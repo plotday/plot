@@ -4,6 +4,7 @@ export default function Terms() {
   return (
     <Container mt="lg">
       <Title order={1}>Terms of Use</Title>
+      <p><em>Last updated: March 8, 2026</em></p>
       <TypographyStylesProvider p={0}>
         <h2 id="agreement-to-terms">AGREEMENT TO TERMS</h2>
         <p>
@@ -81,7 +82,7 @@ export default function Terms() {
           Provided that you are eligible to use the Service, you are granted a
           limited license to access and use the Service and to download or print
           a copy of any portion of the Content to which you have properly gained
-          access solely for your personal, non-commercial use. We reserve all
+          access solely for your personal or internal business use. We reserve all
           rights not expressly granted to you in and to the Service, the Content
           and the Marks.
         </p>
@@ -92,8 +93,7 @@ export default function Terms() {
           and complete; (2) you will maintain the accuracy of such information
           and promptly update such registration information as necessary; (3)
           you have the legal capacity and you agree to comply with these Terms
-          of Use; (4) you are not a minor in the jurisdiction in which you
-          reside; (5) you will not access the Service through automated or
+          of Use; (4) you are not under the age of 13, and if you are under 18, you have obtained parental or guardian consent to use the Service; (5) you will not access the Service through automated or
           non-human means, whether through a bot, script or otherwise; (6) you
           will not use the Service for any illegal or unauthorized purpose; and
           (7) your use of the Service will not violate any applicable law or
@@ -151,12 +151,12 @@ export default function Terms() {
           payment. We also reserve the right to refuse any order placed through
           the Service.
         </p>
-        <h2 id="free-trial">FREE TRIAL</h2>
+        <h2 id="free-tier">FREE TIER</h2>
         <p>
-          We offer a 30-day free trial to new users who register with the
-          Service. The account will not be charged and the subscription will be
-          suspended until upgraded to a paid version at the end of the free
-          trial.
+          We offer a free tier of the Service with limited features. You may
+          use the free tier indefinitely. Paid upgrades are available and will
+          be charged immediately upon purchase. You can manage your
+          subscription at any time through your account settings.
         </p>
         <h2 id="cancellation">CANCELLATION</h2>
         <p>
@@ -185,21 +185,34 @@ export default function Terms() {
           performance of any Software. You may not reproduce or redistribute any
           software except in accordance with the EULA or these Terms of Use.
         </p>
-        <h2 id="extnesions">EXTENSIONS</h2>
+        <h2 id="extensions">EXTENSIONS</h2>
         <p>
-          Plot allows you to optionally install extensions called Twists to
-          extend functionality. Twists come in three types: (1) Twists provided
-          by Plot, (2) Twists you create yourself, and (3) Twists published by
-          other users ("Published Twists"). Installing a Twist is always your
-          choice and requires your explicit action.
+          Plot allows you to optionally install extensions called Twists and
+          Connections to extend functionality and integrate with external
+          services.
         </p>
         <p>
-          When you install a Twist, it may access your data within Plot and may
-          synchronize information between Plot and external systems. For
-          example, a project management Twist might create items in Plot for
-          each task in your project management app, and when you add a response
-          in Plot, it might add that response in the external app. You grant
-          these permissions when you install the Twist.
+          <strong>Twists</strong> extend Plot's functionality. Twists come in
+          three types: (1) Twists provided by Plot, (2) Twists you create
+          yourself, and (3) Twists published by other users ("Published
+          Twists"). Installing a Twist is always your choice and requires your
+          explicit action.
+        </p>
+        <p>
+          <strong>Connections</strong> are links between Plot and your
+          third-party service accounts (such as Google Calendar, email, or
+          project management tools) that sync data on an ongoing basis. When
+          you create a Connection, you authorize Plot to access specific data
+          from that service via OAuth or similar authorization mechanisms. You
+          control which Connections you create and can remove them at any time.
+        </p>
+        <p>
+          When you install a Twist or create a Connection, it may access your
+          data within Plot and may synchronize information between Plot and
+          external systems. For example, a calendar Connection might sync your
+          calendar events into Plot, and when you RSVP in Plot, it might update
+          the calendar event in the external service. You grant these
+          permissions when you install the Twist or authorize the Connection.
         </p>
         <h3 id="published-extensions">Published Extensions</h3>
         <p>
@@ -237,23 +250,48 @@ export default function Terms() {
         </ul>
         <p>
           As a publisher of a Twist, you are responsible for its behavior and
-          any consequences of its use. As a user installing a Twist, you
-          acknowledge that the Twist will operate according to the permissions
-          you grant it, and you should review what a Twist does before
-          installing it.
+          any consequences of its use. As a user installing a Twist or creating
+          a Connection, you acknowledge that the extension will operate
+          according to the permissions you grant it, and you should review what
+          it does before installing or authorizing it.
         </p>
         <p>
-          We reserve the right to review, disable, or remove any Published Twist
-          that violates these terms or poses risks to users or the Service. We
-          are not responsible for reviewing all Published Twists before they are
-          made available, and we make no guarantees about their safety,
-          functionality, or compliance with these terms. Published Twists are
-          provided "as is" and your use of them is at your own risk.
+          We reserve the right to review, disable, or remove any Published
+          Twist that violates these terms or poses risks to users or the
+          Service. We are not responsible for reviewing all Published Twists
+          before they are made available, and we make no guarantees about their
+          safety, functionality, or compliance with these terms. Published
+          Twists are provided "as is" and your use of them is at your own risk.
         </p>
         <p>
           To the maximum extent permitted by law, Plot is not liable for any
-          damages, losses, or issues caused by Twists created or published by
-          users, including Published Twists you install or create.
+          damages, losses, or issues caused by Twists or Connections created or
+          published by users, including Published Twists you install or
+          Connections you authorize.
+        </p>
+        <h2 id="artificial-intelligence">ARTIFICIAL INTELLIGENCE</h2>
+        <p>
+          Plot may use artificial intelligence ("AI") and machine learning
+          technologies to organize, prioritize, and surface relevant
+          information within the Service. For example, AI may be used to
+          suggest priorities, categorize items, or highlight relevant content.
+        </p>
+        <p>
+          Some Twists may also use AI to provide their functionality. When a
+          Twist uses AI, this will be disclosed before installation so you can
+          make an informed decision.
+        </p>
+        <p>
+          You can opt out of all AI processing via your account settings. When
+          AI features are enabled, your data may be processed by third-party AI
+          service providers who are bound by our data processing agreements and
+          privacy commitments.
+        </p>
+        <p>
+          AI-generated outputs are provided for informational purposes and
+          should not be relied upon as the sole basis for important decisions.
+          We do not guarantee the accuracy, completeness, or reliability of
+          AI-generated content.
         </p>
         <p>
           <strong>PROHIBITED ACTIVITIES</strong>
@@ -362,7 +400,7 @@ export default function Terms() {
           <li>
             <p>
               Copy or adapt the Service’s software, including but not limited to
-              Flash, PHP, HTML, JavaScript, or other code.
+              HTML, JavaScript, or other code.
             </p>
           </li>
           <li>
@@ -378,15 +416,15 @@ export default function Terms() {
             </p>
           </li>
         </ol>
-        <h2 id="mobile-application-license">MOBILE APPLICATION LICENSE</h2>
+        <h2 id="application-license">APPLICATION LICENSE</h2>
         <h2 id="use-license">Use License</h2>
         <p>
-          If you access the Service via a mobile application, then we grant you
+          If you access the Service via a desktop or mobile application, then we grant you
           a revocable, non-exclusive, non-transferable, limited right to install
-          and use the mobile application on wireless electronic devices owned or
-          controlled by you, and to access and use the mobile application on
+          and use the application on devices owned or
+          controlled by you, and to access and use the application on
           such devices strictly in accordance with the terms and conditions of
-          this mobile application license contained in these Terms of Use. You
+          this application license contained in these Terms of Use. You
           shall not: (1) decompile, reverse engineer, disassemble, attempt to
           derive the source code of, or decrypt the application; (2) make any
           modification, adaptation, improvement, enhancement, translation, or
@@ -395,7 +433,7 @@ export default function Terms() {
           application; (4) remove, alter, or obscure any proprietary notice
           (including any notice of copyright or trademark) posted by us or the
           licensors of the application; (5) use the application for any revenue
-          generating endeavor, commercial enterprise, or other purpose for which
+          generating endeavor or other purpose for which
           it is not designed or intended; (6) make the application available
           over a network or other environment permitting access or use by
           multiple devices or users at the same time; (7) use the application
@@ -421,7 +459,7 @@ export default function Terms() {
           rules set forth in the applicable App Distributor’s terms of service;
           (2) we are responsible for providing any maintenance and support
           services with respect to the mobile application as specified in the
-          terms and conditions of this mobile application license contained in
+          terms and conditions of this application license contained in
           these Terms of Use or as otherwise required under applicable law, and
           you acknowledge that each App Distributor has no obligation whatsoever
           to furnish any maintenance and support services with respect to the
@@ -441,64 +479,53 @@ export default function Terms() {
           have a VoIP application, then you must not be in violation of their
           wireless data service agreement when using the mobile application; and
           (6) you acknowledge and agree that the App Distributors are
-          third-party beneficiaries of the terms and conditions in this mobile
+          third-party beneficiaries of the terms and conditions in this
           application license contained in these Terms of Use, and that each App
           Distributor will have the right (and will be deemed to have accepted
-          the right) to enforce the terms and conditions in this mobile
+          the right) to enforce the terms and conditions in this
           application license contained in these Terms of Use against you as a
           third-party beneficiary thereof.
         </p>
+        <h2 id="third-party-connections">THIRD-PARTY CONNECTIONS</h2>
         <p>
-          <strong>SOCIAL MEDIA</strong>
+          As part of the functionality of the Service, you may connect your
+          account with third-party services (each such connection, a
+          “Connection”) by authorizing Plot to access your account on that
+          service via OAuth or similar authorization mechanisms. When you
+          create a Connection, you authorize Plot to access specific data
+          scopes (such as read access to your calendar or read/write access
+          to your tasks) as disclosed during the authorization process.
         </p>
         <p>
-          As part of the functionality of the Service, you may link your account
-          with online accounts you have with third-party service providers (each
-          such account, a “Third-Party Account”) by either: (1) providing your
-          Third-Party Account login information through the Service; or (2)
-          allowing us to access your Third-Party Account, as is permitted under
-          the applicable terms and conditions that govern your use of each
-          Third-Party Account. You represent and warrant that you are entitled
-          to disclose your Third-Party Account login information to us and/or
-          grant us access to your Third-Party Account, without breach by you of
-          any of the terms and conditions that govern your use of the applicable
-          Third-Party Account, and without obligating us to pay any fees or
-          making us subject to any usage limitations imposed by the third-party
-          service provider of the Third-Party Account. By granting us access to
-          any Third-Party Accounts, you understand that (1) we may access, make
-          available, and store (if applicable) any content that you have
-          provided to and stored in your Third-Party Account (the “Social
-          Network Content”) so that it is available on and through the Service
-          via your account, including without limitation any friend lists and
-          (2) we may submit to and receive from your Third-Party Account
-          additional information to the extent you are notified when you link
-          your account with the Third-Party Account. Depending on the
-          Third-Party Accounts you choose and subject to the privacy settings
-          that you have set in such Third-Party Accounts, personally
-          identifiable information that you post to your Third-Party Accounts
-          may be available on and through your account on the Service. Please
-          note that if a Third-Party Account or associated service becomes
-          unavailable or our access to such Third-Party Account is terminated by
-          the third-party service provider, then Social Network Content may no
-          longer be available on and through the Service. You will have the
-          ability to disable the connection between your account on the Service
-          and your Third-Party Accounts at any time. PLEASE NOTE THAT YOUR
-          RELATIONSHIP WITH THE THIRD-PARTY SERVICE PROVIDERS ASSOCIATED WITH
-          YOUR THIRD-PARTY ACCOUNTS IS GOVERNED SOLELY BY YOUR AGREEMENT(S) WITH
-          SUCH THIRD-PARTY SERVICE PROVIDERS. We make no effort to review any
-          Social Network Content for any purpose, including but not limited to,
-          for accuracy, legality, or non-infringement, and we are not
-          responsible for any Social Network Content. You acknowledge and agree
-          that we may access your email address book associated with a
-          Third-Party Account and your contacts list stored on your mobile
-          device or tablet computer solely for purposes of identifying and
-          informing you of those contacts who have also registered to use the
-          Service. You can deactivate the connection between the Service and
-          your Third-Party Account by contacting us using the contact
-          information below or through your account settings (if applicable). We
-          will attempt to delete any information stored on our servers that was
-          obtained through such Third-Party Account, except the username and
-          profile picture that become associated with your account.
+          By creating a Connection, you understand that: (1) we may access,
+          store, and process data from your third-party service account to
+          provide the Service's functionality; (2) data may be synced on an
+          ongoing basis via channels and webhooks, meaning the third-party
+          service may push updates to Plot automatically; and (3) we may
+          submit data to your third-party service account when you take
+          actions in Plot (such as RSVPing to an event or updating a task).
+        </p>
+        <p>
+          You represent and warrant that you are entitled to authorize Plot
+          to access your third-party service accounts, without breach of any
+          terms governing your use of those services. You will have the
+          ability to disconnect any Connection at any time through your
+          account settings. When you disconnect a Connection, Plot will stop
+          syncing new data from that service.
+        </p>
+        <p>
+          Plot does not access your contact lists, friend lists, or address
+          books for the purpose of identifying other Plot users or for social
+          discovery. Data from Connections is used solely to provide the
+          Service's functionality to you.
+        </p>
+        <p>
+          PLEASE NOTE THAT YOUR RELATIONSHIP WITH THIRD-PARTY SERVICE
+          PROVIDERS IS GOVERNED SOLELY BY YOUR AGREEMENT(S) WITH SUCH
+          PROVIDERS. We are not responsible for the practices or content of
+          third-party services. If a third-party service becomes unavailable
+          or terminates our access, synced data from that service may no
+          longer be updated within the Service.
         </p>
         <h2 id="submissions">SUBMISSIONS</h2>
         <p>
@@ -579,7 +606,7 @@ export default function Terms() {
           such user to law enforcement authorities; (3) in our sole discretion
           and without limitation, refuse, restrict access to, limit the
           availability of, or disable (to the extent technologically feasible)
-          any of your Contributions or any portion thereof; (4) in our sole
+          any of your content or any portion thereof; (4) in our sole
           discretion and without limitation, notice, or liability, to remove
           from the Service or otherwise disable all files and content that are
           excessive in size or are in any way burdensome to our systems; and (5)
@@ -677,15 +704,14 @@ export default function Terms() {
         <p>
           Any dispute arising out of or in connection with this contract,
           including any question regarding its existence, validity, or
-          termination, shall be referred to and finally resolved by the
-          International Commercial Arbitration Court under the European
-          Arbitration Chamber (Belgium, Brussels, Avenue Louise, 146) according
-          to the Rules of this ICAC, which, as a result of referring to it, is
-          considered as the part of this clause. The number of arbitrators shall
-          be one (1). The seat, or legal place, of arbitration shall be
-          Waterloo, Ontario, Canada. The language to be used in the arbitral
-          proceedings shall be English. The governing law of the contract shall
-          be the substantive law of Canada.
+          termination, shall be referred to and finally resolved by
+          arbitration administered by the ADR Institute of Canada (ADRIC)
+          in accordance with its Arbitration Rules. The number of
+          arbitrators shall be one (1). The seat, or legal place, of
+          arbitration shall be Waterloo, Ontario, Canada. The language to
+          be used in the arbitral proceedings shall be English. The
+          governing law of the contract shall be the substantive law of
+          Canada.
         </p>
         <h2 id="restrictions">Restrictions</h2>
         <p>
@@ -783,8 +809,7 @@ export default function Terms() {
           subsidiaries, affiliates, and all of our respective officers, agents,
           partners, and employees, from and against any loss, damage, liability,
           claim, or demand, including reasonable attorneys' fees and expenses,
-          made by any third party due to or arising out of: (1) your
-          Contributions; (2) use of the Service; (3) breach of these Terms of
+          made by any third party due to or arising out of: (1) your content (including activities, notes, and other content you create in Plot); (2) use of the Service; (3) breach of these Terms of
           Use; (4) any breach of your representations and warranties set forth
           in these Terms of Use; (5) your violation of the rights of a third
           party, including but not limited to intellectual property rights; (6)
@@ -874,7 +899,7 @@ export default function Terms() {
         </p>
         <p>Waterloo, Ontario, Canada</p>
         <p>info@plot.day</p>
-        <p>These terms are effective as of November 9, 2025.</p>
+        <p>These terms are effective as of March 8, 2026.</p>
       </TypographyStylesProvider>
     </Container>
   );

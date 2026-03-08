@@ -6,6 +6,7 @@ export default function Terms() {
       <Title order={1} mb="lg">
         Privacy Policy
       </Title>
+      <p><em>Last updated: March 8, 2026</em></p>
       <TypographyStylesProvider p={0}>
         <p>
           Our mission is to serve people and teams doing great things.
@@ -33,30 +34,48 @@ export default function Terms() {
         <h3 id="content-you-add">Content you add</h3>
         <p>
           You may add content to Plot. Most content you add is private to you.
-          Content in clearly designated shared spaces (e.g. public comments on a
-          meeting) are visible to other users with access to that space (e.g.
-          other attendees of that meeting).
+          However, Priorities (organizational containers for your activities)
+          can be shared with other users. All content within a shared Priority
+          is visible to its members, unless you mark specific items as private.
+          Private items within a shared Priority are only visible to you.
         </p>
-        <h3 id="extensions-and-integrations">Extensions and integrations</h3>
+        <h3 id="extensions-and-integrations">
+          Extensions, Connections, and integrations
+        </h3>
         <p>
           You may optionally install extensions called Twists to extend Plot's
-          functionality. Twists can provided by Plot, created by yourself, or
-          published by other users. When you install a Twist, you explicitly
-          grant it permission to operate.
+          functionality, and create Connections to sync data from third-party
+          services. Twists can be provided by Plot, created by yourself, or
+          published by other users. Connections link Plot to a specific account
+          on a third-party service (such as Google Calendar or a project
+          management tool) and sync data on an ongoing basis.
         </p>
         <p>
-          Twists may access your data within Plot according to the permissions
-          they request. They may also synchronize information between Plot and
-          external systems you authorize. For example, a project management
-          Twist might read your tasks from an external app and create
-          corresponding items in Plot, and when you update something in Plot, it
-          might update the external app as well.
+          When you install a Twist, you explicitly grant it permission to
+          operate. Twists may access the following categories of your data
+          within Plot: activities, notes, priorities, and user profile
+          information. Third-party Twists run in a sandboxed environment with
+          access only to the tools and permissions they request.
         </p>
         <p>
-          You control which Twists you install and can remove them at any time.
-          Only Twists you explicitly install have access to your data. We
-          recommend reviewing what a Twist does and what permissions it requests
-          before installing it.
+          When you create a Connection, you authorize Plot to access specific
+          data from your third-party service account. Connections may receive
+          data via webhooks and push notifications from connected services,
+          meaning data may flow into Plot automatically without you actively
+          triggering it. The data accessed depends on the specific Connection
+          and the scopes you authorize.
+        </p>
+        <p>
+          Plot stores OAuth authentication tokens for connected third-party
+          services to maintain your Connections. You can revoke access at any
+          time by removing the Connection in your account settings.
+        </p>
+        <p>
+          You control which Twists you install and which Connections you
+          create, and can remove them at any time. Only Twists and Connections
+          you explicitly authorize have access to your data. We recommend
+          reviewing what a Twist or Connection does and what permissions it
+          requests before installing or authorizing it.
         </p>
         <h3 id="data-from-third-party-services-you-authorize">
           Data from third-party services you authorize
@@ -64,14 +83,58 @@ export default function Terms() {
         <p>
           For product functionality, you may authorize Plot to read data from
           third-party services that manage relevant data such as your calendar
-          events and contacts. Plot stores copies of this information for
-          processing and fast access.
+          events, contacts, tasks, and email. Plot stores copies of this
+          information for processing and fast access.
+        </p>
+        <p>
+          Connections you create may sync data on an ongoing basis via
+          channels and webhooks. This means third-party services may push data
+          updates to Plot automatically, without you actively triggering each
+          sync.
         </p>
         <p>
           Additionally, Twists you install may connect to third-party services
           you authorize, reading and synchronizing data between those services
-          and Plot. The data accessed depends on the specific Twist and the
-          permissions you grant when connecting to those services.
+          and Plot. The data accessed depends on the specific Twist or
+          Connection and the permissions you grant.
+        </p>
+        <h3 id="data-retention-for-connections">
+          Data retention for Connections and Twists
+        </h3>
+        <p>
+          When you remove a Connection or uninstall a Twist, Plot will stop
+          syncing new data from the associated service. Previously synced data
+          (such as calendar events, tasks, or contacts) will remain in your
+          Plot account unless you explicitly delete it. You can delete
+          individual items or request bulk deletion of synced data by
+          contacting us.
+        </p>
+        <p>
+          When you disconnect a third-party account that was used by a
+          Connection, the Connection will stop functioning and no new data will
+          be synced. OAuth tokens for the disconnected account will be deleted.
+        </p>
+        <h3 id="local-first-architecture">Local-first data storage</h3>
+        <p>
+          Plot uses a local-first architecture, meaning your data is stored
+          on your device and synced to our cloud servers for backup,
+          multi-device sync, and collaboration. This means your data is
+          available to you even when you are offline. When an internet
+          connection is available, your local data is synced with our servers
+          to keep your devices in sync and enable collaboration with others.
+        </p>
+        <h3 id="ai-processing">Artificial intelligence processing</h3>
+        <p>
+          Plot may use artificial intelligence ("AI") and machine learning
+          technologies to process your data for the purpose of organizing,
+          prioritizing, and surfacing relevant information. When AI features
+          are enabled, your data may be processed by third-party AI service
+          providers who are bound by our data processing agreements.
+        </p>
+        <p>
+          Some Twists may also use AI to provide their functionality. When a
+          Twist uses AI, this is disclosed before installation. You can opt
+          out of all AI processing via your account settings.
         </p>
         <h3 id="information-we-collect-automatically">
           Information we collect automatically
@@ -153,8 +216,8 @@ export default function Terms() {
           We may share your information with third-party service providers
           essential to the operation of the product. These service providers are
           only provided the information required to perform the services
-          required. We careful review the Privacy Policies and Terms of Service
-          of our third-part service providers to ensure they reflect our
+          required. We carefully review the Privacy Policies and Terms of Service
+          of our third-party service providers to ensure they reflect our
           commitments to you.
         </p>
         <p>Our third-party service providers include:</p>
@@ -163,13 +226,14 @@ export default function Terms() {
           <li>Email delivery</li>
           <li>Analytics</li>
           <li>Billing</li>
+          <li>AI and machine learning service providers</li>
         </ul>
         <h3 id="ways-we-do-not-use-your-information">
           Ways we <strong>do not</strong> use your information
         </h3>
         <p>
-          Plot does not use any of your information for serving third-part
-          advertisments. We will not sell your information to a third party.
+          Plot does not use any of your information for serving third-party
+          advertisements. We will not sell your information to a third party.
         </p>
         <p>
           Use and transfer to any other app of information received from Google
@@ -177,8 +241,30 @@ export default function Terms() {
           <a href="https://developers.google.com/terms/api-services-user-data-policy#additional_requirements_for_specific_api_scopes">
             Google API Services User Data Policy
           </a>
-          , including the Limited Use requirements.
+          , including the Limited Use requirements. Specifically:
         </p>
+        <ul>
+          <li>
+            Plot's use of Google data is limited to providing and improving
+            the Service's functionality for you.
+          </li>
+          <li>
+            Plot does not use Google data for serving advertisements or for
+            any advertising-related purpose.
+          </li>
+          <li>
+            Plot does not allow humans to read your Google data except (a)
+            with your explicit consent, (b) as necessary for security
+            purposes (e.g., investigating abuse), or (c) to comply with
+            applicable law.
+          </li>
+          <li>
+            Plot does not transfer Google data to third parties except as
+            necessary to provide or improve the Service, to comply with
+            applicable law, or as part of a merger, acquisition, or asset
+            sale with appropriate data protection obligations.
+          </li>
+        </ul>
         <h2 id="3-protecting-your-information">
           3. Protecting your information
         </h2>
@@ -200,7 +286,7 @@ export default function Terms() {
           unauthorized access.
         </p>
         <p>
-          We employ measures to preserve the integrity our your data, including
+          We employ measures to preserve the integrity of your data, including
           regular backups. With electronic records, data loss is a possibility.
           While we will do everything reasonable to protect and, if necessary,
           recover your data, it is your responsibility, if necessary, to keep a
@@ -292,7 +378,7 @@ export default function Terms() {
           incomplete, misleading or out of date.
         </p>
         <p>
-          <strong>Notification of data breaches:</strong> We will comply laws
+          <strong>Notification of data breaches:</strong> We will comply with laws
           applicable to us in respect of any data breach.
         </p>
         <p>
@@ -360,7 +446,7 @@ export default function Terms() {
           <br />
           privacy@plot.day
         </p>
-        <p>This policy is effective as of November 9, 2025.</p>
+        <p>This policy is effective as of March 8, 2026.</p>
       </TypographyStylesProvider>
     </Container>
   );
