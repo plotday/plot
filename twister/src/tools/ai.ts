@@ -66,6 +66,13 @@ import { ITool } from "..";
  */
 export abstract class AI extends ITool {
   /**
+   * Returns which AI capabilities are currently available.
+   * Check this before calling prompt() or embed() to gracefully
+   * handle cases where AI is disabled by the user.
+   */
+  abstract available(): AICapabilities;
+
+  /**
    * Sends a request to an AI model and returns the response using the Vercel AI SDK.
    *
    * Supports text generation, multi-turn conversations, structured outputs,
@@ -145,6 +152,20 @@ export abstract class AI extends ITool {
     request: AIRequest<TOOLS, SCHEMA>
   ): Promise<AIResponse<TOOLS, SCHEMA>>;
 }
+
+/** Options for configuring AI tool usage in a twist. */
+export type AIOptions = {
+  /** Whether AI is required for this twist to function. Default: true */
+  required?: boolean;
+};
+
+/** Describes which AI capabilities are currently available to this twist. */
+export type AICapabilities = {
+  /** Whether AI prompting (text generation) is available. */
+  prompt: boolean;
+  /** Whether AI embedding generation is available. */
+  embed: boolean;
+};
 
 /**
  * Model preferences for selecting an AI model based on performance and cost requirements.
