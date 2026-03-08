@@ -57,6 +57,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs access to the camera to take photos for note attachments.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to attach photos to notes.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to the microphone to enable voice dictation in notes and activities.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
