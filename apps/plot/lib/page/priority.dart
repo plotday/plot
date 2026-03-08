@@ -1712,7 +1712,7 @@ class _PriorityPageState extends State<PriorityPage> {
                     focusNode: focusNode,
                     context: state.context,
                     showSubPriority: true,
-                    setDoneAt: false,
+                    bump: false,
                   ),
                 ];
               },

@@ -17,7 +17,7 @@ schedules.get("/sync/schedules", async (c) => {
     archived,
     limit,
     id,
-    sortBy,
+    sortBy: _sortBy,
     sortDir,
   } = parseReadParams(c);
 

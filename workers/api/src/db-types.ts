@@ -574,6 +574,12 @@ export interface PriorityTwistChannelNoteCreate {
   updated_by: number | null;
 }
 
+export interface PriorityTwistChild {
+  archived_at: Timestamp | null;
+  priority_id: string | null;
+  priority_twist_id: string | null;
+}
+
 export interface PriorityTwistLinkUpdate {
   actions: Json | null;
   assignee_id: string | null;
@@ -689,7 +695,6 @@ export interface PriorityTwistThreadRead {
 
 export interface PriorityTwistThreadSchedule {
   at: string | null;
-  done_at: Timestamp | null;
   on: string | null;
   priority_id: string | null;
   priority_twist_id: string | null;
@@ -751,7 +756,6 @@ export interface Schedule {
   archived_at: Timestamp | null;
   at: string | null;
   created_at: Generated<Timestamp>;
-  done_at: Timestamp | null;
   duration: Interval | null;
   id: Generated<string>;
   link_id: string | null;
@@ -846,6 +850,7 @@ export interface Thread {
 }
 
 export interface ThreadRead {
+  bumped_at: Timestamp | null;
   read_at: Generated<Timestamp>;
   thread_id: string;
   updated_at: Generated<Timestamp>;
@@ -1014,16 +1019,6 @@ export interface UserNote {
   user_id: string | null;
 }
 
-export interface UserNoteTags {
-  archived_at: Timestamp | null;
-  id: string | null;
-  priority_id: string | null;
-  priority_path: string | null;
-  tags: Json | null;
-  updated_at: Timestamp | null;
-  user_id: string | null;
-}
-
 export interface UserPriority {
   archived_at: Timestamp | null;
   color: number | null;
@@ -1075,7 +1070,6 @@ export interface UserSchedule {
   at: string | null;
   contacts: Json | null;
   created_at: Timestamp | null;
-  done_at: Timestamp | null;
   duration: Interval | null;
   id: string | null;
   link_id: string | null;
@@ -1215,6 +1209,7 @@ export interface DB {
   priority_twist_channel_link_create: PriorityTwistChannelLinkCreate;
   priority_twist_channel_link_update: PriorityTwistChannelLinkUpdate;
   priority_twist_channel_note_create: PriorityTwistChannelNoteCreate;
+  priority_twist_child: PriorityTwistChild;
   priority_twist_link_update: PriorityTwistLinkUpdate;
   priority_twist_note_create: PriorityTwistNoteCreate;
   priority_twist_note_update: PriorityTwistNoteUpdate;
@@ -1247,7 +1242,6 @@ export interface DB {
   "user.actor": UserActor;
   "user.link": UserLink;
   "user.note": UserNote;
-  "user.note_tags": UserNoteTags;
   "user.priority": UserPriority;
   "user.priority_actor": UserPriorityActor;
   "user.priority_expanded": UserPriorityExpanded;

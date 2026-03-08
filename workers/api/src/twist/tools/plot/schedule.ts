@@ -244,7 +244,7 @@ function parseRange(range: string | null): {
   end: string | null;
 } {
   if (!range) return { start: null, end: null };
-  const match = range.match(/[\[(]"?([^",]*)"?,\s*"?([^")\]]*)"?[\])]/);
+  const match = range.match(/[[(]"?([^",]*)"?,\s*"?([^")\]]*)"?[)\]]/);
   if (!match) return { start: null, end: null };
   return {
     start: match[1]?.trim() || null,

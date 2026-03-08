@@ -11,11 +11,6 @@ WITH link_agg AS (
     SELECT thread_id, MAX(source_created_at) AS source_created_at
     FROM link
     GROUP BY thread_id
-),
-user_done AS (
-    SELECT thread_id, user_id, done_at
-    FROM schedule
-    WHERE link_id IS NULL AND occurrence IS NULL AND done_at IS NOT NULL
 )
 SELECT
     upe.user_id,
@@ -36,13 +31,13 @@ SELECT
             GREATEST (COALESCE(CASE WHEN ar.read_at >= (CASE WHEN a.created_by = upe.user_id THEN
                                 a.last_note_source_created_at
                             ELSE
-                                COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ud.done_at), a.created_at)
+                                COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
                             END) THEN
                         ar.updated_at
                     END, 'epoch'::timestamptz), CASE WHEN a.created_by = upe.user_id THEN
                     COALESCE(a.last_note_source_created_at, 'epoch'::timestamptz)
                 ELSE
-                    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ud.done_at), a.created_at)
+                    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
                 END)
         ELSE
             'epoch'::timestamptz
@@ -71,19 +66,19 @@ SELECT
             OR ar.read_at < (CASE WHEN a.created_by = upe.user_id THEN
                     a.last_note_source_created_at
                 ELSE
-                    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ud.done_at), a.created_at)
+                    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
                 END)
         ELSE
             FALSE
         END, FALSE) AS unread,
     -- activity_at: feed ordering timestamp
-    -- GREATEST(lastNoteSourceCreatedAt, link.sourceCreatedAt, userSchedule.doneAt),
+    -- GREATEST(lastNoteSourceCreatedAt, link.sourceCreatedAt, threadRead.bumpedAt),
     -- falling back to created_at when all three are null
     COALESCE(
         GREATEST(
             a.last_note_source_created_at,
             la.source_created_at,
-            ud.done_at
+            ar.bumped_at
         ),
         a.created_at
     ) AS activity_at,
@@ -97,7 +92,7 @@ SELECT
              LIMIT 1),
             (SELECT COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamptz)
              FROM schedule s_agg WHERE s_agg.thread_id = a.id AND s_agg.user_id = upe.user_id
-             AND s_agg.archived_at IS NULL AND s_agg.done_at IS NULL
+             AND s_agg.archived_at IS NULL
              ORDER BY COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamptz) ASC NULLS LAST
              LIMIT 1)
         ),
@@ -109,7 +104,6 @@ FROM
     LEFT JOIN thread_read ar ON ar.user_id = upe.user_id
         AND ar.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
-    LEFT JOIN user_done ud ON ud.thread_id = a.id AND ud.user_id = upe.user_id
 WHERE
     (a.draft = FALSE OR a.created_by = upe.user_id)
     AND (CASE WHEN a.private = FALSE THEN TRUE

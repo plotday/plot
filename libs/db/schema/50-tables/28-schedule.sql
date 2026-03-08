@@ -11,7 +11,6 @@ CREATE TABLE "public"."schedule" (
     "duration" interval,
     "recurrence_exdates" timestamptz[],
     "occurrence" text,
-    "done_at" timestamptz,
     "thread_id" uuid REFERENCES public.thread (id) ON DELETE CASCADE,
     "link_id" uuid REFERENCES public.link (id) ON DELETE CASCADE
 );
@@ -93,10 +92,6 @@ WHERE
     "user_id" IS NOT NULL;
 
 CREATE INDEX idx_schedule_updated_at ON "public"."schedule" ("updated_at");
-
-CREATE INDEX idx_schedule_done_at ON "public"."schedule" ("done_at")
-WHERE
-    done_at IS NOT NULL;
 
 CREATE TRIGGER set_schedule_updated_at
     BEFORE INSERT OR UPDATE ON "public"."schedule"

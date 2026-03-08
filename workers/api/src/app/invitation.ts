@@ -1,13 +1,9 @@
-import type { Kysely } from "kysely";
-
 import * as crypto from "crypto";
+import type { Kysely } from "kysely";
 import { Hono } from "hono";
 
 import { render } from "@plotday/email";
 import { createLogger } from "@plotday/worker-util";
-
-// ENV is defined as a global string literal in wrangler.jsonc
-declare const ENV: string;
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
@@ -22,6 +18,9 @@ import {
 import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
 import { extractRequestContext } from "../utils/log-context";
+
+// ENV is defined as a global string literal in wrangler.jsonc
+declare const ENV: string;
 
 interface SendInvitationParams {
   contactId: string;

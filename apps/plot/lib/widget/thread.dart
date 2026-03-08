@@ -21,7 +21,7 @@ class ThreadWidget extends StatelessWidget {
     this.now = false,
     this.showSubPriority = false,
     this.showEventTiming = false,
-    this.setDoneAt = true,
+    this.bump = true,
     this.focusNode,
     this.onHover,
     this.reorderableIndex,
@@ -35,7 +35,7 @@ class ThreadWidget extends StatelessWidget {
   final bool now;
   final bool showSubPriority;
   final bool showEventTiming;
-  final bool setDoneAt;
+  final bool bump;
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
@@ -43,7 +43,7 @@ class ThreadWidget extends StatelessWidget {
   Command? _getSwipeRightCommand() {
     if (activity.at != null) return null;
     return activity.todo
-        ? ThreadDone(activity, setDoneAt: setDoneAt)
+        ? ThreadDone(activity, bump: bump)
         : ToggleThreadToDo(activity);
   }
 
@@ -139,13 +139,13 @@ class ThreadWidget extends StatelessWidget {
         } else if (activity.isFuture) {
           // Todo scheduled later: alarm clock in primary
           leadingCommand = CommandWrapper(
-            ThreadDone(activity, setDoneAt: setDoneAt),
+            ThreadDone(activity, bump: bump),
             icon: Value(PlotIcon.schedule),
           );
         } else {
           // Todo now: filled star in primary
           leadingCommand = CommandWrapper(
-            ThreadDone(activity, setDoneAt: setDoneAt),
+            ThreadDone(activity, bump: bump),
             icon: Value(PlotIcon.todo),
           );
         }
@@ -476,7 +476,7 @@ class ThreadWidget extends StatelessWidget {
                                   tagSuggestions: tagSuggestions,
                                   showCommands: isHighlighted,
                                   showEventTiming: showEventTiming,
-                                  setDoneAt: setDoneAt,
+                                  bump: bump,
                                 ),
                               ),
                             ],
@@ -642,7 +642,7 @@ class ThreadCommands extends HookWidget {
     this.tagSuggestions = const [],
     this.showCommands = false,
     this.showEventTiming = false,
-    this.setDoneAt = true,
+    this.bump = true,
     super.key,
   });
 
@@ -650,7 +650,7 @@ class ThreadCommands extends HookWidget {
   final List<Tag> tagSuggestions;
   final bool showCommands;
   final bool showEventTiming;
-  final bool setDoneAt;
+  final bool bump;
 
   @override
   Widget build(BuildContext context) {
@@ -676,7 +676,7 @@ class ThreadCommands extends HookWidget {
 
         // Use FinishThread when clicking Tag.todo on a "todo" thread
         final command = tag == Tag.todo
-            ? ThreadDone(activity, stateIcon: true, setDoneAt: setDoneAt)
+            ? ThreadDone(activity, stateIcon: true, bump: bump)
             : ToggleThreadTag(activity, tag);
 
         // Get actor names for tooltip
@@ -773,7 +773,7 @@ class ThreadCommands extends HookWidget {
                         ? ThreadDone(
                             activity,
                             stateIcon: true,
-                            setDoneAt: setDoneAt,
+                            bump: bump,
                           )
                         : ToggleThreadTag(activity, tag);
                     final count = activity.tags[tag]?.length ?? 0;

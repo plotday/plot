@@ -1988,7 +1988,8 @@ class Store extends _$Store {
       await m.alterTable(TableMigration(threads));
     }
     if (from < 257) {
-      await _safeAddColumn(m, schedules, schedules.doneAt);
+      await _safeCustomStatement(m,
+        'ALTER TABLE schedules ADD COLUMN done_at INTEGER');
     }
     if (from < 258) {
       await _safeAddColumn(m, schedules, schedules.archivedAt);
@@ -2022,6 +2023,22 @@ class Store extends _$Store {
     }
     if (from < 264) {
       await _safeAddColumn(m, userSettings, userSettings.aiEnabled);
+      // Add bumpedAt to threads table
+      await _safeAddColumn(m, threads, threads.bumpedAt);
+      // Copy done_at from schedules to threads.bumped_at
+      await _safeCustomStatement(m, '''
+        UPDATE threads SET bumped_at = s.done_at
+        FROM schedules s
+        WHERE s.thread_id = threads.id AND s.done_at IS NOT NULL
+      ''');
+      // Archive schedules that had done_at set (they represent completed todos)
+      await _safeCustomStatement(m, '''
+        UPDATE schedules SET archived_at = done_at
+        WHERE done_at IS NOT NULL AND archived_at IS NULL
+      ''');
+      // Drop doneAt column from schedules (Drift rebuilds table keeping only current columns)
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(schedules));
     }
   }
 

@@ -20,6 +20,8 @@ class Threads extends Table
   TextColumn get mentions => text().nullable().map(const UuidListConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   BoolColumn get unreadUpdated => boolean().nullable()();
+  DateTimeColumn get bumpedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
 }
 
 @DataClassName('ScheduleRow')
@@ -53,8 +55,6 @@ class Schedules extends Table with SyncableTable, UuidTable {
   TextColumn get recurrenceExdates =>
       text().nullable().map(const DateTimeListConverter())();
   TextColumn get occurrence => text().nullable()();
-  DateTimeColumn get doneAt =>
-      dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get archivedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   BlobColumn get threadId => blob().nullable().map(const UuidConverter())();
@@ -574,6 +574,8 @@ class Thread extends Equatable implements Comparable<Thread> {
                 'user_id': Base.userId.toString(),
                 'thread_id': activity.id.toString(),
                 'read_at': readAt.toIso8601String(),
+                if (activity.bumpedAt != null)
+                  'bumped_at': activity.bumpedAt!.toUtc().toIso8601String(),
               },
             )
             .toList();
@@ -1263,14 +1265,12 @@ class Thread extends Equatable implements Comparable<Thread> {
       }
       condition = condition | linkDateTimeScheduled;
 
-      // Exclude truly done threads (doneAt set AND no dates).
-      // Re-todoed threads keep doneAt for activity feed ordering but have
-      // dates set, so they should still appear.
+      // Exclude archived per-user schedules (done items).
+      // Only include threads where the user schedule is absent, not archived,
+      // or has a link schedule.
       condition = condition &
           (userSched.id.isNull() |
-              userSched.doneAt.isNull() |
-              userSched.startOn.isNotNull() |
-              userSched.startAt.isNotNull() |
+              userSched.archivedAt.isNull() |
               linkSched.id.isNotNull());
 
       query.where(condition);
@@ -1300,12 +1300,12 @@ class Thread extends Equatable implements Comparable<Thread> {
         ]);
         break;
       case ThreadOrder.reverse:
-        // Activity feed: GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, doneAt)
+        // Activity feed: GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt)
         // Falls back to createdAt only when all three are null.
         final epoch = Constant(DateTime.fromMillisecondsSinceEpoch(0));
         final feedSort = FunctionCallExpression('MAX', [
           coalesce([a.lastNoteSourceCreatedAt, linkTable.sourceCreatedAt, a.createdAt]),
-          coalesce([userSched.doneAt, epoch]),
+          coalesce([a.bumpedAt, epoch]),
         ]);
         query.orderBy([OrderingTerm.desc(feedSort)]);
         break;
@@ -1911,7 +1911,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   /// Timestamp for activity feed ordering and bucket headers.
-  /// GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, doneAt),
+  /// GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt),
   /// falling back to createdAt when all are null.
   DateTime get activityAt {
     DateTime? best = _thread.lastNoteSourceCreatedAt;
@@ -1919,8 +1919,8 @@ class Thread extends Equatable implements Comparable<Thread> {
         (best == null || _linkSourceCreatedAt.isAfter(best))) {
       best = _linkSourceCreatedAt;
     }
-    if (doneAt != null && (best == null || doneAt!.isAfter(best))) {
-      best = doneAt;
+    if (bumpedAt != null && (best == null || bumpedAt!.isAfter(best))) {
+      best = bumpedAt;
     }
     return best ?? createdAt;
   }
@@ -1944,11 +1944,10 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// Whether this todo is pinned after a specific event.
   bool get isPinnedTodo => pinnedAfterTime != null;
 
-  bool get done =>
-      _userSchedule?.doneAt != null &&
-      _userSchedule!.startOn == null &&
-      _userSchedule.startAt == null;
-  DateTime? get doneAt => _userSchedule?.doneAt;
+  /// A thread is "done" when it has no active per-user schedule (archived or absent)
+  /// and no dates set. Effectively: not a todo.
+  bool get done => _userSchedule != null && !todo;
+  DateTime? get bumpedAt => _thread.bumpedAt;
   bool get hasUserSchedule => _userSchedule != null;
   bool get isPast =>
       at?.end?.isBefore(Time.now()) == true ||
@@ -2181,7 +2180,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // Personal to-do state
     bool? todo,
-    Value<DateTime?> doneAt = const Value.absent(),
+    bool bump = false,
   }) {
     final now = DateTime.now();
 
@@ -2361,6 +2360,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         userSchedule = userSchedule.copyWith(
           startOn: Value(Thread.todoNowDate),
           order: Value(Order.first()),
+          archivedAt: const Value(null),
         );
       } else {
         userSchedule = ScheduleRow(
@@ -2373,9 +2373,10 @@ class Thread extends Equatable implements Comparable<Thread> {
         );
       }
     } else if (todo == false) {
+      // Mark done: archive the user schedule (clear dates, set archived_at)
       if (userSchedule != null) {
         userSchedule = userSchedule.copyWith(
-          doneAt: doneAt.present ? doneAt : Value(DateTime.now()),
+          archivedAt: Value(DateTime.now()),
           startOn: const Value(null),
           startAt: const Value(null),
           endOn: const Value(null),
@@ -2388,9 +2389,19 @@ class Thread extends Equatable implements Comparable<Thread> {
           threadId: _thread.id,
           userId: Base.userId,
           order: Order.first(),
-          doneAt: doneAt.present ? doneAt.value : DateTime.now(),
+          archivedAt: DateTime.now(),
         );
       }
+    }
+
+    // Set bumpedAt on the thread when bumping (agenda done)
+    // Also trigger thread-read sync by marking unreadUpdated so bumped_at gets pushed
+    if (bump && todo == false) {
+      activity = activity.copyWith(
+        bumpedAt: Value(DateTime.now()),
+        unread: false,
+        unreadUpdated: const Value(true),
+      );
     }
 
     return Thread._fromStore(
@@ -2426,11 +2437,12 @@ class Thread extends Equatable implements Comparable<Thread> {
             ),
           );
         } else if (_userSchedule != null) {
-          // Re-add to todo: set epoch sentinel (keep doneAt for activity feed ordering)
+          // Re-add to todo: unarchive and set epoch sentinel
           return _withUserSchedule(
             _userSchedule.copyWith(
               startOn: Value(Thread.todoNowDate),
               order: Value(Order.first()),
+              archivedAt: const Value(null),
             ),
           );
         } else {

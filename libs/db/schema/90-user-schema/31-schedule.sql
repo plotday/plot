@@ -20,7 +20,6 @@ SELECT
     s.duration,
     s.recurrence_exdates,
     s.occurrence,
-    s.done_at,
     s.thread_id,
     s.link_id,
     upe.path AS priority_path,

@@ -715,7 +715,8 @@ $function$;
 CREATE OR REPLACE FUNCTION "user".upsert_thread_read (
     user_id uuid,
     p_thread_id uuid,
-    p_read_at timestamptz
+    p_read_at timestamptz,
+    p_bumped_at timestamptz DEFAULT NULL::timestamptz
 )
     RETURNS thread_read
     LANGUAGE plpgsql
@@ -737,11 +738,12 @@ BEGIN
     END IF;
     PERFORM "user".assert_priority_access(upsert_thread_read.user_id, v_priority_id);
 
-    INSERT INTO thread_read (user_id, thread_id, read_at)
-        VALUES (upsert_thread_read.user_id, p_thread_id, COALESCE(p_read_at, now()))
+    INSERT INTO thread_read (user_id, thread_id, read_at, bumped_at)
+        VALUES (upsert_thread_read.user_id, p_thread_id, COALESCE(p_read_at, now()), p_bumped_at)
     ON CONFLICT (user_id, thread_id)
         DO UPDATE SET
             read_at = EXCLUDED.read_at,
+            bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_read.bumped_at END,
             updated_at = now()
     RETURNING * INTO v_row;
 

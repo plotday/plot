@@ -1001,7 +1001,6 @@ export type Database = {
           archived_at: string | null
           at: unknown
           created_at: string
-          done_at: string | null
           duration: string | null
           id: string
           link_id: string | null
@@ -1018,7 +1017,6 @@ export type Database = {
           archived_at?: string | null
           at?: unknown
           created_at?: string
-          done_at?: string | null
           duration?: string | null
           id?: string
           link_id?: string | null
@@ -1035,7 +1033,6 @@ export type Database = {
           archived_at?: string | null
           at?: unknown
           created_at?: string
-          done_at?: string | null
           duration?: string | null
           id?: string
           link_id?: string | null
@@ -1433,18 +1430,21 @@ export type Database = {
       }
       thread_read: {
         Row: {
+          bumped_at: string | null
           read_at: string
           thread_id: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          bumped_at?: string | null
           read_at?: string
           thread_id: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          bumped_at?: string | null
           read_at?: string
           thread_id?: string
           updated_at?: string
@@ -2858,7 +2858,6 @@ export type Database = {
       priority_twist_thread_schedule: {
         Row: {
           at: unknown
-          done_at: string | null
           on: unknown
           priority_id: string | null
           priority_twist_id: string | null
@@ -3345,18 +3344,6 @@ export type Database = {
         }
         Relationships: []
       }
-      note_tags: {
-        Row: {
-          archived_at: string | null
-          id: string | null
-          priority_id: string | null
-          priority_path: unknown
-          tags: Json | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Relationships: []
-      }
       priority: {
         Row: {
           archived_at: string | null
@@ -3417,7 +3404,6 @@ export type Database = {
           at: unknown
           contacts: Json | null
           created_at: string | null
-          done_at: string | null
           duration: string | null
           id: string | null
           link_id: string | null
@@ -3760,7 +3746,12 @@ export type Database = {
         }
       }
       upsert_thread_read: {
-        Args: { p_read_at: string; p_thread_id: string; user_id: string }
+        Args: {
+          p_bumped_at?: string
+          p_read_at: string
+          p_thread_id: string
+          user_id: string
+        }
         Returns: Database["public"]["Tables"]["thread_read"]["Row"]
         SetofOptions: {
           from: "*"

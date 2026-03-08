@@ -26,7 +26,7 @@ noteTags.get("/sync/note-tags", async (c) => {
 
   const rows = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
-      .selectFrom("user.note_tags")
+      .selectFrom("user.note_tags" as any)
       .selectAll()
       .where("user_id", "=", userId)
       .limit(limit);

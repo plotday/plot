@@ -685,18 +685,18 @@ export class Plot extends Tool implements IPlot {
               linkSource: link?.source ?? null,
             };
 
-            // todo=true if schedule is active (on/at set, not done); false otherwise
-            const todo = (item.on != null || item.at != null) && item.done_at == null;
+            // todo=true if schedule is active (on/at set); false otherwise
+            const todo = item.on != null || item.at != null;
 
             // Extract date from schedule's on (daterange) or at (tstzrange)
             let date: Date | undefined;
             if (item.on != null) {
               // daterange format: [start,end) — extract start date
-              const match = String(item.on).match(/[\[(](\d{4}-\d{2}-\d{2})/);
+              const match = String(item.on).match(/[[(](\d{4}-\d{2}-\d{2})/);
               if (match) date = new Date(match[1]);
             } else if (item.at != null) {
               // tstzrange format: ["start","end") — extract start timestamp
-              const match = String(item.at).match(/[\[("]([\d\-T:.+Z]+)/);
+              const match = String(item.at).match(/[[("]([\d\-T:.+Z]+)/);
               if (match) date = new Date(match[1]);
             }
 

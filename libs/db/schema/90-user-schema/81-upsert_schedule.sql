@@ -167,7 +167,7 @@ BEGIN
     END IF;
 
     -- Perform the upsert
-    INSERT INTO schedule (id, thread_id, link_id, user_id, "order", at, "on", recurrence_rule, duration, recurrence_exdates, occurrence, archived_at, done_at)
+    INSERT INTO schedule (id, thread_id, link_id, user_id, "order", at, "on", recurrence_rule, duration, recurrence_exdates, occurrence, archived_at)
         VALUES (
             v_id,
             v_thread_id,
@@ -184,8 +184,7 @@ BEGIN
             COALESCE((p_schedule ->> 'duration')::interval, (p_defaults ->> 'duration')::interval),
             v_recurrence_exdates,
             COALESCE(p_schedule ->> 'occurrence', p_defaults ->> 'occurrence'),
-            COALESCE((p_schedule ->> 'archived_at')::timestamptz, (p_defaults ->> 'archived_at')::timestamptz),
-            COALESCE((p_schedule ->> 'done_at')::timestamptz, (p_defaults ->> 'done_at')::timestamptz)
+            COALESCE((p_schedule ->> 'archived_at')::timestamptz, (p_defaults ->> 'archived_at')::timestamptz)
         )
     ON CONFLICT (id)
         DO UPDATE SET
@@ -239,11 +238,6 @@ BEGIN
                 (p_schedule ->> 'archived_at')::timestamptz
             ELSE
                 schedule.archived_at
-            END,
-            done_at = CASE WHEN p_schedule ? 'done_at' THEN
-                (p_schedule ->> 'done_at')::timestamptz
-            ELSE
-                schedule.done_at
             END
         RETURNING
             * INTO v_result;

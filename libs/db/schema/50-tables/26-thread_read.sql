@@ -4,6 +4,7 @@ CREATE TABLE "public"."thread_read" (
     "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     "thread_id" uuid NOT NULL REFERENCES public.thread ON DELETE CASCADE,
     "read_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "bumped_at" timestamp with time zone,
     PRIMARY KEY (user_id, thread_id)
 );
 

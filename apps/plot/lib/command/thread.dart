@@ -629,7 +629,7 @@ class ThreadDone extends _UpdateThreadCommand {
     super.thread, {
     super.onUpdate,
     bool stateIcon = false,
-    this.setDoneAt = true,
+    this.bump = true,
   }) : super(
          title: 'Done',
          eventObject: EventObject.activity,
@@ -642,7 +642,7 @@ class ThreadDone extends _UpdateThreadCommand {
              : null,
        );
 
-  final bool setDoneAt;
+  final bool bump;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -652,7 +652,7 @@ class ThreadDone extends _UpdateThreadCommand {
     await onUpdate(
       thread.copyWith(
         todo: false,
-        doneAt: setDoneAt ? const Value.absent() : const Value(null),
+        bump: bump,
       ),
     );
     return const CommandDone();

@@ -9,7 +9,6 @@ SELECT
     s.user_id,
     s."on",
     s."at",
-    s.done_at,
     s.updated_at,
     a.priority_id
 FROM

@@ -19,6 +19,7 @@ threadRead.post("/sync/thread-read", async (c) => {
         user_id: userId,
         p_thread_id: record.thread_id,
         p_read_at: record.read_at,
+        p_bumped_at: record.bumped_at || null,
       });
     }
   });
