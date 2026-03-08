@@ -48,6 +48,8 @@ jobs:
           ASC_API_KEY_ID: op://Production/Apple/App Store Connect/key id
           ASC_API_ISSUER_ID: op://Production/Apple/App Store Connect/issuer id
 
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
       - name: Fetch signing files from 1Password
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
@@ -159,8 +161,6 @@ jobs:
           flutter pub run build_runner build --delete-conflicting-outputs
 
       - name: Build with Shorebird
-        env:
-          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
         run: |
           cd apps/plot
 

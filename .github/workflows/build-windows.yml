@@ -96,6 +96,7 @@ jobs:
           R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
 
           WINDOWS_CERT_PASSWORD: op://Production/Windows Signing/password
+          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
 
       - name: Get version from pubspec.yaml
         id: version
@@ -185,23 +186,11 @@ jobs:
 
       - name: Build Windows app
         shell: bash
-        env:
-          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
         run: |
           cd apps/plot
           if [ "${{ inputs.shorebird_release }}" == "true" ]; then
             powershell -Command "& {iwr -UseBasicParsing 'https://raw.githubusercontent.com/shorebirdtech/install/main/install.ps1' | iex}"
-
-            # Debug: find where shorebird was installed
-            echo "USERPROFILE=$USERPROFILE"
-            echo "LOCALAPPDATA=$LOCALAPPDATA"
-            echo "HOME=$HOME"
-            powershell -Command "Get-ChildItem -Path \$env:LOCALAPPDATA -Filter 'shorebird*' -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 10 FullName"
-            powershell -Command "Get-ChildItem -Path \$env:USERPROFILE -Filter 'shorebird*' -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 10 FullName"
-            find "$HOME" -maxdepth 4 -name "shorebird*" -type f 2>/dev/null || true
-            find "$USERPROFILE" -maxdepth 4 -name "shorebird*" -type f 2>/dev/null || true
-
-            export PATH="$USERPROFILE/AppData/Local/Shorebird/bin:$HOME/.shorebird/bin:$PATH"
+            export PATH="$HOME/.shorebird/bin:$PATH"
             shorebird release windows --verbose
           else
             flutter build windows --release --verbose
