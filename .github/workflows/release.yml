@@ -98,7 +98,7 @@ jobs:
   release-ios:
     needs: bump-version
     if: inputs.ios
-    runs-on: macos-latest
+    runs-on: macos-26
 
     steps:
       - name: Generate GitHub App Token
@@ -497,7 +497,7 @@ jobs:
   release-macos:
     needs: bump-version
     if: inputs.macos
-    runs-on: macos-latest
+    runs-on: macos-26
 
     steps:
       - name: Generate GitHub App Token
