@@ -72,7 +72,7 @@ export async function createLink(
       }
     }
 
-    const threadId = await createThread(plot, threadData);
+    let threadId = await createThread(plot, threadData);
 
     // Step 2: Create the link row
     // Read back the thread to get priority_id
@@ -166,6 +166,17 @@ export async function createLink(
         p_defaults: linkDefaults as Json,
       });
       linkId = linkResult.id;
+
+      // If the link was already associated with a different thread (race condition
+      // where concurrent saveLink calls for the same source each create a thread),
+      // clean up the orphaned thread we just created and use the existing one.
+      if (linkResult.thread_id && linkResult.thread_id !== threadId) {
+        await plot.db
+          .deleteFrom("thread")
+          .where("id", "=", threadId)
+          .execute();
+        threadId = linkResult.thread_id as Uuid;
+      }
     } else {
       // Plain insert for links without source
       const linkResult = await plot.db
