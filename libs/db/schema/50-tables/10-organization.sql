@@ -3,6 +3,12 @@
 CREATE TABLE "public"."organization" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "name" text NOT NULL
 );
+
+CREATE TRIGGER set_organization_updated_at
+    BEFORE INSERT OR UPDATE ON "public"."organization"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at ();
 

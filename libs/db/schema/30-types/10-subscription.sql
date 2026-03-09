@@ -14,3 +14,8 @@ CREATE TYPE subscription_status AS ENUM (
     'unpaid'
 );
 
+CREATE TYPE organization_role AS ENUM (
+    'admin',
+    'member'
+);
+

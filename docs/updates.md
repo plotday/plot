@@ -1,3 +1,5 @@
+- Organizations for team billing — Business plan subscribers can create an org, invite members by email, and manage shared billing
+- Team members with matching email domains can auto-join your organization when they sign up
 - New pricing page with three plans (Free, Pro, Business) and monthly/annual billing toggle
 - Subscribe and manage your subscription directly from plot.day
 ---

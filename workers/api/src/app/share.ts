@@ -71,6 +71,35 @@ share.post("/priority/:id/share", async (c) => {
     return c.json({ message: "No changes to make" }, 400);
   }
 
+  // Block sharing on root priorities (personal or org-linked)
+  const priorityInfo = await c.var.db
+    .selectFrom("priority as p")
+    .leftJoin("priority_user as pu", (join: any) =>
+      join
+        .onRef("pu.priority_id", "=", "p.id")
+        .on("pu.user_id", "=", user.id)
+    )
+    .select(["p.organization_id" as any, "pu.personal"])
+    .where("p.id", "=", priorityId)
+    .executeTakeFirst();
+
+  if (priorityInfo) {
+    const { sql } = await import("kysely");
+    const pathResult = await c.var.db
+      .selectFrom("priority")
+      .select(sql`nlevel(path)`.as("depth"))
+      .where("id", "=", priorityId)
+      .executeTakeFirst();
+
+    if (
+      pathResult &&
+      Number(pathResult.depth) === 1 &&
+      (priorityInfo.organization_id != null || priorityInfo.personal === true)
+    ) {
+      return c.json({ message: "Cannot share root priorities" }, 400);
+    }
+  }
+
   // Partition add array into UUIDs and emails
   const addUuids: string[] = [];
   const addEmails: string[] = [];

@@ -2,7 +2,8 @@ CREATE TABLE "public"."domain" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "name" text UNIQUE NOT NULL CHECK ("name" = lower("name")),
-    "organization_id" bigint REFERENCES organization ON DELETE SET NULL
+    "organization_id" bigint REFERENCES organization ON DELETE SET NULL,
+    "auto_join" boolean NOT NULL DEFAULT false
 );
 
 CREATE INDEX "name" ON "public"."domain" USING btree ("name");
@@ -14,7 +15,6 @@ CREATE OR REPLACE FUNCTION public.insert_domain (email text)
 DECLARE
     domain_name text := get_domain (email);
     domain_id bigint;
-    org_id bigint;
 BEGIN
     SELECT
         id INTO domain_id
@@ -23,12 +23,10 @@ BEGIN
     WHERE
         "name" = domain_name;
     IF NOT FOUND THEN
-        INSERT INTO organization (name)
+        INSERT INTO public.domain ("name")
             VALUES (domain_name)
         RETURNING
-            id INTO org_id;
-        INSERT INTO public.domain (organization_id, "name")
-            VALUES (org_id, domain_name);
+            id INTO domain_id;
     END IF;
     RETURN domain_id;
 END;

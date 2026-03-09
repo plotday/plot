@@ -23,6 +23,7 @@ export default [
     route("signout", "routes/signout.tsx"),
 
     route("subscribe", "routes/subscribe.tsx"),
+    route("organization/:id", "routes/organization.$id.tsx"),
     route("account/delete", "routes/account.delete.tsx"),
     route("twister/login", "routes/twister.login.tsx"),
   ]),

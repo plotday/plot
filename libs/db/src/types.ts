@@ -192,18 +192,21 @@ export type Database = {
       }
       domain: {
         Row: {
+          auto_join: boolean
           created_at: string
           id: number
           name: string
           organization_id: number | null
         }
         Insert: {
+          auto_join?: boolean
           created_at?: string
           id?: never
           name: string
           organization_id?: number | null
         }
         Update: {
+          auto_join?: boolean
           created_at?: string
           id?: never
           name?: string
@@ -550,18 +553,144 @@ export type Database = {
           created_at: string
           id: number
           name: string
+          updated_at: string
         }
         Insert: {
           created_at?: string
           id?: never
           name: string
+          updated_at?: string
         }
         Update: {
           created_at?: string
           id?: never
           name?: string
+          updated_at?: string
         }
         Relationships: []
+      }
+      organization_invitation: {
+        Row: {
+          created_at: string
+          email: string
+          id: number
+          invited_by: string
+          organization_id: number
+          role: Database["public"]["Enums"]["organization_role"]
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: never
+          invited_by: string
+          organization_id: number
+          role?: Database["public"]["Enums"]["organization_role"]
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: never
+          invited_by?: string
+          organization_id?: number
+          role?: Database["public"]["Enums"]["organization_role"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_invitation_invited_by_fkey"
+            columns: ["invited_by"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_invitation_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_member: {
+        Row: {
+          created_at: string
+          id: number
+          organization_id: number
+          role: Database["public"]["Enums"]["organization_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          organization_id: number
+          role?: Database["public"]["Enums"]["organization_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          organization_id?: number
+          role?: Database["public"]["Enums"]["organization_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_member_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_member_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_subscription: {
+        Row: {
+          billing_cycle_end: string
+          billing_cycle_start: string
+          created_at: string
+          id: number
+          organization_id: number
+          plan: Database["public"]["Enums"]["subscription_plan"]
+          status: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          billing_cycle_end: string
+          billing_cycle_start: string
+          created_at?: string
+          id?: never
+          organization_id: number
+          plan?: Database["public"]["Enums"]["subscription_plan"]
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          billing_cycle_end?: string
+          billing_cycle_start?: string
+          created_at?: string
+          id?: never
+          organization_id?: number
+          plan?: Database["public"]["Enums"]["subscription_plan"]
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_subscription_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       priority: {
         Row: {
@@ -571,6 +700,7 @@ export type Database = {
           created_by: string
           id: string
           key: string | null
+          organization_id: number | null
           path: unknown
           sync_depth: number | null
           title: string
@@ -584,6 +714,7 @@ export type Database = {
           created_by: string
           id?: string
           key?: string | null
+          organization_id?: number | null
           path: unknown
           sync_depth?: number | null
           title: string
@@ -597,6 +728,7 @@ export type Database = {
           created_by?: string
           id?: string
           key?: string | null
+          organization_id?: number | null
           path?: unknown
           sync_depth?: number | null
           title?: string
@@ -608,6 +740,12 @@ export type Database = {
             foreignKeyName: "priority_created_by_fkey"
             columns: ["created_by"]
             referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organization"
             referencedColumns: ["id"]
           },
         ]
@@ -3209,16 +3347,26 @@ export type Database = {
         Returns: Json
       }
       setup_whats_new_priority: { Args: { p_user_id: string }; Returns: Json }
-      share_priority: {
-        Args: {
-          p_add_actor_ids: string[]
-          p_priority_id: string
-          p_remove_actor_ids: string[]
-          p_role?: string
-          p_user_id: string
-        }
-        Returns: Json
-      }
+      share_priority:
+        | {
+            Args: {
+              p_add_actor_ids: string[]
+              p_priority_id: string
+              p_remove_actor_ids: string[]
+              p_user_id: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_add_actor_ids: string[]
+              p_priority_id: string
+              p_remove_actor_ids: string[]
+              p_role?: string
+              p_user_id: string
+            }
+            Returns: Json
+          }
       sync_user_on_connect: { Args: { p_user_id: string }; Returns: undefined }
       text2ltree: { Args: { "": string }; Returns: unknown }
       tstzrange_to_daterange: {
@@ -3256,6 +3404,7 @@ export type Database = {
     }
     Enums: {
       enter_behavior: "enter_newline" | "enter_submits"
+      organization_role: "admin" | "member"
       subscription_plan: "free" | "pro" | "business"
       subscription_status:
         | "active"
@@ -3366,10 +3515,10 @@ export type Database = {
           id: string | null
           key: string | null
           order: number | null
+          organization_id: number | null
           path: unknown
           personal: boolean | null
           pomodoro: number | null
-          role: string | null
           root: boolean | null
           title: string | null
           top_order: number | null
@@ -3647,10 +3796,10 @@ export type Database = {
           id: string | null
           key: string | null
           order: number | null
+          organization_id: number | null
           path: unknown
           personal: boolean | null
           pomodoro: number | null
-          role: string | null
           root: boolean | null
           title: string | null
           top_order: number | null
@@ -3939,6 +4088,7 @@ export const Constants = {
   public: {
     Enums: {
       enter_behavior: ["enter_newline", "enter_submits"],
+      organization_role: ["admin", "member"],
       subscription_plan: ["free", "pro", "business"],
       subscription_status: [
         "active",

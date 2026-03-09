@@ -1,10 +1,116 @@
--- Function to share a priority with other users/contacts
--- Handles extraction from personal tree when needed
-CREATE OR REPLACE FUNCTION public.share_priority (p_user_id uuid, p_priority_id uuid, p_add_actor_ids uuid[], p_remove_actor_ids uuid[])
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Drop index "idx_priority_organization" from table: "priority"
+DROP INDEX "public"."idx_priority_organization";
+-- Create "propagate_organization_id" function
+CREATE FUNCTION "public"."propagate_organization_id" () RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    v_parent_org_id bigint;
+BEGIN
+    IF NEW.organization_id IS NULL AND nlevel (NEW.path) > 1 THEN
+        SELECT
+            organization_id INTO v_parent_org_id
+        FROM
+            public.priority
+        WHERE
+            path = subpath (NEW.path, 0, nlevel (NEW.path) - 1);
+        IF v_parent_org_id IS NOT NULL THEN
+            NEW.organization_id := v_parent_org_id;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+-- Create trigger "priority_propagate_org_id"
+CREATE TRIGGER "priority_propagate_org_id" BEFORE INSERT ON "public"."priority" FOR EACH ROW EXECUTE FUNCTION "public"."propagate_organization_id"();
+-- Modify "move_priority" function
+CREATE OR REPLACE FUNCTION "public"."move_priority" ("p_priority_id" uuid, "p_new_parent_path" public.ltree) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    v_old_path ltree;
+    v_new_path ltree;
+    v_priority_label text;
+    v_priority_org_id bigint;
+    v_dest_parent_org_id bigint;
+    v_new_parent_org_id bigint;
+BEGIN
+    -- Get the current path of the priority being moved
+    SELECT
+        path,
+        organization_id INTO v_old_path,
+        v_priority_org_id
+    FROM
+        public.priority
+    WHERE
+        id = p_priority_id;
+    -- If priority doesn't exist, raise an exception
+    IF v_old_path IS NULL THEN
+        RAISE EXCEPTION 'Priority with id % not found', p_priority_id;
+    END IF;
+    -- Prevent moving a priority to be a descendant of itself
+    IF p_new_parent_path IS NOT NULL AND (p_new_parent_path <@ v_old_path OR p_new_parent_path = v_old_path) THEN
+        RAISE EXCEPTION 'Cannot move priority to be a descendant of itself';
+    END IF;
+    -- Block moves that cross org boundaries
+    IF v_priority_org_id IS NOT NULL THEN
+        IF p_new_parent_path IS NULL THEN
+            RAISE EXCEPTION 'Cannot move org priority outside its organization tree';
+        END IF;
+        SELECT
+            organization_id INTO v_dest_parent_org_id
+        FROM
+            public.priority
+        WHERE
+            path = p_new_parent_path;
+        IF v_dest_parent_org_id IS DISTINCT FROM v_priority_org_id THEN
+            RAISE EXCEPTION 'Cannot move org priority outside its organization tree';
+        END IF;
+    END IF;
+    -- Extract the last label from the current path (the priority's own identifier)
+    v_priority_label := ltree2text (subpath (v_old_path, -1));
+    -- Calculate the new path
+    IF p_new_parent_path IS NULL THEN
+        -- Moving to root level
+        v_new_path := text2ltree (v_priority_label);
+    ELSE
+        -- Moving under a parent
+        v_new_path := text2ltree (ltree2text (p_new_parent_path) || '.' || v_priority_label);
+    END IF;
+    -- Update all priorities whose path starts with the old path
+    -- This includes the priority itself and all its descendants
+    UPDATE
+        public.priority
+    SET
+        path = CASE
+        -- For the priority itself, use the new path directly
+        WHEN path = v_old_path THEN
+            v_new_path
+            -- For descendants, replace the old path prefix with the new path
+        ELSE
+            text2ltree (ltree2text (v_new_path) || '.' || ltree2text (subpath (path, nlevel (v_old_path))))
+        END
+    WHERE
+        path <@ v_old_path
+        OR path = v_old_path;
+    -- Propagate organization_id to moved priority and descendants (for moves into org tree)
+    IF p_new_parent_path IS NOT NULL THEN
+        SELECT
+            organization_id INTO v_new_parent_org_id
+        FROM
+            public.priority
+        WHERE
+            path = p_new_parent_path;
+        IF v_new_parent_org_id IS NOT NULL THEN
+            UPDATE
+                public.priority
+            SET
+                organization_id = v_new_parent_org_id
+            WHERE
+                path <@ v_new_path
+                AND (organization_id IS DISTINCT FROM v_new_parent_org_id);
+        END IF;
+    END IF;
+END;
+$$;
+-- Modify "share_priority" function
+CREATE OR REPLACE FUNCTION "public"."share_priority" ("p_user_id" uuid, "p_priority_id" uuid, "p_add_actor_ids" uuid[], "p_remove_actor_ids" uuid[]) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     v_priority record;
     v_root_priority_id uuid;
@@ -209,5 +315,12 @@ BEGIN
             ltree2text (v_old_path)
         END);
 END;
-$function$;
-
+$$;
+-- Backfill organization_id for existing descendants of org priorities
+UPDATE public.priority child
+SET organization_id = root.organization_id
+FROM public.priority root
+WHERE root.organization_id IS NOT NULL
+  AND child.path <@ root.path
+  AND child.id != root.id
+  AND child.organization_id IS NULL;

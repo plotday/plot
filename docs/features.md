@@ -264,6 +264,16 @@ Internal catalog of product features for marketing content generation. Direct an
 - Stripe Customer Portal for self-service subscription management
 - Business plan scales per 50 connections
 
+## Organizations
+
+- Create organizations for team billing and shared limits
+- Organization admin and member roles
+- Invite members by email (pending invitations auto-applied on signup)
+- Email domain auto-join (anyone with matching domain can join automatically)
+- Organization-level Stripe billing (separate from personal subscription)
+- Effective plan resolution (highest tier across personal + org memberships)
+- Organization management page (members, domains, billing)
+
 ## Performance & Scalability
 
 ### Optimization

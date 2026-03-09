@@ -38,7 +38,9 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Numeric = ColumnType<string, number | string, number | string>;
 
-export type SubscriptionPlan = "free";
+export type OrganizationRole = "admin" | "member";
+
+export type SubscriptionPlan = "business" | "free" | "pro";
 
 export type SubscriptionStatus = "active" | "canceled" | "incomplete" | "incomplete_expired" | "past_due" | "trialing" | "unpaid";
 
@@ -124,6 +126,7 @@ export interface Device {
 }
 
 export interface Domain {
+  auto_join: Generated<boolean>;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   name: string;
@@ -370,6 +373,37 @@ export interface Organization {
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   name: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface OrganizationInvitation {
+  created_at: Generated<Timestamp>;
+  email: string;
+  id: Generated<Int8>;
+  invited_by: string;
+  organization_id: Int8;
+  role: Generated<OrganizationRole>;
+}
+
+export interface OrganizationMember {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  organization_id: Int8;
+  role: Generated<OrganizationRole>;
+  user_id: string;
+}
+
+export interface OrganizationSubscription {
+  billing_cycle_end: Timestamp;
+  billing_cycle_start: Timestamp;
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  organization_id: Int8;
+  plan: Generated<SubscriptionPlan>;
+  status: Generated<SubscriptionStatus>;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface Priority {
@@ -379,6 +413,7 @@ export interface Priority {
   created_by: string;
   id: Generated<string>;
   key: string | null;
+  organization_id: Int8 | null;
   path: string;
   sync_depth: number | null;
   title: string;
@@ -1019,6 +1054,16 @@ export interface UserNote {
   user_id: string | null;
 }
 
+export interface UserNoteTags {
+  archived_at: Timestamp | null;
+  id: string | null;
+  priority_id: string | null;
+  priority_path: string | null;
+  tags: Json | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface UserPriority {
   archived_at: Timestamp | null;
   color: number | null;
@@ -1028,6 +1073,7 @@ export interface UserPriority {
   id: string | null;
   key: string | null;
   order: number | null;
+  organization_id: Int8 | null;
   path: string | null;
   personal: boolean | null;
   pomodoro: number | null;
@@ -1131,6 +1177,7 @@ export interface UserThread {
   activity_at: Timestamp | null;
   agenda_at: Timestamp | null;
   archived_at: Timestamp | null;
+  bumped_at: Timestamp | null;
   created_at: Timestamp | null;
   draft: boolean | null;
   id: string | null;
@@ -1196,6 +1243,9 @@ export interface DB {
   note_tag: NoteTag;
   note_tags: NoteTags;
   organization: Organization;
+  organization_invitation: OrganizationInvitation;
+  organization_member: OrganizationMember;
+  organization_subscription: OrganizationSubscription;
   priority: Priority;
   priority_child: PriorityChild;
   priority_child_twist: PriorityChildTwist;
@@ -1242,6 +1292,7 @@ export interface DB {
   "user.actor": UserActor;
   "user.link": UserLink;
   "user.note": UserNote;
+  "user.note_tags": UserNoteTags;
   "user.priority": UserPriority;
   "user.priority_actor": UserPriorityActor;
   "user.priority_expanded": UserPriorityExpanded;

@@ -19,6 +19,7 @@ import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync } from "./sync/notify";
+import { addUserToOrgPriority } from "./organization";
 
 const account = new Hono<{ Bindings: Bindings }>();
 
@@ -574,6 +575,99 @@ account.post("/activate", async (c) => {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
     logger.error("Exception setting up Help & Feedback priority", error as Error, {
+      user_id: user.id,
+    });
+  }
+
+  // Step 10: Process pending organization invitations
+  try {
+    const invitations = await c.var.db
+      .selectFrom("organization_invitation")
+      .select(["id", "organization_id", "role"])
+      .where("email", "=", user.email.toLowerCase())
+      .execute();
+
+    for (const inv of invitations) {
+      await c.var.db
+        .insertInto("organization_member")
+        .values({
+          organization_id: inv.organization_id,
+          user_id: user.id,
+          role: inv.role,
+        })
+        .onConflict((oc) =>
+          oc.columns(["organization_id", "user_id"]).doNothing()
+        )
+        .execute();
+
+      await c.var.db
+        .deleteFrom("organization_invitation")
+        .where("id", "=", inv.id)
+        .execute();
+
+      // Give user access to org priority
+      const _orgPriorityId = await addUserToOrgPriority(c.var.db, inv.organization_id, user.id);
+      if (_orgPriorityId) notifySync(c, _orgPriorityId);
+    }
+
+    if (invitations.length > 0) {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.info("Processed pending org invitations", {
+        user_id: user.id,
+        count: invitations.length,
+      });
+    }
+  } catch (err) {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Failed to process org invitations (non-blocking)", err as Error, {
+      user_id: user.id,
+    });
+  }
+
+  // Step 11: Domain auto-join for organizations
+  try {
+    const emailDomain = user.email.split("@")[1]?.toLowerCase();
+    if (emailDomain) {
+      const domain = await c.var.db
+        .selectFrom("domain")
+        .select(["organization_id"])
+        .where("name", "=", emailDomain)
+        .where("auto_join", "=", true)
+        .where("organization_id", "is not", null)
+        .executeTakeFirst();
+
+      if (domain?.organization_id) {
+        await c.var.db
+          .insertInto("organization_member")
+          .values({
+            organization_id: domain.organization_id,
+            user_id: user.id,
+            role: "member",
+          })
+          .onConflict((oc) =>
+            oc.columns(["organization_id", "user_id"]).doNothing()
+          )
+          .execute();
+
+        // Give user access to org priority
+        const _domainOrgPriorityId = await addUserToOrgPriority(c.var.db, domain.organization_id, user.id);
+        if (_domainOrgPriorityId) notifySync(c, _domainOrgPriorityId);
+
+        const context = extractRequestContext(c);
+        const logger = createLogger(context);
+        logger.info("Auto-joined user to organization via domain", {
+          user_id: user.id,
+          domain: emailDomain,
+          organization_id: String(domain.organization_id),
+        });
+      }
+    }
+  } catch (err) {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Failed to auto-join org via domain (non-blocking)", err as Error, {
       user_id: user.id,
     });
   }

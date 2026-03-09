@@ -7,12 +7,14 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Container,
   Loader,
   SegmentedControl,
   Select,
   Stack,
   Text,
+  TextInput,
   Title,
   Badge,
 } from "@mantine/core";
@@ -28,6 +30,9 @@ type SubscriptionInfo = {
   plan: string;
   status: string;
   billing_cycle_end: string | null;
+  effective_plan?: string;
+  effective_source?: string;
+  organization?: { id: string; name: string } | null;
 };
 
 const PRICES = {
@@ -69,9 +74,12 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
     (searchParams.get("billing") as Billing) || "annual"
   );
   const [businessQuantity, setBusinessQuantity] = useState("1");
+  const [orgName, setOrgName] = useState("");
+  const [domainAutoJoin, setDomainAutoJoin] = useState(true);
 
   const isSuccess = searchParams.get("success") === "true";
   const isCanceled = searchParams.get("canceled") === "true";
+  const successOrgId = searchParams.get("org");
 
   // Fetch subscription status
   useEffect(() => {
@@ -105,11 +113,23 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
     try {
       const token = await getToken();
       const lookupKey = `${plan}_${billing}`;
-      const body: { priceLookupKey: string; quantity?: number } = {
+      const body: Record<string, unknown> = {
         priceLookupKey: lookupKey,
       };
       if (plan === "business") {
         body.quantity = parseInt(businessQuantity);
+        if (!subscription?.organization) {
+          // Creating a new org
+          if (!orgName.trim()) {
+            setError("Organization name is required for Business plan");
+            setActionLoading(false);
+            return;
+          }
+          body.organizationName = orgName.trim();
+          body.domainAutoJoin = domainAutoJoin;
+        } else {
+          body.organizationId = subscription.organization.id;
+        }
       }
 
       const res = await fetch(
@@ -125,11 +145,11 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
       );
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as { error?: string };
         throw new Error(data.error || "Failed to create checkout session");
       }
 
-      const { url } = await res.json();
+      const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     } catch (err) {
       setError(
@@ -139,29 +159,30 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
     }
   };
 
-  const handlePortal = async () => {
+  const handlePortal = async (orgId?: string) => {
     setActionLoading(true);
     setError(null);
 
     try {
       const token = await getToken();
-      const res = await fetch(
-        `${loaderData.apiUrl}/app/subscribe/portal`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const portalUrl = orgId
+        ? `${loaderData.apiUrl}/app/organization/${orgId}/subscribe/portal`
+        : `${loaderData.apiUrl}/app/subscribe/portal`;
+
+      const res = await fetch(portalUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as { error?: string };
         throw new Error(data.error || "Failed to open billing portal");
       }
 
-      const { url } = await res.json();
+      const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     } catch (err) {
       setError(
@@ -208,8 +229,10 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
     <>
       {isSuccess && (
         <Alert color="green" title="Subscription active" mb="md">
-          Your subscription is now active. Welcome to Plot{" "}
-          {subscription?.plan === "business" ? "Business" : "Pro"}!
+          Your subscription is now active.
+          {successOrgId
+            ? " Your organization has been set up."
+            : ` Welcome to Plot ${subscription?.effective_plan === "business" ? "Business" : "Pro"}!`}
         </Alert>
       )}
       {isCanceled && (
@@ -225,11 +248,11 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
     </>
   );
 
-  // Has paid plan
-  const hasPaidPlan =
-    subscription &&
-    subscription.plan !== "free" &&
-    subscription.status === "active";
+  const effectivePlan = subscription?.effective_plan ?? subscription?.plan ?? "free";
+  const isOrgPlan = subscription?.effective_source === "organization";
+
+  // Has paid plan (either personal or via org)
+  const hasPaidPlan = effectivePlan !== "free" && subscription?.status === "active";
 
   if (hasPaidPlan) {
     return (
@@ -239,25 +262,39 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
           {alerts}
           <Box className={classes.currentPlan}>
             <Text fw={600} size="lg">
-              Plot {subscription.plan === "business" ? "Business" : "Pro"}
+              Plot {effectivePlan === "business" ? "Business" : "Pro"}
+              {isOrgPlan && subscription?.organization
+                ? ` via ${subscription.organization.name}`
+                : ""}
             </Text>
             <Badge color="green" variant="light">
               Active
             </Badge>
           </Box>
-          {subscription.billing_cycle_end && (
+          {subscription?.billing_cycle_end && !isOrgPlan && (
             <Text c="dimmed" size="sm">
               Current billing period ends{" "}
               {new Date(subscription.billing_cycle_end).toLocaleDateString()}
             </Text>
           )}
-          <Button
-            onClick={handlePortal}
-            loading={actionLoading}
-            variant="outline"
-          >
-            Manage subscription
-          </Button>
+          {isOrgPlan && subscription?.organization && (
+            <Button
+              component={Link}
+              to={`/organization/${subscription.organization.id}`}
+              variant="outline"
+            >
+              Manage organization
+            </Button>
+          )}
+          {!isOrgPlan && (
+            <Button
+              onClick={() => handlePortal()}
+              loading={actionLoading}
+              variant="outline"
+            >
+              Manage subscription
+            </Button>
+          )}
         </Stack>
       </Container>
     );
@@ -375,6 +412,19 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
               value={businessQuantity}
               onChange={(v) => v && setBusinessQuantity(v)}
               data={QUANTITY_OPTIONS}
+              size="sm"
+            />
+            <TextInput
+              label="Organization name"
+              placeholder="Your company name"
+              value={orgName}
+              onChange={(e) => setOrgName(e.currentTarget.value)}
+              size="sm"
+            />
+            <Checkbox
+              label="Allow anyone with the same email domain to join"
+              checked={domainAutoJoin}
+              onChange={(e) => setDomainAutoJoin(e.currentTarget.checked)}
               size="sm"
             />
             <Stack gap="xs" className={classes.featureList}>

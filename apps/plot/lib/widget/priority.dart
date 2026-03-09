@@ -64,6 +64,7 @@ class PriorityWidget extends StatelessWidget {
       trailingBuilder: (isHovered, hasFocus) {
         final hovered = isHovered || hasFocus;
         final sharing = priority.sharing;
+        final canShare = !priority.root;
 
         if (!hovered && !sharing) return null;
 
@@ -73,14 +74,14 @@ class PriorityWidget extends StatelessWidget {
             children: [
               // Hover commands appear to the left
               if (hovered) ...[
-                if (!sharing) Button.icon(ManagePrioritySharing(priority)),
+                if (canShare && !sharing) Button.icon(ManagePrioritySharing(priority)),
                 Button.icon(
                   SetTopPriority(priority, priority.topOrder == null),
                 ),
                 Button.icon(ShowPriorityCommands(priority)),
               ],
               // Persistent sharing icon (rightmost)
-              if (sharing) Button.icon(
+              if (canShare && sharing) Button.icon(
                 ManagePrioritySharing(priority),
                 color: hovered ? buildContext.theme.plotColors.muted : buildContext.theme.plotColors.veryMuted,
               ),
@@ -105,10 +106,16 @@ class PriorityWidget extends StatelessWidget {
       leadingBuilder: (isHovered, hasFocus) => SizedBox(
         width: 20,
         child: Center(
-          child: UnreadIndicator(
-            color: priority.displayColor,
-            unread: unread ?? priority.unread,
-          ),
+          child: priority.organizationId != null && priority.root
+              ? Icon(
+                  FontAwesomeIcons.building,
+                  size: buildContext.theme.iconSizes.xs,
+                  color: buildContext.colour.colours.fromTheme(priority.displayColor),
+                )
+              : UnreadIndicator(
+                  color: priority.displayColor,
+                  unread: unread ?? priority.unread,
+                ),
         ),
       ),
     );

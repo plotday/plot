@@ -11,7 +11,7 @@ SELECT
     GREATEST (pu.archived_at, p.archived_at) AS archived_at,
     p.created_by,
     p.updated_by,
-    pu.personal = TRUE
+    (pu.personal = TRUE OR p.organization_id IS NOT NULL)
     AND p.id = root.id AS root,
     user_root.path @> p.path AS personal,
     COALESCE(settings.title, p.title) AS title,
@@ -35,6 +35,7 @@ SELECT
     inherited_settings.pomodoro,
     inherited_settings.color,
     p.key,
+    p.organization_id,
     COALESCE(upu.unread, FALSE) AS unread
 FROM
     priority_user pu

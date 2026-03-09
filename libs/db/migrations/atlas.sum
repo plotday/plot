@@ -1,4 +1,4 @@
-h1:Vexm84wWuFCTLQzPODxN8vlWI420rF30Rub+7iJ6iIg=
+h1:eYeld7ViWLQX6Ulg4SYAACjw/E99m4XWghhfZJByEZY=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -73,3 +73,6 @@ h1:Vexm84wWuFCTLQzPODxN8vlWI420rF30Rub+7iJ6iIg=
 20260308165801_verify_sync.sql h1:zfjhGCFbX2rJimHsMSV8/aD358WQdMG4scDQ291AdVM=
 20260308202937_add_bumped_at_to_user_thread_view.sql h1:+/MbTe752ZjZaM4vdIVlO+ydRKJ4Ld/X8FAQl1/oNpI=
 20260308215409_add_pro_business_plans.sql h1:ArJ2Y+RZOajjz6wWrPbRs5027Jk3rPi4aBlt6DPMLrQ=
+20260308233025_add_organizations.sql h1:D57Em2h33ANaRQQKNjqnAPqEEqqDa0NpKXcYsyBwhn4=
+20260309004717_add_organization_id_to_priority.sql h1:lwkQzCZUfbuiF/X9KF/ILtvDNWmkxFrT28hVirD/TfM=
+20260309015137_org_priority_sharing_behavior.sql h1:RUzXP4jgnhuICH8rMGNKowxEsgZl8MHeOQfTL4Tx2C8=

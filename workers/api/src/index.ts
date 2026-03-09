@@ -16,6 +16,7 @@ import callbacks from "./app/callbacks";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import files from "./app/files";
 import subscribe from "./app/subscribe";
+import organizationRoutes from "./app/organization";
 import appSync from "./app/sync";
 import summary from "./app/summary";
 import updates from "./app/updates";
@@ -153,6 +154,7 @@ appSection.route("/", summary);
 appSection.route("/", updates);
 appSection.route("/", files);
 appSection.route("/", subscribe);
+appSection.route("/", organizationRoutes);
 // Note: /app/sync routes are mounted separately with appSyncRateLimiter.
 
 // App sync section - public sync endpoints (user-authenticated)

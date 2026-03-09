@@ -444,7 +444,7 @@ class ShowPriorityCommands extends ShowCommands {
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
   EditPriorityCommand(priority),
-  ManagePrioritySharing(priority),
+  if (!priority.root) ManagePrioritySharing(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   NewPriority(parent: priority),
   if (!priority.root) TogglePriorityArchived(priority),

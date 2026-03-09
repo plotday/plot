@@ -10,7 +10,8 @@ CREATE TABLE "public"."priority" (
     "path" ltree NOT NULL UNIQUE,
     "updated_by" integer NOT NULL DEFAULT 0,
     "sync_depth" integer,
-    "key" text
+    "key" text,
+    "organization_id" bigint REFERENCES public."organization" ON DELETE SET NULL
 );
 
 -- Index for priority path ltree queries (supports <@ operator)
@@ -102,6 +103,33 @@ CREATE TRIGGER priority_insert_trigger
     AFTER INSERT ON public.priority
     FOR EACH ROW
     EXECUTE FUNCTION insert_priority_user ();
+
+CREATE OR REPLACE FUNCTION propagate_organization_id ()
+    RETURNS TRIGGER
+    AS $$
+DECLARE
+    v_parent_org_id bigint;
+BEGIN
+    IF NEW.organization_id IS NULL AND nlevel (NEW.path) > 1 THEN
+        SELECT
+            organization_id INTO v_parent_org_id
+        FROM
+            public.priority
+        WHERE
+            path = subpath (NEW.path, 0, nlevel (NEW.path) - 1);
+        IF v_parent_org_id IS NOT NULL THEN
+            NEW.organization_id := v_parent_org_id;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER priority_propagate_org_id
+    BEFORE INSERT ON public.priority
+    FOR EACH ROW
+    EXECUTE FUNCTION propagate_organization_id ();
 
 -- Per-user priority settings
 CREATE TABLE "public"."priority_settings" (

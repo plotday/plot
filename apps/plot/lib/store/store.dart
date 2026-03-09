@@ -1772,7 +1772,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 264;
+  int get schemaVersion => 265;
 
   @override
   MigrationStrategy get migration {
@@ -2039,6 +2039,9 @@ class Store extends _$Store {
       // Drop doneAt column from schedules (Drift rebuilds table keeping only current columns)
       // ignore: experimental_member_use
       await m.alterTable(TableMigration(schedules));
+    }
+    if (from < 265) {
+      await _safeAddColumn(m, priorities, priorities.organizationId);
     }
   }
 

@@ -125,9 +125,9 @@ async function handleSubscriptionUpdate(
     ? (subscription.metadata.plan as "free" | "pro" | "business")
     : "free";
 
-  // Update user_subscription record
+  // Try user_subscription first, then organization_subscription
   try {
-    await c.var.db
+    const userResult = await c.var.db
       .updateTable("user_subscription")
       .set({
         stripe_subscription_id: subscription.id,
@@ -137,9 +137,24 @@ async function handleSubscriptionUpdate(
         billing_cycle_end: end.toISOString(),
       })
       .where("stripe_customer_id", "=", customerId)
-      .execute();
+      .executeTakeFirst();
+
+    if (!userResult || BigInt(userResult.numUpdatedRows) === 0n) {
+      // Not a user subscription — try organization_subscription
+      await c.var.db
+        .updateTable("organization_subscription")
+        .set({
+          stripe_subscription_id: subscription.id,
+          plan,
+          status,
+          billing_cycle_start: start.toISOString(),
+          billing_cycle_end: end.toISOString(),
+        })
+        .where("stripe_customer_id", "=", customerId)
+        .execute();
+    }
   } catch (error) {
-    logger.error("Failed to update user_subscription", error as Error, {
+    logger.error("Failed to update subscription", error as Error, {
       customer_id: customerId,
     });
     throw new Error(`Database update failed: ${(error as Error).message}`);
@@ -165,9 +180,9 @@ async function handleSubscriptionDeleted(
   const customerId = subscription.customer as string;
   const { start, end } = createFreeTierBillingCycle();
 
-  // Revert to free tier
+  // Revert to free tier — try user_subscription first, then organization_subscription
   try {
-    await c.var.db
+    const userResult = await c.var.db
       .updateTable("user_subscription")
       .set({
         stripe_subscription_id: null,
@@ -177,9 +192,23 @@ async function handleSubscriptionDeleted(
         billing_cycle_end: end.toISOString(),
       })
       .where("stripe_customer_id", "=", customerId)
-      .execute();
+      .executeTakeFirst();
+
+    if (!userResult || BigInt(userResult.numUpdatedRows) === 0n) {
+      await c.var.db
+        .updateTable("organization_subscription")
+        .set({
+          stripe_subscription_id: null,
+          plan: "free",
+          status: "active",
+          billing_cycle_start: start.toISOString(),
+          billing_cycle_end: end.toISOString(),
+        })
+        .where("stripe_customer_id", "=", customerId)
+        .execute();
+    }
   } catch (error) {
-    logger.error("Failed to update user_subscription", error as Error, {
+    logger.error("Failed to update subscription", error as Error, {
       customer_id: customerId,
     });
     throw new Error(`Database update failed: ${(error as Error).message}`);
