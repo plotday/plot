@@ -1860,6 +1860,73 @@ class Store extends _$Store {
     await super.close();
   }
 
+  static const _resyncSentinel = '1970-01-01T00:00:00.000Z';
+
+  /// Performs a full re-sync from the server without losing local data.
+  ///
+  /// Marks all existing rows with a sentinel updatedAt (epoch), clears sync
+  /// state, re-pulls everything from the server (which overwrites the sentinel
+  /// on items that still exist), then deletes orphaned rows that still have
+  /// the sentinel. Regular sync is suspended during the entire operation.
+  Future<void> fullResync() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    _isBufferingBroadcasts = true;
+    _bufferedTables.clear();
+
+    try {
+      // 1. Push all pending local changes first
+      final pushLevels = SyncOrchestrator.instance._computePushLevels();
+      for (final level in pushLevels) {
+        await Future.wait(level.map((e) => SyncOrchestrator.instance.push(e)));
+      }
+
+      // 2. Mark all syncable rows with sentinel updatedAt (skip pending rows)
+      final syncableTables = <TableInfo<Table, DataClass>>[
+        threads, notes, priorities, actors, schedules, links,
+        sessions, priorityUsers, priorityMembers, priorityActors,
+        priorityTwists, sourceChannels, noteTags, threadTags, userSettings,
+      ];
+      for (final table in syncableTables) {
+        await customStatement(
+          "UPDATE ${table.actualTableName} SET updated_at = '$_resyncSentinel' WHERE pending IS NULL",
+        );
+      }
+
+      // 3. Clear all sync states (makes initial pulls re-run)
+      await delete(syncStates).go();
+
+      // 4. Re-subscribe and run full sync cycle
+      _unsubscribeFromUpdates();
+      await _subscribeToUpdates();
+      await _syncAll();
+
+      // 5. Delete orphaned rows (still have sentinel, no pending changes)
+      //    Delete children before parents to respect foreign key order
+      final deleteOrder = <TableInfo<Table, DataClass>>[
+        noteTags, threadTags, notes, schedules, links,
+        sessions, sourceChannels, priorityTwists, priorityActors,
+        priorityMembers, priorityUsers, threads, priorities, actors,
+        userSettings,
+      ];
+      for (final table in deleteOrder) {
+        await customStatement(
+          "DELETE FROM ${table.actualTableName} WHERE updated_at = '$_resyncSentinel' AND pending IS NULL",
+        );
+      }
+
+      // 6. Process buffered broadcast messages
+      _isBufferingBroadcasts = false;
+      for (final table in _bufferedTables) {
+        _syncDebouncer(table);
+      }
+      _bufferedTables.clear();
+    } finally {
+      _isBufferingBroadcasts = false;
+      _isSyncing = false;
+    }
+  }
+
   void _unsubscribeFromUpdates() {
     _broadcastClient?.disconnect();
     _broadcastClient = null;

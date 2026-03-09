@@ -391,6 +391,27 @@ class _SaveAiPreference extends Command {
   }
 }
 
+class FullResync extends Command {
+  FullResync()
+    : super(
+        title: 'Full Re-sync',
+        icon: PlotIcon.sync,
+        eventObject: EventObject.sync,
+        eventAction: EventAction.started,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await Store.get.fullResync();
+      return CommandMessage('Re-sync complete');
+    } catch (e, t) {
+      log.warning('Full re-sync failed', e, t);
+      return CommandMessage('Re-sync failed', isError: true);
+    }
+  }
+}
+
 class ShowOfflineInfo extends ShowPage {
   ShowOfflineInfo()
     : super(

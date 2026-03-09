@@ -68,6 +68,7 @@ class GlobalShortcuts extends StatelessWidget {
           ChangeAppearance(),
           if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
           if (helpFeedbackCmd != null) helpFeedbackCmd,
+          FullResync(),
           CopyVersion(),
           SignOut(),
         ],
