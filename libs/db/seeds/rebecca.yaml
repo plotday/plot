@@ -649,7 +649,6 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
-      done_at: "+0d 08:10"
     notes:
       - created: "+0d 08:10"
         content: |
@@ -667,7 +666,6 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
-      done_at: "+0d 08:20"
     notes:
       - created: "+0d 08:20"
         content: |
@@ -682,7 +680,6 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
-      done_at: "+0d 08:30"
     notes:
       - created: "+0d 08:30"
         content: |
@@ -856,6 +853,7 @@ threads:
     created: "-2d"
     schedule:
       at: "+1d 14:00 / +1d 15:00"
+      duration: "1 hour"
       recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     notes:
       - created: "-2d 15:15"

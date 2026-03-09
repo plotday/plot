@@ -87,7 +87,7 @@ export interface Thread {
   archived_at?: string; // Date offset
   tags?: Tags;
   notes?: Note[]; // Notes associated with this thread
-  schedule?: Schedule; // Schedule block (at/on/done_at/recurrence)
+  schedule?: Schedule; // Schedule block (at/on/recurrence)
   links?: SeedLink[]; // External links
 }
 
@@ -96,7 +96,6 @@ export interface Schedule {
   on?: string; // Date range (e.g., "+3d / +5d")
   duration?: string; // e.g., "30 minutes", "2 hours"
   recurrence_rule?: string; // iCalendar RRULE
-  done_at?: string; // Date offset
 }
 
 export interface SeedLink {
@@ -258,7 +257,6 @@ export interface GeneratedSchedule {
   on: string | null; // daterange SQL format
   duration: string | null; // interval SQL format
   recurrence_rule: string | null;
-  done_at: string | null; // ISO timestamp
 }
 
 export interface GeneratedTwistAdmin {

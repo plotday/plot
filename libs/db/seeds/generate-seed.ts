@@ -661,12 +661,6 @@ function validateThread(
         "Recurring schedules must have 'at' or 'on'"
       );
     }
-    if (sched.recurrence_rule && sched.done_at) {
-      addError(
-        `${path}.schedule`,
-        "Recurring schedules cannot have done_at"
-      );
-    }
   }
 
   // Validate author_ref
@@ -1113,7 +1107,7 @@ function generateSQL(
   if (schedules.length > 0) {
     lines.push("-- Schedules");
     lines.push(
-      'INSERT INTO schedule (id, thread_id, link_id, user_id, "order", at, "on", duration, recurrence_rule, done_at, created_at, updated_at)'
+      'INSERT INTO schedule (id, thread_id, link_id, user_id, "order", at, "on", duration, recurrence_rule, created_at, updated_at)'
     );
     lines.push("VALUES");
     for (let i = 0; i < schedules.length; i++) {
@@ -1128,7 +1122,7 @@ function generateSQL(
           s.on ? sqlString(s.on) : "NULL"
         }, ${s.duration ? sqlString(s.duration) : "NULL"}, ${sqlString(
           s.recurrence_rule
-        )}, ${sqlString(s.done_at)}, NOW(), NOW())${comma}`
+        )}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
@@ -1365,9 +1359,6 @@ function processThread(
       on,
       duration: sched.duration ?? null,
       recurrence_rule: sched.recurrence_rule ?? null,
-      done_at: sched.done_at
-        ? parseDateOffset(baseDate, sched.done_at).toISOString()
-        : null,
     });
   }
 
