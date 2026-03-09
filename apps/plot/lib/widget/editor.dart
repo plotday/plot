@@ -20,6 +20,7 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/command/page_link.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/url_title.dart';
 import 'sliver.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
@@ -1241,10 +1242,9 @@ class EditorState extends State<Editor> {
     return ExecutionInstruction.haltExecution;
   }
 
-  /// Handle paste when selection is collapsed — intercepts Plot URLs to insert
-  /// the thread/priority title as linked text.
+  /// Handle paste when selection is collapsed — inserts the URL immediately,
+  /// then replaces it with the resolved page title once fetched.
   ExecutionInstruction _handleCollapsedPaste() {
-    // Read clipboard synchronously-ish to check for Plot URL
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
 
@@ -1256,41 +1256,70 @@ class EditorState extends State<Editor> {
         return;
       }
 
-      final plotLink = OpenPageLink.parse(text);
-      if (plotLink == null) {
-        _normalPaste();
-        return;
-      }
-
-      // Look up the title for the Plot link
-      String? title;
-      try {
-        if (plotLink.threadId != null) {
-          final thread = await Thread.getOne(
-            Uuid.fromShortString(plotLink.threadId!),
-          );
-          title = thread.title;
-        }
-        if (title == null && plotLink.priorityId != null) {
-          final priority = await store.Priority.getOne(
-            Uuid.fromShortString(plotLink.priorityId!),
-          );
-          title = priority.title;
-        }
-      } catch (_) {
-        // Fall back to raw URL if lookup fails
-      }
-
-      if (!mounted) return;
-
-      final displayText = title ?? text;
-      final currentSelection = _composer.selection;
-      if (currentSelection == null) return;
+      // Insert the raw URL immediately so the user sees feedback
+      final insertPosition = _composer.selection;
+      if (insertPosition == null) return;
+      final nodeId = insertPosition.extent.nodeId;
+      final startOffset =
+          (insertPosition.extent.nodePosition as TextNodePosition).offset;
 
       _editor.execute([
         InsertTextRequest(
-          documentPosition: currentSelection.extent,
-          textToInsert: displayText,
+          documentPosition: insertPosition.extent,
+          textToInsert: text,
+          attributions: {LinkAttribution(text)},
+        ),
+      ]);
+
+      // Resolve the title for the URL
+      String? title;
+      final plotLink = OpenPageLink.parse(text);
+      if (plotLink != null) {
+        // Internal Plot link — look up locally
+        try {
+          if (plotLink.threadId != null) {
+            final thread = await Thread.getOne(
+              Uuid.fromShortString(plotLink.threadId!),
+            );
+            title = thread.title;
+          }
+          if (title == null && plotLink.priorityId != null) {
+            final priority = await store.Priority.getOne(
+              Uuid.fromShortString(plotLink.priorityId!),
+            );
+            title = priority.title;
+          }
+        } catch (_) {
+          // Fall back — raw URL is already shown
+        }
+      } else {
+        // External link — fetch page title
+        title = await fetchUrlTitle(text);
+      }
+
+      if (!mounted || title == null) return;
+
+      // Replace the raw URL text with the resolved title
+      final endOffset = startOffset + text.length;
+      _editor.execute([
+        DeleteContentRequest(
+          documentRange: DocumentRange(
+            start: DocumentPosition(
+              nodeId: nodeId,
+              nodePosition: TextNodePosition(offset: startOffset),
+            ),
+            end: DocumentPosition(
+              nodeId: nodeId,
+              nodePosition: TextNodePosition(offset: endOffset),
+            ),
+          ),
+        ),
+        InsertTextRequest(
+          documentPosition: DocumentPosition(
+            nodeId: nodeId,
+            nodePosition: TextNodePosition(offset: startOffset),
+          ),
+          textToInsert: title,
           attributions: {LinkAttribution(text)},
         ),
       ]);
@@ -1783,7 +1812,7 @@ class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
     super.document, {
     required BuildContext context,
     void Function()? onTap,
-  })  : _context = context,
+  }) : _context = context,
        _handler = onTap;
 
   final BuildContext _context;
@@ -1826,8 +1855,9 @@ class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
     final textNode = document.getNodeById(position.nodeId);
     if (textNode is! TextNode) return null;
 
-    final tappedAttributions =
-        textNode.text.getAllAttributionsAt(nodePosition.offset);
+    final tappedAttributions = textNode.text.getAllAttributionsAt(
+      nodePosition.offset,
+    );
     for (final attribution in tappedAttributions) {
       if (attribution is LinkAttribution) {
         return attribution.launchableUri;
