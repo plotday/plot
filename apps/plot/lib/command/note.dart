@@ -420,15 +420,28 @@ class PickNoteAssignee extends ShowCommands {
     final activity = await Thread.getOne(note.threadId);
     // Refresh note to get latest tag state
     final freshNote = await note.refresh();
+    final assigneeIds = freshNote.activeAssignees;
+
+    // Resolve assigned actors for the "Assigned" section
+    final assignedActors = assigneeIds.isNotEmpty
+        ? await Future.wait(assigneeIds.map(Actor.getOne))
+        : <Actor>[];
+
     return Commands(
       prompt: 'Assign to',
       groups: [
+        if (assignedActors.isNotEmpty)
+          StaticCommandGroup(
+            title: 'Assigned',
+            commands: assignedActors
+                .map((actor) => AssignNoteActor(freshNote, actor))
+                .toList(),
+          ),
         ActorGroup(
+          title: 'Contacts',
           priorityId: activity.priority.id,
-          pinnedActorIds: freshNote.activeAssignees,
-          builder: (actor) => actor == null
-              ? _UnassignAllFromNote(freshNote)
-              : AssignNoteActor(freshNote, actor),
+          excludeActorIds: assigneeIds,
+          builder: (actor) => AssignNoteActor(freshNote, actor),
         ),
       ],
     );
@@ -483,42 +496,6 @@ class AssignNoteActor extends NoteCommand {
     } catch (e, stackTrace) {
       log.severe('Error in AssignNoteActor: $e', e, stackTrace);
       return CommandMessage('Failed to update assignment', isError: true);
-    }
-  }
-}
-
-class _UnassignAllFromNote extends NoteCommand {
-  _UnassignAllFromNote(super.note)
-    : super(
-        title: 'Unassign All',
-        eventObject: EventObject.note,
-        eventAction: EventAction.untagged,
-        icon: PlotIcon.assignRemove,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      ThreadBloc? activityBloc;
-      try {
-        activityBloc = context.read<ThreadBloc>();
-      } catch (e) {
-        activityBloc = null;
-      }
-
-      Note updatedNote = note;
-      for (final actorId in note.activeAssignees) {
-        updatedNote = updatedNote.setTag(Tag.todo, actorId, false);
-      }
-      if (activityBloc != null &&
-          activityBloc.state.draft.id == updatedNote.id) {
-        await activityBloc.updateDraft(updatedNote);
-      }
-      await updatedNote.save();
-      return const CommandRefresh();
-    } catch (e, stackTrace) {
-      log.severe('Error in _UnassignAllFromNote: $e', e, stackTrace);
-      return CommandMessage('Failed to unassign all', isError: true);
     }
   }
 }
@@ -670,15 +647,30 @@ class PickDraftNoteAssignee extends ShowCommands {
     Uuid priorityId,
     Future<void> Function(Note note) onUpdate,
   ) async {
+    final assigneeIds = note.activeAssignees;
+
+    // Resolve assigned actors for the "Assigned" section
+    final assignedActors = assigneeIds.isNotEmpty
+        ? await Future.wait(assigneeIds.map(Actor.getOne))
+        : <Actor>[];
+
     return Commands(
       prompt: 'Assign to',
       groups: [
+        if (assignedActors.isNotEmpty)
+          StaticCommandGroup(
+            title: 'Assigned',
+            commands: assignedActors
+                .map((actor) =>
+                    _AssignDraftNoteActor(note, actor, onUpdate: onUpdate))
+                .toList(),
+          ),
         ActorGroup(
+          title: 'Contacts',
           priorityId: priorityId,
-          pinnedActorIds: note.activeAssignees,
-          builder: (actor) => actor == null
-              ? _UnassignAllFromDraftNote(note, onUpdate: onUpdate)
-              : _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),
+          excludeActorIds: assigneeIds,
+          builder: (actor) =>
+              _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),
         ),
       ],
     );
@@ -720,29 +712,3 @@ class _AssignDraftNoteActor extends NoteCommand {
   }
 }
 
-class _UnassignAllFromDraftNote extends NoteCommand {
-  _UnassignAllFromDraftNote(super.note, {required this.onUpdate})
-    : super(
-        title: 'Unassign All',
-        eventObject: EventObject.note,
-        eventAction: EventAction.untagged,
-        icon: PlotIcon.assignRemove,
-      );
-
-  final Future<void> Function(Note note) onUpdate;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      Note updatedNote = note;
-      for (final actorId in note.activeAssignees) {
-        updatedNote = updatedNote.setTag(Tag.todo, actorId, false);
-      }
-      await onUpdate(updatedNote);
-      return const CommandRefresh();
-    } catch (e, stackTrace) {
-      log.severe('Error in _UnassignAllFromDraftNote: $e', e, stackTrace);
-      return CommandMessage('Failed to unassign all', isError: true);
-    }
-  }
-}
