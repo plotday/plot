@@ -12,8 +12,8 @@ import {
 import {
   IconArrowRight,
   IconCode,
-  IconPlugConnected,
-  IconRefresh,
+  IconFilter,
+  IconMessageChatbot,
   IconSparkles,
 } from "@tabler/icons-react";
 import { Link } from "react-router";
@@ -27,18 +27,18 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Plot Twists bring your work from every app together, organized and prioritized. Integrations, automations, and custom workflows.",
+        "Plot Twists are automations and AI agents that work with you, your team, and your connections. Workflows, organization, and AI — built into your work.",
     },
     { "og:title": "Plot Twists" },
     {
       "og:description":
-        "Bring your work from every app together with Plot Twists.",
+        "Automations and AI agents that work with you, your team, and your connections.",
     },
     { "og:image": "https://plot.day/assets/p.png" },
     { "twitter:title": "Plot Twists" },
     {
       "twitter:description":
-        "Bring your work from every app together with Plot Twists.",
+        "Automations and AI agents that work with you, your team, and your connections.",
     },
     { "twitter:image": "https://plot.day/assets/p.png" },
   ];
@@ -53,39 +53,36 @@ export default function Twists() {
           <Stack align="center" gap="lg" ta="center">
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Always have what you need to be productive
+                Automations and agents
+                <br />
+                that work with you
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Your work doesn't live in one app—it's scattered across email,
-              calendars, project tools, documents, and AI assistants. Plot
-              Twists automatically bring everything together, organized and
-              prioritized exactly where you need it.
+              Twists are the automations and AI agents that work alongside you,
+              your team, and everything you've connected to Plot. They implement
+              workflows, filter and organize what needs your attention, and
+              bring AI into your work.
             </Text>
-            <Button
-              variant="gradient"
-              size="lg"
-              component={Link}
-              to="/start"
-            >
+            <Button variant="gradient" size="lg" component={Link} to="/start">
               Get started free
             </Button>
           </Stack>
         </Container>
       </Box>
 
-      {/* Connections CTA */}
+      {/* Connections callout */}
       <Box className={classes.graySection} pt={80} pb={80}>
         <Container size="lg">
           <Stack gap="xl" align="center">
             <Stack gap="md" ta="center" maw={700} mx="auto">
               <Title order={2} size="h2" className={classes.sectionTitle}>
-                Connect the apps you already use
+                Powered by your connections
               </Title>
               <Text className={classes.sectionBody}>
-                Plot Twists integrate with the tools your team relies on every
-                day. Your calendar events, emails, tasks, and messages flow into
-                Plot automatically—no manual updating required.
+                Twists work with everything you've connected to Plot — your
+                calendar, email, project tools, and more. They act on what's
+                flowing in, so you don't have to.
               </Text>
             </Stack>
             <Button
@@ -101,57 +98,53 @@ export default function Twists() {
         </Container>
       </Box>
 
-      {/* How Twists Work */}
+      {/* What Twists do */}
       <Box className={classes.whiteSection} pt={80} pb={80}>
         <Container size="lg">
           <Stack gap="xl">
             <Stack gap="md" ta="center" maw={700} mx="auto">
               <Title order={2} size="h2" className={classes.sectionTitle}>
-                How Twists work
+                What Twists do
               </Title>
-              <Text className={classes.sectionBody}>
-                No more jumping between apps. No more manually updating your
-                to-do list. No more wondering if you missed something important.
-              </Text>
             </Stack>
             <SimpleGrid cols={{ base: 1, md: 3 }} spacing="lg">
-              <Stack className={classes.card} gap="md">
-                <Flex c="brand">
-                  <IconPlugConnected size={32} />
-                </Flex>
-                <Title order={3} size="h4">
-                  Bring it all together
-                </Title>
-                <Text className={classes.sectionBody} fz="sm">
-                  Enable pre-built integrations for the apps you use. Your
-                  calendar events, emails, tasks, and messages sync into Plot
-                  automatically.
-                </Text>
-              </Stack>
               <Stack className={classes.card} gap="md">
                 <Flex c="brand">
                   <IconSparkles size={32} />
                 </Flex>
                 <Title order={3} size="h4">
-                  Organized and prioritized
+                  Workflows & processes
                 </Title>
                 <Text className={classes.sectionBody} fz="sm">
-                  Twists don't just dump data into Plot. They organize and
-                  prioritize your work so you always know what matters most and
-                  what needs your attention.
+                  Twists implement the workflows and processes your team relies
+                  on. From triaging incoming emails to routing tasks, they
+                  handle the repetitive work so you can focus on what matters.
                 </Text>
               </Stack>
               <Stack className={classes.card} gap="md">
                 <Flex c="brand">
-                  <IconRefresh size={32} />
+                  <IconFilter size={32} />
                 </Flex>
                 <Title order={3} size="h4">
-                  Two-way sync
+                  Filter, organize, prioritize
                 </Title>
                 <Text className={classes.sectionBody} fz="sm">
-                  Changes flow both ways. Update a task in Plot and it updates
-                  in Linear. Reply in Plot and it posts to Slack. Work where you
-                  want, stay in sync everywhere.
+                  Not everything needs your attention. Twists surface what's
+                  important, organize it where it belongs, and keep noise out of
+                  your way.
+                </Text>
+              </Stack>
+              <Stack className={classes.card} gap="md">
+                <Flex c="brand">
+                  <IconMessageChatbot size={32} />
+                </Flex>
+                <Title order={3} size="h4">
+                  AI chat & agents
+                </Title>
+                <Text className={classes.sectionBody} fz="sm">
+                  Bring AI directly into your work. Twists power chat and agents
+                  that understand your priorities, your connections, and your
+                  context.
                 </Text>
               </Stack>
             </SimpleGrid>
@@ -159,7 +152,7 @@ export default function Twists() {
         </Container>
       </Box>
 
-      {/* Build Twists */}
+      {/* Build your own */}
       <Box className={classes.graySection} pt={80} pb={80}>
         <Container size="md">
           <Stack
@@ -175,9 +168,9 @@ export default function Twists() {
               Build your own Twists
             </Title>
             <Text className={classes.sectionBody}>
-              Twists are easy to build. Create custom integrations and
-              automations that work exactly how your team needs. The Twist
-              Creator SDK gives you everything you need to get started.
+              Create custom automations that work exactly how your team needs.
+              Add twists built by others, or use the Twist Creator SDK to build
+              your own.
             </Text>
             <Button
               variant="outline"
@@ -197,19 +190,13 @@ export default function Twists() {
         <Container size="sm">
           <Stack gap="lg" align="center" ta="center">
             <Title order={2} size="h2" className={classes.ctaTitle}>
-              Stop juggling apps. Start making progress.
+              Your team, your tools, your workflow.
             </Title>
             <Text c="rgba(255,255,255,0.85)" fz="lg">
-              Plot Twists eliminate the busywork of managing your productivity
-              systems so you can focus on actual work.
+              Twists bring automation and AI to everything you do in Plot.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
-              <Button
-                variant="white"
-                size="xl"
-                component={Link}
-                to="/start"
-              >
+              <Button variant="white" size="xl" component={Link} to="/start">
                 Get started free
               </Button>
               <Button
