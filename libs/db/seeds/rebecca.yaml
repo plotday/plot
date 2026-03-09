@@ -199,6 +199,11 @@ threads:
     created: "-2d"
     schedule:
       on: "-2d"
+    links:
+      - source_ref: slack
+        type: message
+        title: "#coaching-staff discussion"
+        source_url: "https://afcrichmond.slack.com/archives/C04coaching"
     notes:
       - created: "-2d 10:00"
         content: |
@@ -221,6 +226,10 @@ threads:
         type: email
         title: "Fan Sentiment Update"
         source_url: "mailto:keeley.jones@afcrichmond.com"
+      - source_ref: slack
+        type: message
+        title: "#fan-engagement"
+        source_url: "https://afcrichmond.slack.com/archives/C04fans"
     notes:
       - author_ref: keeley
         created: "-2d 11:00"
@@ -248,6 +257,11 @@ threads:
       at: "-2d 10:00 / -2d 11:00"
     tags:
       star: [user]
+    links:
+      - source_ref: whatsapp
+        type: message
+        title: "Barbara chat"
+        source_url: "https://wa.me/447700900001"
     notes:
       - created: "-2d 11:15"
         content: |
@@ -281,6 +295,11 @@ threads:
       at: "0d 10:30 / 0d 11:00"
     tags:
       pinned: [user]
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Roy 1:1"
+        source_url: "https://calendar.google.com/calendar/event?eid=roy1on1"
     notes:
       - author_ref: roy
         created: "-1d 14:50"
@@ -306,6 +325,15 @@ threads:
       at: "0d 10:00 / 0d 10:30"
     tags:
       star: [user]
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Nate 1:1"
+        source_url: "https://calendar.google.com/calendar/event?eid=nate1on1"
+      - source_ref: whatsapp
+        type: message
+        title: "Nate check-in"
+        source_url: "https://wa.me/447700900003"
     notes:
       - created: "-1d 16:30"
         content: |
@@ -344,6 +372,11 @@ threads:
     created: "-1d"
     tags:
       idea: [user]
+    links:
+      - source_ref: notion
+        type: document
+        title: "Women's Team Research Notes"
+        source_url: "https://notion.so/afcrichmond/womens-team-research"
     notes:
       - created: "-1d 17:00"
         content: |
@@ -369,6 +402,19 @@ threads:
       pinned: [user]
       goal: [user]
       decision: [user]
+    links:
+      - source_ref: notion
+        type: document
+        title: "Women's Team Proposal v1.0"
+        source_url: "https://notion.so/afcrichmond/womens-team-proposal"
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Women's Team Financial Model"
+        source_url: "https://docs.google.com/spreadsheets/d/1x2y3z/edit"
+      - source_ref: gmail
+        type: email
+        title: "Board Feedback on Proposal"
+        source_url: "mailto:board@afcrichmond.com"
     notes:
       - created: "-1d 07:30"
         content: |
@@ -567,6 +613,11 @@ threads:
     created: "-1d"
     schedule:
       at: "+0d 08:00 / +0d 09:30"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Morning Focus Block"
+        source_url: "https://calendar.google.com/calendar/event?eid=morningfocus"
     notes:
       - created: "-1d 09:45"
         content: |
@@ -585,6 +636,11 @@ threads:
       on: "-1d"
     tags:
       todo: [user]
+    links:
+      - source_ref: slack
+        type: message
+        title: "#board-planning"
+        source_url: "https://afcrichmond.slack.com/archives/C04board"
     notes:
       - created: "-1d 10:00"
         content: |
@@ -601,12 +657,22 @@ threads:
       at: "-1d 21:30 / -1d 23:00"
     tags:
       star: [user]
+    links:
+      - source_ref: whatsapp
+        type: message
+        title: "Keeley chat"
+        source_url: "https://wa.me/447700900002"
 
   # Day 0: Early morning messages
   - author_ref: beard
     priority_ref: match_prep
     title: "Pre-match travel logistics - Chelsea"
     created: "+0d"
+    links:
+      - source_ref: slack
+        type: message
+        title: "#match-day logistics"
+        source_url: "https://afcrichmond.slack.com/archives/C04matchday"
     notes:
       - author_ref: beard
         created: "+0d 06:45"
@@ -631,6 +697,11 @@ threads:
     priority_ref: media_pr
     title: "Sky Sports interview request - Friday"
     created: "+0d"
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Sky Sports Interview Request"
+        source_url: "mailto:keeley.jones@afcrichmond.com"
     notes:
       - author_ref: keeley
         created: "+0d 07:15"
@@ -649,6 +720,11 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
+    links:
+      - source_ref: notion
+        type: document
+        title: "Spring Maintenance Plan 2025"
+        source_url: "https://notion.so/afcrichmond/spring-maintenance"
     notes:
       - created: "+0d 08:10"
         content: |
@@ -666,6 +742,11 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Q2 Community Budget"
+        source_url: "https://docs.google.com/spreadsheets/d/2b3c4d5e/edit"
     notes:
       - created: "+0d 08:20"
         content: |
@@ -680,6 +761,11 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
+    links:
+      - source_ref: slack
+        type: message
+        title: "#media-comms"
+        source_url: "https://afcrichmond.slack.com/archives/C04media"
     notes:
       - created: "+0d 08:30"
         content: |
@@ -705,6 +791,11 @@ threads:
       on: "+0d"
     tags:
       todo: [user]
+    links:
+      - source_ref: notion
+        type: document
+        title: "Supporter Comms Plan"
+        source_url: "https://notion.so/afcrichmond/supporter-comms"
     notes:
       - created: "+0d 09:15"
         content: |
@@ -723,6 +814,11 @@ threads:
     created: "+0d"
     schedule:
       at: "+0d 12:30 / +0d 13:30"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Lunch - Aegon Sponsorship"
+        source_url: "https://calendar.google.com/calendar/event?eid=aegonlunch"
     notes:
       - created: "+0d 09:20"
         content: |
@@ -737,6 +833,11 @@ threads:
     created: "+0d"
     schedule:
       at: "+0d 14:00 / +0d 14:30"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "FA Women's Championship Call"
+        source_url: "https://calendar.google.com/calendar/event?eid=facall"
     notes:
       - created: "+0d 09:25"
         content: |
@@ -757,6 +858,15 @@ threads:
       on: "+0d"
     tags:
       todo: [user]
+    links:
+      - source_ref: slack
+        type: message
+        title: "#match-day prep"
+        source_url: "https://afcrichmond.slack.com/archives/C04matchprep"
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Chelsea Match Analytics"
+        source_url: "https://docs.google.com/spreadsheets/d/3c4d5e6f/edit"
     notes:
       - created: "+0d 09:30"
         content: |
@@ -775,6 +885,11 @@ threads:
     created: "+0d"
     schedule:
       at: "+0d 19:00 / +0d 20:00"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Match-Day Prep Review"
+        source_url: "https://calendar.google.com/calendar/event?eid=matchdayprep"
     notes:
       - created: "+0d 09:35"
         content: |
@@ -794,6 +909,15 @@ threads:
       at: "+1d 10:00 / +1d 10:45"
     tags:
       pinned: [user]
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Higgins 1:1 - Women's Team"
+        source_url: "https://calendar.google.com/calendar/event?eid=higgins1on1"
+      - source_ref: slack
+        type: message
+        title: "DM with Higgins"
+        source_url: "https://afcrichmond.slack.com/archives/D04higgins"
     notes:
       - created: "-2d 11:00"
         content: |
@@ -855,6 +979,15 @@ threads:
       at: "+1d 14:00 / +1d 15:00"
       duration: "1 hour"
       recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Weekly Operations Meeting"
+        source_url: "https://calendar.google.com/calendar/event?eid=weeklyops"
+      - source_ref: notion
+        type: document
+        title: "Ops Meeting Agenda"
+        source_url: "https://notion.so/afcrichmond/ops-meeting-agenda"
     notes:
       - created: "-2d 15:15"
         content: |
@@ -870,6 +1003,11 @@ threads:
   - priority_ref: supporter_relations
     title: "Review supporter engagement initiatives"
     created: "-1d"
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Supporter Engagement Metrics"
+        source_url: "https://docs.google.com/spreadsheets/d/4d5e6f7g/edit"
     notes:
       - created: "-2d 16:00"
         content: |
@@ -919,6 +1057,10 @@ threads:
         type: email
         title: "Training Update"
         source_url: "mailto:roy.kent@afcrichmond.com"
+      - source_ref: slack
+        type: message
+        title: "#coaching-staff update"
+        source_url: "https://afcrichmond.slack.com/archives/C04coaching2"
     notes:
       - created: "-2d 10:00"
         content: |
@@ -943,6 +1085,11 @@ threads:
     created: "-2d"
     schedule:
       at: "+2d 18:00 / +2d 19:00"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Walk - Think Time"
+        source_url: "https://calendar.google.com/calendar/event?eid=eveningwalk"
     notes:
       - created: "-2d 19:15"
         content: |
@@ -965,6 +1112,11 @@ threads:
     created: "-1d"
     tags:
       idea: [user]
+    links:
+      - source_ref: notion
+        type: document
+        title: "Coaching Candidate Criteria"
+        source_url: "https://notion.so/afcrichmond/coaching-candidates"
     notes:
       - created: "-2d 20:00"
         content: |
@@ -991,6 +1143,11 @@ threads:
     created: "-2d"
     schedule:
       at: "+3d 19:00 / +3d 21:30"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Quarterly Board Dinner"
+        source_url: "https://calendar.google.com/calendar/event?eid=boarddinner"
     notes:
       - created: "-2d 21:45"
         content: |
@@ -1105,6 +1262,11 @@ threads:
     created: "-2d"
     tags:
       pinned: [user]
+    links:
+      - source_ref: notion
+        type: document
+        title: "Feb-March Priorities"
+        source_url: "https://notion.so/afcrichmond/feb-march-priorities"
     notes:
       - created: "-2d 12:00"
         content: |
@@ -1164,6 +1326,11 @@ threads:
     created: "+6d"
     schedule:
       at: "+6d 12:30 / +6d 14:30"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Chelsea vs Richmond"
+        source_url: "https://calendar.google.com/calendar/event?eid=chelseamatch"
     notes:
       - created: "+6d 14:45"
         content: |
