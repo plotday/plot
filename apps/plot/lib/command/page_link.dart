@@ -13,7 +13,7 @@ import 'logging.dart';
 class CopyPageLink extends Command {
   CopyPageLink()
     : super(
-        title: 'Copy Page Link',
+        title: 'Copy page link',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: FontAwesomeIcons.link,
@@ -42,7 +42,7 @@ class CopyPageLink extends Command {
 class OpenPageLink extends Command {
   OpenPageLink(this.url)
     : super(
-        title: 'Open Page Link',
+        title: 'Open page link',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
       );
@@ -103,7 +103,7 @@ class OpenPageLink extends Command {
 class OpenCopiedPageLink extends Command {
   OpenCopiedPageLink()
     : super(
-        title: 'Open Copied Page Link',
+        title: 'Open copied page link',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: FontAwesomeIcons.link,

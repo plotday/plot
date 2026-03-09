@@ -191,7 +191,7 @@ class ToggleNoteFilter extends Command {
 class PickFilterCommand extends ShowCommands {
   PickFilterCommand()
     : super(
-        title: 'Pick Filter',
+        title: 'Pick filter',
         icon: PlotIcon.filter,
         commandsBuilder: (context) async {
           final tags = Tag.getAll();
@@ -204,8 +204,8 @@ class PickFilterCommand extends ShowCommands {
           return Commands(
             prompt: 'Pick filters',
             groups: [
-              StaticCommandGroup(title: 'Remove Filter', commands: remove),
-              StaticCommandGroup(title: 'Add Filter', commands: add),
+              StaticCommandGroup(title: 'Remove filter', commands: remove),
+              StaticCommandGroup(title: 'Add filter', commands: add),
             ],
           );
         },

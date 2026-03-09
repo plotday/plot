@@ -16,7 +16,7 @@ class AttachFile extends Command {
     required this.currentLinks,
     required this.onLinksChanged,
   }) : super(
-          title: 'Attach File',
+          title: 'Attach file',
           eventObject: EventObject.note,
           eventAction: EventAction.added,
           icon: PlotIcon.attachment,

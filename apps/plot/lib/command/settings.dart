@@ -69,7 +69,7 @@ class ShowSettings extends ShowCommands {
 class ChangeAppearance extends ShowCommands {
   ChangeAppearance()
     : super(
-        title: 'Change Light/Dark Mode',
+        title: 'Change light/dark mode',
         icon: FontAwesomeIcons.sun,
         commands: Commands(groups: [appearanceCommands], prompt: 'Appearance'),
       );
@@ -78,7 +78,7 @@ class ChangeAppearance extends ShowCommands {
 class ChangeEnterBehavior extends Command {
   ChangeEnterBehavior()
     : super(
-        title: 'Change Enter Key Behavior',
+        title: 'Change enter key behavior',
         icon: FontAwesomeIcons.keyboard,
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,
@@ -95,7 +95,7 @@ class ChangeEnterBehavior extends Command {
       context,
       items: (search) async => [
         SelectGroup(
-          title: 'Enter Key Behavior',
+          title: 'Enter key behavior',
           items: [EnterBehavior.enterSubmits, EnterBehavior.enterNewline],
         ),
       ],
@@ -241,7 +241,7 @@ class CopyVersion extends Command {
 class ChangeAiPreference extends ShowForm {
   ChangeAiPreference()
     : super(
-        title: 'AI Preferences',
+        title: 'AI preferences',
         icon: FontAwesomeIcons.robot,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
@@ -254,7 +254,7 @@ class ChangeAiPreference extends ShowForm {
 
     final toggle = FormToggle(
       key: 'aiEnabled',
-      label: 'Enable AI Features',
+      label: 'Enable AI features',
       details:
           'AI is used for search, content analysis, and twist capabilities.',
       initialValue: currentValue,
@@ -287,7 +287,7 @@ class ChangeAiPreference extends ShowForm {
     );
 
     return FormData(
-      title: 'AI Preferences',
+      title: 'AI preferences',
       groups: [
         StaticFormGroup(
           items: [
@@ -394,7 +394,7 @@ class _SaveAiPreference extends Command {
 class FullResync extends Command {
   FullResync()
     : super(
-        title: 'Full Re-sync',
+        title: 'Full re-sync',
         icon: PlotIcon.sync,
         eventObject: EventObject.sync,
         eventAction: EventAction.started,

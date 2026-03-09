@@ -23,7 +23,7 @@ final debugCommands = kDebugMode
 class TimeTravel extends ShowPage {
   TimeTravel()
     : super(
-        title: 'Time Travel',
+        title: 'Time travel',
         icon: FontAwesomeIcons.clock,
         builder: (context) => _TimeTravelPage(),
       );
@@ -33,7 +33,7 @@ class TimeTravel extends ShowPage {
 class UnfreezeTime extends Command {
   UnfreezeTime()
     : super(
-        title: 'Unfreeze Time',
+        title: 'Unfreeze time',
         subtitle: 'Return to live time',
         icon: FontAwesomeIcons.clockRotateLeft,
         eventObject: EventObject.settings,
@@ -161,7 +161,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
-                'Time Travel',
+                'Time travel',
                 style: context.theme.typography.xl2.copyWith(
                   fontWeight: FontWeight.w600,
                 ),

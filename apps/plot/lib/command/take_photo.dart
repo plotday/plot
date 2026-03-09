@@ -13,7 +13,7 @@ class TakePhoto extends Command {
     required this.currentLinks,
     required this.onLinksChanged,
   }) : super(
-          title: 'Take Photo',
+          title: 'Take photo',
           eventObject: EventObject.note,
           eventAction: EventAction.added,
           icon: PlotIcon.camera,

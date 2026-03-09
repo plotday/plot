@@ -41,10 +41,10 @@ int _compareEnvironment(String a, String b) {
 class ManageConnectionsAndTwists extends ShowCommands {
   ManageConnectionsAndTwists()
     : super(
-        title: 'Connections and Twists',
+        title: 'Connections and twists',
         icon: PlotIcon.connection,
         commands: Commands(
-          prompt: 'Connections and Twists',
+          prompt: 'Connections and twists',
           groups: [
             StaticCommandGroup(commands: [
               ManageConnections(),
@@ -101,7 +101,7 @@ class _AvailableSource extends _ConnectionItem {
 class ManageConnections extends Command {
   ManageConnections()
     : super(
-        title: 'Manage Connections',
+        title: 'Manage connections',
         description: 'Sync your accounts and data into Plot.',
         icon: PlotIcon.connection,
         eventObject: EventObject.twist,
@@ -243,9 +243,9 @@ class ManageConnections extends Command {
 
     return [
       if (filteredActive.isNotEmpty)
-        SelectGroup(title: 'Active Connections', items: filteredActive),
+        SelectGroup(title: 'Active connections', items: filteredActive),
       if (filteredAvailable.isNotEmpty)
-        SelectGroup(title: 'Available Connections', items: filteredAvailable),
+        SelectGroup(title: 'Available connections', items: filteredAvailable),
     ];
   }
 
@@ -593,7 +593,7 @@ class PromptToArchiveSource extends ShowForm {
     String name,
   ) async {
     return FormData(
-      title: 'Archive Connection',
+      title: 'Archive connection',
       groups: [
         StaticFormGroup(
           items: [
@@ -617,7 +617,7 @@ class PromptToArchiveSource extends ShowForm {
 class _ArchiveSourceCommand extends Command {
   _ArchiveSourceCommand(this.priorityTwistId, this.name)
     : super(
-        title: 'Archive Connection',
+        title: 'Archive connection',
         icon: PlotIcon.archived,
         eventObject: EventObject.twist,
         eventAction: EventAction.archived,
@@ -646,7 +646,7 @@ class _ArchiveSourceCommand extends Command {
 class AddSource extends ShowCommands {
   AddSource()
     : super(
-        title: 'Add Connection',
+        title: 'Add connection',
         icon: PlotIcon.add,
         commandsBuilder: (context) => _getSourceCommands(),
       );
@@ -666,7 +666,7 @@ class AddSource extends ShowCommands {
 
     return Commands(
       groups: [
-        StaticCommandGroup(title: 'Available Connections', commands: commands),
+        StaticCommandGroup(title: 'Available connections', commands: commands),
       ],
     );
   }
@@ -818,7 +818,7 @@ class AddSourceDetail extends ShowForm {
 class ManageTwists extends ShowCommands {
   ManageTwists([Priority? priority])
     : super(
-        title: 'Manage Twists',
+        title: 'Manage twists',
         description: 'Add workflows and automations to your priorities.',
         icon: PlotIcon.twist,
         commandsBuilder: (context) => _getTwistCommands(priority),
@@ -913,10 +913,10 @@ class ManageTwists extends ShowCommands {
     return Commands(
       groups: [
         StaticCommandGroup(
-          title: 'Active Twists',
+          title: 'Active twists',
           commands: editCommands.toList(),
         ),
-        StaticCommandGroup(title: 'Available Twists', commands: addCommands),
+        StaticCommandGroup(title: 'Available twists', commands: addCommands),
       ],
     );
   }
@@ -1182,7 +1182,7 @@ class ShowTwistInfo extends ShowForm {
 class SetupTwist extends ShowForm {
   SetupTwist(this.twist)
     : super(
-        title: 'Add Twist',
+        title: 'Add twist',
         icon: PlotIcon.add,
         form: (context) => _buildForm(context, twist),
       );
@@ -1410,7 +1410,7 @@ class ActivateTwist extends Command {
     required this.channels,
     this.linkChannels,
   }) : super(
-         title: 'Activate Twist',
+         title: 'Activate twist',
          icon: PlotIcon.twist,
          eventObject: EventObject.twist,
          eventAction: EventAction.added,
@@ -2025,7 +2025,7 @@ class EditTwistName extends Command {
 class RemoveTwist extends Command {
   RemoveTwist(this.twist)
     : super(
-        title: 'Remove Twist',
+        title: 'Remove twist',
         subtitle: 'Remove ${twist.name} from this priority',
         eventObject: EventObject.twist,
         eventAction: EventAction.archived,
@@ -2062,7 +2062,7 @@ class PromptToArchiveTwist extends ShowForm {
     PriorityTwist twist,
   ) async {
     return FormData(
-      title: 'Archive Twist',
+      title: 'Archive twist',
       groups: [
         StaticFormGroup(
           items: [
@@ -2086,7 +2086,7 @@ class PromptToArchiveTwist extends ShowForm {
 class ArchiveTwist extends Command {
   ArchiveTwist(this.twist)
     : super(
-        title: 'Archive Twist',
+        title: 'Archive twist',
         icon: PlotIcon.archived,
         eventObject: EventObject.twist,
         eventAction: EventAction.archived,
@@ -2122,7 +2122,7 @@ class ArchiveTwist extends Command {
 class ArchiveActivitiesCreatedByTwist extends ShowForm {
   ArchiveActivitiesCreatedByTwist(this.twist)
     : super(
-        title: 'Archive Threads',
+        title: 'Archive threads',
         icon: PlotIcon.archived,
         form: (context) => _buildForm(context, twist),
       );
@@ -2137,7 +2137,7 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
     final count = await _getActivityCount(twist.id);
 
     return FormData(
-      title: 'Archive Threads Created by Twist',
+      title: 'Archive threads created by twist',
       groups: [
         StaticFormGroup(
           items: [
@@ -2176,7 +2176,7 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
 class _ArchiveActivitiesCommand extends Command {
   _ArchiveActivitiesCommand(this.twist, this.count)
     : super(
-        title: 'Archive Threads',
+        title: 'Archive threads',
         icon: PlotIcon.archived,
         eventObject: EventObject.activity,
         eventAction: EventAction.archived,

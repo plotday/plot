@@ -28,7 +28,7 @@ class CloseModalCommand extends Command {
 class ToggleLeftSidebarCommand extends Command {
   ToggleLeftSidebarCommand({required this.isVisible})
     : super(
-        title: isVisible ? 'Close Priorities' : 'Open Priorities',
+        title: isVisible ? 'Close priorities' : 'Open priorities',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,
@@ -48,7 +48,7 @@ class ToggleLeftSidebarCommand extends Command {
 class ToggleMiddleSidebarCommand extends Command {
   ToggleMiddleSidebarCommand({required this.isVisible})
     : super(
-        title: isVisible ? 'Close Threads' : 'Open Threads',
+        title: isVisible ? 'Close threads' : 'Open threads',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: isVisible ? PlotIcon.sidebarClose : PlotIcon.sidebarOpen,
@@ -79,9 +79,9 @@ class CyclePanelsCommand extends Command {
 
   static String _title(LayoutState layoutState) {
     if (layoutState.leftPanelVisible || layoutState.middlePanelVisible) {
-      return 'Close Sidebar';
+      return 'Close sidebar';
     }
-    return 'Open Sidebar';
+    return 'Open sidebar';
   }
 
   static IconData _icon(LayoutState layoutState) {
@@ -133,7 +133,7 @@ class CyclePanelsCommand extends Command {
 class ToggleSidebarCommand extends Command {
   ToggleSidebarCommand()
     : super(
-        title: 'Toggle Sidebar',
+        title: 'Toggle sidebar',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: PlotIcon.sidebarOpen,
@@ -177,7 +177,7 @@ class ToggleSidebarCommand extends Command {
 class ToggleSearchCommand extends Command {
   ToggleSearchCommand({required this.searchExpanded, required this.onToggle})
     : super(
-        title: searchExpanded ? 'Close Search' : 'Search',
+        title: searchExpanded ? 'Close search' : 'Search',
         eventObject: EventObject.navigation,
         eventAction: EventAction.clicked,
         icon: searchExpanded ? PlotIcon.close : PlotIcon.search,

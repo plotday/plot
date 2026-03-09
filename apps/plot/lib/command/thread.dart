@@ -196,7 +196,7 @@ class NewEvent extends Command {
 class OpenNextThread extends Command {
   OpenNextThread()
     : super(
-        title: 'Next Thread',
+        title: 'Next thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         shortcut: platformSingleActivator(LogicalKeyboardKey.arrowDown),
@@ -241,7 +241,7 @@ class OpenNextThread extends Command {
 class OpenPreviousThread extends Command {
   OpenPreviousThread()
     : super(
-        title: 'Previous Thread',
+        title: 'Previous thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         shortcut: platformSingleActivator(LogicalKeyboardKey.arrowUp),
@@ -286,7 +286,7 @@ class OpenPreviousThread extends Command {
 class AddThread extends Command {
   AddThread(this._thread, {this.navigate = true})
     : super(
-        title: 'Create Thread',
+        title: 'Create thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.added,
         icon: PlotIcon.addActivity,
@@ -364,7 +364,7 @@ class AddThreadWithNote extends Command {
 class AddThreadWithLink extends Command {
   AddThreadWithLink({required this.linkUrl, required this.linkTitle, this.linkFavicon})
     : super(
-        title: 'Add Link',
+        title: 'Add link',
         eventObject: EventObject.activity,
         eventAction: EventAction.added,
         icon: PlotIcon.link,
@@ -493,7 +493,7 @@ class ToggleRsvp extends _UpdateThreadCommand {
 class SkipRsvpSeries extends _UpdateThreadCommand {
   SkipRsvpSeries(super.thread)
     : super(
-        title: 'Decline All',
+        title: 'Decline all',
         eventObject: EventObject.activity,
         eventAction: EventAction.updated,
         icon: PlotIcon.calendarXmark,
@@ -590,7 +590,7 @@ abstract class _UpdateThreadCommand extends Command {
 class ToggleThreadToDo extends _UpdateThreadCommand {
   ToggleThreadToDo(super.thread, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'To Do',
+        title: 'To do',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon
@@ -610,7 +610,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
 class ThreadToDo extends _UpdateThreadCommand {
   ThreadToDo(super.thread, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'To Do',
+        title: 'To do',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon ? PlotIcon.note : PlotIcon.todo,
@@ -894,7 +894,7 @@ class MoveToPriority extends PriorityCommand {
 class MoveToNewThread extends Command {
   MoveToNewThread(this.thread)
     : super(
-        title: 'Move to New Thread',
+        title: 'Move to new thread',
         eventObject: EventObject.activity,
         eventAction: EventAction.moved,
         icon: PlotIcon.move,
@@ -926,7 +926,7 @@ class MoveToNewThread extends Command {
 class MoveThreadToPriority extends ShowCommands {
   MoveThreadToPriority(this.thread)
     : super(
-        title: 'Move to Another Priority',
+        title: 'Move to another priority',
         icon: PlotIcon.move,
         shortcut: platformSingleActivator(LogicalKeyboardKey.period),
         commandsBuilder: (context) => _getMoveCommands(thread),
@@ -1128,7 +1128,7 @@ class _ExecuteMerge extends ThreadCommand {
 class SplitThread extends Command {
   SplitThread(this.thread)
     : super(
-        title: 'Split Thread',
+        title: 'Split thread',
         icon: FontAwesomeIcons.codeBranch,
         eventObject: EventObject.activity,
         eventAction: EventAction.updated,
@@ -1265,7 +1265,7 @@ class _ExecuteSplit extends ThreadCommand {
 class ShowThreadCommands extends ShowCommands {
   ShowThreadCommands(Thread thread, {bool open = true})
     : super(
-        title: 'More Commands',
+        title: 'More commands',
         icon: PlotIcon.menu,
         commandsBuilder: (context) async => Commands(
           groups: await threadCommandGroups(thread, open: open),
@@ -1307,7 +1307,7 @@ class FocusActivityListIntent extends Intent {
 class MoveFocusUp extends Command {
   MoveFocusUp(this.controller)
     : super(
-        title: 'Move Focus Up',
+        title: 'Move focus up',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         icon: PlotIcon.up,
@@ -1325,7 +1325,7 @@ class MoveFocusUp extends Command {
 class MoveFocusDown extends Command {
   MoveFocusDown(this.controller)
     : super(
-        title: 'Move Focus Down',
+        title: 'Move focus down',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
         icon: PlotIcon.down,
@@ -1343,7 +1343,7 @@ class MoveFocusDown extends Command {
 class ClearItemFocus extends Command {
   ClearItemFocus(this.controller, {this.onCleared})
     : super(
-        title: 'Clear Item Focus',
+        title: 'Clear item focus',
         eventObject: EventObject.activity,
         eventAction: EventAction.viewed,
       );
@@ -1366,7 +1366,7 @@ class OpenFocusedItemActions extends ShowCommands {
     FutureOr<List<StaticCommandGroup>> Function(int index) actionBuilder,
   ) : _controller = controller,
       super(
-        title: 'Open Actions for Focused Item',
+        title: 'Open actions for focused item',
         commandsBuilder: (context) async {
           final focusedIndex = controller.focusedIndex;
           if (focusedIndex == null) {
@@ -1442,8 +1442,8 @@ List<StaticCommandGroup> threadCommandGroupsSync(
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Thread: ${thread.title}', commands: commands),
     if (remove.isNotEmpty)
-      StaticCommandGroup(title: 'Remove Tag', commands: remove),
-    if (add.isNotEmpty) StaticCommandGroup(title: 'Add Tag', commands: add),
+      StaticCommandGroup(title: 'Remove tag', commands: remove),
+    if (add.isNotEmpty) StaticCommandGroup(title: 'Add tag', commands: add),
   ];
 }
 

@@ -69,6 +69,7 @@ MUST use incremental migrations to preserve user data.
 - **Documentation**: Include documentation comments for public APIs
 - **File structure**: Keep files focused on a single responsibility
 - **Class equality**: Use the equatable package for class equality checks to avoid boilerplate code.
+- **UI text**: Use sentence case for all menu items, command titles, group titles, and button labels. Capitalize only the first word and proper nouns (e.g. "Add a priority", "Copy page link", "Move to new thread").
 
 Run `flutter analyze` before committing to ensure code quality.
 

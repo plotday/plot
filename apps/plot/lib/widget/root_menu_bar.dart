@@ -78,7 +78,7 @@ class RootMenuBar extends StatelessWidget {
           members: <PlatformMenuItem>[
             PlatformMenuItem(
               onSelected: () => _runCommand(SignOut()),
-              label: 'Sign Out...',
+              label: 'Sign out...',
             ),
           ],
         ),
@@ -138,7 +138,7 @@ class RootMenuBar extends StatelessWidget {
               const SelectAllTextIntent(SelectionChangedCause.keyboard),
             ),
             shortcut: platformSingleActivator(LogicalKeyboardKey.keyA),
-            label: 'Select All',
+            label: 'Select all',
           ),
         ],
       ),
@@ -152,7 +152,7 @@ class RootMenuBar extends StatelessWidget {
           PlatformMenuItem(
             onSelected: () => _runCommand(ToggleSidebarCommand()),
             shortcut: platformSingleActivator(LogicalKeyboardKey.backslash),
-            label: 'Toggle Sidebar',
+            label: 'Toggle sidebar',
           ),
         ],
       ),

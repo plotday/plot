@@ -11,7 +11,7 @@ import 'logging.dart';
 class OpenSharedLink extends Command {
   OpenSharedLink(this.url)
     : super(
-        title: 'Open Shared Link',
+        title: 'Open shared link',
         eventObject: EventObject.activity,
         eventAction: EventAction.added,
       );

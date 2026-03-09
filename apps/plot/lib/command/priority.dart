@@ -60,7 +60,7 @@ class ChangeCurrentPriority extends PriorityCommand {
 class OpenGettingStarted extends Command {
   OpenGettingStarted(this.priority)
     : super(
-        title: 'Getting Started',
+        title: 'Getting started',
         icon: PlotIcon.gettingStarted,
         eventObject: EventObject.priority,
         eventAction: EventAction.viewed,
@@ -79,7 +79,7 @@ class OpenGettingStarted extends Command {
 class OpenHelpFeedback extends Command {
   OpenHelpFeedback(this.priority)
     : super(
-        title: 'Help + Feedback',
+        title: 'Help + feedback',
         icon: PlotIcon.help,
         eventObject: EventObject.priority,
         eventAction: EventAction.viewed,
@@ -158,7 +158,7 @@ class OpenPriority extends Command {
 class PickCurrentPriority extends ShowCommands {
   PickCurrentPriority()
     : super(
-        title: 'Switch Priorities',
+        title: 'Switch priorities',
         icon: PlotIcon.priority,
         shortcut: platformSingleActivator(LogicalKeyboardKey.keyJ),
         commands: ChangeCurrentPriorityCommands(),
@@ -243,8 +243,8 @@ class NewPriority extends ShowForm {
   NewPriority({Priority? parent})
     : super(
         title: parent == null || parent.root == true
-            ? 'Add a Priority'
-            : 'Add a Sub-priority',
+            ? 'Add a priority'
+            : 'Add a sub-priority',
         icon: PlotIcon.add,
         form: (context) async {
           // Get default parent for the dummy action (only used for display)
@@ -260,7 +260,7 @@ class NewPriority extends ShowForm {
               await Priority.getDefault();
 
           return FormData(
-            title: parent == null ? 'Add a Priority' : 'Add a Sub-priority',
+            title: parent == null ? 'Add a priority' : 'Add a sub-priority',
             groups: [
               StaticFormGroup(
                 items: [
@@ -331,7 +331,7 @@ class NewPriority extends ShowForm {
 class EditPriorityCommand extends ShowForm {
   EditPriorityCommand(Priority priority)
     : super(
-        title: 'Edit Priority',
+        title: 'Edit priority',
         icon: PlotIcon.settings,
         form: (context) async {
           final isRoot = priority.root;
@@ -342,7 +342,7 @@ class EditPriorityCommand extends ShowForm {
           }
 
           return FormData(
-            title: 'Edit Priority',
+            title: 'Edit priority',
             groups: [
               StaticFormGroup(
                 items: [
@@ -431,7 +431,7 @@ class EditPriorityCommand extends ShowForm {
 class ShowPriorityCommands extends ShowCommands {
   ShowPriorityCommands(Priority priority, {bool current = false})
     : super(
-        title: 'More Commands',
+        title: 'More commands',
         icon: PlotIcon.menu,
         commands: Commands(
           groups: current
@@ -479,7 +479,7 @@ List<StaticCommandGroup> currentPriorityCommandGroups(Priority priority) => [
 class SetTopPriority extends Command {
   SetTopPriority(this.priority, this.add)
     : super(
-        title: add ? 'Add to Top Priorities' : 'Remove from Top Priorities',
+        title: add ? 'Add to top priorities' : 'Remove from top priorities',
         eventObject: EventObject.priority,
         eventAction: add ? EventAction.pinned : EventAction.unpinned,
         icon: add ? PlotIcon.pin : PlotIcon.unpin,
@@ -500,7 +500,7 @@ class SetTopPriority extends Command {
 class ToggleShowArchived extends Command {
   ToggleShowArchived({required this.showArchived})
     : super(
-        title: showArchived ? 'Show Active Items' : 'Show Archived Items',
+        title: showArchived ? 'Show active items' : 'Show archived items',
         subtitle: showArchived ? 'Hide archived items' : 'Show archived items',
         eventObject: EventObject.archived,
         eventAction: EventAction.viewed,
@@ -521,8 +521,8 @@ class ToggleArchivedPrioritiesFilter extends Command {
   ToggleArchivedPrioritiesFilter({required this.showAllPriorities})
     : super(
         title: showAllPriorities
-            ? 'Hide Archived Priorities'
-            : 'Show Archived Priorities',
+            ? 'Hide archived priorities'
+            : 'Show archived priorities',
         subtitle: showAllPriorities
             ? 'Showing all priorities (active & archived)'
             : 'Showing active priorities only',
@@ -579,7 +579,7 @@ class SharePriority extends PriorityCommand {
 class ManagePrioritySharing extends ShowCommands {
   ManagePrioritySharing(this.priority)
     : super(
-        title: priority.sharing ? 'Manage Sharing' : 'Share Priority',
+        title: priority.sharing ? 'Manage sharing' : 'Share priority',
         icon: priority.sharing ? PlotIcon.shared : PlotIcon.share,
         commandsBuilder: (context) => _getSharingCommands(priority),
       );
@@ -862,7 +862,7 @@ class CurrentUserMemberCommand extends Command {
 class LeavePriorityCommand extends Command {
   LeavePriorityCommand(this.priority)
     : super(
-        title: 'Leave Priority',
+        title: 'Leave priority',
         subtitle: 'Remove your access to this priority',
         icon: PlotIcon.signOut,
         eventObject: EventObject.priority,
@@ -951,7 +951,7 @@ class EditInvitationCommand extends ShowForm {
 class _CancelInvitationCommand extends Command {
   _CancelInvitationCommand(this.priority, this.actor)
     : super(
-        title: 'Cancel Invitation to ${priority.title}',
+        title: 'Cancel invitation to ${priority.title}',
         icon: FontAwesomeIcons.trash,
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,

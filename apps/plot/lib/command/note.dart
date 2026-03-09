@@ -14,7 +14,7 @@ import 'logging.dart';
 class AddNote extends Command {
   AddNote(this._note)
     : super(
-        title: 'Add Note',
+        title: 'Add note',
         eventObject: EventObject.note,
         eventAction: EventAction.added,
         icon: PlotIcon.addActivity,
@@ -62,7 +62,7 @@ abstract class NoteCommand extends Command {
 class AssignNote extends NoteCommand {
   AssignNote(super.note, {this.actorId})
     : super(
-        title: 'Assign to Me',
+        title: 'Assign to me',
         eventObject: EventObject.note,
         eventAction: EventAction.updated,
         icon: PlotIcon.todo,
@@ -119,9 +119,9 @@ class SelfTaskAction extends NoteCommand {
   }
 
   static String _titleForState(_SelfTaskState state) => switch (state) {
-    _SelfTaskState.unassigned => 'Make a Task',
-    _SelfTaskState.todo => 'Mark Done',
-    _SelfTaskState.done => 'Remove Done',
+    _SelfTaskState.unassigned => 'Make a task',
+    _SelfTaskState.todo => 'Mark done',
+    _SelfTaskState.done => 'Remove done',
   };
 
   static EventAction _eventActionForState(_SelfTaskState state) =>
@@ -173,7 +173,7 @@ class SelfTaskAction extends NoteCommand {
 class ToggleSelfTask extends NoteCommand {
   ToggleSelfTask(super.note)
     : super(
-        title: 'Add Task',
+        title: 'Add task',
         eventObject: EventObject.note,
         eventAction: note.isAssignedTo(Base.actorId)
             ? EventAction.untagged
@@ -246,7 +246,7 @@ class ToggleNoteTag extends NoteCommand {
 class ToggleNotePrivate extends NoteCommand {
   ToggleNotePrivate(super.note)
     : super(
-        title: note.private ? 'Make Public' : 'Make Private',
+        title: note.private ? 'Make public' : 'Make private',
         eventObject: EventObject.note,
         eventAction: note.private ? EventAction.untagged : EventAction.tagged,
         icon: PlotIcon.private,
@@ -330,7 +330,7 @@ class ArchiveNote extends NoteCommand {
 class SplitNoteToNewThread extends NoteCommand {
   SplitNoteToNewThread(super.note)
     : super(
-        title: 'Split to New Thread',
+        title: 'Split to new thread',
         eventObject: EventObject.note,
         eventAction: EventAction.moved,
         icon: PlotIcon.move,
@@ -527,8 +527,8 @@ List<StaticCommandGroup> noteCommandGroups(
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Note', commands: commands),
     if (remove.isNotEmpty)
-      StaticCommandGroup(title: 'Remove Tag', commands: remove),
-    if (add.isNotEmpty) StaticCommandGroup(title: 'Add Tag', commands: add),
+      StaticCommandGroup(title: 'Remove tag', commands: remove),
+    if (add.isNotEmpty) StaticCommandGroup(title: 'Add tag', commands: add),
     if (!note.draft)
       StaticCommandGroup(title: '', commands: [ArchiveNote(note)]),
   ];
@@ -608,7 +608,7 @@ class CopyNoteContent extends NoteCommand {
 class ShowNoteCommands extends ShowCommands {
   ShowNoteCommands(Note note, {ThreadBloc? activityBloc})
     : super(
-        title: 'More Commands',
+        title: 'More commands',
         icon: PlotIcon.menu,
         commands: Commands(
           groups: noteCommandGroups(note, activityBloc: activityBloc),
