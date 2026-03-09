@@ -39,6 +39,15 @@ class CopyPageLink extends Command {
   }
 }
 
+/// Parsed result of a Plot internal URL.
+class PlotLink {
+  const PlotLink({this.priorityId, this.threadId});
+
+  /// Short-string IDs from the URL path segments.
+  final String? priorityId;
+  final String? threadId;
+}
+
 class OpenPageLink extends Command {
   OpenPageLink(this.url)
     : super(
@@ -48,6 +57,31 @@ class OpenPageLink extends Command {
       );
 
   final String url;
+
+  /// Returns a [PlotLink] if [url] is an internal Plot URL, or null if external.
+  static PlotLink? parse(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+
+    final appUri = Uri.parse(Env.appBaseUrl);
+    if (uri.host != appUri.host) return null;
+
+    final segments = uri.pathSegments;
+    if (segments.isEmpty) return null;
+
+    // Skip known non-entity paths
+    if (segments.first == 'invite' ||
+        segments.first == 'login' ||
+        segments.first == 'priorities' ||
+        segments.first == 'account') {
+      return null;
+    }
+
+    if (segments.length >= 2 && segments[1] != 'new') {
+      return PlotLink(priorityId: segments[0], threadId: segments[1]);
+    }
+    return PlotLink(priorityId: segments[0]);
+  }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

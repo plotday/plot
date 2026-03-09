@@ -10,13 +10,15 @@ import 'package:follow_the_leader/follow_the_leader.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/store/store.dart';
+import 'package:plot/store/store.dart' hide Priority;
+import 'package:plot/store/store.dart' as store show Priority;
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/command/page_link.dart';
 import 'package:plot/util/platform.dart';
 import 'sliver.dart';
 import 'editor_mention_plugin.dart';
@@ -1204,11 +1206,16 @@ class EditorState extends State<Editor> {
     }
 
     final selection = editContext.composer.selection;
-    if (selection == null || selection.isCollapsed) {
+    if (selection == null) {
       return ExecutionInstruction.continueExecution;
     }
 
-    // Halt execution and handle async clipboard read
+    // For collapsed selections, only intercept for Plot URLs
+    if (selection.isCollapsed) {
+      return _handleCollapsedPaste();
+    }
+
+    // Halt execution and handle async clipboard read for selections
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
 
@@ -1227,18 +1234,79 @@ class EditorState extends State<Editor> {
           ]);
         }
       } else {
-        // Not a URL - perform normal paste
-        CommonEditorOperations(
-          document: _document,
-          editor: _editor,
-          composer: _composer,
-          documentLayoutResolver: () =>
-              _docLayoutKey.currentState as DocumentLayout,
-        ).paste();
+        _normalPaste();
       }
     });
 
     return ExecutionInstruction.haltExecution;
+  }
+
+  /// Handle paste when selection is collapsed — intercepts Plot URLs to insert
+  /// the thread/priority title as linked text.
+  ExecutionInstruction _handleCollapsedPaste() {
+    // Read clipboard synchronously-ish to check for Plot URL
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      final clipboardData = await Clipboard.getData('text/plain');
+      final text = clipboardData?.text?.trim();
+
+      if (text == null || text.isEmpty || !_isUrl(text)) {
+        _normalPaste();
+        return;
+      }
+
+      final plotLink = OpenPageLink.parse(text);
+      if (plotLink == null) {
+        _normalPaste();
+        return;
+      }
+
+      // Look up the title for the Plot link
+      String? title;
+      try {
+        if (plotLink.threadId != null) {
+          final thread = await Thread.getOne(
+            Uuid.fromShortString(plotLink.threadId!),
+          );
+          title = thread.title;
+        }
+        if (title == null && plotLink.priorityId != null) {
+          final priority = await store.Priority.getOne(
+            Uuid.fromShortString(plotLink.priorityId!),
+          );
+          title = priority.title;
+        }
+      } catch (_) {
+        // Fall back to raw URL if lookup fails
+      }
+
+      if (!mounted) return;
+
+      final displayText = title ?? text;
+      final currentSelection = _composer.selection;
+      if (currentSelection == null) return;
+
+      _editor.execute([
+        InsertTextRequest(
+          documentPosition: currentSelection.extent,
+          textToInsert: displayText,
+          attributions: {LinkAttribution(text)},
+        ),
+      ]);
+    });
+
+    return ExecutionInstruction.haltExecution;
+  }
+
+  void _normalPaste() {
+    CommonEditorOperations(
+      document: _document,
+      editor: _editor,
+      composer: _composer,
+      documentLayoutResolver: () =>
+          _docLayoutKey.currentState as DocumentLayout,
+    ).paste();
   }
 
   /// Check if text looks like a URL
@@ -1562,8 +1630,8 @@ class ViewerState extends State<Viewer> {
           const HorizontalRuleComponentBuilder(),
           PlotTaskComponentBuilder(_editor),
         ],
-        // contentTapDelegateFactory: (context) =>
-        //     ViewerTapHandler(context.document, onTap: widget.onTap),
+        contentTapDelegateFactory: (readerContext) =>
+            ViewerTapHandler(readerContext.document, context: context),
       ),
     );
   }
@@ -1711,8 +1779,14 @@ class SubmitIntent extends Intent {
 }
 
 class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
-  ViewerTapHandler(super.document, {void Function()? onTap}) : _handler = onTap;
+  ViewerTapHandler(
+    super.document, {
+    required BuildContext context,
+    void Function()? onTap,
+  })  : _context = context,
+       _handler = onTap;
 
+  final BuildContext _context;
   final void Function()? _handler;
 
   @override
@@ -1723,12 +1797,43 @@ class ViewerTapHandler extends SuperReaderLaunchLinkTapHandler {
 
   @override
   TapHandlingInstruction onTap(DocumentTapDetails details) {
+    // Check if tap is on a link and intercept internal Plot links
+    final tapPosition = details.documentLayout
+        .getDocumentPositionNearestToOffset(details.layoutOffset);
+    if (tapPosition != null) {
+      final link = _getLinkAtPosition(tapPosition);
+      if (link != null) {
+        final url = link.toString();
+        if (OpenPageLink.parse(url) != null) {
+          OpenPageLink(url).run(_context);
+          return TapHandlingInstruction.halt;
+        }
+      }
+    }
+
     final instructions = super.onTap(details);
     if (instructions != TapHandlingInstruction.halt && _handler != null) {
       _handler();
       return TapHandlingInstruction.halt;
     }
     return instructions;
+  }
+
+  Uri? _getLinkAtPosition(DocumentPosition position) {
+    final nodePosition = position.nodePosition;
+    if (nodePosition is! TextNodePosition) return null;
+
+    final textNode = document.getNodeById(position.nodeId);
+    if (textNode is! TextNode) return null;
+
+    final tappedAttributions =
+        textNode.text.getAllAttributionsAt(nodePosition.offset);
+    for (final attribution in tappedAttributions) {
+      if (attribution is LinkAttribution) {
+        return attribution.launchableUri;
+      }
+    }
+    return null;
   }
 }
 
