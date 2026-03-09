@@ -1,17 +1,25 @@
 {
-  "$schema": "../../node_modules/wrangler/config-schema.json",
-  "workers_dev": true,
-  "name": "site",
-  "compatibility_flags": ["nodejs_compat"],
-  "compatibility_date": "2025-09-01",
-  "main": "./workers/app.ts",
-  "routes": [
-    {
-      "pattern": "plot.day",
-      "custom_domain": true
-    }
-  ],
-  "observability": {
-    "enabled": true
-  }
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"workers_dev": true,
+	"name": "site",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"compatibility_date": "2025-09-01",
+	"main": "./workers/app.ts",
+	"routes": [
+		{
+			"pattern": "plot.day",
+			"custom_domain": true
+		}
+	],
+	"observability": {
+		"enabled": true
+	},
+	"kv_namespaces": [
+		{
+			"binding": "VOTES",
+			"id": "2ed0dab96df24f8184ce353b4ad39d91"
+		}
+	]
 }

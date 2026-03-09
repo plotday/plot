@@ -8,6 +8,7 @@ declare global {
     APP_ROOT?: string;
     POSTHOG_API_KEY?: string;
     POSTHOG_PROXY?: string;
+    VOTES?: KVNamespace;
   }
 }
 
