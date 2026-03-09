@@ -29,19 +29,33 @@ extension type ThemeColor(int index) {
   /// Returns the hue value (0-360) for this theme color
   double toHue() {
     return switch (index) {
-      0 => 164.18, // Catalyst - green
-      1 => 225.0, // Call to Adventure - blue
-      2 => 275.0, // Rising Action - blue, too
-      3 => 310.0, // Momentum - puple
-      4 => 20.0, // Turning Point - pink
-      5 => 54.0, // Breakthrough - orange
-      6 => 108.0, // Climax - olive
-      7 => 164.18, // Resolution - blue-gray
-      _ => 0.0, // Unknown - default to red
+      0 => 163.0, // Catalyst - teal green (brand)
+      1 => 245.0, // Call to Adventure - indigo
+      2 => 295.0, // Rising Action - purple (clear of pink zone)
+      3 => 205.0, // Momentum - sky blue
+      4 => 20.0, // Turning Point - red (max chroma for true red)
+      5 => 64.0, // Breakthrough - orange
+      6 => 105.0, // Climax - yellow
+      7 => 163.0, // Resolution - brand (desaturated)
+      _ => 0.0,
     };
   }
 
-  double get chromaFactor => index == 7 ? 0.10 : 1.0;
+  /// Returns per-color chroma tuned to each hue's sRGB gamut ceiling.
+  /// [isDark] selects dark-mode values (higher lightness = lower safe chroma).
+  double toChroma({bool isDark = false}) {
+    return switch (index) {
+      0 => isDark ? 0.090 : 0.125, // teal - high gamut
+      1 => isDark ? 0.110 : 0.120, // indigo - tighter gamut
+      2 => isDark ? 0.120 : 0.145, // purple
+      3 => isDark ? 0.120 : 0.180, // sky blue - moderate gamut
+      4 => isDark ? 0.130 : 0.140, // red - push hard for true red
+      5 => isDark ? 0.120 : 0.145, // orange
+      6 => isDark ? 0.110 : 0.200, // yellow - push chroma hard in light
+      7 => isDark ? 0.010 : 0.015, // gray (desaturated brand)
+      _ => isDark ? 0.100 : 0.140,
+    };
+  }
 }
 
 class ThemeColorConverter extends TypeConverter<ThemeColor, int> {

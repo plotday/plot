@@ -28,8 +28,6 @@ class ThemeState extends Equatable {
   /// Get the hue value from the priority color
   double get priorityHue => priorityColor.toHue();
 
-  /// Get the chroma factor from the priority color
-  double get priorityChromaFactor => priorityColor.chromaFactor;
 
   /// Create a copy with updated properties
   ThemeState copyWith({AppThemeMode? mode, ThemeColor? priorityColor}) {

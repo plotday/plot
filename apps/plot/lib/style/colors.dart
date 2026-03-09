@@ -26,11 +26,14 @@ class OklchColours {
   final RayOklch pureBackground;
   final RayOklch pureForeground;
 
-  /// Base accent chroma before chromaFactor is applied, used by fromTheme
-  final double baseAccentChroma;
+  /// The ThemeColor used to create this colour scheme
+  final ThemeColor _themeColor;
 
-  /// The theme color's chromaFactor, needed to scale per-priority backgrounds
-  final double themeChromaFactor;
+  /// The brightness used to create this colour scheme
+  final Brightness _brightness;
+
+  /// The saturate factor applied during creation
+  final double _saturate;
 
   const OklchColours({
     required this.background,
@@ -45,20 +48,35 @@ class OklchColours {
     required this.barrier,
     required this.pureBackground,
     required this.pureForeground,
-    required this.baseAccentChroma,
-    required this.themeChromaFactor,
-  });
+    required ThemeColor themeColor,
+    required Brightness brightness,
+    required double saturate,
+  }) : _themeColor = themeColor,
+       _brightness = brightness,
+       _saturate = saturate;
 
-  /// Calculate accent lightness for a ThemeColor based on brightness
-  /// ThemeColor 7 (gray) uses special lightness values for better contrast
+  /// Calculate accent lightness for a ThemeColor based on brightness.
+  /// Per-color tuning: warm yellow/gold hues need higher lightness to avoid
+  /// looking brown, while gray needs lower lightness for contrast.
   static double _getAccentLightness(
     ThemeColor? themeColor,
     Brightness brightness,
   ) {
-    if (themeColor?.index == 7) {
-      return brightness == Brightness.light ? 0.35 : 0.82;
-    }
-    return brightness == Brightness.light ? 0.45 : 0.78;
+    return switch (themeColor?.index) {
+      5 =>
+        brightness == Brightness.light
+            ? 0.50
+            : 0.80, // orange: boost to avoid brown
+      6 =>
+        brightness == Brightness.light
+            ? 0.53
+            : 0.80, // yellow: needs most boost to avoid olive
+      7 =>
+        brightness == Brightness.light
+            ? 0.35
+            : 0.82, // gray: lower for contrast
+      _ => brightness == Brightness.light ? 0.45 : 0.78,
+    };
   }
 
   /// Create OKLCH colors from a ThemeColor
@@ -69,24 +87,23 @@ class OklchColours {
     double saturate = 1.0,
   }) {
     final hue = themeColor.toHue();
-    final chromaFactor = themeColor.chromaFactor;
+    final isDark = brightness == Brightness.dark;
+    final accentChroma = themeColor.toChroma(isDark: isDark);
 
+    /// Accent-hued color — chroma is the per-color value, scaled by saturate
+    /// and darken adjustments.
     RayOklch lch(double l, double c, [double? h, double? o]) {
       return RayOklch.fromComponents(
         (l / darken).clamp(0.0, 1.0),
-        c *
-            saturate *
-            chromaFactor *
-            (brightness == Brightness.light ? darken : 1 / darken),
+        c * saturate * (brightness == Brightness.light ? darken : 1 / darken),
         h ?? hue,
         o ?? 1.0,
       );
     }
 
-    /// Warm neutral color — fixed warm hue, ignores chromaFactor so warmth
-    /// is constant regardless of the active priority color.
-    /// Default hue 85 = cream/warm yellow. Chroma is fixed (not scaled by darken)
-    /// so darker surfaces don't become more saturated.
+    /// Warm neutral color — fixed warm hue, independent of priority color.
+    /// Chroma is fixed (not scaled by darken) so darker surfaces don't become
+    /// more saturated.
     RayOklch neutral(double l, double c, [double? h, double? o]) {
       return RayOklch.fromComponents(
         (l / darken).clamp(0.0, 1.0),
@@ -105,42 +122,45 @@ class OklchColours {
         : RayOklch.fromComponents(1.0, 0.0, 0.0);
 
     if (brightness == Brightness.light) {
-      const baseChroma = 0.14;
       final accentLightness = _getAccentLightness(themeColor, brightness);
       return OklchColours(
         pureBackground: pureBackground,
         pureForeground: pureForeground,
         background: neutral(0.98, 0.01),
         editableBackground: neutral(0.995, 0.01),
-        accent: lch(accentLightness, baseChroma),
-        accentBackground: lch(themeColor?.index == 7 ? 0.93 : 0.96, 0.035),
+        accent: lch(accentLightness, accentChroma),
+        accentBackground: lch(
+          themeColor.index == 7 ? 0.93 : 0.96,
+          accentChroma * 0.25,
+        ),
         highlight: neutral(0.94, 0.03, null, 0.9),
         foreground: neutral(0.25, 0.01),
         muted: neutral(0.48, 0.01),
         veryMuted: neutral(0.64, 0.01),
         border: neutral(0.0, 0.0, 0.0, 0.18),
         barrier: neutral(0.0, 0.0, 0.0, 0.3),
-        baseAccentChroma: baseChroma * saturate,
-        themeChromaFactor: chromaFactor,
+        themeColor: themeColor,
+        brightness: brightness,
+        saturate: saturate,
       );
     } else {
-      const baseChroma = 0.08;
       final accentLightness = _getAccentLightness(themeColor, brightness);
       return OklchColours(
         pureBackground: pureBackground,
         pureForeground: pureForeground,
         background: neutral(0.26, 0.006),
         editableBackground: neutral(0.30, 0.006),
-        accent: lch(accentLightness, baseChroma),
-        accentBackground: lch(0.24, 0.025),
+        accent: lch(accentLightness, accentChroma),
+        accentBackground: lch(0.24, accentChroma * 0.31),
         highlight: neutral(0.5, 0.010, null, 0.14),
         foreground: neutral(0.88, 0.004),
         muted: neutral(0.65, 0.006),
         veryMuted: neutral(0.48, 0.005),
         border: neutral(1.0, 0.0, 0.0, 0.12),
         barrier: neutral(0.0, 0.0, 0.0, 0.6),
-        baseAccentChroma: baseChroma * saturate,
-        themeChromaFactor: chromaFactor,
+        themeColor: themeColor,
+        brightness: brightness,
+        saturate: saturate,
       );
     }
   }
@@ -148,35 +168,33 @@ class OklchColours {
   Color fromTheme(ThemeColor? color, {double? lightness, bool muted = false}) {
     double effectiveLightness;
     double chromaMultiplier = 1.0;
-
-    // Determine mode based on accent lightness
-    final isLightMode = accent.lightness < 0.6;
-    final brightness = isLightMode ? Brightness.light : Brightness.dark;
+    final isDark = _brightness == Brightness.dark;
+    final c = color ?? const ThemeColor.defaultColor();
 
     if (muted) {
-      // Apply muted color values
-      effectiveLightness = brightness == Brightness.light ? 0.55 : 0.68;
-      chromaMultiplier = brightness == Brightness.light ? 0.5 : 0.5;
+      effectiveLightness = isDark ? 0.68 : 0.55;
+      chromaMultiplier = 0.5;
     } else if (lightness != null) {
       effectiveLightness = lightness;
     } else {
-      effectiveLightness = _getAccentLightness(color, brightness);
+      effectiveLightness = _getAccentLightness(color, _brightness);
     }
 
     return RayOklch.fromComponents(
       effectiveLightness,
-      baseAccentChroma * chromaMultiplier * (color?.chromaFactor ?? 1.0),
-      (color ?? const ThemeColor.defaultColor()).toHue(),
+      c.toChroma(isDark: isDark) * _saturate * chromaMultiplier,
+      c.toHue(),
     ).toColor();
   }
 
   /// Subtle tinted background for a given priority color, matching
-  /// [accentBackground] but with the target color's hue and chromaFactor.
+  /// [accentBackground] but with the target color's hue and per-color chroma.
   Color backgroundFromTheme(ThemeColor? color) {
     final c = color ?? const ThemeColor.defaultColor();
-    final chromaScale = themeChromaFactor > 0
-        ? c.chromaFactor / themeChromaFactor
-        : 0.0;
+    final isDark = _brightness == Brightness.dark;
+    final currentChroma = _themeColor.toChroma(isDark: isDark);
+    final targetChroma = c.toChroma(isDark: isDark);
+    final chromaScale = currentChroma > 0 ? targetChroma / currentChroma : 0.0;
     return accentBackground
         .withHue(c.toHue())
         .withChroma(accentBackground.chroma * chromaScale)

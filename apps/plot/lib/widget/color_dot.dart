@@ -22,12 +22,12 @@ class ColorDot extends StatelessWidget {
           decoration: BoxDecoration(
             color: context.colour.colours.fromTheme(
               color,
-              lightness: dark ? 0.5 : 0.8,
+              lightness: dark ? 0.5 : 0.65,
             ),
             border: Border.all(
               color: context.colour.colours.fromTheme(
                 color,
-                lightness: dark ? 0.5 : 0.5,
+                lightness: dark ? 0.5 : 0.50,
               ),
               width: 1.0,
             ),
