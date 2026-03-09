@@ -38,7 +38,7 @@
     "prod-db-connect": "pnpm --filter @plotday/db run prod-db-connect",
     "prod-db-disconnect": "pnpm --filter @plotday/db run prod-db-disconnect",
     "prod-db-logs": "pnpm --filter @plotday/db run prod-db-logs",
-    "claude-prod": "pnpm prod-db-connect && PROD_DB_PASSWORD=$(op read --account plotco.1password.com 'op://Production/Database/readonly/password') claude",
+    "claude-prod": "pnpm prod-db-connect && PGPASSWORD=$(op read --account plotco.1password.com 'op://Production/Database/readonly/password') claude",
     "tunnel": "bash scripts/tunnel start",
     "tunnel:start": "bash scripts/tunnel start-bg",
     "tunnel:stop": "bash scripts/tunnel stop",
