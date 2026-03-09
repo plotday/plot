@@ -25,7 +25,7 @@ export type Channel = {
 };
 
 /**
- * Describes a link type that a source creates.
+ * Describes a link type that a connector creates.
  * Used for display in the UI (icons, labels).
  */
 export type LinkTypeConfig = {
@@ -55,15 +55,15 @@ export type LinkTypeConfig = {
  * 1. Manages channel resources (calendars, projects, etc.) per actor
  * 2. Returns tokens for the user who enabled sync on a channel
  * 3. Supports per-actor auth via actAs() for write-back operations
- * 4. Provides saveLink/saveContacts for Sources to save data directly
+ * 4. Provides saveLink/saveContacts for Connectors to save data directly
  *
- * Sources declare their provider, scopes, and channel lifecycle methods as
+ * Connectors declare their provider, scopes, and channel lifecycle methods as
  * class properties and methods. The Integrations tool reads these automatically.
  * Auth and channel management is handled in the twist edit modal in Flutter.
  *
  * @example
  * ```typescript
- * class CalendarSource extends Source<CalendarSource> {
+ * class CalendarConnector extends Connector<CalendarConnector> {
  *   readonly provider = AuthProvider.Google;
  *   readonly scopes = ["https://www.googleapis.com/auth/calendar"];
  *
@@ -112,10 +112,10 @@ export abstract class Integrations extends ITool {
   /**
    * Retrieves an access token for a channel resource.
    *
-   * @param provider - The OAuth provider (deprecated, ignored for single-provider sources)
+   * @param provider - The OAuth provider (deprecated, ignored for single-provider connectors)
    * @param channelId - The channel resource ID (e.g., calendar ID)
    * @returns Promise resolving to the access token or null
-   * @deprecated Use get(channelId) instead. The provider is implicit from the source.
+   * @deprecated Use get(channelId) instead. The provider is implicit from the connector.
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract get(provider: AuthProvider, channelId: string): Promise<AuthToken | null>;
@@ -146,12 +146,12 @@ export abstract class Integrations extends ITool {
   ): Promise<void>;
 
   /**
-   * Saves a link with notes to the source's priority.
+   * Saves a link with notes to the connector's priority.
    *
    * Creates a thread+link pair. The thread is a lightweight container;
    * the link holds the external entity data (source, meta, type, status, etc.).
    *
-   * This method is available only to Sources (not regular Twists).
+   * This method is available only to Connectors (not regular Twists).
    *
    * @param link - The link with notes to save
    * @returns Promise resolving to the saved thread's UUID
@@ -160,7 +160,7 @@ export abstract class Integrations extends ITool {
   abstract saveLink(link: NewLinkWithNotes): Promise<Uuid>;
 
   /**
-   * Saves contacts to the source's priority.
+   * Saves contacts to the connector's priority.
    *
    * @param contacts - Array of contacts to save
    * @returns Promise resolving to the saved actors
@@ -169,7 +169,7 @@ export abstract class Integrations extends ITool {
   abstract saveContacts(contacts: NewContact[]): Promise<Actor[]>;
 
   /**
-   * Archives links matching the given filter that were created by this source.
+   * Archives links matching the given filter that were created by this connector.
    *
    * For each archived link's thread, if no other non-archived links remain,
    * the thread is also archived.
@@ -181,7 +181,7 @@ export abstract class Integrations extends ITool {
   abstract archiveLinks(filter: ArchiveLinkFilter): Promise<void>;
 
   /**
-   * Sets or clears todo status on a thread owned by this source.
+   * Sets or clears todo status on a thread owned by this connector.
    *
    * @param source - The link source URL identifying the thread
    * @param actorId - The user to set the todo for

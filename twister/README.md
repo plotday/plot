@@ -129,7 +129,7 @@ Twist tools provide capabilities to twists. They are usually unopinionated and d
 
 [View all tools →](https://twist.plot.day/documents/Built-in_Tools.html)
 
-External service integrations (Google Calendar, Slack, Linear, etc.) are built as **Sources** — see [Building Sources](https://twist.plot.day/documents/Building_Sources.html).
+External service integrations (Google Calendar, Slack, Linear, etc.) are built as **Connectors** — see [Building Connectors](https://twist.plot.day/documents/Building_Connectors.html).
 
 ### Activities and Notes
 
@@ -208,7 +208,7 @@ plot priority create           # Create new priority
 - [Core Concepts](https://twist.plot.day/documents/Core_Concepts.html) - Twists, tools, and architecture
 - [Sync Strategies](https://twist.plot.day/documents/Sync_Strategies.html) - Data synchronization patterns (upserts, deduplication, ID management)
 - [Built-in Tools](https://twist.plot.day/documents/Built-in_Tools.html) - Plot, Store, AI, and more
-- [Building Sources](https://twist.plot.day/documents/Building_Sources.html) - Build external service integrations
+- [Building Connectors](https://twist.plot.day/documents/Building_Connectors.html) - Build external service integrations
 - [Runtime Environment](https://twist.plot.day/documents/Runtime_Environment.html) - Execution constraints and optimization
 - [Advanced Topics](https://twist.plot.day/documents/Advanced.html) - Complex patterns and techniques
 
@@ -243,14 +243,14 @@ export default class WelcomeTwist extends Twist<WelcomeTwist> {
 }
 ```
 
-### GitHub Source
+### GitHub Connector
 
 ```typescript
-import { Source, type SourceBuilder, type Channel } from "@plotday/twister";
+import { Connector, type ConnectorBuilder, type Channel } from "@plotday/twister";
 import { Integrations } from "@plotday/twister/tools/integrations";
 
-export default class GitHubSource extends Source<GitHubSource> {
-  build(build: SourceBuilder) {
+export default class GitHubConnector extends Connector<GitHubConnector> {
+  build(build: ConnectorBuilder) {
     return {
       integrations: build(Integrations),
     };

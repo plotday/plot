@@ -69,7 +69,7 @@ Use twists for:
 - **Data Processing** - Analyzing and organizing activities
 - **Notifications** - Sending alerts based on conditions
 
-For external service integrations (Google Calendar, GitHub, Slack, etc.), build a **Source** instead. Sources extend `Source<T>` (which itself extends `Twist<T>`) and provide the OAuth and channel lifecycle needed for syncing external data. See [Building Sources](BUILDING_SOURCES.md).
+For external service integrations (Google Calendar, GitHub, Slack, etc.), build a **Connector** instead. Connectors extend `Connector<T>` (which itself extends `Twist<T>`) and provide the OAuth and channel lifecycle needed for syncing external data. See [Building Connectors](BUILDING_CONNECTORS.md).
 
 ---
 
@@ -93,11 +93,11 @@ Core Plot functionality provided by the Twist Creator:
 
 See the [Built-in Tools Guide](TOOLS_GUIDE.md) for complete documentation.
 
-#### 2. Sources
+#### 2. Connectors
 
-External service integrations are built as Sources, which extend `Source<T>`. Sources declare OAuth providers, expose channels for users to enable/disable, and sync data from services like Google Calendar, Slack, GitHub, and more.
+External service integrations are built as Connectors, which extend `Connector<T>`. Connectors declare OAuth providers, expose channels for users to enable/disable, and sync data from services like Google Calendar, Slack, GitHub, and more.
 
-See [Building Sources](BUILDING_SOURCES.md) to create your own.
+See [Building Connectors](BUILDING_CONNECTORS.md) to create your own.
 
 ### Declaring Tool Dependencies
 
@@ -755,5 +755,5 @@ await this.tools.plot.createActivity({
 ## Next Steps
 
 - **[Built-in Tools Guide](TOOLS_GUIDE.md)** - Learn about Plot, Store, AI, and more
-- **[Building Sources](BUILDING_SOURCES.md)** - Build external service integrations
+- **[Building Connectors](BUILDING_CONNECTORS.md)** - Build external service integrations
 - **[Runtime Environment](RUNTIME.md)** - Understand execution constraints

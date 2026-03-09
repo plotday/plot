@@ -1,0 +1,50 @@
+{
+  "name": "@plotday/connector-linear",
+  "plotTwistId": "d23218d6-1e26-4a4d-9a24-63898a494c51",
+  "displayName": "Linear",
+  "description": "Issues from Linear",
+  "logoUrl": "https://api.iconify.design/logos/linear-icon.svg",
+  "logoUrlDark": "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.7.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^",
+    "@linear/sdk": "^72.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "tools/linear"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "tool",
+    "linear",
+    "project-management"
+  ]
+}

@@ -1106,7 +1106,7 @@ async triageEmail(emailContent: string) {
 
 ## Link Type Safety Pattern
 
-When defining `linkTypes` in your source's provider config, use `as const satisfies` to get type-safe status strings:
+When defining `linkTypes` in your connector's provider config, use `as const satisfies` to get type-safe status strings:
 
 ```typescript
 import type { LinkTypeConfig } from "@plotday/twister/tools/integrations";
@@ -1141,12 +1141,12 @@ type PRStatus = (typeof LINK_TYPES)[1]["statuses"][number]["status"]; // "open" 
 Then reference `LINK_TYPES` in your provider config:
 
 ```typescript
-build(build: SourceBuilder) {
+build(build: ConnectorBuilder) {
   return {
     integrations: build(Integrations, {
       providers: [{
-        provider: MySource.PROVIDER,
-        scopes: MySource.SCOPES,
+        provider: MyConnector.PROVIDER,
+        scopes: MyConnector.SCOPES,
         linkTypes: [...LINK_TYPES],
         // ...
       }],
@@ -1159,6 +1159,6 @@ build(build: SourceBuilder) {
 
 ## Next Steps
 
-- **[Building Sources](BUILDING_SOURCES.md)** - Build external service integrations
+- **[Building Connectors](BUILDING_CONNECTORS.md)** - Build external service integrations
 - **[Runtime Environment](RUNTIME.md)** - Understanding execution constraints
 - **API Reference** - Explore detailed API docs in the sidebar

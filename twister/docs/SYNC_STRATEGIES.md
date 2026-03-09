@@ -1,6 +1,6 @@
 # Sync Strategies
 
-This guide explains good ways to build sources that sync other services with Plot. Choosing the right strategy depends on whether you need to update items, deduplicate them, or simply create them once.
+This guide explains good ways to build connectors that sync other services with Plot. Choosing the right strategy depends on whether you need to update items, deduplicate them, or simply create them once.
 
 ## Table of Contents
 
@@ -115,7 +115,7 @@ interface Activity {
 ### Example: Calendar Event Sync
 
 ```typescript
-export default class GoogleCalendarSource extends Source<GoogleCalendarSource> {
+export default class GoogleCalendarConnector extends Connector<GoogleCalendarConnector> {
   async syncEvent(event: calendar_v3.Schema$Event): Promise<void> {
     const activity: NewActivityWithNotes = {
       // Use the event's canonical URL as the source
@@ -168,7 +168,7 @@ export default class GoogleCalendarSource extends Source<GoogleCalendarSource> {
 ### Example: Task/Issue Sync
 
 ```typescript
-export default class LinearSource extends Source<LinearSource> {
+export default class LinearConnector extends Connector<LinearConnector> {
   async syncIssue(issue: LinearIssue): Promise<void> {
     const activity: NewActivityWithNotes = {
       source: issue.url, // Linear provides stable URLs
@@ -274,7 +274,7 @@ Use this strategy when:
 ### Example: Multiple Activities from Single Source
 
 ```typescript
-export default class GmailSource extends Source<GmailSource> {
+export default class GmailConnector extends Connector<GmailConnector> {
   /**
    * Creates separate activities for email threads and individual messages.
    * One email thread can have multiple Plot activities.
@@ -505,7 +505,7 @@ When syncing activities from external systems, it's critical to distinguish betw
 
 ### The `initialSync` Flag Pattern
 
-All sync-based tools should track whether they're performing an initial sync or incremental sync:
+All sync-based connectors should track whether they're performing an initial sync or incremental sync:
 
 | Field | Initial Sync | Incremental Sync | Reason |
 |-------|--------------|------------------|---------|
@@ -588,7 +588,7 @@ async syncBatch(
 **Initial sync (first import):**
 - Activities are **unarchived** (`archived: false`) - gives user a fresh start
 - Activities are marked as **read** (`unread: false`) - prevents notification spam from bulk historical imports
-- Use case: When user first installs the tool or reconnects after disconnection
+- Use case: When user first installs the connector or reconnects after disconnection
 
 **Incremental sync (ongoing updates):**
 - New activities appear as **unread** (`unread: true`) - user gets notified of new items
@@ -694,9 +694,9 @@ if (existingId) {
 
 ## Best Practices
 
-### 1. Be Consistent Within a Source
+### 1. Be Consistent Within a Connector
 
-Choose one strategy per source and stick with it. Mixing strategies in the same source can lead to confusion and bugs.
+Choose one strategy per connector and stick with it. Mixing strategies in the same connector can lead to confusion and bugs.
 
 ### 2. Use Descriptive Keys
 
@@ -805,4 +805,4 @@ For more information:
 
 - [Core Concepts](CORE_CONCEPTS.md) - Understanding activities, notes, and priorities
 - [Tools Guide](TOOLS_GUIDE.md) - Complete reference for the Plot tool
-- [Building Sources](BUILDING_SOURCES.md) - Creating external service integrations
+- [Building Connectors](BUILDING_CONNECTORS.md) - Creating external service integrations

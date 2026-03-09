@@ -24,7 +24,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/asana:
+  connectors/asana:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -43,7 +43,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/github:
+  connectors/github:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -53,7 +53,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/gmail:
+  connectors/gmail:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -63,9 +63,9 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/google-calendar:
+  connectors/google-calendar:
     dependencies:
-      '@plotday/source-google-contacts':
+      '@plotday/connector-google-contacts':
         specifier: workspace:^
         version: link:../google-contacts
       '@plotday/twister':
@@ -76,7 +76,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/google-contacts:
+  connectors/google-contacts:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -86,9 +86,9 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/google-drive:
+  connectors/google-drive:
     dependencies:
-      '@plotday/source-google-contacts':
+      '@plotday/connector-google-contacts':
         specifier: workspace:^
         version: link:../google-contacts
       '@plotday/twister':
@@ -99,7 +99,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/jira:
+  connectors/jira:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -112,7 +112,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/linear:
+  connectors/linear:
     dependencies:
       '@linear/sdk':
         specifier: ^72.0.0
@@ -125,7 +125,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/outlook-calendar:
+  connectors/outlook-calendar:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^
@@ -135,7 +135,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  sources/slack:
+  connectors/slack:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^

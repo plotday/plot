@@ -1,0 +1,50 @@
+{
+  "name": "@plotday/connector-google-calendar",
+  "plotTwistId": "2ed4fcf8-6524-410f-b318-f9316e71c8b0",
+  "displayName": "Google Calendar",
+  "description": "Events from Google Calendar",
+  "logoUrl": "https://api.iconify.design/logos/google-calendar.svg",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.14.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint"
+  },
+  "dependencies": {
+    "@plotday/connector-google-contacts": "workspace:^",
+    "@plotday/twister": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "tools/google-calendar"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "agent",
+    "tool",
+    "google-calendar",
+    "calendar"
+  ]
+}

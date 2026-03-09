@@ -40,8 +40,8 @@ Plot Twists are smart automations that connect, organize, and prioritize your wo
   - Callbacks - Persistent function references
   - AI - Language model integration
 
-- **[Building Sources](BUILDING_SOURCES.md)** - Build external service integrations
-  - Source class structure and lifecycle
+- **[Building Connectors](BUILDING_CONNECTORS.md)** - Build external service integrations
+  - Connector class structure and lifecycle
   - OAuth and channel management
   - Data sync and batch processing
   - Complete examples and best practices
@@ -66,7 +66,7 @@ Plot Twists are smart automations that connect, organize, and prioritize your wo
 
 Explore the complete API documentation using the navigation on the left:
 
-- **Classes** - Twist, Source, Tool, and all built-in tool classes
+- **Classes** - Twist, Connector, Tool, and all built-in tool classes
 - **Interfaces** - Activity, Priority, Contact, and data structures
 - **Enums** - ActivityType, ActorType, and other enumerations
 - **Type Aliases** - Helper types and utilities

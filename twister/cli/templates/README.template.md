@@ -68,9 +68,9 @@ build(build: ToolBuilder) {
 - **Callbacks**: Create persistent function references for webhooks
 - **Network**: HTTP access permissions and webhook management
 
-#### Sources
+#### Connectors
 
-External service integrations (Google Calendar, Slack, Linear, etc.) are built as Sources. See the [Building Sources](https://twist.plot.day/documents/Building_Sources.html) guide.
+External service integrations (Google Calendar, Slack, Linear, etc.) are built as Connectors. See the [Building Connectors](https://twist.plot.day/documents/Building_Connectors.html) guide.
 
 ### Activity Types
 

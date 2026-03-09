@@ -6,7 +6,7 @@
     "lib": ["ES2020", "ES2021", "ES2022.error", "WebWorker"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "customConditions": ["@plotday/source"],
+    "customConditions": ["@plotday/connector"],
     "resolveJsonModule": true,
     "allowJs": true,
     "checkJs": false,

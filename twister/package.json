@@ -11,172 +11,172 @@
   },
   "exports": {
     ".": {
-      "@plotday/source": "./src/index.ts",
+      "@plotday/connector": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./twist": {
-      "@plotday/source": "./src/twist.ts",
+      "@plotday/connector": "./src/twist.ts",
       "types": "./dist/twist.d.ts",
       "default": "./dist/twist.js"
     },
     "./tool": {
-      "@plotday/source": "./src/tool.ts",
+      "@plotday/connector": "./src/tool.ts",
       "types": "./dist/tool.d.ts",
       "default": "./dist/tool.js"
     },
-    "./source": {
-      "@plotday/source": "./src/source.ts",
-      "types": "./dist/source.d.ts",
-      "default": "./dist/source.js"
+    "./connector": {
+      "@plotday/connector": "./src/connector.ts",
+      "types": "./dist/connector.d.ts",
+      "default": "./dist/connector.js"
     },
     "./plot": {
-      "@plotday/source": "./src/plot.ts",
+      "@plotday/connector": "./src/plot.ts",
       "types": "./dist/plot.d.ts",
       "default": "./dist/plot.js"
     },
     "./schedule": {
-      "@plotday/source": "./src/schedule.ts",
+      "@plotday/connector": "./src/schedule.ts",
       "types": "./dist/schedule.d.ts",
       "default": "./dist/schedule.js"
     },
     "./tag": {
-      "@plotday/source": "./src/tag.ts",
+      "@plotday/connector": "./src/tag.ts",
       "types": "./dist/tag.d.ts",
       "default": "./dist/tag.js"
     },
     "./options": {
-      "@plotday/source": "./src/options.ts",
+      "@plotday/connector": "./src/options.ts",
       "types": "./dist/options.d.ts",
       "default": "./dist/options.js"
     },
     "./tools/twists": {
-      "@plotday/source": "./src/tools/twists.ts",
+      "@plotday/connector": "./src/tools/twists.ts",
       "types": "./dist/tools/twists.d.ts",
       "default": "./dist/tools/twists.js"
     },
     "./tools/ai": {
-      "@plotday/source": "./src/tools/ai.ts",
+      "@plotday/connector": "./src/tools/ai.ts",
       "types": "./dist/tools/ai.d.ts",
       "default": "./dist/tools/ai.js"
     },
     "./tools/integrations": {
-      "@plotday/source": "./src/tools/integrations.ts",
+      "@plotday/connector": "./src/tools/integrations.ts",
       "types": "./dist/tools/integrations.d.ts",
       "default": "./dist/tools/integrations.js"
     },
     "./tools/callbacks": {
-      "@plotday/source": "./src/tools/callbacks.ts",
+      "@plotday/connector": "./src/tools/callbacks.ts",
       "types": "./dist/tools/callbacks.d.ts",
       "default": "./dist/tools/callbacks.js"
     },
     "./tools/network": {
-      "@plotday/source": "./src/tools/network.ts",
+      "@plotday/connector": "./src/tools/network.ts",
       "types": "./dist/tools/network.d.ts",
       "default": "./dist/tools/network.js"
     },
     "./tools/plot": {
-      "@plotday/source": "./src/tools/plot.ts",
+      "@plotday/connector": "./src/tools/plot.ts",
       "types": "./dist/tools/plot.d.ts",
       "default": "./dist/tools/plot.js"
     },
     "./tools/tasks": {
-      "@plotday/source": "./src/tools/tasks.ts",
+      "@plotday/connector": "./src/tools/tasks.ts",
       "types": "./dist/tools/tasks.d.ts",
       "default": "./dist/tools/tasks.js"
     },
     "./tools/store": {
-      "@plotday/source": "./src/tools/store.ts",
+      "@plotday/connector": "./src/tools/store.ts",
       "types": "./dist/tools/store.d.ts",
       "default": "./dist/tools/store.js"
     },
     "./utils/types": {
-      "@plotday/source": "./src/utils/types.ts",
+      "@plotday/connector": "./src/utils/types.ts",
       "types": "./dist/utils/types.d.ts",
       "default": "./dist/utils/types.js"
     },
     "./utils/hash": {
-      "@plotday/source": "./src/utils/hash.ts",
+      "@plotday/connector": "./src/utils/hash.ts",
       "types": "./dist/utils/hash.d.ts",
       "default": "./dist/utils/hash.js"
     },
     "./utils/uuid": {
-      "@plotday/source": "./src/utils/uuid.ts",
+      "@plotday/connector": "./src/utils/uuid.ts",
       "types": "./dist/utils/uuid.d.ts",
       "default": "./dist/utils/uuid.js"
     },
     "./twist-guide": {
-      "@plotday/source": "./src/twist-guide.ts",
+      "@plotday/connector": "./src/twist-guide.ts",
       "types": "./dist/twist-guide.d.ts",
       "default": "./dist/twist-guide.js"
     },
     "./creator-docs": {
-      "@plotday/source": "./src/creator-docs.ts",
+      "@plotday/connector": "./src/creator-docs.ts",
       "types": "./dist/creator-docs.d.ts",
       "default": "./dist/creator-docs.js"
     },
     "./llm-docs": {
-      "@plotday/source": "./src/llm-docs/index.ts",
+      "@plotday/connector": "./src/llm-docs/index.ts",
       "types": "./dist/llm-docs/index.d.ts",
       "default": "./dist/llm-docs/index.js"
     },
     "./llm-docs/index": {
-      "@plotday/source": "./src/llm-docs/index.ts",
+      "@plotday/connector": "./src/llm-docs/index.ts",
       "types": "./dist/llm-docs/index.d.ts",
       "default": "./dist/llm-docs/index.js"
     },
     "./llm-docs/twist": {
-      "@plotday/source": "./src/llm-docs/twist.ts",
+      "@plotday/connector": "./src/llm-docs/twist.ts",
       "types": "./dist/llm-docs/twist.d.ts",
       "default": "./dist/llm-docs/twist.js"
     },
     "./llm-docs/plot": {
-      "@plotday/source": "./src/llm-docs/plot.ts",
+      "@plotday/connector": "./src/llm-docs/plot.ts",
       "types": "./dist/llm-docs/plot.d.ts",
       "default": "./dist/llm-docs/plot.js"
     },
     "./llm-docs/tag": {
-      "@plotday/source": "./src/llm-docs/tag.ts",
+      "@plotday/connector": "./src/llm-docs/tag.ts",
       "types": "./dist/llm-docs/tag.d.ts",
       "default": "./dist/llm-docs/tag.js"
     },
     "./llm-docs/tools/twists": {
-      "@plotday/source": "./src/llm-docs/tools/twists.ts",
+      "@plotday/connector": "./src/llm-docs/tools/twists.ts",
       "types": "./dist/llm-docs/tools/twists.d.ts",
       "default": "./dist/llm-docs/tools/twists.js"
     },
     "./llm-docs/tools/ai": {
-      "@plotday/source": "./src/llm-docs/tools/ai.ts",
+      "@plotday/connector": "./src/llm-docs/tools/ai.ts",
       "types": "./dist/llm-docs/tools/ai.d.ts",
       "default": "./dist/llm-docs/tools/ai.js"
     },
     "./llm-docs/tools/integrations": {
-      "@plotday/source": "./src/llm-docs/tools/integrations.ts",
+      "@plotday/connector": "./src/llm-docs/tools/integrations.ts",
       "types": "./dist/llm-docs/tools/integrations.d.ts",
       "default": "./dist/llm-docs/tools/integrations.js"
     },
     "./llm-docs/tools/callbacks": {
-      "@plotday/source": "./src/llm-docs/tools/callbacks.ts",
+      "@plotday/connector": "./src/llm-docs/tools/callbacks.ts",
       "types": "./dist/llm-docs/tools/callbacks.d.ts",
       "default": "./dist/llm-docs/tools/callbacks.js"
     },
     "./llm-docs/tools/network": {
-      "@plotday/source": "./src/llm-docs/tools/network.ts",
+      "@plotday/connector": "./src/llm-docs/tools/network.ts",
       "types": "./dist/llm-docs/tools/network.d.ts",
       "default": "./dist/llm-docs/tools/network.js"
     },
     "./llm-docs/tools/plot": {
-      "@plotday/source": "./src/llm-docs/tools/plot.ts",
+      "@plotday/connector": "./src/llm-docs/tools/plot.ts",
       "types": "./dist/llm-docs/tools/plot.d.ts",
       "default": "./dist/llm-docs/tools/plot.js"
     },
     "./llm-docs/tools/tasks": {
-      "@plotday/source": "./src/llm-docs/tools/tasks.ts",
+      "@plotday/connector": "./src/llm-docs/tools/tasks.ts",
       "types": "./dist/llm-docs/tools/tasks.d.ts",
       "default": "./dist/llm-docs/tools/tasks.js"
     },
     "./llm-docs/tools/store": {
-      "@plotday/source": "./src/llm-docs/tools/store.ts",
+      "@plotday/connector": "./src/llm-docs/tools/store.ts",
       "types": "./dist/llm-docs/tools/store.d.ts",
       "default": "./dist/llm-docs/tools/store.js"
     },

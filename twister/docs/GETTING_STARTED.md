@@ -213,7 +213,7 @@ Now that you have a basic twist running, explore:
 
 - **[Core Concepts](CORE_CONCEPTS.md)** - Understand twists, tools, and the Plot architecture
 - **[Built-in Tools](TOOLS_GUIDE.md)** - Learn about Plot, Store, Integrations, AI, and more
-- **[Building Sources](BUILDING_SOURCES.md)** - Build external service integrations
+- **[Building Connectors](BUILDING_CONNECTORS.md)** - Build external service integrations
 - **[Runtime Environment](RUNTIME.md)** - Understand execution constraints and optimization
 
 ## Common First Tasks
