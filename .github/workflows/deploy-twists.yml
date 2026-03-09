@@ -1,8 +1,8 @@
-name: Deploy Twists & Sources
+name: Deploy Twists & Connectors
 
 env:
   TWISTS: "plot,chat"
-  SOURCES: "github,gmail,google-calendar,google-contacts,google-drive,linear"
+  CONNECTORS: "github,gmail,google-calendar,google-contacts,google-drive,linear"
 
 on:
   push:
@@ -20,8 +20,8 @@ on:
         required: false
         default: "all"
         type: string
-      sources:
-        description: 'Sources to deploy (comma-separated, or "all" for all sources)'
+      connectors:
+        description: 'Connectors to deploy (comma-separated, or "all" for all connectors)'
         required: false
         default: "all"
         type: string
@@ -93,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       twists: ${{ steps.filter.outputs.twists }}
-      sources: ${{ steps.filter.outputs.sources }}
+      connectors: ${{ steps.filter.outputs.connectors }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -145,13 +145,13 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check for affected twists and sources
+      - name: Check for affected twists and connectors
         id: filter
         run: |
           TWIST_LIST=(${TWISTS//,/ })
-          SOURCE_LIST=(${SOURCES//,/ })
+          CONNECTOR_LIST=(${CONNECTORS//,/ })
           TWISTS_TO_DEPLOY=()
-          SOURCES_TO_DEPLOY=()
+          CONNECTORS_TO_DEPLOY=()
 
           # Check if this is a manual dispatch
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -173,20 +173,20 @@ jobs:
               done
             fi
 
-            # Handle sources
-            MANUAL_SOURCES="${{ github.event.inputs.sources }}"
-            if [ -z "$MANUAL_SOURCES" ] || [ "$MANUAL_SOURCES" = "all" ]; then
-              echo "Manual trigger: deploying all sources"
-              SOURCES_TO_DEPLOY=("${SOURCE_LIST[@]}")
+            # Handle connectors
+            MANUAL_CONNECTORS="${{ github.event.inputs.connectors }}"
+            if [ -z "$MANUAL_CONNECTORS" ] || [ "$MANUAL_CONNECTORS" = "all" ]; then
+              echo "Manual trigger: deploying all connectors"
+              CONNECTORS_TO_DEPLOY=("${CONNECTOR_LIST[@]}")
             else
-              echo "Manual trigger: deploying specified sources"
-              IFS=',' read -ra INPUT_LIST <<< "$MANUAL_SOURCES"
-              for source in "${INPUT_LIST[@]}"; do
-                source=$(echo "$source" | xargs)
-                if [ -d "public/sources/$source" ]; then
-                  SOURCES_TO_DEPLOY+=("$source")
+              echo "Manual trigger: deploying specified connectors"
+              IFS=',' read -ra INPUT_LIST <<< "$MANUAL_CONNECTORS"
+              for connector in "${INPUT_LIST[@]}"; do
+                connector=$(echo "$connector" | xargs)
+                if [ -d "public/connectors/$connector" ]; then
+                  CONNECTORS_TO_DEPLOY+=("$connector")
                 else
-                  echo "Warning: source '$source' not found in public/sources/"
+                  echo "Warning: connector '$connector' not found in public/connectors/"
                 fi
               done
             fi
@@ -201,14 +201,14 @@ jobs:
               echo "Twists to deploy: ${TWISTS_TO_DEPLOY[*]}"
             fi
 
-            # Output sources
-            if [ ${#SOURCES_TO_DEPLOY[@]} -eq 0 ]; then
-              echo "sources=[]" >> $GITHUB_OUTPUT
-              echo "No valid sources to deploy"
+            # Output connectors
+            if [ ${#CONNECTORS_TO_DEPLOY[@]} -eq 0 ]; then
+              echo "connectors=[]" >> $GITHUB_OUTPUT
+              echo "No valid connectors to deploy"
             else
-              SOURCES_JSON=$(printf '%s\n' "${SOURCES_TO_DEPLOY[@]}" | jq -R -s -c 'split("\n")[:-1]')
-              echo "sources=$SOURCES_JSON" >> $GITHUB_OUTPUT
-              echo "Sources to deploy: ${SOURCES_TO_DEPLOY[*]}"
+              CONNECTORS_JSON=$(printf '%s\n' "${CONNECTORS_TO_DEPLOY[@]}" | jq -R -s -c 'split("\n")[:-1]')
+              echo "connectors=$CONNECTORS_JSON" >> $GITHUB_OUTPUT
+              echo "Connectors to deploy: ${CONNECTORS_TO_DEPLOY[*]}"
             fi
             exit 0
           fi
@@ -224,14 +224,14 @@ jobs:
             echo "twists=$TWISTS_JSON" >> $GITHUB_OUTPUT
             echo "$REASON, deploying all twists: $TWISTS_JSON"
 
-            SOURCES_JSON=$(printf '%s\n' "${SOURCE_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
-            echo "sources=$SOURCES_JSON" >> $GITHUB_OUTPUT
-            echo "$REASON, deploying all sources: $SOURCES_JSON"
+            CONNECTORS_JSON=$(printf '%s\n' "${CONNECTOR_LIST[@]}" | jq -R -s -c 'split("\n")[:-1]')
+            echo "connectors=$CONNECTORS_JSON" >> $GITHUB_OUTPUT
+            echo "$REASON, deploying all connectors: $CONNECTORS_JSON"
             exit 0
           fi
 
           # Automatic deployment: only deploy changed packages
-          echo "Automatic trigger: checking for affected twists and sources"
+          echo "Automatic trigger: checking for affected twists and connectors"
           AFFECTED_OUTPUT=$(pnpm dlx nx show projects --affected --base=${{ github.event.before }} --head=HEAD --json 2>/dev/null || echo "[]")
 
           for twist in "${TWIST_LIST[@]}"; do
@@ -240,9 +240,9 @@ jobs:
             fi
           done
 
-          for source in "${SOURCE_LIST[@]}"; do
-            if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/source-$source$"; then
-              SOURCES_TO_DEPLOY+=("\"$source\"")
+          for connector in "${CONNECTOR_LIST[@]}"; do
+            if echo "$AFFECTED_OUTPUT" | jq -r '.[]' 2>/dev/null | grep -q "^@plotday/connector-$connector$"; then
+              CONNECTORS_TO_DEPLOY+=("\"$connector\"")
             fi
           done
 
@@ -255,13 +255,13 @@ jobs:
             echo "Changed twists: ${TWISTS_TO_DEPLOY[*]}"
           fi
 
-          if [ ${#SOURCES_TO_DEPLOY[@]} -eq 0 ]; then
-            echo "sources=[]" >> $GITHUB_OUTPUT
-            echo "No sources have changes"
+          if [ ${#CONNECTORS_TO_DEPLOY[@]} -eq 0 ]; then
+            echo "connectors=[]" >> $GITHUB_OUTPUT
+            echo "No connectors have changes"
           else
-            SOURCES_JSON=$(printf '%s\n' "${SOURCES_TO_DEPLOY[@]}" | jq -s . | tr -d '\n')
-            echo "sources=$SOURCES_JSON" >> $GITHUB_OUTPUT
-            echo "Changed sources: ${SOURCES_TO_DEPLOY[*]}"
+            CONNECTORS_JSON=$(printf '%s\n' "${CONNECTORS_TO_DEPLOY[@]}" | jq -s . | tr -d '\n')
+            echo "connectors=$CONNECTORS_JSON" >> $GITHUB_OUTPUT
+            echo "Changed connectors: ${CONNECTORS_TO_DEPLOY[*]}"
           fi
 
   deploy:
@@ -320,13 +320,13 @@ jobs:
           cd ${{ steps.locate.outputs.dir }}
           pnpm plot deploy -e review
 
-  deploy-sources:
+  deploy-connectors:
     needs: check-changes
     runs-on: ubuntu-latest
-    if: needs.check-changes.outputs.sources != '[]'
+    if: needs.check-changes.outputs.connectors != '[]'
     strategy:
       matrix:
-        source: ${{ fromJson(needs.check-changes.outputs.sources) }}
+        connector: ${{ fromJson(needs.check-changes.outputs.connectors) }}
 
     env:
       PLOT_DEPLOY_TOKEN: ${{ secrets.PLOT_DEPLOY_TOKEN }}
@@ -352,12 +352,12 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
-      - name: Install dependencies for ${{ matrix.source }}
+      - name: Install dependencies for ${{ matrix.connector }}
         run: |
-          cd public/sources/${{ matrix.source }}
+          cd public/connectors/${{ matrix.connector }}
           pnpm install --frozen-lockfile --filter="."
 
-      - name: Deploy ${{ matrix.source }} source
+      - name: Deploy ${{ matrix.connector }} connector
         run: |
-          cd public/sources/${{ matrix.source }}
+          cd public/connectors/${{ matrix.connector }}
           pnpm plot deploy -e review
