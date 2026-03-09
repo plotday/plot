@@ -1,5 +1,16 @@
 # @plotday/twister
 
+## 0.39.0
+
+### Added
+
+- AIOptions, AICapabilities types and available() method to AI tool for controlling AI feature availability in twists ([#103](https://github.com/plotday/plot/pull/103) [`faba1b9`](https://github.com/plotday/plot/commit/faba1b95b0d1eace20e0cc7b045e469083478d8b))
+- `thread.defaultMention` and `note.defaultMention` options to Plot tool for opt-in auto-mentioning on thread replies ([`62c95d0`](https://github.com/plotday/plot/commit/62c95d0e06ab6ae81f61a6f394e6895af19d98d2))
+
+### Changed
+
+- BREAKING: Renamed Source to Connector across the SDK. The `Source` class is now `Connector`, the `./source` export is now `./connector`, and all `@plotday/source-*` packages are now `@plotday/connector-*`. A deprecated `Source` alias is re-exported for backward compatibility. ([`27aed55`](https://github.com/plotday/plot/commit/27aed55e66268b40a8e52059d85a9e37cbbc9542))
+
 ## 0.38.0
 
 ### Added
