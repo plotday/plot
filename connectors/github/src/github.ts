@@ -16,6 +16,7 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
 import {
   startPRBatchSync,
@@ -149,6 +150,10 @@ export class GitHub extends Connector<GitHub> {
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.github.com/*"] }),
       tasks: build(Tasks),
+      plot: build(Plot, {
+        thread: { defaultMention: true },
+        note: { defaultMention: true },
+      }),
     };
   }
 

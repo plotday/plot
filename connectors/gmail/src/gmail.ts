@@ -8,6 +8,7 @@ import {
   Integrations,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { Plot } from "@plotday/twister/tools/plot";
 
 import {
   GmailApi,
@@ -66,6 +67,9 @@ export class Gmail extends Connector<Gmail> {
       integrations: build(Integrations),
       network: build(Network, {
         urls: ["https://gmail.googleapis.com/gmail/v1/*"],
+      }),
+      plot: build(Plot, {
+        thread: { defaultMention: true },
       }),
     };
   }

@@ -204,6 +204,38 @@ plot: build(Plot, {
 }),
 ```
 
+**Default mention on replies:**
+
+When your twist processes replies (two-way comment sync or conversational AI), set `defaultMention: true` so the user doesn't have to manually re-mention your twist on every note:
+
+- `thread.defaultMention` — Auto-mention on replies to threads your twist created (e.g., synced issues, emails)
+- `note.defaultMention` — Auto-mention on follow-up notes in threads where your twist was @-mentioned (e.g., conversational agents)
+
+```typescript
+// Connector with two-way comment sync
+plot: build(Plot, {
+  thread: {
+    access: ThreadAccess.Create,
+    defaultMention: true,  // Users replying to synced threads will mention this twist by default
+    updated: this.onThreadUpdated,
+  },
+  note: {
+    created: this.onNoteCreated,
+  },
+}),
+
+// Conversational AI twist
+plot: build(Plot, {
+  thread: { access: ThreadAccess.Respond },
+  note: {
+    defaultMention: true,  // Follow-up notes auto-mention this twist
+    intents: [{ description: "...", examples: [...], handler: this.respond }],
+  },
+}),
+```
+
+Without `defaultMention`, the twist chip appears toggled OFF by default — the user can still enable it manually per-note.
+
 ## Actions
 
 Actions enable user interaction:

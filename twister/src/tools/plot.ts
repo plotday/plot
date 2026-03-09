@@ -202,8 +202,12 @@ export abstract class Plot extends ITool {
        * Must be explicitly set to grant permissions.
        */
       access?: ThreadAccess;
+      /** When true, auto-mention this twist on new notes in threads where it authored content. */
+      defaultMention?: boolean;
     };
     note?: {
+      /** When true, auto-mention this twist on new notes in threads where it was @-mentioned. */
+      defaultMention?: boolean;
       /**
        * Respond to mentions in notes.
        *

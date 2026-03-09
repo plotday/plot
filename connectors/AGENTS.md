@@ -796,6 +796,23 @@ async onNoteCreated(note: Note): Promise<void> {
 }
 ```
 
+### Default Mention on Replies
+
+Connectors with bidirectional sync should set `thread.defaultMention: true` in their Plot tool options so replies to synced threads automatically mention the connector:
+
+```typescript
+plot: build(Plot, {
+  thread: {
+    access: ThreadAccess.Create,
+    defaultMention: true,  // Replies to synced threads mention this connector by default
+    updated: this.onThreadUpdated,
+  },
+  note: { created: this.onNoteCreated },
+}),
+```
+
+Without this, users must manually toggle the connector's mention chip on each reply. Connectors that don't process replies (e.g., read-only calendar sync) should NOT set this flag.
+
 ## Contacts Pattern
 
 Connectors that sync user data should create contacts for authors and assignees:

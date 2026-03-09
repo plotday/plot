@@ -37,6 +37,7 @@ export default class ChatTwist extends Twist<ChatTwist> {
           access: ThreadAccess.Respond,
         },
         note: {
+          defaultMention: true,
           intents: [
             {
               description: "Respond to general questions and requests",
