@@ -692,8 +692,20 @@ export async function prepareThreadForDb(
     }
   }
 
-  // created_by is always the twist
-  const authorId = plot.priorityTwistId;
+  // Resolve thread-level author for read-marking.
+  // The author field comes from NewLink.author (passed via createLink → createThread).
+  // created_by in the DB remains plot.priorityTwistId (the twist created it).
+  let authorId = plot.priorityTwistId;
+  if ("author" in activity && (activity as any).author) {
+    const resolvedAuthorId = await processNewActor(
+      plot,
+      (activity as any).author,
+      targetPriorityId
+    );
+    if (resolvedAuthorId) {
+      authorId = resolvedAuthorId as ActorId;
+    }
+  }
 
   // Build defaults object for INSERT
   const defaults: ActivityInsert = {
