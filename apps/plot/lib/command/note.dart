@@ -397,7 +397,7 @@ class SplitNoteToNewThread extends NoteCommand {
 class PickNoteAssignee extends ShowCommands {
   PickNoteAssignee(this.note)
     : super(
-        title: 'Assign',
+        title: note.assignees.isEmpty ? 'Assign' : 'Assigned',
         icon: _computeIcon(note),
         commandsBuilder: (context) => _getAssigneeCommands(note),
         eventObject: EventObject.note,
@@ -409,7 +409,12 @@ class PickNoteAssignee extends ShowCommands {
   /// Whether there are other assignees (not the current user)
   bool get hasOtherAssignees => note.assignees.any((id) => id != Base.actorId);
 
-  static IconData _computeIcon(Note note) => PlotIcon.assignAdd;
+  static IconData _computeIcon(Note note) {
+    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
+    if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
+    final allOthersDone = otherAssignees.every((id) => note.isCompletedBy(id));
+    return allOthersDone ? PlotIcon.othersTaskDone : PlotIcon.othersTask;
+  }
 
   static Future<Commands> _getAssigneeCommands(Note note) async {
     final activity = await Thread.getOne(note.threadId);
@@ -420,6 +425,7 @@ class PickNoteAssignee extends ShowCommands {
       groups: [
         ActorGroup(
           priorityId: activity.priority.id,
+          pinnedActorIds: freshNote.activeAssignees,
           builder: (actor) => actor == null
               ? _UnassignAllFromNote(freshNote)
               : AssignNoteActor(freshNote, actor),
@@ -640,7 +646,7 @@ class PickDraftNoteAssignee extends ShowCommands {
     required this.priorityId,
     required this.onUpdate,
   }) : super(
-         title: 'Assign',
+         title: note.assignees.isEmpty ? 'Assign' : 'Assigned',
          icon: _computeIcon(note),
          commandsBuilder: (context) =>
              _getAssigneeCommands(note, priorityId, onUpdate),
@@ -669,6 +675,7 @@ class PickDraftNoteAssignee extends ShowCommands {
       groups: [
         ActorGroup(
           priorityId: priorityId,
+          pinnedActorIds: note.activeAssignees,
           builder: (actor) => actor == null
               ? _UnassignAllFromDraftNote(note, onUpdate: onUpdate)
               : _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),

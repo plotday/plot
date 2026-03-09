@@ -660,10 +660,11 @@ class ThreadDone extends _UpdateThreadCommand {
 }
 
 class ActorGroup extends CommandGroup {
-  ActorGroup({required this.priorityId, required this.builder});
+  ActorGroup({required this.priorityId, required this.builder, this.pinnedActorIds});
 
   final Uuid priorityId;
   final Command Function(Actor? actor) builder;
+  final List<ActorId>? pinnedActorIds;
 
   @override
   Future<List<Command>> list({String? search}) async {
@@ -673,6 +674,15 @@ class ActorGroup extends CommandGroup {
       search: search, // Backend search by name/email
       limit: 50,
     );
+    if (pinnedActorIds != null && pinnedActorIds!.isNotEmpty) {
+      final pinned = pinnedActorIds!.toSet();
+      actors.sort((a, b) {
+        final aPinned = pinned.contains(a.id);
+        final bPinned = pinned.contains(b.id);
+        if (aPinned == bPinned) return 0;
+        return aPinned ? -1 : 1;
+      });
+    }
     return [
       builder(null), // Unassign option
       ...actors.map((actor) => builder(actor)),

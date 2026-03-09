@@ -311,36 +311,10 @@ class NoteCommands extends StatelessWidget {
     final othersTodo = todoActors.where((id) => id != actorId).toList();
     final anyDone = doneActors.isNotEmpty;
 
-    // Build custom todo/done tag widgets
-    final taskTagWidgets = <Widget>[
-      // Self has todo: show circle icon, clicking marks done
-      if (selfTodo)
-        Button.icon(
-          SelfTaskAction(note),
-          key: ValueKey(Object.hash(note.id, Tag.todo.id, 'self')),
-          selected: true,
-        ),
-      // Others have todo (not self): show circleUser with count
-      if (!selfTodo && othersTodo.isNotEmpty)
-        CountBadge(
-          count: othersTodo.length,
-          child: Button.icon(
-            PickNoteAssignee(note),
-            key: ValueKey(Object.hash(note.id, Tag.todo.id, 'others')),
-            selected: true,
-          ),
-        ),
-      // Anyone has done: show check with count
-      if (anyDone)
-        CountBadge(
-          count: doneActors.length,
-          child: Button.icon(
-            ToggleNoteTag(note, Tag.done, actorId),
-            key: ValueKey(Object.hash(note.id, Tag.done.id)),
-            selected: true,
-          ),
-        ),
-    ];
+    // Resolve assignee names for tooltip (async)
+    final assigneeNamesFuture = note.assignees.isNotEmpty
+        ? note.getTagActorNames(Tag.todo)
+        : Future.value('');
 
     // Build generic tag widgets (excluding todo/done which are handled above)
     final tagFutures = Tag.getAll()
@@ -387,8 +361,7 @@ class NoteCommands extends StatelessWidget {
     final activityBloc = context.watch<ThreadBloc>();
     final activityState = activityBloc.state;
 
-    // Get commands (only if showCommands is true)
-    // State-based logic:
+    // State-based logic for commands:
     // - No todo/done: show SelfTaskAction + PickNoteAssignee
     // - Self todo: show PickNoteAssignee only
     // - Self done: show PickNoteAssignee only
@@ -396,34 +369,81 @@ class NoteCommands extends StatelessWidget {
     // - Any done: show PickNoteAssignee only
     final noTodoDone = todoActors.isEmpty && doneActors.isEmpty;
     final othersTodoOnly = othersTodo.isNotEmpty && !selfTodo && !selfDone && !anyDone;
-    final commandButtons = showCommands
-        ? [
-            if (noTodoDone) Button.icon(SelfTaskAction(note)),
-            if (!othersTodoOnly && (noTodoDone || selfTodo || selfDone || anyDone))
-              Button.icon(PickNoteAssignee(note)),
-            // Add top tag buttons
-            ...topNoteTags(
-              note,
-              activityState.tagSuggestions,
-              actorId,
-            ).map((cmd) => Button.icon(cmd)),
-            Button.icon(
-              CommandWrapper(
-                ShowNoteCommands(note, activityBloc: activityBloc),
-                icon: Value(PlotIcon.more),
-              ),
-            ),
-          ]
-        : <Widget>[];
 
     // Build the final row with tags and commands
-    return FutureBuilder<List<Widget>>(
-      future: Future.wait(tagFutures),
+    return FutureBuilder<(List<Widget>, String)>(
+      future: Future.wait([
+        Future.wait(tagFutures),
+        assigneeNamesFuture,
+      ]).then((results) => (results[0] as List<Widget>, results[1] as String)),
       builder: (context, snapshot) {
+        final assigneeNames = snapshot.data?.$2 ?? '';
+
+        // Wrap PickNoteAssignee with assignee names subtitle
+        Command assigneeCommand = PickNoteAssignee(note);
+        if (assigneeNames.isNotEmpty) {
+          assigneeCommand = CommandWrapper(
+            assigneeCommand,
+            subtitle: Value(assigneeNames),
+          );
+        }
+
+        // Build task tag widgets
+        final taskTagWidgets = <Widget>[
+          // Self has todo: show circle icon, clicking marks done
+          if (selfTodo)
+            Button.icon(
+              SelfTaskAction(note),
+              key: ValueKey(Object.hash(note.id, Tag.todo.id, 'self')),
+              selected: true,
+            ),
+          // Others have todo (not self): show circleUser with count
+          if (!selfTodo && othersTodo.isNotEmpty)
+            CountBadge(
+              count: othersTodo.length,
+              child: Button.icon(
+                assigneeCommand,
+                key: ValueKey(Object.hash(note.id, Tag.todo.id, 'others')),
+                selected: true,
+              ),
+            ),
+          // Anyone has done: show check with count
+          if (anyDone)
+            CountBadge(
+              count: doneActors.length,
+              child: Button.icon(
+                ToggleNoteTag(note, Tag.done, actorId),
+                key: ValueKey(Object.hash(note.id, Tag.done.id)),
+                selected: true,
+              ),
+            ),
+        ];
+
+        // Build command buttons (only if showCommands is true)
+        final commandButtons = showCommands
+            ? [
+                if (noTodoDone) Button.icon(SelfTaskAction(note)),
+                if (!othersTodoOnly && (noTodoDone || selfTodo || selfDone || anyDone))
+                  Button.icon(assigneeCommand),
+                // Add top tag buttons
+                ...topNoteTags(
+                  note,
+                  activityState.tagSuggestions,
+                  actorId,
+                ).map((cmd) => Button.icon(cmd)),
+                Button.icon(
+                  CommandWrapper(
+                    ShowNoteCommands(note, activityBloc: activityBloc),
+                    icon: Value(PlotIcon.more),
+                  ),
+                ),
+              ]
+            : <Widget>[];
+
         // While loading or on error, show buttons without subtitles
         final genericTagButtons =
             snapshot.hasData && snapshot.connectionState == ConnectionState.done
-            ? snapshot.data!
+            ? snapshot.data!.$1
             : Tag.getAll()
                   .where((tag) {
                     if (tag == Tag.todo || tag == Tag.done) return false;
