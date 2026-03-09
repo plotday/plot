@@ -23,7 +23,9 @@ SELECT
         FROM
             jsonb_array_elements(t.permissions -> '_providers') AS p,
             jsonb_array_elements(p -> 'linkTypes') AS lt
-    ) AS link_types
+    ) AS link_types,
+    COALESCE((t.permissions ->> '_default_mention_created')::boolean, false) AS default_mention_created,
+    COALESCE((t.permissions ->> '_default_mention_mentioned')::boolean, false) AS default_mention_mentioned
 FROM
     priority_twist pt
     JOIN "user".priority_expanded upe ON upe.priority_id = pt.priority_id
@@ -53,7 +55,9 @@ SELECT
         FROM
             jsonb_array_elements(t.permissions -> '_providers') AS p,
             jsonb_array_elements(p -> 'linkTypes') AS lt
-    ) AS link_types
+    ) AS link_types,
+    COALESCE((t.permissions ->> '_default_mention_created')::boolean, false) AS default_mention_created,
+    COALESCE((t.permissions ->> '_default_mention_mentioned')::boolean, false) AS default_mention_mentioned
 FROM
     priority_twist pt
     JOIN twist t ON pt.twist_id = t.id

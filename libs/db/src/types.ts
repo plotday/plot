@@ -3667,6 +3667,8 @@ export type Database = {
           archived_at: string | null
           config: Json | null
           created_at: string | null
+          default_mention_created: boolean | null
+          default_mention_mentioned: boolean | null
           id: string | null
           is_source: boolean | null
           link_types: Json | null

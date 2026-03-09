@@ -238,6 +238,8 @@ export function twistFactory({
     let providers: ProviderDeclaration[] = [];
     let integrationsMap: Record<string, string> = {};
     let aiRequired = false;
+    let defaultMentionCreated = false;
+    let defaultMentionMentioned = false;
 
     if (!checkPermissions) {
       // DEPLOYMENT: Initialize twist to build tools and collect permissions
@@ -356,6 +358,14 @@ export function twistFactory({
       // AI is required if any tool is "AI" and its options don't set required: false
       const aiTool = toolInstances.find(({ id: toolId }) => toolId === "AI");
       aiRequired = aiTool ? (aiTool.options?.required !== false) : false;
+
+      // Compute default mention flags from Plot tool options
+      for (const { id: toolId, options } of toolInstances) {
+        if (toolId === "Plot") {
+          if ((options as any)?.thread?.defaultMention) defaultMentionCreated = true;
+          if ((options as any)?.note?.defaultMention) defaultMentionMentioned = true;
+        }
+      }
     } else {
       // RUNTIME: Tools are validated per-path in builtInToolFactory as they're created
       // Use stored permissions without rebuilding twist
@@ -370,6 +380,8 @@ export function twistFactory({
       optionsSchema,
       sourceProvider,
       aiRequired,
+      defaultMentionCreated,
+      defaultMentionMentioned,
       activate: async (
         priority: Pick<Priority, "id">,
         context?: {

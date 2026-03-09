@@ -75,6 +75,22 @@ class NoteEditorState extends State<NoteEditor> {
   /// Twist IDs toggled OFF by the user for the current note.
   final Set<PriorityTwistId> _disabledTwists = {};
 
+  void _resetDisabledTwists() {
+    _disabledTwists.clear();
+    if (widget.isNewThreadMode) return;
+    final threadState = context.read<ThreadBloc>().state;
+    for (final twist in threadState.threadTwists) {
+      final isAuthor = threadState.notes.any(
+        (n) => n.authorId.toUuid() == twist.id,
+      );
+      final shouldDefault = (isAuthor && twist.defaultMentionCreated) ||
+          twist.defaultMentionMentioned;
+      if (!shouldDefault) {
+        _disabledTwists.add(twist.id);
+      }
+    }
+  }
+
   /// Request focus on the editor
   void focus() {
     log.info(
@@ -98,7 +114,7 @@ class NoteEditorState extends State<NoteEditor> {
 
     // Reset editor and twist toggles if draft note ID changed
     if (newDraftNoteId != _lastDraftNoteId) {
-      _disabledTwists.clear();
+      _resetDisabledTwists();
       if (widget.isNewThreadMode &&
           _lastDraftNoteId != null &&
           newDraftNoteId == null) {

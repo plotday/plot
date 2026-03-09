@@ -156,6 +156,14 @@ export async function deployTwist({
       (permissions as any)._ai_required = true;
     }
 
+    // Store default mention flags in permissions for Flutter app access
+    if (storeResult.defaultMentionCreated) {
+      (permissions as any)._default_mention_created = true;
+    }
+    if (storeResult.defaultMentionMentioned) {
+      (permissions as any)._default_mention_mentioned = true;
+    }
+
     // Enrich providers with linkTypes from sourceProvider
     const { sourceProvider } = storeResult;
     providers = sourceProvider

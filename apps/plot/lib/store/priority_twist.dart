@@ -16,6 +16,8 @@ class PriorityTwists extends Table
   TextColumn get linkTypes => text().nullable()();
   TextColumn get logoUrl => text().nullable()();
   TextColumn get logoUrlDark => text().nullable()();
+  BoolColumn get defaultMentionCreated => boolean().withDefault(const Constant(false))();
+  BoolColumn get defaultMentionMentioned => boolean().withDefault(const Constant(false))();
 }
 
 class PriorityTwistsBase extends BaseTable {
@@ -215,6 +217,8 @@ class PriorityTwist extends PriorityTwistRow {
         linkTypes: row.linkTypes,
         logoUrl: row.logoUrl,
         logoUrlDark: row.logoUrlDark,
+        defaultMentionCreated: row.defaultMentionCreated,
+        defaultMentionMentioned: row.defaultMentionMentioned,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         archivedAt: row.archivedAt,
