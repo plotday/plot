@@ -1,3 +1,4 @@
+- Completed items from Linear, Jira, Asana, and GitHub now show a Done tag on their threads, with a tag icon on the link status badge
 - Clicking a Plot link in a note now navigates within the app instead of opening a browser
 - Pasting a Plot URL into a note inserts the thread or priority title as linked text
 - Organizations for team billing — Business plan subscribers can create an org, invite members by email, and manage shared billing

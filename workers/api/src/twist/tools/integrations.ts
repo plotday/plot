@@ -377,7 +377,12 @@ export class Integrations extends Tool implements IAuth {
       return plot.createLinkOnly(link);
     }
 
-    return plot.createLink(link);
+    const threadId = await plot.createLink(link);
+
+    // Propagate status tags to the thread
+    await this.propagateLinkStatusTags(plot, threadId);
+
+    return threadId;
   }
 
   /**
@@ -482,6 +487,101 @@ export class Integrations extends Tool implements IAuth {
         .where("archived_at", "is", null)
         .execute();
     }
+  }
+
+  /**
+   * Propagate status tags from link statuses to the parent thread.
+   * Uses union semantics: a tag is present if ANY link on the thread (from this twist)
+   * has a status that maps to that tag. Removes the tag only when no links contribute it.
+   */
+  private async propagateLinkStatusTags(
+    plot: Plot,
+    threadId: Uuid
+  ): Promise<void> {
+    // Collect all linkTypes from provider configs
+    const allLinkTypes: LinkTypeConfig[] = this.providerConfigs.flatMap(
+      (p) => p.linkTypes ?? []
+    );
+    if (allLinkTypes.length === 0) return;
+
+    // Collect all possible tags from all status definitions
+    const allPossibleTags = new Set<number>();
+    for (const lt of allLinkTypes) {
+      for (const s of lt.statuses ?? []) {
+        if (s.tag !== undefined) allPossibleTags.add(s.tag);
+      }
+    }
+    if (allPossibleTags.size === 0) return;
+
+    // Query all links on this thread from this twist to compute union of contributed tags
+    const siblingLinks = await this.db
+      .selectFrom("link")
+      .select(["type", "status"])
+      .where("thread_id", "=", threadId as string)
+      .where("created_by", "=", this.priorityTwistId)
+      .execute();
+
+    const contributedTags = new Set<number>();
+    for (const sibling of siblingLinks) {
+      const tag = this.getStatusTag(allLinkTypes, sibling.type, sibling.status);
+      if (tag !== undefined) contributedTags.add(tag);
+    }
+
+    const updatedBy = plot.getUpdatedBy();
+    const syncDepth = plot.syncDepth + 1;
+
+    // Insert tags that should be present
+    for (const tagId of contributedTags) {
+      await this.db
+        .insertInto("thread_tag")
+        .values({
+          thread_id: threadId as string,
+          occurrence: null,
+          tag_id: tagId,
+          actor_id: this.priorityTwistId,
+          updated_by: updatedBy,
+          sync_depth: syncDepth,
+        })
+        .onConflict((oc) =>
+          oc
+            .columns(["actor_id", "thread_id", "occurrence", "tag_id"])
+            .doUpdateSet((eb) => ({
+              updated_by: eb.ref("excluded.updated_by"),
+              sync_depth: eb.ref("excluded.sync_depth"),
+              archived_at: null,
+            }))
+        )
+        .execute();
+    }
+
+    // Remove tags that are no longer contributed (archive them)
+    for (const tagId of allPossibleTags) {
+      if (!contributedTags.has(tagId)) {
+        await this.db
+          .updateTable("thread_tag")
+          .set({ archived_at: new Date(), updated_by: updatedBy, sync_depth: syncDepth })
+          .where("thread_id", "=", threadId as string)
+          .where("actor_id", "=", this.priorityTwistId)
+          .where("tag_id", "=", tagId)
+          .where("archived_at", "is", null)
+          .execute();
+      }
+    }
+  }
+
+  /**
+   * Look up the tag for a given link type + status from linkType configs.
+   */
+  private getStatusTag(
+    linkTypes: LinkTypeConfig[],
+    type: string | null | undefined,
+    status: string | null | undefined
+  ): number | undefined {
+    if (!type || !status) return undefined;
+    const typeConfig = linkTypes.find((lt) => lt.type === type);
+    if (!typeConfig?.statuses) return undefined;
+    const statusDef = typeConfig.statuses.find((s) => s.status === status);
+    return statusDef?.tag;
   }
 
   /**

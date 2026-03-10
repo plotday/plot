@@ -38,13 +38,15 @@ class LinkTypeConfig {
 class LinkStatus {
   final String status;
   final String label;
+  final int? tag;
 
-  const LinkStatus({required this.status, required this.label});
+  const LinkStatus({required this.status, required this.label, this.tag});
 
   factory LinkStatus.fromJson(Map<String, dynamic> json) {
     return LinkStatus(
       status: json['status'] as String,
       label: json['label'] as String,
+      tag: json['tag'] as int?,
     );
   }
 }

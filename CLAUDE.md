@@ -131,6 +131,34 @@ Only publish after testing locally:
 3. Publish: `npm publish` (from `public/twist` directory)
 4. Commit changes to the Twister submodule, then commit the submodule reference update in this repo
 
+### Changesets
+
+**IMPORTANT**: Any change to Twister files in `public/twist/src/` MUST include a changeset file. Never skip this step.
+
+1. **Create a changeset file** at `public/.changeset/<descriptive-name>.md` with this exact format:
+
+   ```markdown
+   ---
+   "@plotday/twister": minor
+   ---
+
+   Added: description of what changed
+   ```
+
+2. **Version bump rules** (Twister is pre-1.0, so `major` is reserved for the 1.0 release):
+   - `minor`: Breaking changes OR new features (removing/renaming exports, changing function signatures, adding types/fields/exports)
+   - `patch`: Bug fixes, documentation, internal changes
+
+3. **Summary format**: The first line after the frontmatter MUST start with a category prefix:
+   - `Added:` — new features or exports
+   - `Changed:` — modifications to existing behavior
+   - `Fixed:` — bug fixes
+   - `Removed:` — removed features or exports
+   - `Deprecated:` — features marked for removal
+   - `Security:` — security-related changes
+
+4. **Validate** your changeset: `cd public && pnpm validate-changesets`
+
 ### Important Notes
 
 - **Never create or modify types in `workers/api/src/twist/types/`** - this directory no longer exists

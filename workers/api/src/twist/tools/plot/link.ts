@@ -50,8 +50,6 @@ export async function createLink(
         ? { pickPriority: link.pickPriority }
         : {}),
       ...(link.notes ? { notes: link.notes } : {}),
-      // Map status to done for backward compat
-      ...(link.status === "done" ? { done: new Date() } : {}),
     };
 
     // For source-based links, look up existing link to reuse its thread.

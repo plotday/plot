@@ -5,6 +5,7 @@ import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
+import { propagateLinkStatusTagsFromDb } from "./link-tags";
 
 const links = new Hono<{ Bindings: Bindings }>();
 
@@ -63,8 +64,17 @@ links.post("/sync/links", async (c) => {
     });
   });
 
-  // Notify sync so twist callbacks (e.g. onLinkUpdated) can fire
+  // Propagate status tags if the link has a thread and status was included
   const linkData = body.link || body;
+  if (result.thread_id && linkData.status !== undefined) {
+    try {
+      await propagateLinkStatusTagsFromDb(c.var.db, result);
+    } catch {
+      // Non-critical: tag propagation failure shouldn't break the sync
+    }
+  }
+
+  // Notify sync so twist callbacks (e.g. onLinkUpdated) can fire
   if (linkData.thread_id) {
     try {
       const priorityId = await getPriorityForThread(c.var.db, linkData.thread_id);

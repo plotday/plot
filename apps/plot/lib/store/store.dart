@@ -385,6 +385,10 @@ class Store extends _$Store {
   /// Optional callback for reporting status during start (e.g. to show on loading page).
   static void Function(String status)? onStartStatus;
 
+  /// Notifies listeners when a full resync completes, so UI can re-trigger
+  /// demand-driven syncs (e.g. pullActivityFeed, pullAgenda).
+  static final onFullResync = StreamController<void>.broadcast();
+
   // Lock to prevent concurrent Store.start() calls
   static final Lock _startLock = Lock();
   // Track the current user to avoid unnecessary Store recreation
@@ -1921,6 +1925,8 @@ class Store extends _$Store {
         _syncDebouncer(table);
       }
       _bufferedTables.clear();
+      // 7. Notify listeners to re-trigger demand-driven syncs
+      onFullResync.add(null);
     } finally {
       _isBufferingBroadcasts = false;
       _isSyncing = false;

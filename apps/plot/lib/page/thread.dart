@@ -631,6 +631,8 @@ class _LinkStatusBadge extends StatelessWidget {
     final statuses = typeConfig?.statuses;
     final canChange = statuses != null && statuses.length > 1;
     final label = link.statusLabel ?? link.status ?? '';
+    final currentStatus = statuses?.where((s) => s.status == link.status).firstOrNull;
+    final statusTag = currentStatus?.tag != null ? Tag.get(id: currentStatus!.tag!) : null;
 
     return GestureDetector(
       onTap: canChange
@@ -650,11 +652,20 @@ class _LinkStatusBadge extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: Text(
-              label,
-              style: context.theme.typography.xs.copyWith(
-                color: context.theme.colors.mutedForeground,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (statusTag != null) ...[
+                  Icon(statusTag.icon, size: 12, color: context.theme.colors.mutedForeground),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  label,
+                  style: context.theme.typography.xs.copyWith(
+                    color: context.theme.colors.mutedForeground,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

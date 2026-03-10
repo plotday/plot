@@ -31,6 +31,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       log.fine('Time changed, reloading agenda to update time-dependent UI');
       _loadAgenda();
     });
+
+    // Re-trigger demand-driven syncs after a full resync
+    _subscriptions.add(Store.onFullResync.stream.listen((_) {
+      log.fine('Full resync completed, reloading priority');
+      _loadPriority();
+    }));
   }
 
   void toggleShowArchived() {
