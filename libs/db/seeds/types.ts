@@ -96,6 +96,7 @@ export interface Schedule {
   on?: string; // Date range (e.g., "+3d / +5d")
   duration?: string; // e.g., "30 minutes", "2 hours"
   recurrence_rule?: string; // iCalendar RRULE
+  todo?: boolean; // true = to-do (user schedule), false/unset with `at` = event (shared schedule)
 }
 
 export interface SeedLink {
@@ -116,6 +117,7 @@ export interface Note {
   content?: string; // Markdown content (preferred)
   note?: string; // Markdown content (alias for backward compatibility)
   mentions?: string[]; // Array of contact refs
+  actions?: Array<Record<string, unknown>>; // Actions (file attachments, etc.)
   tags?: Tags;
   draft?: boolean; // Default: false
   private?: boolean; // Default: false
@@ -298,6 +300,7 @@ export interface GeneratedNote {
   draft: boolean;
   private: boolean;
   content: string | null;
+  actions: string | null; // JSON string for actions JSONB
   mentions: string | null; // Array literal
   source_created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp

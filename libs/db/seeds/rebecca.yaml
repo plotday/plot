@@ -153,11 +153,11 @@ sources:
   - ref: sheets
     name: Google Sheets
     priority_ref: everything
-    logo: "https://api.iconify.design/logos/google-sheets.svg"
+    logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%230F9D58"
     link_types:
       - type: spreadsheet
         label: Spreadsheet
-        logo: "https://api.iconify.design/logos/google-sheets.svg"
+        logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%230F9D58"
 
 threads:
   # Day -2: Quiet observation
@@ -199,6 +199,7 @@ threads:
     created: "-2d"
     schedule:
       on: "-2d"
+      todo: true
     links:
       - source_ref: slack
         type: message
@@ -288,84 +289,27 @@ threads:
           - barbara
 
   # Day -1: Individual conversations
-  - priority_ref: coaching_staff
-    title: "Roy 1:1"
+  - priority_ref: match_prep
+    title: "Chelsea match tactics"
     created: "-1d"
     schedule:
-      at: "0d 10:30 / 0d 11:00"
-    tags:
-      pinned: [user]
+      at: "+0d 10:15 / +0d 11:00"
     links:
       - source_ref: gcal
         type: event
-        title: "Roy 1:1"
-        source_url: "https://calendar.google.com/calendar/event?eid=roy1on1"
+        title: "Chelsea match tactics"
+        source_url: "https://calendar.google.com/calendar/event?eid=chelseatactics"
     notes:
-      - author_ref: roy
-        created: "-1d 14:50"
+      - created: "-1d 15:00"
         content: |
-          Check-in with Rebecca. Team's playing well, creating chances. Just can't finish. Confidence issue, not effort.
+          Tactical review with Roy and Nate ahead of Chelsea away. They're aligned on approach — high press early, exploit Chelsea's fullbacks on transitions. Nate's positioning tweaks from training looked sharp.
 
-          Told her: Keep training. Keep supporting. Wait for one to go in, then floodgates open. Panic would make it worse.
+          Roy: "We're finishing better in practice. Saturday will show it."
 
-          She's not panicking. That's why I can be honest. Just needs to trust the process and not change things because people are nervous.
-      - author_ref: user
-        created: "-1d 14:55"
-        content: |
-          Good conversation with Roy. He's confident it's just a finishing slump, not a deeper problem. Confidence, not effort.
-
-          I trust him. No drama. No rescue. Just support and trust.
-
-          That's the relationship we've built.
-
-  - priority_ref: coaching_staff
-    title: "Nate 1:1"
-    created: "-1d"
-    schedule:
-      at: "0d 10:00 / 0d 10:30"
-    tags:
-      star: [user]
-    links:
-      - source_ref: gcal
-        type: event
-        title: "Nate 1:1"
-        source_url: "https://calendar.google.com/calendar/event?eid=nate1on1"
-      - source_ref: whatsapp
-        type: message
-        title: "Nate check-in"
-        source_url: "https://wa.me/447700900003"
-    notes:
-      - created: "-1d 16:30"
-        content: |
-          Met with Nate separately. He's back at Richmond after his West Ham stint, now as assistant manager. Still finding his footing.
-
-          **Nate:** "I think I know what's wrong with the attack."
-
-          **Me:** "Tell me."
-
-          **Nate:** [explained technical details about positioning and timing]
-
-          **Me:** "Have you talked to Roy about this?"
-
-          **Nate:** [hesitated] "I didn't want to overstep."
-
-          **Me:** "Nate. You're the assistant manager. Bringing ideas isn't overstepping. It's your job."
-
-          **Nate:** "What if he doesn't agree?"
-
-          **Me:** "Then you'll discuss it. That's how coaching works. You're not at West Ham anymore. Roy isn't Rupert. We want your ideas."
-
-          **Nate:** [nodded] "I'll talk to him."
-
-          **Me:** "Good. And Nate? You belong here. Stop questioning it."
-
-          He smiled. Small, but real.
-
-          He's still healing from the Rupert era. That takes time.
+          Confidence is back. That's what matters.
         mentions:
-          - nate
           - roy
-          - rupert
+          - nate
 
   - priority_ref: business_case
     title: "Women's team exploration - initial research"
@@ -394,7 +338,7 @@ threads:
 
           But it needs to be more than vision. It needs to be sustainable.
 
-  # Day 0 (Base date): Building the future
+  # Day 0 (Base date): Building the future — Rebecca's agenda at 8:33 AM
   - priority_ref: business_case
     title: "WOMEN'S TEAM PROPOSAL - Vision and viability"
     created: "-1d"
@@ -608,15 +552,15 @@ threads:
 
           Both can be true.
 
-  - priority_ref: business_ops
-    title: "The important stuff"
+  - priority_ref: womens_team
+    title: "Focus: Launch women's team"
     created: "-1d"
     schedule:
-      at: "+0d 08:00 / +0d 09:30"
+      at: "+0d 08:00 / +0d 09:00"
     links:
       - source_ref: gcal
         type: event
-        title: "Morning Focus Block"
+        title: "Focus: Launch women's team"
         source_url: "https://calendar.google.com/calendar/event?eid=morningfocus"
     notes:
       - created: "-1d 09:45"
@@ -634,6 +578,7 @@ threads:
     created: "-1d"
     schedule:
       on: "-1d"
+      todo: true
     tags:
       todo: [user]
     links:
@@ -714,12 +659,68 @@ threads:
 
           Let me know and I'll confirm with their producer. 💛
 
+  # Day 0: New events and to-dos
+  - priority_ref: commercial
+    title: "Launch sponsorship strategy"
+    created: "+0d"
+    schedule:
+      at: "+0d 09:15 / +0d 10:00"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Launch sponsorship strategy"
+        source_url: "https://calendar.google.com/calendar/event?eid=sponsorstrategy"
+      - source_ref: slack
+        type: message
+        title: "#commercial-partnerships"
+        source_url: "https://afcrichmond.slack.com/archives/C04commercial"
+    notes:
+      - created: "+0d 08:00"
+        content: |
+          Meeting with Keeley to align launch sponsorship strategy for the women's team. Need to identify partners who want to be part of the founding story.
+        mentions:
+          - keeley
+
+  - priority_ref: board_process
+    title: "Draft board presentation outline"
+    created: "+0d"
+    schedule:
+      on: "+0d"
+      todo: true
+    links:
+      - source_ref: notion
+        type: document
+        title: "Board Presentation Draft"
+        source_url: "https://notion.so/afcrichmond/board-presentation-draft"
+
+  - priority_ref: media_pr
+    title: "Sky Sports pre-match interview"
+    created: "+0d"
+    schedule:
+      at: "+0d 15:00 / +0d 15:30"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Sky Sports pre-match interview"
+        source_url: "https://calendar.google.com/calendar/event?eid=skysportsinterview"
+      - source_ref: gmail
+        type: email
+        title: "Sky Sports Interview Confirmation"
+        source_url: "mailto:production@skysports.com"
+    notes:
+      - created: "+0d 08:15"
+        content: |
+          Confirmed with Keeley. Key message: believe in the team, believe in the process.
+        mentions:
+          - keeley
+
   # Day 0: Completed morning actions
   - priority_ref: training_ground
     title: "Training ground spring maintenance plan"
     created: "+0d"
     schedule:
       on: "+0d"
+      todo: true
     links:
       - source_ref: notion
         type: document
@@ -742,6 +743,7 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
+      todo: true
     links:
       - source_ref: sheets
         type: spreadsheet
@@ -761,6 +763,7 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
+      todo: true
     links:
       - source_ref: slack
         type: message
@@ -789,6 +792,7 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
+      todo: true
     tags:
       todo: [user]
     links:
@@ -828,8 +832,32 @@ threads:
 
           Also need to reassure them the men's team form is temporary. Sponsors get nervous when results dip.
 
+  - priority_ref: commercial
+    title: "Founding season scarf design"
+    created: "-1d"
+    schedule:
+      on: "+0d"
+      todo: true
+    notes:
+      - author_ref: keeley
+        created: "-1d 10:15"
+        content: "Babe. BABE. Look what I've been working on. Founding season scarf concept. Tell me this isn't absolutely gorgeous."
+        actions:
+          - type: file
+            fileId: "b7e3f1a2-4d5c-6e8f-9a0b-1c2d3e4f5a6b"
+            fileName: wfc-richmond.png
+            fileSize: 2578195
+            mimeType: image/png
+      - created: "-1d 10:45"
+        content: "Keeley Jones, you brilliant woman. This is stunning. The crest detail is perfect — understated but unmistakably Richmond."
+      - author_ref: keeley
+        created: "-1d 11:02"
+        content: "Right?? I've already got a supplier in Manchester who can do samples in a week. You'll have one on your desk by Thursday. It's going to look incredible wrapped around a few thousand necks on match day."
+      - created: "-1d 11:15"
+        content: "Order extra. I want enough for the supporters' trust event. Imagine unveiling these with the women's team announcement. The fans will lose their minds."
+
   - priority_ref: board_process
-    title: "Call with FA Women's Championship liaison"
+    title: "FA Women's Championship liaison call"
     created: "+0d"
     schedule:
       at: "+0d 14:00 / +0d 14:30"
@@ -856,6 +884,7 @@ threads:
     created: "+0d"
     schedule:
       on: "+0d"
+      todo: true
     tags:
       todo: [user]
     links:
@@ -901,18 +930,18 @@ threads:
 
           The result matters. But how we handle it — win, lose, or draw — matters more right now.
 
-  # Day +1: Building support
+  # Day 0: Late morning
   - priority_ref: board_process
-    title: "Higgins - women's team preliminary discussion"
+    title: "Women's team board strategy"
     created: "-2d"
     schedule:
-      at: "+1d 10:00 / +1d 10:45"
+      at: "+0d 11:15 / +0d 12:00"
     tags:
       pinned: [user]
     links:
       - source_ref: gcal
         type: event
-        title: "Higgins 1:1 - Women's Team"
+        title: "Women's team board strategy"
         source_url: "https://calendar.google.com/calendar/event?eid=higgins1on1"
       - source_ref: slack
         type: message
@@ -959,7 +988,7 @@ threads:
           **From: Performance Analytics**
           **Subject: Match Preview - Chelsea vs Richmond**
 
-          **Fixture:** Chelsea (A) - Saturday, Feb 15
+          **Fixture:** Chelsea (A) - Saturday, Feb 8
           **Form:** Chelsea 4W-1D, Richmond 2W-1D-3L (last 6)
 
           **Challenge:** Chelsea in strong form, Stamford Bridge difficult venue
@@ -976,7 +1005,7 @@ threads:
     title: "Weekly operations meeting"
     created: "-2d"
     schedule:
-      at: "+1d 14:00 / +1d 15:00"
+      at: "+3d 14:00 / +3d 15:00"
       duration: "1 hour"
       recurrence_rule: "FREQ=WEEKLY;BYDAY=MO"
     links:
@@ -1174,7 +1203,8 @@ threads:
     title: "Finalize women's team financial model"
     created: "-2d"
     schedule:
-      on: "-2d"
+      on: "+0d"
+      todo: true
     tags:
       todo: [user]
     links:
@@ -1321,18 +1351,41 @@ threads:
 
           Believe.
 
+  # Day +1: Game day
   - priority_ref: match_prep
-    title: "Match day - Chelsea (A)"
-    created: "+6d"
+    title: "Team departs for Stamford Bridge"
+    created: "+0d"
     schedule:
-      at: "+6d 12:30 / +6d 14:30"
+      at: "+1d 08:30 / +1d 09:00"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Team departs for Stamford Bridge"
+        source_url: "https://calendar.google.com/calendar/event?eid=teamdeparts"
+
+  - priority_ref: match_prep
+    title: "Pre-match meal"
+    created: "+0d"
+    schedule:
+      at: "+1d 10:45 / +1d 11:30"
+    links:
+      - source_ref: gcal
+        type: event
+        title: "Pre-match meal"
+        source_url: "https://calendar.google.com/calendar/event?eid=prematchmeal"
+
+  - priority_ref: match_prep
+    title: "Chelsea vs Richmond"
+    created: "-1d"
+    schedule:
+      at: "+1d 12:30 / +1d 14:30"
     links:
       - source_ref: gcal
         type: event
         title: "Chelsea vs Richmond"
         source_url: "https://calendar.google.com/calendar/event?eid=chelseamatch"
     notes:
-      - created: "+6d 14:45"
+      - created: "-1d 18:00"
         content: |
           Chelsea away. Difficult fixture. Low expectations, which ironically might help.
 

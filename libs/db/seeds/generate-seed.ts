@@ -12,7 +12,7 @@ import { createClerkClient } from "@clerk/backend";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { parse as parseYAML } from "yaml";
 
@@ -286,7 +286,7 @@ Examples:
       data.config.userName
     );
 
-    const sql = generateSQL(data, userId, contactId);
+    const { sql, fileUploads } = generateSQL(data, userId, contactId);
 
     if (values.apply) {
       // Apply mode: execute SQL via psql
@@ -295,6 +295,12 @@ Examples:
         "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
       await applySQL(sql, dbUrl, data);
+
+      // Upload seed files to local R2
+      if (fileUploads.length > 0) {
+        const assetsDir = join(dirname(yamlFile), "assets");
+        await uploadSeedFiles(fileUploads, assetsDir);
+      }
     } else {
       // Default mode: output SQL to stdout
       console.log(sql);
@@ -319,7 +325,7 @@ async function applySQL(
 
   return new Promise((resolve, reject) => {
     // spawn is used here (not exec) — arguments are passed as array, no shell injection risk
-    const psql = spawn("psql", [dbUrl], {
+    const psql = spawn("psql", ["-v", "ON_ERROR_STOP=1", dbUrl], {
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -401,6 +407,59 @@ async function applySQL(
     psql.stdin.write(sql);
     psql.stdin.end();
   });
+}
+
+async function uploadSeedFiles(
+  fileUploads: SeedFileUpload[],
+  assetsDir: string
+): Promise<void> {
+  const r2Persist = join(__dirname, "../../../workers/api/.wrangler/state/v3/r2");
+  const bucket = "plot-files-development";
+
+  const uploads = fileUploads.filter((file) => {
+    const localPath = join(assetsDir, file.fileName);
+    if (!existsSync(localPath)) {
+      console.error(`  ⚠ Asset not found: ${localPath} (skipping)`);
+      return false;
+    }
+    return true;
+  });
+
+  if (uploads.length === 0) return;
+
+  console.error("");
+  console.error("Uploading seed files to local R2...");
+
+  const { Miniflare } = await import("miniflare");
+  const mf = new Miniflare({
+    modules: true,
+    script: "export default { fetch() { return new Response('ok'); } }",
+    r2Buckets: [bucket],
+    r2Persist,
+  });
+
+  const r2 = await mf.getR2Bucket(bucket);
+
+  for (const file of uploads) {
+    const localPath = join(assetsDir, file.fileName);
+    const r2Key = `files/${file.fileId}/${file.fileName}`;
+    const buf = readFileSync(localPath);
+    const content = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+
+    await r2.put(r2Key, content, {
+      customMetadata: {
+        priorityId: file.priorityId,
+        uploadedBy: file.userId,
+      },
+      httpMetadata: {
+        contentType: file.mimeType,
+      },
+    });
+
+    console.error(`  ✓ ${file.fileName} → ${r2Key}`);
+  }
+
+  await mf.dispose();
 }
 
 function countPriorities(priorities: Priority[]): number {
@@ -884,12 +943,21 @@ function validateNote(
 // SQL Generation
 // ============================================================================
 
+interface SeedFileUpload {
+  fileId: string;
+  fileName: string;
+  mimeType: string;
+  priorityId: string;
+  userId: string;
+}
+
 function generateSQL(
   data: SeedData,
   userId: string,
   contactId: string
-): string {
+): { sql: string; fileUploads: SeedFileUpload[] } {
   const lines: string[] = [];
+  const fileUploads: SeedFileUpload[] = [];
   const { baseDate, email, userName } = data.config;
 
   // Header
@@ -897,6 +965,8 @@ function generateSQL(
   lines.push(
     `-- Config: baseDate=${baseDate}, email=${email}, userName=${userName}, userId=${userId}, contactId=${contactId}`
   );
+  lines.push("");
+  lines.push("\\set ON_ERROR_STOP on");
   lines.push("");
   lines.push("BEGIN;");
   lines.push("");
@@ -1011,7 +1081,8 @@ function generateSQL(
         generatedLinks,
         schedules,
         notes,
-        noteTags
+        noteTags,
+        fileUploads
       );
     }
   }
@@ -1078,7 +1149,7 @@ function generateSQL(
       lines.push(
         `  (${sqlString(pu.priority_id)}, ${sqlString(
           pu.user_id
-        )}, NOW(), NOW())${comma}`
+        )}, NOW() - INTERVAL '1 second', NOW())${comma}`
       );
     }
     lines.push("ON CONFLICT (user_id, priority_id) DO NOTHING;");
@@ -1210,7 +1281,7 @@ function generateSQL(
   if (notes.length > 0) {
     lines.push("-- Notes");
     lines.push(
-      "INSERT INTO note (id, thread_id, author_id, created_by, draft, private, content, mentions, source_created_at, updated_at)"
+      "INSERT INTO note (id, thread_id, author_id, created_by, draft, private, content, actions, mentions, source_created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < notes.length; i++) {
@@ -1222,6 +1293,8 @@ function generateSQL(
         )}, ${sqlString(n.created_by)}, ${n.draft}, ${n.private}, ${sqlString(
           n.content
         )}, ${
+          n.actions ? sqlString(n.actions) : "NULL"
+        }, ${
           n.mentions ? sqlString(n.mentions) : "NULL"
         }, ${sqlString(n.source_created_at)}, ${sqlString(
           n.updated_at
@@ -1269,7 +1342,7 @@ function generateSQL(
 
   lines.push("COMMIT;");
 
-  return lines.join("\n");
+  return { sql: lines.join("\n"), fileUploads };
 }
 
 // ============================================================================
@@ -1399,7 +1472,8 @@ function processThread(
   outLinks: GeneratedLink[],
   outSchedules: GeneratedSchedule[],
   outNotes: GeneratedNote[],
-  outNoteTags: GeneratedNoteTag[]
+  outNoteTags: GeneratedNoteTag[],
+  outFileUploads: SeedFileUpload[]
 ): number {
   const id = generateUUID();
   if (thread.ref) {
@@ -1427,12 +1501,17 @@ function processThread(
     const at = sched.at ? parseTimestampRange(baseDate, sched.at) : null;
     const on = sched.on ? parseDateRange(baseDate, sched.on) : null;
 
+    // todo:true or date-only (on without at) -> user schedule (to-do with order)
+    // todo:false or timed (at) -> shared schedule (event, no order)
+    const isTodo =
+      sched.todo === true || (sched.todo !== false && !sched.at && !!sched.on);
+
     outSchedules.push({
       id: generateUUID(),
       thread_id: id,
       link_id: null,
-      user_id: userId,
-      order: order++,
+      user_id: isTodo ? userId : null,
+      order: isTodo ? order++ : null,
       at,
       on,
       duration: sched.duration ?? null,
@@ -1490,6 +1569,26 @@ function processThread(
         outNotes,
         outNoteTags
       );
+
+      // Collect file actions for R2 upload
+      if (note.actions) {
+        for (const action of note.actions) {
+          if (
+            action.type === "file" &&
+            action.fileId &&
+            action.fileName &&
+            action.mimeType
+          ) {
+            outFileUploads.push({
+              fileId: action.fileId as string,
+              fileName: action.fileName as string,
+              mimeType: action.mimeType as string,
+              priorityId,
+              userId,
+            });
+          }
+        }
+      }
     }
   }
 
@@ -1558,6 +1657,7 @@ function processNote(
     draft: note.draft ?? false,
     private: note.private ?? false,
     content: note.content ?? note.note ?? null,
+    actions: note.actions ? JSON.stringify(note.actions) : null,
     mentions,
     source_created_at: createdAt,
     updated_at: createdAt,

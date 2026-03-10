@@ -249,6 +249,10 @@ The schedule block defines when a thread is scheduled (events, tasks, reminders)
 - `on` (optional): Date range for all-day items (e.g., "+3d / +5d")
 - `duration` (optional): Duration string (e.g., "30 minutes", "2 hours")
 - `recurrence_rule` (optional): iCalendar RRULE string
+- `todo` (optional): Whether this is a to-do (user schedule) or event (shared schedule).
+  - `true`: Creates a per-user schedule (to-do with ordering)
+  - `false`: Creates a shared schedule (event)
+  - Omitted: Timed (`at`) defaults to event; date-only (`on`) defaults to to-do
 - `done_at` (optional): Date offset when marked done
 
 **Note:** A schedule should have EITHER `at` (timestamp) OR `on` (date), not both.
@@ -322,6 +326,7 @@ Notes are content associated with a thread, stored as separate entities.
 - `content` (optional): Markdown content (preferred field name)
 - `note` (optional): Markdown content (alias for backward compatibility)
 - `mentions` (optional): Array of contact refs mentioned
+- `actions` (optional): Array of action objects (file attachments, etc.)
 - `tags` (optional): Object mapping tag names to actor arrays
 - `draft` (optional, default: false): Whether this is a draft
 - `private` (optional, default: false): Whether this is private
@@ -342,6 +347,22 @@ threads:
       - created: "+0d 15:05"
         content: "Action items:\n- Set up repository\n- Create project board"
         author_ref: user
+```
+
+### File Attachments
+
+Notes can include file attachments via the `actions` field. Files must be uploaded to R2 separately; the action references the file by its UUID.
+
+```yaml
+notes:
+  - created: "+0d 10:00"
+    content: "Here's the design mockup"
+    actions:
+      - type: file
+        fileId: "b7e3f1a2-4d5c-6e8f-9a0b-1c2d3e4f5a6b"
+        fileName: mockup.png
+        fileSize: 245000
+        mimeType: image/png
 ```
 
 ## Date Offset Syntax
