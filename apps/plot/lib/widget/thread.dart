@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/util/logo_cache.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -914,6 +915,7 @@ class _LinkLogos extends HookWidget {
       logos = links.data!
           .map((Link l) => l.logoForBrightness(brightness))
           .whereType<String>()
+          .where((url) => url.isNotEmpty && !LogoCache.isFailed(url))
           .toSet()
           .toList();
       _logoCache[cacheKey] = logos;

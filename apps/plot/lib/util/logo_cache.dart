@@ -38,6 +38,10 @@ class LogoCache {
     }
   }
 
+  /// Whether [url] was fetched but returned no data (404, network error, etc.).
+  static bool isFailed(String url) =>
+      _resolved.containsKey(url) && _resolved[url] == null;
+
   /// Returns true if [url] looks like an SVG.
   static bool isSvg(String url) =>
       url.endsWith('.svg') || url.contains('.svg?');

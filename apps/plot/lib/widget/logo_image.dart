@@ -6,8 +6,8 @@ import 'package:plot/widget/widget.dart';
 
 /// Displays a logo image from a URL with in-memory caching.
 ///
-/// Always reserves [size]x[size] space to prevent layout shifts.
 /// Uses [LogoCache] so the same URL is downloaded only once across all widgets.
+/// Shows [fallback] when the image fails to load, or nothing if no fallback.
 class LogoImage extends StatelessWidget {
   const LogoImage({
     super.key,
@@ -22,15 +22,12 @@ class LogoImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: LogoCache.isCached(url)
-          ? _buildImage(LogoCache.getSync(url))
-          : FutureBuilder<Uint8List?>(
-              future: LogoCache.get(url),
-              builder: (context, snapshot) => _buildImage(snapshot.data),
-            ),
+    if (LogoCache.isCached(url)) {
+      return _buildImage(LogoCache.getSync(url));
+    }
+    return FutureBuilder<Uint8List?>(
+      future: LogoCache.get(url),
+      builder: (context, snapshot) => _buildImage(snapshot.data),
     );
   }
 
