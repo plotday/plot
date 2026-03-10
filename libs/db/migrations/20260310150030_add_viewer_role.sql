@@ -1,5 +1,131 @@
--- Modify "share_priority" function
-CREATE OR REPLACE FUNCTION "public"."share_priority" ("p_user_id" uuid, "p_priority_id" uuid, "p_add_actor_ids" uuid[], "p_remove_actor_ids" uuid[], "p_role" text DEFAULT 'member') RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
+-- Drop views (CASCADE to handle complex dependency chain, all recreated below)
+DROP VIEW IF EXISTS "user"."priority" CASCADE;
+DROP VIEW IF EXISTS "user"."note" CASCADE;
+DROP VIEW IF EXISTS "user"."actor" CASCADE;
+DROP VIEW IF EXISTS "user"."priority_actor" CASCADE;
+DROP VIEW IF EXISTS "user"."priority_unread" CASCADE;
+DROP VIEW IF EXISTS "user"."note_tags" CASCADE;
+DROP VIEW IF EXISTS "user"."thread_tags" CASCADE;
+DROP VIEW IF EXISTS "user"."thread" CASCADE;
+DROP VIEW IF EXISTS "user"."twist" CASCADE;
+DROP VIEW IF EXISTS "user"."schedule" CASCADE;
+DROP VIEW IF EXISTS "user"."link" CASCADE;
+DROP VIEW IF EXISTS "user"."priority_expanded" CASCADE;
+-- Modify "priority_user" table
+ALTER TABLE "public"."priority_user" ADD COLUMN "role" text NOT NULL DEFAULT 'member';
+-- Create "get_effective_role" function (must be before views that reference it)
+CREATE FUNCTION "user"."get_effective_role" ("p_user_id" uuid, "p_priority_id" uuid) RETURNS text LANGUAGE sql STABLE SET "search_path" = public AS $$
+SELECT
+        CASE WHEN bool_or(pu.role = 'member') THEN
+            'member'
+        ELSE
+            COALESCE(MAX(pu.role), NULL)
+        END
+    FROM
+        priority_user pu
+        JOIN priority pp ON pu.priority_id = pp.id
+        JOIN priority p ON p.path <@ pp.path
+    WHERE
+        pu.user_id = p_user_id
+        AND pu.archived_at IS NULL
+        AND p.id = p_priority_id
+$$;
+-- Create "setup_whats_new_priority" function
+CREATE FUNCTION "public"."setup_whats_new_priority" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
+DECLARE
+    v_priority_id uuid;
+    v_priority_path ltree;
+    v_contact_id uuid;
+    v_plot_priority_path ltree;
+    v_user_root_path ltree;
+    v_override_path ltree;
+    v_user_root_path_part text;
+BEGIN
+    -- Get or create @whats-new priority
+    SELECT
+        id, path INTO v_priority_id, v_priority_path
+    FROM
+        priority
+    WHERE
+        key = '@whats-new'
+    LIMIT 1;
+
+    IF v_priority_id IS NULL THEN
+        v_priority_path := generate_path (NULL);
+        INSERT INTO priority (created_by, title, path, color, key, updated_by)
+            VALUES (p_user_id, 'What''s New', v_priority_path, 7, '@whats-new', 0)
+        RETURNING
+            id INTO v_priority_id;
+        -- The insert_priority_user trigger won't fire for @whats-new since it starts with @
+        -- and isn't @plot, but clean up any personal entry just in case
+        DELETE FROM priority_user
+        WHERE user_id = p_user_id
+            AND priority_id = v_priority_id
+            AND personal = TRUE;
+    END IF;
+
+    -- Get user's contact_id
+    SELECT
+        id INTO v_contact_id
+    FROM
+        contact
+    WHERE
+        user_id = p_user_id
+        AND "primary" = TRUE
+    LIMIT 1;
+
+    -- Add priority_contact (idempotent)
+    IF v_contact_id IS NOT NULL THEN
+        INSERT INTO priority_contact (priority_id, contact_id)
+            VALUES (v_priority_id, v_contact_id)
+        ON CONFLICT (priority_id, contact_id)
+            DO NOTHING;
+    END IF;
+
+    -- Add priority_user with viewer role (idempotent - don't overwrite existing role)
+    INSERT INTO priority_user (user_id, priority_id, personal, role)
+        VALUES (p_user_id, v_priority_id, FALSE, 'viewer')
+    ON CONFLICT (user_id, priority_id)
+        DO NOTHING;
+
+    -- Position under @plot via priority_settings
+    SELECT
+        p.path INTO v_user_root_path
+    FROM
+        priority_user pu
+        JOIN priority p ON pu.priority_id = p.id
+    WHERE
+        pu.user_id = p_user_id
+        AND pu.personal = TRUE
+    LIMIT 1;
+
+    IF v_user_root_path IS NOT NULL THEN
+        v_user_root_path_part := split_part(v_user_root_path::text, '.', 1);
+        SELECT
+            p.path INTO v_plot_priority_path
+        FROM
+            priority p
+        WHERE
+            key = '@plot'
+            AND p.path::text LIKE v_user_root_path_part || '%'
+        LIMIT 1;
+
+        IF v_plot_priority_path IS NOT NULL THEN
+            v_override_path := generate_path (v_plot_priority_path);
+            INSERT INTO priority_settings (user_id, priority_id, path, title)
+                VALUES (p_user_id, v_priority_id, v_override_path, 'What''s New')
+            ON CONFLICT (user_id, priority_id)
+                DO UPDATE SET
+                    path = EXCLUDED.path,
+                    title = EXCLUDED.title;
+        END IF;
+    END IF;
+
+    RETURN jsonb_build_object('success', TRUE, 'priority_id', v_priority_id);
+END;
+$$;
+-- Create "share_priority" function
+CREATE FUNCTION "public"."share_priority" ("p_user_id" uuid, "p_priority_id" uuid, "p_add_actor_ids" uuid[], "p_remove_actor_ids" uuid[], "p_role" text DEFAULT 'member') RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     v_priority record;
     v_root_priority_id uuid;
@@ -205,6 +331,121 @@ BEGIN
         END);
 END;
 $$;
+-- Create "priority_expanded" view
+CREATE VIEW "user"."priority_expanded" (
+  "user_id",
+  "priority_id",
+  "joined_at",
+  "archived_at",
+  "role",
+  "path"
+) AS WITH base AS (
+         SELECT pu.user_id,
+            c.child_id AS priority_id,
+            min(pu.created_at) AS joined_at,
+            LEAST(min(pu.archived_at), min(c.archived_at)) AS archived_at,
+                CASE
+                    WHEN bool_or(pu.role = 'member'::text) THEN 'member'::text
+                    ELSE 'viewer'::text
+                END AS role
+           FROM public.priority_user pu
+             JOIN public.priority_child c ON pu.priority_id = c.priority_id
+          GROUP BY pu.user_id, c.child_id
+        )
+ SELECT b.user_id,
+    b.priority_id,
+    b.joined_at,
+    b.archived_at,
+    b.role,
+        CASE
+            WHEN inherited_settings.path IS NOT NULL THEN inherited_settings.path
+            WHEN user_root.path OPERATOR(public.@>) p.path THEN p.path
+            WHEN parent_inherited_settings.path IS NOT NULL THEN parent_inherited_settings.path OPERATOR(public.||) public.subpath(p.path, public.nlevel(p.path) - 1, 1)::text::public.ltree
+            ELSE user_root.path OPERATOR(public.||) p.path
+        END AS path
+   FROM base b
+     LEFT JOIN public.priority p ON p.id = b.priority_id
+     LEFT JOIN public.priority_user pu_root ON b.user_id = pu_root.user_id AND pu_root.personal = true
+     LEFT JOIN public.priority user_root ON pu_root.priority_id = user_root.id
+     LEFT JOIN public.priority_settings_inherited inherited_settings ON inherited_settings.user_id = b.user_id AND inherited_settings.priority_id = b.priority_id
+     LEFT JOIN public.priority parent_p ON public.nlevel(p.path) > 1 AND parent_p.path OPERATOR(public.=) public.subpath(p.path, 0, public.nlevel(p.path) - 1)
+     LEFT JOIN public.priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = b.user_id AND parent_p.id = parent_inherited_settings.priority_id;
+-- Create "priority_unread" view
+CREATE VIEW "user"."priority_unread" (
+  "user_id",
+  "priority_id",
+  "unread",
+  "updated_at"
+) AS SELECT upe.user_id,
+    upe.priority_id,
+    true AS unread,
+    max(GREATEST(COALESCE(ar.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone),
+        CASE
+            WHEN a.created_by = upe.user_id THEN COALESCE(a.last_note_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone)
+            ELSE COALESCE(a.last_note_created_at, a.created_at)
+        END)) AS updated_at
+   FROM "user".priority_expanded upe
+     JOIN public.thread a ON a.priority_id = upe.priority_id AND a.archived_at IS NULL AND (a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at OR (a.created_by IS NULL OR a.created_by <> upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at)
+     LEFT JOIN public.thread_read ar ON ar.user_id = upe.user_id AND ar.thread_id = a.id
+  GROUP BY upe.user_id, upe.priority_id;
+-- Create "priority" view
+CREATE VIEW "user"."priority" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "archived_at",
+  "created_by",
+  "updated_by",
+  "root",
+  "personal",
+  "title",
+  "path",
+  "global_path",
+  "top_order",
+  "order",
+  "pomodoro",
+  "color",
+  "key",
+  "organization_id",
+  "unread",
+  "role"
+) AS SELECT pu.user_id,
+    p.id,
+    p.created_at,
+    GREATEST(settings.updated_at, pu.updated_at, p.updated_at, COALESCE(upu.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
+    GREATEST(pu.archived_at, p.archived_at) AS archived_at,
+    p.created_by,
+    p.updated_by,
+    (pu.personal = true OR p.organization_id IS NOT NULL) AND p.id = root.id AS root,
+    user_root.path OPERATOR(public.@>) p.path AS personal,
+    COALESCE(settings.title, p.title) AS title,
+        CASE
+            WHEN inherited_settings.path IS NOT NULL THEN inherited_settings.path
+            WHEN user_root.path OPERATOR(public.@>) p.path THEN p.path
+            WHEN parent_inherited_settings.path IS NOT NULL THEN parent_inherited_settings.path OPERATOR(public.||) public.subpath(p.path, public.nlevel(p.path) - 1, 1)::text::public.ltree
+            ELSE user_root.path OPERATOR(public.||) p.path
+        END AS path,
+    p.path AS global_path,
+    settings.top_order,
+    COALESCE(settings."order", (EXTRACT(epoch FROM p.created_at) * 1000::numeric)::double precision) AS "order",
+    inherited_settings.pomodoro,
+    inherited_settings.color,
+    p.key,
+    p.organization_id,
+    COALESCE(upu.unread, false) AS unread,
+    "user".get_effective_role(pu.user_id, p.id) AS role
+   FROM public.priority_user pu
+     JOIN public.priority root ON pu.priority_id = root.id
+     JOIN public.priority_user pu_root ON pu.user_id = pu_root.user_id AND pu_root.personal = true
+     JOIN public.priority user_root ON pu_root.priority_id = user_root.id
+     JOIN public.priority p ON root.path OPERATOR(public.@>) p.path
+     LEFT JOIN public.priority parent_p ON public.nlevel(p.path) > 1 AND parent_p.path OPERATOR(public.=) public.subpath(p.path, 0, public.nlevel(p.path) - 1)
+     LEFT JOIN public.priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = pu.user_id AND parent_p.id = parent_inherited_settings.priority_id
+     LEFT JOIN public.priority_settings settings ON settings.user_id = pu.user_id AND p.id = settings.priority_id
+     LEFT JOIN public.priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id AND p.id = inherited_settings.priority_id
+     LEFT JOIN "user".priority_unread upu ON upu.user_id = pu.user_id AND upu.priority_id = p.id
+  WHERE pu.archived_at IS NULL;
 -- Modify "update_note_tags" function
 CREATE OR REPLACE FUNCTION "user"."update_note_tags" ("user_id" uuid, "p_note_id" uuid, "p_actor_id" uuid, "p_client_id" integer, "p_tag_updates" jsonb) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
@@ -671,6 +912,155 @@ BEGIN
     RETURN v_result;
 END;
 $$;
+-- Modify "upsert_note" function
+CREATE OR REPLACE FUNCTION "user"."upsert_note" ("user_id" uuid, "p_id" uuid, "p_author_id" uuid, "p_created_by" uuid, "p_updated_by" integer, "p_archived_at" timestamptz, "p_thread_id" uuid, "p_draft" boolean, "p_private" boolean, "p_content" text, "p_actions" jsonb, "p_mentions" uuid[], "p_re_note_id" uuid, "p_source_created_at" timestamptz, "p_key" text, "p_merged_from_thread_id" uuid DEFAULT NULL::uuid) RETURNS "public"."note" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+DECLARE
+    v_priority_id uuid;
+    v_created_by uuid;
+    v_author_id uuid;
+    v_thread_author_id uuid;
+    v_row note;
+BEGIN
+    SELECT
+        priority_id INTO v_priority_id
+    FROM
+        thread
+    WHERE
+        id = p_thread_id;
+    IF v_priority_id IS NULL THEN
+        RAISE EXCEPTION 'Thread not found';
+    END IF;
+    PERFORM "user".assert_priority_access(user_id, v_priority_id);
+
+    -- Viewer enforcement: force private, auto-mention thread author
+    IF "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
+        p_private := TRUE;
+        SELECT n.author_id INTO v_thread_author_id
+        FROM note n
+        WHERE n.thread_id = p_thread_id
+        ORDER BY n.created_at ASC
+        LIMIT 1;
+        IF v_thread_author_id IS NOT NULL THEN
+            IF p_mentions IS NULL THEN
+                p_mentions := ARRAY[v_thread_author_id];
+            ELSIF NOT (v_thread_author_id = ANY(p_mentions)) THEN
+                p_mentions := p_mentions || v_thread_author_id;
+            END IF;
+        END IF;
+    END IF;
+
+    v_created_by := COALESCE(p_created_by, user_id);
+    -- When the user creates directly (not via twist), force author to their contact ID.
+    -- This prevents impersonation: clients cannot spoof author_id.
+    -- When a twist creates (created_by != user_id), trust the provided author_id.
+    IF v_created_by = user_id THEN
+        v_author_id := COALESCE("user".user_contact_id(user_id), user_id);
+    ELSE
+        v_author_id := COALESCE(p_author_id, v_created_by);
+    END IF;
+
+    IF v_created_by IS DISTINCT FROM user_id THEN
+        IF NOT EXISTS (
+            SELECT
+                1
+            FROM
+                priority_twist pt
+            WHERE
+                pt.id = v_created_by
+                AND pt.owner_id = upsert_note.user_id) THEN
+            RAISE EXCEPTION 'created_by must be user or owned priority_twist';
+        END IF;
+    END IF;
+
+    IF p_id IS NULL THEN
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        ON CONFLICT (thread_id, key)
+            DO UPDATE SET
+                author_id = note.author_id,
+                created_by = note.created_by,
+                updated_by = EXCLUDED.updated_by,
+                archived_at = EXCLUDED.archived_at,
+                draft = EXCLUDED.draft,
+                private = EXCLUDED.private,
+                content = EXCLUDED.content,
+                actions = EXCLUDED.actions,
+                mentions = EXCLUDED.mentions,
+                re_note_id = EXCLUDED.re_note_id,
+                source_created_at = EXCLUDED.source_created_at,
+                key = EXCLUDED.key,
+                merged_from_thread_id = EXCLUDED.merged_from_thread_id,
+                updated_at = now()
+        RETURNING * INTO v_row;
+    ELSE
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        ON CONFLICT (id)
+            DO UPDATE SET
+                author_id = note.author_id,
+                created_by = note.created_by,
+                updated_by = EXCLUDED.updated_by,
+                archived_at = EXCLUDED.archived_at,
+                thread_id = EXCLUDED.thread_id,
+                draft = EXCLUDED.draft,
+                private = EXCLUDED.private,
+                content = EXCLUDED.content,
+                actions = EXCLUDED.actions,
+                mentions = EXCLUDED.mentions,
+                re_note_id = EXCLUDED.re_note_id,
+                source_created_at = EXCLUDED.source_created_at,
+                key = EXCLUDED.key,
+                merged_from_thread_id = EXCLUDED.merged_from_thread_id,
+                updated_at = now()
+        RETURNING * INTO v_row;
+    END IF;
+
+    RETURN v_row;
+END;
+$$;
+-- Modify "upsert_note_tag" function
+CREATE OR REPLACE FUNCTION "user"."upsert_note_tag" ("user_id" uuid, "p_actor_id" uuid, "p_note_id" uuid, "p_tag_id" integer, "p_updated_by" integer DEFAULT 0, "p_archived_at" timestamptz DEFAULT NULL::timestamp with time zone) RETURNS "public"."note_tag" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+DECLARE
+    v_priority_id uuid;
+    v_tag_type tag_type;
+    v_row note_tag;
+BEGIN
+    SELECT
+        a.priority_id INTO v_priority_id
+    FROM
+        note n
+        JOIN thread a ON a.id = n.thread_id
+    WHERE
+        n.id = p_note_id;
+    IF v_priority_id IS NULL THEN
+        RAISE EXCEPTION 'Note not found';
+    END IF;
+    PERFORM "user".assert_priority_access(user_id, v_priority_id);
+
+    v_tag_type := get_tag_type(p_tag_id);
+    IF v_tag_type = 'compute' THEN
+        RAISE EXCEPTION 'Cannot add computed tag (tag_id: %)', p_tag_id;
+    END IF;
+    -- Viewer enforcement: viewers can only modify count tags
+    IF v_tag_type != 'count' AND "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members can only modify count tags';
+    END IF;
+    IF v_tag_type = 'count' AND p_actor_id != "user".user_contact_id(user_id) THEN
+        RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
+    END IF;
+
+    INSERT INTO note_tag (actor_id, note_id, tag_id, updated_by, archived_at)
+        VALUES (p_actor_id, p_note_id, p_tag_id, COALESCE(p_updated_by, 0), p_archived_at)
+    ON CONFLICT (actor_id, note_id, tag_id)
+        DO UPDATE SET
+            archived_at = EXCLUDED.archived_at,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = now()
+    RETURNING * INTO v_row;
+
+    RETURN v_row;
+END;
+$$;
 -- Modify "upsert_priority" function
 CREATE OR REPLACE FUNCTION "user"."upsert_priority" ("user_id" uuid, "p_priority" jsonb) RETURNS "user"."priority" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
 #variable_conflict use_column
@@ -967,6 +1357,98 @@ BEGIN
     WHERE
         up.user_id = upsert_priority.user_id
         AND up.id = _input.id;
+    RETURN v_row;
+END;
+$$;
+-- Modify "priority_member" view (must be before upsert_priority_member which returns this type)
+CREATE OR REPLACE VIEW "public"."priority_member" (
+  "contact_id",
+  "priority_id",
+  "created_at",
+  "updated_at",
+  "archived_at",
+  "status",
+  "invited_by",
+  "personal",
+  "role"
+) AS SELECT pc.contact_id,
+    pc.priority_id,
+    pc.created_at,
+    GREATEST(pc.updated_at, COALESCE(pu.updated_at, pc.created_at), COALESCE(c.updated_at, pc.created_at)) AS updated_at,
+        CASE
+            WHEN pc.invited_by IS NOT NULL AND pc.invited_at IS NULL THEN pc.updated_at
+            ELSE pu.archived_at
+        END AS archived_at,
+        CASE
+            WHEN c.user_id IS NOT NULL AND pu.user_id IS NOT NULL THEN 'accepted'::text
+            ELSE 'invited'::text
+        END AS status,
+    pc.invited_by,
+    COALESCE(pu.personal, false) AS personal,
+    COALESCE(pu.role, 'member'::text) AS role
+   FROM public.priority_contact pc
+     JOIN public.contact c ON c.id = pc.contact_id
+     LEFT JOIN public.priority_user pu ON pu.user_id = c.user_id AND pu.priority_id = pc.priority_id
+  WHERE pu.user_id IS NOT NULL OR pc.invited_by IS NOT NULL;
+-- Modify "upsert_priority_member" function
+CREATE OR REPLACE FUNCTION "user"."upsert_priority_member" ("user_id" uuid, "p_contact_id" uuid, "p_priority_id" uuid, "p_invited_by" uuid, "p_invited_at" timestamptz) RETURNS "public"."priority_member" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+DECLARE
+    v_row priority_member;
+BEGIN
+    PERFORM "user".assert_priority_access(user_id, p_priority_id);
+
+    -- Viewer enforcement: viewers cannot manage priority members
+    IF "user".get_effective_role(user_id, p_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members cannot manage priority members';
+    END IF;
+
+    INSERT INTO priority_contact (priority_id, contact_id, invited_by, invited_at)
+        VALUES (p_priority_id, p_contact_id, p_invited_by, p_invited_at)
+    ON CONFLICT (priority_id, contact_id)
+        DO UPDATE SET
+            invited_by = EXCLUDED.invited_by,
+            invited_at = EXCLUDED.invited_at,
+            updated_at = now();
+
+    SELECT
+        * INTO v_row
+    FROM
+        priority_member
+    WHERE
+        priority_id = p_priority_id
+        AND contact_id = p_contact_id;
+
+    RETURN v_row;
+END;
+$$;
+-- Modify "upsert_priority_twist" function
+CREATE OR REPLACE FUNCTION "user"."upsert_priority_twist" ("user_id" uuid, "p_id" uuid, "p_priority_id" uuid, "p_twist_id" bigint, "p_owner_id" uuid, "p_name" text, "p_config" jsonb, "p_archived_at" timestamptz) RETURNS "public"."priority_twist" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+DECLARE
+    v_row priority_twist;
+BEGIN
+    -- Source accounts have NULL priority_id; skip access check for those
+    IF p_priority_id IS NOT NULL THEN
+        PERFORM "user".assert_priority_access(user_id, p_priority_id);
+
+        -- Viewer enforcement: viewers cannot manage twists
+        IF "user".get_effective_role(user_id, p_priority_id) = 'viewer' THEN
+            RAISE EXCEPTION 'Viewer members cannot manage twists';
+        END IF;
+    END IF;
+    IF p_owner_id IS DISTINCT FROM user_id THEN
+        RAISE EXCEPTION 'owner_id must match user_id';
+    END IF;
+
+    INSERT INTO priority_twist (id, priority_id, twist_id, owner_id, name, config, archived_at)
+        VALUES (COALESCE(p_id, uuidv7()), p_priority_id, p_twist_id, p_owner_id, p_name, COALESCE(p_config, '{}'::jsonb), p_archived_at)
+    ON CONFLICT (id)
+        DO UPDATE SET
+            name = EXCLUDED.name,
+            config = EXCLUDED.config,
+            archived_at = EXCLUDED.archived_at,
+            updated_at = now()
+    RETURNING * INTO v_row;
+
     RETURN v_row;
 END;
 $$;
@@ -1281,63 +1763,694 @@ BEGIN
     END LOOP;
 END;
 $$;
--- Modify "priority" view
-CREATE OR REPLACE VIEW "user"."priority" (
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
+DECLARE
+    v_result thread;
+    v_id uuid;
+    -- Variables for derived values
+    v_priority_id uuid;
+    v_created_by uuid;
+    -- Archived status check
+    v_is_archived boolean;
+BEGIN
+    -- Extract required fields from JSONB, with fallback to p_defaults for INSERT
+    v_id := COALESCE((p_thread ->> 'id')::uuid, (p_defaults ->> 'id')::uuid);
+    v_priority_id := COALESCE((p_thread ->> 'priority_id')::uuid, (p_defaults ->> 'priority_id')::uuid);
+    v_created_by := COALESCE((p_thread ->> 'created_by')::uuid, (p_defaults ->> 'created_by')::uuid, user_id);
+    -- Generate id if not provided
+    IF v_id IS NULL THEN
+        v_id := uuidv7 ();
+    END IF;
+    -- Resolve priority_id from existing thread if missing
+    IF v_priority_id IS NULL THEN
+        SELECT
+            priority_id INTO v_priority_id
+        FROM
+            thread
+        WHERE
+            id = v_id;
+    END IF;
+    IF v_priority_id IS NULL THEN
+        RAISE EXCEPTION 'priority_id must be provided';
+    END IF;
+    -- Validate access to the priority
+    IF NOT EXISTS (
+        SELECT
+            1
+        FROM
+            priority_user pu
+            JOIN priority pp ON pu.priority_id = pp.id
+            JOIN priority p ON p.path <@ pp.path
+        WHERE
+            pu.user_id = upsert_thread.user_id
+            AND pu.archived_at IS NULL
+            AND p.id = v_priority_id) THEN
+        RAISE EXCEPTION 'User does not have access to this priority';
+    END IF;
+    -- Enforce viewer restriction: viewers cannot create or modify threads
+    IF "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members cannot create or modify threads';
+    END IF;
+    -- Validate created_by when it differs from user_id
+    IF v_created_by IS DISTINCT FROM user_id THEN
+        IF NOT EXISTS (
+            SELECT
+                1
+            FROM
+                priority_twist pt
+            WHERE
+                pt.id = v_created_by
+                AND pt.owner_id = upsert_thread.user_id) THEN
+            RAISE EXCEPTION 'created_by must be user or owned priority_twist';
+        END IF;
+    END IF;
+    -- Check if existing thread is archived (either directly or via priority)
+    -- Only relevant for UPDATE path; INSERT path will have NULL and be coalesced to false
+    SELECT
+        (thread.archived_at IS NOT NULL
+            OR NOT EXISTS (
+                SELECT
+                    1
+                FROM
+                    "user".priority_expanded upe
+                WHERE
+                    upe.priority_id = thread.priority_id
+                    AND upe.user_id = upsert_thread.user_id
+                    AND upe.archived_at IS NULL)) INTO v_is_archived
+    FROM
+        thread
+    WHERE
+        id = v_id;
+    -- If no existing thread, v_is_archived will be NULL (INSERT path)
+    v_is_archived := COALESCE(v_is_archived, FALSE);
+    -- Perform the upsert and return the full row
+    -- On INSERT: Use COALESCE to fall back to p_defaults for fields not in p_thread
+    INSERT INTO thread (id, created_by, priority_id, title, preview, updated_by, sync_depth, private, draft)
+        VALUES (v_id, v_created_by, v_priority_id, COALESCE(p_thread ->> 'title', p_defaults ->> 'title'), COALESCE(p_thread ->> 'preview', p_defaults ->> 'preview'), COALESCE((p_thread ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, 0), COALESCE((p_thread ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint), COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, FALSE), COALESCE((p_thread ->> 'draft')::boolean, (p_defaults ->> 'draft')::boolean, FALSE))
+    ON CONFLICT (id)
+        DO UPDATE SET
+            -- Update fields only if key is present in p_thread
+            -- Key absent: keep existing value (unless archived, then use p_defaults)
+            -- Key present (even with null): use provided value (allows clearing)
+            -- If archived: treat as INSERT and apply p_defaults
+            title = CASE WHEN v_is_archived THEN
+                COALESCE(p_thread ->> 'title', p_defaults ->> 'title', thread.title)
+            ELSE
+                CASE WHEN p_thread ? 'title' THEN
+                    p_thread ->> 'title'
+                ELSE
+                    thread.title
+                END
+            END,
+            preview = CASE WHEN v_is_archived THEN
+                COALESCE(p_thread ->> 'preview', p_defaults ->> 'preview', thread.preview)
+            ELSE
+                CASE WHEN p_thread ? 'preview' THEN
+                    p_thread ->> 'preview'
+                ELSE
+                    thread.preview
+                END
+            END,
+            updated_by = CASE WHEN v_is_archived THEN
+                COALESCE((p_thread ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, thread.updated_by)
+            ELSE
+                CASE WHEN p_thread ? 'updated_by' THEN
+                    (p_thread ->> 'updated_by')::integer
+                ELSE
+                    thread.updated_by
+                END
+            END,
+            sync_depth = CASE WHEN v_is_archived THEN
+                COALESCE((p_thread ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint, thread.sync_depth)
+            ELSE
+                CASE WHEN p_thread ? 'sync_depth' THEN
+                    (p_thread ->> 'sync_depth')::smallint
+                ELSE
+                    thread.sync_depth
+                END
+            END,
+            priority_id = CASE WHEN v_is_archived THEN
+                v_priority_id
+            ELSE
+                CASE WHEN p_thread ? 'priority_id' THEN
+                    (p_thread ->> 'priority_id')::uuid
+                ELSE
+                    thread.priority_id
+                END
+            END,
+            private = CASE WHEN v_is_archived THEN
+                COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, thread.private)
+            ELSE
+                CASE WHEN p_thread ? 'private' THEN
+                    (p_thread ->> 'private')::boolean
+                ELSE
+                    thread.private
+                END
+            END,
+            draft = CASE WHEN v_is_archived THEN
+                COALESCE((p_thread ->> 'draft')::boolean, (p_defaults ->> 'draft')::boolean, thread.draft)
+            ELSE
+                CASE WHEN p_thread ? 'draft' THEN
+                    (p_thread ->> 'draft')::boolean
+                ELSE
+                    thread.draft
+                END
+            END,
+            archived_at = CASE WHEN v_is_archived THEN
+                CASE WHEN p_thread ? 'archived_at' THEN
+                    (p_thread ->> 'archived_at')::timestamptz
+                WHEN p_defaults ? 'archived_at' THEN
+                    (p_defaults ->> 'archived_at')::timestamptz
+                ELSE
+                    thread.archived_at
+                END
+            ELSE
+                CASE WHEN p_thread ? 'archived_at' THEN
+                    (p_thread ->> 'archived_at')::timestamptz
+                ELSE
+                    thread.archived_at
+                END
+            END,
+            created_by = v_created_by
+        RETURNING
+            * INTO v_result;
+    RETURN v_result;
+END;
+$$;
+-- Modify "upsert_thread_tag" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread_tag" ("user_id" uuid, "p_actor_id" uuid, "p_thread_id" uuid, "p_tag_id" integer, "p_occurrence" text DEFAULT NULL::text, "p_updated_by" integer DEFAULT 0, "p_archived_at" timestamptz DEFAULT NULL::timestamp with time zone) RETURNS "public"."thread_tag" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+DECLARE
+    v_priority_id uuid;
+    v_tag_type tag_type;
+    v_row thread_tag;
+BEGIN
+    SELECT
+        priority_id INTO v_priority_id
+    FROM
+        thread
+    WHERE
+        id = p_thread_id;
+    IF v_priority_id IS NULL THEN
+        RAISE EXCEPTION 'Thread not found';
+    END IF;
+    PERFORM "user".assert_priority_access(user_id, v_priority_id);
+
+    v_tag_type := get_tag_type(p_tag_id);
+    IF v_tag_type = 'compute' THEN
+        RAISE EXCEPTION 'Cannot add computed tag (tag_id: %)', p_tag_id;
+    END IF;
+    -- Viewer enforcement: viewers can only modify count tags
+    IF v_tag_type != 'count' AND "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members can only modify count tags';
+    END IF;
+    IF v_tag_type = 'count' AND p_actor_id != "user".user_contact_id(user_id) THEN
+        RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
+    END IF;
+
+    INSERT INTO thread_tag (actor_id, thread_id, occurrence, tag_id, updated_by, archived_at)
+        VALUES (p_actor_id, p_thread_id, p_occurrence, p_tag_id, COALESCE(p_updated_by, 0), p_archived_at)
+    ON CONFLICT (actor_id, thread_id, occurrence, tag_id)
+        DO UPDATE SET
+            archived_at = EXCLUDED.archived_at,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = now()
+    RETURNING * INTO v_row;
+
+    RETURN v_row;
+END;
+$$;
+-- Create "note" view
+CREATE VIEW "user"."note" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "source_created_at",
+  "author_id",
+  "created_by",
+  "updated_by",
+  "archived_at",
+  "thread_id",
+  "draft",
+  "private",
+  "content",
+  "actions",
+  "mentions",
+  "re_note_id",
+  "merged_from_thread_id"
+) AS SELECT upe.user_id,
+    n.id,
+    n.created_at,
+    n.updated_at,
+    n.source_created_at,
+    n.author_id,
+    n.created_by,
+    n.updated_by,
+    n.archived_at,
+    n.thread_id,
+    n.draft,
+    n.private,
+    n.content,
+    n.actions,
+    n.mentions,
+    n.re_note_id,
+    n.merged_from_thread_id
+   FROM public.note n
+     JOIN public.thread a ON a.id = n.thread_id
+     JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
+  WHERE (n.draft = false OR n.created_by = upe.user_id) AND (n.private = false OR n.created_by = upe.user_id OR (upe.user_id = ANY (n.mentions))) AND (a.draft = false OR a.created_by = upe.user_id) AND
+        CASE
+            WHEN a.private = false THEN true
+            WHEN a.created_by = upe.user_id THEN true
+            ELSE "user".mentioned_in_thread(upe.user_id, a.id)
+        END
+UNION ALL
+ SELECT upe.user_id,
+    n.id,
+    n.created_at,
+    n.updated_at,
+    n.source_created_at,
+    n.author_id,
+    n.created_by,
+    n.updated_by,
+    COALESCE(n.archived_at, n.updated_at) AS archived_at,
+    n.thread_id,
+    n.draft,
+    n.private,
+    NULL::text AS content,
+    NULL::jsonb AS actions,
+    NULL::uuid[] AS mentions,
+    n.re_note_id,
+    n.merged_from_thread_id
+   FROM public.note n
+     JOIN public.thread a ON a.id = n.thread_id
+     JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
+  WHERE (n.draft = false OR n.created_by = upe.user_id) AND (a.draft = false OR a.created_by = upe.user_id) AND (n.private = true AND n.created_by <> upe.user_id AND NOT (upe.user_id = ANY (COALESCE(n.mentions, '{}'::uuid[]))) OR a.private = true AND a.created_by <> upe.user_id AND NOT "user".mentioned_in_thread(upe.user_id, a.id));
+-- Create "priority_actor" view
+CREATE VIEW "user"."priority_actor" (
+  "user_id",
+  "priority_path",
+  "actor_id",
+  "created_at",
+  "updated_at",
+  "archived_at"
+) AS SELECT user_id,
+    priority_path,
+    actor_id,
+    created_at,
+    updated_at,
+    archived_at
+   FROM ( SELECT upe.user_id,
+            upe.path AS priority_path,
+            pc.contact_id AS actor_id,
+            LEAST(COALESCE(pc.created_at, c.created_at), COALESCE(c.created_at, pc.created_at)) AS created_at,
+            GREATEST(pc.updated_at, c.updated_at) AS updated_at,
+                CASE
+                    WHEN pc.invited_by IS NOT NULL AND pc.invited_at IS NULL THEN pc.updated_at
+                    ELSE c.archived_at
+                END AS archived_at
+           FROM "user".priority_expanded upe
+             JOIN public.priority_contact pc ON pc.priority_id = upe.priority_id
+             JOIN public.contact c ON c.id = pc.contact_id
+          WHERE NOT (upe.role = 'viewer'::text AND c.user_id IS NOT NULL AND "user".get_effective_role(c.user_id, upe.priority_id) = 'viewer'::text)
+        UNION ALL
+         SELECT upe.user_id,
+            upe.path AS priority_path,
+            pt.id AS actor_id,
+            pt.created_at,
+            pt.updated_at,
+            pt.archived_at
+           FROM "user".priority_expanded upe
+             JOIN public.priority_twist pt ON pt.priority_id = upe.priority_id
+        UNION ALL
+         SELECT upe.user_id,
+            upe.path AS priority_path,
+            pt.id AS actor_id,
+            pt.created_at,
+            GREATEST(pt.updated_at, sc.updated_at) AS updated_at,
+            pt.archived_at
+           FROM "user".priority_expanded upe
+             JOIN public.source_channel sc ON sc.priority_id = upe.priority_id
+             JOIN public.priority_twist pt ON pt.id = sc.priority_twist_id AND pt.priority_id IS NULL) actors;
+-- Create "thread" view
+CREATE VIEW "user"."thread" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "updated_by",
+  "archived_at",
+  "priority_id",
+  "priority_path",
+  "draft",
+  "private",
+  "title",
+  "preview",
+  "last_note_created_at",
+  "last_note_source_created_at",
+  "mentions",
+  "bumped_at",
+  "unread",
+  "activity_at",
+  "agenda_at"
+) AS WITH link_agg AS (
+         SELECT link.thread_id,
+            max(link.source_created_at) AS source_created_at
+           FROM public.link
+          GROUP BY link.thread_id
+        )
+ SELECT upe.user_id,
+    a.id,
+    a.created_at,
+    GREATEST(a.updated_at, COALESCE(a.last_note_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone),
+        CASE
+            WHEN a.archived_at IS NULL AND (a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at OR (a.created_by IS NULL OR a.created_by <> upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at) THEN GREATEST(COALESCE(
+            CASE
+                WHEN ar.read_at >=
+                CASE
+                    WHEN a.created_by = upe.user_id THEN a.last_note_source_created_at
+                    ELSE COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
+                END THEN ar.updated_at
+                ELSE NULL::timestamp with time zone
+            END, '1970-01-01 00:00:00+00'::timestamp with time zone),
+            CASE
+                WHEN a.created_by = upe.user_id THEN COALESCE(a.last_note_source_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone)
+                ELSE COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
+            END)
+            ELSE '1970-01-01 00:00:00+00'::timestamp with time zone
+        END) AS updated_at,
+    a.updated_by,
+    COALESCE(a.archived_at, upe.archived_at) AS archived_at,
+    a.priority_id,
+    upe.path AS priority_path,
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    a.mentions,
+    ar.bumped_at,
+    COALESCE(
+        CASE
+            WHEN a.archived_at IS NULL AND (a.created_by = upe.user_id AND a.last_note_created_at IS NOT NULL AND a.last_note_created_at > upe.joined_at OR (a.created_by IS NULL OR a.created_by <> upe.user_id) AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at) THEN ar.read_at IS NULL OR ar.read_at <
+            CASE
+                WHEN a.created_by = upe.user_id THEN a.last_note_source_created_at
+                ELSE COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
+            END
+            ELSE false
+        END, false) AS unread,
+    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at) AS activity_at,
+    COALESCE(LEAST(( SELECT COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamp with time zone) AS "coalesce"
+           FROM public.schedule s_agg
+          WHERE s_agg.thread_id = a.id AND s_agg.user_id IS NULL AND s_agg.archived_at IS NULL
+          ORDER BY (COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamp with time zone))
+         LIMIT 1), ( SELECT COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamp with time zone) AS "coalesce"
+           FROM public.schedule s_agg
+          WHERE s_agg.thread_id = a.id AND s_agg.user_id = upe.user_id AND s_agg.archived_at IS NULL
+          ORDER BY (COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamp with time zone))
+         LIMIT 1)), a.created_at) AS agenda_at
+   FROM public.thread_x a
+     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
+     LEFT JOIN public.thread_read ar ON ar.user_id = upe.user_id AND ar.thread_id = a.id
+     LEFT JOIN link_agg la ON la.thread_id = a.id
+  WHERE (a.draft = false OR a.created_by = upe.user_id) AND
+        CASE
+            WHEN a.private = false THEN true
+            WHEN a.created_by = upe.user_id THEN true
+            ELSE "user".mentioned_in_thread(upe.user_id, a.id)
+        END
+UNION ALL
+ SELECT upe.user_id,
+    a.id,
+    a.created_at,
+    a.updated_at,
+    a.updated_by,
+    COALESCE(a.archived_at, upe.archived_at, a.updated_at) AS archived_at,
+    a.priority_id,
+    upe.path AS priority_path,
+    a.draft,
+    a.private,
+    NULL::text AS title,
+    NULL::text AS preview,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    NULL::uuid[] AS mentions,
+    NULL::timestamp with time zone AS bumped_at,
+    false AS unread,
+    a.created_at AS activity_at,
+    a.created_at AS agenda_at
+   FROM public.thread_x a
+     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
+  WHERE (a.draft = false OR a.created_by = upe.user_id) AND a.private = true AND a.created_by <> upe.user_id AND NOT "user".mentioned_in_thread(upe.user_id, a.id);
+-- Create "note_tags" view
+CREATE VIEW "user"."note_tags" (
+  "user_id",
+  "id",
+  "updated_at",
+  "archived_at",
+  "priority_id",
+  "priority_path",
+  "tags"
+) AS SELECT ua.user_id,
+    n.id,
+    nt.updated_at,
+    ua.archived_at,
+    ua.priority_id,
+    ua.priority_path,
+    nt.tags
+   FROM public.note_tags nt
+     JOIN public.note n ON n.id = nt.note_id
+     JOIN "user".thread ua ON ua.id = n.thread_id
+  WHERE (n.draft = false OR n.created_by = ua.user_id) AND (n.private = false OR n.created_by = ua.user_id OR (ua.user_id = ANY (n.mentions)));
+-- Create "twist" view
+CREATE VIEW "user"."twist" (
   "user_id",
   "id",
   "created_at",
   "updated_at",
   "archived_at",
+  "priority_id",
+  "twist_id",
+  "twist_environment",
+  "is_source",
+  "owner_id",
+  "name",
+  "config",
+  "logo_url",
+  "logo_url_dark",
+  "link_types",
+  "default_mention_created",
+  "default_mention_mentioned"
+) AS SELECT upe.user_id,
+    pt.id,
+    pt.created_at,
+    pt.updated_at,
+    pt.archived_at,
+    pt.priority_id,
+    pt.twist_id,
+    t.environment AS twist_environment,
+    t.is_source,
+    pt.owner_id,
+    pt.name,
+    pt.config,
+    t.logo_url,
+    t.logo_url_dark,
+    ( SELECT jsonb_agg(lt.value) AS jsonb_agg
+           FROM jsonb_array_elements(t.permissions -> '_providers'::text) p(value),
+            LATERAL jsonb_array_elements(p.value -> 'linkTypes'::text) lt(value)) AS link_types,
+    COALESCE((t.permissions ->> '_default_mention_created'::text)::boolean, false) AS default_mention_created,
+    COALESCE((t.permissions ->> '_default_mention_mentioned'::text)::boolean, false) AS default_mention_mentioned
+   FROM public.priority_twist pt
+     JOIN "user".priority_expanded upe ON upe.priority_id = pt.priority_id
+     JOIN public.twist t ON pt.twist_id = t.id
+UNION ALL
+ SELECT pt.owner_id AS user_id,
+    pt.id,
+    pt.created_at,
+    pt.updated_at,
+    pt.archived_at,
+    pt.priority_id,
+    pt.twist_id,
+    t.environment AS twist_environment,
+    t.is_source,
+    pt.owner_id,
+    pt.name,
+    pt.config,
+    t.logo_url,
+    t.logo_url_dark,
+    ( SELECT jsonb_agg(lt.value) AS jsonb_agg
+           FROM jsonb_array_elements(t.permissions -> '_providers'::text) p(value),
+            LATERAL jsonb_array_elements(p.value -> 'linkTypes'::text) lt(value)) AS link_types,
+    COALESCE((t.permissions ->> '_default_mention_created'::text)::boolean, false) AS default_mention_created,
+    COALESCE((t.permissions ->> '_default_mention_mentioned'::text)::boolean, false) AS default_mention_mentioned
+   FROM public.priority_twist pt
+     JOIN public.twist t ON pt.twist_id = t.id
+  WHERE t.is_source = true AND pt.priority_id IS NULL;
+-- Create "actor" view
+CREATE VIEW "user"."actor" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "archived_at",
+  "type",
+  "name",
+  "email",
+  "avatar_url",
+  "self"
+) AS WITH upa_agg AS (
+         SELECT upa.user_id,
+            upa.actor_id,
+            COALESCE(min(upa.updated_at) FILTER (WHERE upa.archived_at IS NULL), max(upa.archived_at)) AS updated_at,
+                CASE
+                    WHEN count(*) FILTER (WHERE upa.archived_at IS NULL) = 0 THEN max(upa.archived_at)
+                    ELSE NULL::timestamp with time zone
+                END AS archived_at
+           FROM "user".priority_actor upa
+          GROUP BY upa.user_id, upa.actor_id
+        )
+ SELECT ua.user_id,
+    a.id,
+    a.created_at,
+    GREATEST(ua.updated_at, a.updated_at) AS updated_at,
+    COALESCE(a.archived_at, ua.archived_at) AS archived_at,
+    a.type,
+    a.name,
+    a.email,
+    a.avatar_url,
+    (EXISTS ( SELECT 1
+           FROM public.contact c
+          WHERE c.id = a.id AND c.user_id = ua.user_id)) AS self
+   FROM upa_agg ua
+     JOIN public.actor a ON a.id = ua.actor_id;
+-- Create "schedule" view
+CREATE VIEW "user"."schedule" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "archived_at",
+  "schedule_user_id",
+  "order",
+  "at",
+  "on",
+  "recurrence_rule",
+  "duration",
+  "recurrence_exdates",
+  "occurrence",
+  "thread_id",
+  "link_id",
+  "priority_path",
+  "range_at",
+  "range_on",
+  "contacts"
+) AS SELECT upe.user_id,
+    s.id,
+    s.created_at,
+    s.updated_at,
+    COALESCE(s.archived_at, upe.archived_at) AS archived_at,
+    s.user_id AS schedule_user_id,
+    s."order",
+    s.at,
+    s."on",
+    s.recurrence_rule,
+    s.duration,
+    s.recurrence_exdates,
+    s.occurrence,
+    s.thread_id,
+    s.link_id,
+    upe.path AS priority_path,
+        CASE
+            WHEN s.at IS NOT NULL THEN s.at
+            ELSE NULL::tstzrange
+        END AS range_at,
+        CASE
+            WHEN s."on" IS NOT NULL THEN s."on"
+            ELSE NULL::daterange
+        END AS range_on,
+    COALESCE(( SELECT jsonb_agg(jsonb_build_object('id', sc.id, 'contact_id', sc.contact_id, 'contact_email', c.email, 'contact_name', c.name, 'contact_user_id', c.user_id, 'status', sc.status, 'role', sc.role, 'archived_at', sc.archived_at, 'updated_at', sc.updated_at) ORDER BY sc.created_at) AS jsonb_agg
+           FROM public.schedule_contact sc
+             JOIN public.contact c ON c.id = sc.contact_id
+          WHERE sc.schedule_id = s.id), '[]'::jsonb) AS contacts
+   FROM public.schedule s
+     LEFT JOIN public.thread t_thread ON t_thread.id = s.thread_id
+     LEFT JOIN public.link l ON l.id = s.link_id
+     LEFT JOIN public.thread t_link ON t_link.id = l.thread_id
+     JOIN "user".priority_expanded upe ON upe.priority_id = COALESCE(t_thread.priority_id, t_link.priority_id)
+  WHERE s.user_id IS NULL OR s.user_id = upe.user_id;
+-- Create "thread_tags" view
+CREATE VIEW "user"."thread_tags" (
+  "user_id",
+  "id",
+  "archived_at",
+  "occurrence",
+  "updated_at",
+  "priority_id",
+  "priority_path",
+  "tags"
+) AS SELECT ua.user_id,
+    ua.id,
+    ua.archived_at,
+    at.occurrence,
+    at.updated_at,
+    ua.priority_id,
+    ua.priority_path,
+    at.tags
+   FROM public.thread_tags at
+     JOIN "user".thread ua ON ua.id = at.thread_id;
+-- Create "link" view
+CREATE VIEW "user"."link" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "thread_id",
+  "source",
+  "source_created_at",
+  "author_id",
+  "twist_id",
   "created_by",
   "updated_by",
-  "root",
-  "personal",
+  "sync_depth",
   "title",
-  "path",
-  "global_path",
-  "top_order",
-  "order",
-  "pomodoro",
-  "color",
-  "key",
-  "organization_id",
-  "unread",
-  "role"
-) AS SELECT pu.user_id,
-    p.id,
-    p.created_at,
-    GREATEST(settings.updated_at, pu.updated_at, p.updated_at, COALESCE(upu.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
-    GREATEST(pu.archived_at, p.archived_at) AS archived_at,
-    p.created_by,
-    p.updated_by,
-    (pu.personal = true OR p.organization_id IS NOT NULL) AND p.id = root.id AS root,
-    user_root.path OPERATOR(public.@>) p.path AS personal,
-    COALESCE(settings.title, p.title) AS title,
-        CASE
-            WHEN inherited_settings.path IS NOT NULL THEN inherited_settings.path
-            WHEN user_root.path OPERATOR(public.@>) p.path THEN p.path
-            WHEN parent_inherited_settings.path IS NOT NULL THEN parent_inherited_settings.path OPERATOR(public.||) public.subpath(p.path, public.nlevel(p.path) - 1, 1)::text::public.ltree
-            ELSE user_root.path OPERATOR(public.||) p.path
-        END AS path,
-    p.path AS global_path,
-    settings.top_order,
-    COALESCE(settings."order", (EXTRACT(epoch FROM p.created_at) * 1000::numeric)::double precision) AS "order",
-    inherited_settings.pomodoro,
-    inherited_settings.color,
-    p.key,
-    p.organization_id,
-    COALESCE(upu.unread, false) AS unread,
-    "user".get_effective_role(pu.user_id, p.id) AS role
-   FROM public.priority_user pu
-     JOIN public.priority root ON pu.priority_id = root.id
-     JOIN public.priority_user pu_root ON pu.user_id = pu_root.user_id AND pu_root.personal = true
-     JOIN public.priority user_root ON pu_root.priority_id = user_root.id
-     JOIN public.priority p ON root.path OPERATOR(public.@>) p.path
-     LEFT JOIN public.priority parent_p ON public.nlevel(p.path) > 1 AND parent_p.path OPERATOR(public.=) public.subpath(p.path, 0, public.nlevel(p.path) - 1)
-     LEFT JOIN public.priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = pu.user_id AND parent_p.id = parent_inherited_settings.priority_id
-     LEFT JOIN public.priority_settings settings ON settings.user_id = pu.user_id AND p.id = settings.priority_id
-     LEFT JOIN public.priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id AND p.id = inherited_settings.priority_id
-     LEFT JOIN "user".priority_unread upu ON upu.user_id = pu.user_id AND upu.priority_id = p.id
-  WHERE pu.archived_at IS NULL;
+  "preview",
+  "assignee_id",
+  "type",
+  "status",
+  "actions",
+  "meta",
+  "source_url",
+  "logo",
+  "priority_id",
+  "merged_from_thread_id",
+  "priority_path"
+) AS SELECT upe.user_id,
+    l.id,
+    l.created_at,
+    l.updated_at,
+    l.thread_id,
+    l.source,
+    l.source_created_at,
+    l.author_id,
+    l.twist_id,
+    l.created_by,
+    l.updated_by,
+    l.sync_depth,
+    l.title,
+    l.preview,
+    l.assignee_id,
+    l.type,
+    l.status,
+    l.actions,
+    l.meta,
+    l.source_url,
+    l.logo,
+    l.priority_id,
+    l.merged_from_thread_id,
+    upe.path AS priority_path
+   FROM public.link_x l
+     JOIN "user".priority_expanded upe ON l.priority_id = upe.priority_id;
 -- Drop "share_priority" function
-DROP FUNCTION "public"."share_priority" (uuid, uuid, uuid[], uuid[]);
+DROP FUNCTION IF EXISTS "public"."share_priority" (uuid, uuid, uuid[], uuid[]);
