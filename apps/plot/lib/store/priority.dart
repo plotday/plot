@@ -984,6 +984,27 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// or if it inherits sharing from an ancestor.
   bool get sharing => (_sharingComputed ?? false) || sharingAncestorId != null;
 
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Priority &&
+          super == other &&
+          _activeComputed == other._activeComputed &&
+          _unreadComputed == other._unreadComputed &&
+          _sharingComputed == other._sharingComputed &&
+          sharingAncestorId == other.sharingAncestorId &&
+          displayColor == other.displayColor);
+
+  @override
+  int get hashCode => Object.hash(
+        super.hashCode,
+        _activeComputed,
+        _unreadComputed,
+        _sharingComputed,
+        sharingAncestorId,
+        displayColor,
+      );
+
   List<Priority> descendants() {
     List<Priority> result = [];
 
