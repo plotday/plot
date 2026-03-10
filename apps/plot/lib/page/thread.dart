@@ -577,6 +577,13 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
                           maxLines: 1,
                         ),
                       ),
+                      if (link.getTypeConfig()?.supportsAssignee == true) ...[
+                        const SizedBox(width: 8),
+                        _LinkAssigneeBadge(
+                          link: link,
+                          priorityId: widget.thread.priority.id,
+                        ),
+                      ],
                       if (link.statusLabel != null) ...[
                         const SizedBox(width: 8),
                         _LinkStatusBadge(link: link),
@@ -615,6 +622,137 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
     if (actions.length > 1) return true;
     // Single action that is not external
     return actions.first.type != UserActionType.external;
+  }
+}
+
+/// Small badge showing the link's assignee name.
+/// Tappable to change the assignee via a picker modal.
+class _LinkAssigneeBadge extends StatelessWidget {
+  const _LinkAssigneeBadge({required this.link, required this.priorityId});
+
+  final Link link;
+  final Uuid priorityId;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String>(
+      future: _resolveAssigneeName(),
+      builder: (context, snapshot) {
+        final label = snapshot.data ?? 'Unassigned';
+        return GestureDetector(
+          onTap: () async {
+            final result = await _showAssigneePicker(context);
+            if (result != null) {
+              final newId = result.present ? result.value : null;
+              if (newId != link.assigneeId) {
+                await Link.updateAssignee(link, newId);
+              }
+            }
+          },
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: context.theme.colors.secondary,
+                borderRadius: BorderRadius.circular(borderRadiusSm),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Text(
+                  label,
+                  style: context.theme.typography.xs.copyWith(
+                    color: context.theme.colors.mutedForeground,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<String> _resolveAssigneeName() async {
+    final assigneeId = link.assigneeId;
+    if (assigneeId == null) return 'Unassigned';
+    try {
+      final actor = await Actor.getOne(assigneeId);
+      return actor.nameOrEmail;
+    } catch (_) {
+      return 'Unassigned';
+    }
+  }
+
+  Future<Value<ActorId?>?> _showAssigneePicker(BuildContext context) async {
+    final actors = await Actor.get(priorityId: priorityId);
+    if (!context.mounted) return null;
+
+    final result = await Modal(
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            onTap: () => Modal.pop<ActorId?>(context, const Value(null)),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    if (link.assigneeId == null)
+                      Icon(
+                        PlotIcon.done,
+                        size: 14,
+                        color: context.theme.colors.primary,
+                      )
+                    else
+                      const SizedBox(width: 14),
+                    const SizedBox(width: 8),
+                    Text('Unassigned', style: context.theme.typography.sm),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          for (final actor in actors)
+            GestureDetector(
+              onTap: () => Modal.pop<ActorId?>(context, Value(actor.id)),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      if (actor.id == link.assigneeId)
+                        Icon(
+                          PlotIcon.done,
+                          size: 14,
+                          color: context.theme.colors.primary,
+                        )
+                      else
+                        const SizedBox(width: 14),
+                      const SizedBox(width: 8),
+                      Text(actor.nameOrEmail, style: context.theme.typography.sm),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ).show<ActorId?>(context);
+
+    if (result.present) {
+      return result;
+    }
+    return null;
   }
 }
 

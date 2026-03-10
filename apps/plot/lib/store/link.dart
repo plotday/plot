@@ -10,6 +10,7 @@ class LinkTypeConfig {
   final String? logoDark;
   final String? logoMono;
   final List<LinkStatus>? statuses;
+  final bool supportsAssignee;
 
   const LinkTypeConfig({
     required this.type,
@@ -18,6 +19,7 @@ class LinkTypeConfig {
     this.logoDark,
     this.logoMono,
     this.statuses,
+    this.supportsAssignee = false,
   });
 
   factory LinkTypeConfig.fromJson(Map<String, dynamic> json) {
@@ -30,6 +32,9 @@ class LinkTypeConfig {
       statuses: (json['statuses'] as List<dynamic>?)
           ?.map((s) => LinkStatus.fromJson(s as Map<String, dynamic>))
           .toList(),
+      supportsAssignee: json['supportsAssignee'] as bool? ??
+          json['supports_assignee'] as bool? ??
+          false,
     );
   }
 }
@@ -174,6 +179,15 @@ class Link extends Equatable {
   static Future<void> updateStatus(Link link, String newStatus) async {
     final updated = link._link.copyWith(
       status: Value(newStatus),
+      updatedAt: DateTime.now(),
+    );
+    await Store.get.save(Store.get.links, updated, LinksBase());
+  }
+
+  /// Optimistically update the link's assignee and push to the server.
+  static Future<void> updateAssignee(Link link, ActorId? newAssigneeId) async {
+    final updated = link._link.copyWith(
+      assigneeId: Value(newAssigneeId),
       updatedAt: DateTime.now(),
     );
     await Store.get.save(Store.get.links, updated, LinksBase());
