@@ -537,10 +537,10 @@ class Store extends _$Store {
   /// should be reverted to the remote version instead.
   static bool _isPermanentError(dynamic error) {
     if (error is ApiException) {
-      // 400 (Bad Request), 403 (Forbidden), 409 (Conflict), 422 (Unprocessable)
-      // are permanent errors that won't succeed on retry.
+      // 400 (Bad Request), 403 (Forbidden), 404 (Not Found), 409 (Conflict),
+      // 422 (Unprocessable) are permanent errors that won't succeed on retry.
       // Exclude 401 (auth), 408 (timeout), 429 (rate limit) which are transient.
-      const permanentStatuses = {400, 403, 409, 422};
+      const permanentStatuses = {400, 403, 404, 409, 422};
       return permanentStatuses.contains(error.statusCode);
     }
     return false;
