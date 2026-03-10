@@ -58,16 +58,19 @@ extension type ThemeColor(int index) {
   }
 }
 
-class ThemeColorConverter extends TypeConverter<ThemeColor, int> {
+class ThemeColorConverter extends TypeConverter<ThemeColor, int>
+    with JsonTypeConverter2<ThemeColor, int, int> {
   const ThemeColorConverter();
 
   @override
-  ThemeColor fromSql(int fromDb) {
-    return ThemeColor(fromDb);
-  }
+  ThemeColor fromSql(int fromDb) => ThemeColor(fromDb);
 
   @override
-  int toSql(ThemeColor value) {
-    return value.index;
-  }
+  int toSql(ThemeColor value) => value.index;
+
+  @override
+  ThemeColor fromJson(int json) => fromSql(json);
+
+  @override
+  int toJson(ThemeColor value) => toSql(value);
 }

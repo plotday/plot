@@ -56,16 +56,19 @@ extension type Path(String value) {
   }
 }
 
-class PathConverter extends TypeConverter<Path, String> {
+class PathConverter extends TypeConverter<Path, String>
+    with JsonTypeConverter2<Path, String, String> {
   const PathConverter();
 
   @override
-  Path fromSql(String fromDb) {
-    return Path(fromDb);
-  }
+  Path fromSql(String fromDb) => Path(fromDb);
 
   @override
-  String toSql(Path value) {
-    return value.value;
-  }
+  String toSql(Path value) => value.value;
+
+  @override
+  Path fromJson(String json) => fromSql(json);
+
+  @override
+  String toJson(Path value) => toSql(value);
 }

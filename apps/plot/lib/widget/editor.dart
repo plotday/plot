@@ -308,35 +308,38 @@ class EditorState extends State<Editor> {
   /// Resets the editor by clearing it and re-initializing with new content
   void reset(String? content) {
     setState(() {
-      // Clear selection and document
-      _editor.execute([
+      final requests = <EditRequest>[
         const ChangeSelectionRequest(
           null,
           SelectionChangeType.clearSelection,
           SelectionReason.contentChange,
         ),
-        ClearDocumentRequest(),
-      ]);
+      ];
 
-      // If content is provided, deserialize and insert it
       if (content != null && content.isNotEmpty) {
         final newDocument = _deserializeMarkdownWithMentions(content);
 
-        // Remove the empty paragraph that ClearDocumentRequest leaves behind
-        if (_document.nodeCount > 0) {
-          for (int i = _document.nodeCount - 1; i >= 0; i--) {
-            final node = _document.getNodeAt(i);
-            if (node != null) {
-              _document.deleteNode(node.id);
-            }
+        // Delete all existing nodes
+        for (int i = _document.nodeCount - 1; i >= 0; i--) {
+          final node = _document.getNodeAt(i);
+          if (node != null) {
+            requests.add(DeleteNodeRequest(nodeId: node.id));
           }
         }
 
         // Insert all nodes from new document
+        int index = 0;
         for (final node in newDocument.toList()) {
-          _document.insertNodeAt(_document.nodeCount, node);
+          requests.add(InsertNodeAtIndexRequest(
+            nodeIndex: index++,
+            newNode: node,
+          ));
         }
+      } else {
+        requests.add(ClearDocumentRequest());
       }
+
+      _editor.execute(requests);
 
       // Update isEmpty state
       _isEmpty = serializeDocumentToMarkdown(_document).isEmpty;
@@ -522,30 +525,36 @@ class EditorState extends State<Editor> {
           widget.initialContent!,
         );
 
-        // Clear selection before replacing nodes to avoid stale node references
-        // that cause null check failures in SuperEditor's selection styler
-        _editor.execute([
-          const ChangeSelectionRequest(
-            null,
-            SelectionChangeType.clearSelection,
-            SelectionReason.contentChange,
-          ),
-        ]);
-
-        // Replace document nodes by removing all and inserting new ones
+        // Replace document nodes using editor commands (not direct mutation)
+        // to keep the presenter pipeline in sync and avoid null check failures
+        // in SuperEditor's selection styler on focus changes.
         setState(() {
-          // Remove all existing nodes (working backwards to avoid index issues)
+          final requests = <EditRequest>[
+            const ChangeSelectionRequest(
+              null,
+              SelectionChangeType.clearSelection,
+              SelectionReason.contentChange,
+            ),
+          ];
+
+          // Delete all existing nodes
           for (int i = _document.nodeCount - 1; i >= 0; i--) {
             final node = _document.getNodeAt(i);
             if (node != null) {
-              _document.deleteNode(node.id);
+              requests.add(DeleteNodeRequest(nodeId: node.id));
             }
           }
 
           // Insert all nodes from new document
+          int index = 0;
           for (final node in newDocument.toList()) {
-            _document.insertNodeAt(_document.nodeCount, node);
+            requests.add(InsertNodeAtIndexRequest(
+              nodeIndex: index++,
+              newNode: node,
+            ));
           }
+
+          _editor.execute(requests);
         });
       }
     }
