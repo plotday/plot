@@ -900,8 +900,7 @@ class _PriorityPageState extends State<PriorityPage> {
                                           threadCommandGroupsSync(
                                             agendaActivity.thread,
                                           ),
-                                      header: (_) =>
-                                          <StaticCommandGroup>[],
+                                      header: (_) => <StaticCommandGroup>[],
                                     ) ??
                                     <StaticCommandGroup>[];
                               },
@@ -925,7 +924,8 @@ class _PriorityPageState extends State<PriorityPage> {
                                           items,
                                           listController,
                                           ScrollControllerContext.of(context),
-                                          enableReorder: !state.context.isViewer,
+                                          enableReorder:
+                                              !state.context.isViewer,
                                           doneEnd: state.doneEnd,
                                           scrollStorageKey: PageStorageKey(
                                             'priority_agenda_${widget.priorityId}',
@@ -1184,8 +1184,7 @@ class _PriorityPageState extends State<PriorityPage> {
     final borderColor = context.theme.colors.border;
     final bg = context.colour.background;
     final AgendaItem? prev = index > 0 ? listItems[index - 1] : null;
-    final AgendaItem? next =
-        index < listItems.length ? listItems[index] : null;
+    final AgendaItem? next = index < listItems.length ? listItems[index] : null;
 
     final selectedId = state.thread?.id;
     final hovered = controller.hoveredIndex;
@@ -1746,10 +1745,8 @@ class _SplitViewDividerState extends State<_SplitViewDivider> {
   Widget build(BuildContext context) {
     final active = _hovered || _dragging;
     final accentColor = context.colour.accent;
-    final borderColor = active ? accentColor : context.theme.colors.border;
-    final textColor = active
-        ? accentColor
-        : context.theme.colors.foreground;
+    final borderColor = active ? accentColor : context.theme.colors.foreground;
+    final textColor = active ? accentColor : context.theme.colors.foreground;
 
     return GestureDetector(
       onVerticalDragStart: widget.onDragStart != null
@@ -1777,7 +1774,7 @@ class _SplitViewDividerState extends State<_SplitViewDivider> {
           decoration: BoxDecoration(
             color: context.theme.colors.background,
             border: Border.symmetric(
-              horizontal: BorderSide(color: borderColor),
+              horizontal: BorderSide(color: borderColor, width: 0.5),
             ),
           ),
           padding: EdgeInsets.symmetric(
