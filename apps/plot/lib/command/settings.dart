@@ -8,10 +8,13 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:collection/collection.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart';
 import 'package:plot/app_info.dart';
+import 'package:plot/env.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/modal.dart';
 import 'package:plot/widget/select_modal.dart';
@@ -41,6 +44,7 @@ final settingsCommands = StaticCommandGroup(
   commands: [
     ManageConnections(),
     ManageTwists(),
+    ManageOrganizations(),
     CopyPageLink(), OpenCopiedPageLink(),
     ChangeAppearance(),
     ChangeAiPreference(),
@@ -164,6 +168,70 @@ class SignOut extends Command {
     } catch (e, t) {
       log.warning("Sign out failed", e, t);
       return CommandMessage('Sign out failed: $e', isError: true);
+    }
+  }
+}
+
+class ManageOrganizations extends Command {
+  ManageOrganizations()
+    : super(
+        title: 'Manage organizations',
+        description: 'Manage members, domains, and billing for your organizations.',
+        icon: FontAwesomeIcons.building,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final orgs = await api.get<List<dynamic>>('/organization');
+
+      if (orgs.isEmpty) {
+        return CommandMessage('You are not a member of any organization');
+      }
+
+      if (orgs.length == 1) {
+        final url = Uri.parse('${Env.appBaseUrl}/organization/${orgs[0]['id']}');
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+        return const CommandDone();
+      }
+
+      // Multiple orgs — show selection modal
+      if (!context.mounted) return const CommandDone();
+      final selected = await SelectModal.open<Map<String, dynamic>>(
+        context,
+        items: (search) async => [
+          SelectGroup(
+            title: 'Organizations',
+            items: orgs.cast<Map<String, dynamic>>(),
+          ),
+        ],
+        itemBuilder: (org, _) => Padding(
+          padding: context.theme.spacing.paddingSm,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(org['name'] as String, style: context.theme.typography.base.copyWith(
+                fontWeight: FontWeight.w600,
+              )),
+              Text('${org['role']}', style: context.theme.typography.sm.copyWith(
+                color: context.theme.plotColors.muted,
+              )),
+            ],
+          ),
+        ),
+        prompt: 'Select organization',
+      );
+
+      if (context.mounted && selected.present) {
+        final url = Uri.parse('${Env.appBaseUrl}/organization/${selected.value['id']}');
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+      return const CommandDone();
+    } catch (e, t) {
+      log.warning('Failed to open organization management', e, t);
+      return CommandMessage('Failed to open organization management', isError: true);
     }
   }
 }

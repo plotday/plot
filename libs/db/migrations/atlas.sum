@@ -1,4 +1,4 @@
-h1:E0WD2QWrnX5zHOxQXKl6eV1sybYke5jd7bdFU/qTnMc=
+h1:D8+M1mcNrmc4HIvOAZkh4uM1vP0CZ4RhDJvUnp7mN4w=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -79,5 +79,5 @@ h1:E0WD2QWrnX5zHOxQXKl6eV1sybYke5jd7bdFU/qTnMc=
 20260309015137_org_priority_sharing_behavior.sql h1:THGnhWRZaxwV8RDqRY6TtGxLREGnKvy9uhJvNRaoFeI=
 20260309172942_fix_upsert_link_preserve_thread_id.sql h1:wUgqXAgKjrXKaxjnUMdWTtDldDKUnaFei5/yrwGVQYc=
 20260309193739_add_default_mention_flags_to_twist_view.sql h1:zOxxJKjkmf+gjegQC+QDQc1JG9buWjF0Y6Wehb1haBc=
-20260309195930_verify_sync.sql h1:/82NIzIGkXYpWBoa6mvo+IcXeyGlsABVo5kw7LzY4Oc=
-20260310002108_prevent_user_twist_tag_modification.sql h1:QWyKpYqjUgdxZkXBbSyNeYnKYV1z6bnMekSum32CC6U=
+20260310002108_prevent_user_twist_tag_modification.sql h1:KFZ/GwARiJREyfhsE4Qf4fOWPQTO9KDGu24eKepnOmo=
+20260310130915_verify_sync.sql h1:jnVD6znaZ3YNoVHRRt8h1OYKf8j6DAsZJnhtB7rvpyM=

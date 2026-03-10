@@ -66,6 +66,7 @@ class GlobalShortcuts extends StatelessWidget {
           if (gettingStartedCmd != null) gettingStartedCmd,
           ManageConnections(),
           ManageTwists(),
+          ManageOrganizations(),
           CopyPageLink(),
           OpenCopiedPageLink(),
           ChangeAppearance(),
