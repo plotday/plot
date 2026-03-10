@@ -1,5 +1,12 @@
 # @plotday/twister
 
+## 0.40.0
+
+### Added
+
+- optional `tag` field to status definitions in `LinkTypeConfig.statuses` for propagating tags to threads (e.g., `tag: Tag.Done` marks the thread as Done) ([`50d4359`](https://github.com/plotday/plot/commit/50d4359a52a7dbfdfc63cc37f9a8fa77a3255ecc))
+- `supportsAssignee` option to `LinkTypeConfig` for displaying and changing link assignees in the UI ([`ebc6ca5`](https://github.com/plotday/plot/commit/ebc6ca57fd573c9a6c621e48915242af5f607e6b))
+
 ## 0.39.0
 
 ### Added
