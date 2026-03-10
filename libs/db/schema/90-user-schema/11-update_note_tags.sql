@@ -59,6 +59,10 @@ BEGIN
             IF current_tag_type = 'compute' AND tag_id_int NOT IN (1, 3) THEN
                 RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - this tag is calculated from note state', tag_id_int;
             END IF;
+            -- Prevent users from modifying the twist tag (109) - only twists can set this
+            IF tag_id_int = 109 THEN
+                RAISE EXCEPTION 'Cannot modify twist tag (tag_id: 109) - only twists can add or remove this tag';
+            END IF;
             -- Validate cross-user targeting: only allow for compute tags 1, 3 (todo, done)
             IF target_actor_id != p_actor_id AND (current_tag_type != 'compute' OR tag_id_int NOT IN (1, 3)) THEN
                 RAISE EXCEPTION 'Cannot modify this tag for other users (tag_id: %)', tag_id_int;

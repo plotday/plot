@@ -691,12 +691,11 @@ class ThreadCommands extends HookWidget {
 
         final count = activity.tags[tag]?.length ?? 0;
 
-        // Use pulsing animation for twist tags
+        // Twist tags are display-only (not interactive)
         if (tag == Tag.twist) {
           return CountBadge(
             count: count,
             child: PulsingColorButton(
-              wrappedCommand,
               key: key,
               primaryColor: threadColor,
             ),
@@ -779,12 +778,11 @@ class ThreadCommands extends HookWidget {
                           )
                         : ToggleThreadTag(activity, tag);
                     final count = activity.tags[tag]?.length ?? 0;
-                    // Use pulsing animation for twist tags
+                    // Twist tags are display-only (not interactive)
                     if (tag == Tag.twist) {
                       return CountBadge(
                         count: count,
                         child: PulsingColorButton(
-                          command,
                           key: key,
                           primaryColor: threadColor,
                         ),

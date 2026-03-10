@@ -338,12 +338,11 @@ class NoteCommands extends StatelessWidget {
 
           final count = note.tags[tag]?.length ?? 0;
 
-          // Use pulsing animation for twist tags
+          // Twist tags are display-only (not interactive)
           if (tag == Tag.twist) {
             return CountBadge(
               count: count,
               child: PulsingColorButton(
-                wrappedCommand,
                 key: key,
                 primaryColor: accentColor,
               ),
@@ -454,12 +453,11 @@ class NoteCommands extends StatelessWidget {
                     final key = ValueKey(Object.hash(note.id, tag.id));
                     final command = ToggleNoteTag(note, tag, actorId);
                     final count = note.tags[tag]?.length ?? 0;
-                    // Use pulsing animation for twist tags
+                    // Twist tags are display-only (not interactive)
                     if (tag == Tag.twist) {
                       return CountBadge(
                         count: count,
                         child: PulsingColorButton(
-                          command,
                           key: key,
                           primaryColor: context.colour.accent,
                         ),

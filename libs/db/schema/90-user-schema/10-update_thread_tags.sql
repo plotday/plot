@@ -50,6 +50,10 @@ BEGIN
             IF current_tag_type = 'compute' THEN
                 RAISE EXCEPTION 'Cannot add computed tag (tag_id: %) - these tags are calculated from thread state', tag_id_int;
             END IF;
+            -- Prevent users from modifying the twist tag (109) - only twists can set this
+            IF tag_id_int = 109 THEN
+                RAISE EXCEPTION 'Cannot modify twist tag (tag_id: 109) - only twists can add or remove this tag';
+            END IF;
             -- For count tags, enforce that users can only modify their own tags
             -- p_actor_id should match the authenticated user's contact_id
             -- Note: RLS policies already enforce this, but we validate explicitly for clarity
