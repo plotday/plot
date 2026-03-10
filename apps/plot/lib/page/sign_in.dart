@@ -13,6 +13,7 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/auth/auth_service.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
+import 'package:plot/app_info.dart';
 import 'package:plot/base.dart';
 import 'package:plot/router.dart' show EmailSignInRoute;
 import 'package:plot/page/invite.dart';
@@ -207,7 +208,20 @@ class _SignInPageState extends State<SignInPage> {
 
     return Scaffold(
       center: true,
-      body: ConstrainedBox(
+      body: Stack(
+        children: [
+          Positioned(
+            left: 8,
+            bottom: 8,
+            child: Text(
+              AppInfo.versionString,
+              style: context.theme.typography.xs.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+          ),
+          Center(
+            child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 400),
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -363,6 +377,9 @@ class _SignInPageState extends State<SignInPage> {
             ],
           ),
         ),
+          ),
+        ),
+        ],
       ),
     );
   }
