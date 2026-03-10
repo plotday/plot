@@ -10,6 +10,10 @@ import 'package:plot/util/platform.dart';
 import 'command.dart';
 import 'page_link.dart';
 
+bool _hasOrganizations(PrioritiesState? state) =>
+    state != null &&
+    state.priorities.any((p) => p.organizationId != null);
+
 class GlobalShortcuts extends StatelessWidget {
   const GlobalShortcuts({required this.child, super.key});
 
@@ -61,12 +65,13 @@ class GlobalShortcuts extends StatelessWidget {
       ),
       StaticCommandGroup(
         title: 'App',
-        shortcut: settingsCommands.shortcut,
+        shortcut: settingsCommands().shortcut,
         commands: [
           if (gettingStartedCmd != null) gettingStartedCmd,
           ManageConnections(),
           ManageTwists(),
-          ManageOrganizations(),
+          if (_hasOrganizations(prioritiesState))
+            ManageOrganizations(),
           CopyPageLink(),
           OpenCopiedPageLink(),
           ChangeAppearance(),

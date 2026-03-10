@@ -8,6 +8,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:collection/collection.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
@@ -38,22 +39,23 @@ final appearanceCommands = StaticCommandGroup(
   ],
 );
 
-final settingsCommands = StaticCommandGroup(
-  title: 'App',
-  shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
-  commands: [
-    ManageConnections(),
-    ManageTwists(),
-    ManageOrganizations(),
-    CopyPageLink(), OpenCopiedPageLink(),
-    ChangeAppearance(),
-    ChangeAiPreference(),
-    // Only show Enter Behavior setting on devices with physical keyboards
-    if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
-    CopyVersion(),
-    SignOut(),
-  ],
-);
+StaticCommandGroup settingsCommands({bool hasOrganizations = false}) =>
+    StaticCommandGroup(
+      title: 'App',
+      shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
+      commands: [
+        ManageConnections(),
+        ManageTwists(),
+        if (hasOrganizations) ManageOrganizations(),
+        CopyPageLink(), OpenCopiedPageLink(),
+        ChangeAppearance(),
+        ChangeAiPreference(),
+        // Only show Enter Behavior setting on devices with physical keyboards
+        if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
+        CopyVersion(),
+        SignOut(),
+      ],
+    );
 
 final signedOutSettingsCommands = StaticCommandGroup(
   title: 'App',
@@ -65,7 +67,14 @@ class ShowSettings extends ShowCommands {
     : super(
         title: 'Settings',
         icon: PlotIcon.settings,
-        commands: Commands(groups: [settingsCommands], prompt: 'Settings'),
+        commandsBuilder: (context) async {
+          final priorities = context.read<PrioritiesBloc>().state.priorities;
+          final hasOrgs = priorities.any((p) => p.organizationId != null);
+          return Commands(
+            groups: [settingsCommands(hasOrganizations: hasOrgs)],
+            prompt: 'Settings',
+          );
+        },
         shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
       );
 }
