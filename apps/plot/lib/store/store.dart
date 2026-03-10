@@ -1907,6 +1907,11 @@ class Store extends _$Store {
       await _subscribeToUpdates();
       await _syncAll();
 
+      // 4b. Pull first page of activity feed and agenda (global, no priority filter)
+      // This ensures recent/relevant threads survive orphan deletion.
+      await Thread.pullActivityFeed(null, null);
+      await Thread.pullAgenda(null, null);
+
       // 5. Delete orphaned rows (still have sentinel, no pending changes)
       //    Delete children before parents to respect foreign key order
       final deleteOrder = <TableInfo<Table, DataClass>>[
