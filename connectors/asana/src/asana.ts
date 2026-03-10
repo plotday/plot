@@ -60,6 +60,7 @@ export class Asana extends Connector<Asana> {
         { status: "open", label: "Open" },
         { status: "done", label: "Done", tag: Tag.Done },
       ],
+      supportsAssignee: true,
     },
   ];
 

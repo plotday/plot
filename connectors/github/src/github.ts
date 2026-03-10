@@ -118,6 +118,7 @@ export class GitHub extends Connector<GitHub> {
         { status: "closed", label: "Closed", tag: Tag.Done },
         { status: "merged", label: "Merged", tag: Tag.Done },
       ],
+      supportsAssignee: true,
     },
     {
       type: "issue",
@@ -129,6 +130,7 @@ export class GitHub extends Connector<GitHub> {
         { status: "open", label: "Open" },
         { status: "closed", label: "Closed", tag: Tag.Done },
       ],
+      supportsAssignee: true,
     },
   ];
 

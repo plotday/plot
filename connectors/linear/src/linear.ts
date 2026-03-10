@@ -77,6 +77,7 @@ export class Linear extends Connector<Linear> {
         { status: "open", label: "Open" },
         { status: "done", label: "Done", tag: Tag.Done },
       ],
+      supportsAssignee: true,
     },
   ];
 

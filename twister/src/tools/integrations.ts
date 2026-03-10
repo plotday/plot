@@ -49,6 +49,8 @@ export type LinkTypeConfig = {
     /** Tag to propagate to thread when this status is active (e.g., Tag.Done) */
     tag?: Tag;
   }>;
+  /** Whether this link type supports displaying and changing the assignee */
+  supportsAssignee?: boolean;
 };
 
 /**

@@ -60,6 +60,7 @@ export class Jira extends Connector<Jira> {
         { status: "open", label: "Open" },
         { status: "done", label: "Done", tag: Tag.Done },
       ],
+      supportsAssignee: true,
     },
   ];
 
