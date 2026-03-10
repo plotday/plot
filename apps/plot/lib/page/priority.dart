@@ -1745,7 +1745,9 @@ class _SplitViewDividerState extends State<_SplitViewDivider> {
   Widget build(BuildContext context) {
     final active = _hovered || _dragging;
     final accentColor = context.colour.accent;
-    final borderColor = active ? accentColor : context.theme.colors.foreground;
+    final borderColor = active
+        ? accentColor
+        : context.theme.colors.mutedForeground;
     final textColor = active ? accentColor : context.theme.colors.foreground;
 
     return GestureDetector(
@@ -1774,7 +1776,7 @@ class _SplitViewDividerState extends State<_SplitViewDivider> {
           decoration: BoxDecoration(
             color: context.theme.colors.background,
             border: Border.symmetric(
-              horizontal: BorderSide(color: borderColor, width: 0.5),
+              horizontal: BorderSide(color: borderColor),
             ),
           ),
           padding: EdgeInsets.symmetric(
