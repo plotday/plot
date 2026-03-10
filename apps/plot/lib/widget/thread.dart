@@ -138,18 +138,26 @@ class ThreadWidget extends StatelessWidget {
           leadingCommand = CommandWrapper(
             ThreadToDo(activity),
             icon: Value(PlotIcon.addTodo),
+            title: 'Add to do',
           );
         } else if (activity.isFuture) {
           // Todo scheduled later: alarm clock in primary
+          final schedDateTime =
+              activity.on?.start?.toDateTime() ?? activity.at?.start;
+          final schedLabel = schedDateTime != null
+              ? 'Scheduled for ${formatRelativeSchedule(schedDateTime, buildContext)}'
+              : 'Scheduled';
           leadingCommand = CommandWrapper(
-            ThreadDone(activity, bump: bump),
+            PickScheduleThread(activity),
             icon: Value(PlotIcon.schedule),
+            title: schedLabel,
           );
         } else {
           // Todo now: filled star in primary
           leadingCommand = CommandWrapper(
             ThreadDone(activity, bump: bump),
             icon: Value(PlotIcon.todo),
+            title: 'To do (remove)',
           );
         }
 
@@ -696,10 +704,7 @@ class ThreadCommands extends HookWidget {
         if (tag == Tag.twist) {
           return CountBadge(
             count: count,
-            child: PulsingColorButton(
-              key: key,
-              primaryColor: threadColor,
-            ),
+            child: PulsingColorButton(key: key, primaryColor: threadColor),
           );
         }
 
@@ -748,10 +753,10 @@ class ThreadCommands extends HookWidget {
     // Secondary skip button: appears on hover when no RSVP yet
     final skipSeriesButton =
         showEventButtons &&
-        activity.hasOtherAttendees &&
-        activity.currentUserRsvp == null
-            ? Button.icon(SkipRsvpSeries(activity))
-            : null;
+            activity.hasOtherAttendees &&
+            activity.currentUserRsvp == null
+        ? Button.icon(SkipRsvpSeries(activity))
+        : null;
 
     final tagSuggestionButtons = showCommands
         ? topThreadTags(
@@ -772,11 +777,7 @@ class ThreadCommands extends HookWidget {
                   .map((tag) {
                     final key = ValueKey(Object.hash(activity.id, tag.id));
                     final command = tag == Tag.todo
-                        ? ThreadDone(
-                            activity,
-                            stateIcon: true,
-                            bump: bump,
-                          )
+                        ? ThreadDone(activity, stateIcon: true, bump: bump)
                         : ToggleThreadTag(activity, tag);
                     final count = activity.tags[tag]?.length ?? 0;
                     // Twist tags are display-only (not interactive)
@@ -927,14 +928,8 @@ class _LinkLogos extends HookWidget {
       padding: EdgeInsets.only(right: context.theme.spacing.sm),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: logos
-            .map(
-              (String logo) => Padding(
-                padding: EdgeInsets.only(right: context.theme.spacing.xs),
-                child: LogoImage(url: logo),
-              ),
-            )
-            .toList(),
+        spacing: 8,
+        children: logos.map((String logo) => LogoImage(url: logo)).toList(),
       ),
     );
   }

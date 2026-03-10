@@ -366,13 +366,16 @@ class AddThreadWithNote extends Command {
 }
 
 class AddThreadWithLink extends Command {
-  AddThreadWithLink({required this.linkUrl, required this.linkTitle, this.linkFavicon})
-    : super(
-        title: 'Add link',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.added,
-        icon: PlotIcon.link,
-      );
+  AddThreadWithLink({
+    required this.linkUrl,
+    required this.linkTitle,
+    this.linkFavicon,
+  }) : super(
+         title: 'Add link',
+         eventObject: EventObject.activity,
+         eventAction: EventAction.added,
+         icon: PlotIcon.link,
+       );
 
   final String linkUrl;
   final String? linkTitle;
@@ -481,14 +484,18 @@ class ToggleRsvp extends _UpdateThreadCommand {
     // Initial accept (no prior RSVP) always targets the series.
     // Subsequent toggles on recurring occurrences target the occurrence.
     final hasExistingRsvp = thread.currentUserRsvp != null;
-    final isOccurrenceLevel =
-        hasExistingRsvp && thread.occurrence != null;
+    final isOccurrenceLevel = hasExistingRsvp && thread.occurrence != null;
 
-    api.post<dynamic>('/sync/schedule/status', body: {
-      'thread_id': thread.id.toString(),
-      if (isOccurrenceLevel) 'occurrence': thread.occurrence,
-      'status': _targetStatus,
-    }).catchError((_) {});
+    api
+        .post<dynamic>(
+          '/sync/schedule/status',
+          body: {
+            'thread_id': thread.id.toString(),
+            if (isOccurrenceLevel) 'occurrence': thread.occurrence,
+            'status': _targetStatus,
+          },
+        )
+        .catchError((_) {});
 
     return const CommandDone();
   }
@@ -509,10 +516,12 @@ class SkipRsvpSeries extends _UpdateThreadCommand {
     await saveOptimistically(context, updated);
 
     // Skip the entire series (no occurrence)
-    api.post<dynamic>('/sync/schedule/status', body: {
-      'thread_id': thread.id.toString(),
-      'status': 'skip',
-    }).catchError((_) {});
+    api
+        .post<dynamic>(
+          '/sync/schedule/status',
+          body: {'thread_id': thread.id.toString(), 'status': 'skip'},
+        )
+        .catchError((_) {});
 
     return const CommandDone();
   }
@@ -653,12 +662,7 @@ class ThreadDone extends _UpdateThreadCommand {
     // Optimistic removal for instant UI feedback
     context.read<PriorityBloc?>()?.optimisticallyRemoveThread(thread.id);
     HapticFeedback.mediumImpact();
-    await onUpdate(
-      thread.copyWith(
-        todo: false,
-        bump: bump,
-      ),
-    );
+    await onUpdate(thread.copyWith(todo: false, bump: bump));
     return const CommandDone();
   }
 }
@@ -778,60 +782,106 @@ class RescheduleEvent extends Command {
   }
 }
 
-class PickScheduleThread extends ShowPage {
-  PickScheduleThread(Thread thread, {Future<void> Function(Thread)? onUpdate})
-    : super(
-        title: thread.on != null ? 'Reschedule' : 'Schedule',
+class PickScheduleThread extends Command {
+  PickScheduleThread(this._thread, {Future<void> Function(Thread)? onUpdate})
+    : _onUpdate = onUpdate,
+      super(
+        title: _thread.on != null ? 'Reschedule' : 'Schedule',
         icon: PlotIcon.schedule,
-        builder: (context) => SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Text(
-                  'Schedule Action',
-                  style: context.theme.typography.xl2.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              FCalendar(
-                control: .managedDate(
-                  controller: FCalendarController.date(
-                    selectable: (date) {
-                      final today = DateTime.now();
-                      final todayStart = DateTime(
-                        today.year,
-                        today.month,
-                        today.day,
-                      );
-                      final dateStart = DateTime(
-                        date.year,
-                        date.month,
-                        date.day,
-                      );
-                      return !dateStart.isBefore(todayStart);
-                    },
-                  ),
-                ),
-                style: (style) =>
-                    style.copyWith(decoration: const BoxDecoration()),
-                onPress: (date) async {
-                  final actionReturn = await ScheduleThread(
-                    thread,
-                    when: date.toDate(),
-                    onUpdate: onUpdate,
-                  ).run(context);
-                  if (!context.mounted) return;
-                  Modal.pop(context, Value(actionReturn));
-                },
-              ),
-            ],
-          ),
-        ),
+        eventObject: EventObject.modal,
+        eventAction: EventAction.opened,
       );
+
+  final Thread _thread;
+  final Future<void> Function(Thread)? _onUpdate;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final actionReturn = await Modal(
+      constraints: const BoxConstraints(maxWidth: 380, maxHeight: 640),
+      builder: (context) => SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                'Schedule To Do',
+                style: context.theme.typography.xl2.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            FCalendar(
+              control: .managedDate(
+                controller: FCalendarController.date(
+                  selectable: (date) {
+                    final today = DateTime.now();
+                    final todayStart = DateTime(
+                      today.year,
+                      today.month,
+                      today.day,
+                    );
+                    final dateStart = DateTime(date.year, date.month, date.day);
+                    return !dateStart.isBefore(todayStart);
+                  },
+                ),
+              ),
+              style: (style) => style.copyWith(
+                decoration: const BoxDecoration(),
+                padding: EdgeInsets.zero,
+              ),
+              onPress: (date) async {
+                final actionReturn = await ScheduleThread(
+                  _thread,
+                  when: date.toDate(),
+                  onUpdate: _onUpdate,
+                ).run(context);
+                if (!context.mounted) return;
+                Modal.pop(context, Value(actionReturn));
+              },
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FButton(
+                    style: FButtonStyle.secondary(),
+                    onPress: () async {
+                      final actionReturn = await ScheduleThread(
+                        _thread,
+                        when: Thread.todoNowDate,
+                        onUpdate: _onUpdate,
+                      ).run(context);
+                      if (!context.mounted) return;
+                      Modal.pop(context, Value(actionReturn));
+                    },
+                    child: const Text('Today'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FButton(
+                    style: FButtonStyle.secondary(),
+                    onPress: () async {
+                      final actionReturn = await ToggleThreadToDo(
+                        _thread,
+                        onUpdate: _onUpdate,
+                      ).run(context);
+                      if (!context.mounted) return;
+                      Modal.pop(context, Value(actionReturn));
+                    },
+                    child: const Text('Unschedule'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ).show<CommandReturn>(context);
+    return actionReturn.present ? actionReturn.value : const CommandSkipped();
+  }
 }
 
 class ToggleThreadTag extends _UpdateThreadCommand {
@@ -1479,7 +1529,9 @@ List<Command> threadCommands(
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,
-    if (actualPrimary is! PickScheduleThread) PickScheduleThread(thread),
+    if (actualPrimary is! PickScheduleThread &&
+        !(thread.todo && thread.isFuture))
+      PickScheduleThread(thread),
     if (!skipInfrequent) RenameThread(thread),
     MoveThreadToPriority(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
