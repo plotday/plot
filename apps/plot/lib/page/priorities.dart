@@ -122,6 +122,11 @@ class PrioritiesPage extends StatelessWidget {
                                               .firstWhereOrNull(
                                                 (c) => c.key == '@plot.getting-started',
                                               );
+                                          final whatsNew = plotPriority
+                                              ?.children
+                                              .firstWhereOrNull(
+                                                (c) => c.key == '@whats-new',
+                                              );
                                           final helpFeedback = plotPriority
                                               ?.children
                                               .firstWhereOrNull(
@@ -152,7 +157,38 @@ class PrioritiesPage extends StatelessWidget {
                                                     subtitle: Value(null),
                                                   ),
                                                 ),
-                                              // 2. Connections + Twists
+                                              // 2. What's New
+                                              if (whatsNew != null)
+                                                ListTile(
+                                                  title: "What's New",
+                                                  textStyle: context.theme.typography.sm,
+                                                  icon: PlotIcon.sparkles,
+                                                  muted: true,
+                                                  selected: selected?.id == whatsNew.id,
+                                                  selectedBorder: false,
+                                                  command: CommandWrapper(
+                                                    OpenWhatsNew(whatsNew),
+                                                    icon: Value(null),
+                                                    subtitle: Value(null),
+                                                  ),
+                                                  leadingBuilder: (isHovered, hasFocus) =>
+                                                      SizedBox(
+                                                        width: 20,
+                                                        child: whatsNew.unread
+                                                            ? Center(
+                                                                child: Container(
+                                                                  width: 6.0,
+                                                                  height: 6.0,
+                                                                  decoration: BoxDecoration(
+                                                                    color: context.theme.colors.foreground,
+                                                                    shape: BoxShape.circle,
+                                                                  ),
+                                                                ),
+                                                              )
+                                                            : null,
+                                                      ),
+                                                ),
+                                              // 3. Connections + Twists
                                               ValueListenableBuilder<bool>(
                                                 valueListenable: BroadcastClient
                                                     .instance
