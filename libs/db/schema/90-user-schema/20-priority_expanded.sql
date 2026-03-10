@@ -5,7 +5,8 @@ WITH base AS (
         pu.user_id,
         c.child_id AS priority_id,
         MIN(pu.created_at) AS joined_at,
-        LEAST (MIN(pu.archived_at), MIN(c.archived_at)) AS archived_at
+        LEAST (MIN(pu.archived_at), MIN(c.archived_at)) AS archived_at,
+        CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE 'viewer' END AS role
     FROM
         priority_user pu
         JOIN priority_child c ON pu.priority_id = c.priority_id
@@ -18,6 +19,7 @@ SELECT
     b.priority_id,
     b.joined_at,
     b.archived_at,
+    b.role,
     CASE
         WHEN inherited_settings.path IS NOT NULL THEN
             inherited_settings.path

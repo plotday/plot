@@ -18,7 +18,8 @@ SELECT
         'invited'::text
     END AS status,
     pc.invited_by,
-    COALESCE(pu.personal, FALSE) AS personal
+    COALESCE(pu.personal, FALSE) AS personal,
+    COALESCE(pu.role, 'member') AS role
 FROM
     priority_contact pc
     JOIN contact c ON c.id = pc.contact_id

@@ -9,6 +9,7 @@ DECLARE
     current_tag_type tag_type;
     target_actor_id uuid;
     v_priority_id uuid;
+    v_effective_role text;
 BEGIN
     -- Validate that note_id is provided
     IF p_note_id IS NULL THEN
@@ -28,6 +29,7 @@ BEGIN
     IF NOT "user".has_priority_access (user_id, v_priority_id) THEN
         RAISE EXCEPTION 'User does not have access to this note';
     END IF;
+    v_effective_role := "user".get_effective_role(user_id, v_priority_id);
     -- Iterate through the tag updates JSON object
     FOR tag_record IN
     SELECT
@@ -47,6 +49,10 @@ BEGIN
             is_adding := tag_record.value::boolean;
             -- Get tag type using the get_tag_type function
             current_tag_type := get_tag_type (tag_id_int);
+            -- Viewer enforcement: viewers can only modify count tags
+            IF v_effective_role = 'viewer' AND current_tag_type != 'count' THEN
+                RAISE EXCEPTION 'Viewer members can only modify count tags (tag_id: %)', tag_id_int;
+            END IF;
             -- Validate computed tags for notes
             -- Notes can have 'todo' (1) and 'done' (3) tags for per-user assignment/completion
             -- But not 'archived' (4), 'attachment' (5), 'link' (6) - those are computed

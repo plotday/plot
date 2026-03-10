@@ -493,6 +493,26 @@ class _PrioritiesListState extends State<PrioritiesList>
                     ),
                   ),
 
+                  // What's New entry
+                  ...() {
+                    final whatsNew = plotPriority?.children.firstWhereOrNull(
+                      (p) => p.key == '@whats-new',
+                    );
+                    if (whatsNew == null) return <Widget>[];
+                    return [
+                      ListTile(
+                        command: OpenWhatsNew(whatsNew),
+                        icon: PlotIcon.sparkles,
+                        iconOnly: true,
+                        textStyle: itemStyle.copyWith(
+                          color: whatsNew.unread
+                              ? context.theme.colors.foreground
+                              : context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ];
+                  }(),
+
                   if (allPriorities.isEmpty)
                     Padding(
                       padding: EdgeInsets.symmetric(

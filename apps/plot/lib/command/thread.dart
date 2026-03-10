@@ -137,7 +137,11 @@ class NewThread extends Command {
   @override
   bool enabled(BuildContext context) {
     // Disable when already on the new thread page
-    return context.router.current.name != NewThreadRoute.name;
+    if (context.router.current.name == NewThreadRoute.name) return false;
+    // Disable for viewer priorities
+    final priority = context.read<PriorityBloc>().state.context;
+    if (priority.isViewer) return false;
+    return true;
   }
 
   @override
@@ -1421,7 +1425,11 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   bool open = true,
   bool showSplitThread = false,
 }) {
-  final tags = Tag.getAll().map((tag) => ToggleThreadTag(thread, tag)).toList();
+  final isViewer = thread.priority.isViewer;
+  final tags = Tag.getAll()
+      .where((tag) => !isViewer || tag.type == TagType.count)
+      .map((tag) => ToggleThreadTag(thread, tag))
+      .toList();
   final commands = threadCommands(
     thread,
     open: open,
@@ -1455,6 +1463,13 @@ List<Command> threadCommands(
   bool showSplitThread = false,
   bool showEventTiming = false,
 }) {
+  // Viewers can only open threads, not modify them
+  if (thread.priority.isViewer) {
+    return [
+      if (open) ChangeCurrentThread(thread),
+    ];
+  }
+
   final primary = skipPrimary
       ? null
       : primaryThreadCommand(thread, stateIcon: false);

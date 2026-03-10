@@ -505,7 +505,9 @@ List<StaticCommandGroup> noteCommandGroups(
   ThreadBloc? activityBloc,
 }) {
   final actorId = Base.actorId;
+  final isViewer = activityBloc?.state.thread.priority.isViewer ?? false;
   final tags = Tag.getAll()
+      .where((tag) => !isViewer || tag.type == TagType.count)
       .map((tag) => ToggleNoteTag(note, tag, actorId))
       .toList();
   final commands = noteCommands(note, activityBloc: activityBloc);
@@ -529,12 +531,28 @@ List<StaticCommandGroup> noteCommandGroups(
     if (remove.isNotEmpty)
       StaticCommandGroup(title: 'Remove tag', commands: remove),
     if (add.isNotEmpty) StaticCommandGroup(title: 'Add tag', commands: add),
-    if (!note.draft)
+    if (!note.draft && !isViewer)
       StaticCommandGroup(title: '', commands: [ArchiveNote(note)]),
   ];
 }
 
 List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
+  final isViewer = activityBloc?.state.thread.priority.isViewer ?? false;
+
+  // Viewers can only reply (forced private by DB), edit own notes, and copy
+  if (isViewer) {
+    return [
+      if (!note.draft) ReplyToNote(note),
+      if (!note.draft &&
+          note.authorId == Base.actorId &&
+          note.content != null &&
+          note.content!.trim().isNotEmpty)
+        EditNote(note, activityBloc: activityBloc),
+      if (note.content != null && note.content!.trim().isNotEmpty)
+        CopyNoteContent(note),
+    ];
+  }
+
   return [
     SelfTaskAction(note),
     if (!note.draft) ReplyToNote(note),

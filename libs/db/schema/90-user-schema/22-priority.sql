@@ -36,7 +36,8 @@ SELECT
     inherited_settings.color,
     p.key,
     p.organization_id,
-    COALESCE(upu.unread, FALSE) AS unread
+    COALESCE(upu.unread, FALSE) AS unread,
+    "user".get_effective_role(pu.user_id, p.id) AS role
 FROM
     priority_user pu
     JOIN priority root ON pu.priority_id = root.id

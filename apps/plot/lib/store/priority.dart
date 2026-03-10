@@ -23,6 +23,7 @@ class Priorities extends Table
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get personal => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
+  TextColumn get role => text().withDefault(const Constant('member'))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -44,6 +45,7 @@ class PrioritiesBase extends BaseTable {
   Map<String, dynamic> toBase(DataClass row) {
     final json = super.toBase(row);
     json.remove('unread');
+    json.remove('role');
     return json;
   }
 }
@@ -789,6 +791,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          root: false,
          personal: parent.personal,
          unread: false,
+         role: parent.role,
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -855,6 +858,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          path: row.path,
          createdBy: row.createdBy,
          unread: row.unread,
+         role: row.role,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -965,6 +969,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// The ID of the nearest shared ancestor, if any.
   final PriorityId? sharingAncestorId;
 
+  /// Returns true if this priority has a viewer role (read-only).
+  bool get isViewer => role == 'viewer';
+
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
 
@@ -1017,6 +1024,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Priority? parent,
     Value<int?> pending = const Value.absent(),
     bool? unread,
+    String? role,
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1050,6 +1058,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         root: root,
         personal: personal,
         unread: unread,
+        role: role,
       ),
       parent: currentParent,
       children: children,

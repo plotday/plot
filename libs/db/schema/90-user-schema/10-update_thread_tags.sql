@@ -8,6 +8,7 @@ DECLARE
     is_adding boolean;
     current_tag_type tag_type;
     v_priority_id uuid;
+    v_effective_role text;
 BEGIN
     -- Validate that thread_id is provided
     IF p_thread_id IS NULL THEN
@@ -26,6 +27,7 @@ BEGIN
     IF NOT "user".has_priority_access (user_id, v_priority_id) THEN
         RAISE EXCEPTION 'User does not have access to this thread';
     END IF;
+    v_effective_role := "user".get_effective_role(user_id, v_priority_id);
     -- Iterate through the tag updates JSON object
     FOR tag_record IN
     SELECT
@@ -39,6 +41,10 @@ BEGIN
             is_adding := tag_record.value::boolean;
             -- Get tag type using the get_tag_type function
             current_tag_type := get_tag_type (tag_id_int);
+            -- Viewer enforcement: viewers can only modify count tags
+            IF v_effective_role = 'viewer' AND current_tag_type != 'count' THEN
+                RAISE EXCEPTION 'Viewer members can only modify count tags (tag_id: %)', tag_id_int;
+            END IF;
             -- Prevent insertion of computed tags (tag_id 1-99)
             -- Computed tags should only exist as calculated values
             IF current_tag_type = 'compute' THEN

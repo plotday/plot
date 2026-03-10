@@ -9,6 +9,7 @@ class PriorityMembers extends Table
   TextColumn get status => text()(); // 'accepted' or 'invited'
   BlobColumn get invitedBy => blob().map(const UuidConverter()).nullable()();
   BoolColumn get personal => boolean().withDefault(const Constant(false))();
+  TextColumn get role => text().withDefault(const Constant('member'))();
 
   @override
   Set<Column> get primaryKey => {contactId, priorityId};
@@ -50,6 +51,7 @@ class PriorityMember extends PriorityMemberRow {
         status: row.status,
         invitedBy: row.invitedBy,
         personal: row.personal,
+        role: row.role,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         archivedAt: row.archivedAt,

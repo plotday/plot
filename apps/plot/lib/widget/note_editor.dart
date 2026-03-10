@@ -690,7 +690,7 @@ class NoteEditorState extends State<NoteEditor> {
             opacity: _saving ? 0.6 : 1.0,
             child: Row(
               children: [
-                if (widget.showScheduleActions) ...[
+                if (widget.showScheduleActions && !thread.priority.isViewer) ...[
                   // Left side: Todo toggle (on == today)
                   Button.icon(
                     ToggleThreadToDo(
@@ -721,7 +721,7 @@ class NoteEditorState extends State<NoteEditor> {
                     },
                   ),
                 ],
-                if (!thread.priority.personal && !thread.private)
+                if (!thread.priority.personal && !thread.private && !thread.priority.isViewer)
                   Button.icon(
                     ToggleThreadPrivate(
                       thread,
@@ -729,7 +729,7 @@ class NoteEditorState extends State<NoteEditor> {
                     ),
                     selected: thread.private,
                   ),
-                if (!thread.priority.personal)
+                if (!thread.priority.personal && !thread.priority.isViewer)
                   Button.icon(
                     PickDraftNoteAssignee(
                       note: draftNote,

@@ -46,6 +46,7 @@ CREATE TABLE "public"."priority_user" (
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "archived_at" timestamp with time zone,
     "personal" boolean NOT NULL DEFAULT FALSE,
+    "role" text NOT NULL DEFAULT 'member',
     PRIMARY KEY (user_id, priority_id)
 );
 

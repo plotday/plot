@@ -2109,6 +2109,8 @@ class Store extends _$Store {
     }
     if (from < 265) {
       await _safeAddColumn(m, priorities, priorities.organizationId);
+      await _safeAddColumn(m, priorities, priorities.role);
+      await _safeAddColumn(m, priorityMembers, priorityMembers.role);
     }
     if (from < 266) {
       await _safeAddColumn(m, priorityTwists, priorityTwists.defaultMentionCreated);

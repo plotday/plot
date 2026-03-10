@@ -41,6 +41,7 @@ class ThreadWidget extends StatelessWidget {
   final int? reorderableIndex;
 
   Command? _getSwipeRightCommand() {
+    if (activity.priority.isViewer) return null;
     if (activity.at != null) return null;
     return activity.todo
         ? ThreadDone(activity, bump: bump)
@@ -48,6 +49,7 @@ class ThreadWidget extends StatelessWidget {
   }
 
   Command? _getSwipeLeftCommand() {
+    if (activity.priority.isViewer) return null;
     if (activity.at != null) return null;
     return PickScheduleThread(activity);
   }

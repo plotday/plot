@@ -32,6 +32,7 @@ class GlobalShortcuts extends StatelessWidget {
     // Extract @plot priority commands
     Command? gettingStartedCmd;
     Command? helpFeedbackCmd;
+    Command? whatsNewCmd;
     if (prioritiesState != null) {
       final plotPriority = prioritiesState.root?.children.firstWhereOrNull(
         (p) => p.key == '@plot',
@@ -45,6 +46,8 @@ class GlobalShortcuts extends StatelessWidget {
             gettingStartedCmd = OpenGettingStarted(child);
           } else if (child.key?.startsWith('@help-feedback') == true) {
             helpFeedbackCmd = OpenHelpFeedback(child);
+          } else if (child.key == '@whats-new') {
+            whatsNewCmd = OpenWhatsNew(child);
           }
         }
       }
@@ -67,6 +70,7 @@ class GlobalShortcuts extends StatelessWidget {
           OpenCopiedPageLink(),
           ChangeAppearance(),
           if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
+          if (whatsNewCmd != null) whatsNewCmd,
           if (helpFeedbackCmd != null) helpFeedbackCmd,
           FullResync(),
           CopyVersion(),

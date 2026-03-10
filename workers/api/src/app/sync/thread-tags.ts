@@ -5,6 +5,7 @@ import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { notifySync, getPriorityForThread } from "./notify";
+import { stripCountTagActors } from "./viewer";
 
 const threadTags = new Hono<{ Bindings: Bindings }>();
 
@@ -75,6 +76,8 @@ threadTags.get("/sync/thread-tags", async (c) => {
 
     return query.execute();
   });
+
+  await stripCountTagActors(c.var.db, userId, rows);
 
   return c.json(rows as any);
 });

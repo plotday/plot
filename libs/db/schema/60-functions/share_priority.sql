@@ -1,6 +1,6 @@
 -- Function to share a priority with other users/contacts
 -- Handles extraction from personal tree when needed
-CREATE OR REPLACE FUNCTION public.share_priority (p_user_id uuid, p_priority_id uuid, p_add_actor_ids uuid[], p_remove_actor_ids uuid[])
+CREATE OR REPLACE FUNCTION public.share_priority (p_user_id uuid, p_priority_id uuid, p_add_actor_ids uuid[], p_remove_actor_ids uuid[], p_role text DEFAULT 'member')
     RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
@@ -131,8 +131,8 @@ BEGIN
               AND (SELECT count FROM other_invitations) = 0;
             IF v_contact.user_id IS NOT NULL THEN
                 -- Contact is an existing user - also create priority_user
-                INSERT INTO public.priority_user (user_id, priority_id, personal)
-                    VALUES (v_contact.user_id, p_priority_id, FALSE)
+                INSERT INTO public.priority_user (user_id, priority_id, personal, role)
+                    VALUES (v_contact.user_id, p_priority_id, FALSE, p_role)
                 ON CONFLICT (user_id, priority_id)
                     DO UPDATE SET
                         archived_at = NULL;

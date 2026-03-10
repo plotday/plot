@@ -38,6 +38,10 @@ BEGIN
     IF NOT "user".has_priority_access(user_id, v_priority_id) THEN
         RAISE EXCEPTION 'User does not have access to this schedule';
     END IF;
+    -- Enforce viewer restriction: viewers cannot manage schedule contacts
+    IF "user".get_effective_role(upsert_schedule_contacts.user_id, v_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members cannot manage schedule contacts';
+    END IF;
 
     FOR v_contact IN SELECT * FROM jsonb_array_elements(p_contacts)
     LOOP

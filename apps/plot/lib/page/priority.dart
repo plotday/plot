@@ -925,7 +925,7 @@ class _PriorityPageState extends State<PriorityPage> {
                                           items,
                                           listController,
                                           ScrollControllerContext.of(context),
-                                          enableReorder: true,
+                                          enableReorder: !state.context.isViewer,
                                           doneEnd: state.doneEnd,
                                           scrollStorageKey: PageStorageKey(
                                             'priority_agenda_${widget.priorityId}',
@@ -1055,7 +1055,7 @@ class _PriorityPageState extends State<PriorityPage> {
                           agendaItems,
                           _agendaListController,
                           null,
-                          enableReorder: true,
+                          enableReorder: !state.context.isViewer,
                           doneEnd: state.doneEnd,
                         ),
                 ),

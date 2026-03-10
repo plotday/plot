@@ -104,6 +104,10 @@ BEGIN
             AND p.id = v_priority_id) THEN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
+    -- Enforce viewer restriction: viewers cannot create or modify links
+    IF "user".get_effective_role(upsert_link.user_id, v_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members cannot create or modify links';
+    END IF;
 
     -- Validate created_by when it differs from user_id
     IF v_created_by IS DISTINCT FROM user_id THEN

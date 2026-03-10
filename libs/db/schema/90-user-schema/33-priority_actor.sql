@@ -26,6 +26,7 @@ FROM (
         "user".priority_expanded upe
         JOIN priority_contact pc ON pc.priority_id = upe.priority_id
         JOIN contact c ON c.id = pc.contact_id
+    WHERE NOT (upe.role = 'viewer' AND c.user_id IS NOT NULL AND "user".get_effective_role(c.user_id, upe.priority_id) = 'viewer')
 UNION ALL
 -- Priority twists bound directly to a priority
 SELECT

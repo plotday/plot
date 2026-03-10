@@ -672,6 +672,19 @@ account.post("/activate", async (c) => {
     });
   }
 
+  // Set up What's New priority (viewer role)
+  try {
+    await rpc(c.var.db, "setup_whats_new_priority", {
+      p_user_id: user.id,
+    });
+  } catch (error) {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Failed to setup What's New priority", error as Error, {
+      user_id: user.id,
+    });
+  }
+
   notifySync(c, priority.id);
 
   // Look up the user's primary contact ID for the response

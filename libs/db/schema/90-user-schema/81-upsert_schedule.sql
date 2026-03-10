@@ -68,6 +68,10 @@ BEGIN
     END IF;
 
     PERFORM "user".assert_priority_access(upsert_schedule.user_id, v_priority_id);
+    -- Enforce viewer restriction: viewers cannot create or modify schedules
+    IF "user".get_effective_role(upsert_schedule.user_id, v_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members cannot create or modify schedules';
+    END IF;
 
     -- Per-user schedules can only be created/modified by the owning user
     IF v_schedule_user_id IS NOT NULL AND v_schedule_user_id != upsert_schedule.user_id THEN

@@ -57,6 +57,10 @@ BEGIN
     IF v_tag_type = 'compute' THEN
         RAISE EXCEPTION 'Cannot add computed tag (tag_id: %)', p_tag_id;
     END IF;
+    -- Viewer enforcement: viewers can only modify count tags
+    IF v_tag_type != 'count' AND "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members can only modify count tags';
+    END IF;
     IF v_tag_type = 'count' AND p_actor_id != "user".user_contact_id(user_id) THEN
         RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
     END IF;
@@ -107,6 +111,10 @@ BEGIN
     IF v_tag_type = 'compute' THEN
         RAISE EXCEPTION 'Cannot add computed tag (tag_id: %)', p_tag_id;
     END IF;
+    -- Viewer enforcement: viewers can only modify count tags
+    IF v_tag_type != 'count' AND "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members can only modify count tags';
+    END IF;
     IF v_tag_type = 'count' AND p_actor_id != "user".user_contact_id(user_id) THEN
         RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
     END IF;
@@ -150,6 +158,7 @@ DECLARE
     v_priority_id uuid;
     v_created_by uuid;
     v_author_id uuid;
+    v_thread_author_id uuid;
     v_row note;
 BEGIN
     SELECT
@@ -162,6 +171,23 @@ BEGIN
         RAISE EXCEPTION 'Thread not found';
     END IF;
     PERFORM "user".assert_priority_access(user_id, v_priority_id);
+
+    -- Viewer enforcement: force private, auto-mention thread author
+    IF "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
+        p_private := TRUE;
+        SELECT n.author_id INTO v_thread_author_id
+        FROM note n
+        WHERE n.thread_id = p_thread_id
+        ORDER BY n.created_at ASC
+        LIMIT 1;
+        IF v_thread_author_id IS NOT NULL THEN
+            IF p_mentions IS NULL THEN
+                p_mentions := ARRAY[v_thread_author_id];
+            ELSIF NOT (v_thread_author_id = ANY(p_mentions)) THEN
+                p_mentions := p_mentions || v_thread_author_id;
+            END IF;
+        END IF;
+    END IF;
 
     v_created_by := COALESCE(p_created_by, user_id);
     -- When the user creates directly (not via twist), force author to their contact ID.
@@ -287,6 +313,11 @@ DECLARE
 BEGIN
     PERFORM "user".assert_priority_access(user_id, p_priority_id);
 
+    -- Viewer enforcement: viewers cannot manage priority members
+    IF "user".get_effective_role(user_id, p_priority_id) = 'viewer' THEN
+        RAISE EXCEPTION 'Viewer members cannot manage priority members';
+    END IF;
+
     INSERT INTO priority_contact (priority_id, contact_id, invited_by, invited_at)
         VALUES (p_priority_id, p_contact_id, p_invited_by, p_invited_at)
     ON CONFLICT (priority_id, contact_id)
@@ -327,6 +358,11 @@ BEGIN
     -- Source accounts have NULL priority_id; skip access check for those
     IF p_priority_id IS NOT NULL THEN
         PERFORM "user".assert_priority_access(user_id, p_priority_id);
+
+        -- Viewer enforcement: viewers cannot manage twists
+        IF "user".get_effective_role(user_id, p_priority_id) = 'viewer' THEN
+            RAISE EXCEPTION 'Viewer members cannot manage twists';
+        END IF;
     END IF;
     IF p_owner_id IS DISTINCT FROM user_id THEN
         RAISE EXCEPTION 'owner_id must match user_id';
@@ -388,6 +424,23 @@ BEGIN
                 priority
             WHERE
                 id = _input.id) INTO _priority_exists;
+    -- Viewer enforcement: viewers cannot create new priorities
+    -- For existing priorities, allow through (only priority_settings changes like reordering)
+    IF NOT _priority_exists AND nlevel(_input.path) > 1 THEN
+        DECLARE
+            _parent_priority_id uuid;
+            _parent_path ltree;
+        BEGIN
+            _parent_path := subpath(_input.path, 0, nlevel(_input.path) - 1);
+            SELECT up.id INTO _parent_priority_id
+            FROM "user".priority up
+            WHERE up.user_id = upsert_priority.user_id AND up.path = _parent_path
+            LIMIT 1;
+            IF _parent_priority_id IS NOT NULL AND "user".get_effective_role(upsert_priority.user_id, _parent_priority_id) = 'viewer' THEN
+                RAISE EXCEPTION 'Viewer members cannot create priorities';
+            END IF;
+        END;
+    END IF;
     -- Look up existing row from view if it exists (replaces OLD trigger variable)
     IF _priority_exists THEN
         SELECT
