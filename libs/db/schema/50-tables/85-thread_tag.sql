@@ -17,6 +17,8 @@ CREATE INDEX idx_thread_tag_thread_id ON "public"."thread_tag" (thread_id, tag_i
 WHERE
     archived_at IS NULL;
 
+CREATE INDEX idx_thread_tag_thread_id_all ON "public"."thread_tag" (thread_id);
+
 CREATE TRIGGER set_thread_tag_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_tag"
     FOR EACH ROW

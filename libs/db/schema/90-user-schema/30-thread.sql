@@ -151,13 +151,33 @@ SELECT
     ua.user_id,
     ua.id,
     ua.archived_at,
-    at.occurrence,
-    at.updated_at,
+    tt.occurrence,
+    tt.updated_at,
     ua.priority_id,
     ua.priority_path,
-    at.tags
+    tt.tags
 FROM
-    thread_tags at
-    JOIN "user".thread ua ON ua.id = at.thread_id;
+    "user".thread ua
+    JOIN LATERAL (
+        SELECT
+            sq.occurrence,
+            jsonb_object_agg(sq.tag_id, sq.actor_ids) FILTER (WHERE sq.actor_ids IS NOT NULL
+                AND jsonb_array_length(sq.actor_ids) > 0) AS tags,
+            MAX(sq.updated_at) AS updated_at
+        FROM (
+            SELECT
+                at.occurrence,
+                at.tag_id,
+                jsonb_agg(at.actor_id) FILTER (WHERE at.archived_at IS NULL) AS actor_ids,
+                MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at
+            FROM
+                "public"."thread_tag" at
+            WHERE
+                at.thread_id = ua.id
+            GROUP BY
+                at.occurrence,
+                at.tag_id) sq
+        GROUP BY
+            sq.occurrence) tt ON true;
 
 ALTER VIEW "user"."thread_tags" OWNER TO postgres;
