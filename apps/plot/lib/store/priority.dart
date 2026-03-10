@@ -38,6 +38,8 @@ class PrioritiesBase extends BaseTable {
   @override
   Insertable<PriorityRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
+    json.remove('global_path');
+    json['role'] ??= 'member';
     return PriorityRow.fromJson(json);
   }
 
