@@ -54,6 +54,13 @@ type SyncState = {
   initialSync: boolean;
 };
 
+type ViewerInfo = {
+  linearId: string;
+  email: string;
+  name: string;
+  avatar?: string;
+};
+
 /**
  * Linear project management source
  *
@@ -102,6 +109,39 @@ export class Linear extends Connector<Linear> {
       throw new Error("No Linear authentication token available");
     }
     return new LinearClient({ accessToken: token.token });
+  }
+
+  /**
+   * Resolve author contact from a Linear user object.
+   * Falls back to cached viewer info when the API doesn't return an email.
+   */
+  private async resolveAuthorContact(
+    user: { id?: string; email?: string; name?: string; avatarUrl?: string | null } | null | undefined,
+    projectId: string
+  ): Promise<NewContact | undefined> {
+    if (!user) return undefined;
+
+    if (user.email) {
+      return {
+        email: user.email,
+        name: user.name ?? "",
+        avatar: user.avatarUrl ?? undefined,
+      };
+    }
+
+    // Linear API often omits email on creator relations — check if it's the authenticated user
+    if (user.id) {
+      const viewerInfo = await this.get<ViewerInfo>(`viewer_info_${projectId}`);
+      if (viewerInfo?.email && user.id === viewerInfo.linearId) {
+        return {
+          email: viewerInfo.email,
+          name: user.name || viewerInfo.name,
+          avatar: user.avatarUrl ?? viewerInfo.avatar,
+        };
+      }
+    }
+
+    return undefined;
   }
 
   /**
@@ -263,6 +303,22 @@ export class Linear extends Connector<Linear> {
     projectId: string,
     options?: ProjectSyncOptions
   ): Promise<void> {
+    // Cache the authenticated user's info for author resolution
+    try {
+      const client = await this.getClient(projectId);
+      const viewer = await client.viewer;
+      if (viewer) {
+        await this.set(`viewer_info_${projectId}`, {
+          linearId: viewer.id,
+          email: viewer.email,
+          name: viewer.name,
+          avatar: viewer.avatarUrl ?? undefined,
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to fetch Linear viewer info:", error);
+    }
+
     // Initialize sync state
     await this.set(`sync_state_${projectId}`, {
       after: null,
@@ -392,16 +448,9 @@ export class Linear extends Connector<Linear> {
     }
 
     // Prepare author and assignee contacts - will be passed directly as NewContact
-    let authorContact: NewContact | undefined;
+    const authorContact = await this.resolveAuthorContact(creator, projectId);
     let assigneeContact: NewContact | undefined;
 
-    if (creator?.email) {
-      authorContact = {
-        email: creator.email,
-        name: creator.name,
-        avatar: creator.avatarUrl ?? undefined,
-      };
-    }
     if (assignee?.email) {
       assigneeContact = {
         email: assignee.email,
@@ -688,16 +737,9 @@ export class Linear extends Connector<Linear> {
     const assignee = issue.assignee || null;
 
     // Build thread update with only issue fields (no notes)
-    let authorContact: NewContact | undefined;
+    const authorContact = await this.resolveAuthorContact(creator, projectId);
     let assigneeContact: NewContact | undefined;
 
-    if (creator?.email) {
-      authorContact = {
-        email: creator.email,
-        name: creator.name,
-        avatar: creator.avatarUrl ?? undefined,
-      };
-    }
     if (assignee?.email) {
       assigneeContact = {
         email: assignee.email,
