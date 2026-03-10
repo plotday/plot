@@ -2,8 +2,11 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:change_case/change_case.dart';
+import 'package:logging/logging.dart';
 
 import 'enums.dart';
+
+final _serializerLog = Logger('plot.serializer');
 
 enum AuthProvider { google, microsoft, slack, apple, github, discord, notion, atlassian, linear, monday, asana, hubspot, other }
 
@@ -57,7 +60,15 @@ class CustomSerializer extends ValueSerializer {
         return BigInt.parse(json) as T;
       }
     }
-    return _inner.fromJson<T>(json);
+    try {
+      return _inner.fromJson<T>(json);
+    } catch (e) {
+      _serializerLog.severe(
+        'fromJson<$T> failed — json type: ${json.runtimeType}, value: $json',
+        e,
+      );
+      rethrow;
+    }
   }
 
   @override
@@ -65,7 +76,15 @@ class CustomSerializer extends ValueSerializer {
     if (value is DateTime) {
       return (value as DateTime).toUtc().toIso8601String();
     }
-    return _inner.toJson(value);
+    try {
+      return _inner.toJson<T>(value);
+    } catch (e) {
+      _serializerLog.severe(
+        'toJson<$T> failed — value type: ${value.runtimeType}, value: $value',
+        e,
+      );
+      rethrow;
+    }
   }
 }
 
