@@ -29,6 +29,7 @@
     "prod-db-logs": "docker logs cloud-sql-proxy"
   },
   "devDependencies": {
+    "@clerk/backend": "^2.31.0",
     "@plotday/tsconfig": "workspace:^",
     "@supabase/postgres-meta": "^0.95.2",
     "tsx": "^4.19.2",

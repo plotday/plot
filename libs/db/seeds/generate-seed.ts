@@ -8,6 +8,7 @@
  */
 import pg from "pg";
 
+import { createClerkClient } from "@clerk/backend";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -78,7 +79,60 @@ function loadEnvFromFile() {
 }
 
 /**
+ * Create or find a Clerk user for the given email.
+ * Returns the Clerk user ID, or null if Clerk is not configured.
+ */
+async function getOrCreateClerkUser(
+  email: string,
+  userName: string
+): Promise<string | null> {
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  if (!secretKey) {
+    console.error(
+      "⚠ CLERK_SECRET_KEY not set — skipping Clerk user creation. Set it in .env.development.local"
+    );
+    return null;
+  }
+
+  const clerk = createClerkClient({ secretKey });
+  const [firstName, ...lastParts] = userName.split(" ");
+  const lastName = lastParts.join(" ") || undefined;
+
+  try {
+    const clerkUser = await clerk.users.createUser({
+      emailAddress: [email],
+      password: email,
+      firstName,
+      lastName,
+      skipPasswordChecks: true,
+    });
+    console.error(`✓ Created Clerk user: ${email} (${clerkUser.id})`);
+    return clerkUser.id;
+  } catch (error: any) {
+    // 422 with "already exists" means the user is already in Clerk
+    if (
+      error?.status === 422 &&
+      error?.errors?.some((e: any) => e.code === "form_identifier_exists")
+    ) {
+      // Look up existing Clerk user by email
+      const existing = await clerk.users.getUserList({
+        emailAddress: [email],
+      });
+      if (existing.data.length > 0) {
+        console.error(
+          `✓ Found existing Clerk user: ${email} (${existing.data[0].id})`
+        );
+        return existing.data[0].id;
+      }
+    }
+    console.error(`⚠ Failed to create Clerk user for ${email}:`, error?.errors ?? error);
+    return null;
+  }
+}
+
+/**
  * Get or create a user by email using direct PostgreSQL queries.
+ * Also creates a corresponding Clerk user for authentication.
  * @returns Object with userId and contactId
  */
 async function getOrCreateUser(
@@ -87,6 +141,9 @@ async function getOrCreateUser(
 ): Promise<{ userId: string; contactId: string }> {
   // Load from .env.development.local if needed
   loadEnvFromFile();
+
+  // Create Clerk user first (or find existing)
+  const clerkId = await getOrCreateClerkUser(email, userName);
 
   const dbUrl =
     process.env.DATABASE_URL ||
@@ -97,7 +154,7 @@ async function getOrCreateUser(
   try {
     // Check if user exists in public."user"
     const existing = await pool.query(
-      "SELECT id FROM public.\"user\" WHERE email = $1",
+      "SELECT id, clerk_id FROM public.\"user\" WHERE email = $1",
       [email]
     );
 
@@ -106,14 +163,35 @@ async function getOrCreateUser(
     if (existing.rows.length > 0) {
       userId = existing.rows[0].id;
       console.error(`✓ Found existing user: ${email} (${userId})`);
+
+      // Update clerk_id if we have one and it's not set
+      if (clerkId && existing.rows[0].clerk_id !== clerkId) {
+        await pool.query(
+          "UPDATE public.\"user\" SET clerk_id = $1 WHERE id = $2",
+          [clerkId, userId]
+        );
+        console.error(`✓ Updated clerk_id for user: ${email}`);
+      }
     } else {
-      // Create new user
+      // Create new user with clerk_id
       const result = await pool.query(
-        "INSERT INTO public.\"user\" (id, email, name) VALUES (gen_random_uuid(), $1, $2) RETURNING id",
-        [email, userName]
+        "INSERT INTO public.\"user\" (id, email, name, clerk_id) VALUES (gen_random_uuid(), $1, $2, $3) RETURNING id",
+        [email, userName, clerkId]
       );
       userId = result.rows[0].id;
       console.error(`✓ Created new user: ${email} (${userId})`);
+    }
+
+    // Set externalId on Clerk user to link back to DB user
+    if (clerkId) {
+      try {
+        const clerk = createClerkClient({
+          secretKey: process.env.CLERK_SECRET_KEY!,
+        });
+        await clerk.users.updateUser(clerkId, { externalId: userId });
+      } catch (error: any) {
+        console.error(`⚠ Failed to set Clerk externalId:`, error?.errors ?? error);
+      }
     }
 
     // Get contact for this user

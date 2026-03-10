@@ -158,6 +158,9 @@ importers:
         specifier: ^8.18.0
         version: 8.18.0
     devDependencies:
+      '@clerk/backend':
+        specifier: ^2.31.0
+        version: 2.31.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@plotday/tsconfig':
         specifier: workspace:^
         version: link:../tsconfig
