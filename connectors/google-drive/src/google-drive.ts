@@ -44,6 +44,13 @@ import {
   listSharedDrives,
 } from "./google-api";
 
+const MIME_TO_LINK_TYPE: Record<string, string> = {
+  "application/vnd.google-apps.document": "doc",
+  "application/vnd.google-apps.spreadsheet": "sheet",
+  "application/vnd.google-apps.presentation": "slide",
+  "application/vnd.google-apps.form": "form",
+};
+
 /**
  * Google Drive integration source.
  *
@@ -67,7 +74,13 @@ export class GoogleDrive extends Connector<GoogleDrive> {
 
   readonly provider = AuthProvider.Google;
   readonly scopes = Integrations.MergeScopes(GoogleDrive.SCOPES, GoogleContacts.SCOPES);
-  readonly linkTypes = [{ type: "document", label: "Document", logo: "https://api.iconify.design/logos/google-drive.svg", logoMono: "https://api.iconify.design/simple-icons/googledrive.svg" }];
+  readonly linkTypes = [
+    { type: "doc", label: "Document", logo: "https://api.iconify.design/simple-icons/googledocs.svg?color=%234285F4", logoMono: "https://api.iconify.design/simple-icons/googledocs.svg" },
+    { type: "sheet", label: "Spreadsheet", logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%2334A853", logoMono: "https://api.iconify.design/simple-icons/googlesheets.svg" },
+    { type: "slide", label: "Presentation", logo: "https://api.iconify.design/simple-icons/googleslides.svg?color=%23FBBC04", logoMono: "https://api.iconify.design/simple-icons/googleslides.svg" },
+    { type: "form", label: "Form", logo: "https://api.iconify.design/simple-icons/googleforms.svg?color=%23673AB7", logoMono: "https://api.iconify.design/simple-icons/googleforms.svg" },
+    { type: "document", label: "File", logo: "https://api.iconify.design/logos/google-drive.svg", logoMono: "https://api.iconify.design/simple-icons/googledrive.svg" },
+  ];
 
   build(build: ToolBuilder) {
     return {
@@ -693,7 +706,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
 
     const thread: NewLinkWithNotes = {
       source: canonicalSource,
-      type: "document",
+      type: MIME_TO_LINK_TYPE[file.mimeType] ?? "document",
       title: file.name,
       author,
       sourceUrl: file.webViewLink ?? null,

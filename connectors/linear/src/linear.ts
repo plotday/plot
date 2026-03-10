@@ -14,6 +14,7 @@ import {
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
+import { Tag } from "@plotday/twister/tag";
 import { Connector } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
@@ -74,7 +75,7 @@ export class Linear extends Connector<Linear> {
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
       statuses: [
         { status: "open", label: "Open" },
-        { status: "done", label: "Done" },
+        { status: "done", label: "Done", tag: Tag.Done },
       ],
     },
   ];

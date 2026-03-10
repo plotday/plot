@@ -6,6 +6,7 @@ import {
   ITool,
   Serializable,
 } from "..";
+import { Tag } from "../tag";
 import type { JSONValue } from "../utils/types";
 import type { Uuid } from "../utils/uuid";
 
@@ -45,6 +46,8 @@ export type LinkTypeConfig = {
     status: string;
     /** Human-readable label (e.g., "Open", "Done") */
     label: string;
+    /** Tag to propagate to thread when this status is active (e.g., Tag.Done) */
+    tag?: Tag;
   }>;
 };
 

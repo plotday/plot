@@ -7,6 +7,7 @@ import {
   type NewLinkWithNotes,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
+import { Tag } from "@plotday/twister/tag";
 import { Connector } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
@@ -57,7 +58,7 @@ export class Asana extends Connector<Asana> {
       logoMono: "https://api.iconify.design/simple-icons/asana.svg",
       statuses: [
         { status: "open", label: "Open" },
-        { status: "done", label: "Done" },
+        { status: "done", label: "Done", tag: Tag.Done },
       ],
     },
   ];

@@ -7,6 +7,7 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
+import { Tag } from "@plotday/twister/tag";
 import { Options } from "@plotday/twister/options";
 import {
   AuthProvider,
@@ -114,8 +115,8 @@ export class GitHub extends Connector<GitHub> {
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
         { status: "open", label: "Open" },
-        { status: "closed", label: "Closed" },
-        { status: "merged", label: "Merged" },
+        { status: "closed", label: "Closed", tag: Tag.Done },
+        { status: "merged", label: "Merged", tag: Tag.Done },
       ],
     },
     {
@@ -126,7 +127,7 @@ export class GitHub extends Connector<GitHub> {
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
         { status: "open", label: "Open" },
-        { status: "closed", label: "Closed" },
+        { status: "closed", label: "Closed", tag: Tag.Done },
       ],
     },
   ];
