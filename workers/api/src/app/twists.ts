@@ -106,9 +106,9 @@ twists.get("/sources", async (c) => {
   } catch (error) {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
-    logger.error("Error fetching sources", error as Error);
+    logger.error("Error fetching connectors", error as Error);
     if (error instanceof Error) {
-      return c.json({ message: `Error fetching sources: ${error.message}` }, 400);
+      return c.json({ message: `Error fetching connectors: ${error.message}` }, 400);
     }
     throw error;
   }

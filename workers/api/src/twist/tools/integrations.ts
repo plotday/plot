@@ -367,7 +367,7 @@ export class Integrations extends Tool implements IAuth {
     }
 
     if (!targetPriorityId) {
-      throw new Error("Cannot save link: no priority resolved. Set channelId on the link or use a priority-bound source.");
+      throw new Error("Cannot save link: no priority resolved. Set channelId on the link or use a priority-bound connector.");
     }
 
     const plot = this.getPlot(targetPriorityId);

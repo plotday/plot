@@ -150,7 +150,7 @@ ${TWIST_GUIDE}`;
 
     // Validate required index.ts file exists
     if (!source.files["index.ts"]) {
-      throw new Error("Generated source is missing required 'index.ts' file");
+      throw new Error("Generated connector is missing required 'index.ts' file");
     }
 
     // Try to build the twist

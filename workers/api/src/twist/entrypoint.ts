@@ -210,26 +210,26 @@ class ToolShed {
 }
 
 async function buildTwist(priorityTwistId, builtInToolFactory) {
-  // Check if the twist is a Source (has isSource static property)
-  const isSource = TwistConstructor.isSource === true;
+  // Check if the twist is a Connector (has isConnector static property)
+  const isConnector = TwistConstructor.isConnector === true;
 
   // Enforce bidirectional tool access:
-  // - Sources cannot use Plot (must use integrations.saveLink() instead)
-  // - Twists cannot use Integrations (only Sources can)
+  // - Connectors cannot use Plot (must use integrations.saveLink() instead)
+  // - Twists cannot use Integrations (only Connectors can)
   const wrappedFactory = (path, id, options) => {
-    if (isSource && id === "Plot") {
+    if (isConnector && id === "Plot") {
       throw new Error(
-        "Sources cannot use the Plot tool directly. Use integrations.saveLink() instead."
+        "Connectors cannot use the Plot tool directly. Use integrations.saveLink() instead."
       );
     }
-    if (!isSource && id === "Integrations") {
+    if (!isConnector && id === "Integrations") {
       throw new Error(
-        "Twists cannot use the Integrations tool. Only Sources can use integrations."
+        "Twists cannot use the Integrations tool. Only Connectors can use integrations."
       );
     }
-    if (isSource && id === "AI") {
+    if (isConnector && id === "AI") {
       throw new Error(
-        "Sources cannot use the AI tool. Only Twists can use AI capabilities."
+        "Connectors cannot use the AI tool. Only Twists can use AI capabilities."
       );
     }
     return builtInToolFactory(path, id, options);
@@ -386,13 +386,13 @@ export default class extends WorkerEntrypoint {
   }
 
   /**
-   * Returns source metadata (provider, scopes, linkTypes) from the Source instance.
-   * Called by the factory to pass source config to the Integrations built-in tool.
+   * Returns connector metadata (provider, scopes, linkTypes) from the Connector instance.
+   * Called by the factory to pass connector config to the Integrations built-in tool.
    * Returns null for regular twists.
    */
   async getSourceMetadata(twistInit) {
-    const isSource = TwistConstructor.isSource === true;
-    if (!isSource) return null;
+    const isConnector = TwistConstructor.isConnector === true;
+    if (!isConnector) return null;
 
     const { twist } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
     return {
@@ -410,9 +410,9 @@ export default class extends WorkerEntrypoint {
       // Pre-phase: deepest tools first
       await callPreLifecycle(tools, 'preActivate', priority, context);
 
-      // Source-aware activation: Sources receive { auth, actor } instead of (priority, context)
-      const isSource = TwistConstructor.isSource === true;
-      if (isSource && context?.auth) {
+      // Connector-aware activation: Connectors receive { auth, actor } instead of (priority, context)
+      const isConnector = TwistConstructor.isConnector === true;
+      if (isConnector && context?.auth) {
         const sourceContext = {
           auth: context.auth,
           actor: context.actor ? { id: context.actor.id, type: context.actor.type } : undefined,
