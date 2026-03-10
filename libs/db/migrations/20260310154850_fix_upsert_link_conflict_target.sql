@@ -1,19 +1,5 @@
--- Upsert link with smart handling
--- On INSERT: Infers required fields from defaults if provided
--- On UPDATE: Only updates fields whose keys are present in p_link
---   - Key absent: keep existing value
---   - Key present (even with null): use provided value (allows clearing to NULL)
--- Derivation: Automatically derives source_priority_root and twist_id
---
--- Parameters:
---   p_link: link data as JSONB (explicitly provided values only)
---   p_defaults: default values as JSONB (all fields with defaults - used on INSERT if not in p_link)
---
--- Returns: The full link row
-CREATE OR REPLACE FUNCTION "user".upsert_link (user_id uuid, p_link jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS link
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "upsert_link" function
+CREATE OR REPLACE FUNCTION "user"."upsert_link" ("user_id" uuid, "p_link" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."link" LANGUAGE plpgsql AS $$
 DECLARE
     v_result link;
     v_id uuid;
@@ -219,4 +205,4 @@ BEGIN
             * INTO v_result;
     RETURN v_result;
 END;
-$function$;
+$$;
