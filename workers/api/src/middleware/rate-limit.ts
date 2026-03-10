@@ -75,7 +75,8 @@ const createRateLimitHandler = (
       {
         error: getErrorMessage(limiterType),
       },
-      429
+      429,
+      { "Retry-After": "5" }
     );
   };
 };

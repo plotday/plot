@@ -234,6 +234,11 @@ Stream<T> streamWithExpiry<T>(
 /// - Subsequent batches fire with longer delay (maxSubsequentMs)
 /// - Waits for quiet period (waitMs) between calls before firing
 ///
+/// Supports two modes:
+/// - [onBatch]: Called once per unique key when its window fires
+/// - [onBatchAll]: Called once with all collected keys when the window fires
+///   (collective batching — use this to deduplicate work across keys)
+///
 /// Example: BatchDebouncer(200, 500, 250) with calls at [80, 100, 220, 320, 450]ms:
 /// - Batch 1: [80, 100] → fires at 280ms (80 + 200 max initial)
 /// - Batch 2: [220, 320, 450] → fires at 720ms (220 + 500 max subsequent)
@@ -241,19 +246,68 @@ class BatchDebouncer<T> {
   final int maxInitialMs;
   final int maxSubsequentMs;
   final int waitMs;
-  final void Function(T key) onBatch;
+  final void Function(T key)? onBatch;
+  final void Function(Set<T> keys)? onBatchAll;
 
+  // Per-key state (used in onBatch mode)
   final Map<T, Timer> _timers = {};
   final Map<T, DateTime> _batchStartTimes = {};
+
+  // Collective state (used in onBatchAll mode)
+  Timer? _collectiveTimer;
+  DateTime? _collectiveBatchStart;
+  final Set<T> _collectedKeys = {};
 
   BatchDebouncer({
     required this.maxInitialMs,
     required this.maxSubsequentMs,
     required this.waitMs,
-    required this.onBatch,
-  });
+    this.onBatch,
+    this.onBatchAll,
+  }) : assert(onBatch != null || onBatchAll != null,
+            'Either onBatch or onBatchAll must be provided');
 
   void call(T key) {
+    if (onBatchAll != null) {
+      _callCollective(key);
+    } else {
+      _callPerKey(key);
+    }
+  }
+
+  void _callCollective(T key) {
+    final now = DateTime.now();
+    _collectedKeys.add(key);
+
+    // Cancel existing timer
+    _collectiveTimer?.cancel();
+
+    // Calculate delay based on batch start
+    final int delay;
+    if (_collectiveBatchStart == null) {
+      _collectiveBatchStart = now;
+      delay = maxInitialMs < waitMs ? maxInitialMs : waitMs;
+    } else {
+      final int elapsed =
+          now.difference(_collectiveBatchStart!).inMilliseconds;
+      final int remainingTime = maxSubsequentMs - elapsed;
+      delay = remainingTime < waitMs ? remainingTime : waitMs;
+    }
+
+    _collectiveTimer = Timer(Duration(milliseconds: delay), () {
+      _executeCollectiveBatch();
+    });
+  }
+
+  void _executeCollectiveBatch() {
+    _collectiveTimer = null;
+    _collectiveBatchStart = null;
+    final keys = Set<T>.of(_collectedKeys);
+    _collectedKeys.clear();
+    onBatchAll!(keys);
+  }
+
+  void _callPerKey(T key) {
     final now = DateTime.now();
     final existingBatchStartTime = _batchStartTimes[key];
 
@@ -282,7 +336,7 @@ class BatchDebouncer<T> {
   void _executeBatch(T key) {
     _timers.remove(key);
     _batchStartTimes.remove(key);
-    onBatch(key);
+    onBatch!(key);
   }
 
   void dispose() {
@@ -291,5 +345,9 @@ class BatchDebouncer<T> {
     }
     _timers.clear();
     _batchStartTimes.clear();
+    _collectiveTimer?.cancel();
+    _collectiveTimer = null;
+    _collectiveBatchStart = null;
+    _collectedKeys.clear();
   }
 }

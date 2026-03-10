@@ -201,6 +201,49 @@ class SyncOrchestrator {
     _syncOrchestratorLog.info('Completed syncAll');
   }
 
+  /// Syncs a subset of entities with their transitive dependencies.
+  ///
+  /// Computes the full dependency closure, then executes push and pull
+  /// in topological order with parallelism within each level.
+  Future<void> syncSubset(Set<SyncEntity> entities) async {
+    // Compute transitive dependency closure
+    final closure = <SyncEntity>{};
+    void addWithDeps(SyncEntity entity) {
+      if (closure.add(entity)) {
+        for (final dep in entity.dependsOn) {
+          addWithDeps(dep);
+        }
+      }
+    }
+    for (final entity in entities) {
+      addWithDeps(entity);
+    }
+
+    final closureList = closure.toList();
+    _syncOrchestratorLog.fine(
+      'syncSubset: ${entities.map((e) => e.debugName)} '
+      '→ closure: ${closureList.map((e) => e.debugName).toList()}',
+    );
+
+    // Push requested entities (not deps) in topological order
+    final pushLevels = _topologicalSort(closureList, forward: true);
+    for (final level in pushLevels) {
+      // Only push entities that were explicitly requested (not just deps)
+      final toPush = level.where((e) => entities.contains(e)).toList();
+      if (toPush.isNotEmpty) {
+        await _executePushLevel(toPush);
+      }
+    }
+
+    // Pull all entities (including deps) in topological order
+    final pullLevels = _topologicalSort(closureList, forward: true);
+    for (final level in pullLevels) {
+      await _executePullLevel(level);
+    }
+
+    _syncOrchestratorLog.fine('Completed syncSubset');
+  }
+
   /// Pushes a single entity, ensuring dependencies are satisfied
   ///
   /// If the entity is already being pushed, returns the in-flight completer.

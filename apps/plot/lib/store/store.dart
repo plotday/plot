@@ -655,12 +655,13 @@ class Store extends _$Store {
   bool _closing = false;
   final _bufferedTables = <String>{};
 
-  // Adaptive batch debouncer for sync requests per table
+  // Adaptive batch debouncer for sync requests — collects entity names
+  // and syncs them together to eliminate redundant dependency pulls
   late final BatchDebouncer<String> _syncDebouncer = BatchDebouncer(
     maxInitialMs: 200,
     maxSubsequentMs: 500,
     waitMs: 250,
-    onBatch: _handleTableSync,
+    onBatchAll: _handleBatchSync,
   );
 
   Future<DATA> add<TABLE extends SyncableTable, DATA extends DataClass>(
@@ -1560,32 +1561,25 @@ class Store extends _$Store {
     }
   }
 
-  Future<void> _handleTableSync(String table) async {
+  Future<void> _handleBatchSync(Set<String> entityNames) async {
     if (_closing) return;
-    log.fine("Syncing $table via broadcast");
+    log.fine("Batch syncing ${entityNames.join(', ')} via broadcast");
     try {
-      // Map table name to SyncEntity using orchestrator
-      final entity = SyncOrchestrator.getEntityByTableName(table);
+      final entities = entityNames
+          .map((name) => SyncOrchestrator.allEntities
+              .firstWhereOrNull((e) => e.debugName == name))
+          .nonNulls
+          .toSet();
 
-      if (entity == null) {
-        log.warning("Unknown table update for $table");
-        return;
-      }
+      if (entities.isEmpty) return;
 
-      // Use orchestrator for dependency-aware push
-      if (!await SyncOrchestrator.instance.push(entity)) {
-        log.warning("${entity.debugName} push failed during table sync");
-      }
-
-      // Pull dependencies first (e.g., pull actors before notes)
-      for (final dep in entity.dependsOn) {
-        await SyncOrchestrator.instance.pull(dep);
-      }
-
-      // Pull updates for this entity
-      await SyncOrchestrator.instance.pull(entity);
+      await SyncOrchestrator.instance.syncSubset(entities);
     } catch (e, stackTrace) {
-      log.warning("Error handling realtime update for $table", e, stackTrace);
+      log.warning(
+        "Error handling batch sync for $entityNames",
+        e,
+        stackTrace,
+      );
     }
   }
 
@@ -1604,12 +1598,20 @@ class Store extends _$Store {
       return;
     }
 
-    if (_isBufferingBroadcasts) {
-      _bufferedTables.add(table);
+    // Resolve to entity name before debouncing — prevents multiple table names
+    // (e.g. thread, schedule, thread_read) from triggering redundant syncs
+    final entity = SyncOrchestrator.getEntityByTableName(table);
+    if (entity == null) {
+      log.warning("Unknown table update for $table");
       return;
     }
 
-    _syncDebouncer(table);
+    if (_isBufferingBroadcasts) {
+      _bufferedTables.add(entity.debugName);
+      return;
+    }
+
+    _syncDebouncer(entity.debugName);
   }
 
   Future<bool> _hasNetworkConnectivity() async {

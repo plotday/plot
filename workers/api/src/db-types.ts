@@ -1077,6 +1077,7 @@ export interface UserPriority {
   path: string | null;
   personal: boolean | null;
   pomodoro: number | null;
+  role: string | null;
   root: boolean | null;
   title: string | null;
   top_order: number | null;
@@ -1210,6 +1211,8 @@ export interface UserTwist {
   archived_at: Timestamp | null;
   config: Json | null;
   created_at: Timestamp | null;
+  default_mention_created: boolean | null;
+  default_mention_mentioned: boolean | null;
   id: string | null;
   is_source: boolean | null;
   link_types: Json | null;
