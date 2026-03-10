@@ -300,7 +300,8 @@ class _AuthButtonState extends State<AuthButton> {
           AppleIDAuthorizationScopes.fullName,
         ],
         nonce: hashedNonce,
-        webAuthenticationOptions: kIsWeb
+        webAuthenticationOptions: kIsWeb ||
+                defaultTargetPlatform == TargetPlatform.android
             ? WebAuthenticationOptions(
                 clientId: Env.appleClientId,
                 redirectUri: Uri.parse(Env.webAuthCallbackUrl),
