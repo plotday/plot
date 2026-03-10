@@ -207,178 +207,206 @@ class _SignInPageState extends State<SignInPage> {
     }
 
     return Scaffold(
-      center: true,
-      body: Stack(
-        children: [
-          Positioned(
-            left: 8,
-            bottom: 8,
-            child: Text(
-              AppInfo.versionString,
-              style: context.theme.typography.xs.copyWith(
-                color: context.theme.colors.mutedForeground,
-              ),
+      scrollable: false,
+      body: CustomScrollView(
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Column(
+              children: [
+                const Spacer(),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        spacing: 16,
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Center(
+                            child: SvgPicture.asset(
+                              "assets/p.svg",
+                              width: 120,
+                              height: 120,
+                            ),
+                          ),
+                          if (PendingInvite.token != null) ...[
+                            Text(
+                              "You've been invited to Plot",
+                              style: context.theme.typography.xl2.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            if (PendingInvite.inviterName != null ||
+                                PendingInvite.email != null)
+                              RichText(
+                                textAlign: TextAlign.center,
+                                text: TextSpan(
+                                  style: context.theme.typography.base.copyWith(
+                                    height: 1.5,
+                                  ),
+                                  children: [
+                                    if (PendingInvite.inviterName != null) ...[
+                                      TextSpan(text: PendingInvite.inviterName),
+                                      const TextSpan(
+                                        text:
+                                            ' has invited you to collaborate on Plot.\n',
+                                      ),
+                                    ],
+                                    const TextSpan(text: 'Sign up or sign in'),
+                                    if (PendingInvite.email != null) ...[
+                                      const TextSpan(text: ' to link '),
+                                      TextSpan(
+                                        text: PendingInvite.email,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                    const TextSpan(
+                                      text:
+                                          ' and make progress on your priorities.',
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              Text(
+                                "You've been invited to collaborate on Plot.\nSign up or sign in to link your email and make progress on your priorities.",
+                                textAlign: TextAlign.center,
+                                style: context.theme.typography.base,
+                              ),
+                          ] else
+                            Text(
+                              'Sign in to make progress on your priorities',
+                              textAlign: TextAlign.center,
+                              style: context.theme.typography.base,
+                            ),
+                          const SizedBox(height: 8),
+
+                          // OAuth buttons
+                          AuthButton.authenticate(
+                            provider: AuthProvider.google,
+                            autoSignIn: false,
+                            onAuth: ({required idToken, accessToken}) async {
+                              await _handleOAuthSignIn(
+                                provider: IdTokenProvider.google,
+                                idToken: idToken,
+                              );
+                            },
+                            onRedirectAuth: () async {
+                              if (mounted) {
+                                setState(() {
+                                  _isLoading = true;
+                                });
+                              }
+                              try {
+                                await Base.auth.signInWithRedirect(
+                                  provider: IdTokenProvider.google,
+                                );
+                              } on AuthError catch (e, t) {
+                                log.warning(
+                                  'Google redirect sign-in failed',
+                                  e,
+                                  t,
+                                );
+                                Tracker.captureException(e, t);
+                                if (context.mounted) {
+                                  context.showToast(
+                                    message: e.toString(),
+                                    isError: true,
+                                  );
+                                  setState(() {
+                                    _isLoading = false;
+                                  });
+                                }
+                              } catch (e, t) {
+                                log.warning(
+                                  'Google redirect sign-in failed',
+                                  e,
+                                  t,
+                                );
+                                _showGenericError(e, t);
+                              }
+                            },
+                            onError: (error) {
+                              if (mounted) {
+                                context.showToast(
+                                  message: error,
+                                  isError: true,
+                                );
+                              }
+                            },
+                          ),
+
+                          if (defaultTargetPlatform != TargetPlatform.windows)
+                            AuthButton.authenticate(
+                              provider: AuthProvider.apple,
+                              autoSignIn: false,
+                              onAuth: ({required idToken, accessToken}) async {
+                                await _handleOAuthSignIn(
+                                  provider: IdTokenProvider.apple,
+                                  idToken: idToken,
+                                );
+                              },
+                              onError: (error) {
+                                if (mounted) {
+                                  context.showToast(
+                                    message: error,
+                                    isError: true,
+                                  );
+                                }
+                              },
+                            ),
+
+                          // Continue with email button
+                          FButton(
+                            onPress: () {
+                              context.router.navigate(
+                                EmailSignInRoute(returnTo: widget.returnTo),
+                              );
+                            },
+                            style: FButtonStyle.secondary(),
+                            prefix: FaIcon(
+                              FontAwesomeIcons.envelope,
+                              color: context.theme.colors.foreground,
+                            ),
+                            mainAxisSize: .min,
+                            child: Text(
+                              'Continue with email',
+                              style: context.theme.typography.base.copyWith(
+                                color: context.theme.colors.foreground,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+                          const TermsAgreement(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Text(
+                      AppInfo.versionString,
+                      style: context.theme.typography.xs.copyWith(
+                        color: context.theme.colors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          Center(
-            child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            spacing: 16,
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Center(
-                child: SvgPicture.asset(
-                  "assets/p.svg",
-                  width: 120,
-                  height: 120,
-                ),
-              ),
-              if (PendingInvite.token != null) ...[
-                Text(
-                  "You've been invited to Plot",
-                  style: context.theme.typography.xl2.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                if (PendingInvite.inviterName != null ||
-                    PendingInvite.email != null)
-                  RichText(
-                    textAlign: TextAlign.center,
-                    text: TextSpan(
-                      style: context.theme.typography.base.copyWith(
-                        height: 1.5,
-                      ),
-                      children: [
-                        if (PendingInvite.inviterName != null) ...[
-                          TextSpan(text: PendingInvite.inviterName),
-                          const TextSpan(
-                            text: ' has invited you to collaborate on Plot.\n',
-                          ),
-                        ],
-                        const TextSpan(text: 'Sign up or sign in'),
-                        if (PendingInvite.email != null) ...[
-                          const TextSpan(text: ' to link '),
-                          TextSpan(
-                            text: PendingInvite.email,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                        const TextSpan(
-                          text: ' and make progress on your priorities.',
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  Text(
-                    "You've been invited to collaborate on Plot.\nSign up or sign in to link your email and make progress on your priorities.",
-                    textAlign: TextAlign.center,
-                    style: context.theme.typography.base,
-                  ),
-              ] else
-                Text(
-                  'Sign in to make progress on your priorities',
-                  textAlign: TextAlign.center,
-                  style: context.theme.typography.base,
-                ),
-              const SizedBox(height: 8),
-
-              // OAuth buttons
-              AuthButton.authenticate(
-                provider: AuthProvider.google,
-                autoSignIn: false,
-                onAuth: ({required idToken, accessToken}) async {
-                  await _handleOAuthSignIn(
-                    provider: IdTokenProvider.google,
-                    idToken: idToken,
-                  );
-                },
-                onRedirectAuth: () async {
-                  if (mounted) {
-                    setState(() {
-                      _isLoading = true;
-                    });
-                  }
-                  try {
-                    await Base.auth.signInWithRedirect(
-                      provider: IdTokenProvider.google,
-                    );
-                    // Browser will redirect away; no further action needed.
-                  } on AuthError catch (e, t) {
-                    log.warning('Google redirect sign-in failed', e, t);
-                    Tracker.captureException(e, t);
-                    if (context.mounted) {
-                      context.showToast(
-                        message: e.toString(),
-                        isError: true,
-                      );
-                      setState(() {
-                        _isLoading = false;
-                      });
-                    }
-                  } catch (e, t) {
-                    log.warning('Google redirect sign-in failed', e, t);
-                    _showGenericError(e, t);
-                  }
-                },
-                onError: (error) {
-                  if (mounted) {
-                    context.showToast(message: error, isError: true);
-                  }
-                },
-              ),
-
-              if (defaultTargetPlatform != TargetPlatform.windows)
-                AuthButton.authenticate(
-                  provider: AuthProvider.apple,
-                  autoSignIn: false,
-                  onAuth: ({required idToken, accessToken}) async {
-                    await _handleOAuthSignIn(
-                      provider: IdTokenProvider.apple,
-                      idToken: idToken,
-                    );
-                  },
-                  onError: (error) {
-                    if (mounted) {
-                      context.showToast(message: error, isError: true);
-                    }
-                  },
-                ),
-
-              // Continue with email button
-              FButton(
-                onPress: () {
-                  context.router.navigate(
-                    EmailSignInRoute(returnTo: widget.returnTo),
-                  );
-                },
-                style: FButtonStyle.secondary(),
-                prefix: FaIcon(
-                  FontAwesomeIcons.envelope,
-                  color: context.theme.colors.foreground,
-                ),
-                mainAxisSize: .min,
-                child: Text(
-                  'Continue with email',
-                  style: context.theme.typography.base.copyWith(
-                    color: context.theme.colors.foreground,
-                    height: 1,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-              const TermsAgreement(),
-            ],
-          ),
-        ),
-          ),
-        ),
         ],
       ),
     );
