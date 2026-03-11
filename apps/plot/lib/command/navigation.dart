@@ -78,8 +78,12 @@ class CyclePanelsCommand extends Command {
   static String menuLabel(LayoutState layoutState) => _title(layoutState);
 
   static String _title(LayoutState layoutState) {
-    if (layoutState.leftPanelVisible || layoutState.middlePanelVisible) {
-      return 'Close sidebar';
+    if (layoutState.leftPanelVisible && layoutState.middlePanelVisible) {
+      return 'Close priorities';
+    } else if (layoutState.leftPanelVisible) {
+      return 'Close priorities';
+    } else if (layoutState.middlePanelVisible) {
+      return 'Close threads';
     }
     return 'Open sidebar';
   }

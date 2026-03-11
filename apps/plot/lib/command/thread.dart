@@ -85,9 +85,15 @@ class ChangeCurrentThread extends ThreadCommand {
     final source = ThreadListSourceProvider.maybeOf(context);
     priorityBloc.setThread(thread, source: source);
 
-    // Auto-slide panels in 2-panel mode
+    // Prefer middle panel on resize when a thread is open
+    print('[ChangeCurrentThread] setting preferMiddle=${thread != null}');
+    layoutBloc.preferMiddle = thread != null;
+
+    // Auto-slide panels when exactly one sidebar is visible
     final layoutState = layoutBloc.state;
-    if (layoutState.isTwoPanel) {
+    final exactlyTwoPanels = layoutState.multiPanel &&
+        (layoutState.leftPanelVisible != layoutState.middlePanelVisible);
+    if (exactlyTwoPanels) {
       if (thread != null && !hadThread) {
         // Opening thread from browsing → slide to Middle+Right
         layoutBloc.setPanelVisibility(left: false, middle: true);
@@ -149,9 +155,16 @@ class NewThread extends Command {
     final priorityBloc = context.read<PriorityBloc>();
     final priorityId = priorityBloc.state.context.id;
 
-    // Auto-slide panels in 2-panel mode
+    // Prefer middle panel on resize when new thread is open
     final layoutBloc = context.read<LayoutBloc>();
-    if (layoutBloc.state.isTwoPanel) {
+    print('[NewThread] setting preferMiddle=true');
+    layoutBloc.preferMiddle = true;
+
+    // Auto-slide panels when exactly one sidebar is visible
+    final layoutState = layoutBloc.state;
+    final exactlyTwoPanels = layoutState.multiPanel &&
+        (layoutState.leftPanelVisible != layoutState.middlePanelVisible);
+    if (exactlyTwoPanels) {
       layoutBloc.setPanelVisibility(left: false, middle: true);
     }
 

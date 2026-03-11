@@ -292,6 +292,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     _subscriptions.clear();
     _threadSubscription?.cancel();
+    _watchingThreadId = null;
     _agendaSubscription?.cancel();
     _activityFeedSubscription?.cancel();
     _tagsSubscription?.cancel();
@@ -396,6 +397,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     } else {
       _threadSubscription?.cancel();
       _threadSubscription = null;
+      _watchingThreadId = null;
     }
   }
 
@@ -697,9 +699,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadActivityFeed();
   }
 
+  ThreadId? _watchingThreadId;
+
   void _loadThread(Thread thread) {
+    // Skip if already watching the same thread
+    if (_watchingThreadId == thread.id) return;
+
     // Cancel existing thread subscription
     _threadSubscription?.cancel();
+    _watchingThreadId = thread.id;
 
     // Watch the thread
     _threadSubscription = Thread.watchOne(thread.id).listen((

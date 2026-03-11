@@ -74,6 +74,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     // Schedule marking thread as read after 750ms
     _scheduleMarkAsRead();
 
+    // Prefer middle panel on resize while ThreadPage is visible
+    context.read<LayoutBloc>().preferMiddle = true;
+
     // Ensure PriorityBloc knows about this thread on first load
     if (!_hasSetInitialActivity) {
       _hasSetInitialActivity = true;
@@ -115,6 +118,8 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     _provider?.unregisterActivityPanel();
     // Unregister from thread header notifier
     _headerNotifier?.unregister();
+    // Clear middle panel preference when leaving ThreadPage
+    LayoutBloc.instance?.preferMiddle = false;
     super.dispose();
   }
 

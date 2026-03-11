@@ -60,7 +60,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // Dispatch to PrioritiesBloc to filter sidebar
       context.read<PrioritiesBloc>().updateSearch(search);
       // Dispatch to ThreadHeaderNotifier if activity is visible
-      final notifier = ThreadHeaderNotifierProvider.of(context);
+      final notifier = ThreadHeaderNotifierProvider.read(context);
       notifier?.onSearchChanged?.call(search);
     });
   }
@@ -91,7 +91,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     // Clear PrioritiesBloc search
     context.read<PrioritiesBloc>().updateSearch('');
     // Clear activity search
-    final notifier = ThreadHeaderNotifierProvider.of(context);
+    final notifier = ThreadHeaderNotifierProvider.read(context);
     notifier?.onSearchChanged?.call('');
     notifier?.onSearchClosed?.call();
   }
@@ -112,14 +112,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       builder: (context, layoutState) {
         return BlocBuilder<PriorityBloc, PriorityState>(
           builder: (context, state) {
+            // of() registers an InheritedNotifier dependency, so this
+            // builder already rebuilds when the notifier fires.
             final notifier = ThreadHeaderNotifierProvider.of(context);
-
-            return ListenableBuilder(
-              listenable: notifier ?? ChangeNotifier(),
-              builder: (context, _) {
-                return _buildHeader(context, layoutState, state, notifier);
-              },
-            );
+            return _buildHeader(context, layoutState, state, notifier);
           },
         );
       },
@@ -153,8 +149,19 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             icon: Value(PlotIcon.back),
           ),
         )
-      // 2-panel with thread: collapse button + Open Priorities button
-      else if (hasActivity && layoutState.isTwoPanel)
+      // Right-only with thread (960–1309px): back button
+      else if (hasActivity && layoutState.multiPanel &&
+          !layoutState.leftPanelVisible && !layoutState.middlePanelVisible &&
+          context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
+        Button.icon(
+          CommandWrapper(
+            ChangeCurrentThread(null),
+            icon: Value(PlotIcon.back),
+          ),
+        )
+      // 2-panel with thread (960–1309px): cycle + priorities slide
+      else if (hasActivity && layoutState.isTwoPanel &&
+          context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -163,17 +170,54 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
               CommandWrapper(
                 ChangeCurrentThread(null),
                 icon: Value(PlotIcon.priorities),
-                title: 'Open Priorities',
+                title: 'Open priorities',
               ),
             ),
           ],
         )
-      // 2-panel browsing: toggle left panel
-      else if (layoutState.isTwoPanel)
+      // 2-panel browsing (960–1309px): cycle
+      else if (layoutState.isTwoPanel &&
+          context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
         Button.icon(CyclePanelsCommand(layoutState: layoutState))
-      // 3-panel: cycle button
+      // ≥ 1310px right-only: priorities icon + open threads
+      else if (layoutState.multiPanel &&
+          !layoutState.leftPanelVisible && !layoutState.middlePanelVisible)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Button.icon(
+              CommandWrapper(
+                ToggleLeftSidebarCommand(isVisible: false),
+                icon: Value(PlotIcon.priorities),
+              ),
+            ),
+            Button.icon(
+              ToggleMiddleSidebarCommand(isVisible: false),
+            ),
+          ],
+        )
+      // ≥ 1310px with sidebar(s): explicit toggle buttons
       else if (layoutState.multiPanel)
-        Button.icon(CyclePanelsCommand(layoutState: layoutState)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Button.icon(
+              layoutState.leftPanelVisible
+                  ? ToggleLeftSidebarCommand(isVisible: true)
+                  : CommandWrapper(
+                      ToggleLeftSidebarCommand(isVisible: false),
+                      icon: Value(PlotIcon.priorities),
+                    ),
+            ),
+            if (!(layoutState.leftPanelVisible &&
+                layoutState.middlePanelVisible))
+              Button.icon(
+                ToggleMiddleSidebarCommand(
+                  isVisible: layoutState.middlePanelVisible,
+                ),
+              ),
+          ],
+        ),
 
       // Search field or title + search button
       if (_searchExpanded) ...[

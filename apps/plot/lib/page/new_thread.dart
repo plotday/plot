@@ -98,6 +98,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     // Register with ThreadHeaderNotifier so unified header knows NewThreadPage is visible
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
+    // Prefer middle panel on resize while NewThreadPage is visible
+    context.read<LayoutBloc>().preferMiddle = true;
     // Register ThreadEditor with the focus coordination provider
     // Both registrations deferred to avoid notifyListeners() during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -228,6 +230,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     _provider?.unregisterActivityPanel();
     // Unregister from thread header notifier
     _headerNotifier?.unregister();
+    // Clear middle panel preference when leaving NewThreadPage
+    LayoutBloc.instance?.preferMiddle = false;
     super.dispose();
   }
 

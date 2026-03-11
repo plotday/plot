@@ -30,6 +30,9 @@ class LayoutBloc extends Cubit<LayoutState> {
   static LayoutBloc? instance;
 
   double width = 0.0;
+  /// When true, prefer middle panel over left when both can't fit.
+  /// Set by thread commands so resize transitions preserve thread context.
+  bool preferMiddle = false;
   // User has requested left panel visibility.
   // if there's insufficient width, it will still be hidden.
   bool leftPanelRequested;
@@ -43,7 +46,7 @@ class LayoutBloc extends Cubit<LayoutState> {
     _recalculate();
   }
 
-  void _recalculate({bool preferMiddle = false, bool explicit = false}) {
+  void _recalculate({bool explicit = false}) {
     final isMulti = LayoutState.isMultiPanel(width);
     bool effectiveLeftVisible = false;
     bool effectiveMiddleVisible = false;
@@ -53,6 +56,8 @@ class LayoutBloc extends Cubit<LayoutState> {
       // Check if there's enough space for both panels when both are preferred
       final canShowBoth = width >= LayoutState.threePanelMinWidth;
       if (!canShowBoth && leftPanelRequested && middlePanelRequested) {
+        print('[Layout] Can\'t show both: preferMiddle=$preferMiddle, '
+            'leftReq=$leftPanelRequested, midReq=$middlePanelRequested');
         if (preferMiddle) {
           // Not enough space for both panels, prefer middle panel
           effectiveLeftVisible = false;
@@ -69,6 +74,11 @@ class LayoutBloc extends Cubit<LayoutState> {
     } else {
       effectiveMiddleVisible = false;
     }
+
+    print('[Layout] _recalculate: width=$width, isMulti=$isMulti, '
+        'preferMiddle=$preferMiddle, explicit=$explicit, '
+        'leftReq=$leftPanelRequested, midReq=$middlePanelRequested → '
+        'left=$effectiveLeftVisible, mid=$effectiveMiddleVisible');
 
     emit(
       state.copyWith(
@@ -87,7 +97,10 @@ class LayoutBloc extends Cubit<LayoutState> {
 
   void setMiddlePanelVisible(bool visible) {
     middlePanelRequested = visible;
-    _recalculate(explicit: true, preferMiddle: true);
+    final prev = preferMiddle;
+    preferMiddle = true;
+    _recalculate(explicit: true);
+    preferMiddle = prev;
     _persistState();
   }
 
