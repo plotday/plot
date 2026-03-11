@@ -1,5 +1,16 @@
 # @plotday/twister
 
+## 0.41.0
+
+### Changed
+
+- Made `NewContact.email` optional to support provider-ID-based contact resolution ([#107](https://github.com/plotday/plot/pull/107) [`823d6ec`](https://github.com/plotday/plot/commit/823d6ec45af8ee896fd8c08caba515ff6f49f27b))
+- Renamed `--source` CLI flag to `--connector` in `plot create` command to match SDK naming ([`f30e3ba`](https://github.com/plotday/plot/commit/f30e3ba91bc91967133d51b975d3f1be68af8dc7))
+
+### Removed
+
+- `addContacts()` from Plot tool public API (contacts are created implicitly through thread/note creation)
+
 ## 0.40.0
 
 ### Added
