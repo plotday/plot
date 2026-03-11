@@ -600,7 +600,7 @@ class NoteEditorState extends State<NoteEditor> {
                               .priority
                               .personal &&
                           (!widget.draft.private ||
-                              widget.draft.authorId == Base.actorId))
+                              widget.draft.authorId.isCurrentUser))
                         Button.icon(
                           ToggleNoteTag(
                             widget.draft,

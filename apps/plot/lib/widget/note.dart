@@ -367,7 +367,6 @@ class NoteCommands extends StatelessWidget {
     // - Others todo only (no self todo/done): no task/assign buttons
     // - Any done: show PickNoteAssignee only
     final noTodoDone = todoActors.isEmpty && doneActors.isEmpty;
-    final othersTodoOnly = othersTodo.isNotEmpty && !selfTodo && !selfDone && !anyDone;
 
     // Build the final row with tags and commands
     return FutureBuilder<(List<Widget>, String)>(
@@ -396,8 +395,8 @@ class NoteCommands extends StatelessWidget {
               key: ValueKey(Object.hash(note.id, Tag.todo.id, 'self')),
               selected: true,
             ),
-          // Others have todo (not self): show circleUser with count
-          if (!selfTodo && othersTodo.isNotEmpty)
+          // Others have todo: show circleUser with count
+          if (othersTodo.isNotEmpty)
             CountBadge(
               count: othersTodo.length,
               child: Button.icon(
@@ -422,7 +421,7 @@ class NoteCommands extends StatelessWidget {
         final commandButtons = showCommands
             ? [
                 if (noTodoDone) Button.icon(SelfTaskAction(note)),
-                if (!othersTodoOnly && (noTodoDone || selfTodo || selfDone || anyDone))
+                if (othersTodo.isEmpty && (noTodoDone || selfTodo || selfDone || anyDone))
                   Button.icon(assigneeCommand),
                 // Add top tag buttons
                 ...topNoteTags(

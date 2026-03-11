@@ -544,7 +544,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
     return [
       if (!note.draft) ReplyToNote(note),
       if (!note.draft &&
-          note.authorId == Base.actorId &&
+          note.authorId.isCurrentUser &&
           note.content != null &&
           note.content!.trim().isNotEmpty)
         EditNote(note, activityBloc: activityBloc),
@@ -557,7 +557,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
     SelfTaskAction(note),
     if (!note.draft) ReplyToNote(note),
     if (!note.draft &&
-        note.authorId == Base.actorId &&
+        note.authorId.isCurrentUser &&
         note.content != null &&
         note.content!.trim().isNotEmpty)
       EditNote(note, activityBloc: activityBloc),
@@ -567,7 +567,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
     if (note.content != null && note.content!.trim().isNotEmpty)
       CopyNoteContent(note),
     if ((activityBloc?.state.thread.priority.personal != true || note.draft) &&
-        (!note.private || note.authorId == Base.actorId))
+        (!note.private || note.authorId.isCurrentUser))
       ToggleNotePrivate(note),
   ];
 }
