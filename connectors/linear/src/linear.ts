@@ -109,32 +109,30 @@ export class Linear extends Connector<Linear> {
 
   /**
    * Resolve author contact from a Linear user object.
-   * Falls back to cached viewer info when the API doesn't return an email.
+   * Uses provider ID for contact resolution when available.
    */
-  private async resolveAuthorContact(
+  private resolveAuthorContact(
     user: { id?: string; email?: string; name?: string; avatarUrl?: string | null } | null | undefined,
-    projectId: string
-  ): Promise<NewContact | undefined> {
+  ): NewContact | undefined {
     if (!user) return undefined;
 
+    // Always use provider ID for contact resolution when available
+    if (user.id) {
+      return {
+        ...(user.email ? { email: user.email } : {}),
+        name: user.name ?? "",
+        avatar: user.avatarUrl ?? undefined,
+        source: { provider: AuthProvider.Linear, accountId: user.id },
+      };
+    }
+
+    // Fallback: email only (no provider ID)
     if (user.email) {
       return {
         email: user.email,
         name: user.name ?? "",
         avatar: user.avatarUrl ?? undefined,
       };
-    }
-
-    // Linear API often omits email on creator relations — check if it's the authenticated user
-    if (user.id) {
-      const viewerInfo = await this.get<ViewerInfo>(`viewer_info_${projectId}`);
-      if (viewerInfo?.email && user.id === viewerInfo.linearId) {
-        return {
-          email: viewerInfo.email,
-          name: user.name || viewerInfo.name,
-          avatar: user.avatarUrl ?? viewerInfo.avatar,
-        };
-      }
     }
 
     return undefined;
@@ -444,14 +442,15 @@ export class Linear extends Connector<Linear> {
     }
 
     // Prepare author and assignee contacts - will be passed directly as NewContact
-    const authorContact = await this.resolveAuthorContact(creator, projectId);
+    const authorContact = this.resolveAuthorContact(creator);
     let assigneeContact: NewContact | undefined;
 
-    if (assignee?.email) {
+    if (assignee) {
       assigneeContact = {
-        email: assignee.email,
+        ...(assignee.email ? { email: assignee.email } : {}),
         name: assignee.name,
         avatar: assignee.avatarUrl ?? undefined,
+        ...(assignee.id ? { source: { provider: AuthProvider.Linear, accountId: assignee.id } } : {}),
       };
     }
 
@@ -485,13 +484,7 @@ export class Linear extends Connector<Linear> {
       let commentAuthor: NewContact | undefined;
       try {
         const user = await comment.user;
-        if (user?.email) {
-          commentAuthor = {
-            email: user.email,
-            name: user.name,
-            avatar: user.avatarUrl ?? undefined,
-          };
-        }
+        commentAuthor = this.resolveAuthorContact(user);
       } catch (error) {
         console.error(
           "Error fetching comment user:",
@@ -733,14 +726,15 @@ export class Linear extends Connector<Linear> {
     const assignee = issue.assignee || null;
 
     // Build thread update with only issue fields (no notes)
-    const authorContact = await this.resolveAuthorContact(creator, projectId);
+    const authorContact = this.resolveAuthorContact(creator);
     let assigneeContact: NewContact | undefined;
 
-    if (assignee?.email) {
+    if (assignee) {
       assigneeContact = {
-        email: assignee.email,
+        ...(assignee.email ? { email: assignee.email } : {}),
         name: assignee.name,
         avatar: assignee.avatarUrl ?? undefined,
+        ...(assignee.id ? { source: { provider: AuthProvider.Linear, accountId: assignee.id } } : {}),
       };
     }
 
@@ -790,14 +784,7 @@ export class Linear extends Connector<Linear> {
     }
 
     // Extract comment author from webhook payload
-    let commentAuthor: NewContact | undefined;
-    if (comment.user?.email) {
-      commentAuthor = {
-        email: comment.user.email,
-        name: comment.user.name,
-        avatar: comment.user.avatarUrl ?? undefined,
-      };
-    }
+    const commentAuthor = this.resolveAuthorContact(comment.user);
 
     // Create thread update with single comment note
     // Type is required by NewThread, but upsert will use existing thread's type

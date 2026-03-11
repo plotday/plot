@@ -340,18 +340,20 @@ export class Asana extends Connector<Asana> {
     let authorContact: NewContact | undefined;
     let assigneeContact: NewContact | undefined;
 
-    if (createdBy?.email) {
+    if (createdBy) {
       authorContact = {
-        email: createdBy.email,
+        ...(createdBy.email ? { email: createdBy.email } : {}),
         name: createdBy.name,
         avatar: createdBy.photo?.image_128x128,
+        ...(createdBy.gid ? { source: { provider: AuthProvider.Asana, accountId: createdBy.gid } } : {}),
       };
     }
-    if (assignee?.email) {
+    if (assignee) {
       assigneeContact = {
-        email: assignee.email,
+        ...(assignee.email ? { email: assignee.email } : {}),
         name: assignee.name,
         avatar: assignee.photo?.image_128x128,
+        ...(assignee.gid ? { source: { provider: AuthProvider.Asana, accountId: assignee.gid } } : {}),
       };
     }
 
@@ -597,18 +599,20 @@ export class Asana extends Connector<Asana> {
       let authorContact: NewContact | undefined;
       let assigneeContact: NewContact | undefined;
 
-      if (createdBy?.email) {
+      if (createdBy) {
         authorContact = {
-          email: createdBy.email,
+          ...(createdBy.email ? { email: createdBy.email } : {}),
           name: createdBy.name,
           avatar: createdBy.photo?.image_128x128,
+          ...(createdBy.gid ? { source: { provider: AuthProvider.Asana, accountId: createdBy.gid } } : {}),
         };
       }
-      if (assignee?.email) {
+      if (assignee) {
         assigneeContact = {
-          email: assignee.email,
+          ...(assignee.email ? { email: assignee.email } : {}),
           name: assignee.name,
           avatar: assignee.photo?.image_128x128,
+          ...(assignee.gid ? { source: { provider: AuthProvider.Asana, accountId: assignee.gid } } : {}),
         };
       }
 
@@ -687,11 +691,12 @@ export class Asana extends Connector<Asana> {
       // Extract story author
       let storyAuthor: NewContact | undefined;
       const author: any = latestStory.created_by;
-      if (author?.email) {
+      if (author) {
         storyAuthor = {
-          email: author.email,
+          ...(author.email ? { email: author.email } : {}),
           name: author.name,
           avatar: author.photo?.image_128x128,
+          ...(author.gid ? { source: { provider: AuthProvider.Asana, accountId: author.gid } } : {}),
         };
       }
 

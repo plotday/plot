@@ -335,17 +335,17 @@ export class Jira extends Connector<Jira> {
     let authorContact: NewContact | undefined;
     let assigneeContact: NewContact | undefined;
 
-    if (reporter?.emailAddress) {
+    if (reporter) {
       authorContact = {
-        email: reporter.emailAddress,
+        ...(reporter.emailAddress ? { email: reporter.emailAddress } : {}),
         name: reporter.displayName,
         avatar: reporter.avatarUrls?.["48x48"],
         ...atlassianSource(reporter.accountId),
       };
     }
-    if (assignee?.emailAddress) {
+    if (assignee) {
       assigneeContact = {
-        email: assignee.emailAddress,
+        ...(assignee.emailAddress ? { email: assignee.emailAddress } : {}),
         name: assignee.displayName,
         avatar: assignee.avatarUrls?.["48x48"],
         ...atlassianSource(assignee.accountId),
@@ -406,9 +406,9 @@ export class Jira extends Connector<Jira> {
       // Extract comment author
       let commentAuthor: NewContact | undefined;
       const author = comment.author;
-      if (author?.emailAddress) {
+      if (author) {
         commentAuthor = {
-          email: author.emailAddress,
+          ...(author.emailAddress ? { email: author.emailAddress } : {}),
           name: author.displayName,
           avatar: author.avatarUrl,
           ...atlassianSource(author.accountId),
@@ -647,17 +647,17 @@ export class Jira extends Connector<Jira> {
     let authorContact: NewContact | undefined;
     let assigneeContact: NewContact | undefined;
 
-    if (reporter?.emailAddress) {
+    if (reporter) {
       authorContact = {
-        email: reporter.emailAddress,
+        ...(reporter.emailAddress ? { email: reporter.emailAddress } : {}),
         name: reporter.displayName,
         avatar: reporter.avatarUrls?.["48x48"],
         ...atlassianSource(reporter.accountId),
       };
     }
-    if (assignee?.emailAddress) {
+    if (assignee) {
       assigneeContact = {
-        email: assignee.emailAddress,
+        ...(assignee.emailAddress ? { email: assignee.emailAddress } : {}),
         name: assignee.displayName,
         avatar: assignee.avatarUrls?.["48x48"],
         ...atlassianSource(assignee.accountId),
@@ -740,9 +740,9 @@ export class Jira extends Connector<Jira> {
     // Extract comment author
     let commentAuthor: NewContact | undefined;
     const author = comment.author;
-    if (author?.emailAddress) {
+    if (author) {
       commentAuthor = {
-        email: author.emailAddress,
+        ...(author.emailAddress ? { email: author.emailAddress } : {}),
         name: author.displayName,
         avatar: author.avatarUrls?.["48x48"],
         ...atlassianSource(author.accountId),
