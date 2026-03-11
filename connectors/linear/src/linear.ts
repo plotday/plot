@@ -783,6 +783,10 @@ export class Linear extends Connector<Linear> {
       return;
     }
 
+    // Fetch issue title from Linear API (title always overwrites on upsert)
+    const client = await this.getClient(projectId);
+    const issue = await client.issue(issueId);
+
     // Extract comment author from webhook payload
     const commentAuthor = this.resolveAuthorContact(comment.user);
 
@@ -792,7 +796,7 @@ export class Linear extends Connector<Linear> {
     const newLink: NewLinkWithNotes = {
       source: threadSource,
       type: "issue",
-      title: issueId, // Placeholder; upsert by source will preserve existing title
+      title: issue.title,
       notes: [
         {
           key: `comment-${comment.id}`,

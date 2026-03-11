@@ -764,7 +764,7 @@ export class Jira extends Connector<Jira> {
     const link: NewLinkWithNotes = {
       ...(source ? { source } : {}),
       type: "issue",
-      title: issue.key, // Placeholder; upsert by source will preserve existing title
+      title: issue.fields?.summary || issue.key,
       notes: [
         {
           key: `comment-${comment.id}`,

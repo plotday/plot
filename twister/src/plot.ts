@@ -904,7 +904,12 @@ export type NewLink = (
  * Creates a thread+link pair, with notes attached to the thread.
  */
 export type NewLinkWithNotes = NewLink & {
-  /** Title for the link and its thread container */
+  /**
+   * Title for the link and its thread container.
+   * Must be the real entity title (e.g. issue title, message subject),
+   * never a placeholder or ID. This value overwrites the existing title on upsert.
+   * If the title is not available in the webhook payload, fetch it from the API.
+   */
   title: string;
   /** Notes to attach to the thread */
   notes?: Omit<NewNote, "thread">[];
