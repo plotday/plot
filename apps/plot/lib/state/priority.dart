@@ -60,8 +60,14 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info('Updating search to "$search"');
     emit(state.copyWith(search: search));
 
-    // Reload agenda items with new search
-    _loadPriority();
+    // Reset limits but preserve sync state - search filters local data only
+    _agendaLimit = 50;
+    _agendaLastRawRowCount = 0;
+    _loadAgenda(triggerSync: false);
+
+    _activityFeedLimit = 50;
+    _activityFeedLastRawRowCount = 0;
+    _loadActivityFeed(triggerSync: false);
   }
 
   /// Whether the draft has been modified by user actions (e.g. type toggle).
@@ -862,7 +868,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           // If switching priorities, update context atomically with new agenda
           context: state.targetPriority,
           agendaItems: agendaItems,
-          agendaDoneEnd: rawRowCount < _agendaLimit && _agendaSyncNoMore,
+          agendaDoneEnd: rawRowCount < _agendaLimit && (state.search.isNotEmpty || _agendaSyncNoMore),
           // Keep reorderViewItems during suppress, clear when real data arrives
           reorderViewItems: suppressRebuild
               ? const Value.absent()
@@ -934,7 +940,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               .whereType<AgendaThreadItem>()
               .length &&
           threads.length < _activityFeedLimit;
-      final doneEnd = (rawRowCount < _activityFeedLimit && _activityFeedSyncNoMore) ||
+      final isSearching = state.search.isNotEmpty;
+      final doneEnd = (rawRowCount < _activityFeedLimit && (isSearching || _activityFeedSyncNoMore)) ||
           threadCountStalled;
       final items = <AgendaItem>[];
       String? currentBucket;
@@ -985,11 +992,11 @@ class PriorityBloc extends Cubit<PriorityState> {
     final needed = first + count;
     if (needed > _activityFeedLimit) {
       _activityFeedLimit = needed;
-      _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore);
+      _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty);
     } else if (!state.activityFeedDoneEnd) {
       // JOIN multiplication: need more raw rows to get enough unique threads
       _activityFeedLimit += 50;
-      _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore);
+      _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty);
     }
   }
 

@@ -82,9 +82,10 @@
     var(--mantine-color-white),
     var(--mantine-color-dark-7)
   );
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-row: span 7;
+  grid-template-rows: subgrid;
+  row-gap: var(--mantine-spacing-md);
 }
 
 .pricingCardHighlight {
@@ -119,6 +120,16 @@
   font-size: rem(20px);
 }
 
+.bestFor {
+  font-size: rem(14px);
+  font-weight: 600;
+  color: var(--mantine-color-brand-6);
+}
+
+.noteSlot {
+  align-self: start;
+}
+
 .priceBox {
   display: flex;
   align-items: flex-end;
@@ -151,7 +162,6 @@
 .planDescription {
   color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-4));
   font-size: rem(14px);
-  min-height: rem(40px);
 }
 
 .featureList {

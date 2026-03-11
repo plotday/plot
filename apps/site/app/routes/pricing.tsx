@@ -29,6 +29,7 @@ const PLANS = [
   {
     key: "free",
     name: "Free",
+    bestFor: "For individuals and teams using a few core tools",
     price: () => "$0",
     priceNote: "Free forever",
     period: "",
@@ -51,13 +52,14 @@ const PLANS = [
   {
     key: "pro",
     name: "Pro",
+    bestFor: "For individuals working across many tools",
     price: (billing: Billing) => `$${PRICES.pro[billing]}`,
     priceNote: null,
     period: "/mo",
     description: "Unlimited connections. Bring all your tools into one place.",
     features: [
       "Unlimited connections",
-      "Unlimited twists (AI usage may apply)",
+      "Unlimited Twists (optional AI usage extra)",
       "All core features for team collaboration",
       "Unlimited collaborators",
       "Full history of all your work",
@@ -73,14 +75,15 @@ const PLANS = [
   {
     key: "business",
     name: "Business",
+    bestFor: "For ambitious teams who move fast together",
     price: (billing: Billing) => `$${PRICES.business[billing]}`,
     priceNote: null,
     period: "/mo",
     description:
-      "Connections shared across your organization. Add more in groups of 50 as you grow — no per-seat fees, ever.",
+      "Pool connections across your organization to flex with how you work.",
     features: [
       "50+ connections shared across your org",
-      "Unlimited twists (AI usage may apply)",
+      "Unlimited Twists (optional AI usage extra)",
       "All core features for team collaboration",
       "Unlimited team members",
       "Full history of all your work",
@@ -185,8 +188,9 @@ export default function Pricing() {
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Your whole team collaborates free. You only pay for the
-              connections that bring your work together.
+              People work and collaborate in Plot for free.
+              <br />
+              You only pay for the connections that bring your work together.
             </Text>
           </Stack>
         </Container>
@@ -226,19 +230,34 @@ export default function Pricing() {
         <Container size="lg">
           <Box className={classes.pricingGrid}>
             {PLANS.map((plan) => (
-              <Stack
+              <div
                 key={plan.key}
                 className={
                   plan.highlight
                     ? classes.pricingCardHighlight
                     : classes.pricingCard
                 }
-                gap="md"
               >
                 {plan.badge && (
                   <Box className={classes.popularBadge}>{plan.badge}</Box>
                 )}
                 <Text className={classes.planName}>{plan.name}</Text>
+                <Text className={classes.bestFor}>{plan.bestFor}</Text>
+                <Text className={classes.planDescription}>
+                  {plan.description}
+                </Text>
+                <Stack gap="xs" className={classes.featureList}>
+                  {plan.features.map((feature) => (
+                    <Box key={feature} className={classes.featureItem}>
+                      <IconCheck
+                        size={16}
+                        color="var(--mantine-color-brand-6)"
+                        className={classes.featureIcon}
+                      />
+                      <span>{feature}</span>
+                    </Box>
+                  ))}
+                </Stack>
                 <Box className={classes.priceBox}>
                   <Text className={classes.price}>
                     {typeof plan.price === "function"
@@ -257,27 +276,14 @@ export default function Pricing() {
                     </Text>
                   )}
                 </Box>
-                {plan.priceNote && (
-                  <Text className={classes.annualNote}>{plan.priceNote}</Text>
-                )}
-                {billing === "annual" && plan.key !== "free" && (
-                  <Text className={classes.annualNote}>Billed annually</Text>
-                )}
-                <Text className={classes.planDescription}>
-                  {plan.description}
-                </Text>
-                <Stack gap="xs" className={classes.featureList}>
-                  {plan.features.map((feature) => (
-                    <Box key={feature} className={classes.featureItem}>
-                      <IconCheck
-                        size={16}
-                        color="var(--mantine-color-brand-6)"
-                        className={classes.featureIcon}
-                      />
-                      <span>{feature}</span>
-                    </Box>
-                  ))}
-                </Stack>
+                <Box className={classes.noteSlot}>
+                  {plan.priceNote && (
+                    <Text className={classes.annualNote}>{plan.priceNote}</Text>
+                  )}
+                  {billing === "annual" && plan.key !== "free" && (
+                    <Text className={classes.annualNote}>Billed annually</Text>
+                  )}
+                </Box>
                 <Button
                   variant={plan.ctaVariant}
                   fullWidth
@@ -286,7 +292,7 @@ export default function Pricing() {
                 >
                   {plan.cta}
                 </Button>
-              </Stack>
+              </div>
             ))}
           </Box>
         </Container>
@@ -308,32 +314,67 @@ export default function Pricing() {
             </Text>
             <Box className={classes.connectionDiagram}>
               <Box className={classes.connectionItem}>
-                <Text fw={600}>Your Slack account</Text>
+                <Text fw={600}>Gmail</Text>
                 <Text className={classes.connectionDots} />
-                <Text c="dimmed">1 connection</Text>
+                <Text c="dimmed">80 connections</Text>
               </Box>
               <Box className={classes.connectionItem}>
-                <Text fw={600}>Your work Google Calendar</Text>
+                <Text fw={600}>Google Calendar</Text>
                 <Text className={classes.connectionDots} />
-                <Text c="dimmed">1 connection</Text>
+                <Text c="dimmed">80 connections</Text>
               </Box>
               <Box className={classes.connectionItem}>
-                <Text fw={600}>Your personal Google Calendar</Text>
+                <Text fw={600}>Slack</Text>
                 <Text className={classes.connectionDots} />
-                <Text c="dimmed">1 connection</Text>
+                <Text c="dimmed">80 connections</Text>
               </Box>
               <Box className={classes.connectionItem}>
-                <Text fw={600}>5 people using Linear and Plot</Text>
+                <Text fw={600}>Notion</Text>
                 <Text className={classes.connectionDots} />
-                <Text c="dimmed">5 connections</Text>
+                <Text c="dimmed">80 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Linear</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">35 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>GitHub</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">35 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Figma</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">12 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>HubSpot</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">15 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Intercom</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">8 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>Loom</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">35 connections</Text>
+              </Box>
+              <Box className={classes.connectionItem}>
+                <Text fw={600}>PostHog</Text>
+                <Text className={classes.connectionDots} />
+                <Text c="dimmed">26 connections</Text>
               </Box>
               <Box className={classes.connectionTotal}>
-                <Text fw={700}>Total: 8 connections</Text>
+                <Text fw={700}>Total: 486 connections</Text>
               </Box>
             </Box>
             <Text className={classes.sectionBody}>
-              Most individuals use 5–10 connections. A team of 10 typically
-              needs fewer than 50.
+              An 80-person team uses around 500 connections — everyone
+              connects their core tools, plus specialized ones for each team.
             </Text>
           </Stack>
         </Container>
