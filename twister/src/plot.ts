@@ -773,16 +773,18 @@ export enum ActorType {
  * ```
  */
 export type NewContact = {
-  /** Email address of the contact (required) */
-  email: string;
+  /**
+   * Email address of the contact.
+   * Either email or source must be provided for contact resolution.
+   */
+  email?: string;
   /** Optional display name for the contact */
   name?: string;
   /** Optional avatar image URL for the contact */
   avatar?: string;
   /**
-   * External provider account source. Used for privacy compliance
-   * (e.g. Atlassian personal data reporting for GDPR account closure).
-   * Required for contacts sourced from providers that mandate personal data reporting.
+   * External provider account source. Used for identity resolution
+   * when email is unavailable and for privacy compliance reporting.
    */
   source?: { provider: AuthProvider; accountId: string };
 };
@@ -902,7 +904,12 @@ export type NewLink = (
  * Creates a thread+link pair, with notes attached to the thread.
  */
 export type NewLinkWithNotes = NewLink & {
-  /** Title for the link and its thread container */
+  /**
+   * Title for the link and its thread container.
+   * Must be the real entity title (e.g. issue title, message subject),
+   * never a placeholder or ID. This value overwrites the existing title on upsert.
+   * If the title is not available in the webhook payload, fetch it from the API.
+   */
   title: string;
   /** Notes to attach to the thread */
   notes?: Omit<NewNote, "thread">[];

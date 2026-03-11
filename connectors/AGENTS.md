@@ -903,7 +903,8 @@ After creating a new connector, add it to `pnpm-workspace.yaml` if not already c
 12. **❌ Forgetting to clean up on disable** — Delete callbacks, webhooks, and stored state
 13. **❌ Two-way sync without metadata correlation** — Embed Plot ID in external item metadata to prevent duplicates from race conditions (see SYNC_STRATEGIES.md §6)
 14. **❌ Stripping HTML tags locally** — Pass raw HTML with `contentType: "html"` for server-side conversion. Local regex stripping breaks encoding and loses links
-15. **❌ Not setting `created` on notes from external data** — Always pass the external system's timestamp (e.g., `internalDate` from Gmail, `created_at` from an API) as the note's `created` field. Omitting it defaults to sync time, making all notes appear to have been created "just now"
+15. **❌ Using placeholder titles in comment/update webhooks** — `title` always overwrites on upsert. Always use the real entity title (fetch from API if not in the webhook payload). Never use IDs or keys as placeholder titles
+16. **❌ Not setting `created` on notes from external data** — Always pass the external system's timestamp (e.g., `internalDate` from Gmail, `created_at` from an API) as the note's `created` field. Omitting it defaults to sync time, making all notes appear to have been created "just now"
 
 ## Study These Examples
 

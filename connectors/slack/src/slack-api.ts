@@ -2,6 +2,7 @@ import type {
   NewLinkWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
+import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 export type SlackChannel = {
   id: string;
@@ -194,7 +195,8 @@ function parseUserMentions(text: string): string[] {
 function parseUserMentionNewActors(text: string): NewActor[] {
   const userIds = parseUserMentions(text);
   return userIds.map((userId) => ({
-    id: `slack:${userId}` as any,
+    name: userId,
+    source: { provider: AuthProvider.Slack, accountId: userId },
   }));
 }
 
@@ -203,7 +205,8 @@ function parseUserMentionNewActors(text: string): NewActor[] {
  */
 function slackUserToNewActor(userId: string): NewActor {
   return {
-    id: `slack:${userId}` as any,
+    name: userId,
+    source: { provider: AuthProvider.Slack, accountId: userId },
   };
 }
 
