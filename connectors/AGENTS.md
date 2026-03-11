@@ -111,7 +111,6 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { ContactAccess, Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 type SyncState = {
@@ -126,6 +125,7 @@ export class MyConnector extends Connector<MyConnector> {
   static readonly PROVIDER = AuthProvider.Linear; // Use appropriate provider
   static readonly SCOPES = ["read", "write"];
   static readonly Options: SyncToolOptions;
+  static readonly handleReplies = true; // Enable @-mentions on replies to synced threads
   declare readonly Options: SyncToolOptions;
 
   // 2. Declare dependencies
@@ -143,7 +143,6 @@ export class MyConnector extends Connector<MyConnector> {
       network: build(Network, { urls: ["https://api.example.com/*"] }),
       callbacks: build(Callbacks),
       tasks: build(Tasks),
-      plot: build(Plot, { contact: { access: ContactAccess.Write } }),
     };
   }
 
@@ -798,20 +797,16 @@ async onNoteCreated(note: Note): Promise<void> {
 
 ### Default Mention on Replies
 
-Connectors with bidirectional sync should set `thread.defaultMention: true` in their Plot tool options so replies to synced threads automatically mention the connector:
+Connectors with bidirectional sync should set `static readonly handleReplies = true` so replies to synced threads automatically mention the connector:
 
 ```typescript
-plot: build(Plot, {
-  thread: {
-    access: ThreadAccess.Create,
-    defaultMention: true,  // Replies to synced threads mention this connector by default
-    updated: this.onThreadUpdated,
-  },
-  note: { created: this.onNoteCreated },
-}),
+export class MyConnector extends Connector<MyConnector> {
+  static readonly handleReplies = true;  // Replies to synced threads mention this connector by default
+  // ...
+}
 ```
 
-Without this, users must manually toggle the connector's mention chip on each reply. Connectors that don't process replies (e.g., read-only calendar sync) should NOT set this flag.
+Without this, the connector cannot be @-mentioned at all. Connectors that don't process replies (e.g., read-only calendar sync) should NOT set this flag.
 
 ## Contacts Pattern
 
@@ -837,10 +832,7 @@ const activity: NewActivityWithNotes = {
 };
 ```
 
-Declare `ContactAccess.Write` in build:
-```typescript
-plot: build(Plot, { contact: { access: ContactAccess.Write } }),
-```
+Contacts are created implicitly when saving threads/links via `integrations.saveLink()` — no explicit `addContacts()` call or `ContactAccess.Write` permission is needed.
 
 ## Buffer Declaration
 
@@ -875,7 +867,8 @@ After creating a new connector, add it to `pnpm-workspace.yaml` if not already c
 - [ ] Extend `Connector<YourConnector>`
 - [ ] Declare `static readonly PROVIDER`, `static readonly SCOPES`
 - [ ] Declare `static readonly Options: SyncToolOptions` and `declare readonly Options: SyncToolOptions`
-- [ ] Declare all dependencies in `build()`: Integrations, Network, Callbacks, Tasks, Plot
+- [ ] Declare all dependencies in `build()`: Integrations, Network, Callbacks, Tasks
+- [ ] Set `static readonly handleReplies = true` if the connector supports bidirectional sync
 - [ ] Implement `getChannels()`, `onChannelEnabled()`, `onChannelDisabled()`
 - [ ] Convert parent callbacks to tokens with `createFromParent()` — **never pass functions to `this.callback()`**
 - [ ] Store callback tokens with `this.set()`, retrieve with `this.get<Callback>()`

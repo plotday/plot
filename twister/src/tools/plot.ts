@@ -7,7 +7,6 @@ import {
   type Link,
   type NewThread,
   type NewThreadWithNotes,
-  type NewContact,
   type NewNote,
   type NewPriority,
   type Note,
@@ -52,8 +51,6 @@ export enum PriorityAccess {
 export enum ContactAccess {
   /** Read existing contact details. Without this, only the ID will be provided. */
   Read,
-  /** Create and update contacts. */
-  Write,
 }
 
 /**
@@ -188,7 +185,7 @@ export abstract class Plot extends ITool {
    *         access: PriorityAccess.Full
    *       },
    *       contact: {
-   *         access: ContactAccess.Write
+   *         access: ContactAccess.Read
    *       }
    *     })
    *   };
@@ -488,20 +485,6 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract updatePriority(update: PriorityUpdate): Promise<void>;
-
-  /**
-   * Adds contacts to the Plot system.
-   *
-   * Contacts are used for associating people with threads, such as
-   * event attendees or task assignees. Duplicate contacts (by email)
-   * will be merged or updated as appropriate.
-   * This method requires ContactAccess.Write permission.
-   *
-   * @param contacts - Array of contact information to add
-   * @returns Promise resolving to array of created/updated actors
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract addContacts(contacts: Array<NewContact>): Promise<Actor[]>;
 
   /**
    * Retrieves actors by their IDs.

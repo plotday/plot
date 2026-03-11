@@ -25,7 +25,6 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 type Project = {
@@ -70,6 +69,7 @@ type ViewerInfo = {
 export class Linear extends Connector<Linear> {
   static readonly PROVIDER = AuthProvider.Linear;
   static readonly SCOPES = ["read", "write", "admin"];
+  static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Linear;
   readonly scopes = Linear.SCOPES;
@@ -93,10 +93,6 @@ export class Linear extends Connector<Linear> {
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://api.linear.app/*"] }),
       tasks: build(Tasks),
-      plot: build(Plot, {
-        thread: { defaultMention: true },
-        note: { defaultMention: true },
-      }),
     };
   }
 

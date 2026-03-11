@@ -77,6 +77,15 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    */
   readonly linkTypes?: LinkTypeConfig[];
 
+  /**
+   * When true, this connector is mentioned by default on replies to threads it created.
+   * When false (default), this connector cannot be mentioned at all.
+   *
+   * Set this to true for connectors with bidirectional sync (e.g., issue trackers,
+   * messaging) where user replies should be written back to the external service.
+   */
+  static readonly handleReplies?: boolean;
+
   // ---- Channel lifecycle (abstract — every connector must implement) ----
 
   /**

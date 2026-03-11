@@ -10,12 +10,12 @@ interface CreateOptions {
   dir?: string;
   name?: string;
   displayName?: string;
-  source?: boolean;
+  connector?: boolean;
 }
 
 export async function createCommand(options: CreateOptions) {
-  const isSource = !!options.source;
-  out.header(isSource ? "Create a new Plot connector" : "Create a new Plot twist");
+  const isConnector = !!options.connector;
+  out.header(isConnector ? "Create a new Plot connector" : "Create a new Plot twist");
 
   let response: { name: string; displayName: string };
 
@@ -96,7 +96,7 @@ export async function createCommand(options: CreateOptions) {
   const plotTwistId = crypto.randomUUID();
 
   // Create package.json
-  const packageName = isSource ? `@plotday/connector-${response.name}` : response.name;
+  const packageName = isConnector ? `@plotday/connector-${response.name}` : response.name;
   const packageJson: any = {
     name: packageName,
     displayName: response.displayName || response.name,
@@ -130,7 +130,7 @@ export async function createCommand(options: CreateOptions) {
     JSON.stringify(tsconfigJson, null, 2) + "\n"
   );
 
-  const sourceTemplate = `import { Connector, type ToolBuilder } from "@plotday/twister";
+  const connectorTemplate = `import { Connector, type ToolBuilder } from "@plotday/twister";
 import {
   AuthProvider,
   type AuthToken,
@@ -190,7 +190,7 @@ export default class MyTwist extends Twist<MyTwist> {
 
   fs.writeFileSync(
     path.join(twistPath, "src", "index.ts"),
-    isSource ? sourceTemplate : twistTemplate
+    isConnector ? connectorTemplate : twistTemplate
   );
 
   // Detect and use appropriate package manager

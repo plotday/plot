@@ -10,7 +10,7 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { Plot } from "@plotday/twister/tools/plot";
+
 
 type MessageChannel = {
   id: string;
@@ -61,6 +61,7 @@ import {
  */
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
+  static readonly handleReplies = true;
   static readonly SCOPES = [
     "channels:history",
     "channels:read",
@@ -81,9 +82,6 @@ export class Slack extends Connector<Slack> {
     return {
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://slack.com/api/*"] }),
-      plot: build(Plot, {
-        thread: { defaultMention: true },
-      }),
     };
   }
 

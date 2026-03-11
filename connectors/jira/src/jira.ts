@@ -17,7 +17,6 @@ import {
   type Channel,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { Plot } from "@plotday/twister/tools/plot";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 type Project = {
@@ -47,6 +46,7 @@ type SyncState = {
 export class Jira extends Connector<Jira> {
   static readonly PROVIDER = AuthProvider.Atlassian;
   static readonly SCOPES = ["read:jira-work", "write:jira-work", "read:jira-user"];
+  static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Atlassian;
   readonly scopes = Jira.SCOPES;
@@ -69,10 +69,6 @@ export class Jira extends Connector<Jira> {
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://*.atlassian.net/*"] }),
       tasks: build(Tasks),
-      plot: build(Plot, {
-        thread: { defaultMention: true },
-        note: { defaultMention: true },
-      }),
     };
   }
 

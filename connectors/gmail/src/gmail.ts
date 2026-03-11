@@ -8,7 +8,7 @@ import {
   Integrations,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
-import { Plot } from "@plotday/twister/tools/plot";
+
 
 import {
   GmailApi,
@@ -45,6 +45,7 @@ type MessageSyncOptions = {
  */
 export class Gmail extends Connector<Gmail> {
   static readonly PROVIDER = AuthProvider.Google;
+  static readonly handleReplies = true;
   static readonly SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.modify",
@@ -67,9 +68,6 @@ export class Gmail extends Connector<Gmail> {
       integrations: build(Integrations),
       network: build(Network, {
         urls: ["https://gmail.googleapis.com/gmail/v1/*"],
-      }),
-      plot: build(Plot, {
-        thread: { defaultMention: true },
       }),
     };
   }
