@@ -335,7 +335,6 @@ export class Integrations extends Tool implements IAuth {
         priorityTwistId: this.priorityTwistId,
         options: {
           thread: { access: 1 /* ThreadAccess.Create */ },
-          contact: { access: 1 /* ContactAccess.Write */ },
         },
         env: this.env,
       });

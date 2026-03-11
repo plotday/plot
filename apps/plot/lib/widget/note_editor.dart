@@ -80,6 +80,8 @@ class NoteEditorState extends State<NoteEditor> {
     if (widget.isNewThreadMode) return;
     final threadState = context.read<ThreadBloc>().state;
     for (final twist in threadState.threadTwists) {
+      // Connectors that don't handle replies are never mentionable
+      if (twist.isSource && !twist.defaultMentionCreated) continue;
       final isAuthor = threadState.notes.any(
         (n) => n.authorId.toUuid() == twist.id,
       );
@@ -485,13 +487,17 @@ class NoteEditorState extends State<NoteEditor> {
     BuildContext context,
     List<PriorityTwist> twists,
   ) {
+    final mentionableTwists = twists
+        .where((t) => !t.isSource || t.defaultMentionCreated)
+        .toList();
     return Padding(
       padding: const EdgeInsets.only(left: 6, right: 6),
       child: Wrap(
         spacing: 6,
         runSpacing: 4,
         children: [
-          for (final twist in twists) _buildTwistToggleChip(context, twist),
+          for (final twist in mentionableTwists)
+            _buildTwistToggleChip(context, twist),
         ],
       ),
     );
@@ -859,6 +865,7 @@ class NoteEditorState extends State<NoteEditor> {
     if (widget.isNewThreadMode) return const [];
     final threadState = context.read<ThreadBloc>().state;
     return threadState.threadTwists
+        .where((t) => !t.isSource || t.defaultMentionCreated)
         .where((t) => !_disabledTwists.contains(t.id))
         .map((t) => ActorId.fromUuid(t.id))
         .toList();

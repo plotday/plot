@@ -31,9 +31,6 @@ export async function addContacts(
   plot: Plot,
   contacts: Array<NewContact>
 ): Promise<Actor[]> {
-  // Validate contact write access permissions
-  plot.requireContactAccess(ContactAccess.Write);
-
   if (contacts.length === 0) return [];
 
   const normalizedContacts = Object.values(

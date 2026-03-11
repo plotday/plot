@@ -555,20 +555,26 @@ describe("Plot", () => {
   });
 
   describe("Contact Permissions", () => {
-    it("addContacts requires ContactAccess.Write", async () => {
+    it("addContacts succeeds without explicit ContactAccess (internal use)", async () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
         priorityTwistId: "pt-1",
         options: {
-          // No contact access configured
+          // No contact access configured — addContacts is internal-only
         },
         env: envMock,
       });
 
-      await expect(
-        plot.addContacts([{ email: "test@example.com", name: "Test User" }])
-      ).rejects.toThrow("Contact access not requested. Required: Write");
+      // addContacts no longer requires ContactAccess.Write — it's always allowed internally
+      // The method should not throw a permission error
+      // (it may fail for other reasons like missing DB, which is expected in unit tests)
+      try {
+        await plot.addContacts([{ email: "test@example.com", name: "Test User" }]);
+      } catch (e: any) {
+        // Should NOT be a permission error
+        expect(e.message).not.toContain("Contact access not requested");
+      }
     });
   });
 });

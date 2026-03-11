@@ -274,7 +274,8 @@ abstract class BaseTable {
     } else if (range != null) {
       returnRange = range;
     } else if (rows.isNotEmpty) {
-      final firstStr = (rows.first[order] ?? rows.first['created_at']) as String?;
+      final firstStr =
+          (rows.first[order] ?? rows.first['created_at']) as String?;
       final lastStr = (rows.last[order] ?? rows.last['created_at']) as String?;
       if (firstStr != null && lastStr != null) {
         final firstTime = DateTime.parse(firstStr);
@@ -442,7 +443,11 @@ class Store extends _$Store {
       try {
         hasDefault = await Priority.hasDefault();
       } catch (e, stackTrace) {
-        log.warning('Priority.hasDefault() failed, attempting schema rebuild', e, stackTrace);
+        log.warning(
+          'Priority.hasDefault() failed, attempting schema rebuild',
+          e,
+          stackTrace,
+        );
         Tracker.trackError(
           'database',
           errorType: e.runtimeType.toString(),
@@ -1139,8 +1144,17 @@ class Store extends _$Store {
     bool more;
 
     do {
-      var (baseRows, batchLastUpdated, batchLastId, _, batchMore) =
-          await baseTable.get(archived: true, updatedSince: lastUpdated, lastId: lastId);
+      var (
+        baseRows,
+        batchLastUpdated,
+        batchLastId,
+        _,
+        batchMore,
+      ) = await baseTable.get(
+        archived: true,
+        updatedSince: lastUpdated,
+        lastId: lastId,
+      );
       more = batchMore && batchLastUpdated != null;
       if (batchLastUpdated != null) {
         lastUpdated = batchLastUpdated;
@@ -1290,8 +1304,11 @@ class Store extends _$Store {
       // Check if we've already reached the end (noMore flag)
       // Also check ancestors — if a parent priority has synced all data,
       // the child's data is a subset and is also fully synced.
-      final anyNoMore = syncState?.noMore == true ||
-          ancestorSyncStates.any((s) => s.entity != entityName && s.noMore == true);
+      final anyNoMore =
+          syncState?.noMore == true ||
+          ancestorSyncStates.any(
+            (s) => s.entity != entityName && s.noMore == true,
+          );
       if (anyNoMore) {
         log.fine(
           "No more data for entity $entityName (noMore from self or ancestor), skipping pull",
@@ -1566,8 +1583,11 @@ class Store extends _$Store {
     log.fine("Batch syncing ${entityNames.join(', ')} via broadcast");
     try {
       final entities = entityNames
-          .map((name) => SyncOrchestrator.allEntities
-              .firstWhereOrNull((e) => e.debugName == name))
+          .map(
+            (name) => SyncOrchestrator.allEntities.firstWhereOrNull(
+              (e) => e.debugName == name,
+            ),
+          )
           .nonNulls
           .toSet();
 
@@ -1575,11 +1595,7 @@ class Store extends _$Store {
 
       await SyncOrchestrator.instance.syncSubset(entities);
     } catch (e, stackTrace) {
-      log.warning(
-        "Error handling batch sync for $entityNames",
-        e,
-        stackTrace,
-      );
+      log.warning("Error handling batch sync for $entityNames", e, stackTrace);
     }
   }
 
@@ -1682,7 +1698,9 @@ class Store extends _$Store {
       // Process any messages received during sync
       _isBufferingBroadcasts = false;
       if (_bufferedTables.isNotEmpty) {
-        log.fine("Processing ${_bufferedTables.length} buffered broadcast tables");
+        log.fine(
+          "Processing ${_bufferedTables.length} buffered broadcast tables",
+        );
       }
       for (final table in _bufferedTables) {
         _syncDebouncer(table);
@@ -1810,7 +1828,9 @@ class Store extends _$Store {
         try {
           await _incrementalMigration(m, from);
         } catch (e) {
-          log.warning('Incremental migration from $from failed, doing full reset: $e');
+          log.warning(
+            'Incremental migration from $from failed, doing full reset: $e',
+          );
           await _dropAllUserObjects(m.database);
           await m.createAll();
           await ThreadFts.createTable(m.database);
@@ -1824,7 +1844,8 @@ class Store extends _$Store {
             await m.drop(entity);
           }
         }
-        await m.createAll(); // CREATE VIEW/TABLE IF NOT EXISTS — only views get recreated since tables already exist
+        await m
+            .createAll(); // CREATE VIEW/TABLE IF NOT EXISTS — only views get recreated since tables already exist
         await ThreadFts.createTable(m.database);
         await NoteFts.createTable(m.database);
       },
@@ -1889,9 +1910,21 @@ class Store extends _$Store {
 
       // 2. Mark all syncable rows with sentinel updatedAt (skip pending rows)
       final syncableTables = <TableInfo<Table, DataClass>>[
-        threads, notes, priorities, actors, schedules, links,
-        sessions, priorityUsers, priorityMembers, priorityActors,
-        priorityTwists, sourceChannels, noteTags, threadTags, userSettings,
+        threads,
+        notes,
+        priorities,
+        actors,
+        schedules,
+        links,
+        sessions,
+        priorityUsers,
+        priorityMembers,
+        priorityActors,
+        priorityTwists,
+        sourceChannels,
+        noteTags,
+        threadTags,
+        userSettings,
       ];
       for (final table in syncableTables) {
         await customStatement(
@@ -1915,9 +1948,20 @@ class Store extends _$Store {
       // 5. Delete orphaned rows (still have sentinel, no pending changes)
       //    Delete children before parents to respect foreign key order
       final deleteOrder = <TableInfo<Table, DataClass>>[
-        noteTags, threadTags, notes, schedules, links,
-        sessions, sourceChannels, priorityTwists, priorityActors,
-        priorityMembers, priorityUsers, threads, priorities, actors,
+        noteTags,
+        threadTags,
+        notes,
+        schedules,
+        links,
+        sessions,
+        sourceChannels,
+        priorityTwists,
+        priorityActors,
+        priorityMembers,
+        priorityUsers,
+        threads,
+        priorities,
+        actors,
         userSettings,
       ];
       for (final table in deleteOrder) {
@@ -1959,7 +2003,9 @@ class Store extends _$Store {
     if (from < 244) {
       // Use raw SQL: table is still 'activities' until migration 246 renames it to 'threads',
       // and column is still 'links' until migration 246 renames it to 'actions'.
-      await m.database.customStatement('ALTER TABLE activities ADD COLUMN links TEXT');
+      await m.database.customStatement(
+        'ALTER TABLE activities ADD COLUMN links TEXT',
+      );
     }
     if (from < 245) {
       // These columns are added here and then removed in migration 247.
@@ -1975,21 +2021,39 @@ class Store extends _$Store {
     }
     if (from < 246) {
       // Rename tables: activities → threads, activity_exceptions → thread_exceptions, activity_tags → thread_tags
-      await m.database.customStatement('ALTER TABLE activities RENAME TO threads');
-      await m.database.customStatement('ALTER TABLE activity_exceptions RENAME TO thread_exceptions');
-      await m.database.customStatement('ALTER TABLE activity_tags RENAME TO thread_tags');
+      await m.database.customStatement(
+        'ALTER TABLE activities RENAME TO threads',
+      );
+      await m.database.customStatement(
+        'ALTER TABLE activity_exceptions RENAME TO thread_exceptions',
+      );
+      await m.database.customStatement(
+        'ALTER TABLE activity_tags RENAME TO thread_tags',
+      );
       // Rename column: notes.activity_id → notes.thread_id
-      await m.database.customStatement('ALTER TABLE notes RENAME COLUMN activity_id TO thread_id');
+      await m.database.customStatement(
+        'ALTER TABLE notes RENAME COLUMN activity_id TO thread_id',
+      );
       // Rename column: thread_exceptions.activity_id → thread_exceptions.thread_id
-      await m.database.customStatement('ALTER TABLE thread_exceptions RENAME COLUMN activity_id TO thread_id');
+      await m.database.customStatement(
+        'ALTER TABLE thread_exceptions RENAME COLUMN activity_id TO thread_id',
+      );
       // Rename column: threads.links → threads.actions
-      await m.database.customStatement('ALTER TABLE threads RENAME COLUMN links TO actions');
+      await m.database.customStatement(
+        'ALTER TABLE threads RENAME COLUMN links TO actions',
+      );
       // Recreate FTS table: activity_fts → thread_fts
       await m.database.customStatement('DROP TABLE IF EXISTS activity_fts');
       // Update sync_states entity names to match new table names
-      await m.database.customStatement("UPDATE sync_states SET entity = 'threads' WHERE entity = 'activities'");
-      await m.database.customStatement("UPDATE sync_states SET entity = 'thread_exceptions' WHERE entity = 'activity_exceptions'");
-      await m.database.customStatement("UPDATE sync_states SET entity = 'thread_tags' WHERE entity = 'activity_tags'");
+      await m.database.customStatement(
+        "UPDATE sync_states SET entity = 'threads' WHERE entity = 'activities'",
+      );
+      await m.database.customStatement(
+        "UPDATE sync_states SET entity = 'thread_exceptions' WHERE entity = 'activity_exceptions'",
+      );
+      await m.database.customStatement(
+        "UPDATE sync_states SET entity = 'thread_tags' WHERE entity = 'activity_tags'",
+      );
     }
     if (from < 247) {
       // Create new schedules table
@@ -2021,13 +2085,19 @@ class Store extends _$Store {
         WHERE user_start_on IS NOT NULL
       ''');
       // Drop thread_exceptions table
-      await m.database.customStatement('DROP TABLE IF EXISTS thread_exceptions');
+      await m.database.customStatement(
+        'DROP TABLE IF EXISTS thread_exceptions',
+      );
       // Remove scheduling columns from threads (alterTable rebuilds without removed columns)
       // ignore: experimental_member_use
       await m.alterTable(TableMigration(threads));
       // Update sync_states: remove thread_exceptions, reset threads sync
-      await m.database.customStatement("DELETE FROM sync_states WHERE entity = 'thread_exceptions'");
-      await m.database.customStatement("DELETE FROM sync_states WHERE entity = 'threads'");
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity = 'thread_exceptions'",
+      );
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity = 'threads'",
+      );
     }
     if (from < 248) {
       await _safeAddColumn(m, schedules, schedules.contacts);
@@ -2068,8 +2138,10 @@ class Store extends _$Store {
       await m.alterTable(TableMigration(threads));
     }
     if (from < 257) {
-      await _safeCustomStatement(m,
-        'ALTER TABLE schedules ADD COLUMN done_at INTEGER');
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE schedules ADD COLUMN done_at INTEGER',
+      );
     }
     if (from < 258) {
       await _safeAddColumn(m, schedules, schedules.archivedAt);
@@ -2126,8 +2198,16 @@ class Store extends _$Store {
       await _safeAddColumn(m, priorityMembers, priorityMembers.role);
     }
     if (from < 266) {
-      await _safeAddColumn(m, priorityTwists, priorityTwists.defaultMentionCreated);
-      await _safeAddColumn(m, priorityTwists, priorityTwists.defaultMentionMentioned);
+      await _safeAddColumn(
+        m,
+        priorityTwists,
+        priorityTwists.defaultMentionCreated,
+      );
+      await _safeAddColumn(
+        m,
+        priorityTwists,
+        priorityTwists.defaultMentionMentioned,
+      );
     }
   }
 
@@ -2137,7 +2217,8 @@ class Store extends _$Store {
       await m.database.customStatement(sql);
     } catch (e) {
       final msg = e.toString();
-      if (!msg.contains('duplicate column') && !msg.contains('already exists')) {
+      if (!msg.contains('duplicate column') &&
+          !msg.contains('already exists')) {
         rethrow;
       }
     }
@@ -2145,7 +2226,11 @@ class Store extends _$Store {
 
   /// Adds a column, ignoring "duplicate column" errors from previous partial migrations.
   /// SQLite ALTER TABLE is auto-committed and can't be rolled back on failure.
-  static Future<void> _safeAddColumn(Migrator m, TableInfo<Table, dynamic> table, GeneratedColumn<Object> column) async {
+  static Future<void> _safeAddColumn(
+    Migrator m,
+    TableInfo<Table, dynamic> table,
+    GeneratedColumn<Object> column,
+  ) async {
     try {
       await m.addColumn(table, column);
     } catch (e) {
@@ -2154,7 +2239,10 @@ class Store extends _$Store {
   }
 
   /// Creates a table, ignoring errors if it already exists from a previous partial migration.
-  static Future<void> _safeCreateTable(Migrator m, TableInfo<Table, dynamic> table) async {
+  static Future<void> _safeCreateTable(
+    Migrator m,
+    TableInfo<Table, dynamic> table,
+  ) async {
     try {
       await m.createTable(table);
     } catch (e) {
@@ -2164,9 +2252,11 @@ class Store extends _$Store {
 
   static Future<void> _dropAllUserObjects(DatabaseConnectionUser db) async {
     // 1. Drop triggers
-    final triggers = await db.customSelect(
-      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name NOT LIKE 'sqlite_%'",
-    ).get();
+    final triggers = await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name NOT LIKE 'sqlite_%'",
+        )
+        .get();
     for (final row in triggers) {
       final name = row.read<String>('name');
       try {
@@ -2177,9 +2267,11 @@ class Store extends _$Store {
     }
 
     // 2. Drop views
-    final views = await db.customSelect(
-      "SELECT name FROM sqlite_master WHERE type = 'view' AND name NOT LIKE 'sqlite_%'",
-    ).get();
+    final views = await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'view' AND name NOT LIKE 'sqlite_%'",
+        )
+        .get();
     for (final row in views) {
       final name = row.read<String>('name');
       try {
@@ -2192,9 +2284,11 @@ class Store extends _$Store {
     // 3. Drop tables (except internal sqlite tables).
     //    FTS5 shadow tables will fail here but succeed implicitly when their
     //    parent virtual table is dropped. A second pass catches stragglers.
-    final tables = await db.customSelect(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
-    ).get();
+    final tables = await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        )
+        .get();
     for (final row in tables) {
       final name = row.read<String>('name');
       try {
@@ -2206,13 +2300,17 @@ class Store extends _$Store {
 
     // 4. Second pass: pick up anything left (e.g. shadow tables whose parent
     //    was dropped after them in the first pass, freeing them).
-    final remaining = await db.customSelect(
-      "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view', 'trigger') AND name NOT LIKE 'sqlite_%'",
-    ).get();
+    final remaining = await db
+        .customSelect(
+          "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view', 'trigger') AND name NOT LIKE 'sqlite_%'",
+        )
+        .get();
     for (final row in remaining) {
       final name = row.read<String>('name');
       final type = row.read<String>('type');
-      final keyword = type == 'trigger' ? 'TRIGGER' : (type == 'view' ? 'VIEW' : 'TABLE');
+      final keyword = type == 'trigger'
+          ? 'TRIGGER'
+          : (type == 'view' ? 'VIEW' : 'TABLE');
       try {
         await db.customStatement('DROP $keyword IF EXISTS "$name"');
       } catch (e) {

@@ -399,6 +399,7 @@ export default class extends WorkerEntrypoint {
       provider: twist.provider,
       scopes: twist.scopes,
       linkTypes: twist.linkTypes || [],
+      ...(TwistConstructor.handleReplies ? { handleReplies: true } : {}),
     };
   }
 

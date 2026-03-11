@@ -902,10 +902,13 @@ class EditorState extends State<Editor> {
 
   /// Build the combined mention items list from twists and actors
   List<MentionItem> _buildMentionItems() {
+    // Filter out connectors that don't handle replies
+    final mentionableTwists = widget.twists
+        .where((t) => !t.isSource || t.defaultMentionCreated);
     // Twists first, then actors (excluding actors that are already represented by twists)
-    final twistActorIds = widget.twists.map((t) => t.id.toString()).toSet();
+    final twistActorIds = mentionableTwists.map((t) => t.id.toString()).toSet();
     return [
-      ...widget.twists.map(MentionItem.fromTwist),
+      ...mentionableTwists.map(MentionItem.fromTwist),
       ...widget.actors
           .where((actor) => !twistActorIds.contains(actor.id.toString()))
           .map(MentionItem.fromActor),

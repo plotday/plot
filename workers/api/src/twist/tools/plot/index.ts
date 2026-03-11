@@ -207,16 +207,10 @@ export class Plot extends Tool implements IPlot {
     }
 
     if (options?.contact?.access !== undefined) {
-      let flags = [] as PermissionFlag[];
-      if (options.contact.access === ContactAccess.Read) {
-        flags = ["read"];
-      } else if (options.contact.access === ContactAccess.Write) {
-        flags = ["read", "write", "update"];
-      }
       perms.push({
         domain: "plot",
         entity: "contact",
-        flags,
+        flags: ["read"],
       });
     }
 
@@ -1090,12 +1084,7 @@ export class Plot extends Tool implements IPlot {
       );
     }
 
-    // Check if granted permission is sufficient
-    // Write includes Read permissions
     if (required === ContactAccess.Read && granted >= ContactAccess.Read) {
-      return;
-    }
-    if (required === ContactAccess.Write && granted >= ContactAccess.Write) {
       return;
     }
 

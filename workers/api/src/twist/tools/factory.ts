@@ -133,7 +133,7 @@ export function createTool(
     ctx: { exports: ExecutionContext["exports"] };
     config?: Record<string, unknown>;
     /** Source metadata (provider, scopes, linkTypes) for Sources using the new API. */
-    sourceProvider?: { provider: string; scopes: string[]; linkTypes?: any[] } | null;
+    sourceProvider?: { provider: string; scopes: string[]; linkTypes?: any[]; handleReplies?: boolean } | null;
     /** Whether AI features are enabled for the user. Undefined during deployment. */
     aiEnabled?: boolean;
   }

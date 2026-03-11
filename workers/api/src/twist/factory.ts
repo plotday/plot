@@ -81,7 +81,7 @@ export function twistFactory({
     let optionsSchema: Record<string, unknown> | undefined;
 
     // Source metadata (provider, scopes, linkTypes) — set during deployment, loaded at runtime
-    let sourceProvider: { provider: string; scopes: string[]; linkTypes?: any[] } | null = null;
+    let sourceProvider: { provider: string; scopes: string[]; linkTypes?: any[]; handleReplies?: boolean } | null = null;
 
     // Load priority_twist config for Options resolution at runtime
     let priorityTwistConfig: Record<string, unknown> | undefined;
@@ -154,41 +154,6 @@ export function twistFactory({
         });
       }
 
-      // SPECIAL CASE: ContactAccess.Write inheritance at runtime
-      // Apply the same inheritance logic as during deployment: if ANY tool in the
-      // dependency tree has ContactAccess.Write (checked via stored permissions),
-      // automatically grant it to this Plot instance. This ensures Plot's internal
-      // addContacts() calls (from processNewActor) will succeed.
-      if (toolId === "Plot" && checkPermissions && storedToolPermissions) {
-        const hasContactWrite = Object.values(storedToolPermissions).some(
-          (perms) =>
-            perms.some(
-              (p) =>
-                p.domain === "plot" &&
-                p.entity === "contact" &&
-                p.flags.includes("write")
-            )
-        );
-
-        if (hasContactWrite) {
-          const currentAccess = (options as any)?.contact?.access;
-          const ContactAccessWrite = 1; // ContactAccess.Write enum value
-
-          if (
-            currentAccess === undefined ||
-            currentAccess < ContactAccessWrite
-          ) {
-            options = {
-              ...options,
-              contact: {
-                ...(options as any)?.contact,
-                access: ContactAccessWrite,
-              },
-            };
-          }
-        }
-      }
-
       // Validate permissions before creating tool
       const pathString = path.join(":");
       if (checkPermissions && storedToolPermissions) {
@@ -250,53 +215,6 @@ export function twistFactory({
       for (const { id: toolId, options } of toolInstances) {
         const perms = collectToolPermissions(toolId, options);
         allPermissions.push(...perms);
-      }
-
-      // SPECIAL CASE: ContactAccess.Write inheritance
-      // When a child tool (e.g., GoogleCalendar) has ContactAccess.Write and creates
-      // activities/notes with NewContact objects, the Plot tool's internal logic
-      // (processNewActor) calls addContacts() to create those contacts. This means
-      // parent twists/tools also need ContactAccess.Write permission, even if they
-      // don't directly call addContacts().
-      // Solution: If ANY tool in the dependency tree has ContactAccess.Write,
-      // automatically grant it to ALL Plot tool instances.
-      const hasContactWrite = allPermissions.some(
-        (p) =>
-          p.domain === "plot" &&
-          p.entity === "contact" &&
-          p.flags.includes("write")
-      );
-
-      if (hasContactWrite) {
-        // Update all Plot tool instances to have ContactAccess.Write
-        for (const instance of toolInstances) {
-          if (instance.id === "Plot") {
-            // Check if this Plot instance already has ContactAccess.Write
-            const currentAccess = (instance.options as any)?.contact?.access;
-            const ContactAccessWrite = 1; // ContactAccess.Write enum value
-
-            if (
-              currentAccess === undefined ||
-              currentAccess < ContactAccessWrite
-            ) {
-              // Update options to include ContactAccess.Write
-              instance.options = {
-                ...instance.options,
-                contact: {
-                  ...(instance.options as any)?.contact,
-                  access: ContactAccessWrite,
-                },
-              };
-
-              // Re-collect permissions for this updated Plot instance
-              const updatedPerms = collectToolPermissions(
-                instance.id,
-                instance.options
-              );
-              allPermissions.push(...updatedPerms);
-            }
-          }
-        }
       }
 
       permissions = mergeToolPermissions(allPermissions);
@@ -365,6 +283,11 @@ export function twistFactory({
           if ((options as any)?.thread?.defaultMention) defaultMentionCreated = true;
           if ((options as any)?.note?.defaultMention) defaultMentionMentioned = true;
         }
+      }
+
+      // For connectors, read handleReplies from source metadata
+      if (sourceProvider?.handleReplies) {
+        defaultMentionCreated = true;
       }
     } else {
       // RUNTIME: Tools are validated per-path in builtInToolFactory as they're created
