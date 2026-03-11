@@ -12,7 +12,8 @@ CREATE TABLE "public"."thread" (
     "preview" text,
     "last_note_created_at" timestamp with time zone,
     "sync_depth" integer,
-    "last_note_source_created_at" timestamp with time zone
+    "last_note_source_created_at" timestamp with time zone,
+    "key" text
 );
 
 ALTER TABLE "public"."thread"
@@ -49,6 +50,17 @@ WHERE
 CREATE INDEX idx_thread_created_by ON "public"."thread" ("created_by")
 WHERE
     archived_at IS NULL;
+
+COMMENT ON COLUMN "public"."thread"."key" IS 'Internal identifier for deduplication within a priority. Used with priority_id for upsert behavior. Not synced to clients.';
+
+-- Ensure one thread per key per priority
+-- NULL != NULL allows multiple threads when key is null
+CREATE UNIQUE INDEX thread_priority_key_unique ON "public"."thread" ("priority_id", "key");
+
+-- Index for efficient key lookups
+CREATE INDEX idx_thread_key ON "public"."thread" ("key")
+WHERE
+    key IS NOT NULL;
 
 COMMENT ON COLUMN "public"."thread"."created_by" IS 'The user_id or priority_twist_id that actually created this thread. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
 

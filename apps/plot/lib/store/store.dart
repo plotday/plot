@@ -431,9 +431,17 @@ class Store extends _$Store {
       // Update current user ID
       _currentUserId = user.id;
 
-      // Close existing store if it exists
+      // Close existing store if it exists – use the same cleanup sequence
+      // as stop() to prevent races where code accesses a closing Store.
       if (Injector.appInstance.exists<Store>()) {
-        await get.close();
+        final old = get;
+        old._closing = true;
+        old._syncDebouncer.dispose();
+        old._connectivitySubscription?.cancel();
+        old._connectivitySubscription = null;
+        old._unsubscribeFromUpdates();
+        Injector.appInstance.removeByKey<Store>();
+        await old.close();
       }
 
       var inst = Store._(user);
@@ -1607,6 +1615,7 @@ class Store extends _$Store {
   }
 
   Future<void> _handleBroadcastMessage(Map<String, dynamic> message) async {
+    if (_closing) return;
     final table = message['table'] as String?;
 
     if (table == null) {
@@ -1882,7 +1891,8 @@ class Store extends _$Store {
     // This prevents a race where the background isolate's SQLite update hook
     // NativeCallable is invalidated while a write is still in progress,
     // causing a SIGSEGV (null function pointer call from sqlite3).
-    await Future<void>.delayed(const Duration(milliseconds: 100));
+    // 500ms gives heavy sync/batch operations enough time to complete.
+    await Future<void>.delayed(const Duration(milliseconds: 500));
 
     await super.close();
   }

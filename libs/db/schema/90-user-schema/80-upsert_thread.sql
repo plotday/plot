@@ -31,8 +31,17 @@ BEGIN
     v_priority_id := COALESCE((p_thread ->> 'priority_id')::uuid, (p_defaults ->> 'priority_id')::uuid);
     v_created_by := COALESCE((p_thread ->> 'created_by')::uuid, (p_defaults ->> 'created_by')::uuid, user_id);
     -- Generate id if not provided
+    -- If key is provided and no id was given, look up existing thread by key + priority
     IF v_id IS NULL THEN
-        v_id := uuidv7 ();
+        IF (p_thread ? 'key') AND v_priority_id IS NOT NULL THEN
+            SELECT id INTO v_id
+            FROM thread
+            WHERE key = (p_thread ->> 'key')
+              AND priority_id = v_priority_id;
+        END IF;
+        IF v_id IS NULL THEN
+            v_id := uuidv7 ();
+        END IF;
     END IF;
     -- Resolve priority_id from existing thread if missing
     IF v_priority_id IS NULL THEN
@@ -98,8 +107,8 @@ BEGIN
     v_is_archived := COALESCE(v_is_archived, FALSE);
     -- Perform the upsert and return the full row
     -- On INSERT: Use COALESCE to fall back to p_defaults for fields not in p_thread
-    INSERT INTO thread (id, created_by, priority_id, title, preview, updated_by, sync_depth, private, draft)
-        VALUES (v_id, v_created_by, v_priority_id, COALESCE(p_thread ->> 'title', p_defaults ->> 'title'), COALESCE(p_thread ->> 'preview', p_defaults ->> 'preview'), COALESCE((p_thread ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, 0), COALESCE((p_thread ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint), COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, FALSE), COALESCE((p_thread ->> 'draft')::boolean, (p_defaults ->> 'draft')::boolean, FALSE))
+    INSERT INTO thread (id, created_by, priority_id, title, preview, updated_by, sync_depth, private, draft, key)
+        VALUES (v_id, v_created_by, v_priority_id, COALESCE(p_thread ->> 'title', p_defaults ->> 'title'), COALESCE(p_thread ->> 'preview', p_defaults ->> 'preview'), COALESCE((p_thread ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, 0), COALESCE((p_thread ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint), COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, FALSE), COALESCE((p_thread ->> 'draft')::boolean, (p_defaults ->> 'draft')::boolean, FALSE), COALESCE(p_thread ->> 'key', p_defaults ->> 'key'))
     ON CONFLICT (id)
         DO UPDATE SET
             -- Update fields only if key is present in p_thread

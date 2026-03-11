@@ -1503,6 +1503,7 @@ export type Database = {
           created_by: string
           draft: boolean
           id: string
+          key: string | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           preview: string | null
@@ -1519,6 +1520,7 @@ export type Database = {
           created_by: string
           draft?: boolean
           id?: string
+          key?: string | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
           preview?: string | null
@@ -1535,6 +1537,7 @@ export type Database = {
           created_by?: string
           draft?: boolean
           id?: string
+          key?: string | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
           preview?: string | null
@@ -3156,6 +3159,7 @@ export type Database = {
           created_by: string | null
           draft: boolean | null
           id: string | null
+          key: string | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           mentions: string[] | null

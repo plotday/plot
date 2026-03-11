@@ -28,13 +28,12 @@ async function ensureReleasesActivity(
   createdBy: string,
   authorId: string
 ): Promise<string> {
-  const source = `@plot:releases:${twistPackageId}`;
+  const key = `releases:${twistPackageId}`;
 
   const data = await rpcUser(db, "upsert_thread", {
     user_id: createdBy,
     p_thread: {
-      source,
-      type: "note",
+      key,
       title: "Releases",
       priority_id: priorityId,
     },
@@ -145,13 +144,12 @@ async function ensureLogsActivity(
   authorId: string,
   userId: string
 ): Promise<string> {
-  const source = `@plot:logs:${twistPackageId}:${environment}`;
+  const key = `logs:${twistPackageId}:${environment}`;
 
   const data = await rpcUser(db, "upsert_thread", {
     user_id: userId,
     p_thread: {
-      source,
-      type: "note",
+      key,
       title: `Logs (${environment})`,
       priority_id: priorityId,
     },
