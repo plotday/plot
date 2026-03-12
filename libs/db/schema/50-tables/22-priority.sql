@@ -132,25 +132,18 @@ CREATE TRIGGER priority_propagate_org_id
     FOR EACH ROW
     EXECUTE FUNCTION propagate_organization_id ();
 
--- Per-user priority settings
-CREATE TABLE "public"."priority_settings" (
-    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+-- Per-user priority settings (per-key with JSONB values)
+CREATE TABLE "public"."priority_setting" (
+    "updated_at" timestamptz NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
-    -- All fields added below must be handled in handle_user_priority_upsert
-    "top_order" double precision,
-    "order" double precision,
-    -- The fields below are inherited by sub-priorities
-    -- If path is set, it overrides the sub-path below the root
-    "path" ltree,
-    "pomodoro" integer,
-    "color" integer,
-    "title" text,
-    PRIMARY KEY (user_id, priority_id)
+    "key" text NOT NULL,
+    "value" jsonb NOT NULL,
+    PRIMARY KEY (user_id, priority_id, key)
 );
 
-CREATE TRIGGER set_priority_settings_updated_at
-    BEFORE INSERT OR UPDATE ON "public"."priority_settings"
+CREATE TRIGGER set_priority_setting_updated_at
+    BEFORE INSERT OR UPDATE ON "public"."priority_setting"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
 

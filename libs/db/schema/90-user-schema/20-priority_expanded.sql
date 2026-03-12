@@ -21,12 +21,16 @@ SELECT
     b.archived_at,
     b.role,
     CASE
-        WHEN inherited_settings.path IS NOT NULL THEN
-            inherited_settings.path
+        WHEN inherited.path_value IS NOT NULL THEN
+            CASE WHEN inherited.path_source IS NOT NULL
+                AND p.path != inherited.path_source::ltree
+                AND subpath(p.path, nlevel(inherited.path_source::ltree)) != '' THEN
+                inherited.path_value::ltree || subpath(p.path, nlevel(inherited.path_source::ltree))
+            ELSE
+                inherited.path_value::ltree
+            END
         WHEN user_root.path @> p.path THEN
             p.path
-        WHEN parent_inherited_settings.path IS NOT NULL THEN
-            parent_inherited_settings.path || text(subpath (p.path, nlevel (p.path) - 1, 1))::ltree
         ELSE
             user_root.path || p.path
     END AS path
@@ -36,9 +40,11 @@ FROM
     LEFT JOIN priority_user pu_root ON b.user_id = pu_root.user_id
         AND pu_root.personal = TRUE
     LEFT JOIN priority user_root ON pu_root.priority_id = user_root.id
-    LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = b.user_id
-        AND inherited_settings.priority_id = b.priority_id
-    LEFT JOIN priority parent_p ON nlevel (p.path) > 1
-        AND parent_p.path = subpath (p.path, 0, nlevel (p.path) - 1)
-    LEFT JOIN priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = b.user_id
-        AND parent_p.id = parent_inherited_settings.priority_id;
+    LEFT JOIN (
+        SELECT user_id, priority_id,
+            MAX(CASE WHEN key = 'path' THEN value #>> '{}' END) AS path_value,
+            MAX(CASE WHEN key = 'path' THEN text(source_path) END) AS path_source
+        FROM priority_setting_inherited
+        GROUP BY user_id, priority_id
+    ) inherited ON inherited.user_id = b.user_id
+        AND inherited.priority_id = b.priority_id;

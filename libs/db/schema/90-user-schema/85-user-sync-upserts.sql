@@ -524,18 +524,18 @@ BEGIN
             SELECT
                 ps.priority_id INTO _aliased_root_id
             FROM
-                priority_settings ps
+                priority_setting ps
                 JOIN priority p ON ps.priority_id = p.id
             WHERE
                 ps.user_id = upsert_priority.user_id
-                AND ps.path IS NOT NULL
-                AND _input.path <@ ps.path
-                AND _old.path <@ ps.path
-                AND ps.path != p.path
+                AND ps.key = 'path'
+                AND _input.path <@ (ps.value #>> '{}')::ltree
+                AND _old.path <@ (ps.value #>> '{}')::ltree
+                AND (ps.value #>> '{}')::ltree != p.path
                 AND _old_actual_path <@ p.path
                 AND _actual_path <@ p.path
             ORDER BY
-                nlevel (ps.path) DESC
+                nlevel ((ps.value #>> '{}')::ltree) DESC
             LIMIT 1;
             IF _aliased_root_id IS NOT NULL THEN
                 _within_aliased_tree := TRUE;
@@ -572,13 +572,8 @@ BEGIN
                     move_priority (_input.id, _parent_actual_path);
                 _actual_path := NULL;
                 -- Clear any existing visual alias now that priority is in the personal tree
-                UPDATE
-                    priority_settings
-                SET
-                    path = NULL
-                WHERE
-                    user_id = upsert_priority.user_id
-                    AND priority_id = _input.id;
+                DELETE FROM priority_setting
+                WHERE user_id = upsert_priority.user_id AND priority_id = _input.id AND key = 'path';
         ELSIF _old_is_personal
                 AND NOT _new_is_personal THEN
                 RAISE EXCEPTION 'Cannot move personal priority into shared tree'
@@ -650,31 +645,41 @@ BEGIN
         RETURNING
             id INTO _priority_id;
     END IF;
-    -- Update priority_settings for user-specific fields
+    -- Update priority_setting for user-specific fields
     IF _is_visual_move THEN
         -- Visual move: create/update path alias
-        INSERT INTO priority_settings (user_id, priority_id, path, top_order, "order", pomodoro, color)
-            VALUES (upsert_priority.user_id, _priority_id, _input.path, _input.top_order, _input.order, _input.pomodoro, COALESCE(_input.color, _priority_default_color))
-        ON CONFLICT (user_id, priority_id)
-            DO UPDATE SET
-                path = _input.path,
-                top_order = _input.top_order,
-                "order" = _input.order,
-                pomodoro = _input.pomodoro,
-                color = _input.color;
-    ELSIF NOT _is_move
-            AND (_input."top_order" IS NOT NULL
-                OR _input."order" IS NOT NULL
-                OR _input."pomodoro" IS NOT NULL
-                OR _input."color" IS NOT NULL) THEN
-            INSERT INTO priority_settings (user_id, priority_id, path, top_order, "order", pomodoro, color)
-                VALUES (upsert_priority.user_id, _priority_id, NULL, _input.top_order, _input.order, _input.pomodoro, COALESCE(_input.color, _priority_default_color))
-            ON CONFLICT (user_id, priority_id)
-                DO UPDATE SET
-                    top_order = _input.top_order,
-                    "order" = _input.order,
-                    pomodoro = _input.pomodoro,
-                    color = _input.color;
+        INSERT INTO priority_setting (user_id, priority_id, key, value)
+        VALUES (upsert_priority.user_id, _priority_id, 'path', to_jsonb(text(_input.path)))
+        ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+    END IF;
+    -- Always upsert top_order, order, pomodoro, color if provided
+    IF NOT _is_move THEN
+        IF _input.top_order IS NOT NULL THEN
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (upsert_priority.user_id, _priority_id, 'top_order', to_jsonb(_input.top_order))
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        ELSE
+            DELETE FROM priority_setting
+            WHERE user_id = upsert_priority.user_id AND priority_id = _priority_id AND key = 'top_order';
+        END IF;
+        IF _input."order" IS NOT NULL THEN
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (upsert_priority.user_id, _priority_id, 'order', to_jsonb(_input."order"))
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        END IF;
+        IF _input.pomodoro IS NOT NULL THEN
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (upsert_priority.user_id, _priority_id, 'pomodoro', to_jsonb(_input.pomodoro))
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        ELSE
+            DELETE FROM priority_setting
+            WHERE user_id = upsert_priority.user_id AND priority_id = _priority_id AND key = 'pomodoro';
+        END IF;
+        IF _input.color IS NOT NULL THEN
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (upsert_priority.user_id, _priority_id, 'color', to_jsonb(COALESCE(_input.color, _priority_default_color)))
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        END IF;
     END IF;
     -- Return the updated row from the view
     SELECT
@@ -832,4 +837,39 @@ BEGIN
         AND thread_read.thread_id = p_thread_id;
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION "user".upsert_priority_response_time(
+    user_id uuid,
+    p_priority_id uuid,
+    p_response_window jsonb DEFAULT NULL,
+    p_turnaround jsonb DEFAULT NULL,
+    p_set_response_window boolean DEFAULT FALSE,
+    p_set_turnaround boolean DEFAULT FALSE
+) RETURNS void LANGUAGE plpgsql SET search_path TO 'public', 'user' AS $function$
+BEGIN
+    PERFORM "user".assert_priority_access(
+        upsert_priority_response_time.user_id, p_priority_id);
+    IF p_set_response_window THEN
+        IF p_response_window IS NOT NULL THEN
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (upsert_priority_response_time.user_id, p_priority_id, 'response_window', p_response_window)
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        ELSE
+            DELETE FROM priority_setting
+            WHERE user_id = upsert_priority_response_time.user_id
+              AND priority_id = p_priority_id AND key = 'response_window';
+        END IF;
+    END IF;
+    IF p_set_turnaround THEN
+        IF p_turnaround IS NOT NULL THEN
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (upsert_priority_response_time.user_id, p_priority_id, 'turnaround', p_turnaround)
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        ELSE
+            DELETE FROM priority_setting
+            WHERE user_id = upsert_priority_response_time.user_id
+              AND priority_id = p_priority_id AND key = 'turnaround';
+        END IF;
+    END IF;
+END; $function$;
 

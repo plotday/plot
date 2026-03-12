@@ -24,11 +24,6 @@ BEGIN
     LIMIT 1;
     IF v_root_priority_id IS NOT NULL THEN
         -- Root priority already exists
-        -- Ensure priority settings exist
-        INSERT INTO public.priority_settings (user_id, priority_id)
-            VALUES (p_user_id, v_root_priority_id)
-        ON CONFLICT (user_id, priority_id)
-            DO NOTHING;
         RETURN jsonb_build_object('activated', FALSE, 'already_active', TRUE, 'root_priority_id', v_root_priority_id);
     END IF;
     -- Create root priority
@@ -48,11 +43,6 @@ BEGIN
     WHERE
         user_id = p_user_id
         AND priority_id = v_root_priority_id;
-    -- Create priority settings if they don't exist
-    INSERT INTO public.priority_settings (user_id, priority_id)
-        VALUES (p_user_id, v_root_priority_id)
-    ON CONFLICT (user_id, priority_id)
-        DO NOTHING;
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
 $function$;

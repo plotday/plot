@@ -25,64 +25,46 @@ FROM
     "public"."priority" p
     JOIN "public"."priority" c ON c.path <@ p.path;
 
-CREATE OR REPLACE VIEW "public"."priority_settings_inherited" -- for formatting
+CREATE OR REPLACE VIEW "public"."priority_setting_inherited"
 AS
-WITH inherited_sources AS (
-    -- Get settings from priority_settings (user preferences)
+WITH all_sources AS (
+    -- User-specific settings (source_type = 0, wins over priority.color)
     SELECT
         ps.user_id,
         p.id AS priority_id,
-        nlevel (p.path) - nlevel (parent.path) AS distance,
-        0 AS source_type, -- 0 = priority_settings has higher priority than priority.color
-        CASE WHEN nlevel (p.path) > nlevel (parent.path)
-            AND subpath (p.path, nlevel (parent.path)) != '' THEN
-            ps.path || subpath (p.path, nlevel (parent.path))
-        ELSE
-            ps.path
-        END AS path,
-        ps.pomodoro,
-        ps.color
-    FROM
-        priority_settings ps
-        JOIN priority parent ON ps.priority_id = parent.id
-        JOIN priority p ON p.path <@ parent.path
-    WHERE
-        ps.path IS NOT NULL
-        OR ps.pomodoro IS NOT NULL
-        OR ps.color IS NOT NULL
+        ps.key,
+        ps.value,
+        parent.path AS source_path,
+        nlevel(p.path) - nlevel(parent.path) AS distance,
+        0 AS source_type
+    FROM priority_setting ps
+    JOIN priority parent ON ps.priority_id = parent.id
+    JOIN priority p ON p.path <@ parent.path
+    WHERE ps.key IN ('pomodoro', 'color', 'path', 'response_window', 'turnaround')
     UNION ALL
-    -- Get default colors from priority table
+    -- Priority table color fallback (source_type = 1)
     SELECT
         pu.user_id,
         p.id AS priority_id,
-        nlevel (p.path) - nlevel (parent.path) AS distance,
-        1 AS source_type, -- 1 = priority.color has lower priority
-        NULL::ltree AS path,
-        NULL::integer AS pomodoro,
-        parent.color
-    FROM
-        priority_user pu
-        JOIN priority root ON pu.priority_id = root.id
-        JOIN priority p ON p.path <@ root.path
-        JOIN priority parent ON p.path <@ parent.path
-    WHERE
-        parent.color IS NOT NULL
+        'color'::text AS key,
+        to_jsonb(parent.color) AS value,
+        parent.path AS source_path,
+        nlevel(p.path) - nlevel(parent.path) AS distance,
+        1 AS source_type
+    FROM priority_user pu
+    JOIN priority root ON pu.priority_id = root.id
+    JOIN priority p ON p.path <@ root.path
+    JOIN priority parent ON p.path <@ parent.path
+    WHERE parent.color IS NOT NULL
 )
-SELECT DISTINCT ON (user_id, priority_id)
+SELECT DISTINCT ON (user_id, priority_id, key)
     user_id,
     priority_id,
-    path,
-    pomodoro,
-    color
-FROM
-    inherited_sources
-ORDER BY
-    user_id,
-    priority_id,
-    distance ASC, -- Closest ancestor first
-    source_type ASC;
-
--- priority_settings.color before priority.color at same distance
+    key,
+    value,
+    source_path
+FROM all_sources
+ORDER BY user_id, priority_id, key, distance ASC, source_type ASC;
 
 CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid, p_user_id uuid)
     RETURNS SETOF twist

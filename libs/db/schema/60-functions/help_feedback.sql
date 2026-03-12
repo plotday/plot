@@ -110,14 +110,13 @@ BEGIN
     IF v_plot_priority_id IS NOT NULL THEN
         -- Generate override path under user's @plot priority
         v_override_path := generate_path (v_plot_priority_path);
-        -- Upsert priority_settings
-        INSERT INTO priority_settings (user_id, priority_id, path, title)
-            VALUES (v_user_id, v_user_priority_id, v_override_path, 'Help & Feedback')
-        ON CONFLICT (user_id, priority_id)
-            DO UPDATE SET
-                path = EXCLUDED.path,
-                title = EXCLUDED.title,
-                updated_at = now();
+        -- Upsert priority_setting
+        INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (v_user_id, v_user_priority_id, 'path', to_jsonb(ltree2text(v_override_path)))
+        ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (v_user_id, v_user_priority_id, 'title', to_jsonb('Help & Feedback'::text))
+        ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
     END IF;
     -- Return success with created IDs
     RETURN jsonb_build_object('success', TRUE, 'global_priority_id', v_global_priority_id, 'user_priority_id', v_user_priority_id, 'has_plot_override', v_plot_priority_id IS NOT NULL);

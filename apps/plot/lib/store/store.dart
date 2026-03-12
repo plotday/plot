@@ -33,6 +33,7 @@ import 'package:plot/base.dart';
 import 'package:plot/cli_args.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'enums.dart';
+import 'response_time.dart';
 import 'types.dart';
 import 'logging.dart';
 import 'sync_entity.dart';
@@ -1806,7 +1807,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 267;
+  int get schemaVersion => 268;
 
   @override
   MigrationStrategy get migration {
@@ -2222,6 +2223,12 @@ class Store extends _$Store {
     }
     if (from < 267) {
       await _safeAddColumn(m, priorityTwists, priorityTwists.userConnected);
+    }
+    if (from < 268) {
+      await _safeAddColumn(m, priorities, priorities.responseWindow);
+      await _safeAddColumn(m, priorities, priorities.turnaround);
+      await _safeAddColumn(m, priorities, priorities.responseWindowSet);
+      await _safeAddColumn(m, priorities, priorities.turnaroundSet);
     }
   }
 

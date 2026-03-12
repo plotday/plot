@@ -49,14 +49,6 @@ export async function createOrgPriority(
     })
     .execute();
 
-  await db
-    .insertInto("priority_settings")
-    .values({
-      user_id: userId,
-      priority_id: priority.id,
-    })
-    .execute();
-
   return priority.id;
 }
 
@@ -86,17 +78,6 @@ export async function addUserToOrgPriority(
     })
     .onConflict((oc: any) =>
       oc.columns(["user_id", "priority_id"]).doUpdateSet({ archived_at: null })
-    )
-    .execute();
-
-  await db
-    .insertInto("priority_settings")
-    .values({
-      user_id: userId,
-      priority_id: orgPriority.id,
-    })
-    .onConflict((oc: any) =>
-      oc.columns(["user_id", "priority_id"]).doNothing()
     )
     .execute();
 

@@ -243,46 +243,6 @@ account.post("/activate", async (c) => {
     priority = newPriority;
   }
 
-  // Step 4: Create priority settings (if they don't exist)
-  let existingSettings: { user_id: string } | undefined;
-  try {
-    existingSettings = await c.var.db
-      .selectFrom("priority_settings")
-      .select("user_id")
-      .where("user_id", "=", user.id)
-      .where("priority_id", "=", priority.id)
-      .executeTakeFirst();
-  } catch (err) {
-    return captureServerError(c, err as Error, `Failed to check for existing priority settings: ${(err as Error).message}`, {
-      user_id: user.id,
-      priority_id: priority.id,
-    });
-  }
-
-  if (!existingSettings) {
-    try {
-      await c.var.db
-        .insertInto("priority_settings")
-        .values({
-          user_id: user.id,
-          priority_id: priority.id,
-        })
-        .execute();
-    } catch (err) {
-      return captureServerError(c, err as Error, `Failed to create priority settings: ${(err as Error).message}`, {
-        user_id: user.id,
-        priority_id: priority.id,
-      });
-    }
-  } else {
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.info("Priority settings already exist, skipping creation", {
-      user_id: user.id,
-      priority_id: priority.id,
-    });
-  }
-
   // Step 5: Granular Stripe integration with fail-open behavior
   let stripeCustomerId: string | null = null;
   let stripeSubscriptionId: string | null = null;

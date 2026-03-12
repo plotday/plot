@@ -86,12 +86,12 @@ BEGIN
 
         IF v_plot_priority_path IS NOT NULL THEN
             v_override_path := generate_path (v_plot_priority_path);
-            INSERT INTO priority_settings (user_id, priority_id, path, title)
-                VALUES (p_user_id, v_priority_id, v_override_path, 'What''s New')
-            ON CONFLICT (user_id, priority_id)
-                DO UPDATE SET
-                    path = EXCLUDED.path,
-                    title = EXCLUDED.title;
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+                VALUES (p_user_id, v_priority_id, 'path', to_jsonb(ltree2text(v_override_path)))
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+                VALUES (p_user_id, v_priority_id, 'title', to_jsonb('What''s New'::text))
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
         END IF;
     END IF;
 

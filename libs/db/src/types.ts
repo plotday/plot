@@ -863,61 +863,49 @@ export type Database = {
           },
         ]
       }
-      priority_settings: {
+      priority_setting: {
         Row: {
-          color: number | null
-          order: number | null
-          path: unknown
-          pomodoro: number | null
+          key: string
           priority_id: string
-          title: string | null
-          top_order: number | null
           updated_at: string
           user_id: string
+          value: Json
         }
         Insert: {
-          color?: number | null
-          order?: number | null
-          path?: unknown
-          pomodoro?: number | null
+          key: string
           priority_id: string
-          title?: string | null
-          top_order?: number | null
           updated_at?: string
           user_id: string
+          value: Json
         }
         Update: {
-          color?: number | null
-          order?: number | null
-          path?: unknown
-          pomodoro?: number | null
+          key?: string
           priority_id?: string
-          title?: string | null
-          top_order?: number | null
           updated_at?: string
           user_id?: string
+          value?: Json
         }
         Relationships: [
           {
-            foreignKeyName: "priority_settings_priority_id_fkey"
+            foreignKeyName: "priority_setting_priority_id_fkey"
             columns: ["priority_id"]
             referencedRelation: "priority"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "priority_settings_priority_id_fkey"
+            foreignKeyName: "priority_setting_priority_id_fkey"
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["child_id"]
           },
           {
-            foreignKeyName: "priority_settings_priority_id_fkey"
+            foreignKeyName: "priority_setting_priority_id_fkey"
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "priority_settings_user_id_fkey"
+            foreignKeyName: "priority_setting_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
@@ -2361,13 +2349,13 @@ export type Database = {
           },
         ]
       }
-      priority_settings_inherited: {
+      priority_setting_inherited: {
         Row: {
-          color: number | null
-          path: unknown
-          pomodoro: number | null
+          key: string | null
           priority_id: string | null
+          source_path: unknown
           user_id: string | null
+          value: Json | null
         }
         Relationships: []
       }
@@ -3619,10 +3607,14 @@ export type Database = {
           path: unknown
           personal: boolean | null
           pomodoro: number | null
+          response_window: Json | null
+          response_window_set: boolean | null
           role: string | null
           root: boolean | null
           title: string | null
           top_order: number | null
+          turnaround: Json | null
+          turnaround_set: boolean | null
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
@@ -3904,10 +3896,14 @@ export type Database = {
           path: unknown
           personal: boolean | null
           pomodoro: number | null
+          response_window: Json | null
+          response_window_set: boolean | null
           role: string | null
           root: boolean | null
           title: string | null
           top_order: number | null
+          turnaround: Json | null
+          turnaround_set: boolean | null
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
@@ -3935,6 +3931,17 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      upsert_priority_response_time: {
+        Args: {
+          p_priority_id: string
+          p_response_window?: Json
+          p_set_response_window?: boolean
+          p_set_turnaround?: boolean
+          p_turnaround?: Json
+          user_id: string
+        }
+        Returns: undefined
       }
       upsert_priority_twist: {
         Args: {

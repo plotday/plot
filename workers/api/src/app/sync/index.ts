@@ -18,6 +18,7 @@ import priorityUsers from "./priority-users";
 import sessions from "./sessions";
 import sourceChannels from "./source-channels";
 import userSettings from "./user-settings";
+import priorityResponseTime from "./priority-response-time";
 
 const sync = new Hono<{ Bindings: Bindings }>();
 
@@ -37,6 +38,7 @@ sync.route("/", schedules);
 sync.route("/", sessions);
 sync.route("/", userSettings);
 sync.route("/", threadRead);
+sync.route("/", priorityResponseTime);
 
 sync.onError((err, c) => {
   // Handle authorization errors from assertPriorityAccess/assertThreadAccess

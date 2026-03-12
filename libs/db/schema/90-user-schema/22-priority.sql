@@ -16,28 +16,32 @@ SELECT
     user_root.path @> p.path AS personal,
     COALESCE(settings.title, p.title) AS title,
     CASE
-    -- Priority has explicit inherited settings
-    WHEN inherited_settings.path IS NOT NULL THEN
-        inherited_settings.path
-        -- Priority's actual path is already under user's personal root
+    WHEN inherited.path_value IS NOT NULL THEN
+        CASE WHEN inherited.path_source IS NOT NULL
+            AND p.path != inherited.path_source::ltree
+            AND subpath(p.path, nlevel(inherited.path_source::ltree)) != '' THEN
+            inherited.path_value::ltree || subpath(p.path, nlevel(inherited.path_source::ltree))
+        ELSE
+            inherited.path_value::ltree
+        END
     WHEN user_root.path @> p.path THEN
         p.path
-        -- Priority's parent has inherited settings - use parent's visual path + this priority's label
-    WHEN parent_inherited_settings.path IS NOT NULL THEN
-        parent_inherited_settings.path || text(subpath (p.path, nlevel (p.path) - 1, 1))::ltree
-        -- Fallback: concatenate user root + actual path
     ELSE
         user_root.path || p.path
     END AS path,
     p.path AS global_path,
     settings.top_order,
     COALESCE(settings."order", extract(epoch FROM p.created_at) * 1000) AS "order",
-    inherited_settings.pomodoro,
-    inherited_settings.color,
+    inherited.pomodoro,
+    inherited.color,
     p.key,
     p.organization_id,
     COALESCE(upu.unread, FALSE) AS unread,
-    "user".get_effective_role(pu.user_id, p.id) AS role
+    "user".get_effective_role(pu.user_id, p.id) AS role,
+    inherited.response_window,
+    inherited.turnaround,
+    COALESCE(settings.response_window_set, FALSE) AS response_window_set,
+    COALESCE(settings.turnaround_set, FALSE) AS turnaround_set
 FROM
     priority_user pu
     JOIN priority root ON pu.priority_id = root.id
@@ -45,16 +49,30 @@ FROM
         AND pu_root.personal = TRUE
     JOIN priority user_root ON pu_root.priority_id = user_root.id
     JOIN priority p ON root.path @> p.path
-    -- Join parent priority to get its inherited settings for visual path computation
-    LEFT JOIN priority parent_p ON nlevel (p.path) > 1
-        AND parent_p.path = subpath (p.path, 0, nlevel (p.path) - 1)
-    LEFT JOIN priority_settings_inherited parent_inherited_settings ON parent_inherited_settings.user_id = pu.user_id
-        AND parent_p.id = parent_inherited_settings.priority_id
-    LEFT JOIN priority_settings settings ON settings.user_id = pu.user_id
-        AND p.id = settings.priority_id
-    LEFT JOIN priority_settings_inherited inherited_settings ON inherited_settings.user_id = pu.user_id
-        AND p.id = inherited_settings.priority_id
-        -- Latest updated_at in descendant activities
+    -- Direct settings (not inherited)
+    LEFT JOIN (
+        SELECT user_id, priority_id,
+            MAX(CASE WHEN key = 'top_order' THEN (value #>> '{}')::double precision END) AS top_order,
+            MAX(CASE WHEN key = 'order' THEN (value #>> '{}')::double precision END) AS "order",
+            MAX(CASE WHEN key = 'title' THEN value #>> '{}' END) AS title,
+            (MAX(CASE WHEN key = 'response_window' THEN 1 END) IS NOT NULL) AS response_window_set,
+            (MAX(CASE WHEN key = 'turnaround' THEN 1 END) IS NOT NULL) AS turnaround_set,
+            MAX(updated_at) AS updated_at
+        FROM priority_setting
+        GROUP BY user_id, priority_id
+    ) settings ON settings.user_id = pu.user_id AND settings.priority_id = p.id
+    -- Inherited settings (cascaded from ancestors)
+    LEFT JOIN (
+        SELECT user_id, priority_id,
+            MAX(CASE WHEN key = 'pomodoro' THEN (value #>> '{}')::integer END) AS pomodoro,
+            MAX(CASE WHEN key = 'color' THEN (value #>> '{}')::integer END) AS color,
+            MAX(CASE WHEN key = 'response_window' THEN value::text END)::jsonb AS response_window,
+            MAX(CASE WHEN key = 'turnaround' THEN value::text END)::jsonb AS turnaround,
+            MAX(CASE WHEN key = 'path' THEN value #>> '{}' END) AS path_value,
+            MAX(CASE WHEN key = 'path' THEN text(source_path) END) AS path_source
+        FROM priority_setting_inherited
+        GROUP BY user_id, priority_id
+    ) inherited ON inherited.user_id = pu.user_id AND inherited.priority_id = p.id
     LEFT JOIN "user".priority_unread upu ON upu.user_id = pu.user_id
         AND upu.priority_id = p.id
 WHERE

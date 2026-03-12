@@ -80,12 +80,10 @@ BEGIN
         WHERE
             path <@ v_old_path
             OR path = v_old_path;
-        -- Create priority_settings with old path to preserve visual location
-        INSERT INTO public.priority_settings (user_id, priority_id, path)
-            VALUES (p_user_id, p_priority_id, v_old_path)
-        ON CONFLICT (user_id, priority_id)
-            DO UPDATE SET
-                path = EXCLUDED.path;
+        -- Create priority_setting with old path to preserve visual location
+        INSERT INTO public.priority_setting (user_id, priority_id, key, value)
+            VALUES (p_user_id, p_priority_id, 'path', to_jsonb(ltree2text(v_old_path)))
+        ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
         -- Create priority_user for current user (non-personal) for the extracted priority
         INSERT INTO public.priority_user (user_id, priority_id, personal)
             VALUES (p_user_id, p_priority_id, FALSE)
@@ -157,12 +155,9 @@ BEGIN
                         AND nlevel (p.path) = 1;
                     IF v_recipient_org_root IS NOT NULL THEN
                         -- Map shared priority visually under recipient's org root
-                        INSERT INTO public.priority_settings (user_id, priority_id, path)
-                            VALUES (v_contact.user_id, p_priority_id, text2ltree (ltree2text (v_recipient_org_root.path) || '.' || ltree2text (subpath ((
-                                        SELECT path FROM public.priority WHERE id = p_priority_id), -1))))
-                        ON CONFLICT (user_id, priority_id)
-                            DO UPDATE SET
-                                path = EXCLUDED.path;
+                        INSERT INTO public.priority_setting (user_id, priority_id, key, value)
+                            VALUES (v_contact.user_id, p_priority_id, 'path', to_jsonb(ltree2text(text2ltree(ltree2text(v_recipient_org_root.path) || '.' || ltree2text(subpath((SELECT path FROM public.priority WHERE id = p_priority_id), -1))))))
+                        ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
                     END IF;
                 END IF;
             END IF;

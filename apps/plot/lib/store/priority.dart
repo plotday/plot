@@ -24,6 +24,10 @@ class Priorities extends Table
   BoolColumn get personal => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   TextColumn get role => text().withDefault(const Constant('member'))();
+  TextColumn get responseWindow => text().nullable()();
+  TextColumn get turnaround => text().nullable()();
+  BoolColumn get responseWindowSet => boolean().withDefault(const Constant(false))();
+  BoolColumn get turnaroundSet => boolean().withDefault(const Constant(false))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -40,6 +44,17 @@ class PrioritiesBase extends BaseTable {
     json.remove('updated_by');
     json.remove('global_path');
     json['role'] ??= 'member';
+    // JSON-encode response_window and turnaround from API (JSON objects → strings for Drift text columns)
+    if (json['response_window'] != null) {
+      json['response_window'] = json['response_window'] is String
+          ? json['response_window']
+          : jsonEncode(json['response_window']);
+    }
+    if (json['turnaround'] != null) {
+      json['turnaround'] = json['turnaround'] is String
+          ? json['turnaround']
+          : jsonEncode(json['turnaround']);
+    }
     return PriorityRow.fromJson(json);
   }
 
@@ -48,6 +63,10 @@ class PrioritiesBase extends BaseTable {
     final json = super.toBase(row);
     json.remove('unread');
     json.remove('role');
+    json.remove('response_window');
+    json.remove('turnaround');
+    json.remove('response_window_set');
+    json.remove('turnaround_set');
     return json;
   }
 }
@@ -794,6 +813,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          personal: parent.personal,
          unread: false,
          role: parent.role,
+         responseWindowSet: false,
+         turnaroundSet: false,
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -861,6 +882,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: row.createdBy,
          unread: row.unread,
          role: row.role,
+         responseWindow: row.responseWindow,
+         turnaround: row.turnaround,
+         responseWindowSet: row.responseWindowSet,
+         turnaroundSet: row.turnaroundSet,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -974,6 +999,14 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Returns true if this priority has a viewer role (read-only).
   bool get isViewer => role == 'viewer';
 
+  /// Parsed response window settings (inherited from this priority or ancestors).
+  List<ResponseTimeWindow>? get responseWindows =>
+      ResponseTimeWindow.fromJsonString(responseWindow);
+
+  /// Parsed turnaround time setting (inherited from this priority or ancestors).
+  TurnaroundTime? get turnaroundTime =>
+      TurnaroundTime.fromJsonString(turnaround);
+
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
 
@@ -1048,6 +1081,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<int?> pending = const Value.absent(),
     bool? unread,
     String? role,
+    Value<String?> responseWindow = const Value.absent(),
+    Value<String?> turnaround = const Value.absent(),
+    bool? responseWindowSet,
+    bool? turnaroundSet,
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1082,6 +1119,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         personal: personal,
         unread: unread,
         role: role,
+        responseWindow: responseWindow,
+        turnaround: turnaround,
+        responseWindowSet: responseWindowSet,
+        turnaroundSet: turnaroundSet,
       ),
       parent: currentParent,
       children: children,
