@@ -721,9 +721,30 @@ export class Linear extends Connector<Linear> {
       return;
     }
 
-    // Use issue data directly from webhook payload
-    const creator = issue.creator || null;
-    const assignee = issue.assignee || null;
+    // Webhook payloads don't include creator/assignee — fetch from API
+    let creator: { id: string; email?: string; name: string; avatarUrl?: string | null } | null = issue.creator || null;
+    let assignee: { id: string; email?: string; name: string; avatarUrl?: string | null } | null = issue.assignee || null;
+
+    if (!creator || !assignee) {
+      try {
+        const client = await this.getClient(projectId);
+        const fullIssue = await client.issue(issueId);
+        if (!creator) {
+          const apiCreator = await fullIssue.creator;
+          if (apiCreator) {
+            creator = { id: apiCreator.id, email: apiCreator.email, name: apiCreator.name, avatarUrl: apiCreator.avatarUrl };
+          }
+        }
+        if (!assignee) {
+          const apiAssignee = await fullIssue.assignee;
+          if (apiAssignee) {
+            assignee = { id: apiAssignee.id, email: apiAssignee.email, name: apiAssignee.name, avatarUrl: apiAssignee.avatarUrl };
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch issue from API for creator/assignee:", error);
+      }
+    }
 
     // Build thread update with only issue fields (no notes)
     const authorContact = this.resolveAuthorContact(creator);
