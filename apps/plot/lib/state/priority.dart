@@ -510,15 +510,13 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
       if (currentIndex == -1) {
         // Thread not in filtered list (e.g. search active) - fall back to
-        // "no thread" behavior: start from the "Now" header
+        // "no thread" behavior: start from the "Now" header if present,
+        // otherwise stay at -1 (before list) so offset=1 finds the first item
         for (int i = 0; i < state.agendaItems.length; i++) {
           final item = state.agendaItems[i];
           if (item is AgendaHeaderItem && item.now) {
             currentIndex = i;
           }
-        }
-        if (currentIndex == -1) {
-          currentIndex = 0;
         }
       }
     }
@@ -574,12 +572,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     int currentIndex = -1;
 
     if (state.thread == null) {
-      // No thread selected: start from index 0 (most recent)
-      currentIndex = 0;
-      // If first item is a header, start before it so offset=1 finds first thread
-      if (items.first is AgendaHeaderItem) {
-        currentIndex = -1;
-      }
+      // No thread selected: start before the list so offset=1 finds first thread
+      currentIndex = -1;
     } else {
       // Thread selected: find its index
       for (int i = 0; i < items.length; i++) {
@@ -593,12 +587,8 @@ class PriorityBloc extends Cubit<PriorityState> {
         }
       }
       if (currentIndex == -1) {
-        // Thread not in filtered list (e.g. search active) - fall back to
-        // "no thread" behavior: start from most recent
-        currentIndex = 0;
-        if (items.isNotEmpty && items.first is AgendaHeaderItem) {
-          currentIndex = -1;
-        }
+        // Thread not in filtered list (e.g. search active) - keep at -1
+        // so offset=1 finds the first thread in the list
       }
     }
 

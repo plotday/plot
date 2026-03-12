@@ -10,6 +10,8 @@ class ThreadState extends Equatable {
     this.showArchived = false,
     List<Tag> filter = const [],
     this.search = '',
+    this.showAllNotes = false,
+    this.totalNoteCount = 0,
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
     this.replyTo,
@@ -34,6 +36,8 @@ class ThreadState extends Equatable {
   final bool showArchived;
   final List<Tag> filter;
   final String search;
+  final bool showAllNotes;
+  final int totalNoteCount;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
   final Note? replyTo;
@@ -67,6 +71,8 @@ class ThreadState extends Equatable {
     bool? showArchived,
     List<Tag>? filter,
     String? search,
+    bool? showAllNotes,
+    int? totalNoteCount,
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
     Note? replyTo,
@@ -86,6 +92,8 @@ class ThreadState extends Equatable {
           ? (links.isNotEmpty ? List.unmodifiable(links) : links)
           : this.links,
       showArchived: showArchived ?? this.showArchived,
+      showAllNotes: showAllNotes ?? this.showAllNotes,
+      totalNoteCount: totalNoteCount ?? this.totalNoteCount,
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
           : this.filter,
@@ -117,6 +125,8 @@ class ThreadState extends Equatable {
     showArchived,
     filter,
     search,
+    showAllNotes,
+    totalNoteCount,
     tags,
     tagSuggestions,
     replyTo,
@@ -127,7 +137,7 @@ class ThreadState extends Equatable {
 
   @override
   String toString() {
-    return 'ThreadState(thread: ${thread.title}, draft: $draft, notes: ${notes.length}, showArchived: $showArchived, filter: $filter, search: $search, tags: ${tags.length})';
+    return 'ThreadState(thread: ${thread.title}, draft: $draft, notes: ${notes.length}, showArchived: $showArchived, filter: $filter, search: $search, showAllNotes: $showAllNotes, tags: ${tags.length})';
   }
 }
 

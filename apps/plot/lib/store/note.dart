@@ -434,6 +434,32 @@ class Note extends Equatable implements Comparable<Note> {
     });
   }
 
+  /// Watch the count of non-draft notes for a thread.
+  /// Lightweight alternative to [watch] when only the count is needed.
+  static Stream<int> watchCount(
+    ThreadId threadId, {
+    bool? archived = false,
+    NoteId? threadNoteId,
+  }) {
+    final n = Store.get.notes;
+    final query = Store.get.selectOnly(n)
+      ..addColumns([n.id.count()])
+      ..where(n.threadId.equalsValue(threadId))
+      ..where(n.draft.equals(false));
+
+    if (archived != null) {
+      query.where(archived ? n.archivedAt.isNotNull() : n.archivedAt.isNull());
+    }
+
+    if (threadNoteId != null) {
+      query.where(
+        n.id.equalsValue(threadNoteId) | n.reNoteId.equalsValue(threadNoteId),
+      );
+    }
+
+    return query.watchSingle().map((row) => row.read(n.id.count()) ?? 0);
+  }
+
   /// Watch all tags present in an activity and its notes.
   /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
   static Stream<List<(Tag, int)>> watchTagsForActivity(ThreadId threadId) {
