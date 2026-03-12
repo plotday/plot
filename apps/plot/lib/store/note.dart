@@ -248,6 +248,38 @@ class Note extends Equatable implements Comparable<Note> {
     await pullUpdates();
   }
 
+  /// Get all notes for a thread (one-shot query with tags).
+  static Future<List<Note>> getForThread(
+    ThreadId threadId, {
+    bool? draft = false,
+  }) async {
+    final n = Store.get.notes;
+    final tags = Store.get.alias(Store.get.noteTags, 'tags');
+
+    var query =
+        Store.get.select(n).join([leftOuterJoin(tags, tags.id.equalsExp(n.id))])
+          ..where(n.threadId.equalsValue(threadId))
+          ..where(n.archivedAt.isNull())
+          ..addColumns([tags.tags]);
+
+    if (draft != null) {
+      query.where(n.draft.equals(draft));
+    }
+
+    final results = await query.get();
+    final noteGroups = <Uuid, List<TypedResult>>{};
+    for (final result in results) {
+      final noteRow = result.readTable(n);
+      noteGroups.putIfAbsent(noteRow.id, () => []).add(result);
+    }
+
+    return noteGroups.values.map((group) {
+      final noteRow = group.first.readTable(n);
+      final tagsRow = group.first.readTableOrNull(tags);
+      return Note._fromStore(noteRow: noteRow, tags: tagsRow);
+    }).toList();
+  }
+
   /// Get a single note by ID with its tags
   static Future<Note?> get(NoteId id) async {
     final n = Store.get.notes;

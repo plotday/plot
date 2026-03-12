@@ -9,7 +9,7 @@ import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
-import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
@@ -912,13 +912,103 @@ class ToggleThreadTag extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    final isAdding = !thread.hasTag(tag);
     var updatedThread = thread.toggleTag(tag);
     // When adding Tag.done and the user has the thread as to-do, also mark personal to-do as done
-    if (tag == Tag.done && !thread.hasTag(tag) && thread.todo) {
+    if (tag == Tag.done && isAdding && thread.todo) {
       updatedThread = updatedThread.copyWith(todo: false);
     }
     await saveOptimistically(context, updatedThread);
+
+    // When adding Tag.done, also complete self-assigned note tasks and set link statuses
+    if (tag == Tag.done && isAdding) {
+      final actorId = Base.actorId;
+
+      // Complete notes assigned to current user
+      final notes = await Note.getForThread(thread.id);
+      for (final note in notes) {
+        if (note.hasTag(Tag.todo, actorId)) {
+          await note.completeFor(actorId).save();
+        }
+      }
+
+      // Set done status on links
+      if (context.mounted) {
+        await _setLinkDoneStatus(context, thread.id);
+      }
+    }
+
     return const CommandDone();
+  }
+
+  static Future<void> _setLinkDoneStatus(
+    BuildContext context,
+    ThreadId threadId,
+  ) async {
+    final links = await Link.getForThread(threadId);
+
+    // Collect links that have done statuses and aren't already done
+    final linksWithDoneStatuses = <(Link, List<LinkStatus>)>[];
+    for (final link in links) {
+      final typeConfig = link.getTypeConfig();
+      final statuses = typeConfig?.statuses;
+      if (statuses == null) continue;
+
+      final doneStatuses = statuses.where((LinkStatus s) => s.done).toList();
+      if (doneStatuses.isEmpty) continue;
+
+      // Skip if link is already at a done status
+      if (doneStatuses.any((LinkStatus s) => s.status == link.status)) continue;
+
+      linksWithDoneStatuses.add((link, doneStatuses));
+    }
+
+    if (linksWithDoneStatuses.isEmpty) return;
+
+    // Collect all unique done statuses across all links
+    final allDoneStatuses = linksWithDoneStatuses
+        .expand((e) => e.$2.map((s) => (e.$1, s)))
+        .toList();
+
+    if (allDoneStatuses.length == 1) {
+      // Single done status across all links - auto set
+      final (link, status) = allDoneStatuses.first;
+      await Link.updateStatus(link, status.status);
+    } else {
+      // Multiple done statuses - handle per link
+      for (final (link, doneStatuses) in linksWithDoneStatuses) {
+        if (!context.mounted) return;
+        if (doneStatuses.length == 1) {
+          await Link.updateStatus(link, doneStatuses.first.status);
+        } else {
+          // Show picker for links with multiple done statuses
+          final result = await SelectModal.open<String>(
+            context,
+            items: (search) async => [
+              SelectGroup(items: doneStatuses.map((s) => s.status).toList()),
+            ],
+            itemBuilder: (status, _) {
+              final s = doneStatuses.firstWhere((ls) => ls.status == status);
+              return ListTile(
+                title: s.label,
+                leadingBuilder: (isHovered, hasFocus) => Padding(
+                  padding: const EdgeInsets.only(left: 16, right: 8),
+                  child: s.status == link.status
+                      ? Icon(PlotIcon.done, size: 14, color: context.theme.colors.primary)
+                      : const SizedBox(width: 14),
+                ),
+                disableInternalHover: true,
+              );
+            },
+            selectedValue: link.status,
+            prompt: 'Set status for ${link.title ?? "link"}',
+          );
+          if (result.present) {
+            await Link.updateStatus(link, result.value);
+          }
+        }
+      }
+    }
   }
 }
 

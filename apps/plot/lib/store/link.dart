@@ -44,14 +44,16 @@ class LinkStatus {
   final String status;
   final String label;
   final int? tag;
+  final bool done;
 
-  const LinkStatus({required this.status, required this.label, this.tag});
+  const LinkStatus({required this.status, required this.label, this.tag, this.done = false});
 
   factory LinkStatus.fromJson(Map<String, dynamic> json) {
     return LinkStatus(
       status: json['status'] as String,
       label: json['label'] as String,
       tag: json['tag'] as int?,
+      done: json['done'] as bool? ?? false,
     );
   }
 }
