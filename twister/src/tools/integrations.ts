@@ -48,6 +48,8 @@ export type LinkTypeConfig = {
     label: string;
     /** Tag to propagate to thread when this status is active (e.g., Tag.Done) */
     tag?: Tag;
+    /** Whether this status represents completion (done, closed, merged, cancelled, etc.) */
+    done?: boolean;
   }>;
   /** Whether this link type supports displaying and changing the assignee */
   supportsAssignee?: boolean;

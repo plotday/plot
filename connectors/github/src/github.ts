@@ -115,8 +115,8 @@ export class GitHub extends Connector<GitHub> {
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
         { status: "open", label: "Open" },
-        { status: "closed", label: "Closed", tag: Tag.Done },
-        { status: "merged", label: "Merged", tag: Tag.Done },
+        { status: "closed", label: "Closed", tag: Tag.Done, done: true },
+        { status: "merged", label: "Merged", tag: Tag.Done, done: true },
       ],
       supportsAssignee: true,
     },
@@ -128,7 +128,7 @@ export class GitHub extends Connector<GitHub> {
       logoMono: "https://api.iconify.design/simple-icons/github.svg",
       statuses: [
         { status: "open", label: "Open" },
-        { status: "closed", label: "Closed", tag: Tag.Done },
+        { status: "closed", label: "Closed", tag: Tag.Done, done: true },
       ],
       supportsAssignee: true,
     },
