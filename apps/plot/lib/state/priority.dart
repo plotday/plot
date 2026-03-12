@@ -509,7 +509,17 @@ class PriorityBloc extends Cubit<PriorityState> {
         }
       }
       if (currentIndex == -1) {
-        return null;
+        // Thread not in filtered list (e.g. search active) - fall back to
+        // "no thread" behavior: start from the "Now" header
+        for (int i = 0; i < state.agendaItems.length; i++) {
+          final item = state.agendaItems[i];
+          if (item is AgendaHeaderItem && item.now) {
+            currentIndex = i;
+          }
+        }
+        if (currentIndex == -1) {
+          currentIndex = 0;
+        }
       }
     }
 
@@ -583,7 +593,12 @@ class PriorityBloc extends Cubit<PriorityState> {
         }
       }
       if (currentIndex == -1) {
-        return null;
+        // Thread not in filtered list (e.g. search active) - fall back to
+        // "no thread" behavior: start from most recent
+        currentIndex = 0;
+        if (items.isNotEmpty && items.first is AgendaHeaderItem) {
+          currentIndex = -1;
+        }
       }
     }
 
