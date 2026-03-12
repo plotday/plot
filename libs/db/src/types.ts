@@ -1728,6 +1728,7 @@ export type Database = {
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
+          execution_limit: number | null
           id: number
           is_source: boolean
           logo_url: string | null
@@ -1744,6 +1745,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
+          execution_limit?: number | null
           id?: never
           is_source?: boolean
           logo_url?: string | null
@@ -1760,6 +1762,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
+          execution_limit?: number | null
           id?: never
           is_source?: boolean
           logo_url?: string | null
@@ -3239,6 +3242,7 @@ export type Database = {
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
+          execution_limit: number | null
           id: number
           is_source: boolean
           logo_url: string | null

@@ -14,6 +14,9 @@ const HOUR_MS = 60 * 60 * 1000;
 const COST_LIMIT_4H = 5; // $5 in 4 hours
 const COST_LIMIT_30D = 20; // $20 in 30 days
 
+// Execution quota: max invocations per rolling 24h window
+const DEFAULT_EXECUTION_LIMIT = 500;
+
 type UsageRow = {
   cost_type: string;
   hour: number; // this is the nearest UTC hour (rounded down)
@@ -321,6 +324,96 @@ export class Usage extends DurableObject<Bindings> {
     } catch (error) {
       // Cost check failures should not break usage tracking
       logger.error("Failed to check cost limit", error as Error);
+    }
+  }
+
+  /**
+   * Check if this twist has exceeded its execution quota (rolling 24h window).
+   * Returns true if within quota, false if exceeded.
+   * If exceeded, suspends the twist and notifies the owner.
+   */
+  async checkExecutionQuota(limit?: number | null): Promise<boolean> {
+    const priorityTwistId = this.getPriorityTwistId();
+    const effectiveLimit = limit ?? DEFAULT_EXECUTION_LIMIT;
+    const logger = createLogger({
+      durable_object: "Usage",
+      operation: "checkExecutionQuota",
+      priority_twist_id: priorityTwistId,
+    });
+
+    try {
+      // Query local SQLite for invocation count in the last 24 hours
+      const cutoff = this.getCurrentHour() - 24 * HOUR_MS;
+      const result = this.sql
+        .exec(
+          `SELECT COALESCE(SUM(amount), 0) as total
+           FROM usage
+           WHERE cost_type = 'worker:invocation' AND hour >= ?`,
+          cutoff
+        )
+        .next();
+
+      const total = (result.value as { total: number })?.total ?? 0;
+
+      if (total < effectiveLimit) {
+        return true;
+      }
+
+      logger.info("Execution quota exceeded, suspending twist", {
+        total,
+        limit: effectiveLimit,
+      });
+
+      // Suspend and notify using the same pattern as checkCostLimit
+      await withDb(this.env, async (db) => {
+        const pt = await db
+          .selectFrom("priority_twist")
+          .select(["suspended_at", "owner_id", "name"])
+          .where("id", "=", priorityTwistId)
+          .executeTakeFirst();
+
+        if (!pt || pt.suspended_at) return;
+
+        await db
+          .updateTable("priority_twist")
+          .set({ suspended_at: sql`NOW()` })
+          .where("id", "=", priorityTwistId)
+          .execute();
+
+        const helpPriority = await db
+          .selectFrom("priority")
+          .select("id")
+          .where("key", "=", `@help-feedback-${pt.owner_id}`)
+          .executeTakeFirst();
+
+        if (helpPriority) {
+          const activity = await db
+            .insertInto("thread")
+            .values({
+              priority_id: helpPriority.id,
+              title: "Twist processing suspended due to high execution count",
+              created_by: priorityTwistId,
+            })
+            .returning("id")
+            .executeTakeFirstOrThrow();
+
+          await db
+            .insertInto("note")
+            .values({
+              thread_id: activity.id,
+              content: `The twist **${pt.name}** was automatically suspended because it exceeded the execution quota.\n\n**Reason:** ${total} executions in the last 24 hours (limit: ${effectiveLimit})\n\nTo resume processing, clear the suspension in the database.`,
+              created_by: priorityTwistId,
+              author_id: priorityTwistId,
+            })
+            .execute();
+        }
+      });
+
+      return false;
+    } catch (error) {
+      // Quota check failures should not block execution
+      logger.error("Failed to check execution quota", error as Error);
+      return true;
     }
   }
 

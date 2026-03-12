@@ -6,6 +6,7 @@ import { Tag } from "@plotday/twister/tag";
 import { type DB, createDb } from "../db";
 import { type Bindings, type TwistBatchMessage } from "../env";
 import { rpcUser } from "../rpc";
+import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { createLogger } from "@plotday/worker-util";
 
@@ -147,12 +148,25 @@ async function processTwistBatch(
   // Check if twist is suspended before processing
   const twistStatus = await db
     .selectFrom("priority_twist")
-    .select("suspended_at")
-    .where("id", "=", priorityTwistId)
+    .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+    .select(["priority_twist.suspended_at", "twist.execution_limit"])
+    .where("priority_twist.id", "=", priorityTwistId)
     .executeTakeFirst();
 
   if (twistStatus?.suspended_at) {
     logger.info("Skipping twist batch for suspended twist", {
+      priority_twist_id: priorityTwistId,
+    });
+    return;
+  }
+
+  // Check execution quota
+  const usage = Usage.Get(env, priorityTwistId);
+  const withinQuota = await usage.checkExecutionQuota(
+    twistStatus?.execution_limit
+  );
+  if (!withinQuota) {
+    logger.info("Skipping twist batch: execution quota exceeded", {
       priority_twist_id: priorityTwistId,
     });
     return;

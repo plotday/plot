@@ -868,6 +868,10 @@ export interface Thread {
   draft: Generated<boolean>;
   id: Generated<string>;
   /**
+   * Internal identifier for deduplication within a priority. Used with priority_id for upsert behavior. Not synced to clients.
+   */
+  key: string | null;
+  /**
    * Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for unread status in user_thread and user_priority_unread views.
    */
   last_note_created_at: Timestamp | null;
@@ -921,6 +925,7 @@ export interface ThreadX {
   created_by: string | null;
   draft: boolean | null;
   id: string | null;
+  key: string | null;
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
   mentions: string[] | null;
@@ -951,6 +956,7 @@ export interface Twist {
   created_at: Generated<Timestamp>;
   description: string | null;
   environment: Generated<TwistEnvironment>;
+  execution_limit: number | null;
   id: Generated<Int8>;
   is_source: Generated<boolean>;
   logo_url: string | null;

@@ -4,6 +4,7 @@ import superjson from "superjson";
 import { withDb } from "../db";
 import { type Bindings } from "../env";
 import { CallbackError } from "../errors";
+import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { handleTwistOperation } from "../twist/error-handling";
 import { validateSerializable } from "../twist/tools/validation";
@@ -295,8 +296,15 @@ export class CallbacksState extends DurableObject<Bindings> {
     return await withDb(this.env, async (db) => {
       const priorityTwist = await db
         .selectFrom("priority_twist")
-        .select(["priority_id", "twist_id", "archived_at", "suspended_at"])
-        .where("id", "=", callback.priorityTwistId)
+        .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+        .select([
+          "priority_twist.priority_id",
+          "priority_twist.twist_id",
+          "priority_twist.archived_at",
+          "priority_twist.suspended_at",
+          "twist.execution_limit",
+        ])
+        .where("priority_twist.id", "=", callback.priorityTwistId)
         .executeTakeFirst();
 
       // If priority_twist was deleted, clean up callback and return error object
@@ -339,6 +347,23 @@ export class CallbacksState extends DurableObject<Bindings> {
             operation: "callCallback",
             priorityTwistId: callback.priorityTwistId,
             reason: "Twist processing suspended due to high usage",
+          },
+        };
+      }
+
+      // Check execution quota
+      const usage = Usage.Get(this.env, callback.priorityTwistId);
+      const withinQuota = await usage.checkExecutionQuota(
+        priorityTwist.execution_limit
+      );
+      if (!withinQuota) {
+        return {
+          __error: true,
+          type: "SUSPENDED",
+          context: {
+            operation: "callCallback",
+            priorityTwistId: callback.priorityTwistId,
+            reason: "Twist processing suspended due to execution quota exceeded",
           },
         };
       }
