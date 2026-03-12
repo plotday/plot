@@ -9,6 +9,7 @@ import { rpcUser } from "../rpc";
 import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { createLogger } from "@plotday/worker-util";
+import { analyzeNote } from "./note-analysis";
 
 /**
  * Process a batch of twist update messages from the queue.
@@ -519,6 +520,40 @@ async function processTwistBatch(
           isCreate: true,
           syncDepth,
         });
+
+        // AI note analysis for source notes (best-effort)
+        // Skip notes created by the twist itself, and historical imports (> 7 days old)
+        const sourceCreatedAt = note.source_created_at
+          ? new Date(note.source_created_at).getTime()
+          : Date.now();
+        const isRecent =
+          Date.now() - sourceCreatedAt < 7 * 24 * 60 * 60 * 1000;
+        if (
+          note.content &&
+          note.author_id &&
+          note.author_id !== priorityTwistId &&
+          isRecent
+        ) {
+          try {
+            const owner = await db
+              .selectFrom("priority_twist")
+              .select("owner_id")
+              .where("id", "=", priorityTwistId)
+              .executeTakeFirst();
+
+            if (owner?.owner_id && note.thread_id) {
+              await analyzeNote(env, note.id, note.thread_id, owner.owner_id);
+            }
+          } catch (analysisError) {
+            logger.warn("[note-analysis] Failed for source note", {
+              note_id: note.id,
+              error:
+                analysisError instanceof Error
+                  ? analysisError.message
+                  : String(analysisError),
+            });
+          }
+        }
       } catch (error) {
         logger.error("Error processing channel note create", error as Error, {
           note_id: note.id,

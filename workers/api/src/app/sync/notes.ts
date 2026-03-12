@@ -6,6 +6,7 @@ import { assertThreadAccess } from "./authorize";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { rpcUser } from "../../rpc";
 import { notifySync, getPriorityForThread } from "./notify";
+import { analyzeNote } from "../../queue/note-analysis";
 
 const notes = new Hono<{ Bindings: Bindings }>();
 
@@ -148,6 +149,18 @@ notes.post("/sync/notes", async (c) => {
     );
   } else {
     console.log("[embedding:sync] Skipping embedding", { noteId, hasContent: !!content, contentLength: content?.trim().length, draft: body.draft });
+  }
+
+  // AI note analysis for auto-tagging todos/completions (best-effort, don't block response)
+  const isRecent = !body.source_created_at ||
+    (Date.now() - new Date(body.source_created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
+  if (noteId && content && content.trim().length > 0 && !body.draft && isRecent) {
+    c.executionCtx.waitUntil(
+      analyzeNote(c.env, noteId, body.thread_id, c.var.user.id)
+        .catch((error) => {
+          console.error("[note-analysis] Failed to analyze note", noteId, error);
+        })
+    );
   }
 
   return c.json(result as any);
