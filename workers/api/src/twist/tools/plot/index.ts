@@ -635,8 +635,14 @@ export class Plot extends Tool implements IPlot {
       if (this.plotOptions?.thread?.access) {
         const thread = await this.getThread({ id: item.thread_id as Uuid });
         if (thread) {
-          const actors = await contactsOps.getActors(this, [item.user_id as ActorId]);
-          if (actors.length > 0) {
+          let actor: Actor;
+          if (this.plotOptions?.contact?.access !== undefined && this.plotOptions.contact.access >= ContactAccess.Read) {
+            const actors = await contactsOps.getActors(this, [item.user_id as ActorId]);
+            actor = actors[0];
+          } else {
+            actor = { id: item.user_id as ActorId, type: ActorType.Contact, name: null };
+          }
+          if (actor) {
             // Populate thread.meta from link row
             const link = await this.db
               .selectFrom("link")
@@ -651,7 +657,7 @@ export class Plot extends Tool implements IPlot {
             };
             callbacks.push({
               sourceMethod: "onThreadRead",
-              args: [thread, actors[0], !item.read_at],
+              args: [thread, actor, !item.read_at],
             });
           }
         }
@@ -664,8 +670,14 @@ export class Plot extends Tool implements IPlot {
       if (this.plotOptions?.thread?.access) {
         const thread = await this.getThread({ id: item.thread_id as Uuid });
         if (thread) {
-          const actors = await contactsOps.getActors(this, [item.user_id as ActorId]);
-          if (actors.length > 0) {
+          let actor: Actor;
+          if (this.plotOptions?.contact?.access !== undefined && this.plotOptions.contact.access >= ContactAccess.Read) {
+            const actors = await contactsOps.getActors(this, [item.user_id as ActorId]);
+            actor = actors[0];
+          } else {
+            actor = { id: item.user_id as ActorId, type: ActorType.Contact, name: null };
+          }
+          if (actor) {
             // Populate thread.meta from link row
             const link = await this.db
               .selectFrom("link")
@@ -696,7 +708,7 @@ export class Plot extends Tool implements IPlot {
 
             callbacks.push({
               sourceMethod: "onThreadToDo",
-              args: [thread, actors[0], todo, { date }],
+              args: [thread, actor, todo, { date }],
             });
           }
         }
@@ -711,8 +723,14 @@ export class Plot extends Tool implements IPlot {
       if (this.plotOptions?.thread?.access && !item.archived_at) {
         const thread = await this.getThread({ id: item.thread_id as Uuid });
         if (thread) {
-          const actors = await contactsOps.getActors(this, [item.contact_id as ActorId]);
-          if (actors.length > 0) {
+          let actor: Actor;
+          if (this.plotOptions?.contact?.access !== undefined && this.plotOptions.contact.access >= ContactAccess.Read) {
+            const actors = await contactsOps.getActors(this, [item.contact_id as ActorId]);
+            actor = actors[0];
+          } else {
+            actor = { id: item.contact_id as ActorId, type: ActorType.Contact, name: null };
+          }
+          if (actor) {
             // Populate thread.meta from link row
             const link = await this.db
               .selectFrom("link")
@@ -727,7 +745,7 @@ export class Plot extends Tool implements IPlot {
             };
             callbacks.push({
               sourceMethod: "onScheduleContactUpdated",
-              args: [thread, item.schedule_id, item.contact_id as ActorId, item.status ?? null, actors[0]],
+              args: [thread, item.schedule_id, item.contact_id as ActorId, item.status ?? null, actor],
             });
           }
         }
