@@ -37,6 +37,7 @@ describe("twistFactory", () => {
     // Chainable mock for Kysely-style queries
     const chain = {
       select: () => chain,
+      innerJoin: () => chain,
       where: () => chain,
       executeTakeFirst: async () => undefined,
     };

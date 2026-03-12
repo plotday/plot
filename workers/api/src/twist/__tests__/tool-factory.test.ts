@@ -139,9 +139,9 @@ describe("Tool Factory", () => {
       expect(permissions).toEqual([]);
     });
 
-    it("should return empty array for AI tool", () => {
+    it("should return permissions for AI tool", () => {
       const permissions = collectToolPermissions("AI", {});
-      expect(permissions).toEqual([]);
+      expect(permissions).toEqual([{ domain: "ai", entity: "prompt", flags: ["use"] }]);
     });
 
     it("should return empty array for Tasks tool", () => {
