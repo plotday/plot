@@ -6,6 +6,7 @@ import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { rpc } from "../rpc";
 import { createLogger } from "@plotday/worker-util";
+import { checkConnectionLimit, checkTwistLimit } from "../utils/limits";
 
 /**
  * Cleans up a failed twist installation by:
@@ -133,7 +134,7 @@ export async function add(
     // Check if twist requires AI and user has it disabled
     const twistRecord = await db
       .selectFrom("twist")
-      .select("permissions")
+      .select(["permissions", "is_source"])
       .where("id", "=", String(twist_id))
       .executeTakeFirst();
 
@@ -150,6 +151,19 @@ export async function add(
         if (userSettings?.ai_enabled === false) {
           throw new Error("This twist requires AI features which are disabled in your settings.");
         }
+      }
+    }
+
+    // Check plan limits before inserting
+    if (twistRecord?.is_source === true) {
+      const limitCheck = await checkConnectionLimit(db, userId, priority_id);
+      if (!limitCheck.allowed) {
+        throw limitCheck.error;
+      }
+    } else {
+      const limitCheck = await checkTwistLimit(db, userId, priority_id);
+      if (!limitCheck.allowed) {
+        throw limitCheck.error;
       }
     }
 
@@ -613,7 +627,7 @@ export async function activateDraft(
   // Check if twist requires AI and user has it disabled
   const twistRecord = await db
     .selectFrom("twist")
-    .select("permissions")
+    .select(["permissions", "is_source"])
     .where("id", "=", String(draft.twist_id))
     .executeTakeFirst();
 
@@ -630,6 +644,19 @@ export async function activateDraft(
       if (userSettings?.ai_enabled === false) {
         throw new Error("This twist requires AI features which are disabled in your settings.");
       }
+    }
+  }
+
+  // Check plan limits before activating
+  if (twistRecord?.is_source === true) {
+    const limitCheck = await checkConnectionLimit(db, draft.owner_id, priorityId ?? null);
+    if (!limitCheck.allowed) {
+      throw limitCheck.error;
+    }
+  } else {
+    const limitCheck = await checkTwistLimit(db, draft.owner_id, priorityId ?? null);
+    if (!limitCheck.allowed) {
+      throw limitCheck.error;
     }
   }
 

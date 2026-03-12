@@ -1,3 +1,4 @@
+- Connection and twist limits now enforced based on your plan — free accounts get 3 connections and 1 twist, with friendly upgrade prompts when you reach your limit
 - Bring your own AI keys — add your own OpenAI, Anthropic, or Google API keys in Settings for twist AI features, scoped to your account or your organization
 - Better author attribution on synced items — threads from Linear, GitHub, Jira, Asana, and Slack now show the correct person even when their email isn't available
 - Browse 65+ upcoming connections and vote for the ones you want — open Manage connections to see what's coming and get notified when they launch

@@ -410,6 +410,7 @@ export interface OrganizationMember {
 export interface OrganizationSubscription {
   billing_cycle_end: Timestamp;
   billing_cycle_start: Timestamp;
+  connection_group_quantity: Generated<number>;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   organization_id: Int8;

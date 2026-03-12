@@ -22,6 +22,7 @@ import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 import { notifySync } from "./sync/notify";
+import { PlanLimitError } from "../utils/limits";
 
 const twists = new Hono<{ Bindings: Bindings }>();
 
@@ -183,6 +184,9 @@ twists.post("/twist", async (c) => {
       twist_id: String(body.twistId),
       twist_environment: body.twistEnvironment,
     });
+    if (error instanceof PlanLimitError) {
+      return c.json(error.toJSON(), 403);
+    }
     if (error instanceof Error) {
       return c.json({ message: `Error adding twist: ${error.message}` }, 400);
     }
@@ -254,6 +258,9 @@ twists.post("/twist/draft/:id/activate", async (c) => {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
     logger.error("Error activating draft twist", error as Error);
+    if (error instanceof PlanLimitError) {
+      return c.json(error.toJSON(), 403);
+    }
     if (error instanceof Error) {
       return c.json({ message: `Error activating draft: ${error.message}` }, 400);
     }

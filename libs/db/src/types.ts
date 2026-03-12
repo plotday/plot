@@ -699,6 +699,7 @@ export type Database = {
         Row: {
           billing_cycle_end: string
           billing_cycle_start: string
+          connection_group_quantity: number
           created_at: string
           id: number
           organization_id: number
@@ -711,6 +712,7 @@ export type Database = {
         Insert: {
           billing_cycle_end: string
           billing_cycle_start: string
+          connection_group_quantity?: number
           created_at?: string
           id?: never
           organization_id: number
@@ -723,6 +725,7 @@ export type Database = {
         Update: {
           billing_cycle_end?: string
           billing_cycle_start?: string
+          connection_group_quantity?: number
           created_at?: string
           id?: never
           organization_id?: number

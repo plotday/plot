@@ -11,6 +11,7 @@ import {
 } from "./utils";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
+import { PLAN_LIMITS, BUSINESS_CONNECTIONS_PER_GROUP } from "../utils/limits";
 
 const stripe = new Hono<{ Bindings: Bindings }>();
 
@@ -160,6 +161,17 @@ async function handleSubscriptionUpdate(
     throw new Error(`Database update failed: ${(error as Error).message}`);
   }
 
+  // Enforce limits on downgrade
+  await enforceDowngradeLimits(c.var.db, customerId, plan, logger);
+
+  // Update connection_group_quantity for org subscriptions
+  const quantity = subscription.items?.data?.[0]?.quantity ?? 1;
+  await c.var.db
+    .updateTable("organization_subscription")
+    .set({ connection_group_quantity: quantity })
+    .where("stripe_customer_id", "=", customerId)
+    .execute();
+
   logger.info("Updated subscription for customer", {
     customer_id: customerId,
     plan,
@@ -214,9 +226,147 @@ async function handleSubscriptionDeleted(
     throw new Error(`Database update failed: ${(error as Error).message}`);
   }
 
+  // Enforce limits after reverting to free tier
+  await enforceDowngradeLimits(c.var.db, customerId, "free", logger);
+
   logger.info("Reverted customer to free tier", {
     customer_id: customerId,
   });
+}
+
+/**
+ * After a plan change, delete excess connections and archive excess twists.
+ */
+async function enforceDowngradeLimits(
+  db: any,
+  stripeCustomerId: string,
+  newPlan: string,
+  logger: any
+) {
+  const limits = PLAN_LIMITS[newPlan as keyof typeof PLAN_LIMITS] ?? PLAN_LIMITS.free;
+
+  // Check if this is a user subscription
+  const userSub = await db
+    .selectFrom("user_subscription")
+    .select("user_id")
+    .where("stripe_customer_id", "=", stripeCustomerId)
+    .executeTakeFirst();
+
+  if (userSub) {
+    // Personal downgrade: trim connections
+    if (limits.connections !== Infinity) {
+      const excess = await db
+        .selectFrom("priority_twist_connection as ptc")
+        .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
+        .leftJoin("priority as p", "p.id", "pt.priority_id")
+        .select(["ptc.priority_twist_id", "ptc.user_id", "ptc.provider"])
+        .where("ptc.user_id", "=", userSub.user_id)
+        .where((eb: any) =>
+          eb.or([
+            eb("pt.priority_id", "is", null),
+            eb("p.organization_id", "is", null),
+          ])
+        )
+        .orderBy("ptc.connected_at", "desc")
+        .offset(limits.connections)
+        .execute();
+
+      for (const row of excess) {
+        await db
+          .deleteFrom("priority_twist_connection")
+          .where("priority_twist_id", "=", row.priority_twist_id)
+          .where("user_id", "=", row.user_id)
+          .where("provider", "=", row.provider)
+          .execute();
+      }
+
+      if (excess.length > 0) {
+        logger.info("Trimmed excess personal connections on downgrade", {
+          user_id: userSub.user_id,
+          removed: excess.length,
+        });
+      }
+    }
+
+    // Personal downgrade: archive excess twists
+    if (limits.twists !== Infinity) {
+      const excessTwists = await db
+        .selectFrom("priority_twist as pt")
+        .innerJoin("twist as t", "t.id", "pt.twist_id")
+        .leftJoin("priority as p", "p.id", "pt.priority_id")
+        .select("pt.id")
+        .where("pt.owner_id", "=", userSub.user_id)
+        .where("pt.archived_at", "is", null)
+        .where("t.is_source", "=", false)
+        .where((eb: any) =>
+          eb.or([
+            eb("pt.priority_id", "is", null),
+            eb("p.organization_id", "is", null),
+          ])
+        )
+        .orderBy("pt.created_at", "desc")
+        .offset(limits.twists)
+        .execute();
+
+      for (const row of excessTwists) {
+        await db
+          .updateTable("priority_twist")
+          .set({ archived_at: new Date().toISOString() })
+          .where("id", "=", row.id)
+          .execute();
+      }
+
+      if (excessTwists.length > 0) {
+        logger.info("Archived excess personal twists on downgrade", {
+          user_id: userSub.user_id,
+          archived: excessTwists.length,
+        });
+      }
+    }
+
+    return;
+  }
+
+  // Check if this is an org subscription
+  const orgSub = await db
+    .selectFrom("organization_subscription")
+    .select(["organization_id", "connection_group_quantity"])
+    .where("stripe_customer_id", "=", stripeCustomerId)
+    .executeTakeFirst();
+
+  if (orgSub) {
+    const orgId = String(orgSub.organization_id);
+    const orgLimit = (orgSub.connection_group_quantity ?? 1) * BUSINESS_CONNECTIONS_PER_GROUP;
+
+    // For free orgs, limit is 0; for business, use group-based limit
+    const effectiveLimit = newPlan === "free" ? 0 : orgLimit;
+
+    const excessOrgConns = await db
+      .selectFrom("priority_twist_connection as ptc")
+      .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
+      .innerJoin("priority as p", "p.id", "pt.priority_id")
+      .select(["ptc.priority_twist_id", "ptc.user_id", "ptc.provider"])
+      .where("p.organization_id", "=", orgId)
+      .orderBy("ptc.connected_at", "desc")
+      .offset(effectiveLimit)
+      .execute();
+
+    for (const row of excessOrgConns) {
+      await db
+        .deleteFrom("priority_twist_connection")
+        .where("priority_twist_id", "=", row.priority_twist_id)
+        .where("user_id", "=", row.user_id)
+        .where("provider", "=", row.provider)
+        .execute();
+    }
+
+    if (excessOrgConns.length > 0) {
+      logger.info("Trimmed excess org connections on downgrade", {
+        organization_id: orgId,
+        removed: excessOrgConns.length,
+      });
+    }
+  }
 }
 
 export default stripe;

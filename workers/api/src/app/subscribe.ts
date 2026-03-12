@@ -5,6 +5,7 @@ import { createStripeClient, createFreeTierBillingCycle } from "../stripe/utils"
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { getEffectivePlan } from "../utils/plan";
+import { getUsage } from "../utils/limits";
 import { createOrgPriority } from "./organization";
 import { notifySync } from "./sync/notify";
 
@@ -46,6 +47,13 @@ subscribe.get("/subscribe", async (c) => {
         }
       : null,
   });
+});
+
+// GET /subscribe/usage - Get connection and twist usage counts
+subscribe.get("/subscribe/usage", async (c) => {
+  const user = c.var.user;
+  const usage = await getUsage(c.var.db, user.id);
+  return c.json(usage);
 });
 
 // POST /subscribe/checkout - Create Stripe Checkout session

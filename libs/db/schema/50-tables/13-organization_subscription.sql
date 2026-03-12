@@ -9,6 +9,7 @@ CREATE TABLE "public"."organization_subscription" (
     "status" subscription_status NOT NULL DEFAULT 'active',
     "billing_cycle_start" timestamp with time zone NOT NULL,
     "billing_cycle_end" timestamp with time zone NOT NULL,
+    "connection_group_quantity" integer NOT NULL DEFAULT 1,
     UNIQUE (organization_id)
 );
 

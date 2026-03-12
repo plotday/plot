@@ -65,6 +65,42 @@ String? _parsePgCode(http.Response response) {
   return null;
 }
 
+/// Parsed structured error fields from API response JSON
+typedef _ErrorFields = ({
+  String? code,
+  String? limitType,
+  bool? isOrg,
+  bool? isAdmin,
+  String? organizationId,
+});
+
+/// Extracts structured error fields from API response JSON
+_ErrorFields _parseErrorFields(http.Response response) {
+  try {
+    if (_isJsonContentType(response.headers['content-type'])) {
+      final json = jsonDecode(response.body);
+      if (json is Map) {
+        return (
+          code: json['code'] as String?,
+          limitType: json['limit_type'] as String?,
+          isOrg: json['is_org'] as bool?,
+          isAdmin: json['is_admin'] as bool?,
+          organizationId: json['organization_id'] as String?,
+        );
+      }
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+  return (
+    code: null,
+    limitType: null,
+    isOrg: null,
+    isAdmin: null,
+    organizationId: null,
+  );
+}
+
 /// Maps HTTP status codes to user-friendly error titles
 String _getErrorTitle(int statusCode) {
   switch (statusCode) {
@@ -128,12 +164,18 @@ Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
+      final errorFields = _parseErrorFields(response);
       throw ApiException(
         statusCode: response.statusCode,
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
         pgCode: _parsePgCode(response),
+        code: errorFields.code,
+        limitType: errorFields.limitType,
+        isOrg: errorFields.isOrg,
+        isAdmin: errorFields.isAdmin,
+        organizationId: errorFields.organizationId,
       );
     }
     return _parseResponse(response);
@@ -159,12 +201,18 @@ Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
+      final errorFields = _parseErrorFields(response);
       throw ApiException(
         statusCode: response.statusCode,
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
         pgCode: _parsePgCode(response),
+        code: errorFields.code,
+        limitType: errorFields.limitType,
+        isOrg: errorFields.isOrg,
+        isAdmin: errorFields.isAdmin,
+        organizationId: errorFields.organizationId,
       );
     }
     return _parseResponse(response);
@@ -190,12 +238,18 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
+      final errorFields = _parseErrorFields(response);
       throw ApiException(
         statusCode: response.statusCode,
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
         pgCode: _parsePgCode(response),
+        code: errorFields.code,
+        limitType: errorFields.limitType,
+        isOrg: errorFields.isOrg,
+        isAdmin: errorFields.isAdmin,
+        organizationId: errorFields.organizationId,
       );
     }
     return _parseResponse(response);
@@ -220,12 +274,18 @@ Future<T> get<T>(String url) async {
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
+      final errorFields = _parseErrorFields(response);
       throw ApiException(
         statusCode: response.statusCode,
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
         pgCode: _parsePgCode(response),
+        code: errorFields.code,
+        limitType: errorFields.limitType,
+        isOrg: errorFields.isOrg,
+        isAdmin: errorFields.isAdmin,
+        organizationId: errorFields.organizationId,
       );
     }
     return _parseResponse(response);
@@ -250,12 +310,18 @@ Future<T> delete<T>(String url) async {
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
+      final errorFields = _parseErrorFields(response);
       throw ApiException(
         statusCode: response.statusCode,
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
         pgCode: _parsePgCode(response),
+        code: errorFields.code,
+        limitType: errorFields.limitType,
+        isOrg: errorFields.isOrg,
+        isAdmin: errorFields.isAdmin,
+        organizationId: errorFields.organizationId,
       );
     }
     return _parseResponse(response);
@@ -284,12 +350,18 @@ Future<T> deleteWithBody<T>(
     if (response.statusCode != 200) {
       await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
+      final errorFields = _parseErrorFields(response);
       throw ApiException(
         statusCode: response.statusCode,
         endpoint: url,
         title: _getErrorTitle(response.statusCode),
         description: errorMessage,
         pgCode: _parsePgCode(response),
+        code: errorFields.code,
+        limitType: errorFields.limitType,
+        isOrg: errorFields.isOrg,
+        isAdmin: errorFields.isAdmin,
+        organizationId: errorFields.organizationId,
       );
     }
     return _parseResponse(response);

@@ -6,6 +6,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+
 import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
@@ -15,6 +17,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/api/subscribe_api.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart' show PermissionFlag;
 import 'package:plot/env.dart';
@@ -113,6 +116,14 @@ class _UpcomingConnection extends _ConnectionItem {
   String get filterText => '${connection.name} ${connection.category}';
 }
 
+class _LimitBanner extends _ConnectionItem {
+  final String message;
+  _LimitBanner(this.message);
+
+  @override
+  String get filterText => '';
+}
+
 class ManageConnections extends Command {
   ManageConnections()
     : super(
@@ -144,7 +155,10 @@ class ManageConnections extends Command {
         prompt: 'Connections',
         onRefreshNeeded: (refresh) => refreshFn = refresh,
         onSelect: (ctx, item, _) async {
-          if (item is _ActiveSource) {
+          if (item is _LimitBanner) {
+            launchUrl(Uri.parse('https://plot.day/subscribe'));
+            return false;
+          } else if (item is _ActiveSource) {
             await EditSource(
               priorityTwistId: item.id,
               name: item.name,
@@ -266,6 +280,12 @@ class ManageConnections extends Command {
         .map((t) => _AvailableSource(t))
         .toList();
 
+    // Fetch usage to check connection limits
+    UsageData? usage;
+    try {
+      usage = await SubscribeApi.getUsage();
+    } catch (_) {}
+
     // Sort by name, then environment (public first)
     activeItems.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
@@ -312,6 +332,18 @@ class ManageConnections extends Command {
       filteredUpcoming = upcomingItems.where(matches).toList();
     }
 
+    // Add limit banner at top of available connections if at limit
+    if (usage != null && usage.personal.connections.isAtLimit) {
+      filteredAvailable = [
+        _LimitBanner(
+          'You\'ve used ${usage.personal.connections.count} of '
+          '${usage.personal.connections.limit} free connections. '
+          'Upgrade to Pro for unlimited connections.',
+        ),
+        ...filteredAvailable,
+      ];
+    }
+
     return [
       if (filteredActive.isNotEmpty)
         SelectGroup(title: 'Active connections', items: filteredActive),
@@ -333,6 +365,8 @@ class ManageConnections extends Command {
 
   static Widget _buildItem(_ConnectionItem item, bool isLoading) {
     switch (item) {
+      case _LimitBanner():
+        return _LimitBannerRow(message: item.message);
       case _ActiveSource():
         return _ActiveSourceRow(item: item, isLoading: isLoading);
       case _AvailableSource():
@@ -553,6 +587,26 @@ class _UpcomingConnectionRow extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _LimitBannerRow extends StatelessWidget {
+  const _LimitBannerRow({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Text(
+        message,
+        style: TextStyle(
+          fontSize: theme.typography.sm.fontSize,
+          color: theme.colors.primary,
+        ),
       ),
     );
   }
@@ -1021,6 +1075,23 @@ class AddSourceDetail extends ShowForm {
       if (context.mounted) {
         Modal.pop<CommandReturn>(context, Value(const CommandDone()));
       }
+    } on ApiException catch (e, t) {
+      log.warning('Failed to activate source', e, t);
+      if (context.mounted) {
+        if (e.isPlanLimitExceeded) {
+          final message = e.isOrg == true
+              ? (e.isAdmin == true
+                  ? 'Your organization has reached its connection limit. Upgrade your plan to add more.'
+                  : 'Your organization has reached its connection limit. Contact an admin to upgrade.')
+              : 'You\'ve reached your free connection limit. Upgrade to Pro for unlimited connections.';
+          context.showToast(message: message, isError: true);
+        } else {
+          context.showToast(
+            message: 'Failed to add connection. Please try again.',
+            isError: true,
+          );
+        }
+      }
     } catch (e, t) {
       log.warning('Failed to activate source', e, t);
       if (context.mounted) {
@@ -1075,6 +1146,12 @@ class ManageTwists extends ShowCommands {
     ]);
     final priorityTwists = results[0] as List<PriorityTwist>;
     final allTwists = results[1] as List<Twist>;
+
+    // Fetch usage to check twist limits
+    UsageData? usage;
+    try {
+      usage = await SubscribeApi.getUsage();
+    } catch (_) {}
 
     // Filter to non-sources only
     final twistOnlyPriorityTwists = priorityTwists
@@ -1132,17 +1209,63 @@ class ManageTwists extends ShowCommands {
       return _compareEnvironment(a.twist.environment, b.twist.environment);
     });
 
+    // Add limit banner at top of available twists if at limit
+    final List<Command> availableCommands = [
+      if (usage != null && usage.personal.twists.isAtLimit)
+        _UpgradeBannerCommand(
+          'You\'ve used ${usage.personal.twists.count} of '
+          '${usage.personal.twists.limit} free '
+          '${usage.personal.twists.limit == 1 ? 'twist' : 'twists'}. '
+          'Upgrade to Pro for unlimited twists.',
+        ),
+      ...addCommands,
+    ];
+
     return Commands(
       groups: [
         StaticCommandGroup(
           title: 'Active twists',
           commands: editCommands.toList(),
         ),
-        StaticCommandGroup(title: 'Available twists', commands: addCommands),
+        StaticCommandGroup(title: 'Available twists', commands: availableCommands),
       ],
     );
   }
 
+}
+
+/// A command that displays a limit banner and opens the upgrade URL when tapped.
+class _UpgradeBannerCommand extends Command {
+  final String message;
+
+  _UpgradeBannerCommand(this.message)
+    : super(
+        title: message,
+        icon: PlotIcon.sparkles,
+        eventObject: EventObject.twist,
+        eventAction: EventAction.opened,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    launchUrl(Uri.parse('https://plot.day/subscribe'));
+    return const CommandSkipped();
+  }
+
+  @override
+  Widget? buildBody(BuildContext context) {
+    final theme = context.theme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Text(
+        message,
+        style: TextStyle(
+          fontSize: theme.typography.sm.fontSize,
+          color: theme.colors.primary,
+        ),
+      ),
+    );
+  }
 }
 
 // ============================================================================
@@ -1688,6 +1811,22 @@ class ActivateTwist extends Command {
       }
 
       return const CommandDone();
+    } on ApiException catch (e, t) {
+      log.warning('Failed to activate twist', e, t);
+      if (e.isPlanLimitExceeded) {
+        return CommandMessage(
+          e.isOrg == true
+              ? (e.isAdmin == true
+                  ? 'Your organization has reached its twist limit. Upgrade your plan.'
+                  : 'Your organization has reached its twist limit. Contact an admin to upgrade.')
+              : 'You\'ve reached your free twist limit. Upgrade to Pro for unlimited twists.',
+          isError: true,
+        );
+      }
+      return CommandMessage(
+        'Failed to add twist. Please try again.',
+        isError: true,
+      );
     } catch (e, t) {
       log.warning('Failed to activate twist', e, t);
       return CommandMessage(
@@ -1778,6 +1917,35 @@ class ShowAddIntegrationAccount extends ShowForm {
     VoidCallback onAccountAdded,
   ) async {
     final integrations = await TwistApi.getIntegrations(priorityTwistId);
+
+    // Check connection limits
+    UsageData? usage;
+    try {
+      usage = await SubscribeApi.getUsage();
+    } catch (_) {}
+
+    if (usage != null && usage.personal.connections.isAtLimit) {
+      return FormData(
+        title: 'Add account',
+        groups: [
+          StaticFormGroup(
+            items: [
+              FormInfo(
+                key: 'limit_message',
+                divider: false,
+                builder: (formContext) => Padding(
+                  padding: formContext.theme.spacing.padding,
+                  child: Text(
+                    'You\'ve used all ${usage!.personal.connections.limit} of your free connections. Upgrade to Pro for unlimited connections.',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
     return FormData(
       title: 'Add account',
       groups: [
