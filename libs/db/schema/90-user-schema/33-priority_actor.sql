@@ -11,22 +11,28 @@ SELECT
     updated_at,
     archived_at
 FROM (
-    -- Contacts associated with priorities via priority_contact
-    SELECT
-        upe.user_id,
-        upe.path AS priority_path,
-        pc.contact_id AS actor_id,
-        LEAST (COALESCE(pc.created_at, c.created_at), COALESCE(c.created_at, pc.created_at)) AS created_at,
-        GREATEST (pc.updated_at, c.updated_at) AS updated_at,
-        CASE
-            WHEN pc.invited_by IS NOT NULL AND pc.invited_at IS NULL THEN pc.updated_at
-            ELSE c.archived_at
-        END AS archived_at
-    FROM
-        "user".priority_expanded upe
-        JOIN priority_contact pc ON pc.priority_id = upe.priority_id
-        JOIN contact c ON c.id = pc.contact_id
-    WHERE NOT (upe.role = 'viewer' AND c.user_id IS NOT NULL AND "user".get_effective_role(c.user_id, upe.priority_id) = 'viewer')
+    -- Contacts associated with priorities via priority_contact (including ancestor priorities)
+    SELECT user_id, priority_path, actor_id, created_at, updated_at, archived_at
+    FROM (
+        SELECT DISTINCT ON (upe.user_id, upe.path, pc.contact_id)
+            upe.user_id,
+            upe.path AS priority_path,
+            pc.contact_id AS actor_id,
+            LEAST (COALESCE(pc.created_at, c.created_at), COALESCE(c.created_at, pc.created_at)) AS created_at,
+            GREATEST (pc.updated_at, c.updated_at) AS updated_at,
+            CASE
+                WHEN pc.invited_by IS NOT NULL AND pc.invited_at IS NULL THEN pc.updated_at
+                ELSE c.archived_at
+            END AS archived_at
+        FROM
+            "user".priority_expanded upe
+            JOIN priority p ON p.id = upe.priority_id
+            JOIN priority ancestor ON p.path <@ ancestor.path
+            JOIN priority_contact pc ON pc.priority_id = ancestor.id
+            JOIN contact c ON c.id = pc.contact_id
+        WHERE NOT (upe.role = 'viewer' AND c.user_id IS NOT NULL AND "user".get_effective_role(c.user_id, upe.priority_id) = 'viewer')
+        ORDER BY upe.user_id, upe.path, pc.contact_id, nlevel(ancestor.path) DESC
+    ) AS ancestor_contacts
 UNION ALL
 -- Priority twists bound directly to a priority
 SELECT

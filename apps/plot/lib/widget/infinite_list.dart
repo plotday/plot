@@ -657,7 +657,13 @@ class InfiniteListState extends State<InfiniteList> {
                 SliverToBoxAdapter(
                   child: widget.separatorBuilder!(context, widget.count),
                 ),
-              if (!widget.doneEnd) spinner,
+              if (!widget.doneEnd)
+                widget.count == 0
+                    ? const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: Spinner()),
+                      )
+                    : spinner,
             ],
           ),
         ),

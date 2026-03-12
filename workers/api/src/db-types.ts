@@ -80,7 +80,7 @@ export interface Contact {
   archived_at: Timestamp | null;
   avatar_url: string | null;
   created_at: Generated<Timestamp>;
-  email: string;
+  email: string | null;
   id: Generated<string>;
   name: string | null;
   primary: Generated<boolean>;

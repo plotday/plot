@@ -1,3 +1,5 @@
+- Better author attribution on synced items — threads from Linear, GitHub, Jira, Asana, and Slack now show the correct person even when their email isn't available
+- Browse 65+ upcoming connections and vote for the ones you want — open Manage connections to see what's coming and get notified when they launch
 - Completed items from Linear, Jira, Asana, and GitHub now show a Done tag on their threads, with a tag icon on the link status badge
 - Clicking a Plot link in a note now navigates within the app instead of opening a browser
 - Pasting a Plot URL into a note inserts the thread or priority title as linked text

@@ -277,7 +277,7 @@ share.post("/priority/:id/share", async (c) => {
 
   // Fetch all contacts with access (via priority_contact)
   // This includes both users (contact.user_id is set) and invitations (contact.user_id is null)
-  let allContacts: Array<{ id: string; contact_id: string; email: string; name: string | null; user_id: string | null }>;
+  let allContacts: Array<{ id: string; contact_id: string; email: string | null; name: string | null; user_id: string | null }>;
   try {
     allContacts = await c.var.db
       .selectFrom("priority_contact")

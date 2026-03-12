@@ -368,6 +368,31 @@ class TwistApi {
     );
   }
 
+  /// Get upcoming connections with vote counts
+  static Future<({List<UpcomingConnection> connections, Set<String> votedByUser})>
+      getUpcomingConnections() async {
+    final response = await api.get<Map<String, dynamic>>(
+      '/connections/upcoming',
+    );
+    final connections = (response['connections'] as List<dynamic>)
+        .map((json) =>
+            UpcomingConnection.fromJson(json as Map<String, dynamic>))
+        .toList();
+    final votedByUser = (response['votedByUser'] as List<dynamic>)
+        .cast<String>()
+        .toSet();
+    return (connections: connections, votedByUser: votedByUser);
+  }
+
+  /// Vote for an upcoming connection, returns new vote count
+  static Future<int> voteForConnection(String name) async {
+    final response = await api.post<Map<String, dynamic>>(
+      '/connections/vote',
+      body: {'name': name},
+    );
+    return response['votes'] as int;
+  }
+
   /// Re-fetch the channel list from the external service for a provider.
   static Future<void> refreshChannels({
     required String priorityTwistId,
@@ -375,6 +400,36 @@ class TwistApi {
   }) async {
     await api.post<Map<String, dynamic>>(
       '/twist/$priorityTwistId/syncables/$provider/refresh',
+    );
+  }
+}
+
+/// An upcoming connection not yet available as a source
+class UpcomingConnection {
+  final String name;
+  final String logo;
+  final String? logoDark;
+  final String category;
+  final List<String> entities;
+  final int votes;
+
+  const UpcomingConnection({
+    required this.name,
+    required this.logo,
+    this.logoDark,
+    required this.category,
+    required this.entities,
+    required this.votes,
+  });
+
+  factory UpcomingConnection.fromJson(Map<String, dynamic> json) {
+    return UpcomingConnection(
+      name: json['name'] as String,
+      logo: json['logo'] as String,
+      logoDark: json['logoDark'] as String?,
+      category: json['category'] as String,
+      entities: (json['entities'] as List<dynamic>).cast<String>(),
+      votes: json['votes'] as int? ?? 0,
     );
   }
 }

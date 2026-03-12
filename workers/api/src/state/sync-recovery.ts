@@ -7,9 +7,9 @@ import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 
 // Configuration
-const STALE_THRESHOLD_MS = 30_000; // 30 seconds
-const ALARM_INTERVAL_MS = 10_000; // 10 seconds
-const MAX_ALARMS_PER_CRON = 5; // 5 alarms after cron = 6 total executions per minute
+const STALE_THRESHOLD_MS = 60_000; // 60 seconds (increased from 30s to reduce false positives)
+const ALARM_INTERVAL_MS = 30_000; // 30 seconds between recovery checks
+const MAX_ALARMS_PER_CRON = 9; // 9 alarms after cron = 10 total executions per 5-minute cycle
 const MAX_ITEMS_PER_QUERY = 50; // Limit per table per run
 
 /**
@@ -19,10 +19,10 @@ const MAX_ITEMS_PER_QUERY = 50; // Limit per table per run
  * pending updates and notifying the appropriate sync DOs.
  *
  * Architecture:
- * - Cron trigger fires every minute, calling /trigger
- * - /trigger runs recovery and schedules 5 alarms at 10s intervals
+ * - Cron trigger fires every 5 minutes, calling /trigger
+ * - /trigger runs recovery and schedules 9 alarms at 30s intervals
  * - Each alarm runs recovery and schedules the next alarm
- * - After 5 alarms, stops (cron will restart the cycle)
+ * - After 9 alarms, stops (cron will restart the cycle)
  */
 export class SyncRecovery extends DurableObject<Bindings> {
   constructor(ctx: DurableObjectState, env: Bindings) {

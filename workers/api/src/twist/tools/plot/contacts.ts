@@ -33,9 +33,26 @@ export async function addContacts(
 ): Promise<Actor[]> {
   if (contacts.length === 0) return [];
 
+  const logger = createLogger({ operation: "addContacts" });
+
+  // Separate contacts into two groups
+  const contactsWithEmail = contacts.filter(
+    (c): c is NewContact & { email: string } => !!c.email
+  );
+  const sourceOnlyContacts = contacts.filter(
+    (c) => !c.email && c.source
+  );
+
+  // Warn about contacts that can't be resolved (no email, no source)
+  const droppedCount = contacts.length - contactsWithEmail.length - sourceOnlyContacts.length;
+  if (droppedCount > 0) {
+    logger.warn(`Dropped ${droppedCount} contacts with neither email nor source`);
+  }
+
+  // --- Process contacts with email (existing upsert path) ---
   const normalizedContacts = Object.values(
     Object.fromEntries(
-      contacts.map((contact) => [
+      contactsWithEmail.map((contact) => [
         contact.email.toLowerCase(),
         {
           email: contact.email.toLowerCase(),
@@ -60,27 +77,23 @@ export async function addContacts(
 
   // Map the upserted contacts to Actor type
   const rpcData = Array.isArray(rpcResult) ? rpcResult : rpcResult ? [rpcResult] : [];
-  const actors: Actor[] = rpcData.map((contact: any) => {
+  const emailActors: Actor[] = rpcData.map((contact: any) => {
     const actor: Actor = {
       id: contact.id as ActorId,
       type: contact.user_id ? ActorType.User : ActorType.Contact,
       name: contact.name || null,
     };
-    // Email is always present for contacts (required field)
     if (contact.email) {
       actor.email = contact.email;
     }
     return actor;
   });
 
-  // Store external account mappings for privacy compliance reporting
+  // Store external account mappings for email contacts
   const externalAccounts = normalizedContacts
     .filter((c) => c.source)
     .map((c) => {
-      // Find the matching actor by email
-      const actor = actors.find(
-        (a) => a.email === c.email
-      );
+      const actor = emailActors.find((a) => a.email === c.email);
       return actor
         ? {
             contact_id: actor.id,
@@ -115,16 +128,111 @@ export async function addContacts(
         )
         .execute();
     } catch (ceaError) {
-      // Log but don't fail the contact creation
-      const logger = createLogger({ operation: "addContacts" });
       logger.error(
         "Failed to upsert contact_external_account",
         ceaError instanceof Error ? ceaError : new Error(String(ceaError))
       );
     }
+
+    // Email merge: the ON CONFLICT clause above already handles the case where
+    // a contact_external_account mapping previously pointed to a different (email-less)
+    // contact — it updates the mapping to point to the email-matched contact.
   }
 
-  return actors;
+  // --- Process source-only contacts (no email, has provider ID) ---
+  const sourceActors: Actor[] = [];
+
+  for (const contact of sourceOnlyContacts) {
+    const source = contact.source!;
+    try {
+      // Look up existing contact via contact_external_account
+      const existingMapping = await plot.db
+        .selectFrom("contact_external_account")
+        .select("contact_id")
+        .where("provider", "=", source.provider)
+        .where("account_id", "=", source.accountId)
+        .executeTakeFirst();
+
+      if (existingMapping) {
+        // Found existing contact — fetch it and optionally update name/avatar
+        const existingContact = await plot.db
+          .selectFrom("contact")
+          .select(["id", "user_id", "name", "email", "avatar_url"])
+          .where("id", "=", existingMapping.contact_id)
+          .executeTakeFirst();
+
+        if (existingContact) {
+          // Update name/avatar if currently null and new values provided (COALESCE pattern)
+          const normalizedName = normalizeName(contact.name);
+          const needsUpdate =
+            (!existingContact.name && normalizedName) ||
+            (!existingContact.avatar_url && contact.avatar);
+
+          if (needsUpdate) {
+            await plot.db
+              .updateTable("contact")
+              .set({
+                ...((!existingContact.name && normalizedName)
+                  ? { name: normalizedName }
+                  : {}),
+                ...((!existingContact.avatar_url && contact.avatar)
+                  ? { avatar_url: contact.avatar }
+                  : {}),
+              })
+              .where("id", "=", existingContact.id)
+              .execute();
+          }
+
+          const actor: Actor = {
+            id: existingContact.id as ActorId,
+            type: existingContact.user_id ? ActorType.User : ActorType.Contact,
+            name: normalizedName || existingContact.name || null,
+          };
+          if (existingContact.email) {
+            actor.email = existingContact.email;
+          }
+          sourceActors.push(actor);
+        }
+      } else {
+        // No existing mapping — create new contact with NULL email
+        const normalizedName = normalizeName(contact.name);
+        const newContact = await plot.db
+          .insertInto("contact")
+          .values({
+            email: null,
+            name: normalizedName || null,
+            avatar_url: contact.avatar || null,
+          })
+          .returning(["id", "name"])
+          .executeTakeFirstOrThrow();
+
+        // Create the external account mapping
+        await plot.db
+          .insertInto("contact_external_account")
+          .values({
+            contact_id: newContact.id,
+            provider: source.provider,
+            account_id: source.accountId,
+            data_fetched_at: new Date().toISOString(),
+          })
+          .execute();
+
+        const actor: Actor = {
+          id: newContact.id as ActorId,
+          type: ActorType.Contact,
+          name: newContact.name || null,
+        };
+        sourceActors.push(actor);
+      }
+    } catch (error) {
+      logger.error(
+        "Failed to process source-only contact",
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+  }
+
+  return [...emailActors, ...sourceActors];
 }
 
 export async function getActors(

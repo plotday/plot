@@ -116,28 +116,15 @@ export class Usage extends DurableObject<Bindings> {
   }
 
   /**
-   * Increment usage for the given cost type by the specified amount
+   * Increment usage for the given cost type by the specified amount.
+   * Writes to SQLite (DO-durable storage) on every call — in-memory buffering
+   * is unsafe in DOs since they can be evicted between requests.
    */
   spend(costType: string, amount: number) {
     this.getPriorityTwistId();
 
     const currentHour = this.getCurrentHour();
 
-    // Check if we've rolled over to a new hour
-    const previousHourResult = this.sql
-      .exec("SELECT DISTINCT hour FROM usage WHERE hour < ? LIMIT 1", [
-        currentHour,
-      ])
-      .next();
-
-    if (!previousHourResult.done) {
-      // We have data from a previous hour, flush it before continuing
-      // Note: flushToDb is async but we can't await it here
-      // It will handle errors internally
-      this.flushToDb();
-    }
-
-    // Insert or update the current hour's usage
     this.sql.exec(
       `
         INSERT INTO usage (cost_type, hour, amount)
@@ -150,8 +137,10 @@ export class Usage extends DurableObject<Bindings> {
       amount
     );
 
-    this.isDirty = true;
-    this.persistState();
+    if (!this.isDirty) {
+      this.isDirty = true;
+      this.persistState();
+    }
     this.scheduleFlush();
   }
 

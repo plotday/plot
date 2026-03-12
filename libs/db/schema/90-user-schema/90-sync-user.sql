@@ -226,12 +226,13 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to the priority (including hierarchical access)
+    -- Get all users with access to the priority or its descendants (since ancestor contacts are visible to descendants)
     FOR v_user_id IN SELECT DISTINCT
         upe.user_id
     FROM
         new_table n
-        JOIN "user".priority_expanded upe ON upe.priority_id = n.priority_id
+        JOIN priority_child pch ON pch.priority_id = n.priority_id
+        JOIN "user".priority_expanded upe ON upe.priority_id = pch.child_id
     WHERE
         upe.archived_at IS NULL
     ORDER BY
@@ -346,13 +347,14 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Contact changes affect all users with access to priorities where this contact is linked (including hierarchical access)
+    -- Contact changes affect all users with access to priorities where this contact is linked or their descendants
     FOR v_user_id IN SELECT DISTINCT
         upe.user_id
     FROM
         new_table n
         JOIN priority_contact pc ON pc.contact_id = n.id
-        JOIN "user".priority_expanded upe ON upe.priority_id = pc.priority_id
+        JOIN priority_child pch ON pch.priority_id = pc.priority_id
+        JOIN "user".priority_expanded upe ON upe.priority_id = pch.child_id
     WHERE
         upe.archived_at IS NULL
     ORDER BY

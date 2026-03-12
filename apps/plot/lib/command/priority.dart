@@ -98,7 +98,7 @@ class OpenHelpFeedback extends Command {
 class OpenWhatsNew extends Command {
   OpenWhatsNew(this.priority)
     : super(
-        title: "What's New",
+        title: "What's new",
         icon: PlotIcon.sparkles,
         eventObject: EventObject.priority,
         eventAction: EventAction.viewed,
@@ -250,9 +250,7 @@ class TogglePriorityArchived extends Command {
     }
     final isArchived = priority.archivedAt != null;
     await priority
-        .copyWith(
-          archivedAt: Value(isArchived ? null : DateTime.now()),
-        )
+        .copyWith(archivedAt: Value(isArchived ? null : DateTime.now()))
         .save();
     return const CommandDone();
   }
@@ -953,7 +951,8 @@ class EditInvitationCommand extends ShowForm {
           items: [
             FormInfo(
               key: 'info',
-              text: 'Invitation pending for ${actor.nameOrEmail} to ${priority.title}.',
+              text:
+                  'Invitation pending for ${actor.nameOrEmail} to ${priority.title}.',
             ),
             FormDivider(key: 'divider'),
             FormButton(

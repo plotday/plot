@@ -156,28 +156,39 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
 
               const SizedBox(height: 8),
 
-              FTextField(
-                control: .managed(controller: _nameController),
-                hint: 'Enter your name',
-                label: const Text('Name'),
-                autofocus: true,
-                onSubmit: (_) => _handleSubmit(),
-              ),
+              AutofillGroup(
+                child: Column(
+                  spacing: 16,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FTextField(
+                      control: .managed(controller: _nameController),
+                      hint: 'Enter your name',
+                      label: const Text('Name'),
+                      autofillHints: const [AutofillHints.name],
+                      autofocus: true,
+                      onSubmit: (_) => _handleSubmit(),
+                    ),
 
-              FTextField(
-                control: .managed(controller: _passwordController),
-                hint: 'Enter your password',
-                label: const Text('Password'),
-                obscureText: true,
-                onSubmit: (_) => _handleSubmit(),
-              ),
+                    FTextField(
+                      control: .managed(controller: _passwordController),
+                      hint: 'Enter your password',
+                      label: const Text('Password'),
+                      obscureText: true,
+                      autofillHints: const [AutofillHints.newPassword],
+                      onSubmit: (_) => _handleSubmit(),
+                    ),
 
-              FTextField(
-                control: .managed(controller: _confirmPasswordController),
-                hint: 'Re-enter your password',
-                label: const Text('Confirm Password'),
-                obscureText: true,
-                onSubmit: (_) => _handleSubmit(),
+                    FTextField(
+                      control: .managed(controller: _confirmPasswordController),
+                      hint: 'Re-enter your password',
+                      label: const Text('Confirm Password'),
+                      obscureText: true,
+                      autofillHints: const [AutofillHints.newPassword],
+                      onSubmit: (_) => _handleSubmit(),
+                    ),
+                  ],
+                ),
               ),
 
               SizedBox(

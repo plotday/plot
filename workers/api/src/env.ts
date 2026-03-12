@@ -154,6 +154,7 @@ export type Bindings = {
   readonly SYNC_TIMING_ENABLED?: string;
 
   readonly TWIST_CONFIG: KVNamespace;
+  readonly VOTES: KVNamespace;
 
   // Rate Limiting Bindings
   readonly GENERAL_RATE_LIMITER: RateLimit;

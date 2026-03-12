@@ -50,6 +50,7 @@ class SetupSourceWidget extends StatefulWidget {
     required this.priorityTwistId,
     this.setupMode = false,
     this.isAccountBased = false,
+    this.sourceName,
     this.initialData,
     this.refreshNotifier,
     this.onChanged,
@@ -64,6 +65,9 @@ class SetupSourceWidget extends StatefulWidget {
 
   /// When true, channels require per-channel priority selection (account-based sources).
   final bool isAccountBased;
+
+  /// Display name of the source/connector, used in channel config modal titles.
+  final String? sourceName;
 
   /// Pre-loaded integrations data to avoid a loading spinner on open.
   final TwistIntegrations? initialData;
@@ -330,8 +334,23 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         );
       }
 
+      // Build a descriptive title: "Channel from Account (Source)"
+      String formTitle = channel.title;
+      final data = _data;
+      if (data != null) {
+        final account = data.accounts
+            .where((a) => a.provider == channel.provider)
+            .firstOrNull;
+        final parts = <String>[];
+        if (account != null) parts.add(account.displayName);
+        if (widget.sourceName != null) parts.add(widget.sourceName!);
+        if (parts.isNotEmpty) {
+          formTitle = '${channel.title} from ${parts.join(' · ')}';
+        }
+      }
+
       final formData = FormData(
-        title: channel.title,
+        title: formTitle,
         groups: [StaticFormGroup(items: items)],
       );
 

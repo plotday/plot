@@ -1,13 +1,6 @@
--- Retrieve all mentions for a thread.
--- Used by thread_x view to aggregate mentions from notes.
--- Also includes the thread creator when it's a priority_twist (source-created thread),
--- so the connector chip appears in the NoteEditor for replies.
-CREATE OR REPLACE FUNCTION public.get_thread_mentions (p_thread_id uuid)
-    RETURNS uuid[]
-    LANGUAGE sql
-    STABLE
-    AS $function$
-    SELECT
+-- Modify "get_thread_mentions" function
+CREATE OR REPLACE FUNCTION "public"."get_thread_mentions" ("p_thread_id" uuid) RETURNS uuid[] LANGUAGE sql STABLE AS $$
+SELECT
         ARRAY_AGG(DISTINCT mention)
     FROM (
         -- Mentions from notes
@@ -23,4 +16,4 @@ CREATE OR REPLACE FUNCTION public.get_thread_mentions (p_thread_id uuid)
         WHERE t.id = p_thread_id
             AND EXISTS (SELECT 1 FROM priority_twist pt WHERE pt.id = t.created_by)
     ) sub;
-$function$;
+$$;

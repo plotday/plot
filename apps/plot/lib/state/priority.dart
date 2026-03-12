@@ -160,6 +160,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       _agendaHorizonDays += 90;
       _loadAgenda(triggerSync: !_agendaSyncNoMore);
     }
+    // Wait for sync so InfiniteList's _fetching stays true until data arrives
+    final future = _agendaSyncFuture;
+    if (future != null) {
+      try { await future; } catch (_) {}
+    }
   }
 
   @override
@@ -882,7 +887,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     });
 
     if (triggerSync) {
-      _triggerAgendaSync(priorityToLoad);
+      _agendaSyncFuture = _triggerAgendaSync(priorityToLoad);
     }
   }
 
@@ -964,7 +969,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     });
 
     if (triggerSync) {
-      _triggerActivityFeedSync(priorityToLoad);
+      _activityFeedSyncFuture = _triggerActivityFeedSync(priorityToLoad);
     }
   }
 
@@ -998,6 +1003,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       _activityFeedLimit += 50;
       _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty);
     }
+    // Wait for sync so InfiniteList's _fetching stays true until data arrives
+    final future = _activityFeedSyncFuture;
+    if (future != null) {
+      try { await future; } catch (_) {}
+    }
   }
 
   final List<StreamSubscription<void>> _subscriptions;
@@ -1010,6 +1020,8 @@ class PriorityBloc extends Cubit<PriorityState> {
   int _activityFeedLimit = 50;
   bool _agendaSyncNoMore = false;
   bool _activityFeedSyncNoMore = false;
+  Future<void>? _agendaSyncFuture;
+  Future<void>? _activityFeedSyncFuture;
   int _agendaLastRawRowCount = 0;
   int _activityFeedLastRawRowCount = 0;
 }

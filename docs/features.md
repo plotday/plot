@@ -100,6 +100,12 @@ Internal catalog of product features for marketing content generation. Direct an
 - Notion: Page and comment sync
 - OAuth ready: Atlassian, Monday.com, GitHub, Asana, HubSpot
 
+### Upcoming Connections
+- 65+ upcoming connectors browsable in-app
+- Vote for connections you want — feeds into website vote counts
+- Get notified when voted connections become available
+- Categories: Calendar, Communication, Email, Project Management, Design, Documents, Development, CRM, Customer Support, Cloud Storage, Finance, HR, Marketing, Analytics, Notes, Productivity, Automation, E-commerce, Cloud, Security, Product
+
 ### Built-in Tool Capabilities
 - AI: Multiple LLM providers (OpenAI, Anthropic, Google, Workers AI)
   - Text generation and analysis

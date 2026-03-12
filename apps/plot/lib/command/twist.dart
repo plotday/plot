@@ -98,6 +98,21 @@ class _AvailableSource extends _ConnectionItem {
   String get filterText => '${twist.name} ${twist.description ?? ''}';
 }
 
+class _UpcomingConnection extends _ConnectionItem {
+  final UpcomingConnection connection;
+  bool hasVoted;
+  int votes;
+
+  _UpcomingConnection({
+    required this.connection,
+    required this.hasVoted,
+    required this.votes,
+  });
+
+  @override
+  String get filterText => '${connection.name} ${connection.category}';
+}
+
 class ManageConnections extends Command {
   ManageConnections()
     : super(
@@ -108,9 +123,19 @@ class ManageConnections extends Command {
         eventAction: EventAction.opened,
       );
 
+  /// Cached upcoming connections data, fetched once per ManageConnections session.
+  static ({List<UpcomingConnection> connections, Set<String> votedByUser})?
+      _upcomingCache;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    _upcomingCache = null; // Reset cache for each new session
     try {
+      // Track newly activated source so we can open EditSource after
+      // SelectModal closes (avoids a flash of the list between modals).
+      String? activatedSourceId;
+      String? activatedSourceName;
+
       Future<void> Function()? refreshFn;
       await SelectModal.open<_ConnectionItem>(
         context,
@@ -128,18 +153,30 @@ class ManageConnections extends Command {
             await AddSourceDetail(item.twist).run(ctx);
             final activatedId = AddSourceDetail.lastActivatedSourceId;
             AddSourceDetail.lastActivatedSourceId = null;
-            if (activatedId != null && ctx.mounted) {
-              await EditSource(
-                priorityTwistId: activatedId,
-                name: item.twist.name,
-              ).run(ctx);
+            if (activatedId != null) {
+              // Close SelectModal first, then open EditSource from outer context
+              activatedSourceId = activatedId;
+              activatedSourceName = item.twist.name;
+              return true; // Close SelectModal
             }
+          } else if (item is _UpcomingConnection) {
+            await _NotifyUpcomingConnection(item).run(ctx);
           }
           // Refresh items after returning from child command
           await refreshFn?.call();
           return false; // Keep SelectModal open
         },
       );
+
+      // Open EditSource after SelectModal has closed
+      if (activatedSourceId != null && context.mounted) {
+        await EditSource(
+          priorityTwistId: activatedSourceId!,
+          name: activatedSourceName!,
+          isNewlyActivated: true,
+        ).run(context);
+      }
+
       return const CommandSkipped();
     } on ApiException catch (e, t) {
       log.warning('Failed to load sources', e, t);
@@ -159,15 +196,31 @@ class ManageConnections extends Command {
   static Future<List<SelectGroup<_ConnectionItem>>> _fetchItems(
     String? search,
   ) async {
-    // Fetch sources and available twists in parallel
+    // Fetch sources and available twists (always refresh these).
+    // Upcoming connections are cached per session to avoid slow refreshes.
     final defaultPriority = await Priority.getDefault();
-    final results = await Future.wait([
+    final futures = <Future<dynamic>>[
       TwistApi.getUserSources(),
       TwistApi.getAllTwists(defaultPriority),
-    ]);
+    ];
+    if (_upcomingCache == null) {
+      futures.add(
+        TwistApi.getUpcomingConnections()
+            .then<
+              ({List<UpcomingConnection> connections, Set<String> votedByUser})?
+            >((r) => r)
+            .catchError((_) => null),
+      );
+    }
+    final results = await Future.wait(futures);
 
     final sourcesData = results[0] as List<Map<String, dynamic>>;
     final allTwists = results[1] as List<Twist>;
+    if (results.length > 2) {
+      _upcomingCache = results[2]
+          as ({List<UpcomingConnection> connections, Set<String> votedByUser})?;
+    }
+    final upcomingResult = _upcomingCache;
 
     // Build active connections
     final activeItems = <_ActiveSource>[];
@@ -225,9 +278,26 @@ class ManageConnections extends Command {
       return _compareEnvironment(a.twist.environment, b.twist.environment);
     });
 
+    // Build upcoming connections (exclude names that match available sources)
+    final availableSourceNames =
+        allTwists.where((t) => t.isSource).map((t) => t.name).toSet();
+    final upcomingItems = <_UpcomingConnection>[];
+    if (upcomingResult != null) {
+      for (final conn in upcomingResult.connections) {
+        if (!availableSourceNames.contains(conn.name)) {
+          upcomingItems.add(_UpcomingConnection(
+            connection: conn,
+            hasVoted: upcomingResult.votedByUser.contains(conn.name),
+            votes: conn.votes,
+          ));
+        }
+      }
+    }
+
     // Filter by search
     List<_ConnectionItem> filteredActive = activeItems;
     List<_ConnectionItem> filteredAvailable = availableItems;
+    List<_ConnectionItem> filteredUpcoming = upcomingItems;
     if (search != null && search.isNotEmpty) {
       final words = search.toLowerCase().trim().split(RegExp(r'\s+'));
       bool matches(_ConnectionItem item) {
@@ -239,6 +309,7 @@ class ManageConnections extends Command {
 
       filteredActive = activeItems.where(matches).toList();
       filteredAvailable = availableItems.where(matches).toList();
+      filteredUpcoming = upcomingItems.where(matches).toList();
     }
 
     return [
@@ -246,6 +317,8 @@ class ManageConnections extends Command {
         SelectGroup(title: 'Active connections', items: filteredActive),
       if (filteredAvailable.isNotEmpty)
         SelectGroup(title: 'Available connections', items: filteredAvailable),
+      if (filteredUpcoming.isNotEmpty)
+        SelectGroup(title: 'Upcoming connections', items: filteredUpcoming),
     ];
   }
 
@@ -264,6 +337,8 @@ class ManageConnections extends Command {
         return _ActiveSourceRow(item: item, isLoading: isLoading);
       case _AvailableSource():
         return _AvailableSourceRow(item: item, isLoading: isLoading);
+      case _UpcomingConnection():
+        return _UpcomingConnectionRow(item: item, isLoading: isLoading);
     }
   }
 }
@@ -413,6 +488,144 @@ class _AvailableSourceRow extends StatelessWidget {
   }
 }
 
+class _UpcomingConnectionRow extends StatelessWidget {
+  const _UpcomingConnectionRow({required this.item, this.isLoading = false});
+  final _UpcomingConnection item;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          if (isLoading)
+            Spinner(
+              size: theme.iconSizes.base,
+              color: theme.colors.mutedForeground,
+            )
+          else
+            _SourceLogo(
+              logoUrl: item.connection.logo,
+              logoUrlDark: item.connection.logoDark,
+              size: theme.iconSizes.base,
+            ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Row(
+              children: [
+                Text(
+                  item.connection.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: theme.typography.base.fontSize,
+                    color: theme.colors.foreground,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    item.connection.category,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: theme.typography.base.fontSize,
+                      color: theme.colors.mutedForeground,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (item.votes > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colors.secondary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${item.votes}',
+                style: TextStyle(
+                  fontSize: theme.typography.xs.fontSize,
+                  color: theme.colors.mutedForeground,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotifyUpcomingConnection extends ShowForm {
+  _NotifyUpcomingConnection(this.item)
+    : super(
+        title: item.connection.name,
+        icon: PlotIcon.connection,
+        form: (context) => _buildForm(item),
+      );
+
+  final _UpcomingConnection item;
+
+  static Future<FormData> _buildForm(_UpcomingConnection item) async {
+    return FormData(
+      title: item.connection.name,
+      groups: [
+        StaticFormGroup(
+          items: [
+            FormInfo(
+              key: 'category',
+              text: item.connection.category,
+            ),
+            FormInfo(
+              key: 'entities',
+              text: 'Syncs: ${item.connection.entities.join(', ')}',
+            ),
+            if (item.hasVoted)
+              FormInfo(
+                key: 'voted',
+                text: "You'll be notified when this connection is available.",
+              ),
+            if (!item.hasVoted)
+              FormButton(
+                key: 'vote',
+                buildCommand: (_) => _VoteForConnectionCommand(item),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _VoteForConnectionCommand extends Command {
+  _VoteForConnectionCommand(this.item)
+    : super(
+        title: 'Notify me when available',
+        icon: PlotIcon.star,
+        eventObject: EventObject.twist,
+        eventAction: EventAction.updated,
+      );
+
+  final _UpcomingConnection item;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final newVotes = await TwistApi.voteForConnection(item.connection.name);
+      item.hasVoted = true;
+      item.votes = newVotes;
+      return CommandMessage(
+        "You'll be notified when ${item.connection.name} is available.",
+      );
+    } catch (e, t) {
+      log.warning('Failed to vote for connection', e, t);
+      return const CommandMessage('Could not register interest.', isError: true);
+    }
+  }
+}
+
 /// Badge showing the environment name for non-public twists/sources.
 class _EnvironmentBadge extends StatelessWidget {
   const _EnvironmentBadge({required this.environment});
@@ -481,21 +694,27 @@ class EditSource extends ShowForm {
     required this.priorityTwistId,
     required this.name,
     this.isAccountBased = true,
+    this.isNewlyActivated = false,
     super.subtitle,
   }) : super(
          title: name,
          icon: PlotIcon.settings,
-         form: (context) => _buildForm(priorityTwistId, name, isAccountBased),
+         form: (context) =>
+             _buildForm(priorityTwistId, name, isAccountBased, isNewlyActivated),
        );
 
   final String priorityTwistId;
   final String name;
   final bool isAccountBased;
 
+  /// When true, hides the Archive button (source was just set up).
+  final bool isNewlyActivated;
+
   static Future<FormData> _buildForm(
     String priorityTwistId,
     String name,
     bool isAccountBased,
+    bool isNewlyActivated,
   ) async {
     final integrations = await TwistApi.getIntegrations(priorityTwistId);
     final refreshNotifier = ValueNotifier<int>(0);
@@ -538,6 +757,7 @@ class EditSource extends ShowForm {
               builder: (context) => SetupSourceWidget(
                 priorityTwistId: priorityTwistId,
                 isAccountBased: isAccountBased,
+                sourceName: name,
                 initialData: integrations,
                 refreshNotifier: refreshNotifier,
                 onChanged: (changes) {
@@ -561,14 +781,16 @@ class EditSource extends ShowForm {
                 );
               },
             ),
-            FormDivider(key: 'divider'),
-            FormButton(
-              key: 'archive',
-              buildCommand: (_) => PromptToArchiveSource(
-                priorityTwistId: priorityTwistId,
-                name: name,
+            if (!isNewlyActivated) ...[
+              FormDivider(key: 'divider'),
+              FormButton(
+                key: 'archive',
+                buildCommand: (_) => PromptToArchiveSource(
+                  priorityTwistId: priorityTwistId,
+                  name: name,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ],
@@ -1331,6 +1553,7 @@ class SetupTwist extends ShowForm {
               builder: (context) => SetupSourceWidget(
                 priorityTwistId: draftId,
                 setupMode: true,
+                sourceName: twist.name,
                 initialData: integrations,
                 refreshNotifier: refreshNotifier,
                 onChanged: (changes) {

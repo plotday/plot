@@ -1,13 +1,7 @@
--- Upsert contacts from the Plot tool
--- Uses COALESCE to preserve existing name/avatar when new value is null
-CREATE OR REPLACE FUNCTION public.upsert_contacts (contacts jsonb)
-    RETURNS TABLE (
-        id uuid,
-        email text,
-        name text,
-        user_id uuid)
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "contact" table
+ALTER TABLE "public"."contact" DROP CONSTRAINT "contact_email_check", ADD CONSTRAINT "contact_email_check" CHECK ((email IS NULL) OR (email = lower(email))), ALTER COLUMN "email" DROP NOT NULL;
+-- Modify "upsert_contacts" function
+CREATE OR REPLACE FUNCTION "public"."upsert_contacts" ("contacts" jsonb) RETURNS TABLE ("id" uuid, "email" text, "name" text, "user_id" uuid) LANGUAGE plpgsql AS $$
 BEGIN
     RETURN QUERY INSERT INTO contact (email, name, avatar_url)
     SELECT
@@ -28,4 +22,4 @@ ON CONFLICT ON CONSTRAINT contact_email_unique
         contact.name,
         contact.user_id;
 END;
-$function$;
+$$;

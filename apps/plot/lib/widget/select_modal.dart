@@ -188,6 +188,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   bool _isLoading = false;
   int _requestId = 0; // For canceling stale requests
   int _highlightedIndex = 0;
+  bool _isRefreshing = false;
   bool _mouseHasMoved = false;
   bool _enterHandled =
       false; // Prevents double-fire between Shortcuts and onSubmit
@@ -219,10 +220,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     }
   }
 
-  /// Refresh items while preserving search text
+  /// Refresh items while preserving search text and highlighted index
   Future<void> _refreshItems() async {
     // Clear cache to force re-fetch on refresh
     _emptySearchCache = null;
+    _isRefreshing = true;
     _initItems();
   }
 
@@ -235,7 +237,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   }
 
   /// Updates the highlighted index to match the selected value if present.
-  void _updateHighlightedIndex() {
+  void _updateHighlightedIndex({bool preserveOnRefresh = false}) {
     if (widget.selectedValue != null) {
       int currentIndex = 0;
       bool found = false;
@@ -255,6 +257,17 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       if (!found) {
         _highlightedIndex = 0;
       }
+    } else if (preserveOnRefresh) {
+      // Clamp to valid range but don't reset to 0
+      final totalItems = _groups.fold<int>(
+        0,
+        (sum, group) => sum + group.items.length,
+      );
+      if (totalItems > 0) {
+        _highlightedIndex = _highlightedIndex.clamp(0, totalItems - 1);
+      } else {
+        _highlightedIndex = 0;
+      }
     } else {
       _highlightedIndex = 0;
     }
@@ -265,6 +278,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   }
 
   void _fetchItems() async {
+    final refreshing = _isRefreshing;
+    _isRefreshing = false;
     try {
       // Trim whitespace and treat empty trimmed string as null
       final trimmedText = _controller.text.trim();
@@ -283,7 +298,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
           if (totalItems == 0) {
             _error = widget.emptyMessage ?? 'No matches';
           }
-          _updateHighlightedIndex();
+          _updateHighlightedIndex(preserveOnRefresh: refreshing);
         });
         return;
       }
@@ -326,8 +341,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
           _error = widget.emptyMessage ?? 'No matches';
         }
 
-        // Update highlighted index to match selected value
-        _updateHighlightedIndex();
+        // Update highlighted index — preserve position on refresh
+        _updateHighlightedIndex(preserveOnRefresh: refreshing);
       });
     } catch (e, t) {
       log.warning('Error loading items', e, t);

@@ -1,11 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
-
 import { sql } from "kysely";
 
-import { withDb } from "../db";
-import { rpc } from "../rpc";
-import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
+
+import { withDb } from "../db";
+import type { Bindings } from "../env";
+import { rpc } from "../rpc";
 
 const BATCH_WINDOW_MS = 100;
 
@@ -70,8 +70,12 @@ export class SyncNotify extends DurableObject<Bindings> {
     }
   }
 
-  private async notifyUsers(logger: ReturnType<typeof createLogger>): Promise<void> {
-    let users: Awaited<ReturnType<typeof rpc<"get_users_with_priority_access">>>;
+  private async notifyUsers(
+    logger: ReturnType<typeof createLogger>
+  ): Promise<void> {
+    let users: Awaited<
+      ReturnType<typeof rpc<"get_users_with_priority_access">>
+    >;
     try {
       users = await withDb(this.env, (db) =>
         rpc(db, "get_users_with_priority_access", {
@@ -87,7 +91,11 @@ export class SyncNotify extends DurableObject<Bindings> {
 
     // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
     // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
-    const userIds = (!users ? [] : Array.isArray(users) ? users : [users]) as unknown as string[];
+    const userIds = (!users
+      ? []
+      : Array.isArray(users)
+      ? users
+      : [users]) as unknown as string[];
     if (userIds.length === 0) {
       return;
     }
@@ -113,7 +121,9 @@ export class SyncNotify extends DurableObject<Bindings> {
     await Promise.allSettled(promises);
   }
 
-  private async notifyTwists(logger: ReturnType<typeof createLogger>): Promise<void> {
+  private async notifyTwists(
+    logger: ReturnType<typeof createLogger>
+  ): Promise<void> {
     let twists: { id: string }[];
     try {
       // Find all active twists on this priority AND ancestor priorities
@@ -121,14 +131,22 @@ export class SyncNotify extends DurableObject<Bindings> {
       twists = await withDb(this.env, (db) =>
         db
           .selectFrom("priority_twist")
-          .innerJoin("priority as twist_priority", "twist_priority.id", "priority_twist.priority_id")
+          .innerJoin(
+            "priority as twist_priority",
+            "twist_priority.id",
+            "priority_twist.priority_id"
+          )
           .innerJoin("priority as changed_priority", (join) =>
             join.on("changed_priority.id", "=", this.priorityId!)
           )
           .select("priority_twist.id")
           .where("priority_twist.archived_at", "is", null)
           // changed_priority.path is a descendant of (or equal to) twist_priority.path
-          .where(sql<boolean>`${sql.ref("changed_priority.path")} <@ ${sql.ref("twist_priority.path")}`)
+          .where(
+            sql<boolean>`${sql.ref("changed_priority.path")} <@ ${sql.ref(
+              "twist_priority.path"
+            )}`
+          )
           .execute()
       );
     } catch (error) {

@@ -143,6 +143,13 @@ export async function sendInvitation(
     recipientName: contact.name || undefined,
   };
 
+  if (!contact.email) {
+    logger.error("Cannot send invitation to contact without email", {
+      contact_id: contact.id,
+    });
+    return { success: false, error: "Contact has no email address" };
+  }
+
   logger.info("Sending invitation email", {
     contact_email: contact.email,
     priority_name: priorityName,

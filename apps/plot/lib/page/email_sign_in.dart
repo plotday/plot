@@ -538,31 +538,43 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                 ),
               ] else ...[
                 // Email field
-                FTextField(
-                  focusNode: _emailFocusNode,
-                  control: .managed(controller: _emailController),
-                  hint: 'your@email.com',
-                  label: const Text('Email'),
-                  keyboardType: TextInputType.emailAddress,
-                  autofocus: true,
-                  autocorrect: false,
-                  onSubmit: (_) => _mode == _AuthMode.signUp
-                      ? _handleSignUp()
-                      : _handleSignIn(),
+                AutofillGroup(
+                  child: Column(
+                    spacing: 8,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FTextField(
+                        focusNode: _emailFocusNode,
+                        control: .managed(controller: _emailController),
+                        hint: 'your@email.com',
+                        label: const Text('Email'),
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
+                        autofocus: true,
+                        autocorrect: false,
+                        onSubmit: (_) => _mode == _AuthMode.signUp
+                            ? _handleSignUp()
+                            : _handleSignIn(),
+                      ),
+
+                      // Password field (only in sign-in mode)
+                      if (_mode == _AuthMode.signIn)
+                        FTextField(
+                          control: .managed(controller: _passwordController),
+                          hint: 'Enter your password',
+                          label: const Text('Password'),
+                          obscureText: true,
+                          autofillHints: const [AutofillHints.password],
+                          onSubmit: (_) => _handleSignIn(),
+                        ),
+                    ],
+                  ),
                 ),
 
-                // Password field (only in sign-in mode)
                 if (_mode == _AuthMode.signIn) ...[
                   Column(
                     spacing: 2,
                     children: [
-                      FTextField(
-                        control: .managed(controller: _passwordController),
-                        hint: 'Enter your password',
-                        label: const Text('Password'),
-                        obscureText: true,
-                        onSubmit: (_) => _handleSignIn(),
-                      ),
                       // Forgot password link
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,

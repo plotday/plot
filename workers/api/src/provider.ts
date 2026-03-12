@@ -30,11 +30,13 @@ export type MicrosoftProviderData = {
 };
 
 export type GitHubProviderData = {
-  email: string;
+  email: string | null;
+  userId: string;
 };
 
 export type LinearProviderData = {
-  email: string;
+  email: string | null;
+  userId: string;
 };
 
 // Union of all provider-specific data types
@@ -75,8 +77,8 @@ function parseJwtEmail(idToken: string): string | null {
   }
 }
 
-// Helper function to fetch email from GitHub API
-async function fetchGitHubEmail(accessToken: string): Promise<string | null> {
+// Helper function to fetch user info from GitHub API
+async function fetchGitHubUser(accessToken: string): Promise<{ userId: string; email: string | null } | null> {
   try {
     const response = await fetch("https://api.github.com/user", {
       headers: {
@@ -89,11 +91,15 @@ async function fetchGitHubEmail(accessToken: string): Promise<string | null> {
       return null;
     }
 
-    const data = await response.json() as { email?: string };
-    return data.email || null;
+    const data = await response.json() as { id?: number; email?: string };
+    if (!data.id) {
+      return null;
+    }
+
+    return { userId: String(data.id), email: data.email || null };
   } catch (error) {
     const logger = createLogger({ component: "provider" });
-    logger.error("Error fetching GitHub email", error as Error);
+    logger.error("Error fetching GitHub user", error as Error);
     return null;
   }
 }
@@ -139,16 +145,16 @@ const parseGitHubTokenResponse = async (
     return undefined;
   }
 
-  const email = await fetchGitHubEmail(response.access_token);
-  if (!email) {
+  const user = await fetchGitHubUser(response.access_token);
+  if (!user) {
     return undefined;
   }
 
-  return { email };
+  return { email: user.email, userId: user.userId };
 };
 
-// Helper function to fetch email from Linear API
-async function fetchLinearEmail(accessToken: string): Promise<string | null> {
+// Helper function to fetch viewer info from Linear API
+async function fetchLinearViewer(accessToken: string): Promise<{ userId: string; email: string | null } | null> {
   try {
     const response = await fetch("https://api.linear.app/graphql", {
       method: "POST",
@@ -156,7 +162,7 @@ async function fetchLinearEmail(accessToken: string): Promise<string | null> {
         Authorization: accessToken,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ query: "{ viewer { email } }" }),
+      body: JSON.stringify({ query: "{ viewer { id email } }" }),
     });
 
     if (!response.ok) {
@@ -164,12 +170,17 @@ async function fetchLinearEmail(accessToken: string): Promise<string | null> {
     }
 
     const data = (await response.json()) as {
-      data?: { viewer?: { email?: string } };
+      data?: { viewer?: { id?: string; email?: string } };
     };
-    return data.data?.viewer?.email || null;
+    const viewer = data.data?.viewer;
+    if (!viewer?.id) {
+      return null;
+    }
+
+    return { userId: viewer.id, email: viewer.email || null };
   } catch (error) {
     const logger = createLogger({ component: "provider" });
-    logger.error("Error fetching Linear email", error as Error);
+    logger.error("Error fetching Linear viewer", error as Error);
     return null;
   }
 }
@@ -181,12 +192,12 @@ const parseLinearTokenResponse = async (
     return undefined;
   }
 
-  const email = await fetchLinearEmail(response.access_token);
-  if (!email) {
+  const viewer = await fetchLinearViewer(response.access_token);
+  if (!viewer) {
     return undefined;
   }
 
-  return { email };
+  return { email: viewer.email, userId: viewer.userId };
 };
 
 type ProviderConfig = {
@@ -203,6 +214,23 @@ type ProviderConfig = {
   // Extract metadata for AuthToken.provider field
   extractMetadata?: (providerData: ProviderData) => Record<string, string> | undefined;
 };
+
+/**
+ * Extract the provider-specific user ID from provider data.
+ * Returns null if provider data is missing or doesn't contain a user ID.
+ */
+export function extractUserId(provider: AuthProvider, providerData: ProviderData | null): string | null {
+  if (!providerData) return null;
+  switch (provider) {
+    case "github":
+    case "linear":
+      return (providerData as GitHubProviderData | LinearProviderData).userId ?? null;
+    case "slack":
+      return (providerData as SlackProviderData).authed_user?.id ?? null;
+    default:
+      return null;
+  }
+}
 
 export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
   google: {

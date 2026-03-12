@@ -28,6 +28,7 @@ import type { Json } from "@plotday/db";
 import type { DB } from "../../db-types";
 import { type Bindings, type TwistEnvironment } from "../../env";
 import {
+  extractUserId,
   PROVIDER_CONFIGS,
   type ProviderData,
   type StoredTokenData,
@@ -816,6 +817,31 @@ export class Integrations extends Tool implements IAuth {
       actor = await this.buildActor(email);
     } catch (error) {
       throw error;
+    }
+
+    // Store provider ID mapping for source-based contact lookup
+    const providerUserId = extractUserId(tokenInfo.provider, providerData);
+    if (providerUserId && actor.id) {
+      try {
+        await this.db
+          .insertInto("contact_external_account")
+          .values({
+            contact_id: actor.id,
+            provider: tokenInfo.provider,
+            account_id: providerUserId,
+            data_fetched_at: new Date().toISOString(),
+          })
+          .onConflict((oc) =>
+            oc.columns(["provider", "account_id"]).doUpdateSet((eb) => ({
+              contact_id: eb.ref("excluded.contact_id"),
+              data_fetched_at: eb.ref("excluded.data_fetched_at"),
+            }))
+          )
+          .execute();
+      } catch (error) {
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.error("Failed to store provider mapping", error as Error);
+      }
     }
 
     // Store token keyed by provider + actor ID

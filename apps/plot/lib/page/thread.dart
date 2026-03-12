@@ -644,32 +644,19 @@ class _LinkAssigneeBadge extends StatelessWidget {
       future: _resolveAssigneeName(),
       builder: (context, snapshot) {
         final label = snapshot.data ?? 'Unassigned';
-        return GestureDetector(
-          onTap: () async {
-            final result = await _showAssigneePicker(context);
-            if (result != null) {
-              final newId = result.present ? result.value : null;
-              if (newId != link.assigneeId) {
-                await Link.updateAssignee(link, newId);
-              }
-            }
-          },
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: context.theme.colors.secondary,
-                borderRadius: BorderRadius.circular(borderRadiusSm),
-              ),
-              child: Padding(
+        return FButton(
+          style: FButtonStyle.secondary(
+            (style) => style.copyWith(
+              contentStyle: (cs) => cs.copyWith(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                child: Text(
-                  label,
-                  style: context.theme.typography.xs.copyWith(
-                    color: context.theme.colors.mutedForeground,
-                  ),
-                ),
               ),
+            ),
+          ),
+          onPress: () => _showAssigneePicker(context),
+          child: Text(
+            label,
+            style: context.theme.typography.xs.copyWith(
+              color: context.theme.colors.mutedForeground,
             ),
           ),
         );
@@ -688,77 +675,74 @@ class _LinkAssigneeBadge extends StatelessWidget {
     }
   }
 
-  Future<Value<ActorId?>?> _showAssigneePicker(BuildContext context) async {
-    final actors = await Actor.get(priorityId: priorityId);
-    if (!context.mounted) return null;
-
-    final result = await Modal(
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          GestureDetector(
-            onTap: () => Modal.pop<ActorId?>(context, const Value(null)),
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    if (link.assigneeId == null)
-                      Icon(
-                        PlotIcon.done,
-                        size: 14,
-                        color: context.theme.colors.primary,
-                      )
-                    else
-                      const SizedBox(width: 14),
-                    const SizedBox(width: 8),
-                    Text('Unassigned', style: context.theme.typography.sm),
-                  ],
-                ),
+  Future<void> _showAssigneePicker(BuildContext context) async {
+    final result = await SelectModal.open<_AssigneeOption>(
+      context,
+      items: (search) async {
+        final actors = await Actor.get(
+          priorityId: priorityId,
+          search: search,
+          types: [ActorType.user, ActorType.contact],
+          limit: 50,
+        );
+        return [
+          SelectGroup(
+            items: [
+              const _AssigneeOption(null, 'Unassigned', null),
+              ...actors.map(
+                (a) => _AssigneeOption(a.id, a.nameOrEmail, a.email),
               ),
-            ),
+            ],
           ),
-          for (final actor in actors)
-            GestureDetector(
-              onTap: () => Modal.pop<ActorId?>(context, Value(actor.id)),
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      if (actor.id == link.assigneeId)
-                        Icon(
-                          PlotIcon.done,
-                          size: 14,
-                          color: context.theme.colors.primary,
-                        )
-                      else
-                        const SizedBox(width: 14),
-                      const SizedBox(width: 8),
-                      Text(actor.nameOrEmail, style: context.theme.typography.sm),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    ).show<ActorId?>(context);
+        ];
+      },
+      itemBuilder: (option, _) {
+        final isSelected = option.id == link.assigneeId;
+        return ListTile(
+          title: option.name,
+          subtitle: (option.id != null &&
+                  option.email != null &&
+                  option.email != option.name)
+              ? option.email
+              : null,
+          leadingBuilder: (isHovered, hasFocus) => Padding(
+            padding: const EdgeInsets.only(left: 16, right: 8),
+            child: isSelected
+                ? Icon(PlotIcon.done, size: 14, color: context.theme.colors.primary)
+                : const SizedBox(width: 14),
+          ),
+          disableInternalHover: true,
+        );
+      },
+      selectedValue: link.assigneeId != null
+          ? _AssigneeOption(link.assigneeId!, '', null)
+          : const _AssigneeOption(null, 'Unassigned', null),
+      prompt: 'Assign to',
+    );
 
-    if (result.present) {
-      return result;
+    if (!result.present || !context.mounted) return;
+    final newId = result.value.id;
+    if (newId != link.assigneeId) {
+      await Link.updateAssignee(link, newId);
     }
-    return null;
   }
+}
+
+/// Option for the assignee picker — equality based on actor id.
+class _AssigneeOption {
+  const _AssigneeOption(this.id, this.name, this.email);
+
+  final ActorId? id;
+  final String name;
+  final String? email;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _AssigneeOption && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
 
 /// Small badge showing the link's status label.
@@ -777,87 +761,67 @@ class _LinkStatusBadge extends StatelessWidget {
     final currentStatus = statuses?.where((s) => s.status == link.status).firstOrNull;
     final statusTag = currentStatus?.tag != null ? Tag.get(id: currentStatus!.tag!) : null;
 
-    return GestureDetector(
-      onTap: canChange
-          ? () async {
-              final result = await _showStatusPicker(context, link, statuses);
-              if (result != null && result != link.status) {
-                await Link.updateStatus(link, result);
-              }
-            }
-          : null,
-      child: MouseRegion(
-        cursor: canChange ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: context.theme.colors.secondary,
-            borderRadius: BorderRadius.circular(borderRadiusSm),
-          ),
-          child: Padding(
+    return FButton(
+      style: FButtonStyle.secondary(
+        (style) => style.copyWith(
+          contentStyle: (cs) => cs.copyWith(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (statusTag != null) ...[
-                  Icon(statusTag.icon, size: 12, color: context.theme.colors.mutedForeground),
-                  const SizedBox(width: 4),
-                ],
-                Text(
-                  label,
-                  style: context.theme.typography.xs.copyWith(
-                    color: context.theme.colors.mutedForeground,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
+      ),
+      onPress: canChange
+          ? () => _showStatusPicker(context, link, statuses)
+          : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (statusTag != null) ...[
+            Icon(statusTag.icon, size: 12, color: context.theme.colors.mutedForeground),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: context.theme.typography.xs.copyWith(
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  static Future<String?> _showStatusPicker(
+  static Future<void> _showStatusPicker(
     BuildContext context,
     Link link,
     List<LinkStatus> statuses,
   ) async {
-    final result = await Modal(
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final s in statuses)
-            GestureDetector(
-              onTap: () => Modal.pop<String>(context, Value(s.status)),
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      if (s.status == link.status)
-                        Icon(
-                          PlotIcon.done,
-                          size: 14,
-                          color: context.theme.colors.primary,
-                        )
-                      else
-                        const SizedBox(width: 14),
-                      const SizedBox(width: 8),
-                      Text(s.label, style: context.theme.typography.sm),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    ).show<String>(context);
+    final result = await SelectModal.open<String>(
+      context,
+      items: (search) async => [
+        SelectGroup(items: statuses.map((s) => s.status).toList()),
+      ],
+      itemBuilder: (status, _) {
+        final s = statuses.firstWhere((ls) => ls.status == status);
+        return ListTile(
+          title: s.label,
+          leadingBuilder: (isHovered, hasFocus) => Padding(
+            padding: const EdgeInsets.only(left: 16, right: 8),
+            child: s.status == link.status
+                ? Icon(PlotIcon.done, size: 14, color: context.theme.colors.primary)
+                : const SizedBox(width: 14),
+          ),
+          disableInternalHover: true,
+        );
+      },
+      selectedValue: link.status,
+      prompt: 'Set status',
+    );
 
-    return result.present ? result.value : null;
+    if (!result.present || !context.mounted) return;
+    final selected = result.value;
+    if (selected != link.status) {
+      await Link.updateStatus(link, selected);
+    }
   }
 }
 

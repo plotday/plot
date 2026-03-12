@@ -39,11 +39,56 @@ final appearanceCommands = StaticCommandGroup(
   ],
 );
 
-StaticCommandGroup settingsCommands({bool hasOrganizations = false}) =>
+/// Build the App settings command group from [PrioritiesState].
+StaticCommandGroup settingsCommandsFromState(
+  PrioritiesState? prioritiesState, {
+  bool showAllPriorities = false,
+}) {
+  final hasOrganizations = prioritiesState != null &&
+      prioritiesState.priorities.any((p) => p.organizationId != null);
+
+  Command? gettingStartedCmd;
+  Command? helpFeedbackCmd;
+  Command? whatsNewCmd;
+  if (prioritiesState != null) {
+    final plotPriority = prioritiesState.root?.children.firstWhereOrNull(
+      (p) => p.key == '@plot',
+    );
+    if (plotPriority != null) {
+      for (final child in plotPriority.children) {
+        final isArchived = child.archivedAt != null;
+        if (isArchived && !showAllPriorities) continue;
+
+        if (child.key == '@plot.getting-started') {
+          gettingStartedCmd = OpenGettingStarted(child);
+        } else if (child.key?.startsWith('@help-feedback') == true) {
+          helpFeedbackCmd = OpenHelpFeedback(child);
+        } else if (child.key == '@whats-new') {
+          whatsNewCmd = OpenWhatsNew(child);
+        }
+      }
+    }
+  }
+
+  return settingsCommands(
+    hasOrganizations: hasOrganizations,
+    gettingStartedCmd: gettingStartedCmd,
+    whatsNewCmd: whatsNewCmd,
+    helpFeedbackCmd: helpFeedbackCmd,
+  );
+}
+
+StaticCommandGroup settingsCommands({
+  bool hasOrganizations = false,
+  Command? gettingStartedCmd,
+  Command? whatsNewCmd,
+  Command? helpFeedbackCmd,
+}) =>
     StaticCommandGroup(
       title: 'App',
       shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
       commands: [
+        if (gettingStartedCmd != null) gettingStartedCmd,
         ManageConnections(),
         ManageTwists(),
         if (hasOrganizations) ManageOrganizations(),
@@ -52,6 +97,9 @@ StaticCommandGroup settingsCommands({bool hasOrganizations = false}) =>
         ChangeAiPreference(),
         // Only show Enter Behavior setting on devices with physical keyboards
         if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
+        if (whatsNewCmd != null) whatsNewCmd,
+        if (helpFeedbackCmd != null) helpFeedbackCmd,
+        FullResync(),
         CopyVersion(),
         SignOut(),
       ],
@@ -68,10 +116,9 @@ class ShowSettings extends ShowCommands {
         title: 'Settings',
         icon: PlotIcon.settings,
         commandsBuilder: (context) async {
-          final priorities = context.read<PrioritiesBloc>().state.priorities;
-          final hasOrgs = priorities.any((p) => p.organizationId != null);
+          final prioritiesState = context.read<PrioritiesBloc>().state;
           return Commands(
-            groups: [settingsCommands(hasOrganizations: hasOrgs)],
+            groups: [settingsCommandsFromState(prioritiesState)],
             prompt: 'Settings',
           );
         },
@@ -163,7 +210,7 @@ class ChangeEnterBehavior extends Command {
 class SignOut extends Command {
   SignOut()
     : super(
-        title: 'Sign Out',
+        title: 'Sign out',
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,
         icon: PlotIcon.signOut,

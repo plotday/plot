@@ -13,6 +13,7 @@ import twistIntegrations from "./app/twist-integrations";
 import { authMiddleware as appAuthMiddleware } from "./app/auth";
 import authRoutes from "./app/authRoutes";
 import callbacks from "./app/callbacks";
+import connections from "./app/connections";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import files from "./app/files";
 import subscribe from "./app/subscribe";
@@ -154,6 +155,7 @@ appSection.route("/", summary);
 appSection.route("/", updates);
 appSection.route("/", files);
 appSection.route("/", subscribe);
+appSection.route("/", connections);
 appSection.route("/", organizationRoutes);
 // Note: /app/sync routes are mounted separately with appSyncRateLimiter.
 

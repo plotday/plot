@@ -261,6 +261,12 @@ class SyncOrchestrator {
     _pushCompleters[entity] = completer;
 
     try {
+      // Abort if the Store has been closed/removed during an async gap
+      if (!Store.isAvailable) {
+        completer.complete(false);
+        return false;
+      }
+
       // Ensure dependencies are pushed first
       for (final dep in entity.dependsOn) {
         _syncOrchestratorLog.fine(
@@ -268,6 +274,12 @@ class SyncOrchestrator {
         );
         // Recursively push each dependency (will use existing completer if already in progress)
         await push(dep);
+      }
+
+      // Re-check after awaiting dependencies — Store may have closed
+      if (!Store.isAvailable) {
+        completer.complete(false);
+        return false;
       }
 
       _syncOrchestratorLog.fine('Pushing ${entity.debugName}');
@@ -318,6 +330,9 @@ class SyncOrchestrator {
     _pullCompleters[entity] = completer;
 
     try {
+      // Abort if the Store has been closed/removed during an async gap
+      if (!Store.isAvailable) return;
+
       _syncOrchestratorLog.fine('Pulling ${entity.debugName}');
       await entity.pullFn();
       _syncOrchestratorLog.fine('Pulled ${entity.debugName}');

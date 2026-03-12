@@ -82,6 +82,10 @@
         {
           "binding": "TWIST_CONFIG",
           "id": "c169930baecb4bd58c7edc727022a15e"
+        },
+        {
+          "binding": "VOTES",
+          "id": "2ed0dab96df24f8184ce353b4ad39d91"
         }
       ],
       "ratelimits": [
@@ -248,7 +252,7 @@
         }
       ],
       "triggers": {
-        "crons": ["* * * * *"]
+        "crons": ["*/5 * * * *"]
       }
     },
     "production": {
@@ -274,6 +278,10 @@
         {
           "binding": "TWIST_CONFIG",
           "id": "c413b23bb866493da4ee0596ade8b1e2"
+        },
+        {
+          "binding": "VOTES",
+          "id": "2ed0dab96df24f8184ce353b4ad39d91"
         }
       ],
       "ratelimits": [
@@ -433,7 +441,7 @@
         }
       ],
       "triggers": {
-        "crons": ["* * * * *"]
+        "crons": ["*/5 * * * *"]
       }
     }
   },

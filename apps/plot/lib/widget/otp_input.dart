@@ -196,6 +196,7 @@ class _OtpInputState extends State<OtpInput> {
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
                     autocorrect: false,
+                    autofillHints: index == 0 ? const [AutofillHints.oneTimeCode] : const [],
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
                       _OtpTextInputFormatter(),

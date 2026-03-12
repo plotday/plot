@@ -8,8 +8,8 @@ import type { ThreadTagChange, Bindings, TwistBatchMessage } from "../env";
 import { createLogger } from "@plotday/worker-util";
 
 // Debouncing configuration (compile-time constants)
-const MIN_WAIT_MS = 100; // Minimum time to wait before processing
-const MIN_INTERVAL_MS = 100; // Minimum gap between queue messages
+const MIN_WAIT_MS = 500; // Minimum time to wait before processing (allows better batching)
+const MIN_INTERVAL_MS = 500; // Minimum gap between queue messages
 const MAX_JITTER_MS = 2000; // Random jitter to stagger concurrent alarms across DOs
 const MAX_ITEMS_PER_BATCH = 12; // Maximum items per batch in queue messages
 const MAX_BATCH_BYTES = 120_000; // Maximum batch size in bytes (128KB limit minus 8KB headroom)

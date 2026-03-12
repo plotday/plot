@@ -634,10 +634,7 @@ class _PriorityPageState extends State<PriorityPage> {
           previous.context.id != current.context.id ||
           (previous.targetPriority != null && current.targetPriority == null),
       builder: (context, state) {
-        return (state.agendaItems.isEmpty &&
-                !(state.doneStart && state.doneEnd))
-            ? const Center(child: Spinner())
-            : BlocBuilder<LayoutBloc, LayoutState>(
+        return BlocBuilder<LayoutBloc, LayoutState>(
                 builder: (context, layoutState) {
                   // Auto-switch to activity tab when agenda is empty
                   // in single panel mode, unless user explicitly tapped Agenda.

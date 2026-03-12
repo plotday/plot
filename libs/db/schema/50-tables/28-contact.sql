@@ -3,7 +3,7 @@ CREATE TABLE "public"."contact" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "archived_at" timestamp with time zone,
-    "email" text NOT NULL CHECK (email = lower(email)),
+    "email" text CHECK (email IS NULL OR email = lower(email)),
     "name" text,
     "avatar_url" text,
     "user_id" uuid REFERENCES "public"."user" ("id") ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,

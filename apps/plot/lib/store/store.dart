@@ -1703,6 +1703,7 @@ class Store extends _$Store {
       await _subscribeToUpdates();
 
       await _syncAll();
+      if (_closing) return;
 
       // Process any messages received during sync
       _isBufferingBroadcasts = false;
