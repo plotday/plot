@@ -38,7 +38,8 @@ export class Tasks extends Tool implements IRun {
   private priorityTwistId: string;
   private twistId: string;
   private environment: TwistEnvironment;
-  private path: string[]; // path to the tool within the twist
+  private path: string[]; // path to the parent tool
+  private selfPath: string[]; // full path including this tool
   private queue: Queue<RunMessage>;
 
   private static GetStub(
@@ -62,6 +63,7 @@ export class Tasks extends Tool implements IRun {
     this.priorityTwistId = options.priorityTwistId;
     this.twistId = options.twistId;
     this.environment = options.environment;
+    this.selfPath = options.path;
     // remove final element, which is the ID of this tool
     this.path = options.path.slice(0, -1);
     this.queue = options.queue;
@@ -75,7 +77,7 @@ export class Tasks extends Tool implements IRun {
       // Schedule for later execution
       return await this.callbacks.create({
         priorityTwistId: this.priorityTwistId,
-        path: this.path,
+        path: this.selfPath,
         functionName: "scheduledSend",
         extraArgs: [callback],
         callAt: options.runAt,
@@ -93,7 +95,7 @@ export class Tasks extends Tool implements IRun {
   async cancelAllTasks(): Promise<void> {
     await this.callbacks.deleteAll({
       priorityTwistId: this.priorityTwistId,
-      path: this.path,
+      path: this.selfPath,
     });
   }
 
