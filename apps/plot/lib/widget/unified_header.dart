@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
@@ -21,6 +22,24 @@ import 'package:plot/widget/priority_selector.dart';
 import 'button.dart';
 import 'icon.dart';
 import 'window.dart';
+
+Future<bool> _checkPendingItems(ThreadId threadId) async {
+  final actorId = Base.actorId;
+
+  final notes = await Note.getForThread(threadId);
+  if (notes.any((n) => n.hasTag(Tag.todo, actorId))) return true;
+
+  final links = await Link.getForThread(threadId);
+  for (final link in links) {
+    if (link.assigneeId != null && link.assigneeId != actorId) continue;
+    final doneStatuses =
+        link.getTypeConfig()?.statuses?.where((s) => s.done) ?? [];
+    if (doneStatuses.isEmpty) continue;
+    if (!doneStatuses.any((s) => s.status == link.status)) return true;
+  }
+
+  return false;
+}
 
 /// A single header spanning the full window width, placed above all panels.
 class UnifiedHeader extends StatefulWidget {
@@ -434,36 +453,57 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     );
   }
 
-  /// Builds the todo toggle button matching ThreadWidget's leading icon behavior.
+  /// Builds the calendar + todo state toggle buttons matching ThreadWidget's
+  /// leading icon behavior.
   Widget _buildTodoToggle(BuildContext context, Thread thread) {
     final threadColor = context.colour.colours.fromTheme(
       thread.priority.displayColor,
     );
     final isTodo = thread.todo;
+    final isScheduled = isTodo && thread.isFuture;
 
-    final Command command;
-    if (!isTodo) {
-      command = CommandWrapper(
-        ThreadToDo(thread),
-        icon: Value(PlotIcon.addTodo),
-      );
-    } else if (thread.isFuture) {
-      command = CommandWrapper(
-        ThreadDone(thread),
+    // Icon 1: Calendar scheduling icon
+    final calendarIcon = Button.icon(
+      CommandWrapper(
+        PickScheduleThread(thread),
         icon: Value(PlotIcon.schedule),
+        title: 'Schedule',
+      ),
+      selected: isScheduled,
+      selectedColor: threadColor,
+      color: isScheduled ? null : context.theme.plotColors.veryMuted,
+    );
+
+    // Icon 2: To-do state icon
+    final Widget todoIcon;
+    if (!isTodo) {
+      todoIcon = Button.icon(
+        CommandWrapper(ThreadToDo(thread), icon: Value(PlotIcon.addTodo)),
+        color: context.theme.plotColors.muted,
       );
     } else {
-      command = CommandWrapper(
-        ThreadDone(thread),
-        icon: Value(PlotIcon.todo),
+      todoIcon = FutureBuilder<bool>(
+        future: _checkPendingItems(thread.id),
+        builder: (context, snapshot) {
+          final hasPending = snapshot.data ?? false;
+          return Button.icon(
+            CommandWrapper(
+              ThreadDone(thread),
+              icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
+              hoverIcon: hasPending
+                  ? Value(FontAwesomeIcons.circleCheck)
+                  : const Value<IconData?>.absent(),
+            ),
+            selected: true,
+            selectedColor: threadColor,
+          );
+        },
       );
     }
 
-    return Button.icon(
-      command,
-      selected: isTodo,
-      selectedColor: threadColor,
-      color: isTodo ? null : context.theme.plotColors.veryMuted,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [calendarIcon, todoIcon],
     );
   }
 

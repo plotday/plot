@@ -13,6 +13,26 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+Future<bool> _checkPendingItems(ThreadId threadId) async {
+  final actorId = Base.actorId;
+
+  // Check for notes assigned to current user
+  final notes = await Note.getForThread(threadId);
+  if (notes.any((n) => n.hasTag(Tag.todo, actorId))) return true;
+
+  // Check for links assigned to user or unassigned, not already done
+  final links = await Link.getForThread(threadId);
+  for (final link in links) {
+    if (link.assigneeId != null && link.assigneeId != actorId) continue;
+    final doneStatuses =
+        link.getTypeConfig()?.statuses?.where((s) => s.done) ?? [];
+    if (doneStatuses.isEmpty) continue;
+    if (!doneStatuses.any((s) => s.status == link.status)) return true;
+  }
+
+  return false;
+}
+
 class ThreadWidget extends StatelessWidget {
   const ThreadWidget({
     required this.activity,
@@ -130,34 +150,62 @@ class ThreadWidget extends StatelessWidget {
       highlightColor: buildContext.colour.editableBackground,
       selectedColor: selectedBg,
       leadingBuilder: (isHovered, hasFocus) {
-        final Command leadingCommand;
         final bool isTodo = activity.todo;
+        final bool isScheduled = isTodo && activity.isFuture;
 
-        if (!isTodo) {
-          // Not todo: muted outline star, foreground on hover
-          leadingCommand = CommandWrapper(
-            ThreadToDo(activity),
-            icon: Value(PlotIcon.addTodo),
-            title: 'Add to do',
-          );
-        } else if (activity.isFuture) {
-          // Todo scheduled later: alarm clock in primary
-          final schedDateTime =
-              activity.on?.start?.toDateTime() ?? activity.at?.start;
-          final schedLabel = schedDateTime != null
-              ? 'Scheduled for ${formatRelativeSchedule(schedDateTime, buildContext)}'
-              : 'Scheduled';
-          leadingCommand = CommandWrapper(
+        // Icon 1: Calendar scheduling icon
+        final schedDateTime =
+            activity.on?.start?.toDateTime() ?? activity.at?.start;
+        final schedLabel = isScheduled && schedDateTime != null
+            ? 'Scheduled for ${formatRelativeSchedule(schedDateTime, buildContext)}'
+            : 'Schedule';
+        final calendarIcon = Button.icon(
+          CommandWrapper(
             PickScheduleThread(activity),
             icon: Value(PlotIcon.schedule),
             title: schedLabel,
+          ),
+          selected: isScheduled,
+          selectedColor: threadColor,
+          color: isScheduled
+              ? null
+              : buildContext.theme.plotColors.veryMuted,
+          forceHover: isHovered,
+        );
+
+        // Icon 2: To-do state icon
+        final Widget todoIcon;
+        if (!isTodo) {
+          todoIcon = Button.icon(
+            CommandWrapper(
+              ThreadToDo(activity),
+              icon: Value(PlotIcon.addTodo),
+              title: 'Add to do',
+            ),
+            color: buildContext.theme.plotColors.muted,
+            forceHover: isHovered,
           );
         } else {
-          // Todo now: filled star in primary
-          leadingCommand = CommandWrapper(
-            ThreadDone(activity, bump: bump),
-            icon: Value(PlotIcon.todo),
-            title: 'To do (remove)',
+          todoIcon = FutureBuilder<bool>(
+            future: _checkPendingItems(activity.id),
+            builder: (context, snapshot) {
+              final hasPending = snapshot.data ?? false;
+              return Button.icon(
+                CommandWrapper(
+                  ThreadDone(activity, bump: bump),
+                  icon: Value(
+                    hasPending ? FontAwesomeIcons.circle : PlotIcon.todo,
+                  ),
+                  hoverIcon: hasPending
+                      ? Value(FontAwesomeIcons.circleCheck)
+                      : const Value<IconData?>.absent(),
+                  title: 'Done',
+                ),
+                selected: true,
+                selectedColor: threadColor,
+                forceHover: isHovered,
+              );
+            },
           );
         }
 
@@ -177,17 +225,15 @@ class ThreadWidget extends StatelessWidget {
               padding: EdgeInsets.only(
                 top: buildContext.theme.spacing.sm + labelOffset,
                 bottom: buildContext.theme.spacing.sm,
-                // Subtract FButton.icon's internal padding (7.5) so the
-                // visual icon edge aligns with the header text at xl.
                 left: buildContext.theme.spacing.xl - 7.5,
                 right: buildContext.theme.spacing.sm,
               ),
-              child: Button.icon(
-                leadingCommand,
-                selected: isTodo,
-                selectedColor: threadColor,
-                color: isTodo ? null : buildContext.theme.plotColors.veryMuted,
-                forceHover: isHovered,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  calendarIcon,
+                  todoIcon,
+                ],
               ),
             ),
           ],

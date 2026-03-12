@@ -676,7 +676,118 @@ class ThreadDone extends _UpdateThreadCommand {
     context.read<PriorityBloc?>()?.optimisticallyRemoveThread(thread.id);
     HapticFeedback.mediumImpact();
     await onUpdate(thread.copyWith(todo: false, bump: bump));
+
+    // Complete notes assigned to current user
+    final actorId = Base.actorId;
+    final notes = await Note.getForThread(thread.id);
+    for (final note in notes) {
+      if (note.hasTag(Tag.todo, actorId)) {
+        await note.completeFor(actorId).save();
+      }
+    }
+
+    // Set done status on links assigned to user or unassigned
+    if (context.mounted) {
+      await _setLinkDoneStatusForUser(context, thread.id, actorId);
+    }
+
     return const CommandDone();
+  }
+
+  static Future<void> _setLinkDoneStatusForUser(
+    BuildContext context,
+    ThreadId threadId,
+    ActorId actorId,
+  ) async {
+    final links = await Link.getForThread(threadId);
+
+    // Block if any link belongs to an unconnected source
+    for (final link in links) {
+      final ptId = link.createdBy;
+      if (ptId != null) {
+        final pt = PriorityTwist.fromCache(ptId);
+        if (pt != null && pt.isSource && !pt.userConnected) {
+          if (context.mounted) {
+            context.showToast(
+              message: 'Connect your ${pt.name} account',
+              isError: true,
+            );
+          }
+          return;
+        }
+      }
+    }
+
+    // Collect links that have done statuses, aren't already done,
+    // and are assigned to the current user or unassigned
+    final linksWithDoneStatuses = <(Link, List<LinkStatus>)>[];
+    for (final link in links) {
+      // Skip links assigned to other users
+      if (link.assigneeId != null && link.assigneeId != actorId) continue;
+
+      final typeConfig = link.getTypeConfig();
+      final statuses = typeConfig?.statuses;
+      if (statuses == null) continue;
+
+      final doneStatuses = statuses.where((LinkStatus s) => s.done).toList();
+      if (doneStatuses.isEmpty) continue;
+
+      // Skip if link is already at a done status
+      if (doneStatuses.any((LinkStatus s) => s.status == link.status)) continue;
+
+      linksWithDoneStatuses.add((link, doneStatuses));
+    }
+
+    if (linksWithDoneStatuses.isEmpty) return;
+
+    // Collect all unique done statuses across all links
+    final allDoneStatuses = linksWithDoneStatuses
+        .expand((e) => e.$2.map((s) => (e.$1, s)))
+        .toList();
+
+    if (allDoneStatuses.length == 1) {
+      // Single done status across all links - auto set
+      final (link, status) = allDoneStatuses.first;
+      await Link.updateStatus(link, status.status);
+    } else {
+      // Multiple done statuses - handle per link
+      for (final (link, doneStatuses) in linksWithDoneStatuses) {
+        if (!context.mounted) return;
+        if (doneStatuses.length == 1) {
+          await Link.updateStatus(link, doneStatuses.first.status);
+        } else {
+          // Show picker for links with multiple done statuses
+          final result = await SelectModal.open<String>(
+            context,
+            items: (search) async => [
+              SelectGroup(items: doneStatuses.map((s) => s.status).toList()),
+            ],
+            itemBuilder: (status, _) {
+              final s = doneStatuses.firstWhere((ls) => ls.status == status);
+              return ListTile(
+                title: s.label,
+                leadingBuilder: (isHovered, hasFocus) => Padding(
+                  padding: const EdgeInsets.only(left: 16, right: 8),
+                  child: s.status == link.status
+                      ? Icon(
+                          PlotIcon.done,
+                          size: 14,
+                          color: context.theme.colors.primary,
+                        )
+                      : const SizedBox(width: 14),
+                ),
+                disableInternalHover: true,
+              );
+            },
+            selectedValue: link.status,
+            prompt: 'Set status for ${link.title ?? "link"}',
+          );
+          if (result.present) {
+            await Link.updateStatus(link, result.value);
+          }
+        }
+      }
+    }
   }
 }
 
@@ -877,14 +988,21 @@ class PickScheduleThread extends Command {
                   child: FButton(
                     style: FButtonStyle.secondary(),
                     onPress: () async {
-                      final actionReturn = await ToggleThreadToDo(
+                      final actionReturn = await ThreadDone(
                         _thread,
                         onUpdate: _onUpdate,
                       ).run(context);
                       if (!context.mounted) return;
                       Modal.pop(context, Value(actionReturn));
                     },
-                    child: const Text('Unschedule'),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      spacing: 6,
+                      children: [
+                        Icon(FontAwesomeIcons.circleCheck, size: 14),
+                        const Text('Done'),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -912,124 +1030,8 @@ class ToggleThreadTag extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final isAdding = !thread.hasTag(tag);
-    var updatedThread = thread.toggleTag(tag);
-    // When adding Tag.done and the user has the thread as to-do, also mark personal to-do as done
-    if (tag == Tag.done && isAdding && thread.todo) {
-      updatedThread = updatedThread.copyWith(todo: false);
-    }
-    await saveOptimistically(context, updatedThread);
-
-    // When adding Tag.done, also complete self-assigned note tasks and set link statuses
-    if (tag == Tag.done && isAdding) {
-      final actorId = Base.actorId;
-
-      // Complete notes assigned to current user
-      final notes = await Note.getForThread(thread.id);
-      for (final note in notes) {
-        if (note.hasTag(Tag.todo, actorId)) {
-          await note.completeFor(actorId).save();
-        }
-      }
-
-      // Set done status on links
-      if (context.mounted) {
-        await _setLinkDoneStatus(context, thread.id);
-      }
-    }
-
+    await saveOptimistically(context, thread.toggleTag(tag));
     return const CommandDone();
-  }
-
-  static Future<void> _setLinkDoneStatus(
-    BuildContext context,
-    ThreadId threadId,
-  ) async {
-    final links = await Link.getForThread(threadId);
-
-    // Block if any link belongs to an unconnected source
-    for (final link in links) {
-      final ptId = link.createdBy;
-      if (ptId != null) {
-        final pt = PriorityTwist.fromCache(ptId);
-        if (pt != null && pt.isSource && !pt.userConnected) {
-          if (context.mounted) {
-            context.showToast(
-              message: 'Connect your ${pt.name} account',
-              isError: true,
-            );
-          }
-          return;
-        }
-      }
-    }
-
-    // Collect links that have done statuses and aren't already done
-    final linksWithDoneStatuses = <(Link, List<LinkStatus>)>[];
-    for (final link in links) {
-      final typeConfig = link.getTypeConfig();
-      final statuses = typeConfig?.statuses;
-      if (statuses == null) continue;
-
-      final doneStatuses = statuses.where((LinkStatus s) => s.done).toList();
-      if (doneStatuses.isEmpty) continue;
-
-      // Skip if link is already at a done status
-      if (doneStatuses.any((LinkStatus s) => s.status == link.status)) continue;
-
-      linksWithDoneStatuses.add((link, doneStatuses));
-    }
-
-    if (linksWithDoneStatuses.isEmpty) return;
-
-    // Collect all unique done statuses across all links
-    final allDoneStatuses = linksWithDoneStatuses
-        .expand((e) => e.$2.map((s) => (e.$1, s)))
-        .toList();
-
-    if (allDoneStatuses.length == 1) {
-      // Single done status across all links - auto set
-      final (link, status) = allDoneStatuses.first;
-      await Link.updateStatus(link, status.status);
-    } else {
-      // Multiple done statuses - handle per link
-      for (final (link, doneStatuses) in linksWithDoneStatuses) {
-        if (!context.mounted) return;
-        if (doneStatuses.length == 1) {
-          await Link.updateStatus(link, doneStatuses.first.status);
-        } else {
-          // Show picker for links with multiple done statuses
-          final result = await SelectModal.open<String>(
-            context,
-            items: (search) async => [
-              SelectGroup(items: doneStatuses.map((s) => s.status).toList()),
-            ],
-            itemBuilder: (status, _) {
-              final s = doneStatuses.firstWhere((ls) => ls.status == status);
-              return ListTile(
-                title: s.label,
-                leadingBuilder: (isHovered, hasFocus) => Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 8),
-                  child: s.status == link.status
-                      ? Icon(
-                          PlotIcon.done,
-                          size: 14,
-                          color: context.theme.colors.primary,
-                        )
-                      : const SizedBox(width: 14),
-                ),
-                disableInternalHover: true,
-              );
-            },
-            selectedValue: link.status,
-            prompt: 'Set status for ${link.title ?? "link"}',
-          );
-          if (result.present) {
-            await Link.updateStatus(link, result.value);
-          }
-        }
-      }
-    }
   }
 }
 
@@ -1677,20 +1679,11 @@ List<Command> topThreadTags(Thread thread, List<Tag> tagSuggestions) {
   final maxToShow = 3 - activeNonHardcodedCount;
   if (maxToShow <= 0) return [];
 
-  // Always lead with done tag if not already on thread
-  final commands = <Command>[];
-  if (!thread.hasTag(Tag.done)) {
-    commands.add(ToggleThreadTag(thread, Tag.done));
-  }
-
-  commands.addAll(
-    tagSuggestions
-        .where((tag) => !thread.hasTag(tag) && tag != Tag.done)
-        .take(maxToShow - commands.length)
-        .map((tag) => ToggleThreadTag(thread, tag)),
-  );
-
-  return commands.take(maxToShow).toList();
+  return tagSuggestions
+      .where((tag) => !thread.hasTag(tag))
+      .take(maxToShow)
+      .map((tag) => ToggleThreadTag(thread, tag))
+      .toList();
 }
 
 /// Returns the primary command for a thread based on its current schedule state.
