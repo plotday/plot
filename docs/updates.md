@@ -1,3 +1,4 @@
+- Bring your own AI keys — add your own OpenAI, Anthropic, or Google API keys in Settings for twist AI features, scoped to your account or your organization
 - Better author attribution on synced items — threads from Linear, GitHub, Jira, Asana, and Slack now show the correct person even when their email isn't available
 - Browse 65+ upcoming connections and vote for the ones you want — open Manage connections to see what's coming and get notified when they launch
 - Completed items from Linear, Jira, Asana, and GitHub now show a Done tag on their threads, with a tag icon on the link status badge

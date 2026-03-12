@@ -25,7 +25,13 @@ SELECT
             jsonb_array_elements(p -> 'linkTypes') AS lt
     ) AS link_types,
     COALESCE((t.permissions ->> '_default_mention_created')::boolean, false) AS default_mention_created,
-    COALESCE((t.permissions ->> '_default_mention_mentioned')::boolean, false) AS default_mention_mentioned
+    COALESCE((t.permissions ->> '_default_mention_mentioned')::boolean, false) AS default_mention_mentioned,
+    EXISTS (
+        SELECT 1
+        FROM priority_twist_connection ptc
+        WHERE ptc.priority_twist_id = pt.id
+          AND ptc.user_id = upe.user_id
+    ) AS user_connected
 FROM
     priority_twist pt
     JOIN "user".priority_expanded upe ON upe.priority_id = pt.priority_id
@@ -57,7 +63,13 @@ SELECT
             jsonb_array_elements(p -> 'linkTypes') AS lt
     ) AS link_types,
     COALESCE((t.permissions ->> '_default_mention_created')::boolean, false) AS default_mention_created,
-    COALESCE((t.permissions ->> '_default_mention_mentioned')::boolean, false) AS default_mention_mentioned
+    COALESCE((t.permissions ->> '_default_mention_mentioned')::boolean, false) AS default_mention_mentioned,
+    EXISTS (
+        SELECT 1
+        FROM priority_twist_connection ptc
+        WHERE ptc.priority_twist_id = pt.id
+          AND ptc.user_id = pt.owner_id
+    ) AS user_connected
 FROM
     priority_twist pt
     JOIN twist t ON pt.twist_id = t.id

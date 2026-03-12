@@ -6,6 +6,8 @@
 import type { ColumnType } from "kysely";
 import type { IPostgresInterval } from "postgres-interval";
 
+export type AiProvider = "anthropic" | "google" | "openai";
+
 export type ArrayType<T> = ArrayTypeImpl<T> extends (infer U)[]
   ? U[]
   : ArrayTypeImpl<T>;
@@ -59,6 +61,18 @@ export interface Actor {
   name: string | null;
   type: string | null;
   updated_at: Timestamp | null;
+}
+
+export interface AiKey {
+  created_at: Generated<Timestamp>;
+  encrypted_key: string;
+  id: Generated<Int8>;
+  iv: string;
+  key_suffix: string;
+  organization_id: Int8 | null;
+  provider: AiProvider;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
 }
 
 export interface AtlasSchemaRevisionsAtlasSchemaRevisions {
@@ -613,6 +627,14 @@ export interface PriorityTwistChild {
   archived_at: Timestamp | null;
   priority_id: string | null;
   priority_twist_id: string | null;
+}
+
+export interface PriorityTwistConnection {
+  actor_id: string;
+  connected_at: Generated<Timestamp>;
+  priority_twist_id: string;
+  provider: string;
+  user_id: string;
 }
 
 export interface PriorityTwistLinkUpdate {
@@ -1230,11 +1252,13 @@ export interface UserTwist {
   twist_environment: TwistEnvironment | null;
   twist_id: Int8 | null;
   updated_at: Timestamp | null;
+  user_connected: boolean | null;
   user_id: string | null;
 }
 
 export interface DB {
   actor: Actor;
+  ai_key: AiKey;
   "atlas_schema_revisions.atlas_schema_revisions": AtlasSchemaRevisionsAtlasSchemaRevisions;
   contact: Contact;
   contact_external_account: ContactExternalAccount;
@@ -1269,6 +1293,7 @@ export interface DB {
   priority_twist_channel_link_update: PriorityTwistChannelLinkUpdate;
   priority_twist_channel_note_create: PriorityTwistChannelNoteCreate;
   priority_twist_child: PriorityTwistChild;
+  priority_twist_connection: PriorityTwistConnection;
   priority_twist_link_update: PriorityTwistLinkUpdate;
   priority_twist_note_create: PriorityTwistNoteCreate;
   priority_twist_note_update: PriorityTwistNoteUpdate;

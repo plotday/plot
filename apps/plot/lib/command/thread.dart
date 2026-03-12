@@ -86,12 +86,12 @@ class ChangeCurrentThread extends ThreadCommand {
     priorityBloc.setThread(thread, source: source);
 
     // Prefer middle panel on resize when a thread is open
-    print('[ChangeCurrentThread] setting preferMiddle=${thread != null}');
     layoutBloc.preferMiddle = thread != null;
 
     // Auto-slide panels when exactly one sidebar is visible
     final layoutState = layoutBloc.state;
-    final exactlyTwoPanels = layoutState.multiPanel &&
+    final exactlyTwoPanels =
+        layoutState.multiPanel &&
         (layoutState.leftPanelVisible != layoutState.middlePanelVisible);
     if (exactlyTwoPanels) {
       if (thread != null && !hadThread) {
@@ -157,12 +157,12 @@ class NewThread extends Command {
 
     // Prefer middle panel on resize when new thread is open
     final layoutBloc = context.read<LayoutBloc>();
-    print('[NewThread] setting preferMiddle=true');
     layoutBloc.preferMiddle = true;
 
     // Auto-slide panels when exactly one sidebar is visible
     final layoutState = layoutBloc.state;
-    final exactlyTwoPanels = layoutState.multiPanel &&
+    final exactlyTwoPanels =
+        layoutState.multiPanel &&
         (layoutState.leftPanelVisible != layoutState.middlePanelVisible);
     if (exactlyTwoPanels) {
       layoutBloc.setPanelVisibility(left: false, middle: true);
@@ -947,6 +947,23 @@ class ToggleThreadTag extends _UpdateThreadCommand {
   ) async {
     final links = await Link.getForThread(threadId);
 
+    // Block if any link belongs to an unconnected source
+    for (final link in links) {
+      final ptId = link.createdBy;
+      if (ptId != null) {
+        final pt = PriorityTwist.fromCache(ptId);
+        if (pt != null && pt.isSource && !pt.userConnected) {
+          if (context.mounted) {
+            context.showToast(
+              message: 'Connect your ${pt.name} account',
+              isError: true,
+            );
+          }
+          return;
+        }
+      }
+    }
+
     // Collect links that have done statuses and aren't already done
     final linksWithDoneStatuses = <(Link, List<LinkStatus>)>[];
     for (final link in links) {
@@ -994,7 +1011,11 @@ class ToggleThreadTag extends _UpdateThreadCommand {
                 leadingBuilder: (isHovered, hasFocus) => Padding(
                   padding: const EdgeInsets.only(left: 16, right: 8),
                   child: s.status == link.status
-                      ? Icon(PlotIcon.done, size: 14, color: context.theme.colors.primary)
+                      ? Icon(
+                          PlotIcon.done,
+                          size: 14,
+                          color: context.theme.colors.primary,
+                        )
                       : const SizedBox(width: 14),
                 ),
                 disableInternalHover: true,
@@ -1618,9 +1639,7 @@ List<Command> threadCommands(
 }) {
   // Viewers can only open threads, not modify them
   if (thread.priority.isViewer) {
-    return [
-      if (open) ChangeCurrentThread(thread),
-    ];
+    return [if (open) ChangeCurrentThread(thread)];
   }
 
   final primary = skipPrimary

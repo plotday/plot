@@ -858,6 +858,38 @@ export class Integrations extends Tool implements IAuth {
     };
     await this.store.set(tokenKey, token);
 
+    // Record user connection for per-user connection tracking
+    const contact = await this.db
+      .selectFrom("contact")
+      .select("user_id")
+      .where("id", "=", actor.id)
+      .executeTakeFirst();
+    if (contact?.user_id) {
+      try {
+        await this.db
+          .insertInto("priority_twist_connection")
+          .values({
+            priority_twist_id: this.priorityTwistId,
+            user_id: contact.user_id,
+            provider: tokenInfo.provider,
+            actor_id: actor.id,
+            connected_at: new Date().toISOString(),
+          })
+          .onConflict((oc) =>
+            oc
+              .columns(["priority_twist_id", "user_id", "provider"])
+              .doUpdateSet({
+                actor_id: actor.id,
+                connected_at: new Date().toISOString(),
+              })
+          )
+          .execute();
+      } catch (error) {
+        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        logger.error("Failed to record priority_twist_connection", error as Error);
+      }
+    }
+
     // Create Authorization object
     const authorization: Authorization = {
       provider: tokenInfo.provider,
@@ -1016,6 +1048,19 @@ export class Integrations extends Tool implements IAuth {
     // Delete auth token and channel access
     await this.store.clear(tokenKey);
     await this.store.clear(`channel_access:${provider}:${actorId}`);
+
+    // Remove user connection record
+    try {
+      await this.db
+        .deleteFrom("priority_twist_connection")
+        .where("priority_twist_id", "=", this.priorityTwistId)
+        .where("actor_id", "=", actorId)
+        .where("provider", "=", provider)
+        .execute();
+    } catch (error) {
+      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      logger.error("Failed to remove priority_twist_connection", error as Error);
+    }
     // Clean up old key if it exists
     await this.store.clear(`syncable_access:${provider}:${actorId}`);
 

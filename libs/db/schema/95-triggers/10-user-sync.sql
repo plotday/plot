@@ -154,6 +154,19 @@ CREATE TRIGGER user_sync_source_channel_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_source_channel();
 
+-- User sync triggers for priority_twist_connection table
+CREATE TRIGGER user_sync_priority_twist_connection_insert
+  AFTER INSERT ON priority_twist_connection
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_priority_twist_connection();
+
+CREATE TRIGGER user_sync_priority_twist_connection_delete
+  AFTER DELETE ON priority_twist_connection
+  REFERENCING OLD TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_priority_twist_connection();
+
 -- User sync triggers for link table
 CREATE TRIGGER user_sync_link_insert
   AFTER INSERT ON link

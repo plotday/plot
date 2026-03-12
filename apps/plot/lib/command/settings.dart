@@ -40,11 +40,16 @@ final appearanceCommands = StaticCommandGroup(
 );
 
 /// Build the App settings command group from [PrioritiesState].
+///
+/// Accepts optional [adminOrgs] list (fetched from the API) to include
+/// per-org AI preference commands for organizations the user administers.
 StaticCommandGroup settingsCommandsFromState(
   PrioritiesState? prioritiesState, {
   bool showAllPriorities = false,
+  List<Map<String, dynamic>> adminOrgs = const [],
 }) {
-  final hasOrganizations = prioritiesState != null &&
+  final hasOrganizations =
+      prioritiesState != null &&
       prioritiesState.priorities.any((p) => p.organizationId != null);
 
   Command? gettingStartedCmd;
@@ -75,6 +80,7 @@ StaticCommandGroup settingsCommandsFromState(
     gettingStartedCmd: gettingStartedCmd,
     whatsNewCmd: whatsNewCmd,
     helpFeedbackCmd: helpFeedbackCmd,
+    adminOrgs: adminOrgs,
   );
 }
 
@@ -83,27 +89,32 @@ StaticCommandGroup settingsCommands({
   Command? gettingStartedCmd,
   Command? whatsNewCmd,
   Command? helpFeedbackCmd,
-}) =>
-    StaticCommandGroup(
-      title: 'App',
-      shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
-      commands: [
-        if (gettingStartedCmd != null) gettingStartedCmd,
-        ManageConnections(),
-        ManageTwists(),
-        if (hasOrganizations) ManageOrganizations(),
-        CopyPageLink(), OpenCopiedPageLink(),
-        ChangeAppearance(),
-        ChangeAiPreference(),
-        // Only show Enter Behavior setting on devices with physical keyboards
-        if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
-        if (whatsNewCmd != null) whatsNewCmd,
-        if (helpFeedbackCmd != null) helpFeedbackCmd,
-        FullResync(),
-        CopyVersion(),
-        SignOut(),
-      ],
-    );
+  List<Map<String, dynamic>> adminOrgs = const [],
+}) => StaticCommandGroup(
+  title: 'App',
+  shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
+  commands: [
+    if (gettingStartedCmd != null) gettingStartedCmd,
+    ManageConnections(),
+    ManageTwists(),
+    if (hasOrganizations) ManageOrganizations(),
+    CopyPageLink(), OpenCopiedPageLink(),
+    ChangeAppearance(),
+    ChangeAiPreference(),
+    for (final org in adminOrgs)
+      OrgAiPreferences(
+        orgId: org['id'] as String,
+        orgName: org['name'] as String,
+      ),
+    // Only show Enter Behavior setting on devices with physical keyboards
+    if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
+    if (whatsNewCmd != null) whatsNewCmd,
+    if (helpFeedbackCmd != null) helpFeedbackCmd,
+    FullResync(),
+    CopyVersion(),
+    SignOut(),
+  ],
+);
 
 final signedOutSettingsCommands = StaticCommandGroup(
   title: 'App',
@@ -117,8 +128,23 @@ class ShowSettings extends ShowCommands {
         icon: PlotIcon.settings,
         commandsBuilder: (context) async {
           final prioritiesState = context.read<PrioritiesBloc>().state;
+
+          // Fetch orgs to find admin orgs for AI preferences
+          List<Map<String, dynamic>> adminOrgs = [];
+          try {
+            final orgs = await api.get<List<dynamic>>('/organization');
+            adminOrgs = orgs
+                .cast<Map<String, dynamic>>()
+                .where((o) => o['role'] == 'admin')
+                .toList();
+          } catch (_) {
+            // Non-critical — settings still work without org AI preferences
+          }
+
           return Commands(
-            groups: [settingsCommandsFromState(prioritiesState)],
+            groups: [
+              settingsCommandsFromState(prioritiesState, adminOrgs: adminOrgs),
+            ],
             prompt: 'Settings',
           );
         },
@@ -232,7 +258,8 @@ class ManageOrganizations extends Command {
   ManageOrganizations()
     : super(
         title: 'Manage organizations',
-        description: 'Manage members, domains, and billing for your organizations.',
+        description:
+            'Manage members, domains, and billing for your organizations.',
         icon: FontAwesomeIcons.building,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
@@ -248,7 +275,9 @@ class ManageOrganizations extends Command {
       }
 
       if (orgs.length == 1) {
-        final url = Uri.parse('${Env.appBaseUrl}/organization/${orgs[0]['id']}');
+        final url = Uri.parse(
+          '${Env.appBaseUrl}/organization/${orgs[0]['id']}',
+        );
         await launchUrl(url, mode: LaunchMode.externalApplication);
         return const CommandDone();
       }
@@ -268,12 +297,18 @@ class ManageOrganizations extends Command {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(org['name'] as String, style: context.theme.typography.base.copyWith(
-                fontWeight: FontWeight.w600,
-              )),
-              Text('${org['role']}', style: context.theme.typography.sm.copyWith(
-                color: context.theme.plotColors.muted,
-              )),
+              Text(
+                org['name'] as String,
+                style: context.theme.typography.base.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '${org['role']}',
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.plotColors.muted,
+                ),
+              ),
             ],
           ),
         ),
@@ -281,13 +316,18 @@ class ManageOrganizations extends Command {
       );
 
       if (context.mounted && selected.present) {
-        final url = Uri.parse('${Env.appBaseUrl}/organization/${selected.value['id']}');
+        final url = Uri.parse(
+          '${Env.appBaseUrl}/organization/${selected.value['id']}',
+        );
         await launchUrl(url, mode: LaunchMode.externalApplication);
       }
       return const CommandDone();
     } catch (e, t) {
       log.warning('Failed to open organization management', e, t);
-      return CommandMessage('Failed to open organization management', isError: true);
+      return CommandMessage(
+        'Failed to open organization management',
+        isError: true,
+      );
     }
   }
 }
@@ -410,18 +450,114 @@ class ChangeAiPreference extends ShowForm {
       },
     );
 
+    // Fetch existing BYOK keys to pre-populate placeholders
+    final existingSuffixes = <String, String>{};
+    try {
+      final keys = await api.get<List<dynamic>>('/ai-keys');
+      for (final k in keys.cast<Map<String, dynamic>>()) {
+        existingSuffixes[k['provider'] as String] = k['key_suffix'] as String;
+      }
+    } catch (_) {}
+
     return FormData(
       title: 'AI preferences',
       groups: [
+        StaticFormGroup(items: [toggle, warning]),
+        StaticFormGroup(
+          title: 'Your API keys',
+          subtitle: 'Your keys are used for AI in your personal priorities.',
+          items: _buildByokFields(existingSuffixes),
+        ),
         StaticFormGroup(
           items: [
-            toggle,
-            warning,
             FormButton(
               key: 'save',
               buildCommand: (values) => _SaveAiPreference(
                 aiEnabled: values['aiEnabled'] as bool,
                 previousValue: currentValue,
+                openaiKey: values['openai'] as String?,
+                anthropicKey: values['anthropic'] as String?,
+                googleKey: values['google'] as String?,
+                orgId: null,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Build text fields for each AI provider key.
+/// Shows existing key suffix as placeholder when a key is already configured.
+List<FormItem> _buildByokFields(Map<String, String> existingSuffixes) {
+  return [
+    for (final provider in ['openai', 'anthropic', 'google'])
+      FormTextInput(
+        key: provider,
+        label: _providerDisplayName(provider),
+        placeholder: existingSuffixes.containsKey(provider)
+            ? 'Configured (...${existingSuffixes[provider]})'
+            : 'Paste API key',
+      ),
+  ];
+}
+
+String _providerDisplayName(String provider) {
+  return switch (provider) {
+    'openai' => 'OpenAI',
+    'anthropic' => 'Anthropic',
+    'google' => 'Google',
+    _ => provider,
+  };
+}
+
+/// Command for per-org AI preferences (BYOK keys only, no AI toggle).
+class OrgAiPreferences extends ShowForm {
+  OrgAiPreferences({required this.orgId, required this.orgName})
+    : super(
+        title: '$orgName AI preferences',
+        icon: FontAwesomeIcons.robot,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+        form: (context) => _buildOrgForm(context, orgId, orgName),
+      );
+
+  final String orgId;
+  final String orgName;
+
+  static Future<FormData> _buildOrgForm(
+    BuildContext context,
+    String orgId,
+    String orgName,
+  ) async {
+    final existingSuffixes = <String, String>{};
+    try {
+      final keys = await api.get<List<dynamic>>('/organization/$orgId/ai-keys');
+      for (final k in keys.cast<Map<String, dynamic>>()) {
+        existingSuffixes[k['provider'] as String] = k['key_suffix'] as String;
+      }
+    } catch (_) {}
+
+    return FormData(
+      title: '$orgName AI preferences',
+      groups: [
+        StaticFormGroup(
+          title: 'Organization API keys',
+          subtitle: 'These keys are used for AI in $orgName priorities.',
+          items: _buildByokFields(existingSuffixes),
+        ),
+        StaticFormGroup(
+          items: [
+            FormButton(
+              key: 'save',
+              buildCommand: (values) => _SaveAiPreference(
+                aiEnabled: null,
+                previousValue: null,
+                openaiKey: values['openai'] as String?,
+                anthropicKey: values['anthropic'] as String?,
+                googleKey: values['google'] as String?,
+                orgId: orgId,
               ),
             ),
           ],
@@ -432,35 +568,90 @@ class ChangeAiPreference extends ShowForm {
 }
 
 class _SaveAiPreference extends Command {
-  _SaveAiPreference({required this.aiEnabled, required this.previousValue})
-    : super(
-        title: 'Save',
-        eventObject: EventObject.settings,
-        eventAction: EventAction.updated,
-      );
+  _SaveAiPreference({
+    required this.aiEnabled,
+    required this.previousValue,
+    this.openaiKey,
+    this.anthropicKey,
+    this.googleKey,
+    this.orgId,
+  }) : super(
+         title: 'Save',
+         eventObject: EventObject.settings,
+         eventAction: EventAction.updated,
+       );
 
-  final bool aiEnabled;
-  final bool previousValue;
+  /// null when saving org-only preferences (no AI toggle).
+  final bool? aiEnabled;
+  final bool? previousValue;
+  final String? openaiKey;
+  final String? anthropicKey;
+  final String? googleKey;
+
+  /// non-null when saving org keys.
+  final String? orgId;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await context.read<SettingsBloc>().setAiEnabled(aiEnabled);
+      // Save BYOK keys (validate each non-empty key first)
+      final keysToSave = <String, String>{};
+      if (openaiKey != null && openaiKey!.trim().isNotEmpty) {
+        keysToSave['openai'] = openaiKey!.trim();
+      }
+      if (anthropicKey != null && anthropicKey!.trim().isNotEmpty) {
+        keysToSave['anthropic'] = anthropicKey!.trim();
+      }
+      if (googleKey != null && googleKey!.trim().isNotEmpty) {
+        keysToSave['google'] = googleKey!.trim();
+      }
 
-      // If toggling AI off, archive twists that require AI
-      if (previousValue && !aiEnabled) {
-        final archived = await _archiveAiRequiringTwists();
-        if (archived > 0) {
+      final basePath = orgId != null
+          ? '/organization/$orgId/ai-keys'
+          : '/ai-keys';
+
+      for (final entry in keysToSave.entries) {
+        final result = await api.post<Map<String, dynamic>>(
+          basePath,
+          body: {'provider': entry.key, 'key': entry.value},
+        );
+
+        // The API returns 400 with { error: ... } if validation fails.
+        // api.post throws on non-2xx, so we get here only on success.
+        // Check for warnings (key saved but validation uncertain).
+        final warning = result['warning'] as String?;
+        if (warning != null) {
           return CommandMessage(
-            'AI disabled. $archived twist${archived == 1 ? '' : 's'} archived.',
+            '${_providerDisplayName(entry.key)}: $warning',
+            isError: true,
           );
+        }
+      }
+
+      // Save AI toggle (personal preferences only)
+      if (aiEnabled != null && context.mounted) {
+        await context.read<SettingsBloc>().setAiEnabled(aiEnabled!);
+
+        // If toggling AI off, archive twists that require AI
+        if (previousValue == true && !aiEnabled!) {
+          final archived = await _archiveAiRequiringTwists();
+          if (archived > 0) {
+            return CommandMessage(
+              'AI disabled. $archived twist${archived == 1 ? '' : 's'} archived.',
+            );
+          }
         }
       }
 
       return const CommandDone();
     } catch (e, t) {
-      log.warning('Failed to save AI preference', e, t);
-      return CommandMessage('Failed to save AI preference', isError: true);
+      log.warning('Failed to save AI preferences', e, t);
+      // Extract error message from API response if available
+      final msg = e.toString();
+      if (msg.contains('Invalid API key')) {
+        return CommandMessage('Invalid API key', isError: true);
+      }
+      return CommandMessage('Failed to save: $msg', isError: true);
     }
   }
 
@@ -476,9 +667,15 @@ class _SaveAiPreference extends Command {
       try {
         final twists = await TwistApi.getAllTwists(priority);
         // Find twists that require AI (have _ai_required in permissions)
-        final aiTwists = twists.where((t) => t.permissions?.hasPermission(
-          'ai', 'prompt', PermissionFlag.use,
-        ) == true);
+        final aiTwists = twists.where(
+          (t) =>
+              t.permissions?.hasPermission(
+                'ai',
+                'prompt',
+                PermissionFlag.use,
+              ) ==
+              true,
+        );
 
         // Get active local priority_twists for this priority to find IDs
         final localTwists = await PriorityTwist.get(
@@ -489,9 +686,9 @@ class _SaveAiPreference extends Command {
 
         for (final aiTwist in aiTwists) {
           // Find matching local priority_twist
-          final localTwist = localTwists.where(
-            (lt) => lt.twistId.toString() == aiTwist.id,
-          ).firstOrNull;
+          final localTwist = localTwists
+              .where((lt) => lt.twistId.toString() == aiTwist.id)
+              .firstOrNull;
 
           if (localTwist != null) {
             await TwistApi.archiveAndRemoveTwist(localTwist.id.toString());

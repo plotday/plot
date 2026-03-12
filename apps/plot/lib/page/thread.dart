@@ -107,6 +107,13 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       tags: state.tags,
       filter: state.filter,
     );
+
+    // Apply current search from PriorityBloc so notes are filtered
+    // when navigating between threads while search is active
+    final currentSearch = context.read<PriorityBloc>().state.search;
+    if (currentSearch.isNotEmpty) {
+      context.read<ThreadBloc>().updateSearch(currentSearch);
+    }
   }
 
   @override
@@ -333,6 +340,12 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                             ),
                           ),
                         ),
+                        if (state.search.isNotEmpty && !state.showAllNotes && state.notes.length < state.totalNoteCount)
+                          _SearchFilterHint(
+                            onShowAll: () => context
+                                .read<ThreadBloc>()
+                                .setShowAllNotes(true),
+                          ),
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 300),
                           child: Padding(
@@ -499,6 +512,47 @@ class _ThreadFilterBar extends StatelessWidget {
   }
 }
 
+/// Hint bar shown when notes are filtered by global search.
+class _SearchFilterHint extends StatelessWidget {
+  const _SearchFilterHint({required this.onShowAll});
+
+  final VoidCallback onShowAll;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.isMultiPanel ? 20.0 : context.contentPaddingH,
+        vertical: 4,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Notes filtered by search.',
+            style: context.theme.typography.xs.copyWith(
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onShowAll,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Text(
+                'Show all',
+                style: context.theme.typography.xs.copyWith(
+                  color: context.theme.colors.primary,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Compact row for a thread link, pinned above the scrolling notes list.
 /// Shows source logo + link title. Clicking opens the external item.
 class _ThreadLinkRow extends StatefulWidget {
@@ -514,10 +568,20 @@ class _ThreadLinkRow extends StatefulWidget {
 class _ThreadLinkRowState extends State<_ThreadLinkRow> {
   bool _hovered = false;
 
+  /// Whether the current user has connected their account for this link's source.
+  bool get _isUserConnected {
+    final ptId = widget.link.createdBy;
+    if (ptId == null) return true;
+    final pt = PriorityTwist.fromCache(ptId);
+    if (pt == null || !pt.isSource) return true;
+    return pt.userConnected;
+  }
+
   @override
   Widget build(BuildContext context) {
     final link = widget.link;
     final sourceUrl = link.sourceUrl;
+    final connected = _isUserConnected;
 
     return FAnimatedTheme(
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
@@ -527,20 +591,30 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
             MediaQuery.platformBrightnessOf(context),
           );
           return GestureDetector(
-            onTap: sourceUrl != null
-                ? () {
-                    try {
-                      launchUrl(
-                        Uri.parse(sourceUrl),
-                        mode: LaunchMode.externalApplication,
-                      );
-                    } catch (_) {}
-                  }
-                : null,
+            onTap: connected
+                ? (sourceUrl != null
+                    ? () {
+                        try {
+                          launchUrl(
+                            Uri.parse(sourceUrl),
+                            mode: LaunchMode.externalApplication,
+                          );
+                        } catch (_) {}
+                      }
+                    : null)
+                : () {
+                    final ptId = link.createdBy;
+                    if (ptId == null) return;
+                    final pt = PriorityTwist.fromCache(ptId);
+                    if (pt == null) return;
+                    ConnectConnectorAccount(pt).run(context);
+                  },
             child: MouseRegion(
-              cursor: sourceUrl != null
-                  ? SystemMouseCursors.click
-                  : SystemMouseCursors.basic,
+              cursor: connected
+                  ? (sourceUrl != null
+                      ? SystemMouseCursors.click
+                      : SystemMouseCursors.basic)
+                  : SystemMouseCursors.click,
               onEnter: (_) => setState(() => _hovered = true),
               onExit: (_) => setState(() => _hovered = false),
               child: DecoratedBox(
@@ -558,54 +632,72 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
                     horizontal: context.isMultiPanel ? 20.0 : context.contentPaddingH,
                     vertical: 6,
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (linkLogo != null)
-                        LogoImage(
-                          url: linkLogo,
-                          fallback: const Icon(PlotIcon.link, size: 14),
-                        )
-                      else
-                        const Icon(PlotIcon.link, size: 14),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          link.title ?? '',
-                          style: context.theme.typography.sm.copyWith(
-                            color: _hovered
-                                ? context.theme.colors.foreground
-                                : context.theme.colors.foreground.withValues(
-                                    alpha: 0.7,
-                                  ),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                      if (link.getTypeConfig()?.supportsAssignee == true) ...[
-                        const SizedBox(width: 8),
-                        _LinkAssigneeBadge(
-                          link: link,
-                          priorityId: widget.thread.priority.id,
-                        ),
-                      ],
-                      if (link.statusLabel != null) ...[
-                        const SizedBox(width: 8),
-                        _LinkStatusBadge(link: link),
-                      ],
-                      if (link.actions != null)
-                        for (final action in link.actions!
-                            .whereType<ConferencingUserAction>()) ...[
+                      Row(
+                        children: [
+                          if (linkLogo != null)
+                            LogoImage(
+                              url: linkLogo,
+                              fallback: const Icon(PlotIcon.link, size: 14),
+                            )
+                          else
+                            const Icon(PlotIcon.link, size: 14),
                           const SizedBox(width: 8),
-                          _ConferencingButton(action: action),
+                          Expanded(
+                            child: Text(
+                              link.title ?? '',
+                              style: context.theme.typography.sm.copyWith(
+                                color: _hovered
+                                    ? context.theme.colors.foreground
+                                    : context.theme.colors.foreground.withValues(
+                                        alpha: 0.7,
+                                      ),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                          if (connected) ...[
+                            if (link.getTypeConfig()?.supportsAssignee == true) ...[
+                              const SizedBox(width: 8),
+                              _LinkAssigneeBadge(
+                                link: link,
+                                priorityId: widget.thread.priority.id,
+                              ),
+                            ],
+                            if (link.statusLabel != null) ...[
+                              const SizedBox(width: 8),
+                              _LinkStatusBadge(link: link),
+                            ],
+                            if (link.actions != null)
+                              for (final action in link.actions!
+                                  .whereType<ConferencingUserAction>()) ...[
+                                const SizedBox(width: 8),
+                                _ConferencingButton(action: action),
+                              ],
+                            if (_hasMenuActions) ...[
+                              const SizedBox(width: 8),
+                              _ThreadLinkMenu(
+                                link: link,
+                                thread: widget.thread,
+                              ),
+                            ],
+                          ],
                         ],
-                      if (_hasMenuActions) ...[
-                        const SizedBox(width: 8),
-                        _ThreadLinkMenu(
-                          link: link,
-                          thread: widget.thread,
+                      ),
+                      if (!connected)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 22, top: 2),
+                          child: Text(
+                            'Connect your account',
+                            style: context.theme.typography.xs.copyWith(
+                              color: context.theme.colors.primary,
+                            ),
+                          ),
                         ),
-                      ],
                     ],
                   ),
                 ),

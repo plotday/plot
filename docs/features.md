@@ -111,6 +111,7 @@ Internal catalog of product features for marketing content generation. Direct an
   - Text generation and analysis
   - Structured output with schemas
   - Tool calling support
+  - BYOK (Bring Your Own Key): Users can add their own API keys per provider, scoped to personal or organization priorities
 - Network: HTTP requests for external APIs
 - Store: Persistent key-value storage
 - Task Queue: Background processing

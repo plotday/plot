@@ -9,6 +9,55 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      ai_key: {
+        Row: {
+          created_at: string
+          encrypted_key: string
+          id: number
+          iv: string
+          key_suffix: string
+          organization_id: number | null
+          provider: Database["public"]["Enums"]["ai_provider"]
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          encrypted_key: string
+          id?: never
+          iv: string
+          key_suffix: string
+          organization_id?: number | null
+          provider: Database["public"]["Enums"]["ai_provider"]
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          encrypted_key?: string
+          id?: never
+          iv?: string
+          key_suffix?: string
+          organization_id?: number | null
+          provider?: Database["public"]["Enums"]["ai_provider"]
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_key_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_key_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact: {
         Row: {
           archived_at: string | null
@@ -1006,6 +1055,55 @@ export type Database = {
             columns: ["source_priority_twist_id"]
             referencedRelation: "priority_twist_note_create"
             referencedColumns: ["priority_twist_id"]
+          },
+        ]
+      }
+      priority_twist_connection: {
+        Row: {
+          actor_id: string
+          connected_at: string
+          priority_twist_id: string
+          provider: string
+          user_id: string
+        }
+        Insert: {
+          actor_id: string
+          connected_at?: string
+          priority_twist_id: string
+          provider: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string
+          connected_at?: string
+          priority_twist_id?: string
+          provider?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_twist_connection_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_connection_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            referencedRelation: "priority_twist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_twist_connection_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["priority_twist_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_connection_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -3401,6 +3499,7 @@ export type Database = {
       week_from_date: { Args: { d: string }; Returns: unknown }
     }
     Enums: {
+      ai_provider: "openai" | "anthropic" | "google"
       enter_behavior: "enter_newline" | "enter_submits"
       organization_role: "admin" | "member"
       subscription_plan: "free" | "pro" | "business"
@@ -3681,6 +3780,7 @@ export type Database = {
             | null
           twist_id: number | null
           updated_at: string | null
+          user_connected: boolean | null
           user_id: string | null
         }
         Relationships: []
@@ -4089,6 +4189,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      ai_provider: ["openai", "anthropic", "google"],
       enter_behavior: ["enter_newline", "enter_submits"],
       organization_role: ["admin", "member"],
       subscription_plan: ["free", "pro", "business"],

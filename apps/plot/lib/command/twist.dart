@@ -1699,6 +1699,65 @@ class ActivateTwist extends Command {
 }
 
 // ============================================================================
+// Connect Connector Account (streamlined auth for unconnected users)
+// ============================================================================
+
+/// Streamlined auth modal shown when a user taps a link from a source they
+/// haven't connected. Shows only the twist logo/name and auth buttons.
+class ConnectConnectorAccount extends ShowForm {
+  ConnectConnectorAccount(PriorityTwist twist)
+    : super(
+        title: 'Connect ${twist.name}',
+        icon: PlotIcon.connection,
+        form: (context) => _buildForm(twist),
+      );
+
+  static Future<FormData> _buildForm(PriorityTwist twist) async {
+    final integrations =
+        await TwistApi.getIntegrations(twist.id.toString());
+    // Show only providers the user hasn't connected to yet
+    final unconnectedProviders = integrations.providers
+        .where(
+          (p) => !integrations.accounts.any((a) => a.provider == p.provider),
+        )
+        .toList();
+    return FormData(
+      title: 'Connect ${twist.name}',
+      groups: [
+        StaticFormGroup(
+          items: unconnectedProviders
+              .map(
+                (provider) => FormInfo(
+                  key: 'auth_${provider.provider.name}',
+                  divider: false,
+                  builder: (formContext) => Padding(
+                    padding:
+                        formContext.theme.spacing.padding.copyWith(top: 0),
+                    child: _IntegrationAuthButton(
+                      provider: provider,
+                      hasExistingAccount: false,
+                      priorityTwistId: twist.id.toString(),
+                      onSuccess: () {
+                        PriorityTwist.pullUpdates();
+                        if (formContext.mounted) {
+                          Modal.pop<CommandReturn>(
+                            formContext,
+                            Value(const CommandDone()),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
 // Add Integration Account (sub-modal)
 // ============================================================================
 

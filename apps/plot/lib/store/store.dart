@@ -1806,7 +1806,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 266;
+  int get schemaVersion => 267;
 
   @override
   MigrationStrategy get migration {
@@ -2219,6 +2219,9 @@ class Store extends _$Store {
         priorityTwists,
         priorityTwists.defaultMentionMentioned,
       );
+    }
+    if (from < 267) {
+      await _safeAddColumn(m, priorityTwists, priorityTwists.userConnected);
     }
   }
 

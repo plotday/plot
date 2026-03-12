@@ -451,6 +451,38 @@ BEGIN
 END;
 $function$;
 
+-- User sync trigger function for priority_twist_connection changes
+-- When a user connects/disconnects, notify that user so their priority_twist data refreshes
+CREATE OR REPLACE FUNCTION public.sync_user_for_priority_twist_connection ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_max_connected_at timestamptz;
+    v_user_id uuid;
+BEGIN
+    SELECT
+        MAX(connected_at) INTO v_max_connected_at
+    FROM
+        new_table;
+    -- Notify each affected user directly
+    FOR v_user_id IN SELECT DISTINCT
+        user_id
+    FROM
+        new_table
+    ORDER BY
+        user_id LOOP
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'priority_twist', v_max_connected_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+        END LOOP;
+    RETURN NULL;
+END;
+$function$;
+
 -- User sync trigger function for link changes
 CREATE OR REPLACE FUNCTION public.sync_user_for_link ()
     RETURNS TRIGGER

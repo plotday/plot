@@ -603,6 +603,8 @@ class NewThreadPageState extends State<NewThreadPage> {
         _selectedTwist!.id.toString(),
       );
     }
+    // Clear global search so the new thread is visible in the list
+    _provider?.tryCloseSearch();
   }
 
   NewThreadType _loadDefaultType() {

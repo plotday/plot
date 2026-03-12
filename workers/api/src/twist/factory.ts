@@ -4,6 +4,8 @@ import { type Priority } from "@plotday/twister/plot";
 
 import type { DB } from "../db-types";
 import { type Bindings, type TwistEnvironment } from "../env";
+import { decrypt } from "../utils/encryption";
+import type { ByokKeys } from "./tools/ai";
 import { createLogger } from "@plotday/worker-util";
 import { handleTwistOperation } from "./error-handling";
 import { getTwist } from "./loader";
@@ -126,6 +128,53 @@ export function twistFactory({
       aiEnabled = ownerSettings?.ai_enabled ?? true;
     }
 
+    // Resolve BYOK keys at runtime (not during deployment)
+    let byokKeys: ByokKeys | undefined;
+    if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
+      // Determine scope: org priority → org keys, else → user keys
+      const priorityOrg = await db
+        .selectFrom("priority")
+        .select("organization_id")
+        .where("id", "=", priorityId)
+        .executeTakeFirst();
+
+      let aiKeyRows;
+      if (priorityOrg?.organization_id) {
+        aiKeyRows = await db
+          .selectFrom("ai_key")
+          .select(["provider", "encrypted_key", "iv"])
+          .where("organization_id", "=", priorityOrg.organization_id)
+          .execute();
+      } else {
+        // Get owner_id from priority_twist (already queried nearby for aiEnabled)
+        const pt = await db
+          .selectFrom("priority_twist")
+          .select("owner_id")
+          .where("id", "=", priorityTwistId)
+          .executeTakeFirst();
+        if (pt?.owner_id) {
+          aiKeyRows = await db
+            .selectFrom("ai_key")
+            .select(["provider", "encrypted_key", "iv"])
+            .where("user_id", "=", pt.owner_id)
+            .execute();
+        }
+      }
+
+      if (aiKeyRows && aiKeyRows.length > 0) {
+        const keys: ByokKeys = {};
+        for (const row of aiKeyRows) {
+          const plainKey = await decrypt(
+            row.encrypted_key,
+            row.iv,
+            env.AI_KEY_ENCRYPTION_KEY
+          );
+          keys[row.provider as keyof ByokKeys] = plainKey;
+        }
+        byokKeys = keys;
+      }
+    }
+
     // Create factory function for constructing built-in tools at runtime
     const builtInToolFactory = (
       path: string[],
@@ -151,6 +200,7 @@ export function twistFactory({
           config: priorityTwistConfig,
           sourceProvider,
           aiEnabled,
+          byokKeys,
         });
       }
 
@@ -183,6 +233,7 @@ export function twistFactory({
         ctx,
         sourceProvider,
         aiEnabled,
+        byokKeys,
       });
 
       // Track tool for permission collection

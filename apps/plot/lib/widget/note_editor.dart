@@ -80,6 +80,11 @@ class NoteEditorState extends State<NoteEditor> {
     if (widget.isNewThreadMode) return;
     final threadState = context.read<ThreadBloc>().state;
     for (final twist in threadState.threadTwists) {
+      // Unconnected sources are never mentionable
+      if (twist.isSource && !twist.userConnected) {
+        _disabledTwists.add(twist.id);
+        continue;
+      }
       // Connectors that don't handle replies are never mentionable
       if (twist.isSource && !twist.defaultMentionCreated) continue;
       final isAuthor = threadState.notes.any(

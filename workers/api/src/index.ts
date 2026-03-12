@@ -17,6 +17,7 @@ import connections from "./app/connections";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import files from "./app/files";
 import subscribe from "./app/subscribe";
+import aiKeyRoutes from "./app/ai-keys";
 import organizationRoutes from "./app/organization";
 import appSync from "./app/sync";
 import summary from "./app/summary";
@@ -157,6 +158,7 @@ appSection.route("/", files);
 appSection.route("/", subscribe);
 appSection.route("/", connections);
 appSection.route("/", organizationRoutes);
+appSection.route("/", aiKeyRoutes);
 // Note: /app/sync routes are mounted separately with appSyncRateLimiter.
 
 // App sync section - public sync endpoints (user-authenticated)

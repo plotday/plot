@@ -151,6 +151,9 @@ export type Bindings = {
   // Can hopefully remove this once we can use the Vercel AI SDK with Cloudflare AI Gateway without requiring an API key.
   readonly ANTHROPIC_API_KEY: string;
 
+  // 256-bit hex key for encrypting user-provided AI API keys at rest (AES-256-GCM)
+  readonly AI_KEY_ENCRYPTION_KEY: string;
+
   readonly SYNC_TIMING_ENABLED?: string;
 
   readonly TWIST_CONFIG: KVNamespace;

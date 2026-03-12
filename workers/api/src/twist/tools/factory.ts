@@ -14,7 +14,7 @@ import type { DB } from "../../db-types";
 import { type TwistEnvironment, type Bindings } from "../../env";
 import { type ToolPermission } from "../permissions";
 import { Twists } from "./twists";
-import { AI } from "./ai";
+import { AI, type ByokKeys } from "./ai";
 import { Callbacks } from "./callbacks";
 import { Integrations } from "./integrations";
 import { Network } from "./network";
@@ -123,6 +123,7 @@ export function createTool(
     config,
     sourceProvider,
     aiEnabled,
+    byokKeys,
   }: {
     twistId: string;
     environment: TwistEnvironment;
@@ -136,6 +137,8 @@ export function createTool(
     sourceProvider?: { provider: string; scopes: string[]; linkTypes?: any[]; handleReplies?: boolean } | null;
     /** Whether AI features are enabled for the user. Undefined during deployment. */
     aiEnabled?: boolean;
+    /** BYOK API keys for AI providers. When set, only these providers are available. */
+    byokKeys?: ByokKeys;
   }
 ): Tool {
   switch (id) {
@@ -152,7 +155,7 @@ export function createTool(
       if (aiEnabled === false && (options as any)?.required === false) {
         return new AIDisabledStub();
       }
-      return new AI({ env, priorityTwistId });
+      return new AI({ env, priorityTwistId, byokKeys });
     case "Network":
       return new Network({
         ...options,
