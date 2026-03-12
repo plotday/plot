@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.42.0
+
+### Added
+
+- `done` boolean field to LinkTypeConfig status entries to indicate completion statuses ([`e8209e3`](https://github.com/plotday/plot/commit/e8209e39e074d26a59f73a01326bc204f5fb73eb))
+
 ## 0.41.0
 
 ### Changed
