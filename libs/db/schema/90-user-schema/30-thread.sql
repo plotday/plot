@@ -73,13 +73,23 @@ SELECT
             FALSE
         END, FALSE) AS unread,
     -- activity_at: feed ordering timestamp
-    -- GREATEST(lastNoteSourceCreatedAt, link.sourceCreatedAt, threadRead.bumpedAt),
-    -- falling back to created_at when all three are null
+    -- GREATEST(lastNoteSourceCreatedAt, link.sourceCreatedAt, threadRead.bumpedAt, pastScheduleEnd),
+    -- falling back to created_at when all are null
     COALESCE(
         GREATEST(
             a.last_note_source_created_at,
             la.source_created_at,
-            ar.bumped_at
+            ar.bumped_at,
+            (SELECT CASE
+                WHEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz) <= now()
+                THEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz)
+            END
+            FROM schedule s_feed
+            WHERE s_feed.thread_id = a.id
+                AND s_feed.user_id IS NULL
+                AND s_feed.occurrence IS NULL
+                AND s_feed.archived_at IS NULL
+            LIMIT 1)
         ),
         a.created_at
     ) AS activity_at,

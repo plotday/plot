@@ -674,6 +674,10 @@ class Thread extends Equatable implements Comparable<Thread> {
       (results) async {
         if (!Store.isAvailable) return (threads: <Thread>[], rawRowCount: 0);
         final threads = await _mapResultsToThreads(results, archived: archived, range: occurrenceRange ?? range);
+        // Re-sort activity feed for precise recurring event ordering
+        if (order == ThreadOrder.reverse) {
+          threads.sort((a, b) => b.activityAt.compareTo(a.activityAt));
+        }
         return (threads: threads, rawRowCount: results.length);
       },
     );
@@ -1302,12 +1306,25 @@ class Thread extends Equatable implements Comparable<Thread> {
         ]);
         break;
       case ThreadOrder.reverse:
-        // Activity feed: GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt)
-        // Falls back to createdAt only when all three are null.
+        // Activity feed: GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt, pastScheduleEnd)
+        // Falls back to createdAt only when all are null.
         final epoch = Constant(DateTime.fromMillisecondsSinceEpoch(0));
+        final now = DateTime.now();
+        final schedEnd = CaseWhenExpression(
+          cases: [
+            CaseWhen(
+              sched.endAt.isNotNull() &
+                  sched.occurrence.isNull() &
+                  sched.endAt.isSmallerOrEqualValue(now),
+              then: sched.endAt,
+            ),
+          ],
+          orElse: epoch,
+        );
         final feedSort = FunctionCallExpression('MAX', [
           coalesce([a.lastNoteSourceCreatedAt, linkTable.sourceCreatedAt, a.createdAt]),
           coalesce([a.bumpedAt, epoch]),
+          schedEnd,
         ]);
         query.orderBy([OrderingTerm.desc(feedSort)]);
         break;
@@ -1913,7 +1930,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   /// Timestamp for activity feed ordering and bucket headers.
-  /// GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt),
+  /// GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt, pastScheduleEnd),
   /// falling back to createdAt when all are null.
   DateTime get activityAt {
     DateTime? best = _thread.lastNoteSourceCreatedAt;
@@ -1924,7 +1941,54 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (bumpedAt != null && (best == null || bumpedAt!.isAfter(best))) {
       best = bumpedAt;
     }
+    // Include past event end time
+    final schedEnd = _lastPastOccurrenceEnd;
+    if (schedEnd != null && (best == null || schedEnd.isAfter(best))) {
+      best = schedEnd;
+    }
     return best ?? createdAt;
+  }
+
+  /// End time of the most recent past occurrence, for activity feed sorting.
+  /// For non-recurring events, uses the schedule end time directly.
+  /// For recurring events, computes the last occurrence that has ended before now.
+  DateTime? get _lastPastOccurrenceEnd {
+    if (_schedule == null) return null;
+
+    final now = DateTime.now();
+
+    if (!recurring) {
+      // Non-recurring: use the schedule end time directly
+      final end = _schedule.endAt ?? _schedule.endOn?.toDateTime();
+      return (end != null && end.isBefore(now)) ? end : null;
+    }
+
+    // Recurring: find the last occurrence that has ended before now
+    final start = (at?.start ?? on?.start?.toDateTime());
+    if (start == null || recurrenceRule == null) return null;
+
+    try {
+      final instances = recurrenceRule!.getInstances(
+        start: start.copyWith(isUtc: true),
+        after: start.copyWith(isUtc: true),
+        includeAfter: true,
+        before: now.copyWith(isUtc: true),
+      );
+
+      DateTime? lastInstance;
+      for (final instance in instances) {
+        lastInstance = instance.copyWith(isUtc: false);
+      }
+
+      if (lastInstance != null && duration != null) {
+        final end = lastInstance.add(duration!);
+        if (end.isBefore(now)) return end;
+      }
+    } catch (_) {
+      // Silently handle invalid RRULEs
+    }
+
+    return null;
   }
 
   bool get todo =>
