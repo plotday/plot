@@ -216,6 +216,9 @@ class ManageConnections extends Command {
     final futures = <Future<dynamic>>[
       TwistApi.getUserSources(),
       TwistApi.getAllTwists(defaultPriority),
+      SubscribeApi.getUsage()
+          .then<UsageData?>((r) => r)
+          .catchError((_) => null),
     ];
     if (_upcomingCache == null) {
       futures.add(
@@ -230,24 +233,30 @@ class ManageConnections extends Command {
 
     final sourcesData = results[0] as List<Map<String, dynamic>>;
     final allTwists = results[1] as List<Twist>;
-    if (results.length > 2) {
-      _upcomingCache = results[2]
+    final usage = results[2] as UsageData?;
+    if (results.length > 3) {
+      _upcomingCache = results[3]
           as ({List<UpcomingConnection> connections, Set<String> votedByUser})?;
     }
     final upcomingResult = _upcomingCache;
 
+    // Fetch all integrations in parallel
+    final sourceIds = sourcesData.map((json) {
+      final idValue = json['id'];
+      return idValue is int ? idValue.toString() : idValue as String;
+    }).toList();
+    final integrationResults = await Future.wait(
+      sourceIds.map((id) => TwistApi.getIntegrations(id)
+          .then<TwistIntegrations?>((r) => r)
+          .catchError((_) => null)),
+    );
+
     // Build active connections
     final activeItems = <_ActiveSource>[];
-
-    for (final json in sourcesData) {
-      final idValue = json['id'];
-      final id = idValue is int ? idValue.toString() : idValue as String;
-
-      // Fetch integrations to get account/channel info
-      TwistIntegrations? integrations;
-      try {
-        integrations = await TwistApi.getIntegrations(id);
-      } catch (_) {}
+    for (var i = 0; i < sourcesData.length; i++) {
+      final json = sourcesData[i];
+      final id = sourceIds[i];
+      final integrations = integrationResults[i];
 
       final enabledCount = integrations != null
           ? _countEnabled(integrations.channels)
@@ -279,12 +288,6 @@ class ManageConnections extends Command {
         .where((t) => t.isSource)
         .map((t) => _AvailableSource(t))
         .toList();
-
-    // Fetch usage to check connection limits
-    UsageData? usage;
-    try {
-      usage = await SubscribeApi.getUsage();
-    } catch (_) {}
 
     // Sort by name, then environment (public first)
     activeItems.sort(
