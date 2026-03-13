@@ -64,6 +64,8 @@ class ShowForm extends Command {
     super.icon,
     super.shortcut,
     required this.form,
+    this.constraints,
+    this.maxWidthPercentage,
     EventObject? eventObject,
     EventAction? eventAction,
   }) : super(
@@ -72,6 +74,8 @@ class ShowForm extends Command {
        );
 
   final Future<FormData> Function(BuildContext context) form;
+  final BoxConstraints? constraints;
+  final double? maxWidthPercentage;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -91,6 +95,8 @@ class ShowForm extends Command {
         formInstance,
         groups: groups,
         rootContext: context,
+        constraints: constraints,
+        maxWidthPercentage: maxWidthPercentage,
       ).run(context);
     } on Error catch (e, t) {
       log.warning('Action "$title" failed', e, t);

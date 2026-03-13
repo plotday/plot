@@ -16,6 +16,8 @@ class FormModal extends Modal {
     FormData form, {
     required List<StaticFormGroup> groups,
     required BuildContext rootContext,
+    BoxConstraints? constraints,
+    double? maxWidthPercentage,
   }) {
     // Cache the _FormModal widget so it's not recreated on modal rebuilds
     final formModal = _FormModal(
@@ -23,14 +25,16 @@ class FormModal extends Modal {
       groups: groups,
       rootContext: rootContext,
     );
-    return FormModal._(formModal, form);
+    return FormModal._(formModal, form, constraints, maxWidthPercentage);
   }
 
-  FormModal._(Widget formModal, FormData form)
+  FormModal._(Widget formModal, FormData form, BoxConstraints? constraints, double? maxWidthPercentage)
     : super(
         padding: const EdgeInsets.all(0),
         builder: (_) => formModal,
         key: ObjectKey(form),
+        constraints: constraints ?? const BoxConstraints(maxHeight: 640, maxWidth: 750),
+        maxWidthPercentage: maxWidthPercentage ?? 0.8,
       );
 
   Future<CommandReturn> run(BuildContext context) {

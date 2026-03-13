@@ -46,6 +46,80 @@ priorityTwists.get("/sync/priority-twists", async (c) => {
     return query.execute();
   });
 
+  // Self-heal: backfill priority_twist_connection for pre-existing connections
+  const unconnectedSources = (rows as any[]).filter(
+    (r) => r.is_source && !r.user_connected
+  );
+
+  if (unconnectedSources.length > 0) {
+    const userContacts = await c.var.db
+      .selectFrom("contact")
+      .select("id")
+      .where("user_id", "=", userId)
+      .execute();
+    const contactIds = new Set(userContacts.map((ct) => ct.id));
+
+    if (contactIds.size > 0) {
+      for (const row of unconnectedSources) {
+        try {
+          const twistInfo = await c.var.db
+            .selectFrom("twist")
+            .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+            .select(["twist_admin.twist_package_id", "twist.version"])
+            .where("twist.id", "=", row.twist_id)
+            .executeTakeFirst();
+          if (!twistInfo) continue;
+
+          const configStr = await c.env.TWIST_CONFIG.get(
+            `${twistInfo.twist_package_id}:${twistInfo.version}`
+          );
+          if (!configStr) continue;
+
+          const config = JSON.parse(configStr);
+          const integrationsMap: Record<string, string> =
+            config.integrationsMap ?? {};
+
+          for (const [provider, pathStr] of Object.entries(integrationsMap)) {
+            const path = pathStr.split(":");
+            const toolPath = path.slice(0, -1);
+            const doName = `${row.id}:${toolPath.join(":")}`;
+
+            const storageId = c.env.STORAGE.idFromName(doName);
+            const storageDO = c.env.STORAGE.get(storageId);
+
+            const tokenKeys = await storageDO.list(`auth_token:${provider}:`);
+
+            for (const key of tokenKeys) {
+              const actorId = key.split(":").slice(2).join(":");
+              if (contactIds.has(actorId)) {
+                await c.var.db
+                  .insertInto("priority_twist_connection")
+                  .values({
+                    priority_twist_id: row.id,
+                    user_id: userId,
+                    provider,
+                    actor_id: actorId,
+                    connected_at: new Date().toISOString(),
+                  })
+                  .onConflict((oc) =>
+                    oc
+                      .columns(["priority_twist_id", "user_id", "provider"])
+                      .doNothing()
+                  )
+                  .execute();
+                row.user_connected = true;
+                break;
+              }
+            }
+            if (row.user_connected) break;
+          }
+        } catch {
+          // Non-critical backfill — don't fail the sync
+        }
+      }
+    }
+  }
+
   return c.json(rows as any);
 });
 

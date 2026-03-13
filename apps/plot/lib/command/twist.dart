@@ -1851,23 +1851,30 @@ class ConnectConnectorAccount extends ShowForm {
     : super(
         title: 'Connect ${twist.name}',
         icon: PlotIcon.connection,
+        constraints: const BoxConstraints(maxHeight: 200, maxWidth: 400),
+        maxWidthPercentage: 0.5,
         form: (context) => _buildForm(twist),
       );
 
   static Future<FormData> _buildForm(PriorityTwist twist) async {
     final integrations =
         await TwistApi.getIntegrations(twist.id.toString());
-    // Show only providers the user hasn't connected to yet
-    final unconnectedProviders = integrations.providers
+    // Show providers the user hasn't connected to yet, or all providers
+    // if none are unconnected (handles backfill gap where DO storage has
+    // tokens but priority_twist_connection is missing).
+    var providers = integrations.providers
         .where(
           (p) => !integrations.accounts.any((a) => a.provider == p.provider),
         )
         .toList();
+    if (providers.isEmpty) {
+      providers = integrations.providers;
+    }
     return FormData(
       title: 'Connect ${twist.name}',
       groups: [
         StaticFormGroup(
-          items: unconnectedProviders
+          items: providers
               .map(
                 (provider) => FormInfo(
                   key: 'auth_${provider.provider.name}',
@@ -1877,7 +1884,8 @@ class ConnectConnectorAccount extends ShowForm {
                         formContext.theme.spacing.padding.copyWith(top: 0),
                     child: _IntegrationAuthButton(
                       provider: provider,
-                      hasExistingAccount: false,
+                      hasExistingAccount: integrations.accounts
+                          .any((a) => a.provider == provider.provider),
                       priorityTwistId: twist.id.toString(),
                       onSuccess: () {
                         PriorityTwist.pullUpdates();
@@ -2153,12 +2161,7 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
   @override
   Widget build(BuildContext context) {
     final config = getAuthProviderConfig(widget.provider.provider);
-    final providerName =
-        widget.provider.provider.name[0].toUpperCase() +
-        widget.provider.provider.name.substring(1);
-    final label = widget.hasExistingAccount
-        ? 'Add another $providerName account'
-        : config.buttonText;
+    final label = config.buttonText;
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 300),

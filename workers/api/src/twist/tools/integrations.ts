@@ -1312,15 +1312,17 @@ export class Integrations extends Tool implements IAuth {
         const tokenData = await this.store.get<StoredTokenData>(tokenKey);
         const email = tokenData ? this.extractEmail(tokenData.providerData) : null;
 
-        // Look up contact name
+        // Look up contact name and user_id
         let name: string | null = null;
+        let contactUserId: string | null = null;
         if (actorId) {
           const contact = await this.db
             .selectFrom("contact")
-            .select("name")
+            .select(["name", "user_id"])
             .where("id", "=", actorId)
             .executeTakeFirst();
           name = contact?.name ?? null;
+          contactUserId = contact?.user_id ?? null;
         }
 
         accounts.push({
@@ -1337,6 +1339,25 @@ export class Integrations extends Tool implements IAuth {
         if (currentUserContactIds.has(actorId)) {
           for (const s of this.flattenChannels(actorChannels)) {
             channelAccessByCurrentUser.add(`${provider}:${s.id}`);
+          }
+
+          // Self-heal: backfill priority_twist_connection for pre-existing connections
+          if (contactUserId) {
+            await this.db
+              .insertInto("priority_twist_connection")
+              .values({
+                priority_twist_id: this.priorityTwistId,
+                user_id: contactUserId,
+                provider,
+                actor_id: actorId,
+                connected_at: new Date().toISOString(),
+              })
+              .onConflict((oc) =>
+                oc
+                  .columns(["priority_twist_id", "user_id", "provider"])
+                  .doNothing()
+              )
+              .execute();
           }
         }
 

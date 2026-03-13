@@ -6,7 +6,12 @@ SELECT
     upe.user_id,
     pt.id,
     pt.created_at,
-    GREATEST(pt.updated_at, t.updated_at) AS updated_at,
+    GREATEST(pt.updated_at, t.updated_at, (
+        SELECT MAX(ptc2.connected_at)
+        FROM priority_twist_connection ptc2
+        WHERE ptc2.priority_twist_id = pt.id
+          AND ptc2.user_id = upe.user_id
+    )) AS updated_at,
     pt.archived_at,
     pt.priority_id,
     pt.twist_id,
@@ -44,7 +49,12 @@ SELECT
     pt.owner_id AS user_id,
     pt.id,
     pt.created_at,
-    GREATEST(pt.updated_at, t.updated_at) AS updated_at,
+    GREATEST(pt.updated_at, t.updated_at, (
+        SELECT MAX(ptc2.connected_at)
+        FROM priority_twist_connection ptc2
+        WHERE ptc2.priority_twist_id = pt.id
+          AND ptc2.user_id = pt.owner_id
+    )) AS updated_at,
     pt.archived_at,
     pt.priority_id,
     pt.twist_id,
