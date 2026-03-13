@@ -593,6 +593,7 @@ abstract class _UpdateThreadCommand extends Command {
   _UpdateThreadCommand(
     this.thread, {
     Future<void> Function(Thread)? onUpdate,
+    this.priorityBloc,
     required super.title,
     required super.eventObject,
     required super.eventAction,
@@ -602,13 +603,22 @@ abstract class _UpdateThreadCommand extends Command {
 
   final Thread thread;
   final Future<void> Function(Thread) onUpdate;
+  final PriorityBloc? priorityBloc;
 
   /// Optimistically update the UI, then persist the thread.
+  /// Commands that run inside modals must pass [priorityBloc] explicitly
+  /// because the modal context doesn't have PriorityBloc in its tree.
   Future<void> saveOptimistically(
     BuildContext context,
     Thread updatedThread,
   ) async {
-    context.read<PriorityBloc?>()?.optimisticallyUpdateThread(updatedThread);
+    PriorityBloc? bloc = priorityBloc;
+    if (bloc == null) {
+      try {
+        bloc = context.read<PriorityBloc>();
+      } catch (_) {}
+    }
+    bloc?.optimisticallyUpdateThread(updatedThread);
     await onUpdate(updatedThread);
   }
 }
@@ -820,7 +830,7 @@ class ActorGroup extends CommandGroup {
 }
 
 class ScheduleThread extends _UpdateThreadCommand {
-  ScheduleThread(super.thread, {required this.when, super.onUpdate})
+  ScheduleThread(super.thread, {required this.when, super.onUpdate, super.priorityBloc})
     : super(
         title: thread.on != null ? 'Reschedule' : 'Schedule',
         eventObject: EventObject.activity,
@@ -846,7 +856,7 @@ class ScheduleThread extends _UpdateThreadCommand {
 }
 
 class ScheduleEvent extends _UpdateThreadCommand {
-  ScheduleEvent(super.thread, {required this.at, super.onUpdate})
+  ScheduleEvent(super.thread, {required this.at, super.onUpdate, super.priorityBloc})
     : super(
         title: thread.at != null ? 'Reschedule' : 'Schedule',
         eventObject: EventObject.activity,
@@ -876,6 +886,7 @@ class RescheduleEvent extends Command {
     this.thread, {
     bool stateIcon = false,
     this.showPrioritySelector = false,
+    this.priorityBloc,
   }) : super(
          title: 'Reschedule',
          eventObject: EventObject.activity,
@@ -886,6 +897,7 @@ class RescheduleEvent extends Command {
 
   final Thread thread;
   final bool showPrioritySelector;
+  final PriorityBloc? priorityBloc;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -897,8 +909,8 @@ class RescheduleEvent extends Command {
     ).show<DateTimeRange>(context);
 
     if (result.present && context.mounted) {
-      // User confirmed rescheduling with new time
-      await ScheduleEvent(thread, at: result.value).run(context);
+      await ScheduleEvent(thread, at: result.value, priorityBloc: priorityBloc)
+          .run(context);
       return const CommandDone();
     }
 
@@ -921,6 +933,12 @@ class PickScheduleThread extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Capture PriorityBloc before showing modal — modal context won't have it
+    PriorityBloc? bloc;
+    try {
+      bloc = context.read<PriorityBloc>();
+    } catch (_) {}
+
     final actionReturn = await Modal(
       constraints: const BoxConstraints(maxWidth: 380, maxHeight: 640),
       builder: (context) => SingleChildScrollView(
@@ -960,6 +978,7 @@ class PickScheduleThread extends Command {
                   _thread,
                   when: date.toDate(),
                   onUpdate: _onUpdate,
+                  priorityBloc: bloc,
                 ).run(context);
                 if (!context.mounted) return;
                 Modal.pop(context, Value(actionReturn));
@@ -976,6 +995,7 @@ class PickScheduleThread extends Command {
                         _thread,
                         when: Thread.todoNowDate,
                         onUpdate: _onUpdate,
+                        priorityBloc: bloc,
                       ).run(context);
                       if (!context.mounted) return;
                       Modal.pop(context, Value(actionReturn));

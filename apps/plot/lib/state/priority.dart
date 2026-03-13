@@ -102,6 +102,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// saved but schedule not yet saved).
   DateTime? _optimisticTimestamp;
 
+  /// Data-driven suppression for optimistic schedule changes: keeps
+  /// suppressing stream rebuilds until the stream data confirms the
+  /// thread has the expected schedule.
+  (ThreadId, DateTimeRange?)? _pendingOptimisticSchedule;
+
   /// Optimistic reorder: caches the moved agendaViewItems so the UI
   /// doesn't re-derive them (which can produce different item counts).
   void moveAgendaItem(int viewOldIndex, int viewNewIndex,
@@ -225,15 +230,97 @@ class PriorityBloc extends Cubit<PriorityState> {
                 ))
             .toList();
       } else {
-        // In-place replacement (still belongs in agenda)
-        updatedAgendaItems = state.agendaItems.map((item) {
-          return item.when(
-            header: (_) => item,
-            activity: (a) => a.thread.id == updatedThread.id
-                ? AgendaThreadItem(updatedThread, now: a.now)
-                : item,
+        // Check if the event's schedule changed — if so, reposition
+        // instead of doing an in-place replacement.
+        final oldAt = state.agendaItems
+            .whereType<AgendaThreadItem>()
+            .firstWhere((a) => a.thread.id == updatedThread.id)
+            .thread
+            .at;
+        final scheduleChanged = oldAt != updatedThread.at;
+
+        if (scheduleChanged && updatedThread.at != null) {
+          // Record expected schedule for data-driven suppression
+          _pendingOptimisticSchedule = (updatedThread.id, updatedThread.at);
+
+          // Remove old item and its associated event header
+          updatedAgendaItems = state.agendaItems.where((item) {
+            if (item is AgendaHeaderItem && item.thread?.id == updatedThread.id) {
+              return false;
+            }
+            if (item is AgendaThreadItem && item.thread.id == updatedThread.id) {
+              return false;
+            }
+            return true;
+          }).toList();
+
+          // Find insertion point by date section and start time
+          final targetDate = updatedThread.agendaAt.toDate();
+          int insertIndex = updatedAgendaItems.length; // default: end
+
+          for (int i = 0; i < updatedAgendaItems.length; i++) {
+            final item = updatedAgendaItems[i];
+            if (item is AgendaHeaderItem && item.date != null) {
+              if (item.date!.isAfter(targetDate)) {
+                insertIndex = i;
+                break;
+              }
+              if (item.date == targetDate) {
+                // Found the target date section — find position by start time
+                insertIndex = i + 1;
+                for (int j = i + 1; j < updatedAgendaItems.length; j++) {
+                  final sectionItem = updatedAgendaItems[j];
+                  if (sectionItem is AgendaHeaderItem && sectionItem.date != null) {
+                    insertIndex = j;
+                    break;
+                  }
+                  if (sectionItem is AgendaHeaderItem &&
+                      sectionItem.dateTimeRange?.start != null &&
+                      sectionItem.thread != null &&
+                      updatedThread.at!.start != null &&
+                      sectionItem.dateTimeRange!.start!
+                          .isAfter(updatedThread.at!.start!)) {
+                    insertIndex = j;
+                    break;
+                  }
+                  insertIndex = j + 1;
+                }
+                break;
+              }
+            }
+          }
+
+          updatedAgendaItems.insert(
+            insertIndex,
+            AgendaHeaderItem(
+              dateTimeRange: updatedThread.at,
+              thread: updatedThread,
+            ),
           );
-        }).toList();
+          updatedAgendaItems.insert(
+            insertIndex + 1,
+            AgendaThreadItem(updatedThread),
+          );
+        } else {
+          // In-place replacement (schedule unchanged or no schedule)
+          updatedAgendaItems = state.agendaItems.map((item) {
+            return item.when(
+              header: (h) => h.thread?.id == updatedThread.id
+                  ? AgendaHeaderItem(
+                      dateTimeRange: updatedThread.at,
+                      date: h.date,
+                      now: h.now,
+                      thread: updatedThread,
+                      text: h.text,
+                      scheduleAt: h.scheduleAt,
+                    )
+                  : item,
+              activity: (a) => a.thread.id == updatedThread.id
+                  ? AgendaThreadItem(updatedThread, now: a.now)
+                  : item,
+            );
+          }).toList();
+        }
       }
     } else if (updatedThread.todo) {
       // Thread becoming a todo but not in agenda yet — insert it after
@@ -835,10 +922,27 @@ class PriorityBloc extends Cubit<PriorityState> {
       // (thread, schedule, tags) are complete and the stream settles.
       final now = DateTime.now();
 
-      // Time-based suppression for optimistic thread updates (non-reorder).
-      final suppressOptimistic = _optimisticTimestamp != null &&
+      // Data-driven suppression for optimistic schedule changes: keep
+      // suppressing until stream data confirms the expected schedule.
+      final bool suppressOptimisticSchedule;
+      if (_pendingOptimisticSchedule != null) {
+        final (threadId, expectedAt) = _pendingOptimisticSchedule!;
+        final settled = threads.any(
+          (t) => t.id == threadId && t.at == expectedAt,
+        );
+        suppressOptimisticSchedule = !settled;
+        if (settled) {
+          _pendingOptimisticSchedule = null;
+        }
+      } else {
+        suppressOptimisticSchedule = false;
+      }
+
+      // Time-based suppression for other optimistic thread updates (non-reorder).
+      final suppressOptimistic = suppressOptimisticSchedule ||
+          (_optimisticTimestamp != null &&
           now.difference(_optimisticTimestamp!) <
-              const Duration(milliseconds: 500);
+              const Duration(milliseconds: 500));
 
       // Data-driven suppression for reorders: keep reorderViewItems until
       // the stream data includes the reordered thread at its expected order.

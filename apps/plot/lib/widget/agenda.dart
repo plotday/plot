@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
 
 class AgendaHeader extends StatefulWidget {
@@ -266,7 +268,8 @@ class _AgendaHeaderState extends State<AgendaHeader> {
       // If this header has an associated event activity, use RescheduleEvent
       if (widget.thread != null && widget.thread!.at != null) {
         command = CommandWrapper(
-          RescheduleEvent(widget.thread!, showPrioritySelector: true),
+          RescheduleEvent(widget.thread!, showPrioritySelector: true,
+              priorityBloc: context.read<PriorityBloc>()),
           icon: Value(null),
         );
         }
