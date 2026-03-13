@@ -12,7 +12,6 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
-import 'package:plot/util/profile_preferences.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
@@ -310,6 +309,17 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
 
     controller.requestFocus(targetIndex);
     priorityBloc.threadListSource = targetSource;
+
+    // Switch desktop/mobile tab to match the focused source
+    final tabNotifier = PriorityTabProvider.maybeOf(context);
+    if (tabNotifier != null) {
+      final targetTab = targetSource == ThreadListSource.agenda
+          ? PriorityTab.agenda
+          : PriorityTab.activityFeed;
+      if (tabNotifier.value != targetTab) {
+        tabNotifier.value = targetTab;
+      }
+    }
   }
 
   void registerActivityPanel({
@@ -541,51 +551,12 @@ class PriorityPage extends StatefulWidget {
 class _PriorityPageState extends State<PriorityPage> {
   PriorityTab _currentTab = PriorityTab.agenda;
   PriorityTabNotifier? _tabNotifier;
-  bool _userSelectedAgenda = false;
-
-  /// Fraction of usable height (totalHeight - dividerHeight) for the top list.
-  /// 0.0 = collapsed minimum. Values are clamped to [_minFraction, 1.0] in layout.
-  double _topFraction = 0.38;
-  double _minFraction = 0.0; // cached from last layout
   final InfiniteListController _agendaListController = InfiniteListController();
-
-  bool get _isCollapsed => _topFraction <= _minFraction + 0.005;
-
-  @override
-  void initState() {
-    super.initState();
-    _topFraction =
-        ProfilePreferences.instance.getDouble('agenda_top_fraction') ?? 0.38;
-  }
-
-  void _onDividerDragStart() {}
-
-  void _onDividerDragUpdate(double dy, double usableHeight) {
-    if (usableHeight <= 0) return;
-    setState(() {
-      _topFraction = (_topFraction + dy / usableHeight).clamp(
-        _minFraction,
-        1.0,
-      );
-    });
-  }
-
-  void _onDividerDragEnd() {
-    // Snap to collapsed if near minimum
-    if (_topFraction < _minFraction + 0.02) {
-      _topFraction = _minFraction;
-    }
-    ProfilePreferences.instance.setDouble('agenda_top_fraction', _topFraction);
-    setState(() {});
-  }
 
   void _onTabNotifierChanged() {
     if (_tabNotifier != null && _tabNotifier!.value != _currentTab) {
       setState(() {
         _currentTab = _tabNotifier!.value;
-        if (_currentTab == PriorityTab.agenda) {
-          _userSelectedAgenda = true;
-        }
       });
     }
   }
@@ -593,9 +564,6 @@ class _PriorityPageState extends State<PriorityPage> {
   @override
   void didUpdateWidget(PriorityPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.priorityId != widget.priorityId) {
-      _userSelectedAgenda = false;
-    }
   }
 
   @override
@@ -636,34 +604,7 @@ class _PriorityPageState extends State<PriorityPage> {
       builder: (context, state) {
         return BlocBuilder<LayoutBloc, LayoutState>(
                 builder: (context, layoutState) {
-                  // Auto-switch to activity tab when agenda is empty
-                  // in single panel mode, unless user explicitly tapped Agenda.
-                  // Require agendaItems.isNotEmpty to avoid switching before
-                  // the agenda stream has emitted real data.
-                  if (!layoutState.multiPanel &&
-                      !_userSelectedAgenda &&
-                      _currentTab == PriorityTab.agenda &&
-                      state.agendaItems.isNotEmpty &&
-                      state.agendaViewItems
-                          .whereType<AgendaThreadItem>()
-                          .isEmpty) {
-                    _currentTab = PriorityTab.activityFeed;
-                    // Sync tab notifier after build so the bottom bar updates
-                    final notifier = _tabNotifier;
-                    if (notifier != null &&
-                        notifier.value != PriorityTab.activityFeed) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) {
-                          notifier.value = PriorityTab.activityFeed;
-                        }
-                      });
-                    }
-                  }
-
-                  // On desktop, use expansion state; on mobile, use tab state
-                  final isUpNext = layoutState.multiPanel
-                      ? !_isCollapsed
-                      : _currentTab == PriorityTab.agenda;
+                  final isUpNext = _currentTab == PriorityTab.agenda;
                   var items = isUpNext
                       ? state.agendaViewItems
                       : state.activityFeedItems;
@@ -741,22 +682,14 @@ class _PriorityPageState extends State<PriorityPage> {
                         );
                       },
                       builder: (context, listController) {
-                        // For desktop, use expansion-based controller;
-                        // for mobile, use list selector controller
-                        final activeController = layoutState.multiPanel
-                            ? (_isCollapsed
-                                  ? listController
-                                  : _agendaListController)
+                        final activeController = layoutState.multiPanel && _currentTab == PriorityTab.agenda
+                            ? _agendaListController
                             : listController;
 
-                        // Register active controller with the global shortcuts provider.
-                        // On desktop, also register the activity feed controller
-                        // so Cmd-Up/Down can navigate whichever list the user
-                        // was last interacting with.
                         final provider =
                             _PriorityListControllerProvider.maybeOf(context);
                         provider?.registerController(
-                          activeController,
+                          layoutState.multiPanel ? _agendaListController : activeController,
                           activityFeedController: layoutState.multiPanel
                               ? listController
                               : null,
@@ -976,7 +909,7 @@ class _PriorityPageState extends State<PriorityPage> {
       );
     }
 
-    // Filter out the inline "Now" header — it's replaced by a fixed panel header.
+    // Strip the leading "Now" header for the agenda tab
     final allAgendaItems = state.agendaViewItems;
     final agendaItems =
         allAgendaItems.isNotEmpty &&
@@ -984,189 +917,59 @@ class _PriorityPageState extends State<PriorityPage> {
             (allAgendaItems.first as AgendaHeaderItem).now
         ? allAgendaItems.sublist(1)
         : allAgendaItems;
-    final activityFeedItems = state.activityFeedItems;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final totalHeight = constraints.maxHeight;
-        const dividerHeight = 22.0;
-        const nowHeaderHeight = 22.0;
+    final isNowTab = _currentTab == PriorityTab.agenda;
 
-        // Check if the first activity has a label (sub-priority or event
-        // timing), which makes the item taller.
-        final firstActivity = agendaItems
-            .whereType<AgendaThreadItem>()
-            .firstOrNull;
-        final hasSubPriorityLabel =
-            firstActivity != null &&
-            firstActivity.thread.priority.id != state.context.id;
-        final double subPriorityExtra;
-        if (hasSubPriorityLabel) {
-          final xsFontSize = context.theme.typography.xs.fontSize ?? 12.0;
-          final xsLineHeight = context.theme.typography.xs.height ?? 1.2;
-          subPriorityExtra = xsFontSize * xsLineHeight + 2.0;
-        } else {
-          subPriorityExtra = 0.0;
-        }
-        final collapsedTopHeight = 66.0 + subPriorityExtra;
-
-        final usableHeight = totalHeight - dividerHeight - nowHeaderHeight;
-
-        // Cache minFraction so _isCollapsed works outside layout
-        _minFraction = usableHeight > 0
-            ? collapsedTopHeight / usableHeight
-            : 0.0;
-
-        final fraction = _topFraction.clamp(_minFraction, 1.0);
-        final topHeight = fraction * usableHeight;
-        final bottomHeight = (usableHeight - topHeight).clamp(
-          0.0,
-          usableHeight,
-        );
-        final isCollapsed = fraction <= _minFraction + 0.005;
-
-        return Column(
-          children: [
-            FAnimatedTheme(
-              data: darkenTheme(
-                context,
-                context.theme,
-                context.colour,
-                steps: 2,
-              ),
-              child: SizedBox(
-                height: nowHeaderHeight,
-                child: const _PanelHeader(text: 'Now'),
-              ),
-            ),
-            SizedBox(
-              height: topHeight,
-              child: ClipRect(
-                child: ThreadListSourceProvider(
+    return Column(
+      children: [
+        _DesktopTabBar(
+          currentTab: _currentTab,
+          onTabChanged: _onDesktopTabChanged,
+        ),
+        Expanded(
+          child: isNowTab
+              ? ThreadListSourceProvider(
                   source: ThreadListSource.agenda,
-                  child: isCollapsed
-                      ? _buildCollapsedAgenda(context, state, agendaItems)
-                      : _buildList(
-                          context,
-                          state,
-                          agendaItems,
-                          _agendaListController,
-                          null,
-                          enableReorder: !state.context.isViewer,
-                          doneEnd: state.doneEnd,
-                        ),
-                ),
-              ),
-            ),
-            FAnimatedTheme(
-              data: darkenTheme(
-                context,
-                context.theme,
-                context.colour,
-                steps: 2,
-              ),
-              child: SizedBox(
-                height: dividerHeight,
-                child: _SplitViewDivider(
-                  onDragStart: _onDividerDragStart,
-                  onDragUpdate: (dy) => _onDividerDragUpdate(dy, usableHeight),
-                  onDragEnd: _onDividerDragEnd,
-                ),
-              ),
-            ),
-            SizedBox(
-              height: bottomHeight,
-              child: ClipRect(
-                child: ThreadListSourceProvider(
+                  child: _buildList(
+                    context,
+                    state,
+                    agendaItems,
+                    _agendaListController,
+                    null,
+                    enableReorder: !state.context.isViewer,
+                    doneEnd: state.doneEnd,
+                    scrollStorageKey: PageStorageKey(
+                      'priority_agenda_${widget.priorityId}',
+                    ),
+                  ),
+                )
+              : ThreadListSourceProvider(
                   source: ThreadListSource.activityFeed,
                   child: _buildActivityFeed(
                     context,
                     state,
-                    activityFeedItems,
+                    state.activityFeedItems,
                     activityController,
                     ScrollControllerContext.of(context),
+                    scrollStorageKey: PageStorageKey(
+                      'priority_feed_${widget.priorityId}',
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// Builds a non-scrollable preview of the Agenda list when collapsed,
-  /// showing only the first header and first activity item.
-  Widget _buildCollapsedAgenda(
-    BuildContext context,
-    PriorityState state,
-    List<AgendaItem> items,
-  ) {
-    // Take up to 2 items: the header + first activity
-    final previewItems = items.take(2).toList();
-    final hasActivity = previewItems.any((item) => item is AgendaThreadItem);
-    return ListView(
-      physics: const NeverScrollableScrollPhysics(),
-      children: [
-        for (final item in previewItems)
-          item.when(
-            header: (header) => AgendaHeader(
-              priorityContext: state.context,
-              dateTimeRange: header.dateTimeRange,
-              date: header.date,
-              now: header.now,
-              thread: header.thread,
-              text: header.text,
-              scheduleAt: header.scheduleAt,
-            ),
-            activity: (agendaActivity) => ThreadWidget(
-              activity: agendaActivity.thread,
-              selected:
-                  state.thread != null &&
-                  agendaActivity.thread.id == state.thread!.id,
-              now: agendaActivity.now,
-              context: state.context,
-              showSubPriority: true,
-              showEventTiming: true,
-            ),
-          ),
-        if (!hasActivity) _buildAgendaEmpty(context),
+        ),
       ],
     );
   }
 
-  Widget _buildAgendaEmpty(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.contentPaddingH,
-        vertical: context.theme.spacing.md,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            'Use ',
-            style: TextStyle(
-              color: context.theme.colors.mutedForeground,
-              fontSize: context.theme.typography.sm.fontSize,
-            ),
-          ),
-          FaIcon(
-            PlotIcon.addTodo,
-            size: context.theme.typography.sm.fontSize,
-            color: context.theme.colors.mutedForeground,
-          ),
-          Text(
-            ' to add threads that require action',
-            style: TextStyle(
-              color: context.theme.colors.mutedForeground,
-              fontSize: context.theme.typography.sm.fontSize,
-            ),
-          ),
-        ],
-      ),
-    );
+  void _onDesktopTabChanged(PriorityTab tab) {
+    setState(() {
+      _currentTab = tab;
+    });
+    if (_tabNotifier != null && _tabNotifier!.value != tab) {
+      _tabNotifier!.value = tab;
+    }
   }
+
 
   /// Always 1px tall for stable layout. Default renders as 0.5px border +
   /// 0.5px background (thin). Active states fill the full 1px (bolder, and
@@ -1720,121 +1523,109 @@ class _PriorityPageState extends State<PriorityPage> {
   }
 }
 
-class _SplitViewDivider extends StatefulWidget {
-  const _SplitViewDivider({
-    this.onDragStart,
-    this.onDragUpdate,
-    this.onDragEnd,
+class _DesktopTabBar extends StatelessWidget {
+  const _DesktopTabBar({
+    required this.currentTab,
+    required this.onTabChanged,
   });
-  final VoidCallback? onDragStart;
-  final void Function(double dy)? onDragUpdate;
-  final VoidCallback? onDragEnd;
 
-  @override
-  State<_SplitViewDivider> createState() => _SplitViewDividerState();
-}
-
-class _SplitViewDividerState extends State<_SplitViewDivider> {
-  bool _hovered = false;
-  bool _dragging = false;
+  final PriorityTab currentTab;
+  final ValueChanged<PriorityTab> onTabChanged;
 
   @override
   Widget build(BuildContext context) {
-    final active = _hovered || _dragging;
-    final accentColor = context.colour.accent;
-    final borderColor = active
-        ? accentColor
-        : context.theme.colors.mutedForeground;
-    final textColor = active ? accentColor : context.theme.colors.foreground;
-
-    return GestureDetector(
-      onVerticalDragStart: widget.onDragStart != null
-          ? (_) {
-              setState(() => _dragging = true);
-              widget.onDragStart!();
-            }
-          : null,
-      onVerticalDragUpdate: widget.onDragUpdate != null
-          ? (details) => widget.onDragUpdate!(details.delta.dy)
-          : null,
-      onVerticalDragEnd: widget.onDragEnd != null
-          ? (_) {
-              setState(() => _dragging = false);
-              widget.onDragEnd!();
-            }
-          : null,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeRow,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeInOut,
-          decoration: BoxDecoration(
-            color: context.theme.colors.background,
-            border: Border.symmetric(
-              horizontal: BorderSide(color: borderColor),
-            ),
+    final borderSide = BorderSide(color: context.theme.colors.border);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(bottom: borderSide),
+      ),
+      position: DecorationPosition.foreground,
+      child: Row(
+        children: [
+          _DesktopTab(
+            label: 'Now',
+            selected: currentTab == PriorityTab.agenda,
+            border: Border(right: borderSide),
+            onTap: () => onTabChanged(PriorityTab.agenda),
           ),
-          padding: EdgeInsets.symmetric(
-            horizontal: context.contentPaddingH,
-            vertical: context.theme.spacing.xs,
+          _DesktopTab(
+            label: 'Activity',
+            selected: currentTab == PriorityTab.activityFeed,
+            onTap: () => onTabChanged(PriorityTab.activityFeed),
           ),
-          child: Row(
-            children: [
-              const Spacer(),
-              FaIcon(
-                FontAwesomeIcons.gripDots,
-                size: context.theme.typography.xs.fontSize,
-                color: context.theme.plotColors.veryMuted,
-              ),
-              const Spacer(),
-              AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 150),
-                curve: Curves.easeInOut,
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: context.theme.typography.xs.fontSize,
-                ),
-                child: const Text('Activity'),
-              ),
-              const Spacer(),
-              FaIcon(
-                FontAwesomeIcons.gripDots,
-                size: context.theme.typography.xs.fontSize,
-                color: context.theme.plotColors.veryMuted,
-              ),
-              const Spacer(),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
 }
 
-class _PanelHeader extends StatelessWidget {
-  const _PanelHeader({required this.text});
+class _DesktopTab extends StatefulWidget {
+  const _DesktopTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.border,
+  });
 
-  final String text;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Border? border;
+
+  @override
+  State<_DesktopTab> createState() => _DesktopTabState();
+}
+
+class _DesktopTabState extends State<_DesktopTab> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: context.theme.colors.background,
-        border: Border(bottom: BorderSide(color: context.theme.colors.border)),
-      ),
-      padding: EdgeInsets.symmetric(
-        horizontal: context.contentPaddingH,
-        vertical: context.theme.spacing.xs,
-      ),
-      child: Center(
-        child: Text(
-          text,
-          style: TextStyle(
-            color: context.theme.colors.foreground,
-            fontSize: context.theme.typography.xs.fontSize,
+    final theme = context.theme;
+    final darkBg = darkenTheme(context, theme, context.colour, steps: 2)
+        .colors
+        .background;
+
+    final Color background;
+    if (widget.selected) {
+      background = darkBg;
+    } else if (_hovered) {
+      background = theme.colors.secondary;
+    } else {
+      background = theme.colors.background;
+    }
+
+    final textColor = widget.selected
+        ? context.colour.accent
+        : theme.colors.mutedForeground;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: widget.selected ? null : widget.onTap,
+        child: MouseRegion(
+          cursor: widget.selected
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: Container(
+            decoration: BoxDecoration(
+              color: background,
+              border: widget.border,
+            ),
+            padding: EdgeInsets.symmetric(
+              vertical: theme.spacing.xs,
+            ),
+            child: Center(
+              child: Text(
+                widget.label,
+                style: theme.typography.sm.copyWith(
+                  fontFamily: theme.typography.defaultFontFamily,
+                  color: textColor,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
           ),
         ),
       ),
