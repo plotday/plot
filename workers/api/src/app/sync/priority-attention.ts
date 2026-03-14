@@ -17,9 +17,11 @@ priorityAttention.post("/sync/priority-attention", async (c) => {
       p_user_id: userId,
       p_priority_id: body.priority_id,
       p_attention_window: body.attention_window ?? null,
-      p_see_within: body.see_within ?? null,
       p_set_attention_window: body.set_attention_window ?? false,
-      p_set_see_within: body.set_see_within ?? false,
+      p_see_within_requests: body.see_within_requests ?? null,
+      p_see_within_updates: body.see_within_updates ?? null,
+      p_set_see_within_requests: body.set_see_within_requests ?? false,
+      p_set_see_within_updates: body.set_see_within_updates ?? false,
     });
   });
 

@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/app_info.dart';
 import 'package:plot/logging.dart';
+import 'package:plot/notifications/notification_display.dart';
+import 'package:plot/store/attention.dart';
+import 'package:plot/store/store.dart';
 
 /// Manages push notification token registration and message handling.
 ///
@@ -21,6 +24,9 @@ class NotificationService {
   StreamSubscription<RemoteMessage>? _messageOpenedSubscription;
   String? _currentToken;
 
+  /// Callback for navigating to a priority when a notification is tapped.
+  void Function(String priorityId)? onNavigateToPriority;
+
   /// Whether push notifications are supported on this platform.
   static bool get isSupported => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
@@ -29,6 +35,10 @@ class NotificationService {
   /// after the user has signed in.
   Future<void> start() async {
     if (!isSupported) return;
+
+    // Initialize local notification display
+    await NotificationDisplay.instance.initialize();
+    NotificationDisplay.instance.onNotificationTap = _handlePayloadTap;
 
     final messaging = FirebaseMessaging.instance;
 
@@ -67,20 +77,14 @@ class NotificationService {
       }
     });
 
-    // Foreground message handler (log for now; display behavior designed later)
+    // Data message handler — triggers sync and local notification display
     _foregroundSubscription =
-        FirebaseMessaging.onMessage.listen((message) {
-      log.info(
-        'Foreground notification: ${message.notification?.title}',
-      );
-    });
+        FirebaseMessaging.onMessage.listen(_handleDataMessage);
 
     // Notification tap handler (app was in background)
     _messageOpenedSubscription =
         FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      log.info(
-        'Notification tapped: ${message.notification?.title}',
-      );
+      log.info('Notification tapped: ${message.data}');
       _handleNotificationTap(message);
     });
 
@@ -88,9 +92,7 @@ class NotificationService {
     try {
       final initialMessage = await messaging.getInitialMessage();
       if (initialMessage != null) {
-        log.info(
-          'App opened from notification: ${initialMessage.notification?.title}',
-        );
+        log.info('App opened from notification: ${initialMessage.data}');
         _handleNotificationTap(initialMessage);
       }
     } catch (e) {
@@ -134,8 +136,301 @@ class NotificationService {
     log.info('Device token registered ($platform)');
   }
 
-  void _handleNotificationTap(RemoteMessage message) {
-    // Navigation logic to be designed later.
-    // Will use message.data to determine which screen to open.
+  /// Handle incoming FCM data messages (silent push from server).
+  Future<void> _handleDataMessage(RemoteMessage message) async {
+    final type = message.data['type'];
+    if (type != 'sync_wake') return;
+
+    log.info('Received sync_wake push notification');
+
+    try {
+      // 1. Trigger a data sync
+      final store = Store.get;
+      await SyncOrchestrator.instance.syncAll();
+
+      // 2. Query local DB for unread threads grouped by first-level priority
+      final batches = await _buildNotificationBatches(store);
+      if (batches.isEmpty) return;
+
+      // 3. Call the API to generate AI summaries
+      final summaries = await _fetchSummaries(batches);
+      if (summaries == null) {
+        // Fallback: show simple notifications without AI summary
+        await _showFallbackNotifications(batches);
+        return;
+      }
+
+      // 4. Display local notifications
+      await _showNotifications(summaries);
+    } catch (e) {
+      log.warning('Error handling sync_wake notification', e);
+    }
   }
+
+  /// Build notification batches from local unread thread data.
+  /// Groups by first-level priority (direct children of root).
+  Future<List<NotificationBatch>> _buildNotificationBatches(Store store) async {
+    // Get all unread threads with their priority info
+    final unreadRows = await (store.select(store.threads)
+          ..where((t) => t.unread.equals(true)))
+        .get();
+
+    if (unreadRows.isEmpty) return [];
+
+    // Get all priorities to resolve first-level grouping
+    final allPriorities = await store.select(store.priorities).get();
+    final priorityById = {for (final p in allPriorities) p.id.value.toString(): p};
+
+    // Find the root priority
+    final rootPriority = allPriorities
+        .where((p) => p.root)
+        .firstOrNull;
+    if (rootPriority == null) return [];
+
+    final rootPath = rootPriority.path.value;
+
+    // Group unread threads by first-level priority
+    final Map<String, NotificationBatch> batchMap = {};
+
+    for (final thread in unreadRows) {
+      // passive threads show unread in-app but don't generate push notifications
+      if (thread.urgency == 'passive') continue;
+
+      final priorityIdStr = thread.priorityId.value.toString();
+      final priority = priorityById[priorityIdStr];
+      if (priority == null) continue;
+
+      // Find the first-level priority (direct child of root)
+      final firstLevel = _findFirstLevelPriority(
+        priority.path.value, rootPath, allPriorities,
+      );
+      if (firstLevel == null) continue;
+
+      final firstLevelIdStr = firstLevel.id.value.toString();
+
+      final batch = batchMap.putIfAbsent(
+        firstLevelIdStr,
+        () => NotificationBatch(
+          firstLevelPriorityId: firstLevelIdStr,
+          priorityTitle: firstLevel.title,
+          threads: [],
+          highestUrgency: 'inform-updates',
+          attentionWindow: firstLevel.attentionWindow != null
+              ? AttentionWindow.fromJsonString(firstLevel.attentionWindow)
+              : null,
+        ),
+      );
+
+      batch.threads.add(NotificationThread(
+        id: thread.id.value.toString(),
+        title: thread.title,
+        preview: thread.preview,
+        urgency: thread.urgency ?? 'inform-updates',
+        priorityId: priorityIdStr,
+      ));
+
+      // Track highest urgency in batch
+      if (_urgencyRank(thread.urgency) < _urgencyRank(batch.highestUrgency)) {
+        batch.highestUrgency = thread.urgency ?? 'inform-updates';
+      }
+    }
+
+    // For each batch, compute the target priority (lowest common ancestor)
+    for (final batch in batchMap.values) {
+      batch.targetPriorityId = _computeTargetPriority(
+        batch.threads.map((t) => t.priorityId).toSet(),
+        priorityById,
+        batch.firstLevelPriorityId,
+      );
+    }
+
+    return batchMap.values.toList();
+  }
+
+  /// Find the first-level priority (direct child of root) for a given path.
+  PriorityRow? _findFirstLevelPriority(
+    String threadPriorityPath,
+    String rootPath,
+    List<PriorityRow> allPriorities,
+  ) {
+    // First-level priority path has exactly one more segment than root
+    // e.g., root = "abc", first-level = "abc.work"
+    final rootSegments = rootPath.split('.');
+    final pathSegments = threadPriorityPath.split('.');
+
+    if (pathSegments.length <= rootSegments.length) return null;
+
+    // Build the first-level path
+    final firstLevelPath = pathSegments.sublist(0, rootSegments.length + 1).join('.');
+
+    return allPriorities
+        .where((p) => p.path.value == firstLevelPath)
+        .firstOrNull;
+  }
+
+  /// Compute the lowest common ancestor priority that contains all thread priorities.
+  String _computeTargetPriority(
+    Set<String> priorityIds,
+    Map<String, PriorityRow> priorityById,
+    String fallbackId,
+  ) {
+    if (priorityIds.length == 1) return priorityIds.first;
+
+    // Get paths for all priorities
+    final paths = priorityIds
+        .map((id) => priorityById[id]?.path.value)
+        .whereType<String>()
+        .toList();
+
+    if (paths.isEmpty) return fallbackId;
+
+    // Find common prefix of all paths
+    final segments = paths.map((p) => p.split('.')).toList();
+    final minLength = segments.map((s) => s.length).reduce((a, b) => a < b ? a : b);
+
+    int commonLength = 0;
+    for (int i = 0; i < minLength; i++) {
+      final segment = segments[0][i];
+      if (segments.every((s) => s[i] == segment)) {
+        commonLength = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    if (commonLength == 0) return fallbackId;
+
+    final commonPath = segments[0].sublist(0, commonLength).join('.');
+    final match = priorityById.values
+        .where((p) => p.path.value == commonPath)
+        .firstOrNull;
+
+    return match?.id.value.toString() ?? fallbackId;
+  }
+
+  /// Fetch AI-generated summaries from the API.
+  Future<List<Map<String, dynamic>>?> _fetchSummaries(
+    List<NotificationBatch> batches,
+  ) async {
+    try {
+      final response = await api.post<Map<String, dynamic>>(
+        '/notification-summary',
+        body: {
+          'batches': batches.map((b) {
+            return {
+              'first_level_priority_id': b.firstLevelPriorityId,
+              'priority_title': b.priorityTitle,
+              'target_priority_id': b.targetPriorityId,
+              'threads': b.threads.take(10).map((t) {
+                return {
+                  'id': t.id,
+                  'title': t.title,
+                  'preview': t.preview,
+                };
+              }).toList(),
+            };
+          }).toList(),
+        },
+      );
+
+      final summaries = response['summaries'] as List?;
+      return summaries?.cast<Map<String, dynamic>>();
+    } catch (e) {
+      log.warning('Failed to fetch notification summaries', e);
+      return null;
+    }
+  }
+
+  /// Show notifications using AI-generated summaries.
+  Future<void> _showNotifications(List<Map<String, dynamic>> summaries) async {
+    for (var i = 0; i < summaries.length; i++) {
+      final summary = summaries[i];
+      final title = summary['title'] as String? ?? 'Updates';
+      final body = summary['body'] as String? ?? 'You have new updates';
+      final targetPriorityId = summary['target_priority_id'] as String? ?? '';
+
+      await NotificationDisplay.instance.showBatchNotification(
+        id: i,
+        title: title,
+        body: body,
+        targetPriorityId: targetPriorityId,
+      );
+    }
+  }
+
+  /// Fallback: show simple notifications without AI summary.
+  Future<void> _showFallbackNotifications(List<NotificationBatch> batches) async {
+    for (var i = 0; i < batches.length; i++) {
+      final batch = batches[i];
+      final title = batch.priorityTitle ?? 'Updates';
+      final body = batch.threads.length == 1
+          ? batch.threads.first.title ?? 'New update'
+          : '${batch.threads.length} new updates';
+
+      await NotificationDisplay.instance.showBatchNotification(
+        id: i,
+        title: title,
+        body: body,
+        targetPriorityId: batch.targetPriorityId ?? batch.firstLevelPriorityId,
+        urgency: batch.highestUrgency,
+      );
+    }
+  }
+
+  int _urgencyRank(String? urgency) => switch (urgency) {
+    'interrupt' => 0,
+    'inform-requests' => 1,
+    'inform-updates' => 2,
+    'passive' => 3,
+    _ => 4,
+  };
+
+  void _handleNotificationTap(RemoteMessage message) {
+    final targetPriorityId = message.data['target_priority_id'] as String?;
+    if (targetPriorityId != null) {
+      _handlePayloadTap(targetPriorityId);
+    }
+  }
+
+  void _handlePayloadTap(String? payload) {
+    if (payload != null && payload.isNotEmpty) {
+      onNavigateToPriority?.call(payload);
+    }
+  }
+}
+
+/// A batch of unread threads for a single first-level priority.
+class NotificationBatch {
+  final String firstLevelPriorityId;
+  final String? priorityTitle;
+  final List<NotificationThread> threads;
+  String highestUrgency;
+  String? targetPriorityId;
+  final List<AttentionWindow>? attentionWindow;
+
+  NotificationBatch({
+    required this.firstLevelPriorityId,
+    required this.priorityTitle,
+    required this.threads,
+    required this.highestUrgency,
+    this.targetPriorityId,
+    this.attentionWindow,
+  });
+}
+
+/// A single unread thread within a notification batch.
+class NotificationThread {
+  final String id;
+  final String? title;
+  final String? preview;
+  final String urgency;
+  final String priorityId;
+
+  NotificationThread({
+    required this.id,
+    required this.title,
+    required this.preview,
+    required this.urgency,
+    required this.priorityId,
+  });
 }

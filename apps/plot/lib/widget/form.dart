@@ -915,11 +915,9 @@ class FormWindowList extends FormItem {
   }
 
   void removeWindow(int index) {
-    if (_windows.length > 1) {
-      _windows.removeAt(index);
-      onChanged?.call();
-      _notifyListeners();
-    }
+    _windows.removeAt(index);
+    onChanged?.call();
+    _notifyListeners();
   }
 
   void addWindow(AttentionWindow window) {
@@ -940,7 +938,7 @@ class FormWindowList extends FormItem {
   }
 
   @override
-  bool isValid() => _windows.isNotEmpty;
+  bool isValid() => true;
 
   void addListener(VoidCallback listener) {
     _listeners.add(listener);
@@ -1059,7 +1057,7 @@ class _AddWindowTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      title: 'Add attention time',
+      title: 'Add quiet hours',
       icon: PlotIcon.add,
       style: ListTileStyle.button,
       muted: true,
@@ -1067,7 +1065,7 @@ class _AddWindowTile extends StatelessWidget {
       focusNode: focusNode,
       command: CommandWrapper(
         _FormSubmitCommand(),
-        title: 'Add attention time',
+        title: 'Add quiet hours',
         icon: Value(PlotIcon.add),
         run: (_, __) async {
           onTap();

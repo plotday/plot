@@ -2,7 +2,7 @@ CREATE TABLE "public"."thread_unread" (
     "updated_at" timestamptz NOT NULL DEFAULT now(),
     "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     "thread_id" uuid NOT NULL REFERENCES public.thread ON DELETE CASCADE,
-    "urgency" text NOT NULL CHECK (urgency IN ('interrupt', 'inform-fast', 'inform-slow')),
+    "urgency" text NOT NULL CHECK (urgency IN ('interrupt', 'inform-requests', 'inform-updates', 'passive')),
     "importance" smallint NOT NULL DEFAULT 50 CHECK (importance >= 0 AND importance <= 100),
     "read_at" timestamptz,          -- NULL = unread; set when user reads
     "bumped_at" timestamptz,        -- for manual bumps

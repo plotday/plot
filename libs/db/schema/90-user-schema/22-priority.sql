@@ -39,9 +39,11 @@ SELECT
     COALESCE(upu.unread, FALSE) AS unread,
     "user".get_effective_role(pu.user_id, p.id) AS role,
     inherited.attention_window,
-    inherited.see_within,
+    inherited.see_within_requests,
+    inherited.see_within_updates,
     COALESCE(settings.attention_window_set, FALSE) AS attention_window_set,
-    COALESCE(settings.see_within_set, FALSE) AS see_within_set
+    COALESCE(settings.see_within_requests_set, FALSE) AS see_within_requests_set,
+    COALESCE(settings.see_within_updates_set, FALSE) AS see_within_updates_set
 FROM
     priority_user pu
     JOIN priority root ON pu.priority_id = root.id
@@ -56,7 +58,8 @@ FROM
             MAX(CASE WHEN key = 'order' THEN (value #>> '{}')::double precision END) AS "order",
             MAX(CASE WHEN key = 'title' THEN value #>> '{}' END) AS title,
             (MAX(CASE WHEN key = 'attention_window' THEN 1 END) IS NOT NULL) AS attention_window_set,
-            (MAX(CASE WHEN key = 'see_within' THEN 1 END) IS NOT NULL) AS see_within_set,
+            (MAX(CASE WHEN key = 'see_within_requests' THEN 1 END) IS NOT NULL) AS see_within_requests_set,
+            (MAX(CASE WHEN key = 'see_within_updates' THEN 1 END) IS NOT NULL) AS see_within_updates_set,
             MAX(updated_at) AS updated_at
         FROM priority_setting
         GROUP BY user_id, priority_id
@@ -67,7 +70,8 @@ FROM
             MAX(CASE WHEN key = 'pomodoro' THEN (value #>> '{}')::integer END) AS pomodoro,
             MAX(CASE WHEN key = 'color' THEN (value #>> '{}')::integer END) AS color,
             MAX(CASE WHEN key = 'attention_window' THEN value::text END)::jsonb AS attention_window,
-            MAX(CASE WHEN key = 'see_within' THEN value::text END)::jsonb AS see_within,
+            MAX(CASE WHEN key = 'see_within_requests' THEN value::text END)::jsonb AS see_within_requests,
+            MAX(CASE WHEN key = 'see_within_updates' THEN value::text END)::jsonb AS see_within_updates,
             MAX(CASE WHEN key = 'path' THEN value #>> '{}' END) AS path_value,
             MAX(CASE WHEN key = 'path' THEN text(source_path) END) AS path_source
         FROM priority_setting_inherited

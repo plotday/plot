@@ -591,14 +591,14 @@ class Thread extends Equatable implements Comparable<Thread> {
         }
       }
 
-      // Batch POST for marking as unread (manual mark-unread uses inform-slow)
+      // Batch POST for marking as unread (manual mark-unread uses inform-updates)
       if (toMarkUnread.isNotEmpty) {
         for (final activity in toMarkUnread) {
           await api.post<dynamic>(
             '/sync/thread-unread',
             body: {
               'thread_id': activity.id.toString(),
-              'urgency': 'inform-slow',
+              'urgency': 'inform-updates',
             },
           );
         }
@@ -1860,9 +1860,10 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   int get urgencyRank => switch (urgency) {
     'interrupt' => 0,
-    'inform-fast' => 1,
-    'inform-slow' => 2,
-    _ => 3,
+    'inform-requests' => 1,
+    'inform-updates' => 2,
+    'passive' => 3,
+    _ => 4,
   };
 
   String? get title => _thread.title;

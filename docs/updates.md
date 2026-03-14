@@ -1,3 +1,5 @@
+- Smarter notification timing — push notifications now respect your per-priority "see within" settings, so requests and updates arrive on your schedule instead of fixed delays
+- Smart notifications — get push notifications timed by urgency, with AI-generated summaries grouped by your top-level priorities. Urgent items notify immediately, while routine updates are batched and delivered within your preferred timeframe.
 - Connection and twist limits now enforced based on your plan — free accounts get 3 connections and 1 twist, with friendly upgrade prompts when you reach your limit
 - Bring your own AI keys — add your own OpenAI, Anthropic, or Google API keys in Settings for twist AI features, scoped to your account or your organization
 - Better author attribution on synced items — threads from Linear, GitHub, Jira, Asana, and Slack now show the correct person even when their email isn't available

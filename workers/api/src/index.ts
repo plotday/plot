@@ -20,6 +20,7 @@ import subscribe from "./app/subscribe";
 import aiKeyRoutes from "./app/ai-keys";
 import organizationRoutes from "./app/organization";
 import appSync from "./app/sync";
+import notificationSummary from "./app/notification-summary";
 import summary from "./app/summary";
 import updates from "./app/updates";
 import type { Bindings } from "./env";
@@ -58,6 +59,7 @@ export { TwistSync } from "./state/twist-sync";
 export { SyncNotify } from "./state/sync-notify";
 export { SyncRecovery } from "./state/sync-recovery";
 export { PrivacyReporting } from "./state/privacy-reporting";
+export { PushNotify } from "./state/push-notify";
 
 export class TwistBuilder extends Container {
   defaultPort = 3000;
@@ -152,6 +154,7 @@ appSection.route("/", twists);
 appSection.route("/", twistIntegrations);
 appSection.route("/", authRoutes);
 appSection.route("/", callbacks);
+appSection.route("/", notificationSummary);
 appSection.route("/", summary);
 appSection.route("/", updates);
 appSection.route("/", files);

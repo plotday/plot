@@ -28,7 +28,7 @@ threadUnread.post("/sync/thread-unread", async (c) => {
         await rpcUser(trx, "upsert_thread_unread", {
           user_id: userId,
           p_thread_id: record.thread_id,
-          p_urgency: record.urgency || "inform-slow",
+          p_urgency: record.urgency || "inform-updates",
           ...(record.bumped_at ? { p_bumped_at: record.bumped_at } : {}),
         });
       }

@@ -79,3 +79,69 @@ export async function sendPushNotification(
 
   return { success: false, error: errorBody };
 }
+
+/**
+ * Sends a data-only (silent) message to a single device via FCM HTTP v1 API.
+ * No notification key — the app handles display. Used for background wake signals.
+ */
+export async function sendDataMessage(
+  config: FcmConfig,
+  deviceToken: string,
+  data: Record<string, string>
+): Promise<{ success: boolean; error?: string; unregistered?: boolean }> {
+  const accessToken = await getGcpAccessToken(
+    config.serviceAccountEmail,
+    config.serviceAccountKey,
+    FCM_SCOPE
+  );
+
+  const url = `https://fcm.googleapis.com/v1/projects/${config.projectId}/messages:send`;
+
+  const message: Record<string, unknown> = {
+    token: deviceToken,
+    data,
+    android: {
+      priority: "high",
+    },
+    apns: {
+      headers: {
+        "apns-push-type": "background",
+        "apns-priority": "10",
+      },
+      payload: {
+        aps: {
+          "content-available": 1,
+        },
+      },
+    },
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ message }),
+  });
+
+  if (response.ok) {
+    return { success: true };
+  }
+
+  const errorBody = await response.text();
+
+  if (
+    response.status === 404 ||
+    errorBody.includes("UNREGISTERED") ||
+    errorBody.includes("NOT_FOUND")
+  ) {
+    return {
+      success: false,
+      error: "Token is unregistered or invalid",
+      unregistered: true,
+    };
+  }
+
+  return { success: false, error: errorBody };
+}

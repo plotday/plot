@@ -25,9 +25,11 @@ class Priorities extends Table
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   TextColumn get role => text().withDefault(const Constant('member'))();
   TextColumn get attentionWindow => text().nullable()();
-  TextColumn get seeWithin => text().nullable()();
+  TextColumn get seeWithinRequests => text().nullable()();
+  TextColumn get seeWithinUpdates => text().nullable()();
   BoolColumn get attentionWindowSet => boolean().withDefault(const Constant(false))();
-  BoolColumn get seeWithinSet => boolean().withDefault(const Constant(false))();
+  BoolColumn get seeWithinRequestsSet => boolean().withDefault(const Constant(false))();
+  BoolColumn get seeWithinUpdatesSet => boolean().withDefault(const Constant(false))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -44,32 +46,30 @@ class PrioritiesBase extends BaseTable {
     json.remove('updated_by');
     json.remove('global_path');
     json['role'] ??= 'member';
-    // Remap old column names (response_window/turnaround) to new names (attention_window/see_within)
+    // Remap old column names (response_window → attention_window)
     if (json.containsKey('response_window') &&
         !json.containsKey('attention_window')) {
       json['attention_window'] = json.remove('response_window');
-    }
-    if (json.containsKey('turnaround') && !json.containsKey('see_within')) {
-      json['see_within'] = json.remove('turnaround');
     }
     if (json.containsKey('response_window_set') &&
         !json.containsKey('attention_window_set')) {
       json['attention_window_set'] = json.remove('response_window_set');
     }
-    if (json.containsKey('turnaround_set') &&
-        !json.containsKey('see_within_set')) {
-      json['see_within_set'] = json.remove('turnaround_set');
-    }
-    // JSON-encode attention_window and see_within from API (JSON objects → strings for Drift text columns)
+    // JSON-encode attention_window and see_within_* from API (JSON objects → strings for Drift text columns)
     if (json['attention_window'] != null) {
       json['attention_window'] = json['attention_window'] is String
           ? json['attention_window']
           : jsonEncode(json['attention_window']);
     }
-    if (json['see_within'] != null) {
-      json['see_within'] = json['see_within'] is String
-          ? json['see_within']
-          : jsonEncode(json['see_within']);
+    if (json['see_within_requests'] != null) {
+      json['see_within_requests'] = json['see_within_requests'] is String
+          ? json['see_within_requests']
+          : jsonEncode(json['see_within_requests']);
+    }
+    if (json['see_within_updates'] != null) {
+      json['see_within_updates'] = json['see_within_updates'] is String
+          ? json['see_within_updates']
+          : jsonEncode(json['see_within_updates']);
     }
     return PriorityRow.fromJson(json);
   }
@@ -80,9 +80,11 @@ class PrioritiesBase extends BaseTable {
     json.remove('unread');
     json.remove('role');
     json.remove('attention_window');
-    json.remove('see_within');
+    json.remove('see_within_requests');
+    json.remove('see_within_updates');
     json.remove('attention_window_set');
-    json.remove('see_within_set');
+    json.remove('see_within_requests_set');
+    json.remove('see_within_updates_set');
     return json;
   }
 }
@@ -863,7 +865,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          unread: false,
          role: parent.role,
          attentionWindowSet: false,
-         seeWithinSet: false,
+         seeWithinRequestsSet: false,
+         seeWithinUpdatesSet: false,
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -932,9 +935,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          unread: row.unread,
          role: row.role,
          attentionWindow: row.attentionWindow,
-         seeWithin: row.seeWithin,
+         seeWithinRequests: row.seeWithinRequests,
+         seeWithinUpdates: row.seeWithinUpdates,
          attentionWindowSet: row.attentionWindowSet,
-         seeWithinSet: row.seeWithinSet,
+         seeWithinRequestsSet: row.seeWithinRequestsSet,
+         seeWithinUpdatesSet: row.seeWithinUpdatesSet,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -1052,9 +1057,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   List<AttentionWindow>? get attentionWindows =>
       AttentionWindow.fromJsonString(attentionWindow);
 
-  /// Parsed see within time setting (inherited from this priority or ancestors).
-  SeeWithinTime? get seeWithinTime =>
-      SeeWithinTime.fromJsonString(seeWithin);
+  /// Parsed see within requests time (inherited from this priority or ancestors).
+  SeeWithinTime? get seeWithinRequestsTime =>
+      SeeWithinTime.fromJsonString(seeWithinRequests);
+
+  /// Parsed see within updates time (inherited from this priority or ancestors).
+  SeeWithinTime? get seeWithinUpdatesTime =>
+      SeeWithinTime.fromJsonString(seeWithinUpdates);
 
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
@@ -1131,9 +1140,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? unread,
     String? role,
     Value<String?> attentionWindow = const Value.absent(),
-    Value<String?> seeWithin = const Value.absent(),
+    Value<String?> seeWithinRequests = const Value.absent(),
+    Value<String?> seeWithinUpdates = const Value.absent(),
     bool? attentionWindowSet,
-    bool? seeWithinSet,
+    bool? seeWithinRequestsSet,
+    bool? seeWithinUpdatesSet,
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1169,9 +1180,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         unread: unread,
         role: role,
         attentionWindow: attentionWindow,
-        seeWithin: seeWithin,
+        seeWithinRequests: seeWithinRequests,
+        seeWithinUpdates: seeWithinUpdates,
         attentionWindowSet: attentionWindowSet,
-        seeWithinSet: seeWithinSet,
+        seeWithinRequestsSet: seeWithinRequestsSet,
+        seeWithinUpdatesSet: seeWithinUpdatesSet,
       ),
       parent: currentParent,
       children: children,

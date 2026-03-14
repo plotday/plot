@@ -3669,8 +3669,10 @@ export type Database = {
           pomodoro: number | null
           role: string | null
           root: boolean | null
-          see_within: Json | null
-          see_within_set: boolean | null
+          see_within_requests: Json | null
+          see_within_requests_set: boolean | null
+          see_within_updates: Json | null
+          see_within_updates_set: boolean | null
           title: string | null
           top_order: number | null
           unread: boolean | null
@@ -3965,8 +3967,10 @@ export type Database = {
           pomodoro: number | null
           role: string | null
           root: boolean | null
-          see_within: Json | null
-          see_within_set: boolean | null
+          see_within_requests: Json | null
+          see_within_requests_set: boolean | null
+          see_within_updates: Json | null
+          see_within_updates_set: boolean | null
           title: string | null
           top_order: number | null
           unread: boolean | null
@@ -3985,9 +3989,11 @@ export type Database = {
         Args: {
           p_attention_window?: Json
           p_priority_id: string
-          p_see_within?: Json
+          p_see_within_requests?: Json
+          p_see_within_updates?: Json
           p_set_attention_window?: boolean
-          p_set_see_within?: boolean
+          p_set_see_within_requests?: boolean
+          p_set_see_within_updates?: boolean
           p_user_id: string
         }
         Returns: undefined

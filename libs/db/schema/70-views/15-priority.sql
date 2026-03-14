@@ -40,7 +40,7 @@ WITH all_sources AS (
     FROM priority_setting ps
     JOIN priority parent ON ps.priority_id = parent.id
     JOIN priority p ON p.path <@ parent.path
-    WHERE ps.key IN ('pomodoro', 'color', 'path', 'attention_window', 'see_within')
+    WHERE ps.key IN ('pomodoro', 'color', 'path', 'attention_window', 'see_within_requests', 'see_within_updates')
     UNION ALL
     -- Priority table color fallback (source_type = 1)
     SELECT

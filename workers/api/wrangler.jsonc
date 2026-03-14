@@ -66,6 +66,10 @@
     {
       "tag": "v15",
       "new_sqlite_classes": ["SyncNotify"]
+    },
+    {
+      "tag": "v16",
+      "new_sqlite_classes": ["PushNotify"]
     }
   ],
   "env": {
@@ -238,6 +242,10 @@
           {
             "name": "PRIVACY_REPORTING",
             "class_name": "PrivacyReporting"
+          },
+          {
+            "name": "PUSH_NOTIFY",
+            "class_name": "PushNotify"
           }
         ]
       },
@@ -427,6 +435,10 @@
           {
             "name": "PRIVACY_REPORTING",
             "class_name": "PrivacyReporting"
+          },
+          {
+            "name": "PUSH_NOTIFY",
+            "class_name": "PushNotify"
           }
         ]
       },

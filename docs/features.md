@@ -70,6 +70,8 @@ Internal catalog of product features for marketing content generation. Direct an
 - Activity assignment
 - Author tracking (activities and notes)
 - @-mentions for notifications
+- Smart push notifications with urgency-based delivery timing, respecting per-priority "see within" settings
+- AI-generated notification summaries grouped by priority
 - Per-user unread tracking
 - Real-time sync across users and devices
 

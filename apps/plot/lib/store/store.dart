@@ -1443,6 +1443,14 @@ class Store extends _$Store {
         "Pulled ${baseRows.length} rows from ${baseTable.table} (entity: $entityName, ascending: $ascending, archived: $archived, more: $more)",
       );
 
+      // Capture boundary values before fromBase() which may mutate the maps
+      final lastRowBoundary = baseRows.isNotEmpty
+          ? baseRows.last[baseTable.order] as String?
+          : null;
+      final lastRowCreatedAt = baseRows.isNotEmpty
+          ? baseRows.last['created_at'] as String?
+          : null;
+
       final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
         try {
           return [baseTable.fromBase(r)];
@@ -1473,14 +1481,15 @@ class Store extends _$Store {
       // Update sync state with pagination boundary and noMore flag
       if (baseRows.isNotEmpty && lastUpdated != null) {
         // Use the last row in the batch as the pagination boundary
+        // (captured before fromBase() which may strip computed columns)
         // For descending: baseRows.last = oldest item (boundary moving backwards)
         // For ascending: baseRows.last = newest item (boundary moving forwards)
-        var boundaryValue = baseRows.last[baseTable.order] as String?;
+        var boundaryValue = lastRowBoundary;
         if (boundaryValue == null) {
           // Fall back to created_at when sort column is null (e.g. infinity
           // timestamps that serialize to null, or missing computed columns)
-          boundaryValue = baseRows.last['created_at'] as String?;
-          log.warning(
+          boundaryValue = lastRowCreatedAt;
+          log.info(
             "Boundary value for ${baseTable.order} is null in last row of "
             "${baseTable.table}, falling back to created_at=$boundaryValue",
           );
@@ -1807,7 +1816,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 273;
+  int get schemaVersion => 275;
 
   @override
   MigrationStrategy get migration {
@@ -2250,9 +2259,7 @@ class Store extends _$Store {
         priorities,
         columnTransformer: {
           priorities.attentionWindow: const CustomExpression('response_window'),
-          priorities.seeWithin: const CustomExpression('turnaround'),
           priorities.attentionWindowSet: const CustomExpression('response_window_set'),
-          priorities.seeWithinSet: const CustomExpression('turnaround_set'),
         },
       ));
     }
@@ -2264,6 +2271,17 @@ class Store extends _$Store {
     }
     if (from < 273) {
       await _safeAddColumn(m, threads, threads.urgency);
+    }
+    if (from < 274) {
+      await _safeAddColumn(m, priorities, priorities.seeWithinRequests);
+      await _safeAddColumn(m, priorities, priorities.seeWithinUpdates);
+      await _safeAddColumn(m, priorities, priorities.seeWithinRequestsSet);
+      await _safeAddColumn(m, priorities, priorities.seeWithinUpdatesSet);
+    }
+    if (from < 275) {
+      // Drop see_within and see_within_set columns (replaced by see_within_requests/see_within_updates)
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(priorities));
     }
   }
 

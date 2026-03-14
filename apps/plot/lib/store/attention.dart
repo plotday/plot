@@ -23,11 +23,7 @@ class AttentionWindow {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'days': days,
-    'start': start,
-    'end': end,
-  };
+  Map<String, dynamic> toJson() => {'days': days, 'start': start, 'end': end};
 
   AttentionWindow copyWith({List<int>? days, String? start, String? end}) {
     return AttentionWindow(
@@ -42,14 +38,10 @@ class AttentionWindow {
   String get displayDays {
     final sorted = List<int>.from(days)..sort();
     if (sorted.length == 7) return 'Every day';
-    if (sorted.length == 5 &&
-        sorted[0] == 1 &&
-        sorted[4] == 5) {
+    if (sorted.length == 5 && sorted[0] == 1 && sorted[4] == 5) {
       return 'Weekdays';
     }
-    if (sorted.length == 2 &&
-        sorted[0] == 6 &&
-        sorted[1] == 7) {
+    if (sorted.length == 2 && sorted[0] == 6 && sorted[1] == 7) {
       return 'Weekends';
     }
 
@@ -83,7 +75,9 @@ class AttentionWindow {
   static List<AttentionWindow>? fromJsonString(String? jsonString) {
     if (jsonString == null) return null;
     final list = jsonDecode(jsonString) as List;
-    return list.map((e) => AttentionWindow.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => AttentionWindow.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   static String? toJsonString(List<AttentionWindow>? windows) {
@@ -91,9 +85,13 @@ class AttentionWindow {
     return jsonEncode(windows.map((w) => w.toJson()).toList());
   }
 
-  /// Default attention window: every day, 9am-5pm
-  static List<AttentionWindow> get defaultBusinessHours => [
-    const AttentionWindow(days: [1, 2, 3, 4, 5, 6, 7], start: '09:00', end: '17:00'),
+  /// Default quiet hours: every day, 9pm-7am
+  static List<AttentionWindow> get defaultQuietHours => [
+    const AttentionWindow(
+      days: [1, 2, 3, 4, 5, 6, 7],
+      start: '21:00',
+      end: '07:00',
+    ),
   ];
 
   /// Computes the start of the last attention window before the "see within"
@@ -107,10 +105,13 @@ class AttentionWindow {
     final deadline = _computeDeadline(now, windows, seeWithin);
 
     // 2. Scan backwards from deadline to now to find last matching window
-    for (var day = deadline;
-        !day.isBefore(now);
-        day = day.subtract(const Duration(days: 1))) {
-      final isoWeekday = day.weekday; // 1=Mon..7=Sun (matches ISO used in windows)
+    for (
+      var day = deadline;
+      !day.isBefore(now);
+      day = day.subtract(const Duration(days: 1))
+    ) {
+      final isoWeekday =
+          day.weekday; // 1=Mon..7=Sun (matches ISO used in windows)
       for (final window in windows) {
         if (window.days.contains(isoWeekday)) {
           final startParts = window.start.split(':');
@@ -175,29 +176,12 @@ class AttentionWindow {
     SeeWithinTime seeWithin,
   ) {
     switch (seeWithin.unit) {
+      case SeeWithinUnit.minutes:
+        return now.add(Duration(minutes: seeWithin.value));
       case SeeWithinUnit.hours:
         return now.add(Duration(hours: seeWithin.value));
       case SeeWithinUnit.days:
         return now.add(Duration(days: seeWithin.value));
-      case SeeWithinUnit.workdays:
-        // Workdays = days that appear in any attention window
-        final workdays = <int>{};
-        for (final w in windows) {
-          workdays.addAll(w.days);
-        }
-        if (workdays.isEmpty) {
-          // Default to Mon-Fri
-          workdays.addAll([1, 2, 3, 4, 5]);
-        }
-        var remaining = seeWithin.value;
-        var date = now;
-        while (remaining > 0) {
-          date = date.add(const Duration(days: 1));
-          if (workdays.contains(date.weekday)) {
-            remaining--;
-          }
-        }
-        return date;
     }
   }
 
@@ -222,18 +206,18 @@ class AttentionWindow {
 }
 
 enum SeeWithinUnit {
+  minutes,
   hours,
-  days,
-  workdays;
+  days;
 
   String get label {
     switch (this) {
+      case SeeWithinUnit.minutes:
+        return 'minutes';
       case SeeWithinUnit.hours:
         return 'hours';
       case SeeWithinUnit.days:
         return 'days';
-      case SeeWithinUnit.workdays:
-        return 'work days';
     }
   }
 }
@@ -242,28 +226,22 @@ class SeeWithinTime {
   final int value;
   final SeeWithinUnit unit;
 
-  const SeeWithinTime({
-    required this.value,
-    required this.unit,
-  });
+  const SeeWithinTime({required this.value, required this.unit});
 
   factory SeeWithinTime.fromJson(Map<String, dynamic> json) {
     return SeeWithinTime(
       value: json['value'] as int,
-      unit: SeeWithinUnit.values.firstWhere(
-        (u) => u.name == json['unit'],
-      ),
+      unit: SeeWithinUnit.values.firstWhere((u) => u.name == json['unit']),
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'value': value,
-    'unit': unit.name,
-  };
+  Map<String, dynamic> toJson() => {'value': value, 'unit': unit.name};
 
   static SeeWithinTime? fromJsonString(String? jsonString) {
     if (jsonString == null) return null;
-    return SeeWithinTime.fromJson(jsonDecode(jsonString) as Map<String, dynamic>);
+    return SeeWithinTime.fromJson(
+      jsonDecode(jsonString) as Map<String, dynamic>,
+    );
   }
 
   static String? toJsonString(SeeWithinTime? seeWithin) {

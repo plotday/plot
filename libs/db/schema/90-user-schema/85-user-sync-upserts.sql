@@ -918,9 +918,11 @@ CREATE OR REPLACE FUNCTION "user".upsert_priority_attention(
     p_user_id uuid,
     p_priority_id uuid,
     p_attention_window jsonb DEFAULT NULL,
-    p_see_within jsonb DEFAULT NULL,
     p_set_attention_window boolean DEFAULT FALSE,
-    p_set_see_within boolean DEFAULT FALSE
+    p_see_within_requests jsonb DEFAULT NULL,
+    p_see_within_updates jsonb DEFAULT NULL,
+    p_set_see_within_requests boolean DEFAULT FALSE,
+    p_set_see_within_updates boolean DEFAULT FALSE
 ) RETURNS void LANGUAGE plpgsql SET search_path TO 'public', 'user' AS $function$
 BEGIN
     PERFORM "user".assert_priority_access(p_user_id, p_priority_id);
@@ -935,15 +937,26 @@ BEGIN
               AND priority_setting.priority_id = p_priority_id AND key = 'attention_window';
         END IF;
     END IF;
-    IF p_set_see_within THEN
-        IF p_see_within IS NOT NULL THEN
+    IF p_set_see_within_requests THEN
+        IF p_see_within_requests IS NOT NULL THEN
             INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (p_user_id, p_priority_id, 'see_within', p_see_within)
+            VALUES (p_user_id, p_priority_id, 'see_within_requests', p_see_within_requests)
             ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
         ELSE
             DELETE FROM priority_setting
             WHERE priority_setting.user_id = p_user_id
-              AND priority_setting.priority_id = p_priority_id AND key = 'see_within';
+              AND priority_setting.priority_id = p_priority_id AND key = 'see_within_requests';
+        END IF;
+    END IF;
+    IF p_set_see_within_updates THEN
+        IF p_see_within_updates IS NOT NULL THEN
+            INSERT INTO priority_setting (user_id, priority_id, key, value)
+            VALUES (p_user_id, p_priority_id, 'see_within_updates', p_see_within_updates)
+            ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+        ELSE
+            DELETE FROM priority_setting
+            WHERE priority_setting.user_id = p_user_id
+              AND priority_setting.priority_id = p_priority_id AND key = 'see_within_updates';
         END IF;
     END IF;
 END; $function$;

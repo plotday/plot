@@ -142,10 +142,21 @@ export class UserSync extends DurableObject<Bindings> {
       const hasClients = broadcastData.hasConnectedClients;
 
       if (!hasClients) {
-        // No connected clients, skip sync
-        logger.info("Skipping sync - no connected clients", {
-          user_id: this.userId,
-        });
+        // No connected clients — trigger push notification instead
+        try {
+          const pushNotifyId = this.env.PUSH_NOTIFY.idFromName(this.userId);
+          const pushNotifyDO = this.env.PUSH_NOTIFY.get(pushNotifyId);
+          await pushNotifyDO.fetch(
+            new Request("http://do/notify", {
+              method: "POST",
+              body: JSON.stringify({ userId: this.userId }),
+            })
+          );
+        } catch (error) {
+          logger.error("Error triggering PushNotify DO", error as Error, {
+            user_id: this.userId,
+          });
+        }
         this.state.lastSyncTime = now;
         return;
       }

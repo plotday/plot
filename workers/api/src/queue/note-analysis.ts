@@ -64,7 +64,7 @@ interface NoteContext {
   }>;
 }
 
-type UnreadUrgency = "interrupt" | "inform-fast" | "inform-slow" | "ignore";
+type UnreadUrgency = "interrupt" | "inform-requests" | "inform-updates" | "passive" | "ignore";
 
 interface UnreadClassification {
   urgency: UnreadUrgency;
@@ -291,9 +291,10 @@ Unread classification rules:
 - The note author should NEVER be included (they are always ignored).
 - urgency levels:
   - interrupt: urgent, needs immediate attention
-  - inform-fast: someone is waiting (reply needed, question asked)
-  - inform-slow: good to know when catching up
-  - ignore: not worth surfacing (e.g. automated updates, status changes only relevant to the author)
+  - inform-requests: someone is waiting on this person (reply needed, question asked, task assigned)
+  - inform-updates: general update worth reviewing (status changes, comments, progress)
+  - passive: minor update, show as unread but don't push-notify (automated updates, low-relevance changes)
+  - ignore: not worth surfacing
 - importance: 0-100 numeric scale. 0 = trivial, 50 = normal, 100 = critical. Consider how relevant the note is to each member.
 
 Respond with JSON only. No explanation.
@@ -301,10 +302,10 @@ Respond with JSON only. No explanation.
 Output schema:
 {
   "tags": [{"noteId": "string", "actorId": "string", "done": boolean, "tag": "todo"|"reply"}],
-  "unread": {"default": {"urgency": "inform-slow", "importance": 50}, "overrides": {"contactId": {"urgency": "inform-fast", "importance": 75}}}
+  "unread": {"default": {"urgency": "inform-updates", "importance": 50}, "overrides": {"contactId": {"urgency": "inform-requests", "importance": 75}}}
 }
 
-Empty tags array and default {"urgency": "inform-slow", "importance": 50} if no special classification needed.`,
+Empty tags array and default {"urgency": "inform-updates", "importance": 50} if no special classification needed.`,
     },
     {
       role: "user" as const,
@@ -332,7 +333,7 @@ New note by ${context.noteAuthorName ?? "Unknown"} (${context.noteAuthorId}): ${
     throw new Error("Unexpected stream response from AI");
   }
 
-  const defaultClassification: UnreadClassification = { urgency: "inform-slow", importance: 50 };
+  const defaultClassification: UnreadClassification = { urgency: "inform-updates", importance: 50 };
 
   const text = response.response?.trim();
   if (!text) {
@@ -378,8 +379,9 @@ New note by ${context.noteAuthorName ?? "Unknown"} (${context.noteAuthorId}): ${
 
     const validUrgencies = new Set([
       "interrupt",
-      "inform-fast",
-      "inform-slow",
+      "inform-requests",
+      "inform-updates",
+      "passive",
       "ignore",
     ]);
 
@@ -457,6 +459,9 @@ async function applyUnreadStatus(
         p_urgency: urgency,
         p_importance: importance,
       });
+
+      // passive: unread in app but no push notification
+      if (urgency === "passive") continue;
 
       await createSchedule(db, member.userId, threadId, "unread");
     } catch (error) {
