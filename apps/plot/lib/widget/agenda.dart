@@ -268,11 +268,14 @@ class _AgendaHeaderState extends State<AgendaHeader> {
       // If this header has an associated event activity, use RescheduleEvent
       if (widget.thread != null && widget.thread!.at != null) {
         command = CommandWrapper(
-          RescheduleEvent(widget.thread!, showPrioritySelector: true,
-              priorityBloc: context.read<PriorityBloc>()),
+          RescheduleEvent(
+            widget.thread!,
+            showPrioritySelector: true,
+            priorityBloc: context.read<PriorityBloc>(),
+          ),
           icon: Value(null),
         );
-        }
+      }
     }
 
     final verticalMargin = isGapHeader
@@ -348,32 +351,29 @@ class _AgendaHeaderState extends State<AgendaHeader> {
 
     // Gap/event time headers: centered time, rendered outside ListTile
     // to match date header centering
-    if (isGapHeader || (!widget.now && widget.date == null && centerText != null)) {
+    if (isGapHeader ||
+        (!widget.now && widget.date == null && centerText != null)) {
       final veryMuted = context.theme.plotColors.veryMuted;
       final contentColor = isGapHeader ? veryMuted : textColor;
       final timeStyle = TextStyle(color: contentColor, fontSize: fontSize);
 
       final Widget child;
-      if (timeCenterLeft != null || centerText != null) {
-        final String leftText;
-        final String? rightText;
-        if (timeCenterLeft != null) {
-          leftText = timeCenterLeft.trimRight();
-          rightText = timeCenterRight;
-        } else {
-          leftText = centerText!;
-          rightText = null;
-        }
-
-        // Width of a single space for the AM/PM gap
-        final spaceWidth = (TextPainter(
+      if (centerText != null) {
+        // Compute center gap to match date header day-number column
+        final dayNum = widget.dateTimeRange?.start?.day.toString() ?? '00';
+        final dateFontSize = context.theme.typography.base.fontSize;
+        final dayWidth = (TextPainter(
           text: TextSpan(
-            text: ' ',
-            style: TextStyle(fontSize: fontSize),
+            text: dayNum,
+            style: TextStyle(
+              fontSize: dateFontSize,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           maxLines: 1,
           textDirection: TextDirection.ltr,
         )..layout()).width;
+        final centerGap = 2 * context.theme.spacing.md + dayWidth;
 
         child = Row(
           children: [
@@ -381,30 +381,31 @@ class _AgendaHeaderState extends State<AgendaHeader> {
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  leftText,
+                  centerText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: timeStyle,
                 ),
               ),
             ),
-            SizedBox(width: spaceWidth),
-            Expanded(
-              child: Row(
-                children: [
-                  if (rightText != null)
-                    Text(rightText, style: timeStyle),
-                  const Spacer(),
-                  if (durationText != null)
-                    Text(
-                      durationText,
-                      style: TextStyle(
-                        color: veryMuted,
-                        fontSize: fontSize,
-                      ),
-                    ),
-                ],
+            SizedBox(
+              child: Center(
+                child: Text(
+                  '  ·  ',
+                  style: TextStyle(color: veryMuted, fontSize: fontSize),
+                ),
               ),
+            ),
+            Expanded(
+              child: durationText != null
+                  ? Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        durationText,
+                        style: TextStyle(color: veryMuted, fontSize: fontSize),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
           ],
         );
@@ -430,10 +431,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
 
       final cmd = command;
       if (cmd != null) {
-        result = GestureDetector(
-          onTap: () => cmd.run(context),
-          child: result,
-        );
+        result = GestureDetector(onTap: () => cmd.run(context), child: result);
       }
 
       return result;

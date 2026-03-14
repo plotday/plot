@@ -5,6 +5,7 @@ import 'package:plot/util/logo_cache.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/platform.dart';
@@ -167,9 +168,7 @@ class ThreadWidget extends StatelessWidget {
           ),
           selected: isScheduled,
           selectedColor: threadColor,
-          color: isScheduled
-              ? null
-              : buildContext.theme.plotColors.veryMuted,
+          color: isScheduled ? null : buildContext.theme.plotColors.veryMuted,
           forceHover: isHovered,
         );
 
@@ -230,10 +229,7 @@ class ThreadWidget extends StatelessWidget {
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  calendarIcon,
-                  todoIcon,
-                ],
+                children: [calendarIcon, todoIcon],
               ),
             ),
           ],
@@ -283,7 +279,11 @@ class ThreadWidget extends StatelessWidget {
                         // across the full tile width, matching date/gap
                         // header alignment.
                         final ghostPad = context
-                            .theme.buttonStyles.ghost.iconContentStyle.padding
+                            .theme
+                            .buttonStyles
+                            .ghost
+                            .iconContentStyle
+                            .padding
                             .resolve(TextDirection.ltr);
                         final buttonW =
                             context.theme.iconSizes.base + ghostPad.horizontal;
@@ -321,26 +321,6 @@ class ThreadWidget extends StatelessWidget {
                                         activity.at!.duration!.inSeconds > 0;
                                     final veryMuted =
                                         context.theme.plotColors.veryMuted;
-                                    // Center gap matches date header
-                                    // day-number column
-                                    final dayNum =
-                                        activity.at!.start!.day.toString();
-                                    final dateFontSize = context
-                                        .theme.typography.base.fontSize;
-                                    final dayWidth = (TextPainter(
-                                      text: TextSpan(
-                                        text: dayNum,
-                                        style: TextStyle(
-                                          fontSize: dateFontSize,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      maxLines: 1,
-                                      textDirection: TextDirection.ltr,
-                                    )..layout()).width;
-                                    final centerGap =
-                                        2 * context.theme.spacing.md +
-                                        dayWidth;
                                     return Row(
                                       children: [
                                         Expanded(
@@ -351,10 +331,9 @@ class ThreadWidget extends StatelessWidget {
                                           ),
                                         ),
                                         SizedBox(
-                                          width: centerGap,
                                           child: Center(
                                             child: Text(
-                                              '·',
+                                              '  ·  ',
                                               style: TextStyle(
                                                 color: veryMuted,
                                               ),
@@ -362,32 +341,27 @@ class ThreadWidget extends StatelessWidget {
                                           ),
                                         ),
                                         Expanded(
-                                          child: Row(
-                                            children: [
-                                              if (hasDuration)
-                                                Text(
+                                          child: hasDuration
+                                              ? Text(
                                                   activity.at!.duration!
                                                       .format(),
                                                   style: TextStyle(
                                                     color: veryMuted,
                                                   ),
-                                                ),
-                                              if (activity.hasOtherAttendees &&
-                                                  hasDuration)
-                                                const SizedBox(width: 4),
-                                              if (activity.hasOtherAttendees)
-                                                _RsvpSummary(
-                                                  activity: activity,
-                                                  color: veryMuted,
-                                                ),
-                                            ],
-                                          ),
+                                                )
+                                              : const SizedBox.shrink(),
                                         ),
                                       ],
                                     );
                                   },
                                 ),
                               ),
+                              // RSVP summary right-aligned within body bounds
+                              if (activity.hasOtherAttendees)
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: _RsvpSummary(activity: activity),
+                                ),
                               // Priority label on the left
                               if (hasBodyLabel)
                                 Align(
@@ -924,23 +898,33 @@ class _ConferencingIconButton extends StatelessWidget {
 }
 
 class _RsvpSummary extends StatelessWidget {
-  const _RsvpSummary({required this.activity, required this.color});
+  const _RsvpSummary({required this.activity});
 
   final Thread activity;
-  final Color color;
 
   @override
   Widget build(BuildContext context) {
     final counts = activity.rsvpCounts;
-    final style = TextStyle(color: color);
+    final attendColor = context.colour.colours.fromTheme(
+      ThemeColor(0),
+      muted: true,
+    );
+    final skipColor = context.colour.colours.fromTheme(
+      ThemeColor(5),
+      muted: true,
+    );
+    final undecidedColor = context.colour.veryMuted;
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       spacing: 4,
       children: [
-        if (counts.attend > 0) Text('${counts.attend}✓', style: style),
-        if (counts.skip > 0) Text('${counts.skip}✗', style: style),
-        if (counts.undecided > 0) Text('${counts.undecided}?', style: style),
+        if (counts.attend > 0)
+          Text('${counts.attend}✓', style: TextStyle(color: attendColor)),
+        if (counts.skip > 0)
+          Text('${counts.skip}✗', style: TextStyle(color: skipColor)),
+        if (counts.undecided > 0)
+          Text('${counts.undecided}?', style: TextStyle(color: undecidedColor)),
       ],
     );
   }
