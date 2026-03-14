@@ -346,16 +346,109 @@ class _AgendaHeaderState extends State<AgendaHeader> {
       );
     }
 
+    // Gap/event time headers: centered time, rendered outside ListTile
+    // to match date header centering
+    if (isGapHeader || (!widget.now && widget.date == null && centerText != null)) {
+      final veryMuted = context.theme.plotColors.veryMuted;
+      final contentColor = isGapHeader ? veryMuted : textColor;
+      final timeStyle = TextStyle(color: contentColor, fontSize: fontSize);
+
+      final Widget child;
+      if (timeCenterLeft != null || centerText != null) {
+        final String leftText;
+        final String? rightText;
+        if (timeCenterLeft != null) {
+          leftText = timeCenterLeft.trimRight();
+          rightText = timeCenterRight;
+        } else {
+          leftText = centerText!;
+          rightText = null;
+        }
+
+        // Width of a single space for the AM/PM gap
+        final spaceWidth = (TextPainter(
+          text: TextSpan(
+            text: ' ',
+            style: TextStyle(fontSize: fontSize),
+          ),
+          maxLines: 1,
+          textDirection: TextDirection.ltr,
+        )..layout()).width;
+
+        child = Row(
+          children: [
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  leftText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: timeStyle,
+                ),
+              ),
+            ),
+            SizedBox(width: spaceWidth),
+            Expanded(
+              child: Row(
+                children: [
+                  if (rightText != null)
+                    Text(rightText, style: timeStyle),
+                  const Spacer(),
+                  if (durationText != null)
+                    Text(
+                      durationText,
+                      style: TextStyle(
+                        color: veryMuted,
+                        fontSize: fontSize,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+      } else {
+        final double textHeight = (TextPainter(
+          text: TextSpan(
+            text: "A",
+            style: TextStyle(fontSize: fontSize),
+          ),
+          maxLines: 1,
+          textDirection: TextDirection.ltr,
+        )..layout()).height;
+        child = SizedBox(height: textHeight);
+      }
+
+      Widget result = Padding(
+        padding: EdgeInsets.symmetric(vertical: verticalMargin),
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: context.theme.spacing.xs),
+          child: child,
+        ),
+      );
+
+      final cmd = command;
+      if (cmd != null) {
+        result = GestureDetector(
+          onTap: () => cmd.run(context),
+          child: result,
+        );
+      }
+
+      return result;
+    }
+
     Widget tile = ListTile(
       command: command,
       focusNode: widget.focusNode,
-      noHoverHighlight: isGapHeader || widget.now,
+      noHoverHighlight: widget.now,
       padding: EdgeInsets.symmetric(
         horizontal: context.contentPaddingH,
         vertical: context.theme.spacing.xs,
       ),
       bodyBuilder: (context, isHighlighted) {
-        final backgroundColor = isHighlighted && !isGapHeader && !widget.now
+        final backgroundColor = isHighlighted && !widget.now
             ? Color.alphaBlend(
                 context.theme.plotColors.highlight,
                 context.theme.colors.background,
@@ -374,77 +467,6 @@ class _AgendaHeaderState extends State<AgendaHeader> {
             )..layout()).height;
 
             final spacing = context.theme.spacing.md;
-
-            // Gap/time headers: centered time with optional duration on right
-            if (isGapHeader || (!widget.now && centerText != null)) {
-              final veryMuted = context.theme.plotColors.veryMuted;
-              final contentColor = isGapHeader ? veryMuted : textColor;
-              final timeStyle = TextStyle(
-                color: contentColor,
-                fontSize: fontSize,
-              );
-
-              if (timeCenterLeft == null && centerText == null) {
-                return SizedBox(height: textHeight);
-              }
-
-              // Width of a single space for the AM/PM gap
-              final spaceWidth = (TextPainter(
-                text: TextSpan(
-                  text: ' ',
-                  style: TextStyle(fontSize: fontSize),
-                ),
-                maxLines: 1,
-                textDirection: TextDirection.ltr,
-              )..layout()).width;
-
-              final String leftText;
-              final String? rightText;
-              if (timeCenterLeft != null) {
-                leftText = timeCenterLeft.trimRight();
-                rightText = timeCenterRight;
-              } else {
-                leftText = centerText!;
-                rightText = null;
-              }
-
-              return Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      color: backgroundColor,
-                      padding: EdgeInsets.only(left: spacing),
-                      child: Text(
-                        leftText,
-                        style: timeStyle,
-                        textAlign: TextAlign.right,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: spaceWidth),
-                  Expanded(
-                    child: Container(
-                      color: backgroundColor,
-                      child: Row(
-                        children: [
-                          if (rightText != null)
-                            Text(rightText, style: timeStyle),
-                          const Spacer(),
-                          if (durationText != null)
-                            Text(
-                              durationText,
-                              style: TextStyle(
-                                color: veryMuted,
-                                fontSize: fontSize,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }
 
             // Now header with elapsed/remaining: 3-column layout
             if (widget.now &&

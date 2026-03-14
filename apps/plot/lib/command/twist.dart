@@ -1504,6 +1504,20 @@ class ShowTwistDetails extends ShowForm {
   final Priority? priority;
 
   static Future<FormData> _buildForm(Twist twist, Priority? priority) async {
+    // Only fetch plan/keys info for twists that use AI
+    bool? hasAiKeys;
+    String? effectivePlan;
+    if (twist.permissions?.forDomain('ai') != null) {
+      final results = await Future.wait([
+        SubscribeApi.getSubscription(),
+        SubscribeApi.getAiKeys(),
+      ]);
+      final subscription = results[0] as SubscriptionInfo;
+      final aiKeys = results[1] as List<String>;
+      hasAiKeys = aiKeys.isNotEmpty;
+      effectivePlan = subscription.effectivePlan;
+    }
+
     return FormData(
       title: twist.name,
       groups: [
@@ -1512,8 +1526,12 @@ class ShowTwistDetails extends ShowForm {
             FormInfo(
               key: 'details',
               divider: false,
-              builder: (context) =>
-                  TwistDetails(twist: twist, priority: priority),
+              builder: (context) => TwistDetails(
+                twist: twist,
+                priority: priority,
+                hasAiKeys: hasAiKeys,
+                effectivePlan: effectivePlan,
+              ),
             ),
           ],
         ),
@@ -1574,6 +1592,18 @@ class ShowTwistInfo extends ShowForm {
   }
 
   static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
+    // Fetch subscription and AI keys in parallel
+    final results = await Future.wait([
+      SubscribeApi.getSubscription(),
+      SubscribeApi.getAiKeys(),
+    ]);
+    final subscription = results[0] as SubscriptionInfo;
+    final aiKeys = results[1] as List<String>;
+    final hasAiKeys = aiKeys.isNotEmpty;
+
+    // Block AI-required twists for free users without keys
+    final blocked = twist.aiRequired && subscription.isFree && !hasAiKeys;
+
     return FormData(
       title: twist.name,
       groups: [
@@ -1582,9 +1612,14 @@ class ShowTwistInfo extends ShowForm {
             FormInfo(
               key: 'info',
               divider: true,
-              builder: (context) => TwistDetails(twist: twist),
+              builder: (context) => TwistDetails(
+                twist: twist,
+                hasAiKeys: hasAiKeys,
+                effectivePlan: subscription.effectivePlan,
+              ),
             ),
-            FormButton(key: 'add', buildCommand: (_) => SetupTwist(twist)),
+            if (!blocked)
+              FormButton(key: 'add', buildCommand: (_) => SetupTwist(twist)),
           ],
         ),
       ],

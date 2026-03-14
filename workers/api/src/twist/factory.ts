@@ -7,6 +7,7 @@ import { type Bindings, type TwistEnvironment } from "../env";
 import { decrypt } from "../utils/encryption";
 import type { ByokKeys } from "./tools/ai";
 import { createLogger } from "@plotday/worker-util";
+import { getEffectivePlan } from "../utils/plan";
 import { handleTwistOperation } from "./error-handling";
 import { getTwist } from "./loader";
 import {
@@ -128,6 +129,21 @@ export function twistFactory({
       aiEnabled = ownerSettings?.ai_enabled ?? true;
     }
 
+    // Resolve effective plan at runtime (not during deployment)
+    let effectivePlan: string | undefined;
+    if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
+      // Get owner_id from priority_twist
+      const ptOwner = await db
+        .selectFrom("priority_twist")
+        .select("owner_id")
+        .where("id", "=", priorityTwistId)
+        .executeTakeFirst();
+      if (ptOwner?.owner_id) {
+        const plan = await getEffectivePlan(db, ptOwner.owner_id);
+        effectivePlan = plan.plan;
+      }
+    }
+
     // Resolve BYOK keys at runtime (not during deployment)
     let byokKeys: ByokKeys | undefined;
     if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
@@ -201,6 +217,7 @@ export function twistFactory({
           sourceProvider,
           aiEnabled,
           byokKeys,
+          effectivePlan,
         });
       }
 

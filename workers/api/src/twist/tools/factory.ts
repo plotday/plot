@@ -124,6 +124,7 @@ export function createTool(
     sourceProvider,
     aiEnabled,
     byokKeys,
+    effectivePlan,
   }: {
     twistId: string;
     environment: TwistEnvironment;
@@ -139,6 +140,8 @@ export function createTool(
     aiEnabled?: boolean;
     /** BYOK API keys for AI providers. When set, only these providers are available. */
     byokKeys?: ByokKeys;
+    /** The user's effective plan (e.g. "free", "pro", "business"). Undefined during deployment. */
+    effectivePlan?: string;
   }
 ): Tool {
   switch (id) {
@@ -153,6 +156,10 @@ export function createTool(
     case "AI":
       // Return disabled stub when AI is off and twist declared AI as optional
       if (aiEnabled === false && (options as any)?.required === false) {
+        return new AIDisabledStub();
+      }
+      // Return disabled stub for free users without BYOK keys
+      if (effectivePlan === "free" && !byokKeys) {
         return new AIDisabledStub();
       }
       return new AI({ env, priorityTwistId, byokKeys });

@@ -9,10 +9,41 @@ import 'package:plot/util/string.dart';
 import 'package:plot/widget/twist_permission_helper.dart';
 
 class TwistDetails extends StatelessWidget {
-  const TwistDetails({required this.twist, this.priority, super.key});
+  const TwistDetails({
+    required this.twist,
+    this.priority,
+    this.hasAiKeys,
+    this.effectivePlan,
+    super.key,
+  });
 
   final Twist twist;
   final Priority? priority;
+
+  /// Whether the user has any AI API keys configured. Null = not fetched.
+  final bool? hasAiKeys;
+
+  /// The user's effective plan (e.g. 'free', 'pro', 'business'). Null = not fetched.
+  final String? effectivePlan;
+
+  bool get _isFree => effectivePlan == 'free';
+
+  bool get _aiMessageIsWarning =>
+      _isFree && hasAiKeys == false;
+
+  String? get _aiMessage {
+    if (hasAiKeys == null || effectivePlan == null) return null;
+    if (hasAiKeys == false && _isFree) {
+      return twist.aiRequired
+          ? 'Add API keys in settings to use this twist.'
+          : 'Add API keys in settings to enable AI features.';
+    }
+    if (hasAiKeys == true) {
+      return 'AI will use your API keys.';
+    }
+    // Subscribed, no keys
+    return 'AI usage will be billed to your subscription.';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -147,6 +178,18 @@ class TwistDetails extends StatelessWidget {
                         'AI',
                         twist.aiRequired ? 'Required' : 'Optional',
                       ),
+                      if (_aiMessage != null) ...[
+                        SizedBox(height: theme.spacing.sm),
+                        Text(
+                          _aiMessage!,
+                          style: TextStyle(
+                            fontSize: theme.typography.sm.fontSize,
+                            color: _aiMessageIsWarning
+                                ? theme.colors.destructive
+                                : theme.colors.mutedForeground,
+                          ),
+                        ),
+                      ],
                     ],
                     if (twist.createdAt != null) ...[
                       SizedBox(height: theme.spacing.sm),

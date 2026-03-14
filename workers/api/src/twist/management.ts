@@ -7,6 +7,7 @@ import { type TwistEnvironment, type Bindings } from "../env";
 import { rpc } from "../rpc";
 import { createLogger } from "@plotday/worker-util";
 import { checkConnectionLimit, checkTwistLimit } from "../utils/limits";
+import { getEffectivePlan } from "../utils/plan";
 
 /**
  * Cleans up a failed twist installation by:
@@ -150,6 +151,19 @@ export async function add(
           .executeTakeFirst() as { ai_enabled?: boolean } | undefined;
         if (userSettings?.ai_enabled === false) {
           throw new Error("This twist requires AI features which are disabled in your settings.");
+        }
+
+        // Block free users without API keys from adding AI-required twists
+        const effective = await getEffectivePlan(db, userId);
+        if (effective.plan === "free") {
+          const aiKeyCount = await db
+            .selectFrom("ai_key")
+            .select(db.fn.countAll().as("count"))
+            .where("user_id", "=", userId)
+            .executeTakeFirstOrThrow();
+          if (Number(aiKeyCount.count) === 0) {
+            throw new Error("Add an API key in settings to use AI-powered twists.");
+          }
         }
       }
     }
@@ -643,6 +657,19 @@ export async function activateDraft(
         .executeTakeFirst() as { ai_enabled?: boolean } | undefined;
       if (userSettings?.ai_enabled === false) {
         throw new Error("This twist requires AI features which are disabled in your settings.");
+      }
+
+      // Block free users without API keys from activating AI-required twists
+      const effective = await getEffectivePlan(db, draft.owner_id);
+      if (effective.plan === "free") {
+        const aiKeyCount = await db
+          .selectFrom("ai_key")
+          .select(db.fn.countAll().as("count"))
+          .where("user_id", "=", draft.owner_id)
+          .executeTakeFirstOrThrow();
+        if (Number(aiKeyCount.count) === 0) {
+          throw new Error("Add an API key in settings to use AI-powered twists.");
+        }
       }
     }
   }

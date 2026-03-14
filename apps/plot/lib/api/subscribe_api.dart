@@ -102,11 +102,51 @@ class UsageData extends Equatable {
   List<Object?> get props => [personal, organizations];
 }
 
+/// Subscription info including the effective plan across personal + org
+class SubscriptionInfo extends Equatable {
+  final String plan;
+  final String effectivePlan;
+  final String effectiveSource;
+
+  const SubscriptionInfo({
+    required this.plan,
+    required this.effectivePlan,
+    required this.effectiveSource,
+  });
+
+  factory SubscriptionInfo.fromJson(Map<String, dynamic> json) {
+    return SubscriptionInfo(
+      plan: json['plan'] as String? ?? 'free',
+      effectivePlan: json['effective_plan'] as String? ?? 'free',
+      effectiveSource: json['effective_source'] as String? ?? 'personal',
+    );
+  }
+
+  bool get isFree => effectivePlan == 'free';
+
+  @override
+  List<Object?> get props => [plan, effectivePlan, effectiveSource];
+}
+
 /// API methods for subscription and usage
 class SubscribeApi {
   /// Fetch current usage counts and limits for the authenticated user
   static Future<UsageData> getUsage() async {
     final response = await api.get<Map<String, dynamic>>('/subscribe/usage');
     return UsageData.fromJson(response);
+  }
+
+  /// Fetch subscription status including effective plan
+  static Future<SubscriptionInfo> getSubscription() async {
+    final response = await api.get<Map<String, dynamic>>('/subscribe');
+    return SubscriptionInfo.fromJson(response);
+  }
+
+  /// Fetch configured AI provider names (e.g. ['openai', 'anthropic'])
+  static Future<List<String>> getAiKeys() async {
+    final response = await api.get<List<dynamic>>('/ai-keys');
+    return response
+        .map((item) => (item as Map<String, dynamic>)['provider'] as String)
+        .toList();
   }
 }
