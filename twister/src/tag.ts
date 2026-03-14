@@ -40,4 +40,5 @@ export enum Tag {
   Applause = 1016,
   Cool = 1017,
   Sad = 1018,
+  Reply = 1019,
 }
