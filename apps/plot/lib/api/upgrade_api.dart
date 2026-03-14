@@ -129,16 +129,16 @@ class SubscriptionInfo extends Equatable {
 }
 
 /// API methods for subscription and usage
-class SubscribeApi {
+class UpgradeApi {
   /// Fetch current usage counts and limits for the authenticated user
   static Future<UsageData> getUsage() async {
-    final response = await api.get<Map<String, dynamic>>('/subscribe/usage');
+    final response = await api.get<Map<String, dynamic>>('/upgrade/usage');
     return UsageData.fromJson(response);
   }
 
   /// Fetch subscription status including effective plan
   static Future<SubscriptionInfo> getSubscription() async {
-    final response = await api.get<Map<String, dynamic>>('/subscribe');
+    final response = await api.get<Map<String, dynamic>>('/upgrade');
     return SubscriptionInfo.fromJson(response);
   }
 

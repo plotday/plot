@@ -570,15 +570,19 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       }
     }
 
-    // Update controller with current focusable count and activator
-    widget.channelListController?.update(
-      toggleableChannels.length,
-      (context, subIndex) async {
-        if (subIndex < toggleableChannels.length) {
-          _handleChannelTap(toggleableChannels[subIndex]);
-        }
-      },
-    );
+    // Update controller with current focusable count and activator.
+    // Deferred to avoid setState() during build when count changes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.channelListController?.update(
+        toggleableChannels.length,
+        (context, subIndex) async {
+          if (subIndex < toggleableChannels.length) {
+            _handleChannelTap(toggleableChannels[subIndex]);
+          }
+        },
+      );
+    });
 
     // Build channel rows for all visible providers
     final focusCounter = [0];

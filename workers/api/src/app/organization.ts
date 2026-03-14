@@ -598,8 +598,8 @@ organization.patch("/organization/:id/domains/:domainId", async (c) => {
   return c.json({ success: true });
 });
 
-// POST /organization/:id/subscribe/checkout - Stripe Checkout for org
-organization.post("/organization/:id/subscribe/checkout", async (c) => {
+// POST /organization/:id/upgrade/checkout - Stripe Checkout for org
+organization.post("/organization/:id/upgrade/checkout", async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
   const orgId = c.req.param("id");
@@ -701,8 +701,8 @@ organization.post("/organization/:id/subscribe/checkout", async (c) => {
   return c.json({ url: session.url });
 });
 
-// POST /organization/:id/subscribe/portal - Stripe portal for org
-organization.post("/organization/:id/subscribe/portal", async (c) => {
+// POST /organization/:id/upgrade/portal - Stripe portal for org
+organization.post("/organization/:id/upgrade/portal", async (c) => {
   const orgId = c.req.param("id");
 
   if (!(await requireAdmin(c, orgId))) {

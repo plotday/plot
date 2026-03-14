@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-import { useAuth } from "@clerk/react-router";
+import { SignUp, useAuth, useUser } from "@clerk/react-router";
 import { Link, useSearchParams } from "react-router";
 
 import {
@@ -21,8 +21,26 @@ import {
 
 import { IconCheck } from "@tabler/icons-react";
 
-import type { Route } from "./+types/subscribe";
-import classes from "./subscribe.module.css";
+import type { Route } from "./+types/upgrade";
+import classes from "./upgrade.module.css";
+
+const FREEMAIL_DOMAINS = new Set([
+  "gmail.com",
+  "yahoo.com",
+  "hotmail.com",
+  "outlook.com",
+  "icloud.com",
+  "aol.com",
+  "protonmail.com",
+  "proton.me",
+  "mail.com",
+  "zoho.com",
+  "yandex.com",
+  "gmx.com",
+  "live.com",
+  "me.com",
+  "msn.com",
+]);
 
 type Billing = "monthly" | "annual";
 
@@ -47,10 +65,10 @@ const QUANTITY_OPTIONS = Array.from({ length: 40 }, (_, i) => ({
 
 export function meta(_: Route.MetaArgs) {
   return [
-    { title: "Subscribe | Plot" },
+    { title: "Upgrade | Plot" },
     {
       name: "description",
-      content: "Manage your Plot subscription.",
+      content: "Manage your Plot plan.",
     },
   ];
 }
@@ -61,8 +79,9 @@ export async function loader({ context }: Route.LoaderArgs) {
   };
 }
 
-export default function Subscribe({ loaderData }: Route.ComponentProps) {
+export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const { isSignedIn, isLoaded, getToken } = useAuth();
+  const { user } = useUser();
   const [searchParams] = useSearchParams();
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(
     null
@@ -76,6 +95,9 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
   const [businessQuantity, setBusinessQuantity] = useState("1");
   const [orgName, setOrgName] = useState("");
   const [domainAutoJoin, setDomainAutoJoin] = useState(true);
+
+  const emailDomain = user?.primaryEmailAddress?.emailAddress?.split("@")[1]?.toLowerCase();
+  const isFreemailDomain = !emailDomain || FREEMAIL_DOMAINS.has(emailDomain);
 
   const isSuccess = searchParams.get("success") === "true";
   const isCanceled = searchParams.get("canceled") === "true";
@@ -91,7 +113,7 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
     async function fetchSubscription() {
       try {
         const token = await getToken();
-        const res = await fetch(`${loaderData.apiUrl}/app/subscribe`, {
+        const res = await fetch(`${loaderData.apiUrl}/app/upgrade`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
@@ -126,14 +148,14 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
             return;
           }
           body.organizationName = orgName.trim();
-          body.domainAutoJoin = domainAutoJoin;
+          body.domainAutoJoin = isFreemailDomain ? false : domainAutoJoin;
         } else {
           body.organizationId = subscription.organization.id;
         }
       }
 
       const res = await fetch(
-        `${loaderData.apiUrl}/app/subscribe/checkout`,
+        `${loaderData.apiUrl}/app/upgrade/checkout`,
         {
           method: "POST",
           headers: {
@@ -166,8 +188,8 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
     try {
       const token = await getToken();
       const portalUrl = orgId
-        ? `${loaderData.apiUrl}/app/organization/${orgId}/subscribe/portal`
-        : `${loaderData.apiUrl}/app/subscribe/portal`;
+        ? `${loaderData.apiUrl}/app/organization/${orgId}/upgrade/portal`
+        : `${loaderData.apiUrl}/app/upgrade/portal`;
 
       const res = await fetch(portalUrl, {
         method: "POST",
@@ -196,17 +218,23 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
 
   // Not signed in
   if (!isSignedIn) {
+    const planParam = searchParams.get("plan");
+    const planLabel =
+      planParam === "business"
+        ? "Plot Business"
+        : planParam === "pro"
+          ? "Plot Pro"
+          : "Plot";
+    const returnUrl = `/upgrade${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+
     return (
       <Container size="sm" mt="xl" mb="xl">
         <Stack gap="md" align="center" ta="center">
-          <Title order={2}>Manage your subscription</Title>
-          <Text c="dimmed">Sign in to view or manage your subscription.</Text>
-          <Button
-            component={Link}
-            to={`/signin?returnTo=/subscribe${searchParams.get("plan") ? `?plan=${searchParams.get("plan")}&billing=${billing}` : ""}`}
-          >
-            Sign in to continue
-          </Button>
+          <Title order={2}>Get started with {planLabel}</Title>
+          <Text c="dimmed">
+            Create an account to upgrade and start using {planLabel}.
+          </Text>
+          <SignUp fallbackRedirectUrl={returnUrl} />
         </Stack>
       </Container>
     );
@@ -218,7 +246,7 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
       <Container size="sm" mt="xl" mb="xl">
         <Stack align="center" gap="md">
           <Loader />
-          <Text c="dimmed">Loading subscription...</Text>
+          <Text c="dimmed">Loading plan...</Text>
         </Stack>
       </Container>
     );
@@ -228,8 +256,8 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
   const alerts = (
     <>
       {isSuccess && (
-        <Alert color="green" title="Subscription active" mb="md">
-          Your subscription is now active.
+        <Alert color="green" title="Plan active" mb="md">
+          Your plan is now active.
           {successOrgId
             ? " Your organization has been set up."
             : ` Welcome to Plot ${subscription?.effective_plan === "business" ? "Business" : "Pro"}!`}
@@ -258,7 +286,7 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
     return (
       <Container size="sm" mt="xl" mb="xl">
         <Stack gap="md">
-          <Title order={2}>Your subscription</Title>
+          <Title order={2}>Your plan</Title>
           {alerts}
           <Box className={classes.currentPlan}>
             <Text fw={600} size="lg">
@@ -292,7 +320,7 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
               loading={actionLoading}
               variant="outline"
             >
-              Manage subscription
+              Manage plan
             </Button>
           )}
         </Stack>
@@ -316,7 +344,13 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
         {alerts}
 
         <Stack align="center">
-          <Box className={classes.toggleWrapper}>
+          <Box style={{ display: "inline-grid", gridTemplateColumns: "1fr 1fr" }}>
+            <Box />
+            <Box style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+              <Badge variant="light" color="green" size="sm">
+                Save 20%
+              </Badge>
+            </Box>
             <SegmentedControl
               value={billing}
               onChange={(v) => setBilling(v as Billing)}
@@ -325,12 +359,8 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
                 { label: "Annual", value: "annual" },
               ]}
               size="md"
+              style={{ gridColumn: "1 / -1" }}
             />
-            {billing === "annual" && (
-              <Badge variant="light" color="green" size="sm">
-                Save 20%
-              </Badge>
-            )}
           </Box>
         </Stack>
 
@@ -383,7 +413,7 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
               loading={actionLoading}
               fullWidth
             >
-              Subscribe to Pro
+              Upgrade to Pro
             </Button>
           </Stack>
 
@@ -433,12 +463,20 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
               onChange={(e) => setOrgName(e.currentTarget.value)}
               size="sm"
             />
-            <Checkbox
-              label="Allow anyone with the same email domain to join"
-              checked={domainAutoJoin}
-              onChange={(e) => setDomainAutoJoin(e.currentTarget.checked)}
-              size="sm"
-            />
+            {!isFreemailDomain && (
+              <Checkbox
+                label={
+                  <span>
+                    Allow anyone with an{" "}
+                    <span style={{ fontWeight: 700 }}>@{emailDomain}</span>{" "}
+                    email address to join
+                  </span>
+                }
+                checked={domainAutoJoin}
+                onChange={(e) => setDomainAutoJoin(e.currentTarget.checked)}
+                size="sm"
+              />
+            )}
             <Box className={classes.priceDivider} />
             <Box className={classes.priceBox}>
               <Text className={classes.planPrice}>
@@ -456,7 +494,7 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
               loading={actionLoading}
               fullWidth
             >
-              Subscribe to Business
+              Upgrade to Business
             </Button>
           </Stack>
         </Box>

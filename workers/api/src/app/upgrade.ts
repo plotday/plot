@@ -9,15 +9,15 @@ import { getUsage } from "../utils/limits";
 import { createOrgPriority } from "./organization";
 import { notifySync } from "./sync/notify";
 
-const subscribe = new Hono<{ Bindings: Bindings }>();
+const upgrade = new Hono<{ Bindings: Bindings }>();
 
 function planFromLookupKey(key: string): "pro" | "business" {
   if (key.startsWith("business")) return "business";
   return "pro";
 }
 
-// GET /subscribe - Get current subscription status with effective plan
-subscribe.get("/subscribe", async (c) => {
+// GET /upgrade - Get current subscription status with effective plan
+upgrade.get("/upgrade", async (c) => {
   const user = c.var.user;
 
   const subscription = await c.var.db
@@ -49,15 +49,15 @@ subscribe.get("/subscribe", async (c) => {
   });
 });
 
-// GET /subscribe/usage - Get connection and twist usage counts
-subscribe.get("/subscribe/usage", async (c) => {
+// GET /upgrade/usage - Get connection and twist usage counts
+upgrade.get("/upgrade/usage", async (c) => {
   const user = c.var.user;
   const usage = await getUsage(c.var.db, user.id, c.env);
   return c.json(usage);
 });
 
-// POST /subscribe/checkout - Create Stripe Checkout session
-subscribe.post("/subscribe/checkout", async (c) => {
+// POST /upgrade/checkout - Create Stripe Checkout session
+upgrade.post("/upgrade/checkout", async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
   const user = c.var.user;
@@ -205,8 +205,8 @@ subscribe.post("/subscribe/checkout", async (c) => {
       customer: stripeCustomerId,
       line_items: [{ price: prices.data[0].id, quantity: body.quantity || 1 }],
       mode: "subscription",
-      success_url: `${siteRoot}/subscribe?success=true&org=${orgId}`,
-      cancel_url: `${siteRoot}/subscribe?canceled=true`,
+      success_url: `${siteRoot}/upgrade?success=true&org=${orgId}`,
+      cancel_url: `${siteRoot}/upgrade?canceled=true`,
       subscription_data: {
         metadata: { plan: "business", organization_id: orgId },
       },
@@ -255,8 +255,8 @@ subscribe.post("/subscribe/checkout", async (c) => {
       },
     ],
     mode: "subscription",
-    success_url: `${siteRoot}/subscribe?success=true`,
-    cancel_url: `${siteRoot}/subscribe?canceled=true`,
+    success_url: `${siteRoot}/upgrade?success=true`,
+    cancel_url: `${siteRoot}/upgrade?canceled=true`,
     subscription_data: {
       metadata: { plan },
     },
@@ -272,8 +272,8 @@ subscribe.post("/subscribe/checkout", async (c) => {
   return c.json({ url: session.url });
 });
 
-// POST /subscribe/portal - Create Stripe Customer Portal session
-subscribe.post("/subscribe/portal", async (c) => {
+// POST /upgrade/portal - Create Stripe Customer Portal session
+upgrade.post("/upgrade/portal", async (c) => {
   const user = c.var.user;
 
   const subscription = await c.var.db
@@ -291,10 +291,10 @@ subscribe.post("/subscribe/portal", async (c) => {
 
   const session = await stripe.billingPortal.sessions.create({
     customer: subscription.stripe_customer_id,
-    return_url: `${siteRoot}/subscribe`,
+    return_url: `${siteRoot}/upgrade`,
   });
 
   return c.json({ url: session.url });
 });
 
-export default subscribe;
+export default upgrade;

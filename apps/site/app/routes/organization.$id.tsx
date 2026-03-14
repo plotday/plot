@@ -230,7 +230,7 @@ export default function OrganizationPage({
     setActionLoading(true);
     try {
       const res = await apiCall(
-        `/app/organization/${orgId}/subscribe/portal`,
+        `/app/organization/${orgId}/upgrade/portal`,
         { method: "POST" }
       );
       if (res.ok) {

@@ -17,7 +17,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
-import 'package:plot/api/subscribe_api.dart';
+import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart' show PermissionFlag;
 import 'package:plot/env.dart';
@@ -222,7 +222,7 @@ class ManageConnections extends Command {
     final futures = <Future<dynamic>>[
       TwistApi.getUserSources(),
       TwistApi.getAllTwists(defaultPriority),
-      SubscribeApi.getUsage()
+      UpgradeApi.getUsage()
           .then<UsageData?>((r) => r)
           .catchError((_) => null),
     ];
@@ -1211,7 +1211,7 @@ class ManageTwists extends ShowCommands {
     // Fetch usage to check twist limits
     UsageData? usage;
     try {
-      usage = await SubscribeApi.getUsage();
+      usage = await UpgradeApi.getUsage();
     } catch (_) {}
     _usageCache = usage;
 
@@ -1509,8 +1509,8 @@ class ShowTwistDetails extends ShowForm {
     String? effectivePlan;
     if (twist.permissions?.forDomain('ai') != null) {
       final results = await Future.wait([
-        SubscribeApi.getSubscription(),
-        SubscribeApi.getAiKeys(),
+        UpgradeApi.getSubscription(),
+        UpgradeApi.getAiKeys(),
       ]);
       final subscription = results[0] as SubscriptionInfo;
       final aiKeys = results[1] as List<String>;
@@ -1594,8 +1594,8 @@ class ShowTwistInfo extends ShowForm {
   static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
     // Fetch subscription and AI keys in parallel
     final results = await Future.wait([
-      SubscribeApi.getSubscription(),
-      SubscribeApi.getAiKeys(),
+      UpgradeApi.getSubscription(),
+      UpgradeApi.getAiKeys(),
     ]);
     final subscription = results[0] as SubscriptionInfo;
     final aiKeys = results[1] as List<String>;
@@ -2041,7 +2041,7 @@ class ShowAddIntegrationAccount extends ShowForm {
     // Check connection limits
     UsageData? usage;
     try {
-      usage = await SubscribeApi.getUsage();
+      usage = await UpgradeApi.getUsage();
     } catch (_) {}
 
     if (usage != null && usage.personal.connections.isAtLimit) {

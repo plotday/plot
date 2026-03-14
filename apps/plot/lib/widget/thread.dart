@@ -279,9 +279,17 @@ class ThreadWidget extends StatelessWidget {
 
                       // For timed events, center time+duration across full tile width
                       if (isTimedEvent) {
-                        final leadingIndent =
-                            context.theme.iconSizes.base +
-                            7.5 +
+                        // Compute leading width to extend Positioned
+                        // across the full tile width, matching date/gap
+                        // header alignment.
+                        final ghostPad = context
+                            .theme.buttonStyles.ghost.iconContentStyle.padding
+                            .resolve(TextDirection.ltr);
+                        final buttonW =
+                            context.theme.iconSizes.base + ghostPad.horizontal;
+                        final leadingWidth =
+                            (context.theme.spacing.xl - 7.5) +
+                            2 * buttonW +
                             context.theme.spacing.sm;
                         final labelHeight = (TextPainter(
                           text: TextSpan(
@@ -297,10 +305,10 @@ class ThreadWidget extends StatelessWidget {
                           child: Stack(
                             clipBehavior: Clip.hardEdge,
                             children: [
-                              // Time text centered across full tile width
+                              // Time + duration aligned with date header
                               Positioned(
-                                left: -leadingIndent,
-                                right: 0,
+                                left: -leadingWidth,
+                                right: -context.contentPaddingH,
                                 top: 0,
                                 bottom: 0,
                                 child: Builder(
@@ -311,62 +319,51 @@ class ThreadWidget extends StatelessWidget {
                                     final hasDuration =
                                         activity.at!.duration != null &&
                                         activity.at!.duration!.inSeconds > 0;
-                                    // [Expanded: digits right] [gap] [Expanded: am/pm left + duration right]
                                     final veryMuted =
                                         context.theme.plotColors.veryMuted;
-                                    final spaceWidth = (TextPainter(
+                                    // Center gap matches date header
+                                    // day-number column
+                                    final dayNum =
+                                        activity.at!.start!.day.toString();
+                                    final dateFontSize = context
+                                        .theme.typography.base.fontSize;
+                                    final dayWidth = (TextPainter(
                                       text: TextSpan(
-                                        text: ' ',
-                                        style: DefaultTextStyle.of(
-                                          context,
-                                        ).style,
+                                        text: dayNum,
+                                        style: TextStyle(
+                                          fontSize: dateFontSize,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                       maxLines: 1,
                                       textDirection: TextDirection.ltr,
                                     )..layout()).width;
-                                    final amPmMatch = RegExp(
-                                      r'[ap]m$',
-                                    ).firstMatch(timeStr);
-                                    final String leftText;
-                                    final String? rightText;
-                                    if (amPmMatch != null) {
-                                      leftText = timeStr
-                                          .substring(0, amPmMatch.start)
-                                          .trimRight();
-                                      rightText = timeStr.substring(
-                                        amPmMatch.start,
-                                      );
-                                    } else {
-                                      leftText = timeStr;
-                                      rightText = null;
-                                    }
+                                    final centerGap =
+                                        2 * context.theme.spacing.md +
+                                        dayWidth;
                                     return Row(
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            leftText,
+                                            timeStr,
                                             style: timingColor,
                                             textAlign: TextAlign.right,
                                           ),
                                         ),
-                                        SizedBox(width: spaceWidth),
+                                        SizedBox(
+                                          width: centerGap,
+                                          child: Center(
+                                            child: Text(
+                                              '·',
+                                              style: TextStyle(
+                                                color: veryMuted,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                         Expanded(
                                           child: Row(
                                             children: [
-                                              if (rightText != null)
-                                                Text(
-                                                  rightText,
-                                                  style: timingColor,
-                                                ),
-                                              const Spacer(),
-                                              if (activity.hasOtherAttendees)
-                                                _RsvpSummary(
-                                                  activity: activity,
-                                                  color: veryMuted,
-                                                ),
-                                              if (activity.hasOtherAttendees &&
-                                                  hasDuration)
-                                                const SizedBox(width: 4),
                                               if (hasDuration)
                                                 Text(
                                                   activity.at!.duration!
@@ -374,6 +371,14 @@ class ThreadWidget extends StatelessWidget {
                                                   style: TextStyle(
                                                     color: veryMuted,
                                                   ),
+                                                ),
+                                              if (activity.hasOtherAttendees &&
+                                                  hasDuration)
+                                                const SizedBox(width: 4),
+                                              if (activity.hasOtherAttendees)
+                                                _RsvpSummary(
+                                                  activity: activity,
+                                                  color: veryMuted,
                                                 ),
                                             ],
                                           ),

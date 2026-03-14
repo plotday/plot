@@ -38,6 +38,7 @@ const PLANS = [
     features: [
       "Up to 3 connections",
       "1 custom twist",
+      "AI-powered search, auto-tagging, and summaries (limited)",
       "All core features for team collaboration",
       "Unlimited collaborators",
       "Full history of all your work",
@@ -60,13 +61,14 @@ const PLANS = [
     features: [
       "Unlimited connections",
       "Unlimited Twists (optional AI usage extra)",
+      "Unlimited AI-powered search, auto-tagging, and summaries",
       "All core features for team collaboration",
       "Unlimited collaborators",
       "Full history of all your work",
       "Automated organization and prioritization",
     ],
     cta: "Get started",
-    ctaLink: (billing: Billing) => `/subscribe?plan=pro&billing=${billing}`,
+    ctaLink: (billing: Billing) => `/upgrade?plan=pro&billing=${billing}`,
     ctaVariant: "filled" as const,
     highlight: true,
     badge: null,
@@ -84,6 +86,7 @@ const PLANS = [
     features: [
       "50+ connections shared across your org",
       "Unlimited Twists (optional AI usage extra)",
+      "Unlimited AI-powered search, auto-tagging, and summaries",
       "All core features for team collaboration",
       "Unlimited team members",
       "Full history of all your work",
@@ -92,7 +95,7 @@ const PLANS = [
     ],
     cta: "Get started",
     ctaLink: (billing: Billing) =>
-      `/subscribe?plan=business&billing=${billing}`,
+      `/upgrade?plan=business&billing=${billing}`,
     ctaVariant: "filled" as const,
     highlight: false,
     badge: null,
@@ -129,7 +132,7 @@ const FAQS = [
   {
     question: "How does AI pricing work?",
     answer:
-      "Plot's upcoming core AI features (like automated organization and prioritization) are included in paid plans at no extra cost. When you install twists that use AI, you pay for the tokens consumed — at cost, with no markup. You can also bring your own API keys and pay your provider directly. We show full usage breakdowns per model and per twist, and you can set budgets so there are never surprises. Plot never profits from your AI usage.",
+      "Plot includes AI features like smart search, auto-tagging, and summaries. On the Free plan, these features are available with monthly usage limits. Paid plans include unlimited AI processing. When you install twists that use AI, you pay for the tokens consumed — at cost, with no markup. You can also bring your own API keys and pay your provider directly. We show full usage breakdowns per model and per twist, and you can set budgets so there are never surprises. Plot never profits from your AI usage.",
   },
   {
     question: "How do I add more connections on a Business plan?",
@@ -200,7 +203,13 @@ export default function Pricing() {
       <Box className={classes.heroSection} pb={40}>
         <Container size="lg">
           <Stack align="center" gap="xs">
-            <Box className={classes.toggleWrapper}>
+            <Box style={{ display: "inline-grid", gridTemplateColumns: "1fr 1fr" }}>
+              <Box />
+              <Box style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+                <Badge variant="light" color="green" size="sm">
+                  Save 20%
+                </Badge>
+              </Box>
               <SegmentedControl
                 value={billing}
                 onChange={(v) => setBilling(v as Billing)}
@@ -209,17 +218,8 @@ export default function Pricing() {
                   { label: "Annual", value: "annual" },
                 ]}
                 size="md"
+                style={{ gridColumn: "1 / -1" }}
               />
-              {billing === "annual" && (
-                <Badge
-                  variant="light"
-                  color="green"
-                  size="sm"
-                  className={classes.saveBadge}
-                >
-                  Save 20%
-                </Badge>
-              )}
             </Box>
           </Stack>
         </Container>

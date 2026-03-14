@@ -24,16 +24,6 @@
   max-width: 600px;
 }
 
-.toggleWrapper {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-sm);
-}
-
-.saveBadge {
-  flex-shrink: 0;
-}
-
 .graySection {
   background-color: light-dark(
     var(--mantine-color-gray-0),
