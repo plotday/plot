@@ -24,10 +24,10 @@ class Priorities extends Table
   BoolColumn get personal => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   TextColumn get role => text().withDefault(const Constant('member'))();
-  TextColumn get responseWindow => text().nullable()();
-  TextColumn get turnaround => text().nullable()();
-  BoolColumn get responseWindowSet => boolean().withDefault(const Constant(false))();
-  BoolColumn get turnaroundSet => boolean().withDefault(const Constant(false))();
+  TextColumn get attentionWindow => text().nullable()();
+  TextColumn get seeWithin => text().nullable()();
+  BoolColumn get attentionWindowSet => boolean().withDefault(const Constant(false))();
+  BoolColumn get seeWithinSet => boolean().withDefault(const Constant(false))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -44,16 +44,32 @@ class PrioritiesBase extends BaseTable {
     json.remove('updated_by');
     json.remove('global_path');
     json['role'] ??= 'member';
-    // JSON-encode response_window and turnaround from API (JSON objects → strings for Drift text columns)
-    if (json['response_window'] != null) {
-      json['response_window'] = json['response_window'] is String
-          ? json['response_window']
-          : jsonEncode(json['response_window']);
+    // Remap old column names (response_window/turnaround) to new names (attention_window/see_within)
+    if (json.containsKey('response_window') &&
+        !json.containsKey('attention_window')) {
+      json['attention_window'] = json.remove('response_window');
     }
-    if (json['turnaround'] != null) {
-      json['turnaround'] = json['turnaround'] is String
-          ? json['turnaround']
-          : jsonEncode(json['turnaround']);
+    if (json.containsKey('turnaround') && !json.containsKey('see_within')) {
+      json['see_within'] = json.remove('turnaround');
+    }
+    if (json.containsKey('response_window_set') &&
+        !json.containsKey('attention_window_set')) {
+      json['attention_window_set'] = json.remove('response_window_set');
+    }
+    if (json.containsKey('turnaround_set') &&
+        !json.containsKey('see_within_set')) {
+      json['see_within_set'] = json.remove('turnaround_set');
+    }
+    // JSON-encode attention_window and see_within from API (JSON objects → strings for Drift text columns)
+    if (json['attention_window'] != null) {
+      json['attention_window'] = json['attention_window'] is String
+          ? json['attention_window']
+          : jsonEncode(json['attention_window']);
+    }
+    if (json['see_within'] != null) {
+      json['see_within'] = json['see_within'] is String
+          ? json['see_within']
+          : jsonEncode(json['see_within']);
     }
     return PriorityRow.fromJson(json);
   }
@@ -63,10 +79,10 @@ class PrioritiesBase extends BaseTable {
     final json = super.toBase(row);
     json.remove('unread');
     json.remove('role');
-    json.remove('response_window');
-    json.remove('turnaround');
-    json.remove('response_window_set');
-    json.remove('turnaround_set');
+    json.remove('attention_window');
+    json.remove('see_within');
+    json.remove('attention_window_set');
+    json.remove('see_within_set');
     return json;
   }
 }
@@ -386,42 +402,53 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     final now = DateTime.now();
     final today = Date.today().toString();
-
-    // Get all user contact IDs from Actor cache
-    final userActorIds = Actor._cache.values
-        .where((actor) => actor.self)
-        .map((actor) => actor.id.toBytes())
-        .toList();
-
-    // Fallback to primary contact if cache is empty
-    if (userActorIds.isEmpty) {
-      userActorIds.add(Base.actorId.toBytes());
-    }
-
-    final a = Store.get.threads;
-    final s = Store.get.schedules;
-    final query = Store.get.selectOnly(a)..addColumns([a.priorityId]);
-    query.join([leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.occurrence.isNull() & s.userId.isNull())]);
-
-    // Convert PriorityId (Uuid) to Uint8List for isIn query
     final idBytes = ids.map((id) => id.toBytes()).toList();
 
-    query.where(
+    final a = Store.get.threads;
+
+    // Query 1: Shared schedules (userId IS NULL) with time filter
+    final s = Store.get.schedules;
+    final sharedQuery = Store.get.selectOnly(a)..addColumns([a.priorityId]);
+    sharedQuery.join([
+      innerJoin(s, s.threadId.equalsExp(a.id) & s.userId.isNull()),
+    ]);
+    sharedQuery.where(
       a.priorityId.isIn(idBytes) &
           a.archivedAt.isNull() &
+          a.draft.equals(false) &
           (
-          // DateTime scheduled
-          (s.startAt.isSmallerOrEqualValue(now) & s.startOn.isNull()) |
-              // Date scheduled
-              (s.startOn.isSmallerOrEqualValue(today) & s.startAt.isNull()) |
-              // Unscheduled
-              (s.startAt.isNull() & s.startOn.isNull())),
+          (s.startOn.isSmallerOrEqualValue(today) & s.startAt.isNull()) |
+              (s.startAt.isSmallerOrEqualValue(now) &
+                  (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now)))),
     );
 
-    final results = await query.get();
-    return results
-        .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
-        .toSet();
+    // Query 2: User schedules (userId = current user) with time filter
+    final us = Store.get.schedules;
+    final userQuery = Store.get.selectOnly(a)..addColumns([a.priorityId]);
+    userQuery.join([
+      innerJoin(
+        us,
+        us.threadId.equalsExp(a.id) &
+            us.userId.equalsValue(Base.userId) &
+            us.occurrence.isNull() &
+            us.archivedAt.isNull(),
+      ),
+    ]);
+    userQuery.where(
+      a.priorityId.isIn(idBytes) &
+          a.archivedAt.isNull() &
+          a.draft.equals(false) &
+          (
+          (us.startOn.isSmallerOrEqualValue(today) & us.startAt.isNull()) |
+              (us.startAt.isSmallerOrEqualValue(now))),
+    );
+
+    final sharedResults = await sharedQuery.get();
+    final userResults = await userQuery.get();
+    return {
+      ...sharedResults.map((row) => Uuid.fromBytes(row.read(a.priorityId)!)),
+      ...userResults.map((row) => Uuid.fromBytes(row.read(a.priorityId)!)),
+    };
   }
 
   /// Efficiently gets which priority IDs from the given list have unread threads.
@@ -475,57 +502,79 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   /// Watches which priorities have active threads.
   /// Returns a stream of priority IDs that have active tasks.
-  /// Time-based filtering is done in-memory to allow reactive updates.
+  /// Uses two separate queries to avoid column collision when aliasing the same table.
+  /// Shared schedule time filtering is done in-memory to allow reactive updates.
   static Stream<Set<PriorityId>> _watchActivePriorityIds() {
-    // Get all user contact IDs from Actor cache
-    final userActorIds = Actor._cache.values
-        .where((actor) => actor.self)
-        .map((actor) => actor.id.toBytes())
-        .toList();
-
-    // Fallback to primary contact if cache is empty
-    if (userActorIds.isEmpty) {
-      userActorIds.add(Base.actorId.toBytes());
-    }
-
     final a = Store.get.threads;
+
+    // Stream 1: Shared schedules (userId IS NULL) — time filtered in-memory
     final s = Store.get.schedules;
+    final sharedQuery = Store.get.selectOnly(a)
+      ..addColumns([a.priorityId, s.startAt, s.startOn, s.endAt]);
+    sharedQuery.join([
+      innerJoin(s, s.threadId.equalsExp(a.id) & s.userId.isNull()),
+    ]);
+    sharedQuery.where(a.archivedAt.isNull() & a.draft.equals(false));
 
-    // Query for threads that could be active (without time filtering)
-    // We'll filter by time in the map to allow reactive updates
-    final query = Store.get.selectOnly(a)
-      ..addColumns([a.priorityId, s.startAt, s.startOn]);
-    query.join([leftOuterJoin(s, s.threadId.equalsExp(a.id) & s.occurrence.isNull() & s.userId.isNull())]);
-
-    query.where(
-      a.archivedAt.isNull(),
-    );
-
-    return query.watch().map((results) {
+    final sharedStream = sharedQuery.watch().map((results) {
       final now = DateTime.now();
       final today = Date.today().toString();
-
       return results
           .where((row) {
             final startAt = row.read(s.startAt);
             final startOn = row.read(s.startOn);
-
-            // DateTime scheduled and active
-            if (startAt != null && startOn == null) {
-              return startAt.isBefore(now) || startAt.isAtSameMomentAs(now);
-            }
-            // Date scheduled and active
+            final endAt = row.read(s.endAt);
             if (startOn != null && startAt == null) {
               return startOn.compareTo(today) <= 0;
             }
-            // Unscheduled (always active)
-            if (startAt == null && startOn == null) {
-              return true;
+            if (startAt != null) {
+              final started = startAt.isBefore(now) || startAt.isAtSameMomentAs(now);
+              final notEnded = endAt == null || endAt.isAfter(now) || endAt.isAtSameMomentAs(now);
+              return started && notEnded;
             }
             return false;
           })
           .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
           .toSet();
+    });
+
+    // Stream 2: User schedules (userId = current user) — time filtered in-memory
+    final us = Store.get.schedules;
+    final userQuery = Store.get.selectOnly(a)
+      ..addColumns([a.priorityId, us.startAt, us.startOn]);
+    userQuery.join([
+      innerJoin(
+        us,
+        us.threadId.equalsExp(a.id) &
+            us.userId.equalsValue(Base.userId) &
+            us.occurrence.isNull() &
+            us.archivedAt.isNull(),
+      ),
+    ]);
+    userQuery.where(a.archivedAt.isNull() & a.draft.equals(false));
+
+    final userStream = userQuery.watch().map((results) {
+      final now = DateTime.now();
+      final today = Date.today().toString();
+      return results
+          .where((row) {
+            final startAt = row.read(us.startAt);
+            final startOn = row.read(us.startOn);
+            if (startAt != null) {
+              return startAt.isBefore(now) || startAt.isAtSameMomentAs(now);
+            }
+            if (startOn != null) {
+              return startOn.compareTo(today) <= 0;
+            }
+            return false;
+          })
+          .map((row) => Uuid.fromBytes(row.read(a.priorityId)!))
+          .toSet();
+    });
+
+    // Combine both streams
+    return Rx.combineLatest2(sharedStream, userStream, (shared, user) {
+      return {...shared, ...user};
     }).distinct();
   }
 
@@ -813,8 +862,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          personal: parent.personal,
          unread: false,
          role: parent.role,
-         responseWindowSet: false,
-         turnaroundSet: false,
+         attentionWindowSet: false,
+         seeWithinSet: false,
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -882,10 +931,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          createdBy: row.createdBy,
          unread: row.unread,
          role: row.role,
-         responseWindow: row.responseWindow,
-         turnaround: row.turnaround,
-         responseWindowSet: row.responseWindowSet,
-         turnaroundSet: row.turnaroundSet,
+         attentionWindow: row.attentionWindow,
+         seeWithin: row.seeWithin,
+         attentionWindowSet: row.attentionWindowSet,
+         seeWithinSet: row.seeWithinSet,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -999,13 +1048,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Returns true if this priority has a viewer role (read-only).
   bool get isViewer => role == 'viewer';
 
-  /// Parsed response window settings (inherited from this priority or ancestors).
-  List<ResponseTimeWindow>? get responseWindows =>
-      ResponseTimeWindow.fromJsonString(responseWindow);
+  /// Parsed attention window settings (inherited from this priority or ancestors).
+  List<AttentionWindow>? get attentionWindows =>
+      AttentionWindow.fromJsonString(attentionWindow);
 
-  /// Parsed turnaround time setting (inherited from this priority or ancestors).
-  TurnaroundTime? get turnaroundTime =>
-      TurnaroundTime.fromJsonString(turnaround);
+  /// Parsed see within time setting (inherited from this priority or ancestors).
+  SeeWithinTime? get seeWithinTime =>
+      SeeWithinTime.fromJsonString(seeWithin);
 
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
@@ -1081,10 +1130,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<int?> pending = const Value.absent(),
     bool? unread,
     String? role,
-    Value<String?> responseWindow = const Value.absent(),
-    Value<String?> turnaround = const Value.absent(),
-    bool? responseWindowSet,
-    bool? turnaroundSet,
+    Value<String?> attentionWindow = const Value.absent(),
+    Value<String?> seeWithin = const Value.absent(),
+    bool? attentionWindowSet,
+    bool? seeWithinSet,
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1119,10 +1168,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         personal: personal,
         unread: unread,
         role: role,
-        responseWindow: responseWindow,
-        turnaround: turnaround,
-        responseWindowSet: responseWindowSet,
-        turnaroundSet: turnaroundSet,
+        attentionWindow: attentionWindow,
+        seeWithin: seeWithin,
+        attentionWindowSet: attentionWindowSet,
+        seeWithinSet: seeWithinSet,
       ),
       parent: currentParent,
       children: children,

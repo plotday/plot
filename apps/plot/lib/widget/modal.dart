@@ -238,6 +238,18 @@ class _ModalProviderState extends State<ModalProvider> {
         ),
       );
 
+      // Extract constraints from Modal widget if available.
+      // Default dialog max is 560; modals with custom maxWidthPercentage
+      // (e.g. image viewer at 0.9) pass through their own constraints.
+      final hasCustomWidth =
+          modal is Modal && modal.maxWidthPercentage != 0.8;
+      final modalMaxWidth = modal is Modal && hasCustomWidth
+          ? modal.constraints.maxWidth
+          : 560.0;
+      final modalMaxHeight = modal is Modal
+          ? modal.constraints.maxHeight
+          : 640.0;
+
       Widget buildModalContent(BuildContext dialogContext) {
         return ValueListenableBuilder<int>(
           valueListenable: _modalStackNotifier,
@@ -291,8 +303,8 @@ class _ModalProviderState extends State<ModalProvider> {
                         ),
                       ),
                       constraints: BoxConstraints(
-                        maxHeight: maxDialogHeight,
-                        maxWidth: 560,
+                        maxHeight: min(maxDialogHeight, modalMaxHeight),
+                        maxWidth: modalMaxWidth,
                       ),
                       builder: (context, style) => Padding(
                         padding: EdgeInsets.all(1),

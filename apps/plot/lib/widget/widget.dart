@@ -29,6 +29,7 @@ export 'logo_image.dart';
 export 'list_tile.dart';
 export 'priority_selector.dart';
 export 'priority.dart';
+export 'priority_notification.dart';
 export 'pulsing_color_button.dart';
 export 'reorderable_list_view.dart';
 export 'reschedule_event_modal.dart';

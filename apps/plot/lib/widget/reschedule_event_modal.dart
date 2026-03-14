@@ -118,7 +118,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
                 onFocusChange: (hasFocus) {
                   setState(() {});
                 },
-                mouseCursor: SystemMouseCursors.click,
+                mouseCursor: SystemMouseCursors.basic,
                 child: GestureDetector(
                   onTap: _selectPriority,
                   child: Container(

@@ -5,6 +5,7 @@ import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { notifySync, getPriorityForNote } from "./notify";
+import { createSchedule } from "./smart-schedule";
 import { stripCountTagActors } from "./viewer";
 
 const noteTags = new Hono<{ Bindings: Bindings }>();
@@ -100,6 +101,33 @@ noteTags.post("/sync/note-tags", async (c) => {
   const priorityId = await getPriorityForNote(c.var.db, body.note_id);
   notifySync(c, priorityId);
 
+  // Create task schedule when todo tag is added
+  if (body.tag_id === 1 && !body.archived_at) {
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const contact = await c.var.db
+            .selectFrom("contact")
+            .select("user_id")
+            .where("id", "=", body.actor_id)
+            .executeTakeFirst();
+          if (!contact?.user_id) return;
+
+          const note = await c.var.db
+            .selectFrom("note")
+            .select("thread_id")
+            .where("id", "=", body.note_id)
+            .executeTakeFirst();
+          if (!note?.thread_id) return;
+
+          await createSchedule(c.var.db, contact.user_id, note.thread_id, 'task');
+        } catch (error) {
+          console.error("[schedule] Failed to create task schedule from note tag:", error);
+        }
+      })()
+    );
+  }
+
   return c.json(result as any);
 });
 
@@ -119,6 +147,40 @@ noteTags.post("/sync/note-tags/update", async (c) => {
 
   const priorityId2 = await getPriorityForNote(c.var.db, body.note_id);
   notifySync(c, priorityId2);
+
+  // Create task schedule when todo tags are added via update
+  if (body.tag_updates) {
+    const todoEntries = Object.entries(body.tag_updates as Record<string, boolean>)
+      .filter(([key, val]) => val === true && key.startsWith('1:'));
+
+    if (todoEntries.length > 0) {
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const note = await c.var.db
+              .selectFrom("note")
+              .select("thread_id")
+              .where("id", "=", body.note_id)
+              .executeTakeFirst();
+            if (!note?.thread_id) return;
+
+            for (const [key] of todoEntries) {
+              const actorId = key.split(':')[1];
+              const contact = await c.var.db
+                .selectFrom("contact")
+                .select("user_id")
+                .where("id", "=", actorId)
+                .executeTakeFirst();
+              if (!contact?.user_id) continue;
+              await createSchedule(c.var.db, contact.user_id, note.thread_id, 'task');
+            }
+          } catch (error) {
+            console.error("[schedule] Failed to create task schedule from tag update:", error);
+          }
+        })()
+      );
+    }
+  }
 
   return c.json(result as any);
 });

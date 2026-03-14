@@ -1,9 +1,6 @@
--- Unread calculation is inlined from the former user_thread_unread view to avoid
--- a redundant evaluation of user_priority_expanded. thread_read is joined directly
--- with the read threshold applied conditionally in the SELECT expressions.
---
--- Contact lookup for assignee uses a scalar subquery instead of LEFT JOIN to avoid
--- probing the full contact table for every row (most threads have no assignee).
+-- Unread is now explicit via thread_unread table. When a thread_unread row exists
+-- with read_at IS NULL, the thread is unread. The complex timestamp comparison
+-- logic is no longer needed since unread classification is done by note analysis.
 CREATE OR REPLACE VIEW "user"."thread"
 --
 AS
@@ -16,32 +13,9 @@ SELECT
     upe.user_id,
     a.id,
     a.created_at,
-    -- updated_at includes last_note_created_at and thread_read contributions
-    -- thread_read updated_at only contributes when read_at >= unread threshold
-    -- (matching the former user_thread_unread semantics)
+    -- updated_at: when thread_unread exists, use its updated_at; otherwise use thread timestamps
     GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz),
-        CASE WHEN a.archived_at IS NULL
-            AND ((a.created_by = upe.user_id
-                    AND a.last_note_created_at IS NOT NULL
-                    AND a.last_note_created_at > upe.joined_at)
-                OR ((a.created_by IS NULL
-                        OR a.created_by != upe.user_id)
-                    AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
-        THEN
-            GREATEST (COALESCE(CASE WHEN ar.read_at >= (CASE WHEN a.created_by = upe.user_id THEN
-                                a.last_note_source_created_at
-                            ELSE
-                                COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
-                            END) THEN
-                        ar.updated_at
-                    END, 'epoch'::timestamptz), CASE WHEN a.created_by = upe.user_id THEN
-                    COALESCE(a.last_note_source_created_at, 'epoch'::timestamptz)
-                ELSE
-                    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
-                END)
-        ELSE
-            'epoch'::timestamptz
-        END) AS updated_at,
+        COALESCE(tu.updated_at, 'epoch'::timestamptz)) AS updated_at,
     a.updated_by,
     COALESCE(a.archived_at, upe.archived_at) AS archived_at,
     a.priority_id,
@@ -53,33 +27,16 @@ SELECT
     a.last_note_created_at,
     a.last_note_source_created_at,
     a.mentions,
-    ar.bumped_at,
-    -- Unread: TRUE only for non-archived threads where read is missing or stale
-    COALESCE(CASE WHEN a.archived_at IS NULL
-            AND ((a.created_by = upe.user_id
-                    AND a.last_note_created_at IS NOT NULL
-                    AND a.last_note_created_at > upe.joined_at)
-                OR ((a.created_by IS NULL
-                        OR a.created_by != upe.user_id)
-                    AND COALESCE(a.last_note_created_at, a.created_at) > upe.joined_at))
-        THEN
-            ar.read_at IS NULL
-            OR ar.read_at < (CASE WHEN a.created_by = upe.user_id THEN
-                    a.last_note_source_created_at
-                ELSE
-                    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, ar.bumped_at), a.created_at)
-                END)
-        ELSE
-            FALSE
-        END, FALSE) AS unread,
+    tu.bumped_at,
+    -- Unread: TRUE when thread_unread row exists and read_at is NULL
+    COALESCE(tu.read_at IS NULL AND tu.user_id IS NOT NULL, FALSE) AS unread,
+    COALESCE(CASE WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.importance END, 0::smallint) AS importance,
     -- activity_at: feed ordering timestamp
-    -- GREATEST(lastNoteSourceCreatedAt, link.sourceCreatedAt, threadRead.bumpedAt, pastScheduleEnd),
-    -- falling back to created_at when all are null
     COALESCE(
         GREATEST(
             a.last_note_source_created_at,
             la.source_created_at,
-            ar.bumped_at,
+            tu.bumped_at,
             (SELECT CASE
                 WHEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz) <= now()
                 THEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamptz)
@@ -112,8 +69,8 @@ SELECT
 FROM
     thread_x a
     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
-    LEFT JOIN thread_read ar ON ar.user_id = upe.user_id
-        AND ar.thread_id = a.id
+    LEFT JOIN thread_unread tu ON tu.user_id = upe.user_id
+        AND tu.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
 WHERE
     (a.draft = FALSE OR a.created_by = upe.user_id)
@@ -141,6 +98,7 @@ SELECT
     CAST(NULL AS uuid[]) AS mentions,
     NULL::timestamptz AS bumped_at,
     FALSE AS unread,
+    0::smallint AS importance,
     a.created_at AS activity_at,
     a.created_at AS agenda_at
 FROM

@@ -287,7 +287,7 @@ class _LinkChannelRowState extends State<_LinkChannelRow> {
     final theme = context.theme;
 
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(

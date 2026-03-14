@@ -177,6 +177,13 @@ enum Tag {
     'Sad',
     type: TagType.count,
     shortcodes: ['sad', 'cry'],
+  ),
+  reply(
+    1019,
+    PlotIcon.flag,
+    'Reply',
+    type: TagType.count,
+    shortcodes: ['reply', 'flag'],
   );
 
   final int id;

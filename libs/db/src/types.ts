@@ -1234,6 +1234,7 @@ export type Database = {
           occurrence: string | null
           on: unknown
           order: number | null
+          reason: string | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           thread_id: string | null
@@ -1250,6 +1251,7 @@ export type Database = {
           occurrence?: string | null
           on?: unknown
           order?: number | null
+          reason?: string | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
           thread_id?: string | null
@@ -1266,6 +1268,7 @@ export type Database = {
           occurrence?: string | null
           on?: unknown
           order?: number | null
+          reason?: string | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
           thread_id?: string | null
@@ -1758,6 +1761,61 @@ export type Database = {
             foreignKeyName: "thread_tag_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      thread_unread: {
+        Row: {
+          bumped_at: string | null
+          importance: number
+          read_at: string | null
+          thread_id: string
+          updated_at: string
+          urgency: string
+          user_id: string
+        }
+        Insert: {
+          bumped_at?: string | null
+          importance?: number
+          read_at?: string | null
+          thread_id: string
+          updated_at?: string
+          urgency: string
+          user_id: string
+        }
+        Update: {
+          bumped_at?: string | null
+          importance?: number
+          read_at?: string | null
+          thread_id?: string
+          updated_at?: string
+          urgency?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "thread_unread_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "priority_twist_thread_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_unread_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_unread_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_unread_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
         ]
@@ -3063,25 +3121,25 @@ export type Database = {
             referencedColumns: ["priority_id"]
           },
           {
-            foreignKeyName: "thread_read_thread_id_fkey"
+            foreignKeyName: "thread_unread_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "priority_twist_thread_update"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_read_thread_id_fkey"
+            foreignKeyName: "thread_unread_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_read_thread_id_fkey"
+            foreignKeyName: "thread_unread_thread_id_fkey"
             columns: ["thread_id"]
             referencedRelation: "thread_x"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "thread_read_user_id_fkey"
+            foreignKeyName: "thread_unread_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
@@ -3596,6 +3654,8 @@ export type Database = {
       priority: {
         Row: {
           archived_at: string | null
+          attention_window: Json | null
+          attention_window_set: boolean | null
           color: number | null
           created_at: string | null
           created_by: string | null
@@ -3607,14 +3667,12 @@ export type Database = {
           path: unknown
           personal: boolean | null
           pomodoro: number | null
-          response_window: Json | null
-          response_window_set: boolean | null
           role: string | null
           root: boolean | null
+          see_within: Json | null
+          see_within_set: boolean | null
           title: string | null
           top_order: number | null
-          turnaround: Json | null
-          turnaround_set: boolean | null
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
@@ -3668,6 +3726,7 @@ export type Database = {
           priority_path: unknown
           range_at: unknown
           range_on: unknown
+          reason: string | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           schedule_user_id: string | null
@@ -3727,6 +3786,7 @@ export type Database = {
           created_at: string | null
           draft: boolean | null
           id: string | null
+          importance: number | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
           mentions: string[] | null
@@ -3784,6 +3844,10 @@ export type Database = {
     Functions: {
       assert_priority_access: {
         Args: { priority_id: string; user_id: string }
+        Returns: undefined
+      }
+      clear_thread_unread: {
+        Args: { p_thread_id: string; user_id: string }
         Returns: undefined
       }
       delete_thread_read: {
@@ -3885,6 +3949,8 @@ export type Database = {
         Args: { p_priority: Json; user_id: string }
         Returns: {
           archived_at: string | null
+          attention_window: Json | null
+          attention_window_set: boolean | null
           color: number | null
           created_at: string | null
           created_by: string | null
@@ -3896,14 +3962,12 @@ export type Database = {
           path: unknown
           personal: boolean | null
           pomodoro: number | null
-          response_window: Json | null
-          response_window_set: boolean | null
           role: string | null
           root: boolean | null
+          see_within: Json | null
+          see_within_set: boolean | null
           title: string | null
           top_order: number | null
-          turnaround: Json | null
-          turnaround_set: boolean | null
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
@@ -3915,6 +3979,17 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      upsert_priority_attention: {
+        Args: {
+          p_attention_window?: Json
+          p_priority_id: string
+          p_see_within?: Json
+          p_set_attention_window?: boolean
+          p_set_see_within?: boolean
+          p_user_id: string
+        }
+        Returns: undefined
       }
       upsert_priority_member: {
         Args: {
@@ -3931,17 +4006,6 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
-      }
-      upsert_priority_response_time: {
-        Args: {
-          p_priority_id: string
-          p_response_window?: Json
-          p_set_response_window?: boolean
-          p_set_turnaround?: boolean
-          p_turnaround?: Json
-          user_id: string
-        }
-        Returns: undefined
       }
       upsert_priority_twist: {
         Args: {
@@ -4050,6 +4114,23 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "thread_tag"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      upsert_thread_unread: {
+        Args: {
+          p_bumped_at?: string
+          p_importance?: number
+          p_read_at?: string
+          p_thread_id: string
+          p_urgency: string
+          user_id: string
+        }
+        Returns: Database["public"]["Tables"]["thread_unread"]["Row"]
+        SetofOptions: {
+          from: "*"
+          to: "thread_unread"
           isOneToOne: true
           isSetofReturn: false
         }

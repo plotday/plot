@@ -114,9 +114,7 @@ class _SelectTileState extends State<SelectTile> {
         content: GestureDetector(
           onTap: widget.enabled ? _handleActivate : null,
           child: MouseRegion(
-            cursor: widget.enabled
-                ? SystemMouseCursors.click
-                : SystemMouseCursors.basic,
+            cursor: SystemMouseCursors.basic,
             onEnter: widget.enabled
                 ? (_) {
                     setState(() {

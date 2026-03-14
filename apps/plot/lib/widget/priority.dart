@@ -74,17 +74,21 @@ class PriorityWidget extends StatelessWidget {
             children: [
               // Hover commands appear to the left
               if (hovered) ...[
-                if (canShare && !sharing) Button.icon(ManagePrioritySharing(priority)),
+                if (canShare && !sharing)
+                  Button.icon(ManagePrioritySharing(priority)),
                 Button.icon(
                   SetTopPriority(priority, priority.topOrder == null),
                 ),
                 Button.icon(ShowPriorityCommands(priority)),
               ],
               // Persistent sharing icon (rightmost)
-              if (canShare && sharing) Button.icon(
-                ManagePrioritySharing(priority),
-                color: hovered ? buildContext.theme.plotColors.muted : buildContext.theme.plotColors.veryMuted,
-              ),
+              if (canShare && sharing)
+                Button.icon(
+                  ManagePrioritySharing(priority),
+                  color: hovered
+                      ? buildContext.theme.plotColors.muted
+                      : buildContext.theme.plotColors.veryMuted,
+                ),
             ],
           ),
         );
@@ -103,19 +107,16 @@ class PriorityWidget extends StatelessWidget {
       onHover: onHover,
       indentLevel: indentLevel,
       textStyle: textStyle,
-      leadingBuilder: (isHovered, hasFocus) => SizedBox(
-        width: 20,
-        child: Center(
-          child: priority.organizationId != null && priority.root
-              ? Icon(
-                  FontAwesomeIcons.building,
-                  size: buildContext.theme.iconSizes.xs,
-                  color: buildContext.colour.colours.fromTheme(priority.displayColor),
-                )
-              : UnreadIndicator(
-                  color: priority.displayColor,
-                  unread: unread ?? priority.unread,
-                ),
+      leadingBuilder: (isHovered, hasFocus) => Padding(
+        padding: EdgeInsets.only(
+          left: buildContext.theme.spacing.xl,
+          right: buildContext.theme.spacing.sm,
+          bottom: 2,
+        ),
+        child: PriorityNotification(
+          unread: unread ?? priority.unread,
+          active: priority.active,
+          color: priority.displayColor,
         ),
       ),
     );

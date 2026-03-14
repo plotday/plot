@@ -467,7 +467,7 @@ class _ThreadFilterBar extends StatelessWidget {
                   onTap: () =>
                       context.read<ThreadBloc>().setThreadFilter(null),
                   child: MouseRegion(
-                    cursor: SystemMouseCursors.click,
+                    cursor: SystemMouseCursors.basic,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -538,7 +538,7 @@ class _SearchFilterHint extends StatelessWidget {
           GestureDetector(
             onTap: onShowAll,
             child: MouseRegion(
-              cursor: SystemMouseCursors.click,
+              cursor: SystemMouseCursors.basic,
               child: Text(
                 'Show all',
                 style: context.theme.typography.xs.copyWith(
@@ -610,11 +610,9 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
                     ConnectConnectorAccount(pt).run(context);
                   },
             child: MouseRegion(
-              cursor: connected
-                  ? (sourceUrl != null
-                      ? SystemMouseCursors.click
-                      : SystemMouseCursors.basic)
-                  : SystemMouseCursors.click,
+              cursor: connected && sourceUrl != null
+                  ? SystemMouseCursors.click
+                  : SystemMouseCursors.basic,
               onEnter: (_) => setState(() => _hovered = true),
               onExit: (_) => setState(() => _hovered = false),
               child: DecoratedBox(
@@ -1019,7 +1017,7 @@ class _ThreadLinkMenuState extends State<_ThreadLinkMenu> {
           }
         },
         child: MouseRegion(
-          cursor: SystemMouseCursors.click,
+          cursor: SystemMouseCursors.basic,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             child: Icon(

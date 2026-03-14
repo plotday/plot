@@ -639,7 +639,7 @@ class _ChannelRowState extends State<_ChannelRow> {
     final isTappable = widget.canToggle || widget.hasChildren;
 
     return MouseRegion(
-      cursor: isTappable ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor: SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(

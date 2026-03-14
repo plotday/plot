@@ -33,7 +33,7 @@ import 'package:plot/base.dart';
 import 'package:plot/cli_args.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'enums.dart';
-import 'response_time.dart';
+import 'attention.dart';
 import 'types.dart';
 import 'logging.dart';
 import 'sync_entity.dart';
@@ -1807,7 +1807,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 268;
+  int get schemaVersion => 272;
 
   @override
   MigrationStrategy get migration {
@@ -2225,10 +2225,42 @@ class Store extends _$Store {
       await _safeAddColumn(m, priorityTwists, priorityTwists.userConnected);
     }
     if (from < 268) {
-      await _safeAddColumn(m, priorities, priorities.responseWindow);
-      await _safeAddColumn(m, priorities, priorities.turnaround);
-      await _safeAddColumn(m, priorities, priorities.responseWindowSet);
-      await _safeAddColumn(m, priorities, priorities.turnaroundSet);
+      // Original columns added as response_window/turnaround
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN response_window TEXT',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN turnaround TEXT',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN response_window_set INTEGER NOT NULL DEFAULT 0',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN turnaround_set INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (from < 269) {
+      // Rename columns: response_window -> attention_window, turnaround -> see_within
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(
+        priorities,
+        columnTransformer: {
+          priorities.attentionWindow: const CustomExpression('response_window'),
+          priorities.seeWithin: const CustomExpression('turnaround'),
+          priorities.attentionWindowSet: const CustomExpression('response_window_set'),
+          priorities.seeWithinSet: const CustomExpression('turnaround_set'),
+        },
+      ));
+    }
+    if (from < 270) {
+      await _safeAddColumn(m, schedules, schedules.reason);
+    }
+    if (from < 272) {
+      await _safeAddColumn(m, threads, threads.importance);
     }
   }
 

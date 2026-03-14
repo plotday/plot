@@ -19,6 +19,7 @@ class Threads extends Table
 
   TextColumn get mentions => text().nullable().map(const UuidListConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
+  IntColumn get importance => integer().withDefault(const Constant(0))();
   BoolColumn get unreadUpdated => boolean().nullable()();
   DateTimeColumn get bumpedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
@@ -61,6 +62,7 @@ class Schedules extends Table with SyncableTable, UuidTable {
   BlobColumn get linkId => blob().nullable().map(const UuidConverter())();
   TextColumn get contacts => text().nullable()();
   TextColumn get currentUserStatus => text().nullable()();
+  TextColumn get reason => text().nullable()();
 }
 
 class ScheduleContact {
@@ -236,6 +238,7 @@ class ThreadsBase extends BaseTable {
           // Server still has stale data - preserve local state
           merged = merged.copyWith(
             unread: local.unread,
+            importance: local.importance,
             unreadUpdated: const Value(true),
             bumpedAt: Value(local.bumpedAt),
           );
@@ -257,6 +260,7 @@ class ThreadsBase extends BaseTable {
 
     // Remove unread fields - they are managed separately
     json.remove('unread');
+    json.remove('importance');
     json.remove('unread_updated');
 
     // Remove mentions - it's a calculated field from notes
@@ -568,30 +572,31 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     try {
-      // Batch upsert for marking as read
+      // Batch POST for marking as read
       if (toMarkRead.isNotEmpty) {
         final readRecords = toMarkRead
             .map(
               (activity) => {
-                'user_id': Base.userId.toString(),
                 'thread_id': activity.id.toString(),
                 'read_at': readAt.toIso8601String(),
-                if (activity.bumpedAt != null)
-                  'bumped_at': activity.bumpedAt!.toUtc().toIso8601String(),
               },
             )
             .toList();
 
         for (final record in readRecords) {
-          await api.post<dynamic>('/sync/thread-read', body: record);
+          await api.post<dynamic>('/sync/thread-unread', body: record);
         }
       }
 
-      // Batch delete for marking as unread
+      // Batch POST for marking as unread (manual mark-unread uses inform-slow)
       if (toMarkUnread.isNotEmpty) {
         for (final activity in toMarkUnread) {
-          await api.delete<dynamic>(
-            '/sync/thread-read?user_id=${Uri.encodeQueryComponent(Base.userId.toString())}&thread_id=${Uri.encodeQueryComponent(activity.id.toString())}',
+          await api.post<dynamic>(
+            '/sync/thread-unread',
+            body: {
+              'thread_id': activity.id.toString(),
+              'urgency': 'inform-slow',
+            },
           );
         }
       }
@@ -1754,6 +1759,7 @@ class Thread extends Equatable implements Comparable<Thread> {
          title: title,
          preview: preview,
          unread: false,
+         importance: 0,
          unreadUpdated: null,
        ),
        _schedule = null,
@@ -2177,6 +2183,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           startAt: const Value(null),
           endAt: const Value(null),
           updatedAt: DateTime.now(),
+          reason: Value(date != null ? 'schedule' : _userSchedule.reason),
         ),
       );
       log.info(
@@ -2202,6 +2209,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           endOn: const Value(null),
           endAt: const Value(null),
           updatedAt: DateTime.now(),
+          reason: const Value('schedule'),
         ),
       );
       log.info(
@@ -2285,6 +2293,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     // Update schedule if scheduling fields are changing
     var schedule = _schedule;
     var userSchedule = _userSchedule;
+
     if (at.present ||
         on.present ||
         duration.present ||
@@ -2427,6 +2436,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           startOn: Value(Thread.todoNowDate),
           order: Value(Order.first()),
           archivedAt: const Value(null),
+          reason: const Value('add'),
         );
       } else {
         userSchedule = ScheduleRow(
@@ -2436,9 +2446,22 @@ class Thread extends Equatable implements Comparable<Thread> {
           userId: Base.userId,
           startOn: Thread.todoNowDate,
           order: Order.first(),
+          reason: 'add',
         );
       }
-    } else if (todo == false) {
+    }
+
+    // Set reason='schedule' when user explicitly sets dates on a per-user schedule
+    if (userSchedule != null &&
+        (at.present || on.present) &&
+        todo != true &&
+        todo != false) {
+      userSchedule = userSchedule.copyWith(
+        reason: const Value('schedule'),
+      );
+    }
+
+    if (todo == false) {
       // Mark done: archive the user schedule (clear dates, set archived_at)
       if (userSchedule != null) {
         userSchedule = userSchedule.copyWith(
@@ -2509,10 +2532,10 @@ class Thread extends Equatable implements Comparable<Thread> {
               startOn: Value(Thread.todoNowDate),
               order: Value(Order.first()),
               archivedAt: const Value(null),
+              reason: const Value('add'),
             ),
           );
         } else {
-          // Create new per-user schedule with epoch sentinel for "to do now"
           return _withUserSchedule(
             ScheduleRow(
               id: Uuid.generate(),
@@ -2521,6 +2544,7 @@ class Thread extends Equatable implements Comparable<Thread> {
               userId: Base.userId,
               startOn: Thread.todoNowDate,
               order: Order.first(),
+              reason: 'add',
             ),
           );
         }

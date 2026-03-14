@@ -3,12 +3,12 @@ import type { Kysely } from "kysely";
 import type { DB } from "../db";
 import { createDb } from "../db";
 import type { Bindings } from "../env";
+import { createSchedule } from "../app/sync/smart-schedule";
 import { rpcUser } from "../rpc";
 
 /**
- * AI-powered note analysis for auto-tagging todos and completions.
- * Analyzes a note's content in context to detect action items and task completions,
- * then applies Tag.Todo (1) or Tag.Done (3) accordingly.
+ * AI-powered note analysis for auto-tagging todos, reply-needed notes,
+ * and classifying unread urgency for notification behavior.
  */
 export async function analyzeNote(
   env: Bindings,
@@ -21,10 +21,19 @@ export async function analyzeNote(
     const context = await gatherContext(db, noteId, threadId);
     if (!context) return;
 
-    const actions = await classifyNote(env, context);
-    if (actions.length === 0) return;
+    const result = await classifyNote(env, context);
 
-    await applyTagChanges(db, actions, context.memberIds, userId);
+    if (result.tags.length > 0) {
+      await applyTagChanges(db, result.tags, context.memberIds, userId);
+    }
+
+    await applyUnreadStatus(
+      db,
+      threadId,
+      context.noteAuthorId,
+      context.members,
+      result.unread
+    );
   } finally {
     await db.destroy();
   }
@@ -42,20 +51,39 @@ interface NoteContext {
     status: string | null;
     type: string | null;
   }>;
-  members: Array<{ id: string; name: string | null }>;
+  members: Array<{ id: string; name: string | null; userId: string | null }>;
   memberIds: Set<string>;
   existingTodos: Array<{ noteId: string; actorId: string }>;
+  existingReplies: Array<{ noteId: string; actorId: string }>;
   recentNotes: Array<{
     id: string;
+    authorId: string | null;
     authorName: string | null;
     content: string | null;
+    mentions: string[] | null;
   }>;
+}
+
+type UnreadUrgency = "interrupt" | "inform-fast" | "inform-slow" | "ignore";
+
+interface UnreadClassification {
+  urgency: UnreadUrgency;
+  importance: number; // 0-100
+}
+
+interface AnalysisResult {
+  tags: TagAction[];
+  unread: {
+    default: UnreadClassification;
+    overrides: Record<string, Partial<UnreadClassification>>;
+  };
 }
 
 interface TagAction {
   noteId: string;
   actorId: string;
   done: boolean;
+  tag: "todo" | "reply";
 }
 
 async function gatherContext(
@@ -67,7 +95,7 @@ async function gatherContext(
   const [note, thread] = await Promise.all([
     db
       .selectFrom("note")
-      .select(["id", "content", "author_id"])
+      .select(["id", "content", "author_id", "mentions"])
       .where("id", "=", noteId)
       .executeTakeFirst(),
     db
@@ -81,51 +109,95 @@ async function gatherContext(
   if (!thread?.priority_id) return null;
 
   // Fetch remaining context in parallel (all depend on note/thread results)
-  const [links, members, author, existingTodos, recentNotes] = await Promise.all([
-    // Links on this thread
-    db
-      .selectFrom("link as l")
-      .leftJoin("contact as c", "c.id", "l.assignee_id")
-      .select(["l.title", "l.status", "l.type", "c.name as assignee_name"])
-      .where("l.thread_id", "=", threadId)
-      .execute(),
-    // Priority members with names
-    db
-      .selectFrom("priority_contact as pc")
-      .innerJoin("contact as c", "c.id", "pc.contact_id")
-      .select(["c.id", "c.name"])
-      .where("pc.priority_id", "=", thread.priority_id)
-      .execute(),
-    // Note author name
-    db
-      .selectFrom("contact")
-      .select("name")
-      .where("id", "=", note.author_id)
-      .executeTakeFirst(),
-    // Existing active todos on this thread's notes
-    db
-      .selectFrom("note_tag as nt")
-      .innerJoin("note as n", "n.id", "nt.note_id")
-      .select(["nt.note_id as noteId", "nt.actor_id as actorId"])
-      .where("n.thread_id", "=", threadId)
-      .where("nt.tag_id", "=", 1) // Tag.Todo
-      .where("nt.archived_at", "is", null)
-      .execute(),
-    // Recent notes on this thread (excluding the current note)
-    db
-      .selectFrom("note as n")
-      .leftJoin("contact as c", "c.id", "n.author_id")
-      .select(["n.id", "c.name as authorName", "n.content"])
-      .where("n.thread_id", "=", threadId)
-      .where("n.id", "!=", noteId)
-      .where("n.draft", "=", false)
-      .where("n.archived_at", "is", null)
-      .orderBy("n.created_at", "desc")
-      .limit(10)
-      .execute(),
-  ]);
+  const [links, members, author, existingTodos, existingReplies, recentNotes] =
+    await Promise.all([
+      // Links on this thread
+      db
+        .selectFrom("link as l")
+        .leftJoin("contact as c", "c.id", "l.assignee_id")
+        .select(["l.title", "l.status", "l.type", "c.name as assignee_name"])
+        .where("l.thread_id", "=", threadId)
+        .execute(),
+      // Priority members with names and user IDs
+      db
+        .selectFrom("priority_contact as pc")
+        .innerJoin("contact as c", "c.id", "pc.contact_id")
+        .select([
+          "c.id",
+          "c.name",
+          "c.user_id as userId",
+        ])
+        .where("pc.priority_id", "=", thread.priority_id)
+        .execute(),
+      // Note author name
+      db
+        .selectFrom("contact")
+        .select("name")
+        .where("id", "=", note.author_id)
+        .executeTakeFirst(),
+      // Existing active todos on this thread's notes
+      db
+        .selectFrom("note_tag as nt")
+        .innerJoin("note as n", "n.id", "nt.note_id")
+        .select(["nt.note_id as noteId", "nt.actor_id as actorId"])
+        .where("n.thread_id", "=", threadId)
+        .where("nt.tag_id", "=", 1) // Tag.Todo
+        .where("nt.archived_at", "is", null)
+        .execute(),
+      // Existing active reply tags on this thread's notes
+      db
+        .selectFrom("note_tag as nt")
+        .innerJoin("note as n", "n.id", "nt.note_id")
+        .select(["nt.note_id as noteId", "nt.actor_id as actorId"])
+        .where("n.thread_id", "=", threadId)
+        .where("nt.tag_id", "=", 1019) // Tag.Reply
+        .where("nt.archived_at", "is", null)
+        .execute(),
+      // Recent notes on this thread (excluding the current note)
+      db
+        .selectFrom("note as n")
+        .leftJoin("contact as c", "c.id", "n.author_id")
+        .select([
+          "n.id",
+          "n.author_id as authorId",
+          "c.name as authorName",
+          "n.content",
+          "n.mentions",
+        ])
+        .where("n.thread_id", "=", threadId)
+        .where("n.id", "!=", noteId)
+        .where("n.draft", "=", false)
+        .where("n.archived_at", "is", null)
+        .orderBy("n.created_at", "desc")
+        .limit(10)
+        .execute(),
+    ]);
 
   const memberIds = new Set(members.map((m) => m.id));
+
+  // Build a member name lookup for resolving mentions
+  const memberNameMap = new Map(members.map((m) => [m.id, m.name ?? "Unknown"]));
+
+  // Format recent notes with author names and resolved @mentions
+  const formattedRecentNotes = recentNotes.reverse().map((n) => {
+    let content = n.content;
+    // Resolve mention UUIDs to names
+    if (content && n.mentions) {
+      for (const mentionId of n.mentions as string[]) {
+        const name = memberNameMap.get(mentionId);
+        if (name) {
+          content = content.replace(mentionId, `@${name}`);
+        }
+      }
+    }
+    return {
+      id: n.id,
+      authorId: n.authorId,
+      authorName: n.authorName,
+      content,
+      mentions: n.mentions,
+    };
+  });
 
   return {
     noteId,
@@ -134,17 +206,22 @@ async function gatherContext(
     noteAuthorName: author?.name ?? null,
     threadTitle: thread.title,
     links,
-    members,
+    members: members.map((m) => ({
+      id: m.id,
+      name: m.name,
+      userId: m.userId,
+    })),
     memberIds,
     existingTodos,
-    recentNotes: recentNotes.reverse(), // chronological order
+    existingReplies,
+    recentNotes: formattedRecentNotes,
   };
 }
 
 async function classifyNote(
   env: Bindings,
   context: NoteContext
-): Promise<TagAction[]> {
+): Promise<AnalysisResult> {
   const membersStr = context.members
     .map((m) => `- ${m.id}: ${m.name ?? "Unknown"}`)
     .join("\n");
@@ -170,12 +247,23 @@ async function classifyNote(
           .join("\n")
       : "None";
 
+  const repliesStr =
+    context.existingReplies.length > 0
+      ? context.existingReplies
+          .map((t) => {
+            const name =
+              context.members.find((m) => m.id === t.actorId)?.name ?? t.actorId;
+            return `- Note ${t.noteId} flagged for ${name} (${t.actorId})`;
+          })
+          .join("\n")
+      : "None";
+
   const recentStr =
     context.recentNotes.length > 0
       ? context.recentNotes
           .map(
             (n) =>
-              `- ${n.authorName ?? "Unknown"}: ${(n.content ?? "").slice(0, 300)}`
+              `- [${n.authorName ?? "Unknown"}](${n.authorId}): ${(n.content ?? "").slice(0, 300)}`
           )
           .join("\n")
       : "None";
@@ -183,20 +271,40 @@ async function classifyNote(
   const messages = [
     {
       role: "system" as const,
-      content: `You analyze notes in a collaborative productivity app to determine two things:
-1. Does this note require action from someone? (e.g., a question, request, assignment)
-2. Does this note indicate that a previously assigned task is now complete?
+      content: `You analyze notes in a collaborative productivity app to determine three things:
+1. Does this note assign a task to someone? (tag: "todo")
+2. Does this note require a reply from someone? (tag: "reply")
+3. How urgently should each member be notified? (unread classification)
 
-Rules:
-- Only assign tasks to people in the priority members list.
-- If no specific person is identifiable, do not assign a task.
-- For completions, reference the noteId of the existing todo being completed.
-- For new action items, use the current note's ID.
+Tag rules:
+- Only assign tags to people in the priority members list.
+- If no specific person is identifiable, do not assign a tag.
+- For completions (done=true), reference the noteId of the existing todo/reply being completed.
+- For new items (done=false), use the current note's ID.
+- Todo: Only mark as todo if it clearly requires an action that ISN'T already covered by another task or link in the thread. Exception: clear sub-tasks completable before the parent.
+- Reply: Mark as reply if the note clearly requires a response based on thread context and participants. E.g., a direct question in a two-person conversation.
 - Be conservative — only tag when intent is clear.
-- Respond with a JSON array only. No explanation.
 
-Output schema: [{"noteId": "string", "actorId": "string", "done": boolean}]
-Empty array [] means no tag changes needed.`,
+Unread classification rules:
+- For each member, classify how urgently and importantly they should be notified.
+- Return a "default" with per-user "overrides" where needed.
+- The note author should NEVER be included (they are always ignored).
+- urgency levels:
+  - interrupt: urgent, needs immediate attention
+  - inform-fast: someone is waiting (reply needed, question asked)
+  - inform-slow: good to know when catching up
+  - ignore: not worth surfacing (e.g. automated updates, status changes only relevant to the author)
+- importance: 0-100 numeric scale. 0 = trivial, 50 = normal, 100 = critical. Consider how relevant the note is to each member.
+
+Respond with JSON only. No explanation.
+
+Output schema:
+{
+  "tags": [{"noteId": "string", "actorId": "string", "done": boolean, "tag": "todo"|"reply"}],
+  "unread": {"default": {"urgency": "inform-slow", "importance": 50}, "overrides": {"contactId": {"urgency": "inform-fast", "importance": 75}}}
+}
+
+Empty tags array and default {"urgency": "inform-slow", "importance": 50} if no special classification needed.`,
     },
     {
       role: "user" as const,
@@ -206,6 +314,8 @@ Priority members:
 ${membersStr}
 Existing tasks:
 ${todosStr}
+Existing reply flags:
+${repliesStr}
 Recent notes:
 ${recentStr}
 
@@ -215,32 +325,146 @@ New note by ${context.noteAuthorName ?? "Unknown"} (${context.noteAuthorId}): ${
 
   const response = await env.AI.run(
     "@cf/meta/llama-3.1-8b-instruct-fp8",
-    { messages, max_tokens: 256 }
+    { messages, max_tokens: 512 }
   );
 
   if (response instanceof ReadableStream) {
     throw new Error("Unexpected stream response from AI");
   }
 
-  const text = response.response?.trim();
-  if (!text) return [];
+  const defaultClassification: UnreadClassification = { urgency: "inform-slow", importance: 50 };
 
-  // Extract JSON array from the response (handle potential markdown wrapping)
-  const jsonMatch = text.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) return [];
+  const text = response.response?.trim();
+  if (!text) {
+    return { tags: [], unread: { default: defaultClassification, overrides: {} } };
+  }
+
+  // Extract JSON object from the response (handle potential markdown wrapping)
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    // Fallback: try array format for backward compatibility
+    const arrayMatch = text.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
+      try {
+        const parsed = JSON.parse(arrayMatch[0]);
+        if (Array.isArray(parsed)) {
+          const tags = parsed
+            .filter(
+              (item: any) =>
+                typeof item.noteId === "string" &&
+                typeof item.actorId === "string" &&
+                typeof item.done === "boolean"
+            )
+            .map((item: any) => ({ ...item, tag: item.tag ?? "todo" }));
+          return { tags, unread: { default: defaultClassification, overrides: {} } };
+        }
+      } catch {
+        // Fall through
+      }
+    }
+    return { tags: [], unread: { default: defaultClassification, overrides: {} } };
+  }
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
+
+    const tags = (Array.isArray(parsed.tags) ? parsed.tags : []).filter(
       (item: any) =>
         typeof item.noteId === "string" &&
         typeof item.actorId === "string" &&
-        typeof item.done === "boolean"
+        typeof item.done === "boolean" &&
+        (item.tag === "todo" || item.tag === "reply")
     );
+
+    const validUrgencies = new Set([
+      "interrupt",
+      "inform-fast",
+      "inform-slow",
+      "ignore",
+    ]);
+
+    const unreadDefault = parseClassification(parsed.unread?.default, validUrgencies, defaultClassification);
+    const overrides: Record<string, Partial<UnreadClassification>> = {};
+    if (parsed.unread?.overrides && typeof parsed.unread.overrides === "object") {
+      for (const [key, value] of Object.entries(parsed.unread.overrides)) {
+        const override = parseClassificationOverride(value, validUrgencies);
+        if (override) {
+          overrides[key] = override;
+        }
+      }
+    }
+
+    return { tags, unread: { default: unreadDefault, overrides } };
   } catch {
     console.error("[note-analysis] Failed to parse AI response:", text);
-    return [];
+    return { tags: [], unread: { default: defaultClassification, overrides: {} } };
+  }
+}
+
+function parseClassification(
+  raw: any,
+  validUrgencies: Set<string>,
+  fallback: UnreadClassification
+): UnreadClassification {
+  if (!raw) return fallback;
+  // Handle string format (backward compat: just urgency)
+  if (typeof raw === "string") {
+    return { urgency: validUrgencies.has(raw) ? raw as UnreadUrgency : fallback.urgency, importance: fallback.importance };
+  }
+  if (typeof raw !== "object") return fallback;
+  return {
+    urgency: validUrgencies.has(raw.urgency) ? raw.urgency : fallback.urgency,
+    importance: typeof raw.importance === "number" ? Math.max(0, Math.min(100, Math.round(raw.importance))) : fallback.importance,
+  };
+}
+
+function parseClassificationOverride(
+  raw: any,
+  validUrgencies: Set<string>
+): Partial<UnreadClassification> | null {
+  if (!raw) return null;
+  // Handle string format (just urgency)
+  if (typeof raw === "string") {
+    return validUrgencies.has(raw) ? { urgency: raw as UnreadUrgency } : null;
+  }
+  if (typeof raw !== "object") return null;
+  const result: Partial<UnreadClassification> = {};
+  if (validUrgencies.has(raw.urgency)) result.urgency = raw.urgency;
+  if (typeof raw.importance === "number") result.importance = Math.max(0, Math.min(100, Math.round(raw.importance)));
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+async function applyUnreadStatus(
+  db: Kysely<DB>,
+  threadId: string,
+  noteAuthorId: string,
+  members: Array<{ id: string; name: string | null; userId: string | null }>,
+  unread: AnalysisResult["unread"]
+): Promise<void> {
+  for (const member of members) {
+    if (!member.userId) continue;
+    if (member.id === noteAuthorId) continue; // Author never gets unread
+
+    const override = unread.overrides[member.id];
+    const urgency = override?.urgency ?? unread.default.urgency;
+    const importance = override?.importance ?? unread.default.importance;
+    if (urgency === "ignore") continue; // No row for ignore
+
+    try {
+      await rpcUser(db, "upsert_thread_unread", {
+        user_id: member.userId,
+        p_thread_id: threadId,
+        p_urgency: urgency,
+        p_importance: importance,
+      });
+
+      await createSchedule(db, member.userId, threadId, "unread");
+    } catch (error) {
+      console.error(
+        `[note-analysis] Failed to apply unread status for user ${member.userId}:`,
+        error
+      );
+    }
   }
 }
 
@@ -250,22 +474,77 @@ async function applyTagChanges(
   memberIds: Set<string>,
   userId: string
 ): Promise<void> {
-  for (const { noteId: targetNoteId, actorId, done } of actions) {
+  for (const { noteId: targetNoteId, actorId, done, tag } of actions) {
     // Validate actorId is in the priority members list
     if (!memberIds.has(actorId)) continue;
 
-    const tagId = done ? 3 : 1; // Tag.Done or Tag.Todo
     try {
-      await rpcUser(db, "update_note_tags", {
-        user_id: userId,
-        p_note_id: targetNoteId,
-        p_actor_id: userId,
-        p_client_id: 0,
-        p_tag_updates: { [`${tagId}:${actorId}`]: true },
-      });
+      if (tag === "reply") {
+        // Reply is a count tag (1019) — insert directly into note_tag
+        // Count tags enforce ownership, but AI runs server-side with direct DB access
+        if (done) {
+          // Archive the reply tag for this actor
+          await db
+            .updateTable("note_tag")
+            .set({ archived_at: new Date(), updated_at: new Date() })
+            .where("note_id", "=", targetNoteId)
+            .where("actor_id", "=", actorId)
+            .where("tag_id", "=", 1019)
+            .where("archived_at", "is", null)
+            .execute();
+        } else {
+          // Insert reply tag for the target actor
+          await db
+            .insertInto("note_tag")
+            .values({
+              actor_id: actorId,
+              note_id: targetNoteId,
+              tag_id: 1019,
+              updated_by: 0,
+            })
+            .onConflict((oc) =>
+              oc
+                .columns(["actor_id", "note_id", "tag_id"])
+                .doUpdateSet({
+                  archived_at: null,
+                  updated_at: new Date(),
+                })
+            )
+            .execute();
+        }
+      } else {
+        // Todo tag — use RPC + createSchedule (existing logic)
+        const tagId = done ? 3 : 1; // Tag.Done or Tag.Todo
+        await rpcUser(db, "update_note_tags", {
+          user_id: userId,
+          p_note_id: targetNoteId,
+          p_actor_id: userId,
+          p_client_id: 0,
+          p_tag_updates: { [`${tagId}:${actorId}`]: true },
+        });
+
+        // Create task schedule when AI adds todo tag
+        if (!done) {
+          const contact = await db
+            .selectFrom("contact")
+            .select("user_id")
+            .where("id", "=", actorId)
+            .executeTakeFirst();
+          if (contact?.user_id) {
+            const note = await db
+              .selectFrom("note")
+              .select("thread_id")
+              .where("id", "=", targetNoteId)
+              .executeTakeFirst();
+            if (note?.thread_id) {
+              await createSchedule(db, contact.user_id, note.thread_id, "task");
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error(
-        `[note-analysis] Failed to apply tag ${tagId} on note ${targetNoteId} for actor ${actorId}:`,
+        `[note-analysis] Failed to apply ${tag} tag on note ${targetNoteId} for actor ${actorId}:`,
         error
       );
     }

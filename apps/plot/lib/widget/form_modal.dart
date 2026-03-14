@@ -113,6 +113,10 @@ class FormModalState extends State<_FormModal> {
           item.controller.removeListener(_onFormChanged);
         } else if (item is FormSelect) {
           item.removeListener(_onFormChanged);
+        } else if (item is FormToggle) {
+          item.removeListener(_onFormChanged);
+        } else if (item is FormWindowList) {
+          item.removeListener(_onFormChanged);
         }
       }
     }
@@ -127,11 +131,8 @@ class FormModalState extends State<_FormModal> {
   void _initForm() {
     _formGroups = widget.groups;
 
-    // Create focus nodes for each item
-    final totalCount = _formGroups.fold(
-      0,
-      (total, group) => total + group.items.length,
-    );
+    // Create focus nodes — one per focusable sub-item
+    final totalCount = _allFocusSlotsCount();
     _focusNodes = List.generate(totalCount, (_) => FocusNode());
 
     // Find initial focus index based on form state
@@ -146,6 +147,10 @@ class FormModalState extends State<_FormModal> {
           item.onSubmitted = _submitForm;
           item.controller.addListener(_onFormChanged);
         } else if (item is FormSelect) {
+          item.addListener(_onFormChanged);
+        } else if (item is FormToggle) {
+          item.addListener(_onFormChanged);
+        } else if (item is FormWindowList) {
           item.addListener(_onFormChanged);
         } else if (item is FormButton && !foundPrimaryButton) {
           item.isPrimary = true;
@@ -166,35 +171,35 @@ class FormModalState extends State<_FormModal> {
   }
 
   int _findInitialFocusIndex() {
-    final totalCount = _allItemsCount();
+    final totalSlots = _allFocusSlotsCount();
 
     // First, look for first empty required field
-    for (int i = 0; i < totalCount; i++) {
-      final item = _getItemAtIndex(i);
-      if (item.required && !item.isValid() && _isItemEnabled(i)) {
+    for (int i = 0; i < totalSlots; i++) {
+      final (item, _) = _getItemAndSubIndex(i);
+      if (item.required && !item.isValid() && _isFocusSlotEnabled(i)) {
         return i;
       }
     }
 
     // If all required fields are filled, find first text input
-    for (int i = 0; i < totalCount; i++) {
-      final item = _getItemAtIndex(i);
-      if (item is FormTextInput && _isItemEnabled(i)) {
+    for (int i = 0; i < totalSlots; i++) {
+      final (item, _) = _getItemAndSubIndex(i);
+      if (item is FormTextInput && _isFocusSlotEnabled(i)) {
         return i;
       }
     }
 
     // No text inputs, find first button
-    for (int i = 0; i < totalCount; i++) {
-      final item = _getItemAtIndex(i);
-      if (item is FormButton && _isItemEnabled(i)) {
+    for (int i = 0; i < totalSlots; i++) {
+      final (item, _) = _getItemAndSubIndex(i);
+      if (item is FormButton && _isFocusSlotEnabled(i)) {
         return i;
       }
     }
 
-    // Fallback to first enabled item
-    for (int i = 0; i < totalCount; i++) {
-      if (_isItemEnabled(i)) {
+    // Fallback to first enabled slot
+    for (int i = 0; i < totalSlots; i++) {
+      if (_isFocusSlotEnabled(i)) {
         return i;
       }
     }
@@ -205,27 +210,49 @@ class FormModalState extends State<_FormModal> {
   void _onFormChanged() {
     if (mounted) {
       setState(() {
-        // Rebuild to update button enabled state
-        // If the currently highlighted item is now disabled, move to the nearest enabled item
-        if (!_isItemEnabled(_highlightedIndex)) {
-          final totalCount = _allItemsCount();
+        // Sync focus nodes if the total count changed (e.g., window added/removed)
+        final newTotal = _allFocusSlotsCount();
+        if (newTotal != _focusNodes.length) {
+          // Dispose excess nodes
+          for (int i = newTotal; i < _focusNodes.length; i++) {
+            _focusNodes[i].dispose();
+          }
+          // Add new nodes if needed
+          if (newTotal > _focusNodes.length) {
+            _focusNodes = [
+              ..._focusNodes,
+              ...List.generate(
+                newTotal - _focusNodes.length,
+                (_) => FocusNode(),
+              ),
+            ];
+          } else {
+            _focusNodes = _focusNodes.sublist(0, newTotal);
+          }
+          // Clamp highlighted index
+          if (_highlightedIndex >= newTotal && newTotal > 0) {
+            _highlightedIndex = newTotal - 1;
+          }
+        }
 
+        // If the currently highlighted slot is disabled, move to the nearest enabled one
+        if (newTotal > 0 && !_isFocusSlotEnabled(_highlightedIndex)) {
           // Try moving down first
           int candidate = _highlightedIndex + 1;
-          while (candidate < totalCount && !_isItemEnabled(candidate)) {
+          while (candidate < newTotal && !_isFocusSlotEnabled(candidate)) {
             candidate++;
           }
 
-          // If no enabled item below, try moving up
-          if (candidate >= totalCount) {
+          // If no enabled slot below, try moving up
+          if (candidate >= newTotal) {
             candidate = _highlightedIndex - 1;
-            while (candidate >= 0 && !_isItemEnabled(candidate)) {
+            while (candidate >= 0 && !_isFocusSlotEnabled(candidate)) {
               candidate--;
             }
           }
 
-          // Update highlight if we found an enabled item
-          if (candidate >= 0 && candidate < totalCount) {
+          // Update highlight if we found an enabled slot
+          if (candidate >= 0 && candidate < newTotal) {
             _highlightedIndex = candidate;
             if (_highlightedIndex < _focusNodes.length) {
               _focusNodes[_highlightedIndex].requestFocus();
@@ -236,48 +263,82 @@ class FormModalState extends State<_FormModal> {
     }
   }
 
+  /// Total number of focus slots across all items (respects focusableCount).
+  int _allFocusSlotsCount() {
+    int total = 0;
+    for (var group in _formGroups) {
+      for (var item in group.items) {
+        total += item.focusableCount;
+      }
+    }
+    return total;
+  }
+
+  /// Total number of items (for rendering — each FormItem is one rendered row).
   int _allItemsCount() {
     return _formGroups.fold(0, (total, group) => total + group.items.length);
   }
 
-  bool _isItemEnabled(int index) {
-    final item = _getItemAtIndex(index);
-    // Skip non-focusable items (e.g., FormInfo, FormDivider)
-    if (!item.isFocusable) {
-      return false;
+  /// Maps a flat focus slot index to (FormItem, subIndex within that item).
+  (FormItem, int) _getItemAndSubIndex(int focusIndex) {
+    int slot = 0;
+    for (var group in _formGroups) {
+      for (var item in group.items) {
+        final count = item.focusableCount;
+        if (focusIndex < slot + count) {
+          return (item, focusIndex - slot);
+        }
+        slot += count;
+      }
     }
-    if (item is FormButton) {
-      return _isFormValid();
+    throw RangeError('Focus index $focusIndex out of range');
+  }
+
+  /// Returns the starting focus slot index for a given item index.
+  int _focusSlotForItemIndex(int itemIndex) {
+    int slot = 0;
+    int currentItem = 0;
+    for (var group in _formGroups) {
+      for (var item in group.items) {
+        if (currentItem == itemIndex) return slot;
+        slot += item.focusableCount;
+        currentItem++;
+      }
     }
-    if (item is FormSelect) {
-      return item.enabled;
-    }
+    throw RangeError('Item index $itemIndex out of range');
+  }
+
+  bool _isFocusSlotEnabled(int focusIndex) {
+    final (item, _) = _getItemAndSubIndex(focusIndex);
+    if (!item.isFocusable) return false;
+    if (item is FormButton) return _isFormValid();
+    if (item is FormSelect) return item.enabled;
     return true;
   }
 
   void _moveHighlight(int offset) {
     setState(() {
-      final totalCount = _allItemsCount();
-      if (totalCount == 0) return;
+      final totalSlots = _allFocusSlotsCount();
+      if (totalSlots == 0) return;
 
       int newIndex = _highlightedIndex;
       final step = offset > 0 ? 1 : -1;
 
-      // Move by offset, skipping disabled items
+      // Move by offset, skipping disabled slots
       for (int i = 0; i < offset.abs(); i++) {
         int candidate = newIndex + step;
 
-        // Keep moving in the same direction until we find an enabled item
-        while (candidate >= 0 && candidate < totalCount) {
-          if (_isItemEnabled(candidate)) {
+        // Keep moving in the same direction until we find an enabled slot
+        while (candidate >= 0 && candidate < totalSlots) {
+          if (_isFocusSlotEnabled(candidate)) {
             newIndex = candidate;
             break;
           }
           candidate += step;
         }
 
-        // If we couldn't find an enabled item, stop here
-        if (candidate < 0 || candidate >= totalCount) {
+        // If we couldn't find an enabled slot, stop here
+        if (candidate < 0 || candidate >= totalSlots) {
           break;
         }
       }
@@ -285,7 +346,7 @@ class FormModalState extends State<_FormModal> {
       _highlightedIndex = newIndex;
     });
 
-    // Request focus on the new highlighted item
+    // Request focus on the new highlighted slot
     if (_highlightedIndex < _focusNodes.length) {
       _focusNodes[_highlightedIndex].requestFocus();
     }
@@ -426,7 +487,8 @@ class FormModalState extends State<_FormModal> {
     return ListViewSelector(
       key: ValueKey(totalItemCount),
       onActivate: (index) async {
-        final item = _getItemAtIndex(index);
+        if (index >= _allFocusSlotsCount()) return;
+        final (item, _) = _getItemAndSubIndex(index);
         if (item is FormButton || item is FormTextInput) {
           // Enter key triggers form submission (primary button)
           await _submitForm();
@@ -494,8 +556,8 @@ class FormModalState extends State<_FormModal> {
                     ),
                 ActivateListSelectionIntent: CallbackAction<ActivateListSelectionIntent>(
                   onInvoke: (intent) {
-                    if (_allItemsCount() > 0) {
-                      final item = _getItemAtIndex(_highlightedIndex);
+                    if (_allFocusSlotsCount() > 0) {
+                      final (item, subIndex) = _getItemAndSubIndex(_highlightedIndex);
                       if (item is FormButton) {
                         // Run the specific button that's focused
                         final controller = _buttonControllers[item];
@@ -510,7 +572,7 @@ class FormModalState extends State<_FormModal> {
                         log.info(
                           'Activatable item activated, will restore to index $indexToRestore',
                         );
-                        item.activate(context).then((_) {
+                        item.activate(context, subIndex: subIndex).then((_) {
                           log.info(
                             'Item.activate returned, scheduling focus restore',
                           );
@@ -618,31 +680,75 @@ class FormModalState extends State<_FormModal> {
                                       group != _getGroupAtIndex(index - 1))) {
                                 header = Padding(
                                   padding: context.theme.spacing.paddingSm,
-                                  child: Text(
-                                    group.title!,
-                                    style: TextStyle(
-                                      color:
-                                          context.theme.colors.mutedForeground,
-                                      fontSize:
-                                          context.theme.typography.sm.fontSize,
-                                    ),
-                                  ),
+                                  child: group.subtitle != null
+                                      ? Row(
+                                          children: [
+                                            Text(
+                                              group.title!,
+                                              style: TextStyle(
+                                                color: context.theme.colors
+                                                    .mutedForeground,
+                                                fontSize: context.theme
+                                                    .typography.sm.fontSize,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            Text(
+                                              group.subtitle!,
+                                              style: TextStyle(
+                                                color: context.theme.colors
+                                                    .mutedForeground,
+                                                fontSize: context.theme
+                                                    .typography.sm.fontSize,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Text(
+                                          group.title!,
+                                          style: TextStyle(
+                                            color: context.theme.colors
+                                                .mutedForeground,
+                                            fontSize: context.theme
+                                                .typography.sm.fontSize,
+                                          ),
+                                        ),
                                 );
                               }
+
+                              // Map item index to focus slot range
+                              final focusSlotStart = _focusSlotForItemIndex(index);
+                              final focusCount = item.focusableCount;
+
+                              // Determine which sub-item is highlighted (-1 = none)
+                              final int highlightedSubIndex;
+                              if (hasPhysicalKeyboard() &&
+                                  _highlightedIndex >= focusSlotStart &&
+                                  _highlightedIndex < focusSlotStart + focusCount) {
+                                highlightedSubIndex = _highlightedIndex - focusSlotStart;
+                              } else {
+                                highlightedSubIndex = -1;
+                              }
+
+                              // Slice of focus nodes for this item
+                              final itemFocusNodes = focusSlotStart < _focusNodes.length
+                                  ? _focusNodes.sublist(
+                                      focusSlotStart,
+                                      (focusSlotStart + focusCount).clamp(0, _focusNodes.length),
+                                    )
+                                  : <FocusNode>[];
 
                               return GestureDetector(
                                 onTap: () async {
                                   final item = _getItemAtIndex(index);
-                                  // FormButton handles its own taps via ListTile
-                                  if (item.canActivate) {
+                                  // Items with multiple focusable sub-items handle
+                                  // their own taps via ListTile commands
+                                  if (item.canActivate && item.focusableCount <= 1) {
                                     await item.activate(context);
                                   }
                                 },
                                 child: MouseRegion(
-                                  cursor:
-                                      item is FormButton || item.canActivate
-                                      ? SystemMouseCursors.click
-                                      : SystemMouseCursors.basic,
+                                  cursor: SystemMouseCursors.basic,
                                   onEnter: (_) {
                                     if (_mouseHasMoved) {
                                       listController.setHovered(index);
@@ -667,14 +773,11 @@ class FormModalState extends State<_FormModal> {
                                       if (header != null) header,
                                       item.build(
                                         context,
-                                        index == _highlightedIndex &&
-                                            hasPhysicalKeyboard(),
+                                        highlightedSubIndex,
                                         enabled: item is FormButton
                                             ? _isFormValid()
                                             : true,
-                                        focusNode: index < _focusNodes.length
-                                            ? _focusNodes[index]
-                                            : null,
+                                        focusNodes: itemFocusNodes,
                                         controller: item is FormButton
                                             ? _buttonControllers.putIfAbsent(
                                                 item,

@@ -349,7 +349,8 @@ class _ListTileState extends State<ListTile> {
           enabled: widget.reorderableIndex != null && hasPhysicalKeyboard(),
           child: Builder(
             builder: (context) {
-              final isHighlighted = _focusNode.hasFocus ||
+              final isHighlighted =
+                  _focusNode.hasFocus ||
                   (!widget.noHoverHighlight &&
                       !widget.disableInternalHover &&
                       _isHovered) ||
@@ -361,27 +362,34 @@ class _ListTileState extends State<ListTile> {
                   color: widget.noBackground
                       ? null
                       : widget.selected
-                      ? (widget.selectedColor ?? context.theme.colors.primaryForeground)
+                      ? (widget.selectedColor ??
+                            context.theme.colors.primaryForeground)
                       : isHighlighted
-                      ? (widget.highlightColor ?? context.theme.plotColors.highlight)
+                      ? (widget.highlightColor ??
+                            context.theme.plotColors.highlight)
                       : null,
                   borderRadius: widget.borderRadius,
-                  border: widget.borderRadius != null ? null : Border.symmetric(
-                    horizontal: BorderSide(
-                      color: showBorder
-                          ? context.colour.colours.accentBackground
-                              .withLightness(
-                                context.colour.brightness == Brightness.light
-                                    ? 0.85
-                                    : 0.35,
-                              )
-                              .toColor()
-                          : const Color(0x00000000),
-                      width: 1,
-                    ),
-                  ),
+                  border: widget.borderRadius != null
+                      ? null
+                      : Border.symmetric(
+                          horizontal: BorderSide(
+                            color: showBorder
+                                ? context.colour.colours.accentBackground
+                                      .withLightness(
+                                        context.colour.brightness ==
+                                                Brightness.light
+                                            ? 0.85
+                                            : 0.35,
+                                      )
+                                      .toColor()
+                                : const Color(0x00000000),
+                            width: 1,
+                          ),
+                        ),
                 ),
-                padding: EdgeInsets.only(left: widget.indentLevel * 16),
+                padding: EdgeInsets.only(
+                  left: widget.indentLevel * (16 + context.theme.spacing.sm),
+                ),
                 child: Row(
                   crossAxisAlignment: widget.crossAxisAlignment,
                   children: [
@@ -400,7 +408,9 @@ class _ListTileState extends State<ListTile> {
                           // Desktop: GestureDetector participates in gesture arena,
                           // properly competes with ReorderableDragStartListener
                           ? GestureDetector(
-                              onTap: widget.command != null ? () => run() : null,
+                              onTap: widget.command != null
+                                  ? () => run()
+                                  : null,
                               onLongPress: widget.longPressCommand != null
                                   ? _runLongPress
                                   : null,
@@ -415,7 +425,8 @@ class _ListTileState extends State<ListTile> {
                               },
                               onPointerUp: (event) {
                                 if (_tapStartPosition != null) {
-                                  final delta = event.position - _tapStartPosition!;
+                                  final delta =
+                                      event.position - _tapStartPosition!;
                                   final duration = Time.now().difference(
                                     _tapStartTime!,
                                   );
@@ -439,7 +450,10 @@ class _ListTileState extends State<ListTile> {
                     ),
                     ...[
                       if (widget.trailingBuilder != null)
-                        widget.trailingBuilder!(_isHovered, _focusNode.hasFocus),
+                        widget.trailingBuilder!(
+                          _isHovered,
+                          _focusNode.hasFocus,
+                        ),
                     ].whereType<Widget>(),
                     SizedBox(
                       width: widget.trailingBuilder == null
@@ -520,11 +534,15 @@ class _ListTileState extends State<ListTile> {
           final hasIcon = iconWidget is! SizedBox;
 
           if (widget.iconOnly) {
-            return Center(child: Padding(
-              padding: (widget.padding?.resolve(null) ?? context.theme.spacing.paddingSm)
-                  .copyWith(left: 0, right: 0),
-              child: iconWidget,
-            ));
+            return Center(
+              child: Padding(
+                padding:
+                    (widget.padding?.resolve(null) ??
+                            context.theme.spacing.paddingSm)
+                        .copyWith(left: 0, right: 0),
+                child: iconWidget,
+              ),
+            );
           }
 
           return Row(
@@ -534,13 +552,15 @@ class _ListTileState extends State<ListTile> {
               iconWidget,
               Expanded(
                 child: Padding(
-                  padding: (widget.padding?.resolve(null) ?? context.theme.spacing.paddingSm)
-                      .copyWith(
-                        left: 0,
-                        right: 0,
-                        top: widget.style == .header ? 2 : null,
-                        bottom: widget.style == .header ? 2 : null,
-                      ),
+                  padding:
+                      (widget.padding?.resolve(null) ??
+                              context.theme.spacing.paddingSm)
+                          .copyWith(
+                            left: 0,
+                            right: 0,
+                            top: widget.style == .header ? 2 : null,
+                            bottom: widget.style == .header ? 2 : null,
+                          ),
                   child: Column(
                     crossAxisAlignment: widget.centered
                         ? CrossAxisAlignment.center
@@ -600,7 +620,8 @@ class _ListTileState extends State<ListTile> {
                                                             .theme
                                                             .plotColors
                                                             .muted
-                                                      : widget.muted && !isHighlighted
+                                                      : widget.muted &&
+                                                            !isHighlighted
                                                       ? context
                                                             .theme
                                                             .plotColors

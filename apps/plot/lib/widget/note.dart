@@ -44,7 +44,7 @@ class _NoteReplyReferenceState extends State<_NoteReplyReference> {
           onTap: () =>
               context.read<ThreadBloc>().setThreadFilter(widget.reNoteId),
           child: MouseRegion(
-            cursor: SystemMouseCursors.click,
+            cursor: SystemMouseCursors.basic,
             onEnter: (_) => setState(() => _isHovered = true),
             onExit: (_) => setState(() => _isHovered = false),
             child: Container(

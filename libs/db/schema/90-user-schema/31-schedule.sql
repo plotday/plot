@@ -22,6 +22,7 @@ SELECT
     s.occurrence,
     s.thread_id,
     s.link_id,
+    s.reason,
     upe.path AS priority_path,
     -- range_at: for timestamp-based schedules
     CASE WHEN s.at IS NOT NULL THEN

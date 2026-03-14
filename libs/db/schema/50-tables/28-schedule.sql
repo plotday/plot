@@ -11,6 +11,7 @@ CREATE TABLE "public"."schedule" (
     "duration" interval,
     "recurrence_exdates" timestamptz[],
     "occurrence" text,
+    "reason" text,
     "thread_id" uuid REFERENCES public.thread (id) ON DELETE CASCADE,
     "link_id" uuid REFERENCES public.link (id) ON DELETE CASCADE
 );
@@ -34,6 +35,10 @@ ALTER TABLE "public"."schedule"
         (recurrence_rule IS NULL AND duration IS NULL) OR
         (recurrence_rule IS NOT NULL AND duration IS NOT NULL)
     );
+
+-- Schedule reason tracks why item is on agenda (null = legacy/unknown)
+ALTER TABLE "public"."schedule"
+    ADD CONSTRAINT schedule_reason_check CHECK (reason IS NULL OR reason IN ('unread', 'task', 'add', 'schedule'));
 
 -- Cannot have both recurrence_rule and occurrence (occurrence is an exception to a recurrence)
 ALTER TABLE "public"."schedule"

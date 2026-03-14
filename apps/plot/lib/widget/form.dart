@@ -6,6 +6,7 @@ import 'package:plot/command/logging.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/store/attention.dart';
 
 /// Simple command for form submission when display command cannot be built
 class _FormSubmitCommand extends Command {
@@ -116,12 +117,18 @@ abstract class FormItem {
   /// Whether this item can receive keyboard focus and navigation
   bool get isFocusable => true;
 
+  /// Number of focusable sub-items within this form item.
+  /// Most items have 1 (or 0 if not focusable). Items like FormWindowList
+  /// have multiple sub-items that each need their own focus slot.
+  int get focusableCount => isFocusable ? 1 : 0;
+
   /// Whether this item can be activated (e.g., opens a modal on Enter/tap)
   bool get canActivate => false;
 
   /// Activate the item (e.g., open a selection modal).
   /// Only called when [canActivate] is true.
-  Future<void> activate(BuildContext context) async {}
+  /// [subIndex] indicates which sub-item was activated (0 for most items).
+  Future<void> activate(BuildContext context, {int subIndex = 0}) async {}
 
   /// Get the current value of the form item
   dynamic getValue();
@@ -132,12 +139,15 @@ abstract class FormItem {
   /// Check if the form item is valid
   bool isValid();
 
-  /// Build the widget for this form item
+  /// Build the widget for this form item.
+  /// [highlightedSubIndex] is the sub-item index that should be highlighted,
+  /// or -1 if no sub-item is highlighted.
+  /// [focusNodes] contains one focus node per focusable sub-item.
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   });
 }
@@ -182,17 +192,17 @@ class FormTextInput extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     return InputTile(
       label: label ?? key,
       controller: this.controller,
       placeholder: placeholder,
-      highlighted: highlighted,
-      focusNode: focusNode,
+      highlighted: highlightedSubIndex >= 0,
+      focusNode: focusNodes.firstOrNull,
       onSubmitted: onSubmitted != null ? (_) => onSubmitted!() : null,
     );
   }
@@ -300,7 +310,7 @@ class FormSelect<T> extends FormItem {
 
   /// Activate the select field (open the selection modal)
   @override
-  Future<void> activate(BuildContext context) async {
+  Future<void> activate(BuildContext context, {int subIndex = 0}) async {
     if (!enabled) return;
     final result = await SelectModal.open<T>(
       context,
@@ -382,9 +392,9 @@ class FormSelect<T> extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     final isEnabled = this.enabled && enabled;
@@ -395,10 +405,10 @@ class FormSelect<T> extends FormItem {
           ? leadingBuilder!(_value as T)
           : null,
       placeholder: placeholder,
-      highlighted: highlighted,
+      highlighted: highlightedSubIndex >= 0,
       enabled: isEnabled,
       onSelect: () => activate(context),
-      focusNode: focusNode,
+      focusNode: focusNodes.firstOrNull,
     );
   }
 }
@@ -427,17 +437,17 @@ class FormButton extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     return _FormButtonWidget(
       buildCommand: buildCommand,
       controller: controller,
-      highlighted: highlighted,
+      highlighted: highlightedSubIndex >= 0,
       enabled: enabled,
-      focusNode: focusNode,
+      focusNode: focusNodes.firstOrNull,
       isPrimary: isPrimary,
     );
   }
@@ -590,9 +600,9 @@ class FormInfo extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     return Container(
@@ -640,9 +650,9 @@ class FormDivider extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     return Container(
@@ -692,7 +702,7 @@ class FormToggle extends FormItem {
   bool get canActivate => true;
 
   @override
-  Future<void> activate(BuildContext context) async {
+  Future<void> activate(BuildContext context, {int subIndex = 0}) async {
     _value = !_value;
     onChanged?.call();
     _notifyListeners();
@@ -718,18 +728,18 @@ class FormToggle extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     return _FormToggleWidget(
       label: label ?? key,
       details: details,
       value: _value,
-      highlighted: highlighted,
+      highlighted: highlightedSubIndex >= 0,
       enabled: enabled,
-      focusNode: focusNode,
+      focusNode: focusNodes.firstOrNull,
       onToggle: () => activate(context),
     );
   }
@@ -795,15 +805,14 @@ class _FormToggleWidgetState extends State<_FormToggleWidget> {
       enabled: widget.enabled,
       child: FormTileLayout(
         label: '',
-        rightBackgroundColor:
-            isHighlighted ? context.theme.colors.secondary : null,
+        rightBackgroundColor: isHighlighted
+            ? context.theme.colors.secondary
+            : null,
         isActive: isHighlighted,
         content: GestureDetector(
           onTap: widget.enabled ? widget.onToggle : null,
           child: MouseRegion(
-            cursor: widget.enabled
-                ? SystemMouseCursors.click
-                : SystemMouseCursors.basic,
+            cursor: SystemMouseCursors.basic,
             onEnter: widget.enabled
                 ? (_) => setState(() => _isHovered = true)
                 : null,
@@ -854,6 +863,216 @@ class _FormToggleWidgetState extends State<_FormToggleWidget> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Form item that displays a list of attention windows as tappable tiles
+/// with an "Add attention window" button. Non-focusable; tiles handle their own
+/// tap interaction and delegate to [onEdit] / [onAdd] callbacks.
+class FormWindowList extends FormItem {
+  FormWindowList({
+    required super.key,
+    required List<AttentionWindow> initialWindows,
+    required this.onEdit,
+    required this.onAdd,
+    this.onChanged,
+  }) : _windows = List.of(initialWindows),
+       super(required: true);
+
+  final Future<void> Function(BuildContext context, int index) onEdit;
+  final Future<void> Function(BuildContext context) onAdd;
+  final VoidCallback? onChanged;
+
+  List<AttentionWindow> _windows;
+  final List<VoidCallback> _listeners = [];
+
+  List<AttentionWindow> get windows => List.unmodifiable(_windows);
+
+  @override
+  bool get isFocusable => true;
+
+  @override
+  int get focusableCount => _windows.length + 1;
+
+  @override
+  List<AttentionWindow> getValue() => _windows;
+
+  @override
+  void setValue(dynamic value) {
+    if (value is List<AttentionWindow>) {
+      _windows = List.of(value);
+      onChanged?.call();
+      _notifyListeners();
+    }
+  }
+
+  void updateWindow(int index, AttentionWindow window) {
+    _windows[index] = window;
+    onChanged?.call();
+    _notifyListeners();
+  }
+
+  void removeWindow(int index) {
+    if (_windows.length > 1) {
+      _windows.removeAt(index);
+      onChanged?.call();
+      _notifyListeners();
+    }
+  }
+
+  void addWindow(AttentionWindow window) {
+    _windows.add(window);
+    onChanged?.call();
+    _notifyListeners();
+  }
+
+  @override
+  bool get canActivate => true;
+
+  @override
+  Future<void> activate(BuildContext context, {int subIndex = 0}) {
+    if (subIndex < _windows.length) {
+      return onEdit(context, subIndex);
+    }
+    return onAdd(context);
+  }
+
+  @override
+  bool isValid() => _windows.isNotEmpty;
+
+  void addListener(VoidCallback listener) {
+    _listeners.add(listener);
+  }
+
+  void removeListener(VoidCallback listener) {
+    _listeners.remove(listener);
+  }
+
+  void _notifyListeners() {
+    for (final listener in _listeners) {
+      listener();
+    }
+  }
+
+  @override
+  Widget build(
+    BuildContext context,
+    int highlightedSubIndex, {
+    bool enabled = true,
+    List<FocusNode> focusNodes = const [],
+    FormButtonController? controller,
+  }) {
+    return _FormWindowListWidget(
+      windows: _windows,
+      onEdit: onEdit,
+      onAdd: onAdd,
+      highlightedSubIndex: highlightedSubIndex,
+      focusNodes: focusNodes,
+    );
+  }
+}
+
+class _FormWindowListWidget extends StatelessWidget {
+  const _FormWindowListWidget({
+    required this.windows,
+    required this.onEdit,
+    required this.onAdd,
+    required this.highlightedSubIndex,
+    this.focusNodes = const [],
+  });
+
+  final List<AttentionWindow> windows;
+  final Future<void> Function(BuildContext context, int index) onEdit;
+  final Future<void> Function(BuildContext context) onAdd;
+  final int highlightedSubIndex;
+  final List<FocusNode> focusNodes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < windows.length; i++)
+          _WindowTile(
+            window: windows[i],
+            onTap: () => onEdit(context, i),
+            highlighted: highlightedSubIndex == i,
+            focusNode: i < focusNodes.length ? focusNodes[i] : null,
+          ),
+        _AddWindowTile(
+          onTap: () => onAdd(context),
+          highlighted: highlightedSubIndex == windows.length,
+          focusNode: windows.length < focusNodes.length
+              ? focusNodes[windows.length]
+              : null,
+        ),
+      ],
+    );
+  }
+}
+
+class _WindowTile extends StatelessWidget {
+  const _WindowTile({
+    required this.window,
+    required this.onTap,
+    required this.highlighted,
+    this.focusNode,
+  });
+
+  final AttentionWindow window;
+  final VoidCallback onTap;
+  final bool highlighted;
+  final FocusNode? focusNode;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: window.summary,
+      icon: PlotIcon.right,
+      highlighted: highlighted,
+      focusNode: focusNode,
+      command: CommandWrapper(
+        _FormSubmitCommand(),
+        title: window.summary,
+        run: (_, __) async {
+          onTap();
+          return const CommandSkipped();
+        },
+      ),
+    );
+  }
+}
+
+class _AddWindowTile extends StatelessWidget {
+  const _AddWindowTile({
+    required this.onTap,
+    required this.highlighted,
+    this.focusNode,
+  });
+
+  final VoidCallback onTap;
+  final bool highlighted;
+  final FocusNode? focusNode;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: 'Add attention time',
+      icon: PlotIcon.add,
+      style: ListTileStyle.button,
+      muted: true,
+      highlighted: highlighted,
+      focusNode: focusNode,
+      command: CommandWrapper(
+        _FormSubmitCommand(),
+        title: 'Add attention time',
+        icon: Value(PlotIcon.add),
+        run: (_, __) async {
+          onTap();
+          return const CommandSkipped();
+        },
       ),
     );
   }

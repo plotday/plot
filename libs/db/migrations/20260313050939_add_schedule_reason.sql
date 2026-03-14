@@ -1,16 +1,7 @@
--- Upsert schedule with access control
--- Validates user has access to the thread's priority
--- Per-user schedules (user_id set) can only be created/modified by the owning user
--- Supports both thread_id and link_id (exactly one must be set per CHECK constraint)
-CREATE OR REPLACE FUNCTION "user".upsert_schedule (
-    user_id uuid,
-    p_schedule jsonb,
-    p_defaults jsonb DEFAULT '{}' ::jsonb
-)
-    RETURNS schedule
-    LANGUAGE plpgsql
-    SET search_path TO 'public', 'user'
-    AS $function$
+-- Modify "schedule" table
+ALTER TABLE "public"."schedule" DROP CONSTRAINT "schedule_reason_check", ADD CONSTRAINT "schedule_reason_check" CHECK ((reason IS NULL) OR (reason = ANY (ARRAY['unread'::text, 'task'::text, 'add'::text, 'schedule'::text])));
+-- Modify "upsert_schedule" function
+CREATE OR REPLACE FUNCTION "user"."upsert_schedule" ("user_id" uuid, "p_schedule" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."schedule" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
 DECLARE
     v_id uuid;
     v_thread_id uuid;
@@ -258,4 +249,4 @@ BEGIN
             * INTO v_result;
     RETURN v_result;
 END;
-$function$;
+$$;

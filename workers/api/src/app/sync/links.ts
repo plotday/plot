@@ -6,6 +6,7 @@ import { rpcUser } from "../../rpc";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
 import { propagateLinkStatusTagsFromDb } from "./link-tags";
+import { createSchedule } from "./smart-schedule";
 
 const links = new Hono<{ Bindings: Bindings }>();
 
@@ -72,6 +73,28 @@ links.post("/sync/links", async (c) => {
     } catch {
       // Non-critical: tag propagation failure shouldn't break the sync
     }
+  }
+
+  // Create task schedule when link is assigned to a user
+  const assigneeId = result.assignee_id;
+  const linkThreadId = result.thread_id;
+  if (assigneeId && linkThreadId) {
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const contact = await c.var.db
+            .selectFrom("contact")
+            .select("user_id")
+            .where("id", "=", assigneeId)
+            .executeTakeFirst();
+          if (!contact?.user_id) return;
+
+          await createSchedule(c.var.db, contact.user_id, linkThreadId, 'task');
+        } catch (error) {
+          console.error("[schedule] Failed to create task schedule from link assignment:", error);
+        }
+      })()
+    );
   }
 
   // Notify sync so twist callbacks (e.g. onLinkUpdated) can fire

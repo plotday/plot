@@ -462,7 +462,7 @@ class ShowPriorityCommands extends ShowCommands {
 List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.isViewer) EditPriorityCommand(priority),
   if (!priority.isViewer) ManagePrioritySharing(priority),
-  if (!priority.isViewer) ShowResponseTimeSettings(priority),
+  if (!priority.isViewer) ShowAttentionSettings(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.isViewer) NewPriority(parent: priority),
   if (!priority.root && !priority.isViewer) TogglePriorityArchived(priority),

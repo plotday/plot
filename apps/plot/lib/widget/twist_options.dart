@@ -102,7 +102,7 @@ class _TwistSelectItem extends FormItem {
   bool isValid() => true;
 
   @override
-  Future<void> activate(BuildContext context) async {
+  Future<void> activate(BuildContext context, {int subIndex = 0}) async {
     final currentValue = owner._values[optionKey] as String?;
     final result = await SelectModal.open<String>(
       context,
@@ -140,9 +140,9 @@ class _TwistSelectItem extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     final currentValue = owner._values[optionKey] as String?;
@@ -153,8 +153,8 @@ class _TwistSelectItem extends FormItem {
     return SelectTile(
       label: label ?? optionKey,
       value: currentChoice['label'] as String,
-      highlighted: highlighted,
-      focusNode: focusNode,
+      highlighted: highlightedSubIndex >= 0,
+      focusNode: focusNodes.firstOrNull,
       onSelect: () => activate(context),
     );
   }
@@ -185,15 +185,15 @@ class _TwistBooleanItem extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     final value = owner._values[optionKey] as bool? ?? false;
     return FormTileLayout(
       label: label ?? optionKey,
-      isActive: highlighted,
+      isActive: highlightedSubIndex >= 0,
       content: Align(
         alignment: Alignment.centerLeft,
         child: FSwitch(
@@ -237,17 +237,17 @@ class _TwistTextItem extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     return InputTile(
       label: label ?? optionKey,
       controller: _controller,
       placeholder: def['placeholder'] as String?,
-      highlighted: highlighted,
-      focusNode: focusNode,
+      highlighted: highlightedSubIndex >= 0,
+      focusNode: focusNodes.firstOrNull,
       onChanged: (value) => owner._updateValue(optionKey, value),
     );
   }
@@ -283,16 +283,16 @@ class _TwistNumberItem extends FormItem {
   @override
   Widget build(
     BuildContext context,
-    bool highlighted, {
+    int highlightedSubIndex, {
     bool enabled = true,
-    FocusNode? focusNode,
+    List<FocusNode> focusNodes = const [],
     FormButtonController? controller,
   }) {
     return InputTile(
       label: label ?? optionKey,
       controller: _controller,
-      highlighted: highlighted,
-      focusNode: focusNode,
+      highlighted: highlightedSubIndex >= 0,
+      focusNode: focusNodes.firstOrNull,
       onChanged: (value) {
         final numValue = num.tryParse(value);
         if (numValue != null) {

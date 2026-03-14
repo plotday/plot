@@ -1056,7 +1056,8 @@ class _PriorityPageState extends State<PriorityPage> {
       nonReorderablePrefixCount:
           enableReorder &&
               listItems.isNotEmpty &&
-              listItems.first is AgendaHeaderItem
+              listItems.first is AgendaHeaderItem &&
+              (listItems.first as AgendaHeaderItem).date == null
           ? 1
           : 0,
       fetcher: (first, count) =>
@@ -1142,6 +1143,7 @@ class _PriorityPageState extends State<PriorityPage> {
                 ];
               },
               activity: (agendaActivity) {
+                final isBeingDragged = controller.draggingIndex == index;
                 return [
                   ThreadWidget(
                     key: ValueKey(
@@ -1149,6 +1151,7 @@ class _PriorityPageState extends State<PriorityPage> {
                     ),
                     activity: agendaActivity.thread,
                     selected:
+                        !isBeingDragged &&
                         state.thread != null &&
                         agendaActivity.thread.id == state.thread!.id,
                     now: agendaActivity.now,
@@ -1588,11 +1591,11 @@ class _DesktopTabState extends State<_DesktopTab> {
 
     final Color background;
     if (widget.selected) {
-      background = darkBg;
+      background = theme.colors.background;
     } else if (_hovered) {
       background = theme.colors.secondary;
     } else {
-      background = theme.colors.background;
+      background = darkBg;
     }
 
     final textColor = widget.selected
@@ -1603,9 +1606,7 @@ class _DesktopTabState extends State<_DesktopTab> {
       child: GestureDetector(
         onTap: widget.selected ? null : widget.onTap,
         child: MouseRegion(
-          cursor: widget.selected
-              ? SystemMouseCursors.basic
-              : SystemMouseCursors.click,
+          cursor: SystemMouseCursors.basic,
           onEnter: (_) => setState(() => _hovered = true),
           onExit: (_) => setState(() => _hovered = false),
           child: Container(

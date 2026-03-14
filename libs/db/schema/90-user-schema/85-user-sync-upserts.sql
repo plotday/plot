@@ -838,37 +838,112 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "user".upsert_priority_response_time(
+CREATE OR REPLACE FUNCTION "user".upsert_thread_unread (
     user_id uuid,
+    p_thread_id uuid,
+    p_urgency text,
+    p_importance smallint DEFAULT 50,
+    p_read_at timestamptz DEFAULT NULL::timestamptz,
+    p_bumped_at timestamptz DEFAULT NULL::timestamptz
+)
+    RETURNS thread_unread
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'user'
+    AS $function$
+#variable_conflict use_column
+DECLARE
+    v_priority_id uuid;
+    v_row thread_unread;
+BEGIN
+    SELECT
+        priority_id INTO v_priority_id
+    FROM
+        thread
+    WHERE
+        id = p_thread_id;
+    IF v_priority_id IS NULL THEN
+        RAISE EXCEPTION 'Thread not found';
+    END IF;
+    PERFORM "user".assert_priority_access(upsert_thread_unread.user_id, v_priority_id);
+
+    INSERT INTO thread_unread (user_id, thread_id, urgency, importance, read_at, bumped_at)
+        VALUES (upsert_thread_unread.user_id, p_thread_id, p_urgency, p_importance, p_read_at, p_bumped_at)
+    ON CONFLICT (user_id, thread_id)
+        DO UPDATE SET
+            urgency = EXCLUDED.urgency,
+            importance = EXCLUDED.importance,
+            read_at = EXCLUDED.read_at,
+            bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END,
+            updated_at = now()
+    RETURNING * INTO v_row;
+
+    RETURN v_row;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION "user".clear_thread_unread (
+    user_id uuid,
+    p_thread_id uuid
+)
+    RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'user'
+    AS $function$
+DECLARE
+    v_priority_id uuid;
+BEGIN
+    SELECT
+        priority_id INTO v_priority_id
+    FROM
+        thread
+    WHERE
+        id = p_thread_id;
+    IF v_priority_id IS NULL THEN
+        RAISE EXCEPTION 'Thread not found';
+    END IF;
+    PERFORM "user".assert_priority_access(clear_thread_unread.user_id, v_priority_id);
+
+    UPDATE thread_unread
+    SET
+        read_at = now(),
+        updated_at = now()
+    WHERE
+        thread_unread.user_id = clear_thread_unread.user_id
+        AND thread_unread.thread_id = p_thread_id
+        AND thread_unread.read_at IS NULL;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION "user".upsert_priority_attention(
+    p_user_id uuid,
     p_priority_id uuid,
-    p_response_window jsonb DEFAULT NULL,
-    p_turnaround jsonb DEFAULT NULL,
-    p_set_response_window boolean DEFAULT FALSE,
-    p_set_turnaround boolean DEFAULT FALSE
+    p_attention_window jsonb DEFAULT NULL,
+    p_see_within jsonb DEFAULT NULL,
+    p_set_attention_window boolean DEFAULT FALSE,
+    p_set_see_within boolean DEFAULT FALSE
 ) RETURNS void LANGUAGE plpgsql SET search_path TO 'public', 'user' AS $function$
 BEGIN
-    PERFORM "user".assert_priority_access(
-        upsert_priority_response_time.user_id, p_priority_id);
-    IF p_set_response_window THEN
-        IF p_response_window IS NOT NULL THEN
+    PERFORM "user".assert_priority_access(p_user_id, p_priority_id);
+    IF p_set_attention_window THEN
+        IF p_attention_window IS NOT NULL THEN
             INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (upsert_priority_response_time.user_id, p_priority_id, 'response_window', p_response_window)
+            VALUES (p_user_id, p_priority_id, 'attention_window', p_attention_window)
             ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
         ELSE
             DELETE FROM priority_setting
-            WHERE user_id = upsert_priority_response_time.user_id
-              AND priority_id = p_priority_id AND key = 'response_window';
+            WHERE priority_setting.user_id = p_user_id
+              AND priority_setting.priority_id = p_priority_id AND key = 'attention_window';
         END IF;
     END IF;
-    IF p_set_turnaround THEN
-        IF p_turnaround IS NOT NULL THEN
+    IF p_set_see_within THEN
+        IF p_see_within IS NOT NULL THEN
             INSERT INTO priority_setting (user_id, priority_id, key, value)
-            VALUES (upsert_priority_response_time.user_id, p_priority_id, 'turnaround', p_turnaround)
+            VALUES (p_user_id, p_priority_id, 'see_within', p_see_within)
             ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
         ELSE
             DELETE FROM priority_setting
-            WHERE user_id = upsert_priority_response_time.user_id
-              AND priority_id = p_priority_id AND key = 'turnaround';
+            WHERE priority_setting.user_id = p_user_id
+              AND priority_setting.priority_id = p_priority_id AND key = 'see_within';
         END IF;
     END IF;
 END; $function$;

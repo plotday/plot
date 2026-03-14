@@ -63,7 +63,7 @@ class PlotIcon {
   // Tags
   static const now = FontAwesomeIcons.circlePlay;
   static const inbox = FontAwesomeIcons.inbox;
-  static const todo = FontAwesomeIcons.inboxFull;
+  static const todo = FontAwesomeIcons.inbox;
   static const addTodo = FontAwesomeIcons.inboxIn;
   static const someday = FontAwesomeIcons.circleMoon;
   static const later = FontAwesomeIcons.clock;
@@ -104,6 +104,7 @@ class PlotIcon {
   static const praise = FontAwesomeIcons.handsClapping;
   static const wave = FontAwesomeIcons.handWave;
   static const question = FontAwesomeIcons.squareQuestion;
+  static const flag = FontAwesomeIcons.flag;
 
   // Emotions
   static const smile = FontAwesomeIcons.faceSmileBeam;

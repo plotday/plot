@@ -78,7 +78,11 @@ class PrioritiesPage extends StatelessWidget {
                       final selected = nowState is NowLoaded
                           ? nowState.context
                           : null;
-                      final plotPriority = state.root?.children
+                      final root = state.root;
+                      if (root == null) {
+                        return const SizedBox.shrink();
+                      }
+                      final plotPriority = root.children
                           .firstWhereOrNull((p) => p.key == '@plot');
 
                       return Column(
@@ -89,7 +93,7 @@ class PrioritiesPage extends StatelessWidget {
                             ),
                           Expanded(
                             child: PrioritiesList(
-                              root: state.root!,
+                              root: root,
                               priorities: state.priorities,
                               selected: selected,
                               showPlotSection: false,

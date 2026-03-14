@@ -279,7 +279,10 @@ class _PrioritiesListState extends State<PrioritiesList>
                 textStyle: textStyle.copyWith(
                   color: priority.archivedAt != null
                       ? context.theme.colors.mutedForeground
-                      : context.colour.colours.fromTheme(priority.displayColor),
+                      : context.colour.colours.fromTheme(
+                          priority.displayColor,
+                          muted: !priority.active && !priority.unread,
+                        ),
                 ),
                 unread: !priorityExpanded && _hasDescendantUnread(priority)
                     ? true
@@ -334,6 +337,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                             ? context.theme.colors.mutedForeground
                             : context.colour.colours.fromTheme(
                                 priority.displayColor,
+                                muted: !priority.active && !priority.unread,
                               ),
                       ),
                       unread:
@@ -381,18 +385,22 @@ class _PrioritiesListState extends State<PrioritiesList>
                 title: widget.root.title,
                 command: ChangeCurrentPriority(widget.root),
                 selected: widget.selected?.id == widget.root.id,
-                leadingBuilder: (isHovered, hasFocus) => SizedBox(
-                  width: 20,
-                  child: Center(
-                    child: UnreadIndicator(
-                      color: widget.root.displayColor,
-                      unread: widget.root.unread,
-                    ),
+                leadingBuilder: (isHovered, hasFocus) => Padding(
+                  padding: EdgeInsets.only(
+                    left: context.theme.spacing.xl,
+                    right: context.theme.spacing.sm,
+                    bottom: 2,
+                  ),
+                  child: PriorityNotification(
+                    unread: widget.root.unread,
+                    active: widget.root.active,
+                    color: widget.root.displayColor,
                   ),
                 ),
                 textStyle: itemStyle.copyWith(
                   color: context.colour.colours.fromTheme(
                     widget.root.displayColor,
+                    muted: !widget.root.active && !widget.root.unread,
                   ),
                 ),
                 trailingBuilder: (isHovered, hasFocus) =>

@@ -240,6 +240,25 @@ account.post("/activate", async (c) => {
       });
     }
 
+    // Step 3.6: Set default attention settings on root priority
+    try {
+      await sql`
+        INSERT INTO priority_setting (user_id, priority_id, key, value)
+        VALUES
+          (${user.id}::uuid, ${newPriority.id}::uuid, 'attention_window',
+           ${JSON.stringify([{ days: [1, 2, 3, 4, 5, 6, 7], start: "09:00", end: "17:00" }])}::jsonb),
+          (${user.id}::uuid, ${newPriority.id}::uuid, 'see_within',
+           ${JSON.stringify({ value: 1, unit: "workdays" })}::jsonb)
+        ON CONFLICT (user_id, priority_id, key) DO NOTHING
+      `.execute(c.var.db);
+    } catch (err) {
+      const logger = createLogger(extractRequestContext(c));
+      logger.error("Failed to set default attention settings", err as Error, {
+        user_id: user.id,
+        priority_id: newPriority.id,
+      });
+    }
+
     priority = newPriority;
   }
 

@@ -1,4 +1,5 @@
 import 'dart:io' show File;
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -499,11 +500,26 @@ class _FileImageWidgetState extends State<FileImageWidget> {
     }
   }
 
-  void _openViewer() {
+  Future<void> _openViewer() async {
     final bytes = _bytes;
     if (bytes == null) return;
+
+    // Decode intrinsic dimensions to cap at 1:1 resolution
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final intrinsicWidth = frame.image.width.toDouble();
+    final intrinsicHeight = frame.image.height.toDouble();
+    frame.image.dispose();
+    codec.dispose();
+
+    if (!mounted) return;
+
+    final mediaQuery = MediaQuery.of(context);
+    final maxWidth = intrinsicWidth.clamp(0.0, mediaQuery.size.width * 0.9);
+    final maxHeight = intrinsicHeight.clamp(0.0, mediaQuery.size.height * 0.9);
+
     Modal(
-      constraints: const BoxConstraints(maxHeight: 900, maxWidth: 1200),
+      constraints: BoxConstraints(maxHeight: maxHeight, maxWidth: maxWidth),
       maxWidthPercentage: 0.9,
       maxHeightPercentage: 0.9,
       padding: EdgeInsets.zero,
