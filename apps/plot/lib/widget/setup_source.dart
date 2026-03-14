@@ -15,6 +15,7 @@ import 'package:plot/widget/form_modal.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
+import 'package:plot/widget/icon.dart';
 import 'logging.dart';
 
 /// Selected channel for the setup flow.
@@ -265,8 +266,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       Priority? currentPriority;
       if (currentPriorityId != null) {
         try {
-          currentPriority =
-              await Priority.getOne(Uuid.fromString(currentPriorityId));
+          currentPriority = await Priority.getOne(
+            Uuid.fromString(currentPriorityId),
+          );
         } catch (_) {}
       }
       currentPriority ??= await Priority.getDefault();
@@ -329,7 +331,8 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           FormButton(
             key: 'disable',
             buildCommand: (_) => _CallbackCommand(
-              title: 'Disable Sync',
+              title: 'Disable sync',
+              icon: PlotIcon.archived,
               onRun: () async {
                 setState(() {
                   _localSelectedChannels.remove(key);
@@ -367,8 +370,11 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       final groups = await formData.list();
       if (!mounted) return;
 
-      await FormModal(formData, groups: groups, rootContext: context)
-          .run(context);
+      await FormModal(
+        formData,
+        groups: groups,
+        rootContext: context,
+      ).run(context);
     } else {
       // Non-account-based: simple toggle
       setState(() {
@@ -448,10 +454,12 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
       // Determine highlight and focus node for toggleable rows
       final int subIndex = canToggle ? focusCounter[0] : -1;
-      final bool highlighted = controller != null &&
+      final bool highlighted =
+          controller != null &&
           canToggle &&
           controller.highlightedSubIndex == subIndex;
-      final FocusNode? focusNode = controller != null &&
+      final FocusNode? focusNode =
+          controller != null &&
               canToggle &&
               subIndex < controller.focusNodes.length
           ? controller.focusNodes[subIndex]
@@ -574,14 +582,14 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     // Deferred to avoid setState() during build when count changes.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      widget.channelListController?.update(
-        toggleableChannels.length,
-        (context, subIndex) async {
-          if (subIndex < toggleableChannels.length) {
-            _handleChannelTap(toggleableChannels[subIndex]);
-          }
-        },
-      );
+      widget.channelListController?.update(toggleableChannels.length, (
+        context,
+        subIndex,
+      ) async {
+        if (subIndex < toggleableChannels.length) {
+          _handleChannelTap(toggleableChannels[subIndex]);
+        }
+      });
     });
 
     // Build channel rows for all visible providers
@@ -589,10 +597,12 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     final channelRows = <Widget>[];
     for (final provider in channelsByProvider.keys) {
       if (!fullyRemovedProviders.contains(provider)) {
-        channelRows.addAll(_buildChannelTree(
-          channelsByProvider[provider]!,
-          focusCounter: focusCounter,
-        ));
+        channelRows.addAll(
+          _buildChannelTree(
+            channelsByProvider[provider]!,
+            focusCounter: focusCounter,
+          ),
+        );
       }
     }
 
@@ -728,103 +738,108 @@ class _ChannelRowState extends State<_ChannelRow> {
     final isTappable = widget.canToggle || widget.hasChildren;
     final isHighlighted = widget.highlighted || (_isHovered && isTappable);
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.hasChildren
-            ? widget.onExpandToggle
-            : widget.canToggle
-            ? widget.onToggle
-            : null,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: isHighlighted
-                ? theme.colors.foreground.withValues(alpha: 0.05)
-                : null,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: 12.0 + theme.iconSizes.base + 12.0 + (widget.depth * 24.0),
-              right: theme.spacing.sm,
-              bottom: theme.spacing.sm,
+    return Focus(
+      focusNode: widget.focusNode,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.hasChildren
+              ? widget.onExpandToggle
+              : widget.canToggle
+              ? widget.onToggle
+              : null,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isHighlighted
+                  ? theme.colors.foreground.withValues(alpha: 0.05)
+                  : null,
+              borderRadius: BorderRadius.circular(6),
             ),
-            child: Row(
-              children: [
-                if (widget.hasChildren)
-                  Padding(
-                    padding: EdgeInsets.only(right: theme.spacing.sm),
-                    child: Icon(
-                      widget.isExpanded
-                          ? FontAwesomeIcons.chevronDown
-                          : FontAwesomeIcons.chevronRight,
-                      size: 10,
-                      color: theme.colors.mutedForeground,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left:
+                    12.0 + theme.iconSizes.base + 12.0 + (widget.depth * 24.0),
+                right: theme.spacing.sm,
+                bottom: theme.spacing.sm,
+              ),
+              child: Row(
+                children: [
+                  if (widget.hasChildren)
+                    Padding(
+                      padding: EdgeInsets.only(right: theme.spacing.sm),
+                      child: Icon(
+                        widget.isExpanded
+                            ? FontAwesomeIcons.chevronDown
+                            : FontAwesomeIcons.chevronRight,
+                        size: 10,
+                        color: theme.colors.mutedForeground,
+                      ),
                     ),
-                  ),
-                Opacity(
-                  opacity: widget.isForceEnabled ? 0.5 : 1.0,
-                  child: IgnorePointer(
-                    child: SizedBox(
-                      width: 32,
-                      height: 20,
-                      child: FittedBox(
-                        fit: BoxFit.contain,
-                        child: FSwitch(
-                          value: widget.isChecked,
-                          onChange: (_) {},
-                          enabled: widget.canToggle,
+                  Opacity(
+                    opacity: widget.isForceEnabled ? 0.5 : 1.0,
+                    child: IgnorePointer(
+                      child: SizedBox(
+                        width: 32,
+                        height: 20,
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: FSwitch(
+                            value: widget.isChecked,
+                            onChange: (_) {},
+                            enabled: widget.canToggle,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                SizedBox(width: theme.spacing.md),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          widget.channel.title,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: theme.typography.sm.fontSize,
-                            color: widget.canToggle
-                                ? theme.colors.foreground
-                                : theme.colors.mutedForeground,
-                          ),
-                        ),
-                      ),
-                      if (widget.priorityName != null && widget.isChecked) ...[
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: theme.spacing.sm,
-                          ),
-                          child: Icon(
-                            FontAwesomeIcons.arrowRight,
-                            size: 10,
-                            color: theme.colors.mutedForeground,
-                          ),
-                        ),
+                  SizedBox(width: theme.spacing.md),
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
                         Flexible(
                           child: Text(
-                            widget.priorityName!,
+                            widget.channel.title,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: theme.typography.sm.fontSize,
-                              color: theme.colors.mutedForeground,
+                              color: widget.canToggle
+                                  ? theme.colors.foreground
+                                  : theme.colors.mutedForeground,
                             ),
                           ),
                         ),
+                        if (widget.priorityName != null &&
+                            widget.isChecked) ...[
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: theme.spacing.sm,
+                            ),
+                            child: Icon(
+                              FontAwesomeIcons.arrowRight,
+                              size: 10,
+                              color: theme.colors.mutedForeground,
+                            ),
+                          ),
+                          Flexible(
+                            child: Text(
+                              widget.priorityName!,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: theme.typography.sm.fontSize,
+                                color: theme.colors.mutedForeground,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -835,14 +850,8 @@ class _ChannelRowState extends State<_ChannelRow> {
 
 /// Simple command that runs a callback. Used for inline FormButton actions.
 class _CallbackCommand extends Command {
-  _CallbackCommand({
-    required super.title,
-    super.icon,
-    required this.onRun,
-  }) : super(
-         eventObject: EventObject.modal,
-         eventAction: EventAction.updated,
-       );
+  _CallbackCommand({required super.title, super.icon, required this.onRun})
+    : super(eventObject: EventObject.modal, eventAction: EventAction.updated);
 
   final Future<CommandReturn> Function() onRun;
 
