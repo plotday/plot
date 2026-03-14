@@ -769,6 +769,7 @@ class Store extends _$Store {
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable,
   ) async {
+    if (_closing) return false;
     final entity = baseTable.fullName;
 
     // Check if push already in progress for this table
@@ -1133,6 +1134,7 @@ class Store extends _$Store {
     TABLE extends SyncableTable,
     DATA extends DataClass
   >(TableInfo<TABLE, DATA> table, BaseTable baseTable) async {
+    if (_closing) return;
     final entity = getArchivedEntityName(baseTable.fullName);
     log.fine("pullArchived(${baseTable.table})");
 
@@ -1288,6 +1290,7 @@ class Store extends _$Store {
     bool ascending = true,
     bool archived = false,
   }) async {
+    if (_closing) return null;
     // Queue concurrent pulls for the same entity+direction combination
     // This prevents overlapping pulls even with different pullTo values
     final entityName = archived
@@ -1898,14 +1901,46 @@ class Store extends _$Store {
     // Cancel all pending debounce timers
     _syncDebouncer.dispose();
 
-    // Allow in-flight queries to drain before closing the database connection.
-    // This prevents a race where the background isolate's SQLite update hook
-    // NativeCallable is invalidated while a write is still in progress,
-    // causing a SIGSEGV (null function pointer call from sqlite3).
-    // 500ms gives heavy sync/batch operations enough time to complete.
-    await Future<void>.delayed(const Duration(milliseconds: 500));
+    // Wait for in-flight sync operations to drain before closing the database
+    // connection. This prevents a race where the background isolate's SQLite
+    // update hook NativeCallable is invalidated while a write is still in
+    // progress, causing a SIGSEGV (null function pointer call from sqlite3).
+    await _drainActiveOperations();
 
     await super.close();
+  }
+
+  /// Waits for active push/pull/sync operations to complete, with a timeout.
+  Future<void> _drainActiveOperations() async {
+    const drainTimeout = Duration(seconds: 5);
+    final deadline = DateTime.now().add(drainTimeout);
+
+    // Poll until all tracked operations are idle or timeout is reached.
+    while (DateTime.now().isBefore(deadline)) {
+      final activePushes = List<Future<bool>>.of(
+        _pushCompleters.values.map((c) => c.future),
+      );
+      final activePulls = List<Future<DateTime?>>.of(
+        _pullQueue.values.whereType<Completer<DateTime?>>().map((c) => c.future),
+      );
+
+      if (activePushes.isEmpty && activePulls.isEmpty && !_isSyncing) {
+        break;
+      }
+
+      // Wait for whichever finishes first: all active ops, or a short poll tick
+      await Future.any([
+        if (activePushes.isNotEmpty || activePulls.isNotEmpty)
+          Future.wait([...activePushes, ...activePulls])
+              .then((_) {})
+              .catchError((_) {}),
+        Future<void>.delayed(const Duration(milliseconds: 200)),
+      ]);
+    }
+
+    // Final short delay so any last SQLite update-hook invocations complete
+    // before the NativeCallable is torn down.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
   }
 
   static const _resyncSentinel = '1970-01-01T00:00:00.000Z';
