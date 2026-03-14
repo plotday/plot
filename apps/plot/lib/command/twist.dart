@@ -222,9 +222,7 @@ class ManageConnections extends Command {
     final futures = <Future<dynamic>>[
       TwistApi.getUserSources(),
       TwistApi.getAllTwists(defaultPriority),
-      UpgradeApi.getUsage()
-          .then<UsageData?>((r) => r)
-          .catchError((_) => null),
+      UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
     ];
     if (_upcomingCache == null) {
       futures.add(
@@ -279,20 +277,18 @@ class ManageConnections extends Command {
           ? integrations.accounts.first
           : null;
 
-      if (enabledCount > 0) {
-        activeItems.add(
-          _ActiveSource(
-            id: id,
-            name: json['name'] as String,
-            accountName: firstAccount?.displayName,
-            accountEmail: firstAccount?.email,
-            logoUrl: json['logo_url'] as String?,
-            logoUrlDark: json['logo_url_dark'] as String?,
-            provider: firstAccount?.provider,
-            enabledCount: enabledCount,
-          ),
-        );
-      }
+      activeItems.add(
+        _ActiveSource(
+          id: id,
+          name: json['name'] as String,
+          accountName: firstAccount?.displayName,
+          accountEmail: firstAccount?.email,
+          logoUrl: json['logo_url'] as String?,
+          logoUrlDark: json['logo_url_dark'] as String?,
+          provider: firstAccount?.provider,
+          enabledCount: enabledCount,
+        ),
+      );
     }
 
     // Build available connections (all source twists, including active ones
@@ -644,8 +640,10 @@ class _NotifyUpcomingConnection extends ShowForm {
               builder: (context) {
                 final theme = context.theme;
                 return Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

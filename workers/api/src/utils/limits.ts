@@ -64,21 +64,26 @@ export class PlanLimitError extends Error {
  */
 export async function getPersonalConnectionCount(
   db: Kysely<DB>,
-  userId: string
+  userId: string,
+  excludePriorityTwistId?: string
 ): Promise<number> {
-  const result = await db
+  let query = db
     .selectFrom("priority_twist_connection as ptc")
     .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
     .leftJoin("priority as p", "p.id", "pt.priority_id")
     .select(sql<string>`count(DISTINCT (ptc.provider, ptc.actor_id))`.as("count"))
     .where("ptc.user_id", "=", userId)
+    .where("pt.archived_at", "is", null)
     .where((eb) =>
       eb.or([
         eb("pt.priority_id", "is", null),
         eb("p.organization_id", "is", null),
       ])
-    )
-    .executeTakeFirstOrThrow();
+    );
+  if (excludePriorityTwistId) {
+    query = query.where("ptc.priority_twist_id", "!=", excludePriorityTwistId);
+  }
+  const result = await query.executeTakeFirstOrThrow();
 
   return Number(result.count);
 }
@@ -97,6 +102,7 @@ export async function getOrgConnectionCount(
     .innerJoin("priority as p", "p.id", "pt.priority_id")
     .select(sql<string>`count(DISTINCT (ptc.provider, ptc.actor_id))`.as("count"))
     .where("p.organization_id", "=", organizationId)
+    .where("pt.archived_at", "is", null)
     .executeTakeFirstOrThrow();
 
   return Number(result.count);
@@ -189,7 +195,8 @@ async function isOrgAdmin(
 export async function checkConnectionLimit(
   db: Kysely<DB>,
   userId: string,
-  targetPriorityId: string | null
+  targetPriorityId: string | null,
+  excludePriorityTwistId?: string
 ): Promise<{ allowed: true } | { allowed: false; error: PlanLimitError }> {
   // Determine if this is an org priority
   let organizationId: string | null = null;
@@ -269,7 +276,7 @@ export async function checkConnectionLimit(
     return { allowed: true };
   }
 
-  const count = await getPersonalConnectionCount(db, userId);
+  const count = await getPersonalConnectionCount(db, userId, excludePriorityTwistId);
   if (count >= limits.connections) {
     return {
       allowed: false,

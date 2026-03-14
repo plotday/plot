@@ -885,7 +885,8 @@ export class Integrations extends Tool implements IAuth {
       const limitCheck = await checkConnectionLimit(
         this.db,
         contact.user_id,
-        limitPriorityTwist?.priority_id ?? null
+        limitPriorityTwist?.priority_id ?? null,
+        this.priorityTwistId
       );
       if (!limitCheck.allowed) {
         throw limitCheck.error;

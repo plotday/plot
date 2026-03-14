@@ -548,6 +548,12 @@ export async function deleteTwist(
       }
     }
 
+    // Clean up connection rows before archiving
+    await db
+      .deleteFrom("priority_twist_connection")
+      .where("priority_twist_id", "=", priority_twist_id)
+      .execute();
+
     return await db
       .updateTable("priority_twist")
       .set({ archived_at: new Date().toISOString() })
@@ -676,7 +682,7 @@ export async function activateDraft(
 
   // Check plan limits before activating
   if (twistRecord?.is_source === true) {
-    const limitCheck = await checkConnectionLimit(db, draft.owner_id, priorityId ?? null);
+    const limitCheck = await checkConnectionLimit(db, draft.owner_id, priorityId ?? null, draft.id);
     if (!limitCheck.allowed) {
       throw limitCheck.error;
     }
