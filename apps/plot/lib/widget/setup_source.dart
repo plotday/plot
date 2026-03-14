@@ -32,8 +32,8 @@ class IntegrationChanges {
   final Set<String> removedAccounts; // "provider:actorId" keys
   final Map<String, String>
   channelPriorities; // "provider:channelId" → priorityId
-  final Map<String, bool>
-  channelCreateThreads; // "provider:channelId" → createThreads
+  final Map<String, String>
+  channelCreateThreads; // "provider:channelId" → createThreads ('all'|'actionable'|'manual')
 
   const IntegrationChanges({
     this.selectedChannels = const {},
@@ -99,8 +99,8 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   /// Locally tracked priority assignments per channel key ("provider:channelId" → priorityId).
   final Map<String, String> _channelPriorities = {};
 
-  /// Locally tracked createThreads per channel key ("provider:channelId" → bool).
-  final Map<String, bool> _channelCreateThreads = {};
+  /// Locally tracked createThreads per channel key ("provider:channelId" → 'all'|'actionable'|'manual').
+  final Map<String, String> _channelCreateThreads = {};
 
   /// Cached priority names for display (priorityId → title).
   final Map<String, String> _priorityNames = {};
@@ -256,7 +256,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     if (widget.isAccountBased) {
       // Resolve current priority for initial value
       final currentPriorityId = _channelPriorities[key];
-      final currentCreateThreads = _channelCreateThreads[key] ?? true;
+      final currentCreateThreads = _channelCreateThreads[key] ?? 'all';
 
       Priority? currentPriority;
       if (currentPriorityId != null) {
@@ -283,12 +283,18 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           initialValue: currentPriority,
           placeholder: 'Select a priority',
         ),
-        FormToggle(
+        FormSelect<String>(
           key: 'createThreads',
           label: 'Create threads',
-          details:
-              'When off, items sync as searchable links without creating threads.',
+          items: (_) async => ['all', 'actionable', 'manual'],
+          titleBuilder: (v) => switch (v) {
+            'all' => 'For everything',
+            'actionable' => 'For anything requiring action',
+            'manual' => 'Add links manually',
+            _ => v,
+          },
           initialValue: currentCreateThreads,
+          hasInitialValue: true,
         ),
         FormButton(
           key: 'save',
@@ -297,7 +303,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
             icon: FontAwesomeIcons.check,
             onRun: () async {
               final priority = values['priority'] as Priority?;
-              final createThreads = values['createThreads'] as bool? ?? true;
+              final createThreads = values['createThreads'] as String? ?? 'all';
               if (priority != null) {
                 setState(() {
                   _localSelectedChannels.add(key);

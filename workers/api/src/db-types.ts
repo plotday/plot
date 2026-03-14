@@ -484,24 +484,20 @@ export interface PriorityMember {
   updated_at: Timestamp | null;
 }
 
-export interface PrioritySettings {
-  color: number | null;
-  order: number | null;
-  path: string | null;
-  pomodoro: number | null;
+export interface PrioritySetting {
+  key: string;
   priority_id: string;
-  title: string | null;
-  top_order: number | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
+  value: Json;
 }
 
-export interface PrioritySettingsInherited {
-  color: number | null;
-  path: string | null;
-  pomodoro: number | null;
+export interface PrioritySettingInherited {
+  key: string | null;
   priority_id: string | null;
+  source_path: string | null;
   user_id: string | null;
+  value: Json | null;
 }
 
 export interface PriorityTags {
@@ -820,6 +816,7 @@ export interface Schedule {
   occurrence: string | null;
   on: string | null;
   order: number | null;
+  reason: string | null;
   recurrence_exdates: ArrayType<Timestamp> | null;
   recurrence_rule: string | null;
   thread_id: string | null;
@@ -868,7 +865,7 @@ export interface SourceChannel {
    * Provider-specific global ID for the channel. The same calendar/project has the same ID across users.
    */
   channel_id: string;
-  create_threads: Generated<boolean>;
+  create_threads: Generated<string>;
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
   id: Generated<Int8>;
@@ -940,6 +937,16 @@ export interface ThreadTags {
   thread_id: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
+}
+
+export interface ThreadUnread {
+  bumped_at: Timestamp | null;
+  importance: Generated<number>;
+  read_at: Timestamp | null;
+  thread_id: string;
+  updated_at: Generated<Timestamp>;
+  urgency: string;
+  user_id: string;
 }
 
 export interface ThreadX {
@@ -1095,6 +1102,8 @@ export interface UserNoteTags {
 
 export interface UserPriority {
   archived_at: Timestamp | null;
+  attention_window: Json | null;
+  attention_window_set: boolean | null;
   color: number | null;
   created_at: Timestamp | null;
   created_by: string | null;
@@ -1108,6 +1117,10 @@ export interface UserPriority {
   pomodoro: number | null;
   role: string | null;
   root: boolean | null;
+  see_within_requests: Json | null;
+  see_within_requests_set: boolean | null;
+  see_within_updates: Json | null;
+  see_within_updates_set: boolean | null;
   title: string | null;
   top_order: number | null;
   unread: boolean | null;
@@ -1155,6 +1168,7 @@ export interface UserSchedule {
   priority_path: string | null;
   range_at: string | null;
   range_on: string | null;
+  reason: string | null;
   recurrence_exdates: ArrayType<Timestamp> | null;
   recurrence_rule: string | null;
   schedule_user_id: string | null;
@@ -1172,7 +1186,7 @@ export interface UserSettings {
 
 export interface UserSourceChannel {
   channel_id: string | null;
-  create_threads: boolean | null;
+  create_threads: string | null;
   created_at: Timestamp | null;
   enabled: boolean | null;
   id: Int8 | null;
@@ -1211,6 +1225,7 @@ export interface UserThread {
   created_at: Timestamp | null;
   draft: boolean | null;
   id: string | null;
+  importance: number | null;
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
   mentions: string[] | null;
@@ -1222,6 +1237,7 @@ export interface UserThread {
   unread: boolean | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
+  urgency: string | null;
   user_id: string | null;
 }
 
@@ -1285,8 +1301,8 @@ export interface DB {
   priority_child_twist: PriorityChildTwist;
   priority_contact: PriorityContact;
   priority_member: PriorityMember;
-  priority_settings: PrioritySettings;
-  priority_settings_inherited: PrioritySettingsInherited;
+  priority_setting: PrioritySetting;
+  priority_setting_inherited: PrioritySettingInherited;
   priority_tags: PriorityTags;
   priority_twist: PriorityTwist;
   priority_twist_channel: PriorityTwistChannel;
@@ -1315,6 +1331,7 @@ export interface DB {
   thread_read: ThreadRead;
   thread_tag: ThreadTag;
   thread_tags: ThreadTags;
+  thread_unread: ThreadUnread;
   thread_x: ThreadX;
   token: Token;
   twist: Twist;

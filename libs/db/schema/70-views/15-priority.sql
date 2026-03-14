@@ -35,6 +35,7 @@ WITH all_sources AS (
         ps.key,
         ps.value,
         parent.path AS source_path,
+        ps.updated_at,
         nlevel(p.path) - nlevel(parent.path) AS distance,
         0 AS source_type
     FROM priority_setting ps
@@ -49,6 +50,7 @@ WITH all_sources AS (
         'color'::text AS key,
         to_jsonb(parent.color) AS value,
         parent.path AS source_path,
+        parent.updated_at,
         nlevel(p.path) - nlevel(parent.path) AS distance,
         1 AS source_type
     FROM priority_user pu
@@ -62,7 +64,8 @@ SELECT DISTINCT ON (user_id, priority_id, key)
     priority_id,
     key,
     value,
-    source_path
+    source_path,
+    updated_at
 FROM all_sources
 ORDER BY user_id, priority_id, key, distance ASC, source_type ASC;
 

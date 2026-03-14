@@ -420,7 +420,7 @@ class ChangeAiPreference extends ShowForm {
       key: 'aiEnabled',
       label: 'Enable AI features',
       details:
-          'AI is used for search, content analysis, and twist capabilities.',
+          'AI is used for search, smart notifications, and twist capabilities.',
       initialValue: currentValue,
     );
     toggle.addListener(() {

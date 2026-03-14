@@ -621,9 +621,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     final bloc = context.read<PriorityBloc>();
     final draft = bloc.state.draft;
     if (_selectedType == NewThreadType.task && !draft.todo) {
-      bloc.updateDraft(draft.toggleTag(Tag.todo));
+      bloc.updateDraftLocal(draft.toggleTag(Tag.todo));
     } else if (_selectedType != NewThreadType.task && draft.todo) {
-      bloc.updateDraft(draft.toggleTag(Tag.todo));
+      bloc.updateDraftLocal(draft.toggleTag(Tag.todo));
     }
     if (_selectedType == NewThreadType.chat) {
       _resolveDefaultTwist();

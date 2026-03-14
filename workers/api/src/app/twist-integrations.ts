@@ -287,11 +287,12 @@ twistIntegrations.post(
 
     // Parse optional body for priorityId and createThreads
     let priorityId: string | undefined;
-    let createThreads: boolean | undefined;
+    let createThreads: string | undefined;
     try {
       const body = await c.req.json();
       priorityId = body?.priorityId;
-      if (typeof body?.createThreads === "boolean") {
+      if (typeof body?.createThreads === "string" &&
+          ["all", "actionable", "manual"].includes(body.createThreads)) {
         createThreads = body.createThreads;
       }
     } catch {

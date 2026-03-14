@@ -927,6 +927,7 @@ class _PriorityPageState extends State<PriorityPage> {
           onTabChanged: _onDesktopTabChanged,
           hasUnreadActivity: state.context.unread ||
               state.context.descendants().any((p) => p.unread),
+          priority: state.context,
         ),
         Expanded(
           child: isNowTab
@@ -1532,11 +1533,13 @@ class _DesktopTabBar extends StatelessWidget {
   const _DesktopTabBar({
     required this.currentTab,
     required this.onTabChanged,
+    required this.priority,
     this.hasUnreadActivity = false,
   });
 
   final PriorityTab currentTab;
   final ValueChanged<PriorityTab> onTabChanged;
+  final Priority priority;
   final bool hasUnreadActivity;
 
   @override
@@ -1560,6 +1563,9 @@ class _DesktopTabBar extends StatelessWidget {
             selected: currentTab == PriorityTab.activityFeed,
             onTap: () => onTabChanged(PriorityTab.activityFeed),
             showUnreadDot: hasUnreadActivity,
+            trailing: _NotificationButton(
+              onTap: () => context.run(ShowAttentionSettings(priority)),
+            ),
           ),
         ],
       ),
@@ -1574,6 +1580,7 @@ class _DesktopTab extends StatefulWidget {
     required this.onTap,
     this.border,
     this.showUnreadDot = false,
+    this.trailing,
   });
 
   final String label;
@@ -1581,6 +1588,7 @@ class _DesktopTab extends StatefulWidget {
   final VoidCallback onTap;
   final Border? border;
   final bool showUnreadDot;
+  final Widget? trailing;
 
   @override
   State<_DesktopTab> createState() => _DesktopTabState();
@@ -1645,23 +1653,66 @@ class _DesktopTabState extends State<_DesktopTab> {
             padding: EdgeInsets.symmetric(
               vertical: theme.spacing.xs,
             ),
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _unreadDot(textColor, visible: widget.showUnreadDot),
-                  Text(
-                    widget.label,
-                    style: theme.typography.sm.copyWith(
-                      fontFamily: theme.typography.defaultFontFamily,
-                      color: textColor,
-                      fontWeight: FontWeight.w500,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _unreadDot(textColor, visible: widget.showUnreadDot),
+                    Text(
+                      widget.label,
+                      style: theme.typography.sm.copyWith(
+                        fontFamily: theme.typography.defaultFontFamily,
+                        color: textColor,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
+                    _unreadDot(textColor, visible: false),
+                  ],
+                ),
+                if (widget.trailing != null)
+                  Positioned(
+                    right: 0,
+                    child: widget.trailing!,
                   ),
-                  _unreadDot(textColor, visible: false),
-                ],
-              ),
+              ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationButton extends StatefulWidget {
+  const _NotificationButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_NotificationButton> createState() => _NotificationButtonState();
+}
+
+class _NotificationButtonState extends State<_NotificationButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: Icon(
+            PlotIcon.notification,
+            size: 14,
+            color: _hovered
+                ? context.theme.colors.foreground
+                : context.theme.plotColors.veryMuted,
           ),
         ),
       ),

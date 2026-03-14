@@ -424,6 +424,16 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     }
 
+    // Clean up orphaned drafts (keep only the latest)
+    if (drafts.length > 1) {
+      log.info(
+        '[setPriority] Cleaning up ${drafts.length - 1} orphaned drafts for priority ${newPriority.id}',
+      );
+      for (final stale in drafts.skip(1)) {
+        await stale.delete();
+      }
+    }
+
     // Load draft note for the draft thread (also load archived notes)
     // We get all draft notes (archived or not) and take the latest one
     final draftNotes =
@@ -528,6 +538,15 @@ class PriorityBloc extends Cubit<PriorityState> {
       preview: const Value(null),
     );
     emit(state.copyWith(draft: clearedDraft));
+  }
+
+  /// Updates the draft thread in state only (no DB save).
+  /// Use for default type toggles and other UI-only state that
+  /// will be persisted when the user adds real content.
+  void updateDraftLocal(Thread thread) {
+    if (thread.id != state.draft.id) return;
+    _draftModified = true;
+    emit(state.copyWith(draft: thread));
   }
 
   /// Updates the draft thread and optionally the note, saving both to the database.

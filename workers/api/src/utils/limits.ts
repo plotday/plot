@@ -67,7 +67,7 @@ export async function getPersonalConnectionCount(
     .selectFrom("priority_twist_connection as ptc")
     .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
     .leftJoin("priority as p", "p.id", "pt.priority_id")
-    .select(sql<string>`count(*)`.as("count"))
+    .select(sql<string>`count(DISTINCT (ptc.provider, ptc.actor_id))`.as("count"))
     .where("ptc.user_id", "=", userId)
     .where((eb) =>
       eb.or([
@@ -92,7 +92,7 @@ export async function getOrgConnectionCount(
     .selectFrom("priority_twist_connection as ptc")
     .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
     .innerJoin("priority as p", "p.id", "pt.priority_id")
-    .select(sql<string>`count(*)`.as("count"))
+    .select(sql<string>`count(DISTINCT (ptc.provider, ptc.actor_id))`.as("count"))
     .where("p.organization_id", "=", organizationId)
     .executeTakeFirstOrThrow();
 
@@ -128,7 +128,7 @@ export async function getPersonalTwistCount(
     .selectFrom("priority_twist as pt")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
     .leftJoin("priority as p", "p.id", "pt.priority_id")
-    .select(sql<string>`count(*)`.as("count"))
+    .select(sql<string>`count(DISTINCT (pt.twist_id, COALESCE(pt.priority_id::text, '')))`.as("count"))
     .where("pt.owner_id", "=", userId)
     .where("pt.archived_at", "is", null)
     .where("t.is_source", "=", false)

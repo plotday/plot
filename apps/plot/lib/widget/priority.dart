@@ -113,7 +113,7 @@ class PriorityWidget extends StatelessWidget {
       textStyle: textStyle,
       leadingBuilder: (isHovered, hasFocus) => Padding(
         padding: EdgeInsets.only(
-          left: buildContext.theme.spacing.xl,
+          left: buildContext.theme.spacing.lg,
           right: buildContext.theme.spacing.sm,
           bottom: 2,
         ),

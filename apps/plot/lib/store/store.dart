@@ -1816,7 +1816,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 275;
+  int get schemaVersion => 276;
 
   @override
   MigrationStrategy get migration {
@@ -2282,6 +2282,18 @@ class Store extends _$Store {
       // Drop see_within and see_within_set columns (replaced by see_within_requests/see_within_updates)
       // ignore: experimental_member_use
       await m.alterTable(TableMigration(priorities));
+    }
+    if (from < 276) {
+      await m.database.customStatement(
+        "ALTER TABLE source_channels RENAME COLUMN create_threads TO create_threads_old",
+      );
+      await m.addColumn(sourceChannels, sourceChannels.createThreads);
+      await m.database.customStatement(
+        "UPDATE source_channels SET create_threads = CASE WHEN create_threads_old = 1 THEN 'all' ELSE 'manual' END",
+      );
+      await m.database.customStatement(
+        "ALTER TABLE source_channels DROP COLUMN create_threads_old",
+      );
     }
   }
 

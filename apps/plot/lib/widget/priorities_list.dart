@@ -286,8 +286,13 @@ class _PrioritiesListState extends State<PrioritiesList>
                       ? context.theme.colors.mutedForeground
                       : context.colour.colours.fromTheme(
                           priority.displayColor,
-                          muted: !(priorityExpanded ? priority.active : _hasDescendantActive(priority))
-                              && !(priorityExpanded ? priority.unread : _hasDescendantUnread(priority)),
+                          muted:
+                              !(priorityExpanded
+                                  ? priority.active
+                                  : _hasDescendantActive(priority)) &&
+                              !(priorityExpanded
+                                  ? priority.unread
+                                  : _hasDescendantUnread(priority)),
                         ),
                 ),
                 unread: !priorityExpanded && _hasDescendantUnread(priority)
@@ -346,8 +351,13 @@ class _PrioritiesListState extends State<PrioritiesList>
                             ? context.theme.colors.mutedForeground
                             : context.colour.colours.fromTheme(
                                 priority.displayColor,
-                                muted: !(priorityExpanded ? priority.active : _hasDescendantActive(priority))
-                                    && !(priorityExpanded ? priority.unread : _hasDescendantUnread(priority)),
+                                muted:
+                                    !(priorityExpanded
+                                        ? priority.active
+                                        : _hasDescendantActive(priority)) &&
+                                    !(priorityExpanded
+                                        ? priority.unread
+                                        : _hasDescendantUnread(priority)),
                               ),
                       ),
                       unread:
@@ -401,7 +411,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                 selected: widget.selected?.id == widget.root.id,
                 leadingBuilder: (isHovered, hasFocus) => Padding(
                   padding: EdgeInsets.only(
-                    left: context.theme.spacing.xl,
+                    left: context.theme.spacing.lg,
                     right: context.theme.spacing.sm,
                     bottom: 2,
                   ),

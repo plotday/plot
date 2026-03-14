@@ -48,6 +48,7 @@ class PlotIcon {
   static const users = FontAwesomeIcons.users;
   static const private = FontAwesomeIcons.lock;
   static const offline = FontAwesomeIcons.wifiSlash;
+  static const notification = FontAwesomeIcons.bellRing;
 
   // Task icons
   static const selfTask = FontAwesomeIcons.circlePlus;

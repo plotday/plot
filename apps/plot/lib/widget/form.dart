@@ -560,6 +560,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
         child: ListTile(
           command: wrappedCommand,
           style: ListTileStyle.button,
+          padding: context.theme.spacing.paddingSm,
           focusNode: widget.focusNode,
           controller: widget.controller?._listTileController,
           textStyle: widget.isPrimary && widget.enabled
@@ -1029,6 +1030,7 @@ class _WindowTile extends StatelessWidget {
     return ListTile(
       title: window.summary,
       icon: PlotIcon.right,
+      padding: context.theme.spacing.paddingSm,
       highlighted: highlighted,
       focusNode: focusNode,
       command: CommandWrapper(
@@ -1060,6 +1062,7 @@ class _AddWindowTile extends StatelessWidget {
       title: 'Add quiet hours',
       icon: PlotIcon.add,
       style: ListTileStyle.button,
+      padding: context.theme.spacing.paddingSm,
       muted: true,
       highlighted: highlighted,
       focusNode: focusNode,

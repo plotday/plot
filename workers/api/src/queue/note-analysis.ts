@@ -25,6 +25,12 @@ export async function analyzeNote(
 
     if (result.tags.length > 0) {
       await applyTagChanges(db, result.tags, context.memberIds, userId);
+
+      // Unarchive thread if actionable tags found and channel uses 'actionable' mode
+      const actionableTags = result.tags.filter(t => !t.done);
+      if (actionableTags.length > 0) {
+        await maybeUnarchiveActionableThread(db, threadId);
+      }
     }
 
     await applyUnreadStatus(
@@ -470,6 +476,37 @@ async function applyUnreadStatus(
         error
       );
     }
+  }
+}
+
+/**
+ * Unarchive a thread if it's archived and linked to a channel with 'actionable' mode.
+ * Called when note analysis finds actionable tags (todo/reply).
+ */
+async function maybeUnarchiveActionableThread(
+  db: Kysely<DB>,
+  threadId: string
+): Promise<void> {
+  const result = await db
+    .selectFrom("thread as t")
+    .innerJoin("link as l", "l.thread_id", "t.id")
+    .innerJoin("source_channel as sc", (join) =>
+      join
+        .onRef("sc.priority_twist_id", "=", "l.created_by")
+        .onRef("sc.channel_id", "=", "l.channel_id")
+    )
+    .select("t.id")
+    .where("t.id", "=", threadId)
+    .where("t.archived_at", "is not", null)
+    .where("sc.create_threads", "=", "actionable")
+    .executeTakeFirst();
+
+  if (result) {
+    await db
+      .updateTable("thread")
+      .set({ archived_at: null })
+      .where("id", "=", threadId)
+      .execute();
   }
 }
 

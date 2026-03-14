@@ -10,8 +10,8 @@ class SourceChannels extends Table with SyncableTable, CreatedTable {
       blob().nullable().map(const UuidConverter())();
   BoolColumn get enabled =>
       boolean().withDefault(const Constant(false))();
-  BoolColumn get createThreads =>
-      boolean().withDefault(const Constant(true))();
+  TextColumn get createThreads =>
+      text().withDefault(const Constant('all'))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -49,7 +49,7 @@ class SourceChannel extends Equatable {
   String get title => _row.title;
   Uuid? get priorityId => _row.priorityId;
   bool get enabled => _row.enabled;
-  bool get createThreads => _row.createThreads;
+  String get createThreads => _row.createThreads;
   DateTime get createdAt => _row.createdAt;
   DateTime get updatedAt => _row.updatedAt;
 

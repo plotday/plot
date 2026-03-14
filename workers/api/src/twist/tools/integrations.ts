@@ -77,7 +77,7 @@ type ChannelConfig = {
   enabledBy?: ActorId;
   title?: string | null;
   priorityId?: string | null;
-  createThreads?: boolean;
+  createThreads?: string; // 'all' | 'actionable' | 'manual'
 };
 
 type PendingActAs = {
@@ -353,7 +353,7 @@ export class Integrations extends Tool implements IAuth {
    */
   async saveLink(link: NewLinkWithNotes): Promise<Uuid> {
     let targetPriorityId = this.priorityId;
-    let createThreads = true;
+    let createThreads: string = "all";
 
     // For account-based sources, resolve priority and create_threads from channel
     if (!targetPriorityId && link.channelId) {
@@ -364,7 +364,7 @@ export class Integrations extends Tool implements IAuth {
         .where("channel_id", "=", link.channelId)
         .executeTakeFirst();
       targetPriorityId = channel?.priority_id ?? "";
-      createThreads = channel?.create_threads ?? true;
+      createThreads = channel?.create_threads ?? "all";
     }
 
     if (!targetPriorityId) {
@@ -373,12 +373,22 @@ export class Integrations extends Tool implements IAuth {
 
     const plot = this.getPlot(targetPriorityId);
 
-    // If create_threads is false, create only the link row without a thread
-    if (!createThreads) {
+    // If 'manual', create only the link row without a thread
+    if (createThreads === "manual") {
       return plot.createLinkOnly(link);
     }
 
     const threadId = await plot.createLink(link);
+
+    // For 'actionable' mode, archive the thread immediately.
+    // Note analysis will unarchive if it finds todo/reply tags.
+    if (createThreads === "actionable") {
+      await this.db
+        .updateTable("thread")
+        .set({ archived_at: new Date().toISOString() })
+        .where("id", "=", threadId as string)
+        .execute();
+    }
 
     // Propagate status tags to the thread
     await this.propagateLinkStatusTags(plot, threadId);
@@ -1096,7 +1106,7 @@ export class Integrations extends Tool implements IAuth {
     actorId: ActorId,
     title?: string,
     priorityId?: string,
-    createThreads?: boolean
+    createThreads?: string
   ): Promise<void> {
     // Find the title from the actor's channel access list if not provided
     if (!title) {
@@ -1122,14 +1132,14 @@ export class Integrations extends Tool implements IAuth {
         title: title ?? channelId,
         priority_id: priorityId ?? null,
         enabled: true,
-        create_threads: createThreads ?? true,
+        create_threads: createThreads ?? "all",
       })
       .onConflict((oc) =>
         oc.columns(["priority_twist_id", "channel_id"]).doUpdateSet({
           enabled: true,
           title: title ?? channelId,
           priority_id: priorityId ?? null,
-          create_threads: createThreads ?? true,
+          create_threads: createThreads ?? "all",
           updated_at: new Date(),
         })
       )
@@ -1223,7 +1233,7 @@ export class Integrations extends Tool implements IAuth {
       enabled: boolean;
       enabledBy: ActorId | undefined;
       priorityId: string | null | undefined;
-      createThreads: boolean;
+      createThreads: string;
       currentUserHasAccess: boolean;
       children?: Array<{
         provider: AuthProvider;
@@ -1232,7 +1242,7 @@ export class Integrations extends Tool implements IAuth {
         enabled: boolean;
         enabledBy: ActorId | undefined;
         priorityId: string | null | undefined;
-        createThreads: boolean;
+        createThreads: string;
         currentUserHasAccess: boolean;
         children?: any[];
       }>;
@@ -1284,7 +1294,7 @@ export class Integrations extends Tool implements IAuth {
       enabled: boolean;
       enabledBy: ActorId | undefined;
       priorityId: string | null | undefined;
-      createThreads: boolean;
+      createThreads: string;
       currentUserHasAccess: boolean;
       children?: AnnotatedChannel[];
     };
@@ -1386,7 +1396,7 @@ export class Integrations extends Tool implements IAuth {
           enabled: channelConfig?.enabled ?? false,
           enabledBy: channelConfig?.enabledBy,
           priorityId: channelConfig?.priorityId ?? null,
-          createThreads: channelConfig?.createThreads ?? true,
+          createThreads: channelConfig?.createThreads ?? "all",
           currentUserHasAccess: channelAccessByCurrentUser.has(mapKey),
         };
 
@@ -1610,6 +1620,10 @@ export class Integrations extends Tool implements IAuth {
     // Dual-read fallback: check KV
     const config = await this.store.get<ChannelConfig>(`channel_config:${provider}:${channelId}`);
     if (config) {
+      // Normalize boolean createThreads from old KV data
+      if (typeof config.createThreads === "boolean") {
+        config.createThreads = (config.createThreads as unknown as boolean) ? "all" : "manual";
+      }
       // Migrate KV data to DB lazily
       await this.db
         .insertInto("source_channel")
@@ -1619,6 +1633,7 @@ export class Integrations extends Tool implements IAuth {
           title: config.title ?? channelId,
           priority_id: config.priorityId ?? null,
           enabled: config.enabled,
+          create_threads: config.createThreads ?? "all",
         })
         .onConflict((oc) => oc.columns(["priority_twist_id", "channel_id"]).doNothing())
         .execute();
@@ -1626,7 +1641,11 @@ export class Integrations extends Tool implements IAuth {
     }
 
     // Backward compat: read from old storage key prefix
-    return this.store.get<ChannelConfig>(`syncable_config:${provider}:${channelId}`);
+    const oldConfig = await this.store.get<ChannelConfig>(`syncable_config:${provider}:${channelId}`);
+    if (oldConfig && typeof oldConfig.createThreads === "boolean") {
+      oldConfig.createThreads = (oldConfig.createThreads as unknown as boolean) ? "all" : "manual";
+    }
+    return oldConfig;
   }
 
   /**

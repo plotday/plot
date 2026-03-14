@@ -490,6 +490,9 @@ class _ListTileState extends State<ListTile> {
       child: Builder(
         builder: (context) {
           // Build the icon widget
+          final iconSize = widget.style == ListTileStyle.header
+              ? context.theme.iconSizes.sm
+              : context.theme.iconSizes.base;
           final iconWidget = () {
             // Skip command's buildIcon when leadingBuilder already provides
             // a visual indicator (avoids double icons in priority tiles).
@@ -499,9 +502,7 @@ class _ListTileState extends State<ListTile> {
             if (customIcon != null) {
               if (_showSpinner) {
                 return Spinner(
-                  size: widget.style == ListTileStyle.header
-                      ? context.theme.iconSizes.sm
-                      : context.theme.iconSizes.base,
+                  size: iconSize,
                   color: context.theme.plotColors.muted,
                 );
               }
@@ -512,17 +513,13 @@ class _ListTileState extends State<ListTile> {
             if (widget.icon != null || widget.command?.icon != null) {
               if (_showSpinner) {
                 return Spinner(
-                  size: widget.style == ListTileStyle.header
-                      ? context.theme.iconSizes.sm
-                      : context.theme.iconSizes.base,
+                  size: iconSize,
                   color: context.theme.plotColors.muted,
                 );
               }
               return Icon(
                 widget.icon ?? widget.command?.icon,
-                size: widget.style == ListTileStyle.header
-                    ? context.theme.iconSizes.sm
-                    : context.theme.iconSizes.base,
+                size: iconSize,
                 color: context.theme.plotColors.muted,
               );
             }
@@ -532,6 +529,13 @@ class _ListTileState extends State<ListTile> {
 
           // Only apply spacing when icon is present
           final hasIcon = iconWidget is! SizedBox;
+          // Normalize icon height so varying glyph heights stay centered
+          final normalizedIcon = hasIcon
+              ? SizedBox(
+                  height: iconSize,
+                  child: Center(child: iconWidget),
+                )
+              : iconWidget;
 
           if (widget.iconOnly) {
             return Center(
@@ -540,27 +544,29 @@ class _ListTileState extends State<ListTile> {
                     (widget.padding?.resolve(null) ??
                             context.theme.spacing.paddingSm)
                         .copyWith(left: 0, right: 0),
-                child: iconWidget,
+                child: normalizedIcon,
               ),
             );
           }
 
-          return Row(
+          final contentPadding =
+              (widget.padding?.resolve(null) ??
+                      context.theme.spacing.paddingSm)
+                  .copyWith(
+                    left: 0,
+                    right: 0,
+                    top: widget.style == ListTileStyle.header ? 2 : null,
+                    bottom: widget.style == ListTileStyle.header ? 2 : null,
+                  );
+
+          final mainRow = Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             spacing: hasIcon ? 12 : 0,
             children: [
-              iconWidget,
+              normalizedIcon,
               Expanded(
                 child: Padding(
-                  padding:
-                      (widget.padding?.resolve(null) ??
-                              context.theme.spacing.paddingSm)
-                          .copyWith(
-                            left: 0,
-                            right: 0,
-                            top: widget.style == .header ? 2 : null,
-                            bottom: widget.style == .header ? 2 : null,
-                          ),
+                  padding: contentPadding,
                   child: Column(
                     crossAxisAlignment: widget.centered
                         ? CrossAxisAlignment.center
@@ -659,7 +665,6 @@ class _ListTileState extends State<ListTile> {
                                 );
                         },
                       ),
-                      if (widget.details != null) widget.details!,
                     ],
                   ),
                 ),
@@ -673,6 +678,21 @@ class _ListTileState extends State<ListTile> {
                     color: context.theme.plotColors.muted,
                   ),
                 ),
+            ],
+          );
+
+          if (widget.details == null) return mainRow;
+
+          // Details go below the row so the icon stays aligned with the title
+          final iconOffset = hasIcon ? iconSize + 12 : 0.0;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              mainRow,
+              Padding(
+                padding: EdgeInsets.only(left: iconOffset),
+                child: widget.details!,
+              ),
             ],
           );
         },

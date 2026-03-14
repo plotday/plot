@@ -1518,7 +1518,7 @@ export type Database = {
       source_channel: {
         Row: {
           channel_id: string
-          create_threads: boolean
+          create_threads: string
           created_at: string
           enabled: boolean
           id: number
@@ -1529,7 +1529,7 @@ export type Database = {
         }
         Insert: {
           channel_id: string
-          create_threads?: boolean
+          create_threads?: string
           created_at?: string
           enabled?: boolean
           id?: never
@@ -1540,7 +1540,7 @@ export type Database = {
         }
         Update: {
           channel_id?: string
-          create_threads?: boolean
+          create_threads?: string
           created_at?: string
           enabled?: boolean
           id?: never
@@ -3748,7 +3748,7 @@ export type Database = {
       source_channel: {
         Row: {
           channel_id: string | null
-          create_threads: boolean | null
+          create_threads: string | null
           created_at: string | null
           enabled: boolean | null
           id: number | null

@@ -289,7 +289,7 @@ class TwistApi {
     required String provider,
     required String channelId,
     String? priorityId,
-    bool? createThreads,
+    String? createThreads,
   }) async {
     await api.post<Map<String, dynamic>>(
       '/twist/$priorityTwistId/syncables/$provider/$channelId/enable',
@@ -614,7 +614,7 @@ class TwistChannel extends Equatable {
   final bool enabled;
   final String? enabledBy;
   final String? priorityId;
-  final bool createThreads;
+  final String createThreads;
   final bool currentUserHasAccess;
   final List<TwistChannel> children;
 
@@ -625,7 +625,7 @@ class TwistChannel extends Equatable {
     required this.enabled,
     this.enabledBy,
     this.priorityId,
-    this.createThreads = true,
+    this.createThreads = 'all',
     required this.currentUserHasAccess,
     this.children = const [],
   });
@@ -641,7 +641,7 @@ class TwistChannel extends Equatable {
       enabled: json['enabled'] as bool,
       enabledBy: json['enabledBy'] as String?,
       priorityId: json['priorityId'] as String?,
-      createThreads: json['createThreads'] as bool? ?? true,
+      createThreads: json['createThreads'] as String? ?? 'all',
       currentUserHasAccess: json['currentUserHasAccess'] as bool,
       children:
           (json['children'] as List<dynamic>?)

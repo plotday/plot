@@ -7,7 +7,7 @@ SELECT
     pu.user_id,
     p.id,
     p.created_at,
-    GREATEST (settings.updated_at, pu.updated_at, p.updated_at, coalesce(upu.updated_at, 'epoch')) AS updated_at,
+    GREATEST (settings.updated_at, pu.updated_at, p.updated_at, coalesce(upu.updated_at, 'epoch'), inherited.updated_at) AS updated_at,
     GREATEST (pu.archived_at, p.archived_at) AS archived_at,
     p.created_by,
     p.updated_by,
@@ -73,7 +73,8 @@ FROM
             MAX(CASE WHEN key = 'see_within_requests' THEN value::text END)::jsonb AS see_within_requests,
             MAX(CASE WHEN key = 'see_within_updates' THEN value::text END)::jsonb AS see_within_updates,
             MAX(CASE WHEN key = 'path' THEN value #>> '{}' END) AS path_value,
-            MAX(CASE WHEN key = 'path' THEN text(source_path) END) AS path_source
+            MAX(CASE WHEN key = 'path' THEN text(source_path) END) AS path_source,
+            MAX(updated_at) AS updated_at
         FROM priority_setting_inherited
         GROUP BY user_id, priority_id
     ) inherited ON inherited.user_id = pu.user_id AND inherited.priority_id = p.id

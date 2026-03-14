@@ -49,10 +49,7 @@ class ManageConnectionsAndTwists extends ShowCommands {
         commands: Commands(
           prompt: 'Connections and twists',
           groups: [
-            StaticCommandGroup(commands: [
-              ManageConnections(),
-              ManageTwists(),
-            ]),
+            StaticCommandGroup(commands: [ManageConnections(), ManageTwists()]),
           ],
         ),
       );
@@ -136,11 +133,15 @@ class ManageConnections extends Command {
 
   /// Cached upcoming connections data, fetched once per ManageConnections session.
   static ({List<UpcomingConnection> connections, Set<String> votedByUser})?
-      _upcomingCache;
+  _upcomingCache;
+
+  /// Cached usage data, refreshed each fetch.
+  static UsageData? _usageCache;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     _upcomingCache = null; // Reset cache for each new session
+    _usageCache = null;
     try {
       // Track newly activated source so we can open EditSource after
       // SelectModal closes (avoids a flash of the list between modals).
@@ -164,6 +165,11 @@ class ManageConnections extends Command {
               name: item.name,
             ).run(ctx);
           } else if (item is _AvailableSource) {
+            if (_usageCache != null &&
+                _usageCache!.personal.connections.isAtLimit) {
+              ctx.showToast(message: 'Upgrade to add more connections.');
+              return false;
+            }
             await AddSourceDetail(item.twist).run(ctx);
             final activatedId = AddSourceDetail.lastActivatedSourceId;
             AddSourceDetail.lastActivatedSourceId = null;
@@ -234,9 +240,14 @@ class ManageConnections extends Command {
     final sourcesData = results[0] as List<Map<String, dynamic>>;
     final allTwists = results[1] as List<Twist>;
     final usage = results[2] as UsageData?;
+    _usageCache = usage;
     if (results.length > 3) {
-      _upcomingCache = results[3]
-          as ({List<UpcomingConnection> connections, Set<String> votedByUser})?;
+      _upcomingCache =
+          results[3]
+              as ({
+                List<UpcomingConnection> connections,
+                Set<String> votedByUser,
+              })?;
     }
     final upcomingResult = _upcomingCache;
 
@@ -246,9 +257,11 @@ class ManageConnections extends Command {
       return idValue is int ? idValue.toString() : idValue as String;
     }).toList();
     final integrationResults = await Future.wait(
-      sourceIds.map((id) => TwistApi.getIntegrations(id)
-          .then<TwistIntegrations?>((r) => r)
-          .catchError((_) => null)),
+      sourceIds.map(
+        (id) => TwistApi.getIntegrations(
+          id,
+        ).then<TwistIntegrations?>((r) => r).catchError((_) => null),
+      ),
     );
 
     // Build active connections
@@ -302,17 +315,21 @@ class ManageConnections extends Command {
     });
 
     // Build upcoming connections (exclude names that match available sources)
-    final availableSourceNames =
-        allTwists.where((t) => t.isSource).map((t) => t.name).toSet();
+    final availableSourceNames = allTwists
+        .where((t) => t.isSource)
+        .map((t) => t.name)
+        .toSet();
     final upcomingItems = <_UpcomingConnection>[];
     if (upcomingResult != null) {
       for (final conn in upcomingResult.connections) {
         if (!availableSourceNames.contains(conn.name)) {
-          upcomingItems.add(_UpcomingConnection(
-            connection: conn,
-            hasVoted: upcomingResult.votedByUser.contains(conn.name),
-            votes: conn.votes,
-          ));
+          upcomingItems.add(
+            _UpcomingConnection(
+              connection: conn,
+              hasVoted: upcomingResult.votedByUser.contains(conn.name),
+              votes: conn.votes,
+            ),
+          );
         }
       }
     }
@@ -339,7 +356,7 @@ class ManageConnections extends Command {
     if (usage != null && usage.personal.connections.isAtLimit) {
       filteredAvailable = [
         _LimitBanner(
-          'You\'ve used ${usage.personal.connections.count} of '
+          'You\'re using ${usage.personal.connections.count} of '
           '${usage.personal.connections.limit} free connections. '
           'Upgrade to Pro for unlimited connections.',
         ),
@@ -574,20 +591,11 @@ class _UpcomingConnectionRow extends StatelessWidget {
               ],
             ),
           ),
-          if (item.votes > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: theme.colors.secondary,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${item.votes}',
-                style: TextStyle(
-                  fontSize: theme.typography.xs.fontSize,
-                  color: theme.colors.mutedForeground,
-                ),
-              ),
+          if (item.hasVoted)
+            Icon(
+              PlotIcon.notification,
+              size: theme.iconSizes.xs,
+              color: theme.colors.mutedForeground,
             ),
         ],
       ),
@@ -631,10 +639,7 @@ class _NotifyUpcomingConnection extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            FormInfo(
-              key: 'category',
-              text: item.connection.category,
-            ),
+            FormInfo(key: 'category', text: item.connection.category),
             FormInfo(
               key: 'entities',
               text: 'Syncs: ${item.connection.entities.join(', ')}',
@@ -660,7 +665,7 @@ class _VoteForConnectionCommand extends Command {
   _VoteForConnectionCommand(this.item)
     : super(
         title: 'Notify me when available',
-        icon: PlotIcon.star,
+        icon: PlotIcon.notification,
         eventObject: EventObject.twist,
         eventAction: EventAction.updated,
       );
@@ -678,7 +683,10 @@ class _VoteForConnectionCommand extends Command {
       );
     } catch (e, t) {
       log.warning('Failed to vote for connection', e, t);
-      return const CommandMessage('Could not register interest.', isError: true);
+      return const CommandMessage(
+        'Could not register interest.',
+        isError: true,
+      );
     }
   }
 }
@@ -756,8 +764,12 @@ class EditSource extends ShowForm {
   }) : super(
          title: name,
          icon: PlotIcon.settings,
-         form: (context) =>
-             _buildForm(priorityTwistId, name, isAccountBased, isNewlyActivated),
+         form: (context) => _buildForm(
+           priorityTwistId,
+           name,
+           isAccountBased,
+           isNewlyActivated,
+         ),
        );
 
   final String priorityTwistId;
@@ -1084,8 +1096,8 @@ class AddSourceDetail extends ShowForm {
         if (e.isPlanLimitExceeded) {
           final message = e.isOrg == true
               ? (e.isAdmin == true
-                  ? 'Your organization has reached its connection limit. Upgrade your plan to add more.'
-                  : 'Your organization has reached its connection limit. Contact an admin to upgrade.')
+                    ? 'Your organization has reached its connection limit. Upgrade your plan to add more.'
+                    : 'Your organization has reached its connection limit. Contact an admin to upgrade.')
               : 'You\'ve reached your free connection limit. Upgrade to Pro for unlimited connections.';
           context.showToast(message: message, isError: true);
         } else {
@@ -1119,6 +1131,9 @@ class ManageTwists extends ShowCommands {
         icon: PlotIcon.twist,
         commandsBuilder: (context) => _getTwistCommands(priority),
       );
+
+  /// Cached usage data for twist limit checks.
+  static UsageData? _usageCache;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -1155,6 +1170,7 @@ class ManageTwists extends ShowCommands {
     try {
       usage = await SubscribeApi.getUsage();
     } catch (_) {}
+    _usageCache = usage;
 
     // Filter to non-sources only
     final twistOnlyPriorityTwists = priorityTwists
@@ -1216,7 +1232,7 @@ class ManageTwists extends ShowCommands {
     final List<Command> availableCommands = [
       if (usage != null && usage.personal.twists.isAtLimit)
         _UpgradeBannerCommand(
-          'You\'ve used ${usage.personal.twists.count} of '
+          'You\'re using ${usage.personal.twists.count} of '
           '${usage.personal.twists.limit} free '
           '${usage.personal.twists.limit == 1 ? 'twist' : 'twists'}. '
           'Upgrade to Pro for unlimited twists.',
@@ -1230,11 +1246,13 @@ class ManageTwists extends ShowCommands {
           title: 'Active twists',
           commands: editCommands.toList(),
         ),
-        StaticCommandGroup(title: 'Available twists', commands: availableCommands),
+        StaticCommandGroup(
+          title: 'Available twists',
+          commands: availableCommands,
+        ),
       ],
     );
   }
-
 }
 
 /// A command that displays a limit banner and opens the upgrade URL when tapped.
@@ -1472,6 +1490,16 @@ class ShowTwistInfo extends ShowForm {
   final Twist twist;
 
   @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final usage = ManageTwists._usageCache;
+    if (usage != null && usage.personal.twists.isAtLimit) {
+      context.showToast(message: 'Upgrade to add more twists.');
+      return const CommandSkipped();
+    }
+    return super.run(context);
+  }
+
+  @override
   Widget? buildBody(BuildContext context) {
     if (twist.environment == 'public') return null;
     final theme = context.theme;
@@ -1480,9 +1508,7 @@ class ShowTwistInfo extends ShowForm {
         Text(
           twist.name,
           overflow: TextOverflow.ellipsis,
-          style: theme.typography.base.copyWith(
-            color: theme.colors.foreground,
-          ),
+          style: theme.typography.base.copyWith(color: theme.colors.foreground),
         ),
         const SizedBox(width: 6),
         _EnvironmentBadge(environment: twist.environment),
@@ -1820,8 +1846,8 @@ class ActivateTwist extends Command {
         return CommandMessage(
           e.isOrg == true
               ? (e.isAdmin == true
-                  ? 'Your organization has reached its twist limit. Upgrade your plan.'
-                  : 'Your organization has reached its twist limit. Contact an admin to upgrade.')
+                    ? 'Your organization has reached its twist limit. Upgrade your plan.'
+                    : 'Your organization has reached its twist limit. Contact an admin to upgrade.')
               : 'You\'ve reached your free twist limit. Upgrade to Pro for unlimited twists.',
           isError: true,
         );
@@ -1857,8 +1883,7 @@ class ConnectConnectorAccount extends ShowForm {
       );
 
   static Future<FormData> _buildForm(PriorityTwist twist) async {
-    final integrations =
-        await TwistApi.getIntegrations(twist.id.toString());
+    final integrations = await TwistApi.getIntegrations(twist.id.toString());
     // Show providers the user hasn't connected to yet, or all providers
     // if none are unconnected (handles backfill gap where DO storage has
     // tokens but priority_twist_connection is missing).
@@ -1880,12 +1905,12 @@ class ConnectConnectorAccount extends ShowForm {
                   key: 'auth_${provider.provider.name}',
                   divider: false,
                   builder: (formContext) => Padding(
-                    padding:
-                        formContext.theme.spacing.padding.copyWith(top: 0),
+                    padding: formContext.theme.spacing.padding.copyWith(top: 0),
                     child: _IntegrationAuthButton(
                       provider: provider,
-                      hasExistingAccount: integrations.accounts
-                          .any((a) => a.provider == provider.provider),
+                      hasExistingAccount: integrations.accounts.any(
+                        (a) => a.provider == provider.provider,
+                      ),
                       priorityTwistId: twist.id.toString(),
                       onSuccess: () {
                         PriorityTwist.pullUpdates();
@@ -1947,7 +1972,7 @@ class ShowAddIntegrationAccount extends ShowForm {
                 builder: (formContext) => Padding(
                   padding: formContext.theme.spacing.padding,
                   child: Text(
-                    'You\'ve used all ${usage!.personal.connections.limit} of your free connections. Upgrade to Pro for unlimited connections.',
+                    'You\'re using all ${usage!.personal.connections.limit} of your free connections. Upgrade to Pro for unlimited connections.',
                   ),
                 ),
               ),
