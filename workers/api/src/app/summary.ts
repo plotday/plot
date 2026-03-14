@@ -5,6 +5,7 @@ import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
+import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
 
 const summary = new Hono<{ Bindings: Bindings }>();
 
@@ -22,14 +23,23 @@ summary.post("/summary", async (c) => {
       return handleValidationError(parseResult.error);
     }
     const body = parseResult.data;
-    return c.json(await summarize(c.env.AI, body.body));
+
+    // Check free-tier AI limit
+    const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
+    if (!aiAllowed.allowed) {
+      return c.json({ title: body.body.replaceAll(/\s+/g, " ").trim().slice(0, 60) });
+    }
+
+    const result = await summarize(c.env.AI, body.body);
+    recordAiUsage(c.env, c.var.user.id, "note_processing");
+    return c.json(result);
   } catch (error) {
     return captureServerError(c, error, "Error processing request.");
   }
 });
 
 async function summarize(ai: Ai, body: string) {
-  body = body.trim();
+  body = body.trim().slice(0, 2000);
   if (body.length === 0) {
     return {
       title: "Empty",
@@ -53,7 +63,7 @@ async function summarize(ai: Ai, body: string) {
         content: body,
       },
     ];
-    const response = await ai.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
+    const response = await ai.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
       messages,
       max_tokens: 64,
     });

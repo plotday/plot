@@ -5,6 +5,7 @@ import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
+import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
 
 const notificationSummary = new Hono<{ Bindings: Bindings }>();
 
@@ -36,9 +37,14 @@ notificationSummary.post("/notification-summary", async (c) => {
 
     const { batches } = parseResult.data;
 
+    // Check free-tier AI limit
+    const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
+
     const summaries = await Promise.all(
       batches.map(async (batch) => {
-        const body = await generateSummary(c.env.AI, batch.threads);
+        const body = aiAllowed.allowed
+          ? await generateSummary(c.env.AI, batch.threads)
+          : fallbackSummary(batch.threads);
         return {
           first_level_priority_id: batch.first_level_priority_id,
           title: batch.priority_title ?? "Updates",
@@ -47,6 +53,10 @@ notificationSummary.post("/notification-summary", async (c) => {
         };
       })
     );
+
+    if (aiAllowed.allowed) {
+      recordAiUsage(c.env, c.var.user.id, "note_processing");
+    }
 
     return c.json({ summaries });
   } catch (error) {
@@ -92,7 +102,7 @@ async function generateSummary(
     ];
 
     const response = await ai.run(
-      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "@cf/meta/llama-3.1-8b-instruct-fp8",
       { messages, max_tokens: 128 }
     );
 

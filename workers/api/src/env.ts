@@ -12,6 +12,7 @@ import { type SyncNotify } from "./state/sync-notify";
 import { type SyncRecovery } from "./state/sync-recovery";
 import { type PrivacyReporting } from "./state/privacy-reporting";
 import { type Usage } from "./state/usage";
+import { type UserAiUsage } from "./state/user-ai-usage";
 import { type UserSync } from "./state/user-sync";
 import type {
   NoteCreate,
@@ -185,6 +186,7 @@ export type Bindings = {
   readonly CALLBACKS: DurableObjectNamespace<CallbacksState>;
   readonly BROADCAST: DurableObjectNamespace<Broadcast>;
   readonly USAGE: DurableObjectNamespace<Usage>;
+  readonly USER_AI_USAGE: DurableObjectNamespace<UserAiUsage>;
   readonly LOG_SUBSCRIPTIONS: DurableObjectNamespace<LogSubscriptions>;
   readonly LOG_STREAM: DurableObjectNamespace<LogStream>;
   readonly SDK_TOKEN_STORE: DurableObjectNamespace<SdkTokenStore>;

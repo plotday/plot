@@ -49,6 +49,7 @@ export { Storage } from "./state/storage";
 export { CallbacksState } from "./state/callbacks";
 export { Broadcast } from "./state/broadcast";
 export { Usage } from "./state/usage";
+export { UserAiUsage } from "./state/user-ai-usage";
 export { LogSubscriptions } from "./state/log-subscriptions";
 export { HttpProxy } from "./twist/http-proxy";
 export { LogStream } from "./state/log-stream";

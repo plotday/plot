@@ -2,6 +2,9 @@ import type { Kysely } from "kysely";
 import { sql } from "kysely";
 
 import type { DB } from "../db-types";
+import type { Bindings } from "../env";
+import { UserAiUsage } from "../state/user-ai-usage";
+import { FREE_AI_LIMITS } from "./ai-limits";
 export const PLAN_LIMITS = {
   free: { connections: 3, twists: 1 },
   pro: { connections: Infinity, twists: Infinity },
@@ -146,7 +149,7 @@ export async function getPersonalTwistCount(
 /**
  * Get the user's personal plan.
  */
-async function getPersonalPlan(
+export async function getPersonalPlan(
   db: Kysely<DB>,
   userId: string
 ): Promise<"free" | "pro" | "business"> {
@@ -339,7 +342,8 @@ export async function checkTwistLimit(
  */
 export async function getUsage(
   db: Kysely<DB>,
-  userId: string
+  userId: string,
+  env?: Bindings
 ) {
   const plan = await getPersonalPlan(db, userId);
   const limits = PLAN_LIMITS[plan];
@@ -385,6 +389,18 @@ export async function getUsage(
     })
   );
 
+  // Get AI usage for free plan users
+  let ai = undefined;
+  if (plan === "free" && env) {
+    const aiUsage = await UserAiUsage.Get(env, userId).getUsage();
+    ai = {
+      note_processing: {
+        count: aiUsage.note_processing ?? 0,
+        limit: FREE_AI_LIMITS.note_processing,
+      },
+    };
+  }
+
   return {
     personal: {
       connections: {
@@ -395,6 +411,7 @@ export async function getUsage(
         count: twistCount,
         limit: limits.twists === Infinity ? null : limits.twists,
       },
+      ...(ai ? { ai } : {}),
     },
     organizations,
   };

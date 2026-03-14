@@ -12,6 +12,7 @@ import {
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { PLAN_LIMITS, BUSINESS_CONNECTIONS_PER_GROUP } from "../utils/limits";
+import { backfillEmbeddings } from "../queue/backfill-embeddings";
 
 const stripe = new Hono<{ Bindings: Bindings }>();
 
@@ -163,6 +164,25 @@ async function handleSubscriptionUpdate(
 
   // Enforce limits on downgrade
   await enforceDowngradeLimits(c.var.db, customerId, plan, logger);
+
+  // Backfill embeddings when upgrading from free to a paid plan
+  if (plan !== "free") {
+    const upgradeUser = await c.var.db
+      .selectFrom("user_subscription")
+      .select("user_id")
+      .where("stripe_customer_id", "=", customerId)
+      .executeTakeFirst();
+
+    if (upgradeUser) {
+      c.executionCtx.waitUntil(
+        backfillEmbeddings(c.env, upgradeUser.user_id).catch((error) => {
+          logger.error("Failed to backfill embeddings on upgrade", error as Error, {
+            user_id: upgradeUser.user_id,
+          });
+        })
+      );
+    }
+  }
 
   // Update connection_group_quantity for org subscriptions
   const quantity = subscription.items?.data?.[0]?.quantity ?? 1;

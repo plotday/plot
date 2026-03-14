@@ -10,6 +10,7 @@ import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { createLogger } from "@plotday/worker-util";
 import { analyzeNote } from "./note-analysis";
+import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
 
 /**
  * Process a batch of twist update messages from the queue.
@@ -542,7 +543,16 @@ async function processTwistBatch(
               .executeTakeFirst();
 
             if (owner?.owner_id && note.thread_id) {
-              await analyzeNote(env, note.id, note.thread_id, owner.owner_id);
+              const aiAllowed = await checkAiLimit(env, db, owner.owner_id, "note_processing");
+              if (aiAllowed.allowed) {
+                await analyzeNote(env, note.id, note.thread_id, owner.owner_id);
+                recordAiUsage(env, owner.owner_id, "note_processing");
+              } else {
+                logger.info("[note-analysis] AI limit reached, skipping", {
+                  note_id: note.id,
+                  user_id: owner.owner_id,
+                });
+              }
             }
           } catch (analysisError) {
             logger.warn("[note-analysis] Failed for source note", {

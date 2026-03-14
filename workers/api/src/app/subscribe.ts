@@ -52,7 +52,7 @@ subscribe.get("/subscribe", async (c) => {
 // GET /subscribe/usage - Get connection and twist usage counts
 subscribe.get("/subscribe/usage", async (c) => {
   const user = c.var.user;
-  const usage = await getUsage(c.var.db, user.id);
+  const usage = await getUsage(c.var.db, user.id, c.env);
   return c.json(usage);
 });
 

@@ -7,6 +7,7 @@ import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { rpcUser } from "../../rpc";
 import { notifySync, getPriorityForThread } from "./notify";
 import { analyzeNote } from "../../queue/note-analysis";
+import { checkAiLimit, recordAiUsage, isAiEnabled } from "../../utils/ai-limits";
 
 const notes = new Hono<{ Bindings: Bindings }>();
 
@@ -118,12 +119,29 @@ notes.post("/sync/notes", async (c) => {
   const priorityId = await getPriorityForThread(c.var.db, body.thread_id);
   notifySync(c, priorityId);
 
-  // Generate embedding for search (best-effort, don't block the response)
+  // Generate embedding + AI note analysis (best-effort, don't block the response)
   const noteId = (result as any)?.id ?? body.id;
   const content = body.content as string | null;
   if (noteId && content && content.trim().length > 0 && !body.draft) {
     c.executionCtx.waitUntil(
       (async () => {
+        // Check ai_enabled setting and free-tier limits before running AI
+        const [aiEnabled, aiAllowed] = await Promise.all([
+          isAiEnabled(c.var.db, c.var.user.id),
+          checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing"),
+        ]);
+
+        if (!aiEnabled) {
+          console.log("[embedding:sync] AI disabled for user, skipping", noteId);
+          return;
+        }
+
+        if (!aiAllowed.allowed) {
+          console.log("[embedding:sync] AI limit reached for user, skipping", noteId);
+          return;
+        }
+
+        // Generate embedding
         try {
           console.log("[embedding:sync] Generating embedding for note", noteId, "content length:", content.length);
           const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
@@ -145,22 +163,24 @@ notes.post("/sync/notes", async (c) => {
         } catch (error) {
           console.error("[embedding:sync] Failed to generate embedding for note", noteId, error);
         }
+
+        // AI note analysis for auto-tagging
+        const isRecent = !body.source_created_at ||
+          (Date.now() - new Date(body.source_created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
+        if (isRecent) {
+          try {
+            await analyzeNote(c.env, noteId, body.thread_id, c.var.user.id);
+          } catch (error) {
+            console.error("[note-analysis] Failed to analyze note", noteId, error);
+          }
+        }
+
+        // Record usage after both operations complete
+        recordAiUsage(c.env, c.var.user.id, "note_processing");
       })()
     );
   } else {
     console.log("[embedding:sync] Skipping embedding", { noteId, hasContent: !!content, contentLength: content?.trim().length, draft: body.draft });
-  }
-
-  // AI note analysis for auto-tagging todos/completions (best-effort, don't block response)
-  const isRecent = !body.source_created_at ||
-    (Date.now() - new Date(body.source_created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
-  if (noteId && content && content.trim().length > 0 && !body.draft && isRecent) {
-    c.executionCtx.waitUntil(
-      analyzeNote(c.env, noteId, body.thread_id, c.var.user.id)
-        .catch((error) => {
-          console.error("[note-analysis] Failed to analyze note", noteId, error);
-        })
-    );
   }
 
   return c.json(result as any);
