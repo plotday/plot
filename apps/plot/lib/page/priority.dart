@@ -925,8 +925,10 @@ class _PriorityPageState extends State<PriorityPage> {
         _DesktopTabBar(
           currentTab: _currentTab,
           onTabChanged: _onDesktopTabChanged,
-          hasUnreadActivity: state.context.unread ||
-              state.context.descendants().any((p) => p.unread),
+          hasUnreadActivity: state.activityFeedItems.any((item) => item.when(
+            activity: (a) => a.thread.unread,
+            header: (_) => false,
+          )),
           priority: state.context,
         ),
         Expanded(
