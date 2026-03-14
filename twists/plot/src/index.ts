@@ -9,12 +9,12 @@ import {
   Twist,
   type Uuid,
 } from "@plotday/twister";
+import { AI } from "@plotday/twister/tools/ai";
 import {
   Plot,
   PriorityAccess,
   ThreadAccess,
 } from "@plotday/twister/tools/plot";
-import { AI } from "@plotday/twister/tools/ai";
 
 class PlotTwist extends Twist<PlotTwist> {
   build(build: ToolBuilder) {
@@ -24,15 +24,18 @@ class PlotTwist extends Twist<PlotTwist> {
           access: ThreadAccess.Create,
         },
         note: {
-          intents: [{
-            description: "Answer questions about content, activities, notes, and links",
-            examples: [
-              "What did we discuss about the product launch?",
-              "Find notes about the marketing budget",
-              "Summarize what we know about project X",
-            ],
-            handler: this.onSearchQuery,
-          }],
+          intents: [
+            {
+              description:
+                "Answer questions about content, activities, notes, and links",
+              examples: [
+                "What did we discuss about the product launch?",
+                "Find notes about the marketing budget",
+                "Summarize what we know about project X",
+              ],
+              handler: this.onSearchQuery,
+            },
+          ],
         },
         priority: {
           access: PriorityAccess.Create,
@@ -240,7 +243,8 @@ class PlotTwist extends Twist<PlotTwist> {
     if (!query?.trim()) {
       await this.tools.plot.createNote({
         thread: { id: note.thread.id },
-        content: "What would you like to know? Ask me a question about your content.",
+        content:
+          "What would you like to know? Ask me a question about your content.",
       });
       return;
     }
@@ -253,7 +257,8 @@ class PlotTwist extends Twist<PlotTwist> {
     if (results.length === 0) {
       await this.tools.plot.createNote({
         thread: { id: note.thread.id },
-        content: "I couldn't find any relevant content. Try rephrasing or being more specific.",
+        content:
+          "I couldn't find any relevant content. Try rephrasing or being more specific.",
       });
       return;
     }
@@ -283,19 +288,27 @@ class PlotTwist extends Twist<PlotTwist> {
 
     if (canPrompt) {
       // Build RAG context
-      const context = results.map((r, i) => {
-        const location = [r.priority.title, r.thread.title].filter(Boolean).join(" > ");
-        const body = r.type === "link"
-          ? `[${r.title}](${r.sourceUrl || ""})${r.content ? "\n" + r.content : ""}`
-          : r.content || "(no content)";
-        return `[${i + 1}] ${location}\n${body}`;
-      }).join("\n\n");
+      const context = results
+        .map((r, i) => {
+          const location = [r.priority.title, r.thread.title]
+            .filter(Boolean)
+            .join(" > ");
+          const body =
+            r.type === "link"
+              ? `[${r.title}](${r.sourceUrl || ""})${
+                  r.content ? "\n" + r.content : ""
+                }`
+              : r.content || "(no content)";
+          return `[${i + 1}] ${location}\n${body}`;
+        })
+        .join("\n\n");
 
       const response = await this.tools.ai.prompt({
         model: { speed: "fast", cost: "medium" },
-        system: "You answer questions using the user's own notes and links as context. " +
-          "Answer directly — don't say things like \"based on the provided content\" or " +
-          "\"according to your notes\". Just give the answer naturally, as if you know it. " +
+        system:
+          "You answer questions using the user's own notes and links as context. " +
+          'Answer directly — don\'t say things like "based on the provided content" or ' +
+          '"according to your notes". Just give the answer naturally, as if you know it. ' +
           "If the context doesn't fully answer the question, say what you found and note " +
           "what's missing. Be concise. Reference specific threads when relevant.",
         prompt: `Question: ${query}\n\nRelevant content:\n${context}`,
@@ -307,15 +320,21 @@ class PlotTwist extends Twist<PlotTwist> {
         actions: actions.length > 0 ? actions : undefined,
       });
     } else {
-      // AI unavailable — show results directly
-      const resultsList = results.slice(0, 5).map(r => {
-        const location = [r.priority.title, r.thread.title].filter(Boolean).join(" > ");
-        return `- **${location}**: ${r.content?.substring(0, 200) || "(no content)"}`;
-      }).join("\n");
+      // AI unavailable — show thread titles with upsell
+      const seen = new Set<string>();
+      const threadList = otherResults
+        .filter((r) => {
+          if (seen.has(r.thread.id)) return false;
+          seen.add(r.thread.id);
+          return true;
+        })
+        .slice(0, 5)
+        .map((r) => `- ${r.thread.title || "(untitled)"}`)
+        .join("\n");
 
       await this.tools.plot.createNote({
         thread: { id: note.thread.id },
-        content: `Here's what I found:\n\n${resultsList}`,
+        content: `I found these threads that might help:\n\n${threadList}\n\n*Upgrade or add an API key in settings for AI-generated answers.*`,
         actions: actions.length > 0 ? actions : undefined,
       });
     }
