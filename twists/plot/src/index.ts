@@ -65,8 +65,8 @@ class PlotTwist extends Twist<PlotTwist> {
           content:
             "Plot is your workspace for making progress on what matters most. **Priorities**, **Threads**, and **Notes** are the core building blocks of Plot:\n\n" +
             "- **Priorities**: The roles, goals, and projects in your life — the areas you direct your focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.\n" +
-            '- **Threads**: Everything related to something you work on, collected in one place. A thread can contain notes, messages, links syncing with external items, and chats with twists. Threads are the core thing you mark "to do" and schedule.\n' +
-            "- **Notes**: The content within threads. Notes can be personal notes, messages to others, or synced comments with connected apps. Notes can become tasks and can be assigned to multiple people.",
+            '- **Threads**: Everything related to something you work on, collected in one place. A thread can contain notes, messages to collaborators, links syncing with external items, and chats with twists. Threads are the core thing you mark "to do" and schedule.\n' +
+            "- **Notes**: The content within threads. Notes can be personal notes, messages to others, or synced comments with connected apps. Individual notes can be marked as tasks and assigned to people.",
         },
         {
           content:
@@ -115,7 +115,7 @@ class PlotTwist extends Twist<PlotTwist> {
         },
         {
           content:
-            "Each connection has channels you can enable or disable, letting you control exactly what syncs. Use the **Connections** command in settings to browse available connections and manage which ones are active.",
+            "Each connection has channels you can enable or disable, letting you control exactly what syncs. Use the **Manage connections** command to browse available connections, vote for upcoming ones, and manage which are active.",
         },
       ],
       preview:
@@ -143,9 +143,43 @@ class PlotTwist extends Twist<PlotTwist> {
             },
           ],
         },
+        {
+          content:
+            "You can also **@mention Plot** in any thread to ask questions about your notes and links. Plot will search your content and answer using AI.",
+        },
       ],
       preview:
         "**Twists** are automations, workflows, and agents that do helpful things with your threads — often working with items from your connections. For example, a twist might triage your inbox, summarize meeting notes, or create follow-up tasks from action items.",
+      priority: onboardingPriority,
+    });
+
+    // Set up Notifications (TO DO)
+    await this.tools.plot.createThread({
+      title: "Set up Notifications",
+      tags: { [Tag.Todo]: todoActors },
+      notes: [
+        {
+          content:
+            "Plot has smart notifications that are timed based on urgency rather than sending everything immediately. " +
+            "This means new messages and updates won't interrupt you the moment they arrive — instead, they're delivered within a timeframe you control. " +
+            "If you're used to getting notified immediately for every message, you may want to adjust these defaults.",
+        },
+        {
+          content:
+            "Each priority has two timing settings:\n\n" +
+            "- **See requests within** (default: 30 minutes) — how quickly you're notified about messages and mentions\n" +
+            "- **See updates within** (default: 1 hour) — how quickly you're notified about other changes\n\n" +
+            "To adjust, open a priority's command menu and choose **Notifications**, or tap the notification icon on a priority. " +
+            "Settings inherit from parent priorities, so you can set timing once at the top level and all children will follow.",
+        },
+        {
+          content:
+            "Plot also has **quiet hours** (default: 9 PM – 7 AM) during which notifications are silenced. " +
+            "You can customize quiet hours per priority in the same Notifications settings.",
+        },
+      ],
+      preview:
+        "Plot delivers notifications based on urgency, not instantly. Adjust per-priority timing to match how you work.",
       priority: onboardingPriority,
     });
 
@@ -174,7 +208,8 @@ class PlotTwist extends Twist<PlotTwist> {
             "**Touch Gestures**\n\n" +
             "- **Long press** on items to open the menu\n" +
             "- **Swipe right** on threads: mark To Do (or mark done if already doing)\n" +
-            "- **Swipe left** on threads: schedule to do later",
+            "- **Swipe left** on threads: schedule to do later\n" +
+            "- **Share** a link from another app to Plot using the share sheet (iOS and Android)",
         },
       ],
       preview: "Keyboard and touch shortcuts",

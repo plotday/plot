@@ -117,6 +117,8 @@ class FormModalState extends State<_FormModal> {
           item.removeListener(_onFormChanged);
         } else if (item is FormWindowList) {
           item.removeListener(_onFormChanged);
+        } else if (item is FormChannelList) {
+          item.removeListener(_onFormChanged);
         }
       }
     }
@@ -151,6 +153,8 @@ class FormModalState extends State<_FormModal> {
         } else if (item is FormToggle) {
           item.addListener(_onFormChanged);
         } else if (item is FormWindowList) {
+          item.addListener(_onFormChanged);
+        } else if (item is FormChannelList) {
           item.addListener(_onFormChanged);
         } else if (item is FormButton && !foundPrimaryButton) {
           item.isPrimary = true;

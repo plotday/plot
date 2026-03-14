@@ -411,6 +411,7 @@ class UpcomingConnection {
   final String? logoDark;
   final String category;
   final List<String> entities;
+  final String? description;
   final int votes;
 
   const UpcomingConnection({
@@ -419,6 +420,7 @@ class UpcomingConnection {
     this.logoDark,
     required this.category,
     required this.entities,
+    this.description,
     required this.votes,
   });
 
@@ -429,6 +431,7 @@ class UpcomingConnection {
       logoDark: json['logoDark'] as String?,
       category: json['category'] as String,
       entities: (json['entities'] as List<dynamic>).cast<String>(),
+      description: json['description'] as String?,
       votes: json['votes'] as int? ?? 0,
     );
   }

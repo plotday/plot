@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/widget/form.dart';
 import 'package:plot/widget/spinner.dart';
 import 'logging.dart';
 
@@ -41,6 +42,7 @@ class SetupLinkChannelsWidget extends StatefulWidget {
     this.priorityNotifier,
     this.setupMode = false,
     this.onChanged,
+    this.channelListController,
     super.key,
   });
 
@@ -56,6 +58,9 @@ class SetupLinkChannelsWidget extends StatefulWidget {
   final bool setupMode;
 
   final ValueChanged<LinkChannelSelection>? onChanged;
+
+  /// Controller for keyboard navigation integration with FormChannelList.
+  final FormChannelListController? channelListController;
 
   @override
   State<SetupLinkChannelsWidget> createState() =>
@@ -204,6 +209,24 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
           .add(channel);
     }
 
+    // Collect all channels in display order for the controller
+    final allChannels = <LinkChannel>[];
+    for (final entry in grouped.entries) {
+      allChannels.addAll(entry.value);
+    }
+
+    // Update controller with current focusable count and activator
+    final controller = widget.channelListController;
+    controller?.update(
+      allChannels.length,
+      (context, subIndex) async {
+        if (subIndex < allChannels.length) {
+          _handleToggle(allChannels[subIndex]);
+        }
+      },
+    );
+
+    int focusIndex = 0;
     final sections = <Widget>[];
     for (final entry in grouped.entries) {
       final firstChannel = entry.value.first;
@@ -221,11 +244,20 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
         final key =
             '${channel.sourcePriorityTwistId}:${channel.channelId}';
         final isEnabled = _localEnabled[key] ?? false;
+        final highlighted = controller != null &&
+            controller.highlightedSubIndex == focusIndex;
+        final focusNode = controller != null &&
+                focusIndex < controller.focusNodes.length
+            ? controller.focusNodes[focusIndex]
+            : null;
         sections.add(_LinkChannelRow(
           channel: channel,
           isChecked: isEnabled,
           onToggle: () => _handleToggle(channel),
+          highlighted: highlighted,
+          focusNode: focusNode,
         ));
+        focusIndex++;
       }
     }
 
@@ -269,11 +301,15 @@ class _LinkChannelRow extends StatefulWidget {
     required this.channel,
     required this.isChecked,
     required this.onToggle,
+    this.highlighted = false,
+    this.focusNode,
   });
 
   final LinkChannel channel;
   final bool isChecked;
   final VoidCallback onToggle;
+  final bool highlighted;
+  final FocusNode? focusNode;
 
   @override
   State<_LinkChannelRow> createState() => _LinkChannelRowState();
@@ -285,6 +321,7 @@ class _LinkChannelRowState extends State<_LinkChannelRow> {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
+    final isHighlighted = widget.highlighted || _isHovered;
 
     return MouseRegion(
       cursor: SystemMouseCursors.basic,
@@ -295,7 +332,7 @@ class _LinkChannelRowState extends State<_LinkChannelRow> {
         onTap: widget.onToggle,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: _isHovered
+            color: isHighlighted
                 ? theme.colors.foreground.withValues(alpha: 0.05)
                 : null,
             borderRadius: BorderRadius.circular(6),

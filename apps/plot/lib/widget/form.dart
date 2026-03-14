@@ -1036,7 +1036,7 @@ class _WindowTile extends StatelessWidget {
       command: CommandWrapper(
         _FormSubmitCommand(),
         title: window.summary,
-        run: (_, __) async {
+        run: (_, _) async {
           onTap();
           return const CommandSkipped();
         },
@@ -1070,12 +1070,97 @@ class _AddWindowTile extends StatelessWidget {
         _FormSubmitCommand(),
         title: 'Add quiet hours',
         icon: Value(PlotIcon.add),
-        run: (_, __) async {
+        run: (_, _) async {
           onTap();
           return const CommandSkipped();
         },
       ),
     );
+  }
+}
+
+/// Controller for [FormChannelList] that bridges async-loaded channel content
+/// to the form's focus system.
+class FormChannelListController {
+  int _count = 0;
+  Future<void> Function(BuildContext, int)? _activator;
+  VoidCallback? _onCountChanged;
+
+  /// Which sub-item is currently highlighted by the form (-1 = none).
+  int highlightedSubIndex = -1;
+
+  /// Focus nodes assigned by the form, one per focusable sub-item.
+  List<FocusNode> focusNodes = const [];
+
+  int get count => _count;
+
+  /// Called by the channel widget after building its rows.
+  void update(int count, Future<void> Function(BuildContext, int) activator) {
+    _activator = activator;
+    if (count != _count) {
+      _count = count;
+      _onCountChanged?.call();
+    }
+  }
+}
+
+/// Form item that displays a list of channels via an external builder.
+/// The channel widget calls [controller.update] to report its focusable count
+/// and activation handler, bridging async-loaded content to the form's focus system.
+class FormChannelList extends FormItem {
+  FormChannelList({
+    required super.key,
+    required this.controller,
+    required this.builder,
+  }) : super(required: false);
+
+  final FormChannelListController controller;
+  final Widget Function(BuildContext) builder;
+
+  @override
+  bool get isFocusable => true;
+
+  @override
+  int get focusableCount => controller.count;
+
+  @override
+  bool get canActivate => true;
+
+  @override
+  Future<void> activate(BuildContext context, {int subIndex = 0}) async {
+    await controller._activator?.call(context, subIndex);
+  }
+
+  @override
+  dynamic getValue() => null;
+
+  @override
+  void setValue(dynamic value) {}
+
+  @override
+  bool isValid() => true;
+
+  void addListener(VoidCallback listener) {
+    controller._onCountChanged = listener;
+  }
+
+  void removeListener(VoidCallback listener) {
+    if (controller._onCountChanged == listener) {
+      controller._onCountChanged = null;
+    }
+  }
+
+  @override
+  Widget build(
+    BuildContext context,
+    int highlightedSubIndex, {
+    bool enabled = true,
+    List<FocusNode> focusNodes = const [],
+    FormButtonController? controller,
+  }) {
+    this.controller.highlightedSubIndex = highlightedSubIndex;
+    this.controller.focusNodes = focusNodes;
+    return builder(context);
   }
 }
 

@@ -54,6 +54,7 @@ class SetupSourceWidget extends StatefulWidget {
     this.initialData,
     this.refreshNotifier,
     this.onChanged,
+    this.channelListController,
     super.key,
   });
 
@@ -77,6 +78,9 @@ class SetupSourceWidget extends StatefulWidget {
 
   /// Called when local integration state changes (channels or accounts).
   final ValueChanged<IntegrationChanges>? onChanged;
+
+  /// Controller for keyboard navigation integration with FormChannelList.
+  final FormChannelListController? channelListController;
 
   @override
   State<SetupSourceWidget> createState() => _SetupSourceWidgetState();
@@ -391,12 +395,41 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     );
   }
 
+  /// Collects toggleable channels from the tree in display order.
+  List<TwistChannel> _collectToggleableChannels(
+    List<TwistChannel> channels, {
+    bool ancestorEnabled = false,
+  }) {
+    final result = <TwistChannel>[];
+    for (final channel in channels) {
+      final key = '${channel.provider.name}:${channel.id}';
+      final isForceEnabled = ancestorEnabled;
+      final isOn = _localSelectedChannels.contains(key) || isForceEnabled;
+      final canToggle =
+          !isForceEnabled && (widget.setupMode || channel.currentUserHasAccess);
+      final isExpanded = _expandedChannels.contains(key);
+
+      if (canToggle) {
+        result.add(channel);
+      }
+
+      if (channel.hasChildren && isExpanded) {
+        result.addAll(
+          _collectToggleableChannels(channel.children, ancestorEnabled: isOn),
+        );
+      }
+    }
+    return result;
+  }
+
   List<Widget> _buildChannelTree(
     List<TwistChannel> channels, {
     int depth = 0,
     bool ancestorEnabled = false,
+    required List<int> focusCounter,
   }) {
     final widgets = <Widget>[];
+    final controller = widget.channelListController;
     for (final channel in channels) {
       final key = '${channel.provider.name}:${channel.id}';
       final isExplicitlyEnabled = _localSelectedChannels.contains(key);
@@ -411,6 +444,21 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       String? priorityName;
       if (priorityId != null) {
         priorityName = _priorityNames[priorityId];
+      }
+
+      // Determine highlight and focus node for toggleable rows
+      final int subIndex = canToggle ? focusCounter[0] : -1;
+      final bool highlighted = controller != null &&
+          canToggle &&
+          controller.highlightedSubIndex == subIndex;
+      final FocusNode? focusNode = controller != null &&
+              canToggle &&
+              subIndex < controller.focusNodes.length
+          ? controller.focusNodes[subIndex]
+          : null;
+
+      if (canToggle) {
+        focusCounter[0]++;
       }
 
       widgets.add(
@@ -435,6 +483,8 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
               : null,
           isForceEnabled: isForceEnabled,
           priorityName: widget.isAccountBased ? priorityName : null,
+          highlighted: highlighted,
+          focusNode: focusNode,
         ),
       );
 
@@ -444,6 +494,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
             channel.children,
             depth: depth + 1,
             ancestorEnabled: isOn,
+            focusCounter: focusCounter,
           ),
         );
       }
@@ -509,11 +560,35 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       );
     }
 
+    // Collect toggleable channels across all visible providers for the controller
+    final toggleableChannels = <TwistChannel>[];
+    for (final provider in channelsByProvider.keys) {
+      if (!fullyRemovedProviders.contains(provider)) {
+        toggleableChannels.addAll(
+          _collectToggleableChannels(channelsByProvider[provider]!),
+        );
+      }
+    }
+
+    // Update controller with current focusable count and activator
+    widget.channelListController?.update(
+      toggleableChannels.length,
+      (context, subIndex) async {
+        if (subIndex < toggleableChannels.length) {
+          _handleChannelTap(toggleableChannels[subIndex]);
+        }
+      },
+    );
+
     // Build channel rows for all visible providers
+    final focusCounter = [0];
     final channelRows = <Widget>[];
     for (final provider in channelsByProvider.keys) {
       if (!fullyRemovedProviders.contains(provider)) {
-        channelRows.addAll(_buildChannelTree(channelsByProvider[provider]!));
+        channelRows.addAll(_buildChannelTree(
+          channelsByProvider[provider]!,
+          focusCounter: focusCounter,
+        ));
       }
     }
 
@@ -619,6 +694,8 @@ class _ChannelRow extends StatefulWidget {
     this.onExpandToggle,
     this.isForceEnabled = false,
     this.priorityName,
+    this.highlighted = false,
+    this.focusNode,
   });
 
   final TwistChannel channel;
@@ -631,6 +708,8 @@ class _ChannelRow extends StatefulWidget {
   final VoidCallback? onExpandToggle;
   final bool isForceEnabled;
   final String? priorityName;
+  final bool highlighted;
+  final FocusNode? focusNode;
 
   @override
   State<_ChannelRow> createState() => _ChannelRowState();
@@ -643,6 +722,7 @@ class _ChannelRowState extends State<_ChannelRow> {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final isTappable = widget.canToggle || widget.hasChildren;
+    final isHighlighted = widget.highlighted || (_isHovered && isTappable);
 
     return MouseRegion(
       cursor: SystemMouseCursors.basic,
@@ -657,7 +737,7 @@ class _ChannelRowState extends State<_ChannelRow> {
             : null,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: _isHovered && isTappable
+            color: isHighlighted
                 ? theme.colors.foreground.withValues(alpha: 0.05)
                 : null,
             borderRadius: BorderRadius.circular(6),

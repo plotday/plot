@@ -368,11 +368,13 @@ class ShowAttentionSettings extends ShowForm {
       );
     }
     final parentId = priority.parentId;
-    if (parentId == null)
+    if (parentId == null) {
       return _matchSeeWithin(null, _defaultSeeWithinRequests);
+    }
     final parents = await Priority.get(id: parentId, depth: 0);
-    if (parents.isEmpty)
+    if (parents.isEmpty) {
       return _matchSeeWithin(null, _defaultSeeWithinRequests);
+    }
     return _matchSeeWithin(
       parents.first.seeWithinRequestsTime,
       _defaultSeeWithinRequests,
@@ -389,8 +391,9 @@ class ShowAttentionSettings extends ShowForm {
       );
     }
     final parentId = priority.parentId;
-    if (parentId == null)
+    if (parentId == null) {
       return _matchSeeWithin(null, _defaultSeeWithinUpdates);
+    }
     final parents = await Priority.get(id: parentId, depth: 0);
     if (parents.isEmpty) return _matchSeeWithin(null, _defaultSeeWithinUpdates);
     return _matchSeeWithin(

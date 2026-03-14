@@ -580,7 +580,7 @@ class _UpcomingConnectionRow extends StatelessWidget {
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    item.connection.category,
+                    item.connection.description ?? item.connection.category,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: theme.typography.base.fontSize,
@@ -639,10 +639,51 @@ class _NotifyUpcomingConnection extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            FormInfo(key: 'category', text: item.connection.category),
             FormInfo(
-              key: 'entities',
-              text: 'Syncs: ${item.connection.entities.join(', ')}',
+              key: 'header',
+              builder: (context) {
+                final theme = context.theme;
+                return Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SourceLogo(
+                        logoUrl: item.connection.logo,
+                        logoUrlDark: item.connection.logoDark,
+                        size: 32,
+                      ),
+                      if (item.connection.description != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          item.connection.description!,
+                          style: TextStyle(
+                            fontSize: theme.typography.base.fontSize,
+                            color: theme.colors.foreground,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                        item.connection.category,
+                        style: TextStyle(
+                          fontSize: theme.typography.sm.fontSize,
+                          color: theme.colors.mutedForeground,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Syncs: ${item.connection.entities.join(', ')}',
+                        style: TextStyle(
+                          fontSize: theme.typography.sm.fontSize,
+                          color: theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             if (item.hasVoted)
               FormInfo(
@@ -787,6 +828,7 @@ class EditSource extends ShowForm {
   ) async {
     final integrations = await TwistApi.getIntegrations(priorityTwistId);
     final refreshNotifier = ValueNotifier<int>(0);
+    final sourceChannelListController = FormChannelListController();
 
     Set<String> collectEnabled(List<TwistChannel> channels) {
       final result = <String>{};
@@ -820,15 +862,16 @@ class EditSource extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            FormInfo(
+            FormChannelList(
               key: 'integrations',
-              divider: false,
+              controller: sourceChannelListController,
               builder: (context) => SetupSourceWidget(
                 priorityTwistId: priorityTwistId,
                 isAccountBased: isAccountBased,
                 sourceName: name,
                 initialData: integrations,
                 refreshNotifier: refreshNotifier,
+                channelListController: sourceChannelListController,
                 onChanged: (changes) {
                   integrationChanges = changes;
                 },
@@ -1352,6 +1395,7 @@ class EditTwist extends ShowForm {
 
       // Track link channel changes
       var linkChannelSelection = const LinkChannelSelection();
+      final linkChannelListController = FormChannelListController();
 
       return FormData(
         title: 'Edit ${priorityTwist.name}',
@@ -1365,12 +1409,13 @@ class EditTwist extends ShowForm {
                 required: true,
               ),
               if (hasLinkPermission)
-                FormInfo(
+                FormChannelList(
                   key: 'link_channels',
-                  divider: false,
+                  controller: linkChannelListController,
                   builder: (context) => SetupLinkChannelsWidget(
                     priorityTwistId: priorityTwist.id.toString(),
                     priorityId: priorityTwist.priorityId?.toString(),
+                    channelListController: linkChannelListController,
                     onChanged: (selection) {
                       linkChannelSelection = selection;
                     },
@@ -1657,6 +1702,8 @@ class SetupTwist extends ShowForm {
 
     // Track link channel changes
     var linkChannelSelection = const LinkChannelSelection();
+    final setupSourceController = FormChannelListController();
+    final setupLinkController = FormChannelListController();
 
     final prioritySelect = FormSelect<Priority>(
       key: 'priority',
@@ -1699,15 +1746,16 @@ class SetupTwist extends ShowForm {
               initialValue: twist.name,
               required: true,
             ),
-            FormInfo(
+            FormChannelList(
               key: 'integrations',
-              divider: false,
+              controller: setupSourceController,
               builder: (context) => SetupSourceWidget(
                 priorityTwistId: draftId,
                 setupMode: true,
                 sourceName: twist.name,
                 initialData: integrations,
                 refreshNotifier: refreshNotifier,
+                channelListController: setupSourceController,
                 onChanged: (changes) {
                   integrationChanges = changes;
                 },
@@ -1723,13 +1771,14 @@ class SetupTwist extends ShowForm {
               ),
             if (optionItems != null) ...optionItems.items,
             if (hasLinkPermission)
-              FormInfo(
+              FormChannelList(
                 key: 'link_channels',
-                divider: false,
+                controller: setupLinkController,
                 builder: (context) => SetupLinkChannelsWidget(
                   priorityTwistId: draftId,
                   priorityNotifier: priorityNotifier,
                   setupMode: true,
+                  channelListController: setupLinkController,
                   onChanged: (selection) {
                     linkChannelSelection = selection;
                   },

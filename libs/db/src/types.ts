@@ -2412,6 +2412,7 @@ export type Database = {
           key: string | null
           priority_id: string | null
           source_path: unknown
+          updated_at: string | null
           user_id: string | null
           value: Json | null
         }
