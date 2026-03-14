@@ -83,9 +83,14 @@
   color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-5));
 }
 
-.priceUnit {
-  font-size: rem(12px);
-  color: light-dark(var(--mantine-color-gray-5), var(--mantine-color-gray-6));
+.bestFor {
+  font-size: rem(14px);
+  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-4));
+}
+
+.priceDivider {
+  border-top: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
 }
 
 .featureList {

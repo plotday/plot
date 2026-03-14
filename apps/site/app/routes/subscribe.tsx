@@ -345,6 +345,28 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
             gap="md"
           >
             <Text className={classes.planName}>Pro</Text>
+            <Text className={classes.bestFor}>
+              For individuals working across many tools
+            </Text>
+            <Stack gap="xs" className={classes.featureList}>
+              {[
+                "Unlimited connections",
+                "Unlimited twists (AI usage may apply)",
+                "All core features for team collaboration",
+                "Unlimited collaborators",
+                "Full history of all your work",
+                "Automated organization and prioritization",
+              ].map((f) => (
+                <Box key={f} className={classes.featureItem}>
+                  <IconCheck
+                    size={16}
+                    color="var(--mantine-color-brand-6)"
+                  />
+                  <span>{f}</span>
+                </Box>
+              ))}
+            </Stack>
+            <Box className={classes.priceDivider} />
             <Box className={classes.priceBox}>
               <Text className={classes.planPrice}>
                 ${PRICES.pro[billing]}
@@ -356,24 +378,6 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
                 Billed annually
               </Text>
             )}
-            <Stack gap="xs" className={classes.featureList}>
-              {[
-                "Unlimited connections",
-                "Unlimited twists (AI usage may apply)",
-                "All core features for team collaboration",
-                "Unlimited collaborators",
-                "Full history of all your work",
-                "Automated organization and prioritization (coming soon)",
-              ].map((f) => (
-                <Box key={f} className={classes.featureItem}>
-                  <IconCheck
-                    size={16}
-                    color="var(--mantine-color-brand-6)"
-                  />
-                  <span>{f}</span>
-                </Box>
-              ))}
-            </Stack>
             <Button
               onClick={() => handleCheckout("pro")}
               loading={actionLoading}
@@ -393,21 +397,29 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
             gap="md"
           >
             <Text className={classes.planName}>Business</Text>
-            <Box className={classes.priceBox}>
-              <Text className={classes.planPrice}>
-                ${PRICES.business[billing]}
-              </Text>
-              <Text className={classes.planPricePeriod}>
-                /mo
-                <br />
-                <span className={classes.priceUnit}>per 50 connections</span>
-              </Text>
-            </Box>
-            {billing === "annual" && (
-              <Text c="dimmed" size="xs" mt={-8}>
-                Billed annually
-              </Text>
-            )}
+            <Text className={classes.bestFor}>
+              For ambitious teams who move fast together
+            </Text>
+            <Stack gap="xs" className={classes.featureList}>
+              {[
+                "50+ connections shared across your org",
+                "Unlimited twists (AI usage may apply)",
+                "All core features for team collaboration",
+                "Unlimited team members",
+                "Full history of all your work",
+                "Automated organization and prioritization",
+                "Organization-level controls",
+              ].map((f) => (
+                <Box key={f} className={classes.featureItem}>
+                  <IconCheck
+                    size={16}
+                    color="var(--mantine-color-brand-6)"
+                  />
+                  <span>{f}</span>
+                </Box>
+              ))}
+            </Stack>
+            <Box className={classes.priceDivider} />
             <Select
               value={businessQuantity}
               onChange={(v) => v && setBusinessQuantity(v)}
@@ -427,25 +439,18 @@ export default function Subscribe({ loaderData }: Route.ComponentProps) {
               onChange={(e) => setDomainAutoJoin(e.currentTarget.checked)}
               size="sm"
             />
-            <Stack gap="xs" className={classes.featureList}>
-              {[
-                "50+ connections shared across your org",
-                "Unlimited twists (AI usage may apply)",
-                "All core features for team collaboration",
-                "Unlimited team members",
-                "Full history of all your work",
-                "Automated organization and prioritization (coming soon)",
-                "Organization-level controls (coming soon)",
-              ].map((f) => (
-                <Box key={f} className={classes.featureItem}>
-                  <IconCheck
-                    size={16}
-                    color="var(--mantine-color-brand-6)"
-                  />
-                  <span>{f}</span>
-                </Box>
-              ))}
-            </Stack>
+            <Box className={classes.priceDivider} />
+            <Box className={classes.priceBox}>
+              <Text className={classes.planPrice}>
+                ${PRICES.business[billing] * parseInt(businessQuantity)}
+              </Text>
+              <Text className={classes.planPricePeriod}>/mo</Text>
+            </Box>
+            {billing === "annual" && (
+              <Text c="dimmed" size="xs" mt={-8}>
+                Billed annually
+              </Text>
+            )}
             <Button
               onClick={() => handleCheckout("business")}
               loading={actionLoading}
