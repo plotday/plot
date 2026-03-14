@@ -3798,6 +3798,7 @@ export type Database = {
           unread: boolean | null
           updated_at: string | null
           updated_by: number | null
+          urgency: string | null
           user_id: string | null
         }
         Relationships: []

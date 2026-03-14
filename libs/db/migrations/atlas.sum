@@ -1,4 +1,4 @@
-h1:N6J4f8o/SGBwvRiI4gVD11a4kenY42N1z1xK8hcdBJ8=
+h1:ojhti87ZUgJYOeH/U/VP5lBej5QWRgUbglV5JY8qCAo=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -99,3 +99,5 @@ h1:N6J4f8o/SGBwvRiI4gVD11a4kenY42N1z1xK8hcdBJ8=
 20260313210912_add_thread_unread_and_reply_tag.sql h1:4sNC78tLEohaoQWKMnskLxYRfTt9U3s0ymRXy8+O57c=
 20260314005016_rename_status_to_urgency_add_importance.sql h1:rwNNLhnqNej38qsBoS3UL9vb3x0vaHloINFLyp2t2YU=
 20260314005338_add_importance_to_thread_view.sql h1:pCfnBFHef5rn4DoFPtC24H42F1WPDgf7ojE/VUdxatc=
+20260314013632_add_urgency_to_thread_view.sql h1:PDRc5gh43ymr+sfnqj+LdUhgdt6OFuSn/4NnwuzgqG0=
+20260314013720_reply_tag_propagation.sql h1:Lcm+cviRKZVXEUczL+ZY46OzX7K/JpbUtqPRyFlPMDM=

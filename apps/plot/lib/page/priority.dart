@@ -925,6 +925,8 @@ class _PriorityPageState extends State<PriorityPage> {
         _DesktopTabBar(
           currentTab: _currentTab,
           onTabChanged: _onDesktopTabChanged,
+          hasUnreadActivity: state.context.unread ||
+              state.context.descendants().any((p) => p.unread),
         ),
         Expanded(
           child: isNowTab
@@ -1530,10 +1532,12 @@ class _DesktopTabBar extends StatelessWidget {
   const _DesktopTabBar({
     required this.currentTab,
     required this.onTabChanged,
+    this.hasUnreadActivity = false,
   });
 
   final PriorityTab currentTab;
   final ValueChanged<PriorityTab> onTabChanged;
+  final bool hasUnreadActivity;
 
   @override
   Widget build(BuildContext context) {
@@ -1555,6 +1559,7 @@ class _DesktopTabBar extends StatelessWidget {
             label: 'Activity',
             selected: currentTab == PriorityTab.activityFeed,
             onTap: () => onTabChanged(PriorityTab.activityFeed),
+            showUnreadDot: hasUnreadActivity,
           ),
         ],
       ),
@@ -1568,12 +1573,14 @@ class _DesktopTab extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.border,
+    this.showUnreadDot = false,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
   final Border? border;
+  final bool showUnreadDot;
 
   @override
   State<_DesktopTab> createState() => _DesktopTabState();
@@ -1581,6 +1588,27 @@ class _DesktopTab extends StatefulWidget {
 
 class _DesktopTabState extends State<_DesktopTab> {
   bool _hovered = false;
+
+  static const _dotSize = 6.0;
+  static const _dotSpacing = 4.0;
+
+  Widget _unreadDot(Color color, {required bool visible}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: _dotSpacing),
+      child: SizedBox(
+        width: _dotSize,
+        height: _dotSize,
+        child: visible
+            ? DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+              )
+            : null,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1618,13 +1646,20 @@ class _DesktopTabState extends State<_DesktopTab> {
               vertical: theme.spacing.xs,
             ),
             child: Center(
-              child: Text(
-                widget.label,
-                style: theme.typography.sm.copyWith(
-                  fontFamily: theme.typography.defaultFontFamily,
-                  color: textColor,
-                  fontWeight: FontWeight.w500,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _unreadDot(textColor, visible: widget.showUnreadDot),
+                  Text(
+                    widget.label,
+                    style: theme.typography.sm.copyWith(
+                      fontFamily: theme.typography.defaultFontFamily,
+                      color: textColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  _unreadDot(textColor, visible: false),
+                ],
               ),
             ),
           ),

@@ -227,6 +227,11 @@ class _PrioritiesListState extends State<PrioritiesList>
                   : (!priorityExpanded && _hasDescendantUnread(priority)
                         ? true
                         : null),
+              active: topSection
+                  ? _hasDescendantActive(priority)
+                  : (!priorityExpanded && _hasDescendantActive(priority)
+                        ? true
+                        : null),
               reorderableIndex: reorderableIndex,
             ),
             if (priority.children.isNotEmpty)
@@ -281,10 +286,14 @@ class _PrioritiesListState extends State<PrioritiesList>
                       ? context.theme.colors.mutedForeground
                       : context.colour.colours.fromTheme(
                           priority.displayColor,
-                          muted: !priority.active && !priority.unread,
+                          muted: !(priorityExpanded ? priority.active : _hasDescendantActive(priority))
+                              && !(priorityExpanded ? priority.unread : _hasDescendantUnread(priority)),
                         ),
                 ),
                 unread: !priorityExpanded && _hasDescendantUnread(priority)
+                    ? true
+                    : null,
+                active: !priorityExpanded && _hasDescendantActive(priority)
                     ? true
                     : null,
               ),
@@ -337,11 +346,16 @@ class _PrioritiesListState extends State<PrioritiesList>
                             ? context.theme.colors.mutedForeground
                             : context.colour.colours.fromTheme(
                                 priority.displayColor,
-                                muted: !priority.active && !priority.unread,
+                                muted: !(priorityExpanded ? priority.active : _hasDescendantActive(priority))
+                                    && !(priorityExpanded ? priority.unread : _hasDescendantUnread(priority)),
                               ),
                       ),
                       unread:
                           !priorityExpanded && _hasDescendantUnread(priority)
+                          ? true
+                          : null,
+                      active:
+                          !priorityExpanded && _hasDescendantActive(priority)
                           ? true
                           : null,
                       reorderableIndex: reorderableIndex,
@@ -548,6 +562,12 @@ class _PrioritiesListState extends State<PrioritiesList>
   bool _hasDescendantUnread(Priority priority) {
     if (priority.unread) return true;
     return priority.descendants().any((p) => p.unread);
+  }
+
+  /// Returns true if the priority or any of its descendants is active
+  bool _hasDescendantActive(Priority priority) {
+    if (priority.active) return true;
+    return priority.descendants().any((p) => p.active);
   }
 
   /// Returns the visible subset of children when truncating, or null if no truncation needed.

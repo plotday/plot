@@ -19,6 +19,7 @@ class PriorityWidget extends StatelessWidget {
     this.textStyle,
     this.showAncestry = false,
     this.unread,
+    this.active,
     this.reorderableIndex,
     super.key,
   });
@@ -47,6 +48,9 @@ class PriorityWidget extends StatelessWidget {
 
   /// Custom unread value (if null, uses priority.unread)
   final bool? unread;
+
+  /// Custom active value (if null, uses priority.active)
+  final bool? active;
 
   /// Index for reorderable list. If provided on mobile, shows trailing drag handle.
   final int? reorderableIndex;
@@ -115,7 +119,7 @@ class PriorityWidget extends StatelessWidget {
         ),
         child: PriorityNotification(
           unread: unread ?? priority.unread,
-          active: priority.active,
+          active: active ?? priority.active,
           color: priority.displayColor,
         ),
       ),

@@ -1050,7 +1050,18 @@ class ToggleThreadTag extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    final isRemovingReply = tag == Tag.reply && thread.hasTag(tag);
     await saveOptimistically(context, thread.toggleTag(tag));
+    if (isRemovingReply) {
+      // Remove reply tag from all notes on this thread
+      final notes = await Note.getForThread(thread.id);
+      for (final note in notes) {
+        if (note.hasTag(Tag.reply, Base.actorId)) {
+          final updated = note.setTag(Tag.reply, Base.actorId, false);
+          await updated.save(skipReplyPropagation: true);
+        }
+      }
+    }
     return const CommandDone();
   }
 }

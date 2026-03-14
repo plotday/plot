@@ -17,6 +17,8 @@ import 'logging.dart';
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
+  final Set<ThreadId> _stickyUnreadIds = {};
+
   PriorityBloc({required Priority priority, Thread? thread})
     : _subscriptions = [],
       _threadSubscription = null,
@@ -484,6 +486,21 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (thread == null) {
       threadListSource = null;
     }
+
+    // Sticky unread tracking: when navigating away from a thread, remove it
+    // from sticky set so it moves to the read section. When selecting an
+    // unread thread, add it so it stays in place while being read.
+    final oldThread = state.thread;
+    if (oldThread != null && thread?.id != oldThread.id) {
+      final wasSticky = _stickyUnreadIds.remove(oldThread.id);
+      if (wasSticky) {
+        oldThread.copyWith(bumpedAt: Value(DateTime.now())).save();
+      }
+    }
+    if (thread != null && thread.unread) {
+      _stickyUnreadIds.add(thread.id);
+    }
+
     if (state.thread == thread) {
       return;
     }
@@ -1058,16 +1075,42 @@ class PriorityBloc extends Cubit<PriorityState> {
       final doneEnd = (rawRowCount < _activityFeedLimit && (isSearching || _activityFeedSyncNoMore)) ||
           threadCountStalled;
       final items = <AgendaItem>[];
-      String? currentBucket;
+
+      // Partition into unread and read
+      final unreadThreads = <Thread>[];
+      final readThreads = <Thread>[];
       for (final thread in threads) {
+        if (thread.unread || _stickyUnreadIds.contains(thread.id)) {
+          unreadThreads.add(thread);
+        } else {
+          readThreads.add(thread);
+        }
+      }
+
+      // Sort unread by urgency rank (lower = higher priority), then importance desc,
+      // with activityAt as stable tiebreaker
+      unreadThreads.sort((a, b) {
+        final urgencyCmp = a.urgencyRank.compareTo(b.urgencyRank);
+        if (urgencyCmp != 0) return urgencyCmp;
+        final importanceCmp = b.importance.compareTo(a.importance);
+        if (importanceCmp != 0) return importanceCmp;
+        return b.activityAt.compareTo(a.activityAt);
+      });
+
+      // Add unread threads (no section header - they're at the very top)
+      for (final thread in unreadThreads) {
+        items.add(AgendaThreadItem(thread));
+      }
+
+      // Add read threads with time-ago bucket headers
+      String? currentBucket;
+      for (final thread in readThreads) {
         final (label, bucketDate) = PriorityState._timeAgoBucket(
           thread.activityAt.toDate(),
         );
         if (label != currentBucket) {
           currentBucket = label;
-          if (label != 'Today') {
-            items.add(AgendaHeaderItem(text: label, date: bucketDate));
-          }
+          items.add(AgendaHeaderItem(text: label, date: bucketDate));
         }
         items.add(AgendaThreadItem(thread));
       }

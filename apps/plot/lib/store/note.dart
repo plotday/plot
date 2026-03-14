@@ -583,7 +583,7 @@ class Note extends Equatable implements Comparable<Note> {
     );
   }
 
-  Future<void> save({bool pushToRemote = true}) async {
+  Future<void> save({bool pushToRemote = true, bool skipReplyPropagation = false}) async {
     // Save note row to local DB
     await Store.get.add(Store.get.notes, toRow().toCompanion(false));
 
@@ -597,6 +597,18 @@ class Note extends Equatable implements Comparable<Note> {
     // schedule exists on the thread (makes the thread appear on the user's todo list).
     if (hasTag(Tag.todo, Base.actorId)) {
       await _ensureTodoForUser(threadId, Base.userId);
+    }
+
+    // Reply tag propagation: note → thread
+    if (!skipReplyPropagation) {
+      final replyUpdated = _tags?.tagsUpdated?[Tag.reply.id.toString()];
+      if (replyUpdated == true) {
+        // Reply added to note → ensure reply exists on thread
+        await _ensureReplyOnThread(threadId);
+      } else if (replyUpdated == false) {
+        // Reply removed from note → remove from thread if no other notes have it
+        await _removeReplyFromThreadIfNoneLeft(threadId);
+      }
     }
 
     // Update thread's lastNoteCreatedAt to this note's createdAt (only for non-draft notes)
@@ -646,6 +658,30 @@ class Note extends Equatable implements Comparable<Note> {
         ).toCompanion(false),
         SchedulesBase(),
       );
+    }
+  }
+
+  /// Ensures the reply tag exists on the thread for the current user.
+  static Future<void> _ensureReplyOnThread(ThreadId threadId) async {
+    final thread = await Thread.getOne(threadId);
+    final hasReply = thread.tags[Tag.reply]?.contains(Base.actorId) ?? false;
+    if (!hasReply) {
+      await thread.toggleTag(Tag.reply).save();
+    }
+  }
+
+  /// Removes the reply tag from the thread if no other notes have it for the current user.
+  static Future<void> _removeReplyFromThreadIfNoneLeft(ThreadId threadId) async {
+    final notes = await Note.getForThread(threadId);
+    final anyReply = notes.any(
+      (n) => n.hasTag(Tag.reply, Base.actorId) && n.archivedAt == null,
+    );
+    if (!anyReply) {
+      final thread = await Thread.getOne(threadId);
+      final hasReply = thread.tags[Tag.reply]?.contains(Base.actorId) ?? false;
+      if (hasReply) {
+        await thread.toggleTag(Tag.reply).save();
+      }
     }
   }
 

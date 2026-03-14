@@ -1807,7 +1807,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 272;
+  int get schemaVersion => 273;
 
   @override
   MigrationStrategy get migration {
@@ -2261,6 +2261,9 @@ class Store extends _$Store {
     }
     if (from < 272) {
       await _safeAddColumn(m, threads, threads.importance);
+    }
+    if (from < 273) {
+      await _safeAddColumn(m, threads, threads.urgency);
     }
   }
 

@@ -321,7 +321,10 @@ class NoteCommands extends StatelessWidget {
         .where((tag) {
           if (tag == Tag.todo || tag == Tag.done) return false;
           final actors = note.tags[tag];
-          return actors != null && actors.isNotEmpty;
+          if (actors == null || actors.isEmpty) return false;
+          // Reply tags: only show current user's
+          if (tag == Tag.reply) return actors.contains(actorId);
+          return true;
         })
         .map((tag) async {
           final key = ValueKey(Object.hash(note.id, tag.id));
@@ -336,7 +339,7 @@ class NoteCommands extends StatelessWidget {
               ? CommandWrapper(command, subtitle: Value(actorNames))
               : command;
 
-          final count = note.tags[tag]?.length ?? 0;
+          final count = tag == Tag.reply ? 1 : (note.tags[tag]?.length ?? 0);
 
           // Twist tags are display-only (not interactive)
           if (tag == Tag.twist) {
@@ -446,12 +449,14 @@ class NoteCommands extends StatelessWidget {
                   .where((tag) {
                     if (tag == Tag.todo || tag == Tag.done) return false;
                     final actors = note.tags[tag];
-                    return actors != null && actors.isNotEmpty;
+                    if (actors == null || actors.isEmpty) return false;
+                    if (tag == Tag.reply) return actors.contains(actorId);
+                    return true;
                   })
                   .map((tag) {
                     final key = ValueKey(Object.hash(note.id, tag.id));
                     final command = ToggleNoteTag(note, tag, actorId);
-                    final count = note.tags[tag]?.length ?? 0;
+                    final count = tag == Tag.reply ? 1 : (note.tags[tag]?.length ?? 0);
                     // Twist tags are display-only (not interactive)
                     if (tag == Tag.twist) {
                       return CountBadge(

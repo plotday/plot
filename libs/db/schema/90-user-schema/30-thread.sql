@@ -31,6 +31,7 @@ SELECT
     -- Unread: TRUE when thread_unread row exists and read_at is NULL
     COALESCE(tu.read_at IS NULL AND tu.user_id IS NOT NULL, FALSE) AS unread,
     COALESCE(CASE WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.importance END, 0::smallint) AS importance,
+    COALESCE(CASE WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.urgency END, NULL) AS urgency,
     -- activity_at: feed ordering timestamp
     COALESCE(
         GREATEST(
@@ -99,6 +100,7 @@ SELECT
     NULL::timestamptz AS bumped_at,
     FALSE AS unread,
     0::smallint AS importance,
+    NULL::text AS urgency,
     a.created_at AS activity_at,
     a.created_at AS agenda_at
 FROM

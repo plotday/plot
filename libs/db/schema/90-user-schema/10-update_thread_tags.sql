@@ -121,6 +121,12 @@ BEGIN
                     AND (occurrence IS NOT DISTINCT FROM p_occurrence)
                     AND archived_at IS NULL;
             END IF;
+            -- Reply tag propagation: thread → notes
+            IF tag_id_int = 1019 THEN
+                UPDATE note_tag SET archived_at = now(), updated_by = p_client_id
+                WHERE note_id IN (SELECT id FROM note WHERE thread_id = p_thread_id)
+                AND tag_id = 1019 AND actor_id = p_actor_id AND archived_at IS NULL;
+            END IF;
         END IF;
 END LOOP;
 END;

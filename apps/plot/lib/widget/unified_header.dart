@@ -510,7 +510,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   /// Builds active tag toggle buttons for the current thread.
   List<Widget> _buildActiveTagToggles(BuildContext context, Thread thread) {
     return thread.tags.keys
-        .where((tag) => tag != Tag.todo && tag.addable)
+        .where((tag) {
+          if (tag == Tag.todo) return false;
+          if (!tag.addable) return false;
+          if (tag == Tag.reply) {
+            return thread.tags[tag]?.contains(Base.actorId) ?? false;
+          }
+          return true;
+        })
         .take(3)
         .map((tag) => Button.icon(ToggleThreadTag(thread, tag)))
         .toList();

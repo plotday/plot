@@ -20,6 +20,7 @@ class Threads extends Table
   TextColumn get mentions => text().nullable().map(const UuidListConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   IntColumn get importance => integer().withDefault(const Constant(0))();
+  TextColumn get urgency => text().nullable()();
   BoolColumn get unreadUpdated => boolean().nullable()();
   DateTimeColumn get bumpedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
@@ -239,6 +240,7 @@ class ThreadsBase extends BaseTable {
           merged = merged.copyWith(
             unread: local.unread,
             importance: local.importance,
+            urgency: Value(local.urgency),
             unreadUpdated: const Value(true),
             bumpedAt: Value(local.bumpedAt),
           );
@@ -261,6 +263,7 @@ class ThreadsBase extends BaseTable {
     // Remove unread fields - they are managed separately
     json.remove('unread');
     json.remove('importance');
+    json.remove('urgency');
     json.remove('unread_updated');
 
     // Remove mentions - it's a calculated field from notes
@@ -1760,6 +1763,7 @@ class Thread extends Equatable implements Comparable<Thread> {
          preview: preview,
          unread: false,
          importance: 0,
+         urgency: null,
          unreadUpdated: null,
        ),
        _schedule = null,
@@ -1851,6 +1855,15 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   bool? get unreadUpdated => _thread.unreadUpdated;
+  String? get urgency => _thread.urgency;
+  int get importance => _thread.importance;
+
+  int get urgencyRank => switch (urgency) {
+    'interrupt' => 0,
+    'inform-fast' => 1,
+    'inform-slow' => 2,
+    _ => 3,
+  };
 
   String? get title => _thread.title;
   String? get preview => _thread.preview;
@@ -2255,6 +2268,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     // Personal to-do state
     bool? todo,
     bool bump = false,
+    Value<DateTime?> bumpedAt = const Value.absent(),
   }) {
     final now = DateTime.now();
 
@@ -2274,6 +2288,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         mentions.present ||
         preview.present ||
         archivedAt.present ||
+        bumpedAt.present ||
         title.present) {
       activity = _thread.copyWith(
         priorityId: priority?.id,
@@ -2284,9 +2299,10 @@ class Thread extends Equatable implements Comparable<Thread> {
         createdAt: draft == false && _thread.draft ? now : null,
         updatedAt: now,
         archivedAt: archivedAt,
+        bumpedAt: bumpedAt,
         title: !recurring ? title : const Value.absent(),
         unread: unread,
-        unreadUpdated: unread != null ? Value(true) : const Value.absent(),
+        unreadUpdated: unread != null || bumpedAt.present ? Value(true) : const Value.absent(),
       );
     }
 
