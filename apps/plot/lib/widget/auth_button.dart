@@ -46,11 +46,14 @@ class _AuthUrlResult {
 
 class AuthButton extends StatefulWidget {
   /// Whether native google_sign_in is supported on this platform.
+  /// On web, Clerk JS handles all Google auth (One Tap + redirect), so
+  /// google_sign_in is not used — initializing both would cause
+  /// google.accounts.id.initialize() to be called twice.
   static bool get _useNativeGoogleSignIn =>
-      kIsWeb ||
-      defaultTargetPlatform == TargetPlatform.iOS ||
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
       defaultTargetPlatform == TargetPlatform.macOS ||
-      defaultTargetPlatform == TargetPlatform.android;
+      defaultTargetPlatform == TargetPlatform.android);
 
   static Future<void> init() async {
     if (_useNativeGoogleSignIn) {
@@ -547,7 +550,17 @@ class _AuthButtonState extends State<AuthButton> {
   void _onPress() {
     if (_isLoading) return;
     if (widget.provider == AuthProvider.google) {
-      if (!AuthButton._useNativeGoogleSignIn) {
+      if (kIsWeb) {
+        // On web, Clerk JS handles all Google auth. Use backend OAuth for
+        // authorize flows, or Clerk's redirect for authentication.
+        if (widget._link != null) {
+          _startOAuth();
+        } else if (widget._onRedirectAuth != null) {
+          widget._onRedirectAuth!();
+        } else {
+          _startOAuth();
+        }
+      } else if (!AuthButton._useNativeGoogleSignIn) {
         // On Windows/Linux, use browser-based OAuth for authorize flows,
         // or the all-platforms sign-in for authentication
         if (widget._link != null) {
@@ -555,18 +568,6 @@ class _AuthButtonState extends State<AuthButton> {
         } else {
           _startGoogleAuthDesktop();
         }
-      } else if (kIsWeb && widget._link != null) {
-        // On web, use backend OAuth for authorize flows to avoid:
-        // 1. Multiple popup blocking (authorizeScopes/authorizeServer open separate popups)
-        // 2. User sign-out when selecting a different account
-        _startOAuth();
-      } else if (kIsWeb &&
-          !GoogleSignIn.instance.supportsAuthenticate() &&
-          widget._onRedirectAuth != null) {
-        // On web browsers without FedCM (e.g. Firefox), use Clerk's OAuth
-        // redirect flow instead of the GSI rendered button (which doesn't
-        // composite properly under Flutter's CanvasKit renderer).
-        widget._onRedirectAuth!();
       } else {
         _startGoogleAuth();
       }
