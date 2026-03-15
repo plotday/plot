@@ -11,6 +11,7 @@ import 'package:plot/util/list.dart';
 import 'package:plot/page/loading.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/router.dart';
+import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
 
@@ -18,6 +19,7 @@ part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
   final Set<ThreadId> _stickyUnreadIds = {};
+  ThreadHeaderNotifier? headerNotifier;
 
   PriorityBloc({required Priority priority, Thread? thread})
     : _subscriptions = [],
@@ -495,6 +497,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
     if (thread == null) {
       threadListSource = null;
+      // Reset header visibility before emitting so the header rebuild
+      // sees isThreadVisible = false immediately
+      headerNotifier?.isThreadVisible = false;
     }
 
     // Sticky unread tracking: when navigating away from a thread, remove it

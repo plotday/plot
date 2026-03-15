@@ -18,8 +18,7 @@ class TermsAgreement extends StatelessWidget {
           children: [
             const TextSpan(text: 'By signing in, you agree to our\n'),
             WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
+              alignment: PlaceholderAlignment.middle,
               child: HoverableLink(
                 text: 'Terms of Service',
                 uri: Uri.parse('https://plot.day/terms'),
@@ -27,13 +26,11 @@ class TermsAgreement extends StatelessWidget {
               ),
             ),
             WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
+              alignment: PlaceholderAlignment.middle,
               child: Text(' and '),
             ),
             WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
+              alignment: PlaceholderAlignment.middle,
               child: HoverableLink(
                 text: 'Privacy Policy',
                 uri: Uri.parse('https://plot.day/privacy'),

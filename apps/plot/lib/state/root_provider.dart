@@ -21,6 +21,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/widget/root_menu_bar.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/main.dart' show setNavigatorKey;
+import 'package:plot/util/splash.dart';
 import 'logging.dart';
 
 class RootProvider extends StatefulWidget {
@@ -57,6 +58,10 @@ class RootProviderState extends State<RootProvider> {
       reevaluateListenable: ReevaluateListenable.stream(userBloc.stream),
     );
     super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      removeSplash();
+    });
   }
 
   @override

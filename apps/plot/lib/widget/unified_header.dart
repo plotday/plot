@@ -17,7 +17,9 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:auto_route/auto_route.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
+import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/priority_selector.dart';
 import 'button.dart';
 import 'icon.dart';
@@ -67,6 +69,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     super.didChangeDependencies();
     _panelController = ActivityPanelControllerProvider.maybeOf(context);
     _panelController?.registerSearchToggle(_toggleSearch);
+    context.read<PriorityBloc>().headerNotifier =
+        ThreadHeaderNotifierProvider.read(context);
   }
 
   void _onSearchChanged() {
@@ -266,8 +270,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // New Thread button (multiPanel only, since bottom nav has it otherwise)
       if (layoutState.multiPanel) Button.icon(NewThread()),
 
-      // Menu button
-      Button.icon(_buildMenuCommand(state, layoutState, notifier)),
+      // Menu button (hide on NewThreadPage in single panel mode)
+      if (layoutState.multiPanel || !hasActivity || state.thread != null)
+        Button.icon(_buildMenuCommand(state, layoutState, notifier)),
 
       // Windows window control padding
       if (resolvedToolbarPadding.right != 0)
@@ -359,7 +364,25 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       return const Expanded(child: SizedBox.shrink());
     }
 
-    // Default: show PrioritySelector with search button
+    // Single panel: tap priority to open priorities tab
+    if (!layoutState.multiPanel) {
+      return Expanded(
+        child: Row(
+          spacing: 8,
+          children: [
+            Flexible(
+              child: GestureDetector(
+                onTap: () => AutoTabsRouter.of(context).setActiveIndex(0),
+                child: PriorityLabel(priority: state.context),
+              ),
+            ),
+            search,
+          ],
+        ),
+      );
+    }
+
+    // Multi-panel: show PrioritySelector with dropdown
     final selector = PrioritySelector(
       selected: state.context,
       onSelect: (p) => context.run(ChangeCurrentPriority(p)),
