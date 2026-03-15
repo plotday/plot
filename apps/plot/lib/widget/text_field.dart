@@ -107,6 +107,9 @@ class TextFieldState extends State<TextField> {
             ? const FTextFieldStyleDelta.context()
             : FTextFieldStyleDelta.delta(
                 contentPadding: EdgeInsetsGeometryDelta.value(EdgeInsets.zero),
+                color: FVariantsValueDelta.delta([
+                  FVariantValueDeltaOperation.all(const Color(0x00000000)),
+                ]),
                 border: FVariantsValueDelta.delta([
                   FVariantValueDeltaOperation.all(
                     OutlineInputBorder(
