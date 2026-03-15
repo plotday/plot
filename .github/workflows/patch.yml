@@ -108,9 +108,7 @@ jobs:
           flutter pub run build_runner build --delete-conflicting-outputs
 
       - name: Install Shorebird
-        run: |
-          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
-          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+        uses: shorebirdtech/setup-shorebird@v1
 
       - name: Patch iOS
         run: |
@@ -214,9 +212,7 @@ jobs:
           flutter pub run build_runner build --delete-conflicting-outputs
 
       - name: Install Shorebird
-        run: |
-          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
-          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+        uses: shorebirdtech/setup-shorebird@v1
 
       - name: Patch Android
         run: |
@@ -314,9 +310,7 @@ jobs:
           flutter pub run build_runner build --delete-conflicting-outputs
 
       - name: Install Shorebird
-        run: |
-          curl --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh -sSf | bash
-          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+        uses: shorebirdtech/setup-shorebird@v1
 
       - name: Patch macOS
         run: |
@@ -419,10 +413,7 @@ jobs:
           flutter pub run build_runner build --delete-conflicting-outputs
 
       - name: Install Shorebird
-        shell: bash
-        run: |
-          powershell -Command "& {iwr -UseBasicParsing 'https://raw.githubusercontent.com/shorebirdtech/install/main/install.ps1' | iex}"
-          echo "$HOME/.shorebird/bin" >> "$GITHUB_PATH"
+        uses: shorebirdtech/setup-shorebird@v1
 
       - name: Patch Windows
         shell: bash
