@@ -359,56 +359,73 @@ class _AgendaHeaderState extends State<AgendaHeader> {
 
       final Widget child;
       if (centerText != null) {
-        // Compute center gap to match date header day-number column
-        final dayNum = widget.dateTimeRange?.start?.day.toString() ?? '00';
-        final dateFontSize = context.theme.typography.base.fontSize;
-        final dayWidth = (TextPainter(
-          text: TextSpan(
-            text: dayNum,
-            style: TextStyle(
-              fontSize: dateFontSize,
-              fontWeight: FontWeight.bold,
+        if (!context.isMultiPanel) {
+          // Narrow: right-aligned like thread header
+          // [duration] · [time]
+          child = Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: context.contentPaddingH,
             ),
-          ),
-          maxLines: 1,
-          textDirection: TextDirection.ltr,
-        )..layout()).width;
-        final centerGap = 2 * context.theme.spacing.md + dayWidth;
-
-        child = Row(
-          children: [
-            Expanded(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (durationText != null) ...[
+                  Text(
+                    durationText,
+                    style: TextStyle(color: veryMuted, fontSize: fontSize),
+                  ),
+                  Text(
+                    ' · ',
+                    style: TextStyle(color: veryMuted, fontSize: fontSize),
+                  ),
+                ],
+                Text(
                   centerText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: timeStyle,
                 ),
-              ),
+              ],
             ),
-            SizedBox(
-              child: Center(
-                child: Text(
-                  '  ·  ',
-                  style: TextStyle(color: veryMuted, fontSize: fontSize),
+          );
+        } else {
+          // Wide: centered to match date header day-number column
+          child = Row(
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    centerText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: timeStyle,
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: durationText != null
-                  ? Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        durationText,
-                        style: TextStyle(color: veryMuted, fontSize: fontSize),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ],
-        );
+              SizedBox(
+                child: Center(
+                  child: Text(
+                    '  ·  ',
+                    style: TextStyle(color: veryMuted, fontSize: fontSize),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: durationText != null
+                    ? Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          durationText,
+                          style: TextStyle(
+                              color: veryMuted, fontSize: fontSize),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          );
+        }
       } else {
         final double textHeight = (TextPainter(
           text: TextSpan(

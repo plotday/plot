@@ -265,7 +265,100 @@ class ThreadWidget extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (hasTopLabel)
+              // Narrow timed events: separate from Transform.translate
+              // so only the priority label shifts left while timing
+              // stays right-aligned with the gap header.
+              if (isTimedEvent && !buildContext.isMultiPanel)
+                Builder(
+                  builder: (context) {
+                    final narrowLabelShift = (() {
+                      final ghostPad = context
+                          .theme
+                          .buttonStyles
+                          .ghost
+                          .iconContentStyle
+                          .padding
+                          .resolve(TextDirection.ltr);
+                      final buttonW =
+                          context.theme.iconSizes.base + ghostPad.horizontal;
+                      return -(buttonW +
+                          context.theme.spacing.md -
+                          context.theme.spacing.xs -
+                          8);
+                    })();
+                    final veryMuted = context.theme.plotColors.veryMuted;
+                    final timingColor = now
+                        ? TextStyle(
+                            color: context.colour.colours.fromTheme(
+                              activity.priority.displayColor,
+                            ),
+                          )
+                        : null;
+                    final timeStr = activity.at!.start!
+                        .toTimeOfDay()
+                        .formatShort(context);
+                    final hasDuration =
+                        activity.at!.duration != null &&
+                        activity.at!.duration!.inSeconds > 0;
+
+                    final rightParts = <Widget>[
+                      if (activity.hasOtherAttendees)
+                        _RsvpSummary(activity: activity),
+                      if (hasDuration)
+                        Text(
+                          activity.at!.duration!.format(),
+                          style: TextStyle(color: veryMuted),
+                        ),
+                      Text(timeStr, style: timingColor),
+                    ];
+
+                    return DefaultTextStyle(
+                      style: TextStyle(
+                        color:
+                            headerFg ??
+                            buildContext.theme.colors.mutedForeground,
+                        fontSize: buildContext.theme.typography.xs.fontSize,
+                        height: 1,
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          right:
+                              context.contentPaddingH -
+                              context.theme.spacing.sm,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: hasBodyLabel
+                                  ? Transform.translate(
+                                      offset: Offset(narrowLabelShift, 0),
+                                      child: PriorityLabel(
+                                        priority: activity.priority,
+                                        context: this.context,
+                                        color: headerFg,
+                                        fontSize: context
+                                            .theme
+                                            .typography
+                                            .xs
+                                            .fontSize,
+                                        height: 1,
+                                        muted: headerFg == null,
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            for (int i = 0; i < rightParts.length; i++) ...[
+                              if (i > 0)
+                                Text(' · ', style: TextStyle(color: veryMuted)),
+                              rightParts[i],
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              if (hasTopLabel && !(isTimedEvent && !buildContext.isMultiPanel))
                 Builder(
                   builder: (context) {
                     // When narrow, shift the label left so it starts at
@@ -319,53 +412,6 @@ class ThreadWidget extends StatelessWidget {
                                   activity.at!.duration!.inSeconds > 0;
                               final veryMuted =
                                   context.theme.plotColors.veryMuted;
-
-                              // Narrow: priority left, RSVP · duration · time right
-                              if (!buildContext.isMultiPanel) {
-                                final rightParts = <Widget>[
-                                  if (activity.hasOtherAttendees)
-                                    _RsvpSummary(activity: activity),
-                                  if (hasDuration)
-                                    Text(
-                                      activity.at!.duration!.format(),
-                                      style: TextStyle(color: veryMuted),
-                                    ),
-                                  Text(timeStr, style: timingColor),
-                                ];
-                                return Row(
-                                  children: [
-                                    if (hasBodyLabel)
-                                      Flexible(
-                                        child: PriorityLabel(
-                                          priority: activity.priority,
-                                          context: this.context,
-                                          color: headerFg,
-                                          fontSize: context
-                                              .theme
-                                              .typography
-                                              .xs
-                                              .fontSize,
-                                          height: 1,
-                                          muted: headerFg == null,
-                                        ),
-                                      ),
-                                    const Spacer(),
-                                    for (
-                                      int i = 0;
-                                      i < rightParts.length;
-                                      i++
-                                    ) ...[
-                                      if (i > 0)
-                                        Text(
-                                          ' · ',
-                                          style: TextStyle(color: veryMuted),
-                                        ),
-                                      rightParts[i],
-                                    ],
-                                    SizedBox(width: -narrowLabelShift),
-                                  ],
-                                );
-                              }
 
                               // Wide: center time+duration across full tile width
                               final ghostPad = context
