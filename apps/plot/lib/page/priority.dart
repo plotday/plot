@@ -1382,10 +1382,10 @@ class _PriorityPageState extends State<PriorityPage> {
                         eventEndTime: pinTime,
                       );
                     } else {
-                      // Unrelated → move to gap after the event
+                      // Unrelated → pin after the event
                       updatedActivity = activity.reorderToAfterEvent(
                         newOrder,
-                        eventEndTime: targetEvent.at!.end!,
+                        eventEndTime: pinTime,
                       );
                     }
                   } else {
