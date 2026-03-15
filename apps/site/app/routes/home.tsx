@@ -93,8 +93,9 @@ export default function Home() {
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Everything in one place. Organized, prioritized, and ready for
-              action.
+              Everything in one place.
+              <br />
+              Organized, prioritized, and ready for action.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
               <Button variant="gradient" size="lg" component={Link} to="/start">
