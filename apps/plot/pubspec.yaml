@@ -99,7 +99,10 @@ dependencies:
   share_handler: ^0.0.25
   mime: ^2.0.0
   image_picker: ^1.1.2
-  clerk_auth: 0.0.14-beta
+  clerk_auth:
+    git:
+      url: https://github.com/clerk/clerk-sdk-flutter.git
+      path: packages/clerk_auth
   crypto: ^3.0.0
   firebase_core: ^3.12.1
   firebase_messaging: ^15.2.4
