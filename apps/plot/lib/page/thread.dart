@@ -59,6 +59,12 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   // Store reference to thread header notifier
   ThreadHeaderNotifier? _headerNotifier;
 
+  // Store reference to PriorityBloc for cleanup in dispose
+  PriorityBloc? _priorityBloc;
+
+  // The thread ID this page is showing, for conditional cleanup in dispose
+  ThreadId? _threadId;
+
   // Timer for delayed read marking
   Timer? _markReadTimer;
 
@@ -68,9 +74,11 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Save reference during a safe lifecycle method
+    // Save references during a safe lifecycle method
     _provider = ActivityPanelControllerProvider.maybeOf(context);
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
+    _priorityBloc = context.read<PriorityBloc>();
+    _threadId = context.read<ThreadBloc>().state.thread.id;
     // Schedule marking thread as read after 750ms
     _scheduleMarkAsRead();
 
@@ -127,6 +135,12 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     _headerNotifier?.unregister();
     // Clear middle panel preference when leaving ThreadPage
     LayoutBloc.instance?.preferMiddle = false;
+    // Clear thread from PriorityBloc if it still shows this page's thread.
+    // This handles browser back/gesture back which bypass PopScope.
+    // Guard: skip if navigating thread-to-thread (bloc already updated).
+    if (_priorityBloc?.state.thread?.id == _threadId) {
+      _priorityBloc?.setThread(null);
+    }
     super.dispose();
   }
 
