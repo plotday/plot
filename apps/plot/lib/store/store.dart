@@ -1710,6 +1710,15 @@ class Store extends _$Store {
       _unsubscribeFromUpdates();
       await _waitForNetworkConnectivity();
 
+      // Validate session before firing parallel sync requests. If the session
+      // is definitively dead, bail out early instead of spamming 401s.
+      final tokenResult = await Base.getSessionTokenWithReason();
+      if (tokenResult.failure == TokenFailureReason.sessionInvalid) {
+        log.warning('Session invalid before sync — skipping sync');
+        Base.handleTokenResult(tokenResult);
+        return;
+      }
+
       // Subscribe to WebSocket FIRST, buffering messages during sync
       _isBufferingBroadcasts = true;
       _bufferedTables.clear();
