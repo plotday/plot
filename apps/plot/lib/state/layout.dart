@@ -145,10 +145,14 @@ class LayoutStateProvider extends StatelessWidget {
   }
 }
 
-/// Extension to access multiPanel state from any context (without requiring LayoutBloc)
+/// Extension to access multiPanel state from any context.
 extension LayoutHelpers on BuildContext {
-  /// Check if current screen width supports multi-panel layout
+  /// Check if current screen width supports multi-panel layout.
+  /// Prefers LayoutBloc (uses LayoutBuilder constraints, correct on all browsers).
+  /// Falls back to MediaQuery for contexts outside the LayoutBloc scope.
   bool get isMultiPanel {
+    final bloc = read<LayoutBloc?>();
+    if (bloc != null) return bloc.state.multiPanel;
     return LayoutState.isMultiPanel(MediaQuery.of(this).size.width);
   }
 
