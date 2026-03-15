@@ -17,6 +17,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/priority.dart';
@@ -149,23 +150,20 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // Single-panel with thread: back button
       if (hasActivity && !layoutState.multiPanel)
         Button.icon(
-          CommandWrapper(
-            ChangeCurrentThread(null),
-            icon: Value(PlotIcon.back),
-          ),
+          CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
         )
       // Right-only with thread (960–1309px): back button
-      else if (hasActivity && layoutState.multiPanel &&
-          !layoutState.leftPanelVisible && !layoutState.middlePanelVisible &&
+      else if (hasActivity &&
+          layoutState.multiPanel &&
+          !layoutState.leftPanelVisible &&
+          !layoutState.middlePanelVisible &&
           context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
         Button.icon(
-          CommandWrapper(
-            ChangeCurrentThread(null),
-            icon: Value(PlotIcon.back),
-          ),
+          CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
         )
       // 2-panel with thread (960–1309px): cycle + priorities slide
-      else if (hasActivity && layoutState.isTwoPanel &&
+      else if (hasActivity &&
+          layoutState.isTwoPanel &&
           context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
         Row(
           mainAxisSize: MainAxisSize.min,
@@ -186,7 +184,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         Button.icon(CyclePanelsCommand(layoutState: layoutState))
       // ≥ 1310px right-only: priorities icon + open threads
       else if (layoutState.multiPanel &&
-          !layoutState.leftPanelVisible && !layoutState.middlePanelVisible)
+          !layoutState.leftPanelVisible &&
+          !layoutState.middlePanelVisible)
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -196,9 +195,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                 icon: Value(PlotIcon.priorities),
               ),
             ),
-            Button.icon(
-              ToggleMiddleSidebarCommand(isVisible: false),
-            ),
+            Button.icon(ToggleMiddleSidebarCommand(isVisible: false)),
           ],
         )
       // ≥ 1310px with sidebar(s): explicit toggle buttons
@@ -243,8 +240,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final thread = state.thread;
     final suffixes = <Widget>[
       // Active tag toggles (when thread is visible)
-      if (thread != null)
-        ..._buildActiveTagToggles(context, thread),
+      if (thread != null) ..._buildActiveTagToggles(context, thread),
 
       // Todo toggle (when thread is visible)
       if (thread != null) _buildTodoToggle(context, thread),
@@ -347,7 +343,24 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             Flexible(
               child: GestureDetector(
                 onTap: () => AutoTabsRouter.of(context).setActiveIndex(0),
-                child: PriorityLabel(priority: state.context),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 4,
+                  children: [
+                    Flexible(
+                      child: PriorityLabel(
+                        priority: state.context,
+                        onSelect: (_) =>
+                            AutoTabsRouter.of(context).setActiveIndex(0),
+                      ),
+                    ),
+                    Icon(
+                      PlotIcon.verticalExpand,
+                      size: context.theme.iconSizes.xs,
+                      color: context.theme.plotColors.muted,
+                    ),
+                  ],
+                ),
               ),
             ),
             search,
@@ -418,10 +431,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                 hint: 'Search…',
                 style: FTextFieldStyleDelta.delta(
                   contentPadding: EdgeInsetsGeometryDelta.value(
-                    const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   ),
                 ),
                 suffixBuilder: (context, style, states) {
