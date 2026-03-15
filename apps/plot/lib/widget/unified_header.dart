@@ -354,6 +354,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       );
     }
 
+    // In single panel with new thread visible, hide priority and search
+    if (!layoutState.multiPanel && hasActivity) {
+      return const Expanded(child: SizedBox.shrink());
+    }
+
     // Default: show PrioritySelector with search button
     final selector = PrioritySelector(
       selected: state.context,

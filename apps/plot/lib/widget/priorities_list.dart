@@ -411,7 +411,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                 selected: widget.selected?.id == widget.root.id,
                 leadingBuilder: (isHovered, hasFocus) => Padding(
                   padding: EdgeInsets.only(
-                    left: context.theme.spacing.lg,
+                    left: isMultiPanel
+                        ? context.theme.spacing.lg
+                        : context.theme.spacing.sm,
                     right: context.theme.spacing.sm,
                     bottom: 2,
                   ),

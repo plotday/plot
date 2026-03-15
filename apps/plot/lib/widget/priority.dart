@@ -2,6 +2,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/state/layout.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -58,6 +59,9 @@ class PriorityWidget extends StatelessWidget {
   @override
   Widget build(BuildContext buildContext) {
     bool isContext = priority == context;
+    final leadingH = buildContext.isMultiPanel
+        ? buildContext.theme.spacing.lg
+        : buildContext.theme.spacing.sm;
     final listTile = ListTile(
       command: !isContext
           ? ChangeCurrentPriority(priority, ancestry: showAncestry)
@@ -73,7 +77,7 @@ class PriorityWidget extends StatelessWidget {
         if (!hovered && !sharing) return null;
 
         return Padding(
-          padding: EdgeInsets.only(right: buildContext.theme.spacing.lg),
+          padding: EdgeInsets.only(right: leadingH),
           child: Row(
             children: [
               // Hover commands appear to the left
@@ -113,7 +117,7 @@ class PriorityWidget extends StatelessWidget {
       textStyle: textStyle,
       leadingBuilder: (isHovered, hasFocus) => Padding(
         padding: EdgeInsets.only(
-          left: buildContext.theme.spacing.lg,
+          left: leadingH,
           right: buildContext.theme.spacing.sm,
           bottom: 2,
         ),

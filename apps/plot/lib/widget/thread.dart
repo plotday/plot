@@ -147,7 +147,9 @@ class ThreadWidget extends StatelessWidget {
       longPressCommand: isTouchDevice ? ShowThreadCommands(activity) : null,
       title: activity.displayTitle,
       subtitle: activity.preview,
-      padding: EdgeInsets.symmetric(horizontal: buildContext.contentPaddingH),
+      padding: buildContext.isMultiPanel
+          ? EdgeInsets.symmetric(horizontal: buildContext.contentPaddingH)
+          : EdgeInsets.only(right: buildContext.theme.spacing.sm),
       highlightColor: buildContext.colour.editableBackground,
       selectedColor: selectedBg,
       leadingBuilder: (isHovered, hasFocus) {
@@ -208,12 +210,15 @@ class ThreadWidget extends StatelessWidget {
           );
         }
 
+        final isWide = buildContext.isMultiPanel;
         return Stack(
           children: [
             Positioned(
               top: labelOffset,
               bottom: 0,
-              left: (buildContext.theme.spacing.xl - 6) / 2,
+              left: isWide
+                  ? (buildContext.theme.spacing.xl - 6) / 2
+                  : buildContext.theme.spacing.sm,
               width: 6,
               child: UnreadIndicator(
                 color: activity.priority.displayColor,
@@ -224,12 +229,17 @@ class ThreadWidget extends StatelessWidget {
               padding: EdgeInsets.only(
                 top: buildContext.theme.spacing.sm + labelOffset,
                 bottom: buildContext.theme.spacing.sm,
-                left: buildContext.theme.spacing.xl - 7.5,
+                left: isWide
+                    ? buildContext.theme.spacing.xl - 7.5
+                    : buildContext.theme.spacing.sm,
                 right: buildContext.theme.spacing.sm,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: [calendarIcon, todoIcon],
+                children: [
+                  if (buildContext.isMultiPanel) calendarIcon,
+                  todoIcon,
+                ],
               ),
             ),
           ],
@@ -256,157 +266,239 @@ class ThreadWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (hasTopLabel)
-                DefaultTextStyle(
-                  style: TextStyle(
-                    color:
-                        headerFg ?? buildContext.theme.colors.mutedForeground,
-                    fontSize: buildContext.theme.typography.xs.fontSize,
-                    height: 1,
-                  ),
-                  child: Builder(
-                    builder: (context) {
-                      final timingColor = now
-                          ? TextStyle(
-                              color: context.colour.colours.fromTheme(
-                                activity.priority.displayColor,
-                              ),
-                            )
-                          : null;
+                Builder(
+                  builder: (context) {
+                    // When narrow, shift the label left so it starts at
+                    // spacing.xs + 7.5 from the tile's left edge (aligned
+                    // with the leading icon's left edge).
+                    final narrowLabelShift = buildContext.isMultiPanel
+                        ? 0.0
+                        : (() {
+                            final ghostPad = context
+                                .theme
+                                .buttonStyles
+                                .ghost
+                                .iconContentStyle
+                                .padding
+                                .resolve(TextDirection.ltr);
+                            final buttonW =
+                                context.theme.iconSizes.base +
+                                ghostPad.horizontal;
+                            return -(buttonW +
+                                context.theme.spacing.md -
+                                context.theme.spacing.xs -
+                                8);
+                          })();
+                    return Transform.translate(
+                      offset: Offset(narrowLabelShift, 0),
+                      child: DefaultTextStyle(
+                        style: TextStyle(
+                          color:
+                              headerFg ??
+                              buildContext.theme.colors.mutedForeground,
+                          fontSize: buildContext.theme.typography.xs.fontSize,
+                          height: 1,
+                        ),
+                        child: Builder(
+                          builder: (context) {
+                            final timingColor = now
+                                ? TextStyle(
+                                    color: context.colour.colours.fromTheme(
+                                      activity.priority.displayColor,
+                                    ),
+                                  )
+                                : null;
 
-                      // For timed events, center time+duration across full tile width
-                      if (isTimedEvent) {
-                        // Compute leading width to extend Positioned
-                        // across the full tile width, matching date/gap
-                        // header alignment.
-                        final ghostPad = context
-                            .theme
-                            .buttonStyles
-                            .ghost
-                            .iconContentStyle
-                            .padding
-                            .resolve(TextDirection.ltr);
-                        final buttonW =
-                            context.theme.iconSizes.base + ghostPad.horizontal;
-                        final leadingWidth =
-                            (context.theme.spacing.xl - 7.5) +
-                            2 * buttonW +
-                            context.theme.spacing.sm;
-                        final labelHeight = (TextPainter(
-                          text: TextSpan(
-                            text: 'A',
-                            style: DefaultTextStyle.of(context).style,
-                          ),
-                          maxLines: 1,
-                          textDirection: TextDirection.ltr,
-                        )..layout()).height;
+                            // For timed events, show timing info
+                            if (isTimedEvent) {
+                              final timeStr = activity.at!.start!
+                                  .toTimeOfDay()
+                                  .formatShort(context);
+                              final hasDuration =
+                                  activity.at!.duration != null &&
+                                  activity.at!.duration!.inSeconds > 0;
+                              final veryMuted =
+                                  context.theme.plotColors.veryMuted;
 
-                        return SizedBox(
-                          height: labelHeight,
-                          child: Stack(
-                            clipBehavior: Clip.hardEdge,
-                            children: [
-                              // Time + duration aligned with date header
-                              Positioned(
-                                left: -leadingWidth,
-                                right: -context.contentPaddingH,
-                                top: 0,
-                                bottom: 0,
-                                child: Builder(
-                                  builder: (context) {
-                                    final timeStr = activity.at!.start!
-                                        .toTimeOfDay()
-                                        .formatShort(context);
-                                    final hasDuration =
-                                        activity.at!.duration != null &&
-                                        activity.at!.duration!.inSeconds > 0;
-                                    final veryMuted =
-                                        context.theme.plotColors.veryMuted;
-                                    return Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            timeStr,
-                                            style: timingColor,
-                                            textAlign: TextAlign.right,
-                                          ),
+                              // Narrow: priority left, RSVP · duration · time right
+                              if (!buildContext.isMultiPanel) {
+                                final rightParts = <Widget>[
+                                  if (activity.hasOtherAttendees)
+                                    _RsvpSummary(activity: activity),
+                                  if (hasDuration)
+                                    Text(
+                                      activity.at!.duration!.format(),
+                                      style: TextStyle(color: veryMuted),
+                                    ),
+                                  Text(timeStr, style: timingColor),
+                                ];
+                                return Row(
+                                  children: [
+                                    if (hasBodyLabel)
+                                      Flexible(
+                                        child: PriorityLabel(
+                                          priority: activity.priority,
+                                          context: this.context,
+                                          color: headerFg,
+                                          fontSize: context
+                                              .theme
+                                              .typography
+                                              .xs
+                                              .fontSize,
+                                          height: 1,
+                                          muted: headerFg == null,
                                         ),
-                                        SizedBox(
-                                          child: Center(
+                                      ),
+                                    const Spacer(),
+                                    for (
+                                      int i = 0;
+                                      i < rightParts.length;
+                                      i++
+                                    ) ...[
+                                      if (i > 0)
+                                        Text(
+                                          ' · ',
+                                          style: TextStyle(color: veryMuted),
+                                        ),
+                                      rightParts[i],
+                                    ],
+                                    SizedBox(width: -narrowLabelShift),
+                                  ],
+                                );
+                              }
+
+                              // Wide: center time+duration across full tile width
+                              final ghostPad = context
+                                  .theme
+                                  .buttonStyles
+                                  .ghost
+                                  .iconContentStyle
+                                  .padding
+                                  .resolve(TextDirection.ltr);
+                              final buttonW =
+                                  context.theme.iconSizes.base +
+                                  ghostPad.horizontal;
+                              final leadingWidth =
+                                  (context.theme.spacing.xl - 7.5) +
+                                  2 * buttonW +
+                                  context.theme.spacing.sm;
+                              final labelHeight = (TextPainter(
+                                text: TextSpan(
+                                  text: 'A',
+                                  style: DefaultTextStyle.of(context).style,
+                                ),
+                                maxLines: 1,
+                                textDirection: TextDirection.ltr,
+                              )..layout()).height;
+
+                              return SizedBox(
+                                height: labelHeight,
+                                child: Stack(
+                                  clipBehavior: Clip.hardEdge,
+                                  children: [
+                                    // Time + duration aligned with date header
+                                    Positioned(
+                                      left: -leadingWidth,
+                                      right: -context.contentPaddingH,
+                                      top: 0,
+                                      bottom: 0,
+                                      child: Row(
+                                        children: [
+                                          Expanded(
                                             child: Text(
-                                              '  ·  ',
-                                              style: TextStyle(
-                                                color: veryMuted,
+                                              timeStr,
+                                              style: timingColor,
+                                              textAlign: TextAlign.right,
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            child: Center(
+                                              child: Text(
+                                                '  ·  ',
+                                                style: TextStyle(
+                                                  color: veryMuted,
+                                                ),
                                               ),
                                             ),
                                           ),
+                                          Expanded(
+                                            child: hasDuration
+                                                ? Text(
+                                                    activity.at!.duration!
+                                                        .format(),
+                                                    style: TextStyle(
+                                                      color: veryMuted,
+                                                    ),
+                                                  )
+                                                : const SizedBox.shrink(),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // RSVP summary right-aligned within body bounds
+                                    if (activity.hasOtherAttendees)
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: _RsvpSummary(activity: activity),
+                                      ),
+                                    // Priority label on the left
+                                    if (hasBodyLabel)
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: PriorityLabel(
+                                          priority: activity.priority,
+                                          context: this.context,
+                                          color: headerFg,
+                                          fontSize: context
+                                              .theme
+                                              .typography
+                                              .xs
+                                              .fontSize,
+                                          height: 1,
+                                          muted: headerFg == null,
                                         ),
-                                        Expanded(
-                                          child: hasDuration
-                                              ? Text(
-                                                  activity.at!.duration!
-                                                      .format(),
-                                                  style: TextStyle(
-                                                    color: veryMuted,
-                                                  ),
-                                                )
-                                              : const SizedBox.shrink(),
-                                        ),
-                                      ],
-                                    );
-                                  },
+                                      ),
+                                  ],
                                 ),
-                              ),
-                              // RSVP summary right-aligned within body bounds
-                              if (activity.hasOtherAttendees)
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: _RsvpSummary(activity: activity),
-                                ),
-                              // Priority label on the left
-                              if (hasBodyLabel)
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: PriorityLabel(
-                                    priority: activity.priority,
-                                    context: this.context,
-                                    color: headerFg,
-                                    fontSize:
-                                        context.theme.typography.xs.fontSize,
-                                    height: 1,
-                                    muted: headerFg == null,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      }
+                              );
+                            }
 
-                      // Non-timed: left-aligned Row
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (hasBodyLabel)
-                            Flexible(
-                              child: PriorityLabel(
-                                priority: activity.priority,
-                                context: this.context,
-                                color: headerFg,
-                                fontSize: context.theme.typography.xs.fontSize,
-                                height: 1,
-                                muted: headerFg == null,
-                              ),
-                            ),
-                          if (hasBodyLabel && hasScheduleLabel) Text(' · '),
-                          if (scheduleDate != null) ...[
-                            Text(formatRelativeSchedule(scheduleDate, context)),
-                            if (activity.duration != null &&
-                                activity.duration!.inSeconds > 0)
-                              Text(' · ${activity.duration!.format()}'),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
+                            // Non-timed: left-aligned Row
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (hasBodyLabel)
+                                  Flexible(
+                                    child: PriorityLabel(
+                                      priority: activity.priority,
+                                      context: this.context,
+                                      color: headerFg,
+                                      fontSize:
+                                          context.theme.typography.xs.fontSize,
+                                      height: 1,
+                                      muted: headerFg == null,
+                                    ),
+                                  ),
+                                if (hasBodyLabel && hasScheduleLabel)
+                                  Text(' · '),
+                                if (scheduleDate != null) ...[
+                                  Text(
+                                    formatRelativeSchedule(
+                                      scheduleDate,
+                                      context,
+                                    ),
+                                  ),
+                                  if (activity.duration != null &&
+                                      activity.duration!.inSeconds > 0)
+                                    Text(' · ${activity.duration!.format()}'),
+                                ],
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  },
                 ),
               // SizedBox + Stack keeps the title row height stable
               // regardless of whether ThreadCommands buttons are
@@ -747,13 +839,20 @@ class ThreadCommands extends HookWidget {
     );
 
     // Get commands (only if showCommands is true)
+    final isNarrow = !context.isMultiPanel;
+    final hoverCommands = threadCommands(
+      activity,
+      skipPrimary: true,
+      skipInfrequent: true,
+      showEventTiming: showEventTiming,
+    );
     final threadCommandButtons = showCommands
-        ? threadCommands(
-            activity,
-            skipPrimary: true,
-            skipInfrequent: true,
-            showEventTiming: showEventTiming,
-          ).map((cmd) => Button.icon(cmd)).toList()
+        ? [
+            if (isNarrow) Button.icon(PickScheduleThread(activity)),
+            ...hoverCommands
+                .where((cmd) => !isNarrow || cmd is! PickScheduleThread)
+                .map((cmd) => Button.icon(cmd)),
+          ]
         : <Widget>[];
 
     // Conferencing/RSVP buttons only for threads shown by their own event

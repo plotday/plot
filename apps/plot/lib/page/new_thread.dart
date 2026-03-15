@@ -386,10 +386,10 @@ class NewThreadPageState extends State<NewThreadPage> {
         ),
         SizedBox(height: spacing),
 
-        LayoutBuilder(
-          builder: (context, constraints) {
-            // Hide labels when too narrow to fit all type chips with text
-            final showLabels = constraints.maxWidth >= 360;
+        Builder(
+          builder: (context) {
+            // Hide labels when narrow (single panel)
+            final showLabels = context.isMultiPanel;
             return Center(
               child: Wrap(
                 spacing: spacing,
@@ -682,7 +682,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       prefix: showLabel ? Icon(icon, size: context.theme.iconSizes.base) : null,
       child: showLabel
           ? Text(label)
-          : Icon(icon, size: context.theme.iconSizes.base),
+          : Icon(icon, size: context.theme.iconSizes.lg),
     );
 
     if (!kIsWeb && hasPhysicalKeyboard()) {
