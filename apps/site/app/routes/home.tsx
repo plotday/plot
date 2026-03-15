@@ -67,15 +67,15 @@ const PRODUCT_ICONS: { name: string; color: string; path: string }[] = [
 
 export function meta(_: Route.MetaArgs) {
   return [
-    { title: "Plot | Decisive Team Collaboration" },
+    { title: "Plot | Your best work, every day" },
     {
       name: "description",
       content:
-        "Work has changed. Plot delivers collaboration with clarity, focus, and results.",
+        "Everything in one place. Organized, prioritized, and ready for action.",
     },
     { "og:image": "https://plot.day/assets/p.png" },
     { "twitter:title": "Plot" },
-    { "twitter:description": "Decisive Team Collaboration" },
+    { "twitter:description": "Your best work, every day" },
     { "twitter:image": "https://plot.day/assets/p.png" },
   ];
 }
@@ -89,21 +89,15 @@ export default function Home() {
           <Stack align="center" gap="lg" ta="center">
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Prioritized Progress
+                Your best work, every day
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
-              Plot organizes all your team's work and conversations,
-              <br />
-              so you have the clarity to take action.
+              Everything in one place. Organized, prioritized, and ready for
+              action.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
-              <Button
-                variant="gradient"
-                size="lg"
-                component={Link}
-                to="/start"
-              >
+              <Button variant="gradient" size="lg" component={Link} to="/start">
                 Get started free
               </Button>
               <Button
@@ -125,7 +119,10 @@ export default function Home() {
         </Container>
         <Container size="lg" mt="xl">
           <picture>
-            <source srcSet="/assets/screenshot-d.png" media="(prefers-color-scheme: dark)" />
+            <source
+              srcSet="/assets/screenshot-d.png"
+              media="(prefers-color-scheme: dark)"
+            />
             <img
               src="/assets/screenshot.png"
               alt="Plot interface showing a team conversation transforming into a prioritized action item"
@@ -420,12 +417,7 @@ export default function Home() {
             <Title order={2} size="h2" className={classes.ctaTitle}>
               Turn collaboration chaos into prioritized progress
             </Title>
-            <Button
-              variant="white"
-              size="xl"
-              component={Link}
-              to="/start"
-            >
+            <Button variant="white" size="xl" component={Link} to="/start">
               Get started free
             </Button>
             <Flex gap="lg" wrap="wrap" justify="center">
