@@ -37,10 +37,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     });
 
     // Re-trigger demand-driven syncs after a full resync
-    _subscriptions.add(Store.onFullResync.stream.listen((_) {
-      log.fine('Full resync completed, reloading priority');
-      _loadPriority();
-    }));
+    _subscriptions.add(
+      Store.onFullResync.stream.listen((_) {
+        log.fine('Full resync completed, reloading priority');
+        _loadPriority();
+      }),
+    );
   }
 
   void toggleShowArchived() {
@@ -113,8 +115,11 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Optimistic reorder: caches the moved agendaViewItems so the UI
   /// doesn't re-derive them (which can produce different item counts).
-  void moveAgendaItem(int viewOldIndex, int viewNewIndex,
-      {AgendaItem? updatedItem}) {
+  void moveAgendaItem(
+    int viewOldIndex,
+    int viewNewIndex, {
+    AgendaItem? updatedItem,
+  }) {
     if (viewOldIndex == viewNewIndex) return;
 
     _reorderTimestamp = DateTime.now();
@@ -123,7 +128,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     // The page strips the leading "Now" header from agendaViewItems before
     // passing items to InfiniteList, so indices from onReorder are relative
     // to the Now-stripped list. Adjust to agendaViewItems indices.
-    final nowOffset = (viewItems.isNotEmpty &&
+    final nowOffset =
+        (viewItems.isNotEmpty &&
             viewItems.first is AgendaHeaderItem &&
             (viewItems.first as AgendaHeaderItem).now)
         ? 1
@@ -139,7 +145,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     // reorderViewItems to the derived _makeAgenda result.
     final movedItem = viewItems[adjNew];
     if (movedItem is AgendaThreadItem) {
-      _pendingReorderOrder = (movedItem.thread.id, movedItem.thread.order.value);
+      _pendingReorderOrder = (
+        movedItem.thread.id,
+        movedItem.thread.order.value,
+      );
     }
 
     log.info(
@@ -172,7 +181,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Wait for sync so InfiniteList's _fetching stays true until data arrives
     final future = _agendaSyncFuture;
     if (future != null) {
-      try { await future; } catch (_) {}
+      try {
+        await future;
+      } catch (_) {}
     }
   }
 
@@ -199,11 +210,13 @@ class PriorityBloc extends Cubit<PriorityState> {
   void optimisticallyRemoveThread(ThreadId id) {
     _optimisticTimestamp = DateTime.now();
     final updatedItems = state.agendaItems
-        .where((item) => item.when(
-              header: (_) => true,
-              activity: (a) =>
-                  a.thread.id != id || a.thread.isLinkScheduleInstance,
-            ))
+        .where(
+          (item) => item.when(
+            header: (_) => true,
+            activity: (a) =>
+                a.thread.id != id || a.thread.isLinkScheduleInstance,
+          ),
+        )
         .toList();
     emit(state.copyWith(agendaItems: updatedItems));
   }
@@ -214,24 +227,29 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (updatedThread.draft) return;
     _optimisticTimestamp = DateTime.now();
 
-    final foundInAgenda = state.agendaItems.any((item) => item.when(
-      header: (_) => false,
-      activity: (a) => a.thread.id == updatedThread.id,
-    ));
+    final foundInAgenda = state.agendaItems.any(
+      (item) => item.when(
+        header: (_) => false,
+        activity: (a) => a.thread.id == updatedThread.id,
+      ),
+    );
 
     List<AgendaItem> updatedAgendaItems;
     if (foundInAgenda) {
       // Thread is in agenda — check if it should be removed or updated.
-      final shouldRemove = !updatedThread.todo &&
+      final shouldRemove =
+          !updatedThread.todo &&
           updatedThread.at == null &&
           updatedThread.on == null;
       if (shouldRemove) {
         // Thread was only in agenda as a todo — remove it
         updatedAgendaItems = state.agendaItems
-            .where((item) => item.when(
-                  header: (_) => true,
-                  activity: (a) => a.thread.id != updatedThread.id,
-                ))
+            .where(
+              (item) => item.when(
+                header: (_) => true,
+                activity: (a) => a.thread.id != updatedThread.id,
+              ),
+            )
             .toList();
       } else {
         // Check if the event's schedule changed — if so, reposition
@@ -249,10 +267,12 @@ class PriorityBloc extends Cubit<PriorityState> {
 
           // Remove old item and its associated event header
           updatedAgendaItems = state.agendaItems.where((item) {
-            if (item is AgendaHeaderItem && item.thread?.id == updatedThread.id) {
+            if (item is AgendaHeaderItem &&
+                item.thread?.id == updatedThread.id) {
               return false;
             }
-            if (item is AgendaThreadItem && item.thread.id == updatedThread.id) {
+            if (item is AgendaThreadItem &&
+                item.thread.id == updatedThread.id) {
               return false;
             }
             return true;
@@ -274,7 +294,8 @@ class PriorityBloc extends Cubit<PriorityState> {
                 insertIndex = i + 1;
                 for (int j = i + 1; j < updatedAgendaItems.length; j++) {
                   final sectionItem = updatedAgendaItems[j];
-                  if (sectionItem is AgendaHeaderItem && sectionItem.date != null) {
+                  if (sectionItem is AgendaHeaderItem &&
+                      sectionItem.date != null) {
                     insertIndex = j;
                     break;
                   }
@@ -282,8 +303,9 @@ class PriorityBloc extends Cubit<PriorityState> {
                       sectionItem.dateTimeRange?.start != null &&
                       sectionItem.thread != null &&
                       updatedThread.at!.start != null &&
-                      sectionItem.dateTimeRange!.start!
-                          .isAfter(updatedThread.at!.start!)) {
+                      sectionItem.dateTimeRange!.start!.isAfter(
+                        updatedThread.at!.start!,
+                      )) {
                     insertIndex = j;
                     break;
                   }
@@ -354,10 +376,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         // No today header found — insert after the first header
         insertIndex = updatedAgendaItems.isNotEmpty ? 1 : 0;
       }
-      updatedAgendaItems.insert(
-        insertIndex,
-        AgendaThreadItem(updatedThread),
-      );
+      updatedAgendaItems.insert(insertIndex, AgendaThreadItem(updatedThread));
     } else {
       updatedAgendaItems = state.agendaItems;
     }
@@ -371,13 +390,15 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     }).toList();
 
-    emit(state.copyWith(
-      thread: state.thread?.id == updatedThread.id
-          ? Value(updatedThread)
-          : const Value.absent(),
-      agendaItems: updatedAgendaItems,
-      activityFeedItems: updatedFeedItems,
-    ));
+    emit(
+      state.copyWith(
+        thread: state.thread?.id == updatedThread.id
+            ? Value(updatedThread)
+            : const Value.absent(),
+        agendaItems: updatedAgendaItems,
+        activityFeedItems: updatedFeedItems,
+      ),
+    );
   }
 
   Future<void> setPriority(Priority newPriority) async {
@@ -755,10 +776,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (threadListSource != null) return threadListSource!;
     // Check if current thread is in the agenda
     if (state.thread != null) {
-      final inAgenda = state.agendaItems.any((item) => item.when(
-        header: (_) => false,
-        activity: (a) => a.thread.id == state.thread!.id,
-      ));
+      final inAgenda = state.agendaItems.any(
+        (item) => item.when(
+          header: (_) => false,
+          activity: (a) => a.thread.id == state.thread!.id,
+        ),
+      );
       if (inAgenda) return ThreadListSource.agenda;
     }
     return ThreadListSource.activityFeed;
@@ -790,27 +813,26 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Watch tags for the priority
     _tagsSubscription?.cancel();
-    _tagsSubscription = Thread.watchTagsForPriority(priorityToLoad.path)
-        .listen((tags) {
-          // Common tags (excluding action tags)
-          final commonTagsFiltered = tags
-              .where((tagData) => tagData.$1.type != .compute)
-              .map((tagData) => tagData.$1)
-              .toList();
+    _tagsSubscription = Thread.watchTagsForPriority(priorityToLoad.path).listen(
+      (tags) {
+        // Common tags (excluding action tags)
+        final commonTagsFiltered = tags
+            .where((tagData) => tagData.$1.type != .compute)
+            .map((tagData) => tagData.$1)
+            .toList();
 
-          // All tags excluding action tags and common tags
-          final commonTagSet = commonTagsFiltered.toSet();
-          final otherTags = Tag.getAll(onlyAddable: true)
-              .where(
-                (tag) => tag.type != .compute && !commonTagSet.contains(tag),
-              )
-              .toList();
+        // All tags excluding action tags and common tags
+        final commonTagSet = commonTagsFiltered.toSet();
+        final otherTags = Tag.getAll(onlyAddable: true)
+            .where((tag) => tag.type != .compute && !commonTagSet.contains(tag))
+            .toList();
 
-          // Combine: common tags first, then other tags
-          final tagSuggestions = [...commonTagsFiltered, ...otherTags];
+        // Combine: common tags first, then other tags
+        final tagSuggestions = [...commonTagsFiltered, ...otherTags];
 
-          emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
-        });
+        emit(state.copyWith(tags: tags, tagSuggestions: tagSuggestions));
+      },
+    );
 
     // Watch twists for the priority (including ancestors)
     _subscriptions.add(
@@ -854,9 +876,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _watchingThreadId = thread.id;
 
     // Watch the thread
-    _threadSubscription = Thread.watchOne(thread.id).listen((
-      watchedThread,
-    ) {
+    _threadSubscription = Thread.watchOne(thread.id).listen((watchedThread) {
       emit(state.copyWith(thread: Value(watchedThread)));
     });
   }
@@ -876,7 +896,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Creates a fresh draft for the priority afterward.
   /// If note is provided, converts it from draft to published and asynchronously generates a title.
   /// Returns the saved thread.
-  Future<Thread> add(Thread thread, {Note? note, bool assignNote = true}) async {
+  Future<Thread> add(
+    Thread thread, {
+    Note? note,
+    bool assignNote = true,
+  }) async {
     // Convert the draft to a non-draft
     final savedThread = thread.copyWith(draft: false);
     await savedThread.save();
@@ -885,10 +909,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (note != null &&
         note.content != null &&
         note.content!.trim().isNotEmpty) {
-      var publishedNote = note.copyWith(
-        threadId: savedThread.id,
-        draft: false,
-      );
+      var publishedNote = note.copyWith(threadId: savedThread.id, draft: false);
 
       // If the thread is a task and note assignment is requested, assign the note to the current user
       if (savedThread.todo && assignNote) {
@@ -913,7 +934,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
 
     // Create fresh draft for the priority (use remembered default if set)
-    final newDraft = Thread(priority: _newThreadDefaultPriority ?? thread.priority, draft: true);
+    final newDraft = Thread(
+      priority: _newThreadDefaultPriority ?? thread.priority,
+      draft: true,
+    );
     emit(
       state.copyWith(
         draft: newDraft,
@@ -930,111 +954,122 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.fine('Loading agenda for priority ${priorityToLoad.id}');
     _agendaSubscription?.cancel();
 
-    _agendaSubscription = Thread.watch(
-      priorityPath: priorityToLoad.path,
-      archived: state.showArchived,
-      filter: state.filter.isNotEmpty ? state.filter : null,
-      search: state.search.isNotEmpty ? state.search : null,
-      order: ThreadOrder.sorted,
-      limit: _agendaLimit,
-      includeUnscheduled: false,
-      range: CustomBoundedDateRange(
-        Date.today(),
-        Date.today().addDays(_agendaHorizonDays),
-      ),
-    ).transform(
-      ExpiringStreamTransformer((result) {
-        // Re-evaluate every minute on the minute to update time-dependent UI
-        final now = Time.now();
-        final expiry = now.add(
-          Duration(
-            seconds: 60 - now.second,
-            milliseconds: -now.millisecond,
-          ),
-        );
-        return ExpiringResult(value: result, expiry: expiry);
-      }),
-    ).debounceTime(const Duration(milliseconds: 100)).listen((result) {
-      final (:threads, :rawRowCount) = result;
-      _agendaLastRawRowCount = rawRowCount;
+    _agendaSubscription =
+        Thread.watch(
+              priorityPath: priorityToLoad.path,
+              archived: state.showArchived,
+              filter: state.filter.isNotEmpty ? state.filter : null,
+              search: state.search.isNotEmpty ? state.search : null,
+              order: ThreadOrder.sorted,
+              limit: _agendaLimit,
+              includeUnscheduled: false,
+              range: CustomBoundedDateRange(
+                Date.today(),
+                Date.today().addDays(_agendaHorizonDays),
+              ),
+            )
+            .transform(
+              ExpiringStreamTransformer((result) {
+                // Re-evaluate every minute on the minute to update time-dependent UI
+                final now = Time.now();
+                final expiry = now.add(
+                  Duration(
+                    seconds: 60 - now.second,
+                    milliseconds: -now.millisecond,
+                  ),
+                );
+                return ExpiringResult(value: result, expiry: expiry);
+              }),
+            )
+            .debounceTime(const Duration(milliseconds: 100))
+            .listen((result) {
+              final (:threads, :rawRowCount) = result;
+              _agendaLastRawRowCount = rawRowCount;
 
-      // After a reorder or optimistic update, suppress agenda rebuilds
-      // briefly so the optimistic state stays visible until all DB writes
-      // (thread, schedule, tags) are complete and the stream settles.
-      final now = DateTime.now();
+              // After a reorder or optimistic update, suppress agenda rebuilds
+              // briefly so the optimistic state stays visible until all DB writes
+              // (thread, schedule, tags) are complete and the stream settles.
+              final now = DateTime.now();
 
-      // Data-driven suppression for optimistic schedule changes: keep
-      // suppressing until stream data confirms the expected schedule.
-      final bool suppressOptimisticSchedule;
-      if (_pendingOptimisticSchedule != null) {
-        final (threadId, expectedAt) = _pendingOptimisticSchedule!;
-        final settled = threads.any(
-          (t) => t.id == threadId && t.at == expectedAt,
-        );
-        suppressOptimisticSchedule = !settled;
-        if (settled) {
-          _pendingOptimisticSchedule = null;
-        }
-      } else {
-        suppressOptimisticSchedule = false;
-      }
+              // Data-driven suppression for optimistic schedule changes: keep
+              // suppressing until stream data confirms the expected schedule.
+              final bool suppressOptimisticSchedule;
+              if (_pendingOptimisticSchedule != null) {
+                final (threadId, expectedAt) = _pendingOptimisticSchedule!;
+                final settled = threads.any(
+                  (t) => t.id == threadId && t.at == expectedAt,
+                );
+                suppressOptimisticSchedule = !settled;
+                if (settled) {
+                  _pendingOptimisticSchedule = null;
+                }
+              } else {
+                suppressOptimisticSchedule = false;
+              }
 
-      // Time-based suppression for other optimistic thread updates (non-reorder).
-      final suppressOptimistic = suppressOptimisticSchedule ||
-          (_optimisticTimestamp != null &&
-          now.difference(_optimisticTimestamp!) <
-              const Duration(milliseconds: 500));
+              // Time-based suppression for other optimistic thread updates (non-reorder).
+              final suppressOptimistic =
+                  suppressOptimisticSchedule ||
+                  (_optimisticTimestamp != null &&
+                      now.difference(_optimisticTimestamp!) <
+                          const Duration(milliseconds: 500));
 
-      // Data-driven suppression for reorders: keep reorderViewItems until
-      // the stream data includes the reordered thread at its expected order.
-      // Stale events are prevented by cancelling and restarting the
-      // subscription in moveAgendaItem, so no time-based fallback is needed.
-      final bool suppressReorder;
-      if (_pendingReorderOrder != null) {
-        final (threadId, expectedOrder) = _pendingReorderOrder!;
-        final settled = threads.any(
-          (t) => t.id == threadId && t.order.value == expectedOrder,
-        );
-        suppressReorder = !settled;
-        if (settled) {
-          _pendingReorderOrder = null;
-          _reorderTimestamp = null;
-        }
-      } else {
-        suppressReorder = false;
-      }
+              // Data-driven suppression for reorders: keep reorderViewItems until
+              // the stream data includes the reordered thread at its expected order.
+              // Stale events are prevented by cancelling and restarting the
+              // subscription in moveAgendaItem, so no time-based fallback is needed.
+              final bool suppressReorder;
+              if (_pendingReorderOrder != null) {
+                final (threadId, expectedOrder) = _pendingReorderOrder!;
+                final settled = threads.any(
+                  (t) => t.id == threadId && t.order.value == expectedOrder,
+                );
+                suppressReorder = !settled;
+                if (settled) {
+                  _pendingReorderOrder = null;
+                  _reorderTimestamp = null;
+                }
+              } else {
+                suppressReorder = false;
+              }
 
-      final suppressRebuild = suppressReorder || suppressOptimistic;
+              final suppressRebuild = suppressReorder || suppressOptimistic;
 
-      log.fine(
-        '[_loadAgenda] stream fired: suppress=$suppressRebuild '
-        '(reorder=$suppressReorder optimistic=$suppressOptimistic) '
-        'reorderAge=${_reorderTimestamp != null ? now.difference(_reorderTimestamp!).inMilliseconds : "null"}ms '
-        'hasReorderViewItems=${state.reorderViewItems != null} '
-        'pendingOrder=${_pendingReorderOrder?.$2}',
-      );
+              log.fine(
+                '[_loadAgenda] stream fired: suppress=$suppressRebuild '
+                '(reorder=$suppressReorder optimistic=$suppressOptimistic) '
+                'reorderAge=${_reorderTimestamp != null ? now.difference(_reorderTimestamp!).inMilliseconds : "null"}ms '
+                'hasReorderViewItems=${state.reorderViewItems != null} '
+                'pendingOrder=${_pendingReorderOrder?.$2}',
+              );
 
-      final agendaItems = suppressRebuild
-          ? state.agendaItems
-          : PriorityState._makeAgenda(threads, context: priorityToLoad, horizonDays: _agendaHorizonDays);
+              final agendaItems = suppressRebuild
+                  ? state.agendaItems
+                  : PriorityState._makeAgenda(
+                      threads,
+                      context: priorityToLoad,
+                      horizonDays: _agendaHorizonDays,
+                    );
 
-      emit(
-        state.copyWith(
-          // If switching priorities, update context atomically with new agenda
-          context: state.targetPriority,
-          agendaItems: agendaItems,
-          agendaDoneEnd: rawRowCount < _agendaLimit && (state.search.isNotEmpty || _agendaSyncNoMore),
-          // Keep reorderViewItems during suppress, clear when real data arrives
-          reorderViewItems: suppressRebuild
-              ? const Value.absent()
-              : const Value(null),
-          // Clear targetPriority after switching
-          targetPriority: state.targetPriority != null
-              ? const Value(null)
-              : const Value.absent(),
-        ),
-      );
-    });
+              emit(
+                state.copyWith(
+                  // If switching priorities, update context atomically with new agenda
+                  context: state.targetPriority,
+                  agendaItems: agendaItems,
+                  agendaDoneEnd:
+                      rawRowCount < _agendaLimit &&
+                      (state.search.isNotEmpty || _agendaSyncNoMore),
+                  // Keep reorderViewItems during suppress, clear when real data arrives
+                  reorderViewItems: suppressRebuild
+                      ? const Value.absent()
+                      : const Value(null),
+                  // Clear targetPriority after switching
+                  targetPriority: state.targetPriority != null
+                      ? const Value(null)
+                      : const Value.absent(),
+                ),
+              );
+            });
 
     if (triggerSync) {
       _agendaSyncFuture = _triggerAgendaSync(priorityToLoad);
@@ -1047,15 +1082,16 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> _triggerAgendaSync(Priority priorityToLoad) async {
     final archived = _effectiveShowArchived;
     await Thread.pullAgenda(
-      priorityToLoad.id, priorityToLoad.path,
+      priorityToLoad.id,
+      priorityToLoad.path,
       archived: archived,
     );
     final path = priorityToLoad.path.value;
     final suffix = archived ? '_archived' : '';
     final entityName = 'agenda:$path$suffix';
-    final syncState = await (Store.get.select(Store.get.syncStates)
-      ..where((row) => row.entity.equals(entityName)))
-      .getSingleOrNull();
+    final syncState = await (Store.get.select(
+      Store.get.syncStates,
+    )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
     // If no sync state exists after pulling, the pull was satisfied by an
     // ancestor's noMore flag — treat this entity as fully synced too.
     _agendaSyncNoMore = syncState?.noMore ?? true;
@@ -1067,82 +1103,90 @@ class PriorityBloc extends Cubit<PriorityState> {
   void _loadActivityFeed({bool triggerSync = true}) {
     final priorityToLoad = state.targetPriority ?? state.context;
     _activityFeedSubscription?.cancel();
-    _activityFeedSubscription = Thread.watch(
-      order: ThreadOrder.reverse,
-      priorityPath: priorityToLoad.path,
-      archived: state.showArchived,
-      filter: state.filter.isNotEmpty ? state.filter : null,
-      search: state.search.isNotEmpty ? state.search : null,
-      limit: _activityFeedLimit,
-    ).listen((result) {
-      final (:threads, :rawRowCount) = result;
-      _activityFeedLastRawRowCount = rawRowCount;
+    _activityFeedSubscription =
+        Thread.watch(
+          order: ThreadOrder.reverse,
+          priorityPath: priorityToLoad.path,
+          archived: state.showArchived,
+          filter: state.filter.isNotEmpty ? state.filter : null,
+          search: state.search.isNotEmpty ? state.search : null,
+          limit: _activityFeedLimit,
+        ).listen((result) {
+          final (:threads, :rawRowCount) = result;
+          _activityFeedLastRawRowCount = rawRowCount;
 
-      // Suppress rebuilds briefly after optimistic updates so stale
-      // intermediate stream events (e.g. thread saved but schedule not yet)
-      // don't overwrite the optimistic state.
-      final suppressOptimistic = _optimisticTimestamp != null &&
-          DateTime.now().difference(_optimisticTimestamp!) <
-              const Duration(milliseconds: 500);
-      if (suppressOptimistic) return;
+          // Suppress rebuilds briefly after optimistic updates so stale
+          // intermediate stream events (e.g. thread saved but schedule not yet)
+          // don't overwrite the optimistic state.
+          final suppressOptimistic =
+              _optimisticTimestamp != null &&
+              DateTime.now().difference(_optimisticTimestamp!) <
+                  const Duration(milliseconds: 500);
+          if (suppressOptimistic) return;
 
-      // doneEnd when sync is complete AND either:
-      // - raw rows are below limit (no more data), OR
-      // - thread count hasn't grown despite limit increase (JOIN multiplication)
-      final threadCountStalled = _activityFeedSyncNoMore &&
-          rawRowCount >= _activityFeedLimit &&
-          threads.length == state.activityFeedItems
-              .whereType<AgendaThreadItem>()
-              .length &&
-          threads.length < _activityFeedLimit;
-      final isSearching = state.search.isNotEmpty;
-      final doneEnd = (rawRowCount < _activityFeedLimit && (isSearching || _activityFeedSyncNoMore)) ||
-          threadCountStalled;
-      final items = <AgendaItem>[];
+          // doneEnd when sync is complete AND either:
+          // - raw rows are below limit (no more data), OR
+          // - thread count hasn't grown despite limit increase (JOIN multiplication)
+          final threadCountStalled =
+              _activityFeedSyncNoMore &&
+              rawRowCount >= _activityFeedLimit &&
+              threads.length ==
+                  state.activityFeedItems
+                      .whereType<AgendaThreadItem>()
+                      .length &&
+              threads.length < _activityFeedLimit;
+          final isSearching = state.search.isNotEmpty;
+          final doneEnd =
+              (rawRowCount < _activityFeedLimit &&
+                  (isSearching || _activityFeedSyncNoMore)) ||
+              threadCountStalled;
+          final items = <AgendaItem>[];
 
-      // Partition into unread and read
-      final unreadThreads = <Thread>[];
-      final readThreads = <Thread>[];
-      for (final thread in threads) {
-        if (thread.unread || _stickyUnreadIds.contains(thread.id)) {
-          unreadThreads.add(thread);
-        } else {
-          readThreads.add(thread);
-        }
-      }
+          // Partition into unread and read
+          final unreadThreads = <Thread>[];
+          final readThreads = <Thread>[];
+          for (final thread in threads) {
+            if (thread.unread || _stickyUnreadIds.contains(thread.id)) {
+              unreadThreads.add(thread);
+            } else {
+              readThreads.add(thread);
+            }
+          }
 
-      // Sort unread by urgency rank (lower = higher priority), then importance desc,
-      // with activityAt as stable tiebreaker
-      unreadThreads.sort((a, b) {
-        final urgencyCmp = a.urgencyRank.compareTo(b.urgencyRank);
-        if (urgencyCmp != 0) return urgencyCmp;
-        final importanceCmp = b.importance.compareTo(a.importance);
-        if (importanceCmp != 0) return importanceCmp;
-        return b.activityAt.compareTo(a.activityAt);
-      });
+          // Sort unread by urgency rank (lower = higher priority), then importance desc,
+          // with activityAt as stable tiebreaker
+          unreadThreads.sort((a, b) {
+            final urgencyCmp = a.urgencyRank.compareTo(b.urgencyRank);
+            if (urgencyCmp != 0) return urgencyCmp;
+            final importanceCmp = b.importance.compareTo(a.importance);
+            if (importanceCmp != 0) return importanceCmp;
+            return b.activityAt.compareTo(a.activityAt);
+          });
 
-      // Add unread threads (no section header - they're at the very top)
-      for (final thread in unreadThreads) {
-        items.add(AgendaThreadItem(thread));
-      }
+          // Add unread threads (no section header - they're at the very top)
+          for (final thread in unreadThreads) {
+            items.add(AgendaThreadItem(thread));
+          }
 
-      // Add read threads with time-ago bucket headers
-      String? currentBucket;
-      for (final thread in readThreads) {
-        final (label, bucketDate) = PriorityState._timeAgoBucket(
-          thread.activityAt.toDate(),
-        );
-        if (label != currentBucket) {
-          currentBucket = label;
-          items.add(AgendaHeaderItem(text: label, date: bucketDate));
-        }
-        items.add(AgendaThreadItem(thread));
-      }
-      emit(state.copyWith(
-        activityFeedItems: items,
-        activityFeedDoneEnd: doneEnd,
-      ));
-    });
+          // Add read threads with time-ago bucket headers
+          String? currentBucket;
+          for (final thread in readThreads) {
+            final (label, bucketDate) = PriorityState._timeAgoBucket(
+              thread.activityAt.toDate(),
+            );
+            if (label != currentBucket) {
+              currentBucket = label;
+              items.add(AgendaHeaderItem(text: label, date: bucketDate));
+            }
+            items.add(AgendaThreadItem(thread));
+          }
+          emit(
+            state.copyWith(
+              activityFeedItems: items,
+              activityFeedDoneEnd: doneEnd,
+            ),
+          );
+        });
 
     if (triggerSync) {
       _activityFeedSyncFuture = _triggerActivityFeedSync(priorityToLoad);
@@ -1152,19 +1196,21 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
     final archived = _effectiveShowArchived;
     await Thread.pullActivityFeed(
-      priorityToLoad.id, priorityToLoad.path,
+      priorityToLoad.id,
+      priorityToLoad.path,
       archived: archived,
     );
     final path = priorityToLoad.path.value;
     final suffix = archived ? '_archived' : '';
     final entityName = 'activity-feed:$path$suffix';
-    final syncState = await (Store.get.select(Store.get.syncStates)
-      ..where((row) => row.entity.equals(entityName)))
-      .getSingleOrNull();
+    final syncState = await (Store.get.select(
+      Store.get.syncStates,
+    )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
     // If no sync state exists after pulling, the pull was satisfied by an
     // ancestor's noMore flag — treat this entity as fully synced too.
     _activityFeedSyncNoMore = syncState?.noMore ?? true;
-    if (_activityFeedSyncNoMore && _activityFeedLastRawRowCount < _activityFeedLimit) {
+    if (_activityFeedSyncNoMore &&
+        _activityFeedLastRawRowCount < _activityFeedLimit) {
       emit(state.copyWith(activityFeedDoneEnd: true));
     }
   }
@@ -1173,16 +1219,22 @@ class PriorityBloc extends Cubit<PriorityState> {
     final needed = first + count;
     if (needed > _activityFeedLimit) {
       _activityFeedLimit = needed;
-      _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty);
+      _loadActivityFeed(
+        triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty,
+      );
     } else if (!state.activityFeedDoneEnd) {
       // JOIN multiplication: need more raw rows to get enough unique threads
       _activityFeedLimit += 50;
-      _loadActivityFeed(triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty);
+      _loadActivityFeed(
+        triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty,
+      );
     }
     // Wait for sync so InfiniteList's _fetching stays true until data arrives
     final future = _activityFeedSyncFuture;
     if (future != null) {
-      try { await future; } catch (_) {}
+      try {
+        await future;
+      } catch (_) {}
     }
   }
 
@@ -1220,8 +1272,7 @@ class ThreadListSourceProvider extends InheritedWidget {
   }
 
   @override
-  bool updateShouldNotify(ThreadListSourceProvider old) =>
-      source != old.source;
+  bool updateShouldNotify(ThreadListSourceProvider old) => source != old.source;
 }
 
 class PriorityBlocProvider extends StatefulWidget {
@@ -1269,9 +1320,7 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
           : widget.priorityId != null
           ? Priority.getOne(widget.priorityId!)
           : widget.threadId != null
-          ? Thread.getOne(
-              widget.threadId!,
-            ).then((thread) => thread.priority)
+          ? Thread.getOne(widget.threadId!).then((thread) => thread.priority)
           : Future<Priority>.error(
               'Either priorityId or threadId must be provided',
             ));

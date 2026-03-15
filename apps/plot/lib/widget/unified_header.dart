@@ -25,24 +25,6 @@ import 'button.dart';
 import 'icon.dart';
 import 'window.dart';
 
-Future<bool> _checkPendingItems(ThreadId threadId) async {
-  final actorId = Base.actorId;
-
-  final notes = await Note.getForThread(threadId);
-  if (notes.any((n) => n.hasTag(Tag.todo, actorId))) return true;
-
-  final links = await Link.getForThread(threadId);
-  for (final link in links) {
-    if (link.assigneeId != null && link.assigneeId != actorId) continue;
-    final doneStatuses =
-        link.getTypeConfig()?.statuses?.where((s) => s.done) ?? [];
-    if (doneStatuses.isEmpty) continue;
-    if (!doneStatuses.any((s) => s.status == link.status)) return true;
-  }
-
-  return false;
-}
-
 /// A single header spanning the full window width, placed above all panels.
 class UnifiedHeader extends StatefulWidget {
   const UnifiedHeader({super.key});
@@ -504,22 +486,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         color: context.theme.plotColors.muted,
       );
     } else {
-      todoIcon = FutureBuilder<bool>(
-        future: _checkPendingItems(thread.id),
-        builder: (context, snapshot) {
-          final hasPending = snapshot.data ?? false;
-          return Button.icon(
-            CommandWrapper(
-              ThreadDone(thread),
-              icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
-              hoverIcon: hasPending
-                  ? Value(FontAwesomeIcons.circleCheck)
-                  : const Value<IconData?>.absent(),
-            ),
-            selected: true,
-            selectedColor: threadColor,
-          );
-        },
+      final hasPending = thread.outstandingTasks;
+      todoIcon = Button.icon(
+        CommandWrapper(
+          ThreadDone(thread),
+          icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
+          hoverIcon: hasPending
+              ? Value(FontAwesomeIcons.circleCheck)
+              : const Value<IconData?>.absent(),
+        ),
+        selected: true,
+        selectedColor: threadColor,
       );
     }
 

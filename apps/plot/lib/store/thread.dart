@@ -64,6 +64,7 @@ class Schedules extends Table with SyncableTable, UuidTable {
   TextColumn get contacts => text().nullable()();
   TextColumn get currentUserStatus => text().nullable()();
   TextColumn get reason => text().nullable()();
+  BoolColumn get outstandingTasks => boolean().withDefault(const Constant(false))();
 }
 
 class ScheduleContact {
@@ -2044,6 +2045,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// A thread is "done" when it has no active per-user schedule (archived or absent)
   /// and no dates set. Effectively: not a todo.
   bool get done => _userSchedule != null && !todo;
+  bool get outstandingTasks => _userSchedule?.outstandingTasks ?? false;
   DateTime? get bumpedAt => _thread.bumpedAt;
   bool get hasUserSchedule => _userSchedule != null;
   bool get isPast =>
@@ -2442,6 +2444,7 @@ class Thread extends Equatable implements Comparable<Thread> {
                 ? recurrenceExdates.value
                 : null,
             order: order ?? Order.first(),
+            outstandingTasks: false,
           );
         }
       }
@@ -2475,6 +2478,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           startOn: Thread.todoNowDate,
           order: Order.first(),
           reason: 'add',
+          outstandingTasks: false,
         );
       }
     }
@@ -2507,6 +2511,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           userId: Base.userId,
           order: Order.first(),
           archivedAt: DateTime.now(),
+          outstandingTasks: false,
         );
       }
     }
@@ -2573,6 +2578,7 @@ class Thread extends Equatable implements Comparable<Thread> {
               startOn: Thread.todoNowDate,
               order: Order.first(),
               reason: 'add',
+              outstandingTasks: false,
             ),
           );
         }
@@ -2886,6 +2892,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           recurrenceExdates: _schedule?.recurrenceExdates,
           contacts: _schedule?.contacts,
           currentUserStatus: _schedule?.currentUserStatus,
+          outstandingTasks: false,
         ),
         priority: priority,
         tags: _tags,

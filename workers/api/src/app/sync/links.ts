@@ -90,8 +90,47 @@ links.post("/sync/links", async (c) => {
           if (!contact?.user_id) return;
 
           await createSchedule(c.var.db, contact.user_id, linkThreadId, 'task');
+          // Recompute outstanding_tasks for the assignee
+          await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(c.var.db);
         } catch (error) {
           console.error("[schedule] Failed to create task schedule from link assignment:", error);
+        }
+      })()
+    );
+  }
+
+  // Recompute outstanding_tasks when link status changes (may mark done/undone)
+  if (linkThreadId && linkData.status !== undefined) {
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          if (assigneeId) {
+            // Recompute for the assigned user
+            const contact = await c.var.db
+              .selectFrom("contact")
+              .select("user_id")
+              .where("id", "=", assigneeId)
+              .executeTakeFirst();
+            if (contact?.user_id) {
+              await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(c.var.db);
+            }
+          } else {
+            // Unassigned link: recompute for all users with a schedule on this thread
+            const schedules = await c.var.db
+              .selectFrom("schedule")
+              .select("user_id")
+              .where("thread_id", "=", linkThreadId)
+              .where("user_id", "is not", null)
+              .where("occurrence", "is", null)
+              .execute();
+            for (const sched of schedules) {
+              if (sched.user_id) {
+                await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${sched.user_id}::uuid)`.execute(c.var.db);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("[schedule] Failed to recompute outstanding_tasks from link status:", error);
         }
       })()
     );

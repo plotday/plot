@@ -1819,7 +1819,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 276;
+  int get schemaVersion => 279;
 
   @override
   MigrationStrategy get migration {
@@ -2328,6 +2328,21 @@ class Store extends _$Store {
       );
       await m.database.customStatement(
         "ALTER TABLE source_channels DROP COLUMN create_threads_old",
+      );
+    }
+    if (from < 277) {
+      await _safeAddColumn(m, schedules, schedules.outstandingTasks);
+    }
+    if (from < 278) {
+      // (v278 originally deleted the row, but that doesn't work — see v279)
+    }
+    if (from < 279) {
+      // Reset schedule sync cursor so the server-backfilled outstanding_tasks
+      // values are re-pulled on next sync. Set to 0 (not delete) because
+      // pull() without initial:true treats a missing cursor as "new entity"
+      // and just sets it to now() without fetching.
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'schedules'",
       );
     }
   }

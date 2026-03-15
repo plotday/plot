@@ -13,7 +13,8 @@ CREATE TABLE "public"."schedule" (
     "occurrence" text,
     "reason" text,
     "thread_id" uuid REFERENCES public.thread (id) ON DELETE CASCADE,
-    "link_id" uuid REFERENCES public.link (id) ON DELETE CASCADE
+    "link_id" uuid REFERENCES public.link (id) ON DELETE CASCADE,
+    "outstanding_tasks" boolean NOT NULL DEFAULT FALSE
 );
 
 -- Exactly one of at/on must be set, or both null for per-user undated schedules

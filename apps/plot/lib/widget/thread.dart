@@ -14,26 +14,6 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-Future<bool> _checkPendingItems(ThreadId threadId) async {
-  final actorId = Base.actorId;
-
-  // Check for notes assigned to current user
-  final notes = await Note.getForThread(threadId);
-  if (notes.any((n) => n.hasTag(Tag.todo, actorId))) return true;
-
-  // Check for links assigned to user or unassigned, not already done
-  final links = await Link.getForThread(threadId);
-  for (final link in links) {
-    if (link.assigneeId != null && link.assigneeId != actorId) continue;
-    final doneStatuses =
-        link.getTypeConfig()?.statuses?.where((s) => s.done) ?? [];
-    if (doneStatuses.isEmpty) continue;
-    if (!doneStatuses.any((s) => s.status == link.status)) return true;
-  }
-
-  return false;
-}
-
 class ThreadWidget extends StatelessWidget {
   const ThreadWidget({
     required this.activity,
@@ -187,26 +167,21 @@ class ThreadWidget extends StatelessWidget {
             forceHover: isHovered,
           );
         } else {
-          todoIcon = FutureBuilder<bool>(
-            future: _checkPendingItems(activity.id),
-            builder: (context, snapshot) {
-              final hasPending = snapshot.data ?? false;
-              return Button.icon(
-                CommandWrapper(
-                  ThreadDone(activity, bump: bump),
-                  icon: Value(
-                    hasPending ? FontAwesomeIcons.circle : PlotIcon.todo,
-                  ),
-                  hoverIcon: hasPending
-                      ? Value(FontAwesomeIcons.circleCheck)
-                      : const Value<IconData?>.absent(),
-                  title: 'Done',
-                ),
-                selected: true,
-                selectedColor: threadColor,
-                forceHover: isHovered,
-              );
-            },
+          final hasPending = activity.outstandingTasks;
+          todoIcon = Button.icon(
+            CommandWrapper(
+              ThreadDone(activity, bump: bump),
+              icon: Value(
+                hasPending ? FontAwesomeIcons.circle : PlotIcon.todo,
+              ),
+              hoverIcon: hasPending
+                  ? Value(FontAwesomeIcons.circleCheck)
+                  : const Value<IconData?>.absent(),
+              title: 'Done',
+            ),
+            selected: true,
+            selectedColor: threadColor,
+            forceHover: isHovered,
           );
         }
 

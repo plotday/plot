@@ -502,6 +502,10 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // This route means no thread is selected — clear any stale thread state.
+      // Handles browser back / gesture back which bypass PopScope.
+      context.read<PriorityBloc>().setThread(null);
       final layoutState = context.read<LayoutBloc>().state;
       if (layoutState.middlePanelVisible) {
         context.router.navigate(NewThreadRoute());

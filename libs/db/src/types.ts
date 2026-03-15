@@ -1234,6 +1234,7 @@ export type Database = {
           occurrence: string | null
           on: unknown
           order: number | null
+          outstanding_tasks: boolean
           reason: string | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
@@ -1251,6 +1252,7 @@ export type Database = {
           occurrence?: string | null
           on?: unknown
           order?: number | null
+          outstanding_tasks?: boolean
           reason?: string | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
@@ -1268,6 +1270,7 @@ export type Database = {
           occurrence?: string | null
           on?: unknown
           order?: number | null
+          outstanding_tasks?: boolean
           reason?: string | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
@@ -3472,6 +3475,10 @@ export type Database = {
       }
       order_first: { Args: never; Returns: number }
       parent_path: { Args: { p: unknown }; Returns: unknown }
+      recompute_outstanding_tasks: {
+        Args: { p_thread_id: string; p_user_id: string }
+        Returns: undefined
+      }
       redeem_invitation_token: {
         Args: { p_token: string; p_user_id: string }
         Returns: Json
@@ -3726,6 +3733,7 @@ export type Database = {
           occurrence: string | null
           on: unknown
           order: number | null
+          outstanding_tasks: boolean | null
           priority_path: unknown
           range_at: unknown
           range_on: unknown

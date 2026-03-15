@@ -599,6 +599,19 @@ class Note extends Equatable implements Comparable<Note> {
       await _ensureTodoForUser(threadId, Base.userId);
     }
 
+    // Recompute outstandingTasks on the per-user schedule when todo/done tags change
+    if (_tags?.tagsUpdated != null) {
+      final todoId = Tag.todo.id.toString();
+      final doneId = Tag.done.id.toString();
+      final hasTodoChange = _tags!.tagsUpdated!.keys.any(
+        (k) => k == todoId || k.startsWith('$todoId:') ||
+               k == doneId || k.startsWith('$doneId:'),
+      );
+      if (hasTodoChange) {
+        await _recomputeOutstandingTasks(threadId, Base.userId);
+      }
+    }
+
     // Reply tag propagation: note → thread
     if (!skipReplyPropagation) {
       final replyUpdated = _tags?.tagsUpdated?[Tag.reply.id.toString()];
@@ -641,6 +654,7 @@ class Note extends Equatable implements Comparable<Note> {
         userId: userId,
         startOn: Thread.todoNowDate,
         order: Order.first(),
+        outstandingTasks: true,
       );
       await Store.get.save(
         Store.get.schedules,
@@ -655,6 +669,7 @@ class Note extends Equatable implements Comparable<Note> {
           archivedAt: const Value(null),
           updatedAt: DateTime.now(),
           startOn: existing.startOn == null ? Value(Thread.todoNowDate) : const Value.absent(),
+          outstandingTasks: true,
         ).toCompanion(false),
         SchedulesBase(),
       );
@@ -683,6 +698,41 @@ class Note extends Equatable implements Comparable<Note> {
         await thread.toggleTag(Tag.reply).save();
       }
     }
+  }
+
+  /// Recomputes the outstandingTasks flag on the per-user schedule for a thread.
+  static Future<void> _recomputeOutstandingTasks(ThreadId threadId, Uuid userId) async {
+    final hasOutstanding = await _checkOutstandingTasks(threadId);
+    final schedule = await (Store.get.select(Store.get.schedules)
+      ..where((s) => s.threadId.equalsValue(threadId) &
+                     s.userId.equalsValue(userId) &
+                     s.occurrence.isNull()))
+        .getSingleOrNull();
+    if (schedule != null && schedule.outstandingTasks != hasOutstanding) {
+      await Store.get.save(
+        Store.get.schedules,
+        schedule.copyWith(outstandingTasks: hasOutstanding, updatedAt: DateTime.now()).toCompanion(false),
+        SchedulesBase(),
+      );
+    }
+  }
+
+  /// Checks if a thread has outstanding tasks for the current user.
+  static Future<bool> _checkOutstandingTasks(ThreadId threadId) async {
+    final actorId = Base.actorId;
+    // Check notes with active todo tag
+    final notes = await Note.getForThread(threadId);
+    if (notes.any((n) => n.hasTag(Tag.todo, actorId))) return true;
+    // Check links assigned to user (or unassigned) with non-done status
+    final links = await Link.getForThread(threadId);
+    for (final link in links) {
+      if (link.assigneeId != null && link.assigneeId != actorId) continue;
+      final doneStatuses =
+          link.getTypeConfig()?.statuses?.where((s) => s.done) ?? [];
+      if (doneStatuses.isEmpty) continue;
+      if (!doneStatuses.any((s) => s.status == link.status)) return true;
+    }
+    return false;
   }
 
   Future<void> delete() async {
