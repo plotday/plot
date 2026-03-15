@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
@@ -130,17 +131,29 @@ Future<void> _checkAuthError(http.Response response, String url) async {
   }
 }
 
-/// Retries a request once on 429 using the Retry-After header.
+final _random = Random();
+
+/// Retries a request up to 3 times on 429 with exponential backoff + jitter.
 /// Returns the successful response, or the final failed response.
 Future<http.Response> _retryOn429(
   Future<http.Response> Function() request,
 ) async {
-  final response = await request();
+  var response = await request();
   if (response.statusCode != 429) return response;
 
-  final retryAfter = int.tryParse(response.headers['retry-after'] ?? '') ?? 2;
-  await Future<void>.delayed(Duration(seconds: retryAfter));
-  return request();
+  final retryAfter = int.tryParse(response.headers['retry-after'] ?? '') ?? 5;
+
+  for (var attempt = 0; attempt < 3; attempt++) {
+    final backoff = retryAfter * (1 << attempt); // 5s, 10s, 20s
+    final jitter = _random.nextDouble(); // 0-1s
+    await Future<void>.delayed(
+      Duration(milliseconds: (backoff * 1000 + jitter * 1000).round()),
+    );
+    response = await request();
+    if (response.statusCode != 429) return response;
+  }
+
+  return response;
 }
 
 Future<Map<String, String>> getHeaders() async {
@@ -153,7 +166,7 @@ Future<Map<String, String>> getHeaders() async {
   };
 }
 
-Future<T> post<T>(String url, {Map<String, dynamic> body = const {}}) async {
+Future<T> post<T>(String url, {Object body = const <String, dynamic>{}}) async {
   try {
     final headers = await getHeaders();
     final response = await _retryOn429(() => http.post(

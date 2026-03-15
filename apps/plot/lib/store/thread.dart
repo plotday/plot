@@ -576,33 +576,24 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     try {
-      // Batch POST for marking as read
-      if (toMarkRead.isNotEmpty) {
-        final readRecords = toMarkRead
-            .map(
-              (activity) => {
-                'thread_id': activity.id.toString(),
-                'read_at': readAt.toIso8601String(),
-              },
-            )
-            .toList();
+      // Batch all read/unread changes into a single POST
+      final records = <Map<String, dynamic>>[
+        ...toMarkRead.map(
+          (activity) => <String, dynamic>{
+            'thread_id': activity.id.toString(),
+            'read_at': readAt.toIso8601String(),
+          },
+        ),
+        ...toMarkUnread.map(
+          (activity) => <String, dynamic>{
+            'thread_id': activity.id.toString(),
+            'urgency': 'inform-updates',
+          },
+        ),
+      ];
 
-        for (final record in readRecords) {
-          await api.post<dynamic>('/sync/thread-unread', body: record);
-        }
-      }
-
-      // Batch POST for marking as unread (manual mark-unread uses inform-updates)
-      if (toMarkUnread.isNotEmpty) {
-        for (final activity in toMarkUnread) {
-          await api.post<dynamic>(
-            '/sync/thread-unread',
-            body: {
-              'thread_id': activity.id.toString(),
-              'urgency': 'inform-updates',
-            },
-          );
-        }
+      if (records.isNotEmpty) {
+        await api.post<dynamic>('/sync/thread-unread', body: records);
       }
 
       // Don't clear unreadUpdated here - let processPulledRows clear it

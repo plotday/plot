@@ -19,6 +19,10 @@ class SyncOrchestrator {
   final Map<SyncEntity, Completer<bool>> _pushCompleters = {};
   final Map<SyncEntity, Completer<void>> _pullCompleters = {};
 
+  // 429 rate-limit cooldown tracking
+  DateTime? _lastRateLimitAt;
+  Duration _rateLimitCooldown = const Duration(seconds: 5);
+
   // ============================================================================
   // STATIC ENTITY DEFINITIONS (type-safe!)
   // ============================================================================
@@ -168,6 +172,9 @@ class SyncOrchestrator {
   ///
   /// This replaces the old _syncAll() method with a dependency-aware version.
   Future<void> syncAll() async {
+    // Wait out 429 cooldown if active
+    await _waitForRateLimitCooldown();
+
     _syncOrchestratorLog.info('Starting syncAll: pull all → push all');
 
     // Phase 1: Pull all (parents → children)
@@ -206,6 +213,9 @@ class SyncOrchestrator {
   /// Computes the full dependency closure, then executes push and pull
   /// in topological order with parallelism within each level.
   Future<void> syncSubset(Set<SyncEntity> entities) async {
+    // Wait out 429 cooldown if active
+    await _waitForRateLimitCooldown();
+
     // Compute transitive dependency closure
     final closure = <SyncEntity>{};
     void addWithDeps(SyncEntity entity) {
@@ -296,6 +306,8 @@ class SyncOrchestrator {
         stackTrace,
       );
 
+      _trackRateLimitIfNeeded(e);
+
       // Report unexpected errors to PostHog
       if (!_isExpectedError(e)) {
         Tracker.trackError(
@@ -344,6 +356,8 @@ class SyncOrchestrator {
         stackTrace,
       );
 
+      _trackRateLimitIfNeeded(e);
+
       // Report unexpected errors to PostHog
       if (!_isExpectedError(e)) {
         Tracker.trackError(
@@ -388,6 +402,7 @@ class SyncOrchestrator {
   /// Returns true for:
   /// - Network errors (expected during offline periods)
   /// - Auth errors (handled by automatic sign-out flow)
+  /// - 429 rate limit errors (transient, handled by backoff)
   ///
   /// Returns false for:
   /// - API errors (unexpected)
@@ -402,8 +417,43 @@ class SyncOrchestrator {
     // Auth errors are handled by sign-out flow and tracked elsewhere
     if (Store._isAuthError(error)) return true;
 
+    // 429 rate limit errors are transient and handled by backoff
+    if (error is ApiException && error.statusCode == 429) return true;
+
     // All other errors should be reported
     return false;
+  }
+
+  /// Tracks a 429 rate limit event and increases cooldown (exponential, max 60s)
+  void _trackRateLimitIfNeeded(dynamic error) {
+    if (error is ApiException && error.statusCode == 429) {
+      _lastRateLimitAt = DateTime.now();
+      // Double cooldown on each 429, capped at 60s
+      _rateLimitCooldown = Duration(
+        seconds: (_rateLimitCooldown.inSeconds * 2).clamp(5, 60),
+      );
+      _syncOrchestratorLog.warning(
+        'Rate limited (429). Cooldown: ${_rateLimitCooldown.inSeconds}s',
+      );
+    }
+  }
+
+  /// Waits out any active 429 cooldown period, resets cooldown on success
+  Future<void> _waitForRateLimitCooldown() async {
+    if (_lastRateLimitAt == null) return;
+
+    final elapsed = DateTime.now().difference(_lastRateLimitAt!);
+    if (elapsed < _rateLimitCooldown) {
+      final remaining = _rateLimitCooldown - elapsed;
+      _syncOrchestratorLog.fine(
+        'Waiting ${remaining.inSeconds}s for rate limit cooldown',
+      );
+      await Future<void>.delayed(remaining);
+    }
+
+    // Reset cooldown after waiting
+    _lastRateLimitAt = null;
+    _rateLimitCooldown = const Duration(seconds: 5);
   }
 
   /// Computes pull levels using topological sort (parent → child order)
