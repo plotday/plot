@@ -56,7 +56,7 @@ async function summarize(ai: Ai, body: string) {
       {
         role: "system",
         content:
-          "You name items in a productivity app. Create a short title for the user-provided action or note. Respond only with the title.",
+          "You name items in a productivity app. Create a short title for the user-provided action or note. Do not wrap the title in quotes. Respond only with the title.",
       },
       {
         role: "user",
@@ -71,7 +71,7 @@ async function summarize(ai: Ai, body: string) {
       throw new Error("Response is a stream");
     }
     const json = {
-      title: response.response,
+      title: response.response?.replace(/^"(.*)"$/, "$1")?.trim() || body.replaceAll(/\s+/g, " ").trim().slice(0, 60),
     };
     return json;
   } catch (e) {

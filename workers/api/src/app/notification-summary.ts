@@ -93,7 +93,7 @@ async function generateSummary(
           "You write push notification bodies for a productivity app. " +
           "Given a list of unread updates, create 1-2 short sentences summarizing " +
           "the top 1-2 updates by importance. Be concise and informative. " +
-          "Do not use markdown. Respond only with the summary text.",
+          "Do not use markdown. Do not wrap the summary in quotes. Respond only with the summary text.",
       },
       {
         role: "user",
@@ -110,7 +110,7 @@ async function generateSummary(
       throw new Error("Response is a stream");
     }
 
-    return response.response?.trim() || fallbackSummary(threads);
+    return response.response?.replace(/^"(.*)"$/, "$1")?.trim() || fallbackSummary(threads);
   } catch (e) {
     const logger = createLogger();
     logger.error("Error generating notification summary", e as Error);
