@@ -1589,6 +1589,11 @@ class Thread extends Equatable implements Comparable<Thread> {
             for (final result in group) {
               final scheduleRow = result.readTableOrNull(sched);
               if (scheduleRow == null || scheduleRow.occurrence == null) continue;
+              // Remove archived occurrences (e.g. cancelled recurring event instances)
+              if (scheduleRow.archivedAt != null) {
+                occurrences.remove(scheduleRow.occurrence!);
+                continue;
+              }
               final activity = Thread._fromStore(
                 activity: activityRow,
                 priority: priority,
@@ -1665,6 +1670,11 @@ class Thread extends Equatable implements Comparable<Thread> {
             // Apply occurrence overrides (replace matching generated entries).
             for (final overrideRow in overrides) {
               if (overrideRow.occurrence != null) {
+                // Remove archived occurrences (e.g. cancelled recurring event instances)
+                if (overrideRow.archivedAt != null) {
+                  occurrences.remove(overrideRow.occurrence!);
+                  continue;
+                }
                 occurrences[overrideRow.occurrence!] = Thread._fromStore(
                   activity: activityRow,
                   priority: priority,
@@ -1682,6 +1692,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           } else {
             // Non-recurring link schedules: range-check and add individually.
             for (final linkScheduleRow in linkGroup) {
+              if (linkScheduleRow.archivedAt != null) continue;
               final linkThread = Thread._fromStore(
                 activity: activityRow,
                 priority: priority,
