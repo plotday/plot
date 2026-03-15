@@ -13,11 +13,10 @@ FTextFieldStyleDelta buildTextFieldStyleDelta(
   return FTextFieldStyleDelta.delta(
     cursorColor: colourScheme.muted,
     color: FVariantsValueDelta.delta([
-      FVariantValueDeltaOperation.base(null),
-      FVariantValueDeltaOperation.exact(
-        {FTextFieldVariantConstraint.focused},
-        colourScheme.editableBackground,
-      ),
+      FVariantValueDeltaOperation.all(colourScheme.background),
+      FVariantValueDeltaOperation.exact({
+        FTextFieldVariantConstraint.focused,
+      }, colourScheme.editableBackground),
     ]),
     border: FVariantsValueDelta.delta([
       FVariantValueDeltaOperation.all(
