@@ -101,10 +101,18 @@ files.get("/files/:fileId", async (c) => {
   const contentType =
     object.httpMetadata?.contentType || "application/octet-stream";
 
+  // ASCII fallback: replace non-ASCII chars with underscores
+  const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_");
+  // RFC 5987 encoded filename for Unicode support
+  const encodedFileName = encodeURIComponent(fileName).replace(
+    /['()]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+
   return new Response(object.body, {
     headers: {
       "Content-Type": contentType,
-      "Content-Disposition": `attachment; filename="${fileName}"`,
+      "Content-Disposition": `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedFileName}`,
     },
   });
 });
