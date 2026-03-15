@@ -6,10 +6,9 @@ import 'package:plot/style/colors.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 
-FAlertStyles buildAlertStyles(
-  FAlertStyles baseStyles,
+FVariantsDelta<FAlertVariantConstraint, FAlertVariant, FAlertStyle,
+    FAlertStyleDelta> buildAlertStylesDelta(
   ColourSchemeData colourScheme,
-  BorderRadius borderRadius,
   FTypography typography,
   PlotIconSizes iconSizes,
 ) {
@@ -20,34 +19,58 @@ FAlertStyles buildAlertStyles(
     25.72,
   ).toColor();
 
-  return baseStyles.copyWith(
-    // ignore: unused_result
-    primary: baseStyles.primary.copyWith(
-      decoration: BoxDecoration(
-        color: colourScheme.accentBackground.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(borderRadiusMd),
-        border: Border.all(color: colourScheme.accent.withValues(alpha: 0.2)),
+  return FVariantsDelta.delta([
+    FVariantOperation.exact(
+      {FAlertVariantConstraint.primary},
+      FAlertStyleDelta.delta(
+        decoration: DecorationDelta.value(
+          BoxDecoration(
+            color: colourScheme.accentBackground.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(borderRadiusMd),
+            border: Border.all(
+              color: colourScheme.accent.withValues(alpha: 0.2),
+            ),
+          ),
+        ),
+        iconStyle: IconThemeDataDelta.value(
+          IconThemeData(color: colourScheme.accent, size: iconSizes.lg),
+        ),
+        titleTextStyle: TextStyleDelta.value(
+          typography.md.copyWith(
+            color: colourScheme.accent,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitleTextStyle: TextStyleDelta.value(
+          typography.sm.copyWith(color: colourScheme.accent),
+        ),
       ),
-      iconStyle: IconThemeData(color: colourScheme.accent, size: iconSizes.lg),
-      titleTextStyle: typography.base.copyWith(
-        color: colourScheme.accent,
-        fontWeight: FontWeight.w500,
-      ),
-      subtitleTextStyle: typography.sm.copyWith(color: colourScheme.accent),
     ),
-    // ignore: unused_result
-    destructive: baseStyles.destructive.copyWith(
-      decoration: BoxDecoration(
-        color: destructiveColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(borderRadiusMd),
-        border: Border.all(color: destructiveColor.withValues(alpha: 0.3)),
+    FVariantOperation.exact(
+      {FAlertVariantConstraint.destructive},
+      FAlertStyleDelta.delta(
+        decoration: DecorationDelta.value(
+          BoxDecoration(
+            color: destructiveColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(borderRadiusMd),
+            border: Border.all(
+              color: destructiveColor.withValues(alpha: 0.3),
+            ),
+          ),
+        ),
+        iconStyle: IconThemeDataDelta.value(
+          IconThemeData(color: destructiveColor, size: iconSizes.lg),
+        ),
+        titleTextStyle: TextStyleDelta.value(
+          typography.md.copyWith(
+            color: destructiveColor,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitleTextStyle: TextStyleDelta.value(
+          typography.sm.copyWith(color: destructiveColor),
+        ),
       ),
-      iconStyle: IconThemeData(color: destructiveColor, size: iconSizes.lg),
-      titleTextStyle: typography.base.copyWith(
-        color: destructiveColor,
-        fontWeight: FontWeight.w500,
-      ),
-      subtitleTextStyle: typography.sm.copyWith(color: destructiveColor),
     ),
-  );
+  ]);
 }

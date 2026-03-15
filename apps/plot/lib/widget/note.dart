@@ -165,10 +165,11 @@ class _NoteWidgetState extends State<NoteWidget> {
                       (link) => NoteActionWidget(
                         link: link,
                         note: widget.note,
-                        style: FButtonStyle.secondary(
-                          (s) => s.copyWith(
-                            contentStyle: (cs) => cs.copyWith(
-                              padding: const EdgeInsets.symmetric(
+                        variant: FButtonVariant.secondary,
+                        style: FButtonStyleDelta.delta(
+                          contentStyle: FButtonContentStyleDelta.delta(
+                            padding: EdgeInsetsGeometryDelta.value(
+                              const EdgeInsets.symmetric(
                                 horizontal: 10,
                                 vertical: 5,
                               ),

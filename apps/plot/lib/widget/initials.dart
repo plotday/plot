@@ -121,7 +121,7 @@ class Initials extends StatelessWidget {
       children.add(
         Text(
           initials[i],
-          style: context.theme.typography.base.copyWith(
+          style: context.theme.typography.md.copyWith(
             fontSize: size,
             fontWeight: FontWeight.w600,
             height: 1.0,
@@ -161,7 +161,7 @@ class Initials extends StatelessWidget {
     return fallback != null
         ? Text(
             fallback!,
-            style: context.theme.typography.base.copyWith(
+            style: context.theme.typography.md.copyWith(
               fontSize: size,
               fontWeight: FontWeight.w600,
               height: 1.0,

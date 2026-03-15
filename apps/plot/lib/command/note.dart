@@ -1,12 +1,12 @@
 import 'package:flutter/services.dart';
 
 import 'command.dart';
+import 'package:plot/router.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
-import 'package:plot/router.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'logging.dart';

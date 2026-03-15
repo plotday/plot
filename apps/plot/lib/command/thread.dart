@@ -48,7 +48,7 @@ abstract class ThreadCommand extends Command {
           child: Text(
             title,
             overflow: TextOverflow.ellipsis,
-            style: context.theme.typography.base.copyWith(
+            style: context.theme.typography.md.copyWith(
               color: context.theme.colors.foreground,
             ),
           ),
@@ -969,9 +969,9 @@ class PickScheduleThread extends Command {
                   },
                 ),
               ),
-              style: (style) => style.copyWith(
-                decoration: const BoxDecoration(),
-                padding: EdgeInsets.zero,
+              style: FCalendarStyleDelta.delta(
+                decoration: DecorationDelta.value(const BoxDecoration()),
+                padding: EdgeInsetsGeometryDelta.value(EdgeInsets.zero),
               ),
               onPress: (date) async {
                 final actionReturn = await ScheduleThread(
@@ -989,7 +989,7 @@ class PickScheduleThread extends Command {
               children: [
                 Expanded(
                   child: FButton(
-                    style: FButtonStyle.secondary(),
+                    variant: FButtonVariant.secondary,
                     onPress: () async {
                       final actionReturn = await ScheduleThread(
                         _thread,
@@ -1006,7 +1006,7 @@ class PickScheduleThread extends Command {
                 const SizedBox(width: 8),
                 Expanded(
                   child: FButton(
-                    style: FButtonStyle.secondary(),
+                    variant: FButtonVariant.secondary,
                     onPress: () async {
                       final actionReturn = await ThreadDone(
                         _thread,

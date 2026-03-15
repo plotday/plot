@@ -250,7 +250,7 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
                   ),
                 ),
                 FButton.icon(
-                  style: FButtonStyle.ghost(),
+                  variant: FButtonVariant.ghost,
                   onPress: () => _removeFile(fileLink),
                   child: Icon(PlotIcon.close, size: 14,
                       color: theme.colors.mutedForeground),
@@ -262,7 +262,7 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
         Row(
           children: [
             FButton(
-              style: FButtonStyle.secondary(),
+              variant: FButtonVariant.secondary,
               onPress: _isUploading ? null : () => _addFile(),
               prefix: _isUploading
                   ? null
@@ -272,7 +272,7 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
             ),
             const Spacer(),
             FButton(
-              style: FButtonStyle.secondary(),
+              variant: FButtonVariant.secondary,
               onPress: () => Modal.pop(context, const Value<void>(null)),
               child: const Text('Close'),
             ),

@@ -527,19 +527,15 @@ class NoteEditorState extends State<NoteEditor> {
           }
         });
       },
-      style: disabled
-          ? FButtonStyle.secondary(
-              (s) => s.copyWith(
-                decoration: _remapDecoration(s.decoration, chipRadius),
-                contentStyle: (c) => c.copyWith(padding: chipPadding),
-              ),
-            )
-          : FButtonStyle.primary(
-              (s) => s.copyWith(
-                decoration: _remapDecoration(s.decoration, chipRadius),
-                contentStyle: (c) => c.copyWith(padding: chipPadding),
-              ),
-            ),
+      variant: disabled ? FButtonVariant.secondary : FButtonVariant.primary,
+      style: FButtonStyleDelta.delta(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(DecorationDelta.boxDelta(borderRadius: chipRadius)),
+        ]),
+        contentStyle: FButtonContentStyleDelta.delta(
+          padding: EdgeInsetsGeometryDelta.value(chipPadding),
+        ),
+      ),
       mainAxisSize: MainAxisSize.min,
       prefix: logoUrl != null
           ? LogoImage(url: logoUrl, size: 12)
@@ -551,21 +547,6 @@ class NoteEditorState extends State<NoteEditor> {
             : null,
       ),
     );
-  }
-
-  static FWidgetStateMap<BoxDecoration> _remapDecoration(
-    FWidgetStateMap<BoxDecoration> source,
-    BorderRadius radius,
-  ) {
-    BoxDecoration apply(BoxDecoration d) => d.copyWith(borderRadius: radius);
-
-    return FWidgetStateMap({
-      WidgetState.disabled: apply(source.resolve({WidgetState.disabled})),
-      WidgetState.hovered | WidgetState.pressed: apply(
-        source.resolve({WidgetState.hovered}),
-      ),
-      WidgetState.any: apply(source.resolve({})),
-    });
   }
 
   // -- Bottom bars --

@@ -15,9 +15,9 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/base.dart';
-import 'package:plot/router.dart' show EmailSignInRoute;
 import 'package:plot/page/invite.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/router.dart' show EmailSignInRoute;
 import 'logging.dart';
 
 @RoutePage()
@@ -245,7 +245,7 @@ class _SignInPageState extends State<SignInPage> {
                               RichText(
                                 textAlign: TextAlign.center,
                                 text: TextSpan(
-                                  style: context.theme.typography.base.copyWith(
+                                  style: context.theme.typography.md.copyWith(
                                     height: 1.5,
                                   ),
                                   children: [
@@ -277,13 +277,13 @@ class _SignInPageState extends State<SignInPage> {
                               Text(
                                 "You've been invited to collaborate on Plot.\nSign up or sign in to link your email and make progress on your priorities.",
                                 textAlign: TextAlign.center,
-                                style: context.theme.typography.base,
+                                style: context.theme.typography.md,
                               ),
                           ] else
                             Text(
                               'Sign in to make progress on your priorities',
                               textAlign: TextAlign.center,
-                              style: context.theme.typography.base,
+                              style: context.theme.typography.md,
                             ),
                           const SizedBox(height: 8),
 
@@ -369,7 +369,7 @@ class _SignInPageState extends State<SignInPage> {
                                 EmailSignInRoute(returnTo: widget.returnTo),
                               );
                             },
-                            style: FButtonStyle.secondary(),
+                            variant: FButtonVariant.secondary,
                             prefix: FaIcon(
                               FontAwesomeIcons.envelope,
                               color: context.theme.colors.foreground,
@@ -377,7 +377,7 @@ class _SignInPageState extends State<SignInPage> {
                             mainAxisSize: .min,
                             child: Text(
                               'Continue with email',
-                              style: context.theme.typography.base.copyWith(
+                              style: context.theme.typography.md.copyWith(
                                 color: context.theme.colors.foreground,
                                 height: 1,
                               ),

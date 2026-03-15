@@ -279,7 +279,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         SizedBox(width: resolvedToolbarPadding.right),
     ];
 
-    Widget header = FAnimatedTheme(
+    Widget header = FTheme(
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) => ClipRect(
@@ -294,19 +294,11 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
               ),
             ),
             child: FHeader(
-              style: (style) {
-                final resolvedPadding = style.padding.resolve(
-                  TextDirection.ltr,
-                );
-                return style.copyWith(
-                  padding: EdgeInsets.fromLTRB(
-                    resolvedPadding.left,
-                    resolvedPadding.top,
-                    resolvedPadding.right,
-                    8,
-                  ),
-                );
-              },
+              style: FHeaderStyleDelta.delta(
+                padding: EdgeInsetsGeometryDelta.add(
+                  EdgeInsets.only(bottom: -2),
+                ),
+              ),
               title: Row(spacing: 8, children: titleChildren),
               suffixes: suffixes,
             ),
@@ -350,7 +342,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
               child: Text(
                 state.thread!.displayTitle,
                 overflow: TextOverflow.ellipsis,
-                style: context.theme.typography.base,
+                style: context.theme.typography.sm,
               ),
             ),
             search,
@@ -442,10 +434,12 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                 control: .managed(controller: _searchController),
                 focusNode: _searchFocusNode,
                 hint: 'Search…',
-                style: (style) => style.copyWith(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
+                style: FTextFieldStyleDelta.delta(
+                  contentPadding: EdgeInsetsGeometryDelta.value(
+                    const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                   ),
                 ),
                 suffixBuilder: (context, style, states) {

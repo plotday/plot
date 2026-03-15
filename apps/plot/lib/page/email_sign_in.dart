@@ -2,11 +2,11 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/router.dart' show PasswordSetupRoute;
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/auth/auth_service.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/base.dart';
-import 'package:plot/router.dart' show PasswordSetupRoute;
 import 'logging.dart';
 
 @RoutePage()
@@ -428,7 +428,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                         children: [
                           Text(
                             'Enter the 6-digit code from your email:',
-                            style: context.theme.typography.base,
+                            style: context.theme.typography.md,
                             textAlign: TextAlign.center,
                           ),
                           OtpInput(
@@ -452,7 +452,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                     FButton(
                       onPress:
                           _isLoading ? null : _handleResendSecondFactor,
-                      style: FButtonStyle.ghost(),
+                      variant: FButtonVariant.ghost,
                       child: const Text('Resend code'),
                     ),
                     const SizedBox(width: 8),
@@ -465,7 +465,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                           _otpController.clear();
                         });
                       },
-                      style: FButtonStyle.ghost(),
+                      variant: FButtonVariant.ghost,
                       child: const Text('Cancel'),
                     ),
                   ],
@@ -495,7 +495,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                         children: [
                           Text(
                             'Enter the 6-digit code from your email:',
-                            style: context.theme.typography.base,
+                            style: context.theme.typography.md,
                             textAlign: TextAlign.center,
                           ),
                           OtpInput(
@@ -518,7 +518,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                   children: [
                     FButton(
                       onPress: _isLoading ? null : _handleResendCode,
-                      style: FButtonStyle.ghost(),
+                      variant: FButtonVariant.ghost,
                       child: const Text('Resend code'),
                     ),
                     const SizedBox(width: 8),
@@ -531,7 +531,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                           _otpController.clear();
                         });
                       },
-                      style: FButtonStyle.ghost(),
+                      variant: FButtonVariant.ghost,
                       child: const Text('Different email'),
                     ),
                   ],
@@ -582,7 +582,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                           FButton(
                             onPress:
                                 _isLoading ? null : _handlePasswordReset,
-                            style: FButtonStyle.ghost(),
+                            variant: FButtonVariant.ghost,
                             child: const Text('Reset password'),
                           ),
                           FButton(
@@ -600,7 +600,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                                           _emailFocusNode.requestFocus();
                                         });
                                   },
-                            style: FButtonStyle.ghost(),
+                            variant: FButtonVariant.ghost,
                             child: const Text('Sign up instead'),
                           ),
                         ],
@@ -618,7 +618,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                         : (_mode == _AuthMode.signUp
                               ? _handleSignUp
                               : _handleSignIn),
-                    style: FButtonStyle.primary(),
+                    variant: FButtonVariant.primary,
                     child: _isLoading
                         ? const Spinner()
                         : Text(
@@ -630,7 +630,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                 // Back button
                 FButton(
                   onPress: () => context.router.maybePop(),
-                  style: FButtonStyle.ghost(),
+                  variant: FButtonVariant.ghost,
                   child: const Text('Use another sign-in method'),
                 ),
               ],

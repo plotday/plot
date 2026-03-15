@@ -11,12 +11,12 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/color_dot.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/router.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/theme_color.dart';
+import 'package:plot/router.dart';
 
 abstract class PriorityCommand extends Command {
   PriorityCommand(

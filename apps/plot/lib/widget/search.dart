@@ -92,10 +92,12 @@ class _SearchWidgetState extends State<SearchWidget> {
                 child: FTextField(
                   control: .managed(controller: _controller), focusNode: _focusNode,
                   hint: 'Search...',
-                  style: (style) => style.copyWith(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                  style: FTextFieldStyleDelta.delta(
+                    contentPadding: EdgeInsetsGeometryDelta.value(
+                      const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                     ),
                   ),
                 ),
@@ -103,7 +105,7 @@ class _SearchWidgetState extends State<SearchWidget> {
             ),
             const SizedBox(width: 4),
             FButton.icon(
-              style: FButtonStyle.ghost(),
+              variant: FButtonVariant.ghost,
               onPress: _toggle,
               child: Icon(PlotIcon.close, size: context.theme.iconSizes.sm),
             ),
@@ -113,7 +115,7 @@ class _SearchWidgetState extends State<SearchWidget> {
     }
 
     return FButton.icon(
-      style: FButtonStyle.ghost(),
+      variant: FButtonVariant.ghost,
       onPress: _toggle,
       child: Icon(PlotIcon.search, size: context.theme.iconSizes.sm),
     );

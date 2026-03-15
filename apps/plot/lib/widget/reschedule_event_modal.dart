@@ -140,7 +140,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
             ),
           const SizedBox(height: 16),
           FButton(
-            style: FButtonStyle.secondary(),
+            variant: FButtonVariant.secondary,
             child: Text(buttonText),
             onPress: () async {
               if (_hasChanged) {

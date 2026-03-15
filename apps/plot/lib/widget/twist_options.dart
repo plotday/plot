@@ -121,7 +121,7 @@ class _TwistSelectItem extends FormItem {
           ),
           child: Text(
             choice['label'] as String,
-            style: context.theme.typography.base.copyWith(
+            style: context.theme.typography.md.copyWith(
               color: context.theme.colors.foreground,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
             ),

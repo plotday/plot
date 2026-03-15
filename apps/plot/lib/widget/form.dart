@@ -564,7 +564,7 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
           focusNode: widget.focusNode,
           controller: widget.controller?._listTileController,
           textStyle: widget.isPrimary && widget.enabled
-              ? context.theme.typography.base.copyWith(
+              ? context.theme.typography.md.copyWith(
                   fontWeight: FontWeight.bold,
                   color: context.theme.colors.primary,
                 )
@@ -623,7 +623,7 @@ class FormInfo extends FormItem {
           horizontal: text != null ? context.theme.spacing.lg : 0,
         ),
         child: text != null
-            ? SelectableText(text!, style: context.theme.typography.base)
+            ? SelectableText(text!, style: context.theme.typography.md)
             : builder!(context),
       ),
     );
@@ -829,7 +829,7 @@ class _FormToggleWidgetState extends State<_FormToggleWidget> {
                     Expanded(
                       child: Text(
                         widget.label,
-                        style: context.theme.typography.base.copyWith(
+                        style: context.theme.typography.md.copyWith(
                           color: widget.enabled
                               ? context.theme.colors.foreground
                               : context.theme.plotColors.muted,

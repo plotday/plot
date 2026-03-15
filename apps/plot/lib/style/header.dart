@@ -3,21 +3,24 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
 
-FHeaderStyles buildHeaderStyles(
-  FHeaderStyles baseStyles,
+FVariantsDelta<FHeaderVariantConstraint, FHeaderVariant, FHeaderStyle,
+    FHeaderStyleDelta> buildHeaderStylesDelta(
   FTypography typography,
   ColourSchemeData colourScheme,
 ) {
-  // ignore: unused_result
-  return baseStyles.copyWith(
-    // ignore: unused_result
-    rootStyle: baseStyles.rootStyle.copyWith(
-      titleTextStyle: typography.base.copyWith(
-        color: colourScheme.muted,
-        fontWeight: FontWeight.w500,
-        height: 1,
+  return FVariantsDelta.delta([
+    FVariantOperation.exact(
+      {FHeaderVariantConstraint.root},
+      FHeaderStyleDelta.delta(
+        titleTextStyle: TextStyleDelta.value(
+          typography.md.copyWith(
+            color: colourScheme.muted,
+            fontWeight: FontWeight.w500,
+            height: 1,
+          ),
+        ),
+        actionSpacing: 0,
       ),
-      actionSpacing: 0,
     ),
-  );
+  ]);
 }

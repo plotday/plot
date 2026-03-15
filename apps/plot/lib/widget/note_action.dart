@@ -24,6 +24,7 @@ class NoteActionWidget extends StatelessWidget {
     required this.link,
     this.note,
     this.onAuthComplete,
+    this.variant,
     this.style,
     this.textStyle,
     super.key,
@@ -33,8 +34,11 @@ class NoteActionWidget extends StatelessWidget {
   final Note? note;
   final VoidCallback? onAuthComplete;
 
-  /// Optional button style override (e.g. ghost for thread-level actions).
-  final FBaseButtonStyle Function(FButtonStyle)? style;
+  /// Optional button variant override (e.g. ghost for thread-level actions).
+  final FButtonVariant? variant;
+
+  /// Optional button style delta override.
+  final FButtonStyleDelta? style;
 
   /// Optional text style override (e.g. sm for compact actions).
   final TextStyle? textStyle;
@@ -51,6 +55,7 @@ class NoteActionWidget extends StatelessWidget {
         if (note == null) {
           return _CallbackActionWithoutNote(
             link: link as CallbackUserAction,
+            variant: variant,
             style: style,
             textStyle: textStyle,
           );
@@ -58,18 +63,21 @@ class NoteActionWidget extends StatelessWidget {
         return CallbackActionButton(
           link: link as CallbackUserAction,
           note: note!,
+          variant: variant,
           style: style,
           textStyle: textStyle,
         );
       case UserActionType.external:
         return ExternalLinkButton(
           link: link as ExternalUserAction,
+          variant: variant,
           style: style,
           textStyle: textStyle,
         );
       case UserActionType.conferencing:
         return ConferencingLinkButton(
           link: link as ConferencingUserAction,
+          variant: variant,
           style: style,
           textStyle: textStyle,
         );
@@ -80,12 +88,14 @@ class NoteActionWidget extends StatelessWidget {
         }
         return FileLinkButton(
           link: fileLink,
+          variant: variant,
           style: style,
           textStyle: textStyle,
         );
       case UserActionType.thread:
         return ThreadLinkButton(
           link: link as ThreadUserAction,
+          variant: variant,
           style: style,
           textStyle: textStyle,
         );
@@ -98,6 +108,7 @@ class CallbackActionButton extends StatefulWidget {
   const CallbackActionButton({
     required this.link,
     required this.note,
+    this.variant,
     this.style,
     this.textStyle,
     super.key,
@@ -105,7 +116,8 @@ class CallbackActionButton extends StatefulWidget {
 
   final CallbackUserAction link;
   final Note note;
-  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final FButtonVariant? variant;
+  final FButtonStyleDelta? style;
   final TextStyle? textStyle;
 
   @override
@@ -118,7 +130,8 @@ class _CallbackActionButtonState extends State<CallbackActionButton> {
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: widget.style ?? FButtonStyle.secondary(),
+      variant: widget.variant ?? FButtonVariant.secondary,
+      style: widget.style ?? const FButtonStyleDelta.context(),
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
       child: Flexible(
@@ -171,12 +184,14 @@ class _CallbackActionButtonState extends State<CallbackActionButton> {
 class _CallbackActionWithoutNote extends StatefulWidget {
   const _CallbackActionWithoutNote({
     required this.link,
+    this.variant,
     this.style,
     this.textStyle,
   });
 
   final CallbackUserAction link;
-  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final FButtonVariant? variant;
+  final FButtonStyleDelta? style;
   final TextStyle? textStyle;
 
   @override
@@ -190,7 +205,8 @@ class _CallbackActionWithoutNoteState extends State<_CallbackActionWithoutNote> 
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: widget.style ?? FButtonStyle.secondary(),
+      variant: widget.variant ?? FButtonVariant.secondary,
+      style: widget.style ?? const FButtonStyleDelta.context(),
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
       child: Flexible(
@@ -232,19 +248,22 @@ class _CallbackActionWithoutNoteState extends State<_CallbackActionWithoutNote> 
 class ExternalLinkButton extends StatelessWidget {
   const ExternalLinkButton({
     required this.link,
+    this.variant,
     this.style,
     this.textStyle,
     super.key,
   });
 
   final ExternalUserAction link;
-  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final FButtonVariant? variant;
+  final FButtonStyleDelta? style;
   final TextStyle? textStyle;
 
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: style ?? FButtonStyle.secondary(),
+      variant: variant ?? FButtonVariant.secondary,
+      style: style ?? const FButtonStyleDelta.context(),
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
       child: Flexible(
@@ -273,19 +292,22 @@ class ExternalLinkButton extends StatelessWidget {
 class ConferencingLinkButton extends StatelessWidget {
   const ConferencingLinkButton({
     required this.link,
+    this.variant,
     this.style,
     this.textStyle,
     super.key,
   });
 
   final ConferencingUserAction link;
-  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final FButtonVariant? variant;
+  final FButtonStyleDelta? style;
   final TextStyle? textStyle;
 
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: style ?? FButtonStyle.secondary(),
+      variant: variant ?? FButtonVariant.secondary,
+      style: style ?? const FButtonStyleDelta.context(),
       mainAxisSize: MainAxisSize.min,
       onPress: () => _handleTap(),
       child: Flexible(
@@ -329,19 +351,22 @@ class ConferencingLinkButton extends StatelessWidget {
 class ThreadLinkButton extends StatelessWidget {
   const ThreadLinkButton({
     required this.link,
+    this.variant,
     this.style,
     this.textStyle,
     super.key,
   });
 
   final ThreadUserAction link;
-  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final FButtonVariant? variant;
+  final FButtonStyleDelta? style;
   final TextStyle? textStyle;
 
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: style ?? FButtonStyle.secondary(),
+      variant: variant ?? FButtonVariant.secondary,
+      style: style ?? const FButtonStyleDelta.context(),
       mainAxisSize: MainAxisSize.min,
       onPress: link.priorityId != null ? () => _handleTap(context) : null,
       child: Flexible(
@@ -375,13 +400,15 @@ class ThreadLinkButton extends StatelessWidget {
 class FileLinkButton extends StatefulWidget {
   const FileLinkButton({
     required this.link,
+    this.variant,
     this.style,
     this.textStyle,
     super.key,
   });
 
   final FileUserAction link;
-  final FBaseButtonStyle Function(FButtonStyle)? style;
+  final FButtonVariant? variant;
+  final FButtonStyleDelta? style;
   final TextStyle? textStyle;
 
   @override
@@ -394,7 +421,8 @@ class _FileLinkButtonState extends State<FileLinkButton> {
   @override
   Widget build(BuildContext context) {
     return FButton(
-      style: widget.style ?? FButtonStyle.secondary(),
+      variant: widget.variant ?? FButtonVariant.secondary,
+      style: widget.style ?? const FButtonStyleDelta.context(),
       mainAxisSize: MainAxisSize.min,
       onPress: _isLoading ? null : () => _handleTap(),
       prefix: _isLoading

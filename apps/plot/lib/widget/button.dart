@@ -85,173 +85,31 @@ class Button extends StatefulWidget {
 class _ButtonState extends State<Button> {
   bool _isHovered = false;
 
+  FButtonVariant _variant() {
+    return switch (widget.style) {
+      ButtonStyle.primary => FButtonVariant.primary,
+      ButtonStyle.secondary => FButtonVariant.secondary,
+      ButtonStyle.ghost => FButtonVariant.ghost,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
-    FBaseButtonStyle Function(FButtonStyle) fStyle;
+    FButtonVariant variant;
+    FButtonStyleDelta styleDelta;
+
     if (widget.selected) {
-      fStyle = (baseStyle) {
-        // Ghost selected: keep ghost decoration, just color the text/icon
-        // Primary/secondary selected: use primary style (tint background)
-        var style = widget.style == ButtonStyle.ghost
-            ? context.theme.buttonStyles.ghost
-            : context.theme.buttonStyles.primary;
-
-        if (widget.iconOnly) {
-          style = style.copyWith(
-            decoration: style.decoration.map(
-              (d) => d.copyWith(borderRadius: BorderRadius.circular(999)),
-            ),
-          );
-        }
-
-        final color = widget.selectedColor ?? context.theme.colors.primary;
-
-        if (widget.style == ButtonStyle.ghost) {
-          // Ghost selected: override text/icon color only
-          final hoverColor = Color.lerp(
-            color,
-            context.colour.foreground,
-            0.3,
-          );
-          style = style.copyWith(
-            // ignore: unused_result
-            contentStyle: style.contentStyle.copyWith(
-              textStyle: FWidgetStateMap({
-                WidgetState.hovered | WidgetState.pressed:
-                    style.contentStyle.textStyle
-                        .resolve({WidgetState.hovered})
-                        .copyWith(color: hoverColor),
-                WidgetState.any: style.contentStyle.textStyle
-                    .resolve({})
-                    .copyWith(color: color),
-              }),
-              iconStyle: FWidgetStateMap({
-                WidgetState.hovered | WidgetState.pressed:
-                    style.contentStyle.iconStyle
-                        .resolve({WidgetState.hovered})
-                        .copyWith(color: hoverColor),
-                WidgetState.any: style.contentStyle.iconStyle
-                    .resolve({})
-                    .copyWith(color: color),
-              }),
-            ),
-            // ignore: unused_result
-            iconContentStyle: style.iconContentStyle.copyWith(
-              iconStyle: FWidgetStateMap({
-                WidgetState.hovered | WidgetState.pressed:
-                    style.iconContentStyle.iconStyle
-                        .resolve({WidgetState.hovered})
-                        .copyWith(color: hoverColor),
-                WidgetState.any: style.iconContentStyle.iconStyle
-                    .resolve({})
-                    .copyWith(color: color),
-              }),
-            ),
-          );
-        } else if (widget.selectedColor != null) {
-          // Primary/secondary selected with custom color: tint with selectedColor
-          final oklch = widget.selectedColor!.toRayRgb8().toOklch();
-          final colourScheme = context.colour;
-          final isLight = colourScheme.brightness == Brightness.light;
-
-          final bgColor = oklch
-              .withLightness(isLight ? 0.94 : 0.26)
-              .withChroma(isLight ? 0.04 : 0.03)
-              .toColor();
-          final hoverBgColor = oklch
-              .withLightness(isLight ? 0.90 : 0.30)
-              .withChroma(isLight ? 0.06 : 0.05)
-              .toColor();
-          final borderColor = oklch.withOpacity(0.35).toColor();
-          final hoverBorderColor = oklch.withOpacity(0.5).toColor();
-          final fgColor = widget.selectedColor!;
-
-          style = style.copyWith(
-            // ignore: unused_result
-            decoration: FWidgetStateMap({
-              WidgetState.hovered | WidgetState.pressed: BoxDecoration(
-                borderRadius: widget.iconOnly
-                    ? BorderRadius.circular(999)
-                    : style.decoration.resolve({}).borderRadius
-                        as BorderRadius?,
-                color: hoverBgColor,
-                border: Border.all(color: hoverBorderColor),
-              ),
-              WidgetState.any: BoxDecoration(
-                borderRadius: widget.iconOnly
-                    ? BorderRadius.circular(999)
-                    : style.decoration.resolve({}).borderRadius
-                        as BorderRadius?,
-                color: bgColor,
-                border: Border.all(color: borderColor),
-              ),
-            }),
-            // ignore: unused_result
-            contentStyle: style.contentStyle.copyWith(
-              textStyle: FWidgetStateMap({
-                WidgetState.any: style.contentStyle.textStyle
-                    .resolve({})
-                    .copyWith(color: fgColor),
-              }),
-              iconStyle: FWidgetStateMap({
-                WidgetState.any: style.contentStyle.iconStyle
-                    .resolve({})
-                    .copyWith(color: fgColor),
-              }),
-            ),
-            // ignore: unused_result
-            iconContentStyle: style.iconContentStyle.copyWith(
-              iconStyle: FWidgetStateMap({
-                WidgetState.any: style.iconContentStyle.iconStyle
-                    .resolve({})
-                    .copyWith(color: fgColor),
-              }),
-            ),
-          );
-        }
-
-        return style;
-      };
+      // For selected state, we build a complete FButtonStyle and pass it as the delta
+      // (FButtonStyle implements FButtonStyleDelta and returns itself)
+      variant = _variant();
+      styleDelta = _buildSelectedStyle(context);
     } else {
-      fStyle = switch (widget.style) {
-        ButtonStyle.primary => FButtonStyle.primary(),
-        ButtonStyle.secondary => FButtonStyle.secondary(),
-        ButtonStyle.ghost => FButtonStyle.ghost(),
-      };
+      variant = _variant();
 
-      // Apply circular border radius and optional color for icon buttons
       if (widget.iconOnly) {
-        fStyle = (baseStyle) {
-          final unselectedStyle = switch (widget.style) {
-            ButtonStyle.primary => context.theme.buttonStyles.primary,
-            ButtonStyle.secondary => context.theme.buttonStyles.secondary,
-            ButtonStyle.ghost => context.theme.buttonStyles.ghost,
-          };
-
-          var result = unselectedStyle.copyWith(
-            decoration: unselectedStyle.decoration.map(
-              (decoration) =>
-                  decoration.copyWith(borderRadius: BorderRadius.circular(999)),
-            ),
-          );
-
-          if (widget.color != null) {
-            final iconStyle = result.iconContentStyle.iconStyle;
-            result = result.copyWith(
-              // ignore: unused_result
-              iconContentStyle: result.iconContentStyle.copyWith(
-                iconStyle: FWidgetStateMap({
-                  WidgetState.hovered | WidgetState.pressed:
-                      iconStyle.resolve({WidgetState.hovered}),
-                  WidgetState.any:
-                      iconStyle.resolve({}).copyWith(color: widget.color),
-                }),
-              ),
-            );
-          }
-
-          return result;
-        };
+        styleDelta = _buildIconOnlyStyle(context);
+      } else {
+        styleDelta = const FButtonStyleDelta.context();
       }
     }
 
@@ -286,7 +144,8 @@ class _ButtonState extends State<Button> {
 
           return widget.iconOnly
               ? FButton.icon(
-                  style: fStyle,
+                  variant: variant,
+                  style: styleDelta,
                   onPress: onPress,
                   child: customIcon ??
                       (icon != null
@@ -294,14 +153,15 @@ class _ButtonState extends State<Button> {
                           : (widget.command.buildBody(context) ??
                                 Text(
                                   widget.command.title,
-                                  style: context.theme.typography.base.copyWith(
+                                  style: context.theme.typography.md.copyWith(
                                     height: 1,
                                     textBaseline: TextBaseline.ideographic,
                                   ),
                                 ))),
                 )
               : FButton(
-                  style: fStyle,
+                  variant: variant,
+                  style: styleDelta,
                   onPress: onPress,
                   prefix: icon != null
                       ? Icon(icon, size: context.theme.iconSizes.base)
@@ -313,6 +173,163 @@ class _ButtonState extends State<Button> {
     );
 
     return _wrapButton(button);
+  }
+
+  /// Build style for selected state. Returns a full FButtonStyle which
+  /// implements FButtonStyleDelta (ignoring the base and returning itself).
+  FButtonStyleDelta _buildSelectedStyle(BuildContext context) {
+    // Ghost selected: keep ghost decoration, just color the text/icon
+    // Primary/secondary selected: use primary style (tint background)
+    final sizeStyles = widget.style == ButtonStyle.ghost
+        ? context.theme.buttonStyles.ghost
+        : context.theme.buttonStyles.primary;
+    var style = sizeStyles.md;
+
+    if (widget.iconOnly) {
+      style = style.copyWith(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
+          ),
+        ]),
+      );
+    }
+
+    final color = widget.selectedColor ?? context.theme.colors.primary;
+
+    if (widget.style == ButtonStyle.ghost) {
+      // Ghost selected: override text/icon color only
+      final hoverColor = Color.lerp(
+        color,
+        context.colour.foreground,
+        0.3,
+      );
+      style = style.copyWith(
+        // ignore: unused_result
+        contentStyle: FButtonContentStyleDelta.delta(
+          textStyle: _textStyleVariants(
+            base: style.contentStyle.textStyle
+                .resolve({}).copyWith(color: color),
+            hovered: style.contentStyle.textStyle
+                .resolve({FTappableVariant.hovered}).copyWith(color: hoverColor),
+          ),
+          iconStyle: _iconVariants(
+            base: style.contentStyle.iconStyle
+                .resolve({}).copyWith(color: color),
+            hovered: style.contentStyle.iconStyle
+                .resolve({FTappableVariant.hovered}).copyWith(color: hoverColor),
+          ),
+        ),
+        // ignore: unused_result
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          iconStyle: _iconVariants(
+            base: style.iconContentStyle.iconStyle
+                .resolve({}).copyWith(color: color),
+            hovered: style.iconContentStyle.iconStyle
+                .resolve({FTappableVariant.hovered}).copyWith(color: hoverColor),
+          ),
+        ),
+      );
+    } else if (widget.selectedColor != null) {
+      // Primary/secondary selected with custom color: tint with selectedColor
+      final oklch = widget.selectedColor!.toRayRgb8().toOklch();
+      final colourScheme = context.colour;
+      final isLight = colourScheme.brightness == Brightness.light;
+
+      final bgColor = oklch
+          .withLightness(isLight ? 0.94 : 0.26)
+          .withChroma(isLight ? 0.04 : 0.03)
+          .toColor();
+      final hoverBgColor = oklch
+          .withLightness(isLight ? 0.90 : 0.30)
+          .withChroma(isLight ? 0.06 : 0.05)
+          .toColor();
+      final borderColor = oklch.withOpacity(0.35).toColor();
+      final hoverBorderColor = oklch.withOpacity(0.5).toColor();
+      final fgColor = widget.selectedColor!;
+
+      final baseRadius = widget.iconOnly
+          ? BorderRadius.circular(999)
+          : (style.decoration.resolve({}) as BoxDecoration).borderRadius as BorderRadius?;
+
+      style = style.copyWith(
+        // ignore: unused_result
+        decoration: _decorationVariants(
+          base: BoxDecoration(
+            borderRadius: baseRadius,
+            color: bgColor,
+            border: Border.all(color: borderColor),
+          ),
+          hovered: BoxDecoration(
+            borderRadius: baseRadius,
+            color: hoverBgColor,
+            border: Border.all(color: hoverBorderColor),
+          ),
+        ),
+        // ignore: unused_result
+        contentStyle: FButtonContentStyleDelta.delta(
+          textStyle: _textStyleVariants(
+            base: style.contentStyle.textStyle
+                .resolve({}).copyWith(color: fgColor),
+          ),
+          iconStyle: _iconVariants(
+            base: style.contentStyle.iconStyle
+                .resolve({}).copyWith(color: fgColor),
+          ),
+        ),
+        // ignore: unused_result
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          iconStyle: _iconVariants(
+            base: style.iconContentStyle.iconStyle
+                .resolve({}).copyWith(color: fgColor),
+          ),
+        ),
+      );
+    }
+
+    return style;
+  }
+
+  /// Build style delta for non-selected icon-only buttons.
+  FButtonStyleDelta _buildIconOnlyStyle(BuildContext context) {
+    if (widget.color != null) {
+      // Need to resolve the full style to modify icon color
+      final sizeStyles = switch (widget.style) {
+        ButtonStyle.primary => context.theme.buttonStyles.primary,
+        ButtonStyle.secondary => context.theme.buttonStyles.secondary,
+        ButtonStyle.ghost => context.theme.buttonStyles.ghost,
+      };
+      var style = sizeStyles.md;
+
+      style = style.copyWith(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
+          ),
+        ]),
+      );
+
+      final iconStyle = style.iconContentStyle.iconStyle;
+      style = style.copyWith(
+        // ignore: unused_result
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          iconStyle: _iconVariants(
+            base: iconStyle.resolve({}).copyWith(color: widget.color),
+          ),
+        ),
+      );
+
+      return style;
+    }
+
+    // Simple icon-only: just change border radius
+    return FButtonStyleDelta.delta(
+      decoration: FVariantsDelta.delta([
+        FVariantOperation.all(
+          DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
+        ),
+      ]),
+    );
   }
 
   Widget _wrapButton(Widget button) {
@@ -369,4 +386,58 @@ class _ButtonState extends State<Button> {
 
     return result;
   }
+}
+
+// Helpers to create tappable FVariants for decoration, text, and icon styles.
+// FVariants implements FVariantsDelta, so these can be passed directly to copyWith.
+
+FVariants<FTappableVariantConstraint, FTappableVariant, Decoration,
+    DecorationDelta> _decorationVariants({
+  required Decoration base,
+  Decoration? hovered,
+}) {
+  return FVariants<FTappableVariantConstraint, FTappableVariant, Decoration,
+      DecorationDelta>(
+    base,
+    variants: {
+      if (hovered != null) ...<List<FTappableVariantConstraint>, Decoration>{
+        [FTappableVariantConstraint.hovered]: hovered,
+        [FTappableVariantConstraint.pressed]: hovered,
+      },
+    },
+  );
+}
+
+FVariants<FTappableVariantConstraint, FTappableVariant, TextStyle,
+    TextStyleDelta> _textStyleVariants({
+  required TextStyle base,
+  TextStyle? hovered,
+}) {
+  return FVariants<FTappableVariantConstraint, FTappableVariant, TextStyle,
+      TextStyleDelta>(
+    base,
+    variants: {
+      if (hovered != null) ...<List<FTappableVariantConstraint>, TextStyle>{
+        [FTappableVariantConstraint.hovered]: hovered,
+        [FTappableVariantConstraint.pressed]: hovered,
+      },
+    },
+  );
+}
+
+FVariants<FTappableVariantConstraint, FTappableVariant, IconThemeData,
+    IconThemeDataDelta> _iconVariants({
+  required IconThemeData base,
+  IconThemeData? hovered,
+}) {
+  return FVariants<FTappableVariantConstraint, FTappableVariant,
+      IconThemeData, IconThemeDataDelta>(
+    base,
+    variants: {
+      if (hovered != null) ...<List<FTappableVariantConstraint>, IconThemeData>{
+        [FTappableVariantConstraint.hovered]: hovered,
+        [FTappableVariantConstraint.pressed]: hovered,
+      },
+    },
+  );
 }

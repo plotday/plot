@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
@@ -107,23 +108,28 @@ class _DateInputState extends State<DateInput> {
             textAlign: TextAlign.center,
             prefixBuilder: null,
             start: Time.now(),
-            style: (style) {
-              final textField = style.textFieldStyle.copyWith(
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: theme.spacing.sm,
-                  vertical: theme.spacing.md,
-                ),
-                border: style.textFieldStyle.border.map(
-                  (borderStyle) => borderStyle.copyWith(
-                    borderSide: const BorderSide(
-                      width: 0,
-                      style: BorderStyle.none,
+            style: FDateFieldStyleDelta.delta(
+              fieldStyles: FVariantsDelta.delta([
+                FVariantOperation.all(FTextFieldStyleDelta.delta(
+                  contentPadding: EdgeInsetsGeometryDelta.value(
+                    EdgeInsets.symmetric(
+                      horizontal: theme.spacing.sm,
+                      vertical: theme.spacing.md,
                     ),
                   ),
-                ),
-              );
-              return style.copyWith(textFieldStyle: textField);
-            },
+                  border: FVariantsValueDelta.delta([
+                    FVariantValueDeltaOperation.all(
+                      const OutlineInputBorder(
+                        borderSide: BorderSide(
+                          width: 0,
+                          style: BorderStyle.none,
+                        ),
+                      ),
+                    ),
+                  ]),
+                )),
+              ]),
+            ),
             builder: (context, style, states, child) => child,
           ),
         ),
@@ -151,7 +157,7 @@ class _DateInputState extends State<DateInput> {
     required FThemeData theme,
   }) {
     return FButton(
-      style: (style) => theme.buttonStyles.ghost,
+      variant: FButtonVariant.ghost,
       onPress: onPressed,
       child: Icon(icon, size: theme.iconSizes.sm),
     );

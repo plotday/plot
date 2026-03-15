@@ -289,7 +289,7 @@ class _AgendaHeaderState extends State<AgendaHeader> {
       final headerBg = context.colour.headerBackground;
       final dateFontSize = dateCenterLeft == null
           ? context.theme.typography.xs.fontSize
-          : context.theme.typography.base.fontSize;
+          : context.theme.typography.md.fontSize;
       final veryMuted = context.theme.plotColors.veryMuted;
       final mutedStyle = TextStyle(color: veryMuted, fontSize: dateFontSize);
 

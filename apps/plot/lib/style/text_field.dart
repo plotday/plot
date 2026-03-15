@@ -1,34 +1,52 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' show OutlineInputBorder;
+import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
 
-FTextFieldStyle buildTextFieldStyle(
-  FTextFieldStyle baseStyle,
+FTextFieldStyleDelta buildTextFieldStyleDelta(
   ColourSchemeData colourScheme,
-  BorderRadius borderRadius,
+  FBorderRadius borderRadius,
   double borderWidth,
   FTypography typography,
 ) {
-  // ignore: unused_result
-  return baseStyle.copyWith(
+  return FTextFieldStyleDelta.delta(
     cursorColor: colourScheme.muted,
-    fillColor: colourScheme.editableBackground,
-    border: FWidgetStateMap({
-      WidgetState.focused: OutlineInputBorder(
-        borderSide: BorderSide(color: colourScheme.accent, width: borderWidth),
-        borderRadius: borderRadius,
+    color: FVariantsValueDelta.delta([
+      FVariantValueDeltaOperation.base(null),
+      FVariantValueDeltaOperation.exact(
+        {FTextFieldVariantConstraint.focused},
+        colourScheme.editableBackground,
       ),
-      WidgetState.any: OutlineInputBorder(
-        borderSide: BorderSide(color: colourScheme.border, width: borderWidth),
-        borderRadius: borderRadius,
+    ]),
+    border: FVariantsValueDelta.delta([
+      FVariantValueDeltaOperation.all(
+        OutlineInputBorder(
+          borderSide: BorderSide(
+            color: colourScheme.border,
+            width: borderWidth,
+          ),
+          borderRadius: borderRadius.md,
+        ),
       ),
-    }),
-    contentTextStyle: baseStyle.contentTextStyle.map(
-      (style) => style.copyWith(
-        color: colourScheme.foreground,
-        fontSize: typography.base.fontSize,
+      FVariantValueDeltaOperation.exact(
+        {FTextFieldVariantConstraint.focused},
+        OutlineInputBorder(
+          borderSide: BorderSide(
+            color: colourScheme.accent,
+            width: borderWidth,
+          ),
+          borderRadius: borderRadius.md,
+        ),
       ),
-    ),
+    ]),
+    contentTextStyle: FVariantsDelta.delta([
+      FVariantOperation.all(
+        TextStyleDelta.delta(
+          color: colourScheme.foreground,
+          fontSize: typography.md.fontSize,
+        ),
+      ),
+    ]),
   );
 }

@@ -435,7 +435,7 @@ class _ActiveSourceRow extends StatelessWidget {
                   item.name,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: theme.typography.base.fontSize,
+                    fontSize: theme.typography.md.fontSize,
                     color: theme.colors.foreground,
                   ),
                 ),
@@ -446,7 +446,7 @@ class _ActiveSourceRow extends StatelessWidget {
                       subtitle,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: theme.typography.base.fontSize,
+                        fontSize: theme.typography.md.fontSize,
                         color: theme.colors.mutedForeground,
                       ),
                     ),
@@ -508,7 +508,7 @@ class _AvailableSourceRow extends StatelessWidget {
                   item.twist.name,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: theme.typography.base.fontSize,
+                    fontSize: theme.typography.md.fontSize,
                     color: theme.colors.foreground,
                   ),
                 ),
@@ -523,7 +523,7 @@ class _AvailableSourceRow extends StatelessWidget {
                       item.twist.description!,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: theme.typography.base.fontSize,
+                        fontSize: theme.typography.md.fontSize,
                         color: theme.colors.mutedForeground,
                       ),
                     ),
@@ -569,7 +569,7 @@ class _UpcomingConnectionRow extends StatelessWidget {
                   item.connection.name,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: theme.typography.base.fontSize,
+                    fontSize: theme.typography.md.fontSize,
                     color: theme.colors.foreground,
                   ),
                 ),
@@ -579,7 +579,7 @@ class _UpcomingConnectionRow extends StatelessWidget {
                     item.connection.description ?? item.connection.category,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: theme.typography.base.fontSize,
+                      fontSize: theme.typography.md.fontSize,
                       color: theme.colors.mutedForeground,
                     ),
                   ),
@@ -657,7 +657,7 @@ class _NotifyUpcomingConnection extends ShowForm {
                         Text(
                           item.connection.description!,
                           style: TextStyle(
-                            fontSize: theme.typography.base.fontSize,
+                            fontSize: theme.typography.md.fontSize,
                             color: theme.colors.foreground,
                           ),
                         ),
@@ -1569,7 +1569,7 @@ class ShowTwistInfo extends ShowForm {
         Text(
           twist.name,
           overflow: TextOverflow.ellipsis,
-          style: theme.typography.base.copyWith(color: theme.colors.foreground),
+          style: theme.typography.md.copyWith(color: theme.colors.foreground),
         ),
         const SizedBox(width: 6),
         _EnvironmentBadge(environment: twist.environment),
@@ -1579,7 +1579,7 @@ class ShowTwistInfo extends ShowForm {
             child: Text(
               twist.description!,
               overflow: TextOverflow.ellipsis,
-              style: theme.typography.base.copyWith(
+              style: theme.typography.md.copyWith(
                 color: theme.colors.mutedForeground,
               ),
             ),
@@ -2281,7 +2281,7 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
             : _buildProviderIcon(widget.provider.provider, config.iconSize),
         child: Text(
           label,
-          style: context.theme.typography.base.copyWith(
+          style: context.theme.typography.md.copyWith(
             fontWeight: config.fontWeight,
             fontFamily: config.fontFamily,
             color: _isLoading ? config.disabledTextColor : config.textColor,

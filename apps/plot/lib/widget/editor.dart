@@ -1679,7 +1679,7 @@ class ViewerState extends State<Viewer> {
 }
 
 TextStyle _baseTextStyle(BuildContext context) {
-  return context.theme.typography.base.copyWith(height: 1.4);
+  return context.theme.typography.md.copyWith(height: 1.4);
 }
 
 /// Custom inline text styler that applies styling to user mentions

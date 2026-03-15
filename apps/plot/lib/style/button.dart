@@ -7,291 +7,374 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 
-FButtonStyles buildButtonStyles(
+FVariantsDelta<FButtonVariantConstraint, FButtonVariant, FButtonSizeStyles,
+    FButtonSizesDelta> buildButtonStylesDelta(
   FButtonStyles baseStyles,
   ColourSchemeData colourScheme,
-  BorderRadius borderRadius,
+  FBorderRadius borderRadius,
   FTypography typography,
   PlotIconSizes iconSizes,
 ) {
-  return baseStyles.copyWith(
-    // ignore: unused_result
-    primary: baseStyles.primary.copyWith(
-      // ignore: unused_result
-      tappableStyle: (t) => t.copyWith(motion: (_) => FTappableMotion.none),
-      // ignore: unused_result
-      decoration: FWidgetStateMap({
-        WidgetState.disabled: BoxDecoration(
-          borderRadius: borderRadius,
-          color: colourScheme.colours.accent
-              .withChroma(0)
-              .withLightness(colourScheme.brightness == .light ? 0.95 : 0.27)
-              .toColor(),
-          border: Border.all(
-            color: colourScheme.colours.accent
-                .withChroma(0)
-                .withLightness(colourScheme.brightness == .light ? 0.85 : 0.40)
-                .toColor(),
-          ),
+  return FVariantsDelta.delta([
+    // Primary button
+    FVariantOperation.exact(
+      {FButtonVariantConstraint.primary},
+      FButtonSizesDelta.delta([
+        FVariantOperation.all(
+          _buildPrimaryStyleDelta(colourScheme, borderRadius, typography, iconSizes),
         ),
-        WidgetState.hovered | WidgetState.pressed: BoxDecoration(
-          borderRadius: borderRadius,
-          color: colourScheme.colours.accent
-              .withLightness(colourScheme.brightness == .light ? 0.90 : 0.30)
-              .withChroma(colourScheme.brightness == .light ? 0.06 : 0.05)
-              .toColor(),
-          border: Border.all(
-            color: colourScheme.colours.accent.withOpacity(0.5).toColor(),
-          ),
+      ]),
+    ),
+    // Secondary button (based on outline style)
+    FVariantOperation.exact(
+      {FButtonVariantConstraint.secondary},
+      FButtonSizesDelta.delta([
+        FVariantOperation.all(
+          _buildSecondaryStyleDelta(colourScheme, borderRadius, typography, iconSizes),
         ),
-        WidgetState.any: BoxDecoration(
-          borderRadius: borderRadius,
-          color: colourScheme.colours.accent
-              .withLightness(colourScheme.brightness == .light ? 0.94 : 0.26)
-              .withChroma(colourScheme.brightness == .light ? 0.04 : 0.03)
-              .toColor(),
-          border: Border.all(
-            color: colourScheme.colours.accent.withOpacity(0.35).toColor(),
-          ),
+      ]),
+    ),
+    // Outline button
+    FVariantOperation.exact(
+      {FButtonVariantConstraint.outline},
+      FButtonSizesDelta.delta([
+        FVariantOperation.all(
+          _buildOutlineStyleDelta(colourScheme, borderRadius),
         ),
-      }),
-      // ignore: unused_result
-      contentStyle: baseStyles.primary.contentStyle.copyWith(
-        padding: PlotSpacing.fallback.padding,
-        textStyle: FWidgetStateMap({
-          WidgetState.disabled: typography.base.copyWith(
-            color: colourScheme.colours.accent
-                .withChroma(0)
-                .withLightness(0.50)
-                .toColor(),
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-          WidgetState.hovered | WidgetState.pressed: typography.base.copyWith(
-            color: colourScheme.colours.accent
-                .withLightness(
-                  colourScheme.brightness == .light
-                      ? 0.35
-                      : colourScheme.colours.accent.lightness,
-                )
-                .toColor(),
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-          WidgetState.any: typography.base.copyWith(
-            color: colourScheme.accent,
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-        }),
-        iconStyle: FWidgetStateMap({
-          WidgetState.disabled: IconThemeData(
-            color: colourScheme.colours.accent
-                .withChroma(0)
-                .withLightness(0.50)
-                .toColor(),
-            size: iconSizes.base,
-          ),
-          WidgetState.hovered | WidgetState.pressed: IconThemeData(
-            color: colourScheme.colours.accent
-                .withLightness(
-                  colourScheme.brightness == .light
-                      ? 0.35
-                      : colourScheme.colours.accent.lightness,
-                )
-                .toColor(),
-            size: iconSizes.base,
-          ),
-          WidgetState.any: IconThemeData(
-            color: colourScheme.accent,
-            size: iconSizes.base,
-          ),
-        }),
+      ]),
+    ),
+    // Ghost button
+    FVariantOperation.exact(
+      {FButtonVariantConstraint.ghost},
+      FButtonSizesDelta.delta([
+        FVariantOperation.all(
+          _buildGhostStyleDelta(colourScheme, borderRadius, typography, iconSizes),
+        ),
+      ]),
+    ),
+  ]);
+}
+
+// Helper to create a tappable decoration FVariants with base, disabled,
+// hovered, and pressed states.
+FVariants<FTappableVariantConstraint, FTappableVariant, Decoration,
+    DecorationDelta> _decorationVariants({
+  required Decoration base,
+  Decoration? disabled,
+  Decoration? hovered,
+  Decoration? pressed,
+}) {
+  return FVariants<FTappableVariantConstraint, FTappableVariant, Decoration,
+      DecorationDelta>(
+    base,
+    variants: {
+      if (disabled != null)
+        [FTappableVariantConstraint.disabled]: disabled,
+      if (hovered != null)
+        [FTappableVariantConstraint.hovered]: hovered,
+      if (pressed != null)
+        [FTappableVariantConstraint.pressed]: pressed,
+    },
+  );
+}
+
+// Helper to create tappable text style FVariants.
+FVariants<FTappableVariantConstraint, FTappableVariant, TextStyle,
+    TextStyleDelta> _textStyleVariants({
+  required TextStyle base,
+  TextStyle? disabled,
+  TextStyle? hovered,
+  TextStyle? pressed,
+}) {
+  return FVariants<FTappableVariantConstraint, FTappableVariant, TextStyle,
+      TextStyleDelta>(
+    base,
+    variants: {
+      if (disabled != null)
+        [FTappableVariantConstraint.disabled]: disabled,
+      if (hovered != null)
+        [FTappableVariantConstraint.hovered]: hovered,
+      if (pressed != null)
+        [FTappableVariantConstraint.pressed]: pressed,
+    },
+  );
+}
+
+// Helper to create tappable icon theme FVariants.
+FVariants<FTappableVariantConstraint, FTappableVariant, IconThemeData,
+    IconThemeDataDelta> _iconVariants({
+  required IconThemeData base,
+  IconThemeData? disabled,
+  IconThemeData? hovered,
+  IconThemeData? pressed,
+}) {
+  return FVariants<FTappableVariantConstraint, FTappableVariant, IconThemeData,
+      IconThemeDataDelta>(
+    base,
+    variants: {
+      if (disabled != null)
+        [FTappableVariantConstraint.disabled]: disabled,
+      if (hovered != null)
+        [FTappableVariantConstraint.hovered]: hovered,
+      if (pressed != null)
+        [FTappableVariantConstraint.pressed]: pressed,
+    },
+  );
+}
+
+FButtonStyleDelta _buildPrimaryStyleDelta(
+  ColourSchemeData colourScheme,
+  FBorderRadius borderRadius,
+  FTypography typography,
+  PlotIconSizes iconSizes,
+) {
+  final disabledColor = colourScheme.colours.accent
+      .withChroma(0)
+      .withLightness(colourScheme.brightness == .light ? 0.95 : 0.27)
+      .toColor();
+  final disabledBorderColor = colourScheme.colours.accent
+      .withChroma(0)
+      .withLightness(colourScheme.brightness == .light ? 0.85 : 0.40)
+      .toColor();
+  final hoveredColor = colourScheme.colours.accent
+      .withLightness(colourScheme.brightness == .light ? 0.90 : 0.30)
+      .withChroma(colourScheme.brightness == .light ? 0.06 : 0.05)
+      .toColor();
+  final hoveredBorderColor =
+      colourScheme.colours.accent.withOpacity(0.5).toColor();
+  final baseColor = colourScheme.colours.accent
+      .withLightness(colourScheme.brightness == .light ? 0.94 : 0.26)
+      .withChroma(colourScheme.brightness == .light ? 0.04 : 0.03)
+      .toColor();
+  final baseBorderColor =
+      colourScheme.colours.accent.withOpacity(0.35).toColor();
+
+  final disabledFg = colourScheme.colours.accent
+      .withChroma(0)
+      .withLightness(0.50)
+      .toColor();
+  final hoveredFg = colourScheme.colours.accent
+      .withLightness(
+        colourScheme.brightness == .light
+            ? 0.35
+            : colourScheme.colours.accent.lightness,
+      )
+      .toColor();
+
+  final hoveredDecoration = BoxDecoration(
+    borderRadius: borderRadius.md,
+    color: hoveredColor,
+    border: Border.all(color: hoveredBorderColor),
+  );
+
+  return FButtonStyleDelta.delta(
+    tappableStyle: FTappableStyleDelta.delta(motion: FTappableMotion.none),
+    decoration: _decorationVariants(
+      base: BoxDecoration(
+        borderRadius: borderRadius.md,
+        color: baseColor,
+        border: Border.all(color: baseBorderColor),
       ),
-      // ignore: unused_result
-      iconContentStyle: baseStyles.primary.iconContentStyle.copyWith(
-        iconStyle: FWidgetStateMap({
-          WidgetState.disabled: IconThemeData(
-            color: colourScheme.colours.accent
-                .withChroma(0)
-                .withLightness(0.50)
-                .toColor(),
-            size: iconSizes.lg,
-          ),
-          WidgetState.hovered | WidgetState.pressed: IconThemeData(
-            color: colourScheme.colours.accent
-                .withLightness(
-                  colourScheme.brightness == .light
-                      ? 0.35
-                      : colourScheme.colours.accent.lightness,
-                )
-                .toColor(),
-            size: iconSizes.lg,
-          ),
-          WidgetState.any: IconThemeData(
-            color: colourScheme.accent,
-            size: iconSizes.lg,
-          ),
-        }),
+      disabled: BoxDecoration(
+        borderRadius: borderRadius.md,
+        color: disabledColor,
+        border: Border.all(color: disabledBorderColor),
+      ),
+      hovered: hoveredDecoration,
+      pressed: hoveredDecoration,
+    ),
+    contentStyle: FButtonContentStyleDelta.delta(
+      padding: EdgeInsetsGeometryDelta.value(PlotSpacing.fallback.padding),
+      textStyle: _textStyleVariants(
+        base: typography.md.copyWith(
+          color: colourScheme.accent, fontWeight: FontWeight.w500, height: 1,
+        ),
+        disabled: typography.md.copyWith(
+          color: disabledFg, fontWeight: FontWeight.w500, height: 1,
+        ),
+        hovered: typography.md.copyWith(
+          color: hoveredFg, fontWeight: FontWeight.w500, height: 1,
+        ),
+        pressed: typography.md.copyWith(
+          color: hoveredFg, fontWeight: FontWeight.w500, height: 1,
+        ),
+      ),
+      iconStyle: _iconVariants(
+        base: IconThemeData(color: colourScheme.accent, size: iconSizes.base),
+        disabled: IconThemeData(color: disabledFg, size: iconSizes.base),
+        hovered: IconThemeData(color: hoveredFg, size: iconSizes.base),
+        pressed: IconThemeData(color: hoveredFg, size: iconSizes.base),
       ),
     ),
-    // ignore: unused_result
-    secondary: baseStyles.outline.copyWith(
-      // ignore: unused_result
-      tappableStyle: (t) => t.copyWith(motion: (_) => FTappableMotion.none),
-      // ignore: unused_result
-      decoration: FWidgetStateMap({
-        WidgetState.disabled: BoxDecoration(
-          borderRadius: borderRadius,
-          border: Border.all(color: colourScheme.border.withValues(alpha: 0.5)),
-        ),
-        WidgetState.hovered | WidgetState.pressed: BoxDecoration(
-          borderRadius: borderRadius,
-          border: Border.all(color: colourScheme.border),
-          color: colourScheme.brightness == Brightness.light
-              ? colourScheme.colours.background.withLightness(1).toColor()
-              : colourScheme.highlight,
-        ),
-        WidgetState.any: BoxDecoration(
-          borderRadius: borderRadius,
-          border: Border.all(color: colourScheme.border),
-        ),
-      }),
-      // ignore: unused_result
-      contentStyle: baseStyles.outline.contentStyle.copyWith(
-        padding: PlotSpacing.fallback.padding,
-        textStyle: FWidgetStateMap({
-          WidgetState.disabled: typography.base.copyWith(
-            color: colourScheme.veryMuted,
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-          WidgetState.hovered | WidgetState.pressed: typography.base.copyWith(
-            color: colourScheme.colours.muted
-                .withLightness(colourScheme.brightness == .light ? 0.40 : 0.73)
-                .toColor(),
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-          WidgetState.any: typography.base.copyWith(
-            color: colourScheme.muted,
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-        }),
-        iconStyle: FWidgetStateMap({
-          WidgetState.disabled: IconThemeData(
-            color: colourScheme.veryMuted,
-            size: iconSizes.base,
-          ),
-          WidgetState.hovered | WidgetState.pressed: IconThemeData(
-            color: colourScheme.colours.muted
-                .withLightness(colourScheme.brightness == .light ? 0.40 : 0.73)
-                .toColor(),
-            size: iconSizes.base,
-          ),
-          WidgetState.any: IconThemeData(
-            color: colourScheme.muted,
-            size: iconSizes.base,
-          ),
-        }),
+    iconContentStyle: FButtonIconContentStyleDelta.delta(
+      iconStyle: _iconVariants(
+        base: IconThemeData(color: colourScheme.accent, size: iconSizes.lg),
+        disabled: IconThemeData(color: disabledFg, size: iconSizes.lg),
+        hovered: IconThemeData(color: hoveredFg, size: iconSizes.lg),
+        pressed: IconThemeData(color: hoveredFg, size: iconSizes.lg),
       ),
     ),
-    // ignore: unused_result
-    outline: baseStyles.outline.copyWith(
-      // ignore: unused_result
-      tappableStyle: (t) => t.copyWith(motion: (_) => FTappableMotion.none),
-      // ignore: unused_result
-      decoration: FWidgetStateMap({
-        WidgetState.hovered | WidgetState.pressed: BoxDecoration(
-          borderRadius: borderRadius,
-          border: Border.all(
-            color: colourScheme.colours.muted.withOpacity(0.4).toColor(),
-            width: 1,
-          ),
-          color: colourScheme.colours.highlight
-              .withLightness(colourScheme.brightness == .light ? 0.95 : 0.52)
-              .toColor(),
-        ),
-        WidgetState.any: BoxDecoration(
-          borderRadius: borderRadius,
-          border: Border.all(
-            color: colourScheme.colours.muted.withOpacity(0.4).toColor(),
-            width: 1,
-          ),
-          color: colourScheme.colours.highlight
-              .withLightness(colourScheme.brightness == .light ? 0.90 : 0.48)
-              .toColor(),
-        ),
-      }),
-    ),
-    // ignore: unused_result
-    ghost: baseStyles.ghost.copyWith(
-      // ignore: unused_result
-      tappableStyle: (t) => t.copyWith(motion: (_) => FTappableMotion.none),
-      // ignore: unused_result
-      decoration: FWidgetStateMap({
-        WidgetState.any: BoxDecoration(
-          borderRadius: borderRadius,
-          border: Border.all(
-            color: Color(0x00000000), // Transparent border
-            width: 2,
-          ),
-        ),
-      }),
-      // ignore: unused_result
-      contentStyle: baseStyles.ghost.contentStyle.copyWith(
-        padding: EdgeInsets.all(isMobilePlatform() ? 14 : 10),
-        spacing: 6,
-        textStyle: FWidgetStateMap({
-          WidgetState.disabled: typography.base.copyWith(
-            color: colourScheme.muted,
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-          WidgetState.hovered | WidgetState.pressed: typography.base.copyWith(
-            color: colourScheme.foreground,
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-          WidgetState.any: typography.base.copyWith(
-            color: colourScheme.muted,
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-        }),
-        iconStyle: FWidgetStateMap({
-          WidgetState.disabled: IconThemeData(
-            color: colourScheme.muted.withValues(alpha: 0.5),
-            size: iconSizes.base,
-          ),
-          WidgetState.hovered | WidgetState.pressed: IconThemeData(
-            color: colourScheme.foreground,
-            size: iconSizes.base,
-          ),
-          WidgetState.any: IconThemeData(
-            color: colourScheme.muted,
-            size: iconSizes.base,
-          ),
-        }),
+  );
+}
+
+FButtonStyleDelta _buildSecondaryStyleDelta(
+  ColourSchemeData colourScheme,
+  FBorderRadius borderRadius,
+  FTypography typography,
+  PlotIconSizes iconSizes,
+) {
+  final hoveredBgColor = colourScheme.brightness == Brightness.light
+      ? colourScheme.colours.background.withLightness(1).toColor()
+      : colourScheme.highlight;
+  final hoveredFg = colourScheme.colours.muted
+      .withLightness(colourScheme.brightness == .light ? 0.40 : 0.73)
+      .toColor();
+
+  final hoveredDecoration = BoxDecoration(
+    borderRadius: borderRadius.md,
+    border: Border.all(color: colourScheme.border),
+    color: hoveredBgColor,
+  );
+
+  return FButtonStyleDelta.delta(
+    tappableStyle: FTappableStyleDelta.delta(motion: FTappableMotion.none),
+    decoration: _decorationVariants(
+      base: BoxDecoration(
+        borderRadius: borderRadius.md,
+        border: Border.all(color: colourScheme.border),
       ),
-      // ignore: unused_result
-      iconContentStyle: baseStyles.ghost.iconContentStyle.copyWith(
-        padding: EdgeInsets.all(isMobilePlatform() ? 14 : 7.5),
-        iconStyle: FWidgetStateMap({
-          WidgetState.disabled: IconThemeData(
-            color: colourScheme.muted.withValues(alpha: 0.5),
-            size: iconSizes.lg,
-          ),
-          WidgetState.hovered | WidgetState.pressed: IconThemeData(
-            color: colourScheme.foreground,
-            size: iconSizes.lg,
-          ),
-          WidgetState.any: IconThemeData(
-            color: colourScheme.muted,
-            size: iconSizes.lg,
-          ),
-        }),
+      disabled: BoxDecoration(
+        borderRadius: borderRadius.md,
+        border: Border.all(
+          color: colourScheme.border.withValues(alpha: 0.5),
+        ),
+      ),
+      hovered: hoveredDecoration,
+      pressed: hoveredDecoration,
+    ),
+    contentStyle: FButtonContentStyleDelta.delta(
+      padding: EdgeInsetsGeometryDelta.value(PlotSpacing.fallback.padding),
+      textStyle: _textStyleVariants(
+        base: typography.md.copyWith(
+          color: colourScheme.muted, fontWeight: FontWeight.w500, height: 1,
+        ),
+        disabled: typography.md.copyWith(
+          color: colourScheme.veryMuted, fontWeight: FontWeight.w500, height: 1,
+        ),
+        hovered: typography.md.copyWith(
+          color: hoveredFg, fontWeight: FontWeight.w500, height: 1,
+        ),
+        pressed: typography.md.copyWith(
+          color: hoveredFg, fontWeight: FontWeight.w500, height: 1,
+        ),
+      ),
+      iconStyle: _iconVariants(
+        base: IconThemeData(color: colourScheme.muted, size: iconSizes.base),
+        disabled: IconThemeData(
+          color: colourScheme.veryMuted, size: iconSizes.base,
+        ),
+        hovered: IconThemeData(color: hoveredFg, size: iconSizes.base),
+        pressed: IconThemeData(color: hoveredFg, size: iconSizes.base),
+      ),
+    ),
+  );
+}
+
+FButtonStyleDelta _buildOutlineStyleDelta(
+  ColourSchemeData colourScheme,
+  FBorderRadius borderRadius,
+) {
+  final mutedBorder =
+      colourScheme.colours.muted.withOpacity(0.4).toColor();
+  final baseHighlight = colourScheme.colours.highlight
+      .withLightness(colourScheme.brightness == .light ? 0.90 : 0.48)
+      .toColor();
+  final hoveredHighlight = colourScheme.colours.highlight
+      .withLightness(colourScheme.brightness == .light ? 0.95 : 0.52)
+      .toColor();
+
+  final hoveredDecoration = BoxDecoration(
+    borderRadius: borderRadius.md,
+    border: Border.all(color: mutedBorder, width: 1),
+    color: hoveredHighlight,
+  );
+
+  return FButtonStyleDelta.delta(
+    tappableStyle: FTappableStyleDelta.delta(motion: FTappableMotion.none),
+    decoration: _decorationVariants(
+      base: BoxDecoration(
+        borderRadius: borderRadius.md,
+        border: Border.all(color: mutedBorder, width: 1),
+        color: baseHighlight,
+      ),
+      hovered: hoveredDecoration,
+      pressed: hoveredDecoration,
+    ),
+  );
+}
+
+FButtonStyleDelta _buildGhostStyleDelta(
+  ColourSchemeData colourScheme,
+  FBorderRadius borderRadius,
+  FTypography typography,
+  PlotIconSizes iconSizes,
+) {
+  final mobilePadding = EdgeInsets.all(isMobilePlatform() ? 14 : 10);
+  final mobileIconPadding = EdgeInsets.all(isMobilePlatform() ? 14 : 7.5);
+
+  return FButtonStyleDelta.delta(
+    tappableStyle: FTappableStyleDelta.delta(motion: FTappableMotion.none),
+    decoration: _decorationVariants(
+      base: BoxDecoration(
+        borderRadius: borderRadius.md,
+        border: Border.all(color: const Color(0x00000000), width: 2),
+      ),
+    ),
+    contentStyle: FButtonContentStyleDelta.delta(
+      padding: EdgeInsetsGeometryDelta.value(mobilePadding),
+      spacing: 6,
+      textStyle: _textStyleVariants(
+        base: typography.md.copyWith(
+          color: colourScheme.muted, fontWeight: FontWeight.w500, height: 1,
+        ),
+        disabled: typography.md.copyWith(
+          color: colourScheme.muted, fontWeight: FontWeight.w500, height: 1,
+        ),
+        hovered: typography.md.copyWith(
+          color: colourScheme.foreground, fontWeight: FontWeight.w500, height: 1,
+        ),
+        pressed: typography.md.copyWith(
+          color: colourScheme.foreground, fontWeight: FontWeight.w500, height: 1,
+        ),
+      ),
+      iconStyle: _iconVariants(
+        base: IconThemeData(color: colourScheme.muted, size: iconSizes.base),
+        disabled: IconThemeData(
+          color: colourScheme.muted.withValues(alpha: 0.5),
+          size: iconSizes.base,
+        ),
+        hovered: IconThemeData(
+          color: colourScheme.foreground, size: iconSizes.base,
+        ),
+        pressed: IconThemeData(
+          color: colourScheme.foreground, size: iconSizes.base,
+        ),
+      ),
+    ),
+    iconContentStyle: FButtonIconContentStyleDelta.delta(
+      padding: EdgeInsetsGeometryDelta.value(mobileIconPadding),
+      iconStyle: _iconVariants(
+        base: IconThemeData(color: colourScheme.muted, size: iconSizes.lg),
+        disabled: IconThemeData(
+          color: colourScheme.muted.withValues(alpha: 0.5),
+          size: iconSizes.lg,
+        ),
+        hovered: IconThemeData(
+          color: colourScheme.foreground, size: iconSizes.lg,
+        ),
+        pressed: IconThemeData(
+          color: colourScheme.foreground, size: iconSizes.lg,
+        ),
       ),
     ),
   );

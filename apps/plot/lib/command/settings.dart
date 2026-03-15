@@ -200,7 +200,7 @@ class ChangeEnterBehavior extends Command {
             children: [
               Text(
                 title,
-                style: context.theme.typography.base.copyWith(
+                style: context.theme.typography.md.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -299,7 +299,7 @@ class ManageOrganizations extends Command {
             children: [
               Text(
                 org['name'] as String,
-                style: context.theme.typography.base.copyWith(
+                style: context.theme.typography.md.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -760,7 +760,7 @@ class _OfflineInfoContent extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Check your network connection and try again. If you\'re online, try signing in again.',
-            style: context.theme.typography.base.copyWith(
+            style: context.theme.typography.md.copyWith(
               color: context.theme.colors.mutedForeground,
             ),
           ),
@@ -773,7 +773,7 @@ class _OfflineInfoContent extends StatelessWidget {
                   context,
                   Value(const CommandDone()),
                 ),
-                style: FButtonStyle.secondary(),
+                variant: FButtonVariant.secondary,
                 child: const Text('Close'),
               ),
               const SizedBox(width: 12),
@@ -786,7 +786,7 @@ class _OfflineInfoContent extends StatelessWidget {
                     log.warning("Sign out failed", e, t);
                   }
                 },
-                style: FButtonStyle.primary(),
+                variant: FButtonVariant.primary,
                 child: const Text('Sign In'),
               ),
             ],

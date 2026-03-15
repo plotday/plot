@@ -656,7 +656,7 @@ class _AccountRow extends StatelessWidget {
                       account.displayName,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: theme.typography.base.fontSize,
+                        fontSize: theme.typography.md.fontSize,
                         color: theme.colors.foreground,
                       ),
                     ),
@@ -668,7 +668,7 @@ class _AccountRow extends StatelessWidget {
                         account.email!,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: theme.typography.base.fontSize,
+                          fontSize: theme.typography.md.fontSize,
                           color: theme.colors.mutedForeground,
                         ),
                       ),
@@ -680,7 +680,7 @@ class _AccountRow extends StatelessWidget {
             if (!isRemoved && onRefresh != null)
               FButton.icon(
                 onPress: isRefreshing ? null : onRefresh,
-                style: FButtonStyle.ghost(),
+                variant: FButtonVariant.ghost,
                 child: isRefreshing
                     ? SizedBox(width: 14, height: 14, child: Spinner(size: 14))
                     : Icon(

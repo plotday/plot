@@ -21,34 +21,23 @@ FTypography buildTypography(BuildContext context, FColors colorScheme) {
   // Choose the appropriate font sizes
   final sizes = _useMobileFonts(context) ? _mobileSizes : _desktopSizes;
 
-  return FTypography.inherit(
+  final baseTypography = FTypography.inherit(
     colors: colorScheme,
     defaultFontFamily: 'Figtree',
-  ).copyWith(
-    xs: FTypography.inherit(
-      colors: colorScheme,
-      defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: sizes.xs, letterSpacing: 0.2),
-    sm: FTypography.inherit(
-      colors: colorScheme,
-      defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: sizes.sm, letterSpacing: 0.1),
-    base: FTypography.inherit(
-      colors: colorScheme,
-      defaultFontFamily: 'Figtree',
-    ).base.copyWith(fontSize: sizes.base),
-    lg: FTypography.inherit(
-      colors: colorScheme,
-      defaultFontFamily: 'Figtree',
-    ).base.copyWith(
+    touch: false,
+  );
+  final baseStyle = baseTypography.md;
+
+  return baseTypography.copyWith(
+    xs: baseStyle.copyWith(fontSize: sizes.xs, letterSpacing: 0.2),
+    sm: baseStyle.copyWith(fontSize: sizes.sm, letterSpacing: 0.1),
+    md: baseStyle.copyWith(fontSize: sizes.base),
+    lg: baseStyle.copyWith(
       fontSize: sizes.lg,
       fontWeight: FontWeight.w500,
       letterSpacing: -0.15,
     ),
-    xl: FTypography.inherit(
-      colors: colorScheme,
-      defaultFontFamily: 'Figtree',
-    ).base.copyWith(
+    xl: baseStyle.copyWith(
       fontSize: sizes.xl,
       fontWeight: FontWeight.w500,
       letterSpacing: -0.3,

@@ -3,13 +3,13 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
 
-FTooltipStyle buildTooltipStyle(
-  FTooltipStyle baseStyle,
+FTooltipStyleDelta buildTooltipStyleDelta(
   ColourSchemeData colourScheme,
-  BorderRadius borderRadius,
   FTypography typography,
 ) {
-  return baseStyle.copyWith(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+  return FTooltipStyleDelta.delta(
+    padding: EdgeInsetsDelta.value(
+      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+    ),
   );
 }

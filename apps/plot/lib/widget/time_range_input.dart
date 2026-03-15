@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/widgets.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
@@ -184,23 +185,31 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           focusNode: _startTimeFocusNode,
                           prefixBuilder: null,
                           textAlign: TextAlign.right,
-                          style: (style) {
-                            final textField = style.textFieldStyle.copyWith(
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: theme.spacing.sm,
-                                vertical: theme.spacing.md,
-                              ),
-                              border: style.textFieldStyle.border.map(
-                                (borderStyle) => borderStyle.copyWith(
-                                  borderSide: const BorderSide(
-                                    width: 0,
-                                    style: BorderStyle.none,
+                          style: FTimeFieldStyleDelta.delta(
+                            fieldStyles: FVariantsDelta.delta([
+                              FVariantOperation.all(
+                                FTextFieldStyleDelta.delta(
+                                  contentPadding: EdgeInsetsGeometryDelta.value(
+                                    EdgeInsets.symmetric(
+                                      horizontal: theme.spacing.sm,
+                                      vertical: theme.spacing.md,
+                                    ),
                                   ),
+                                  border: FVariantsValueDelta.delta([
+                                    FVariantValueDeltaOperation.all(
+                                      OutlineInputBorder(
+                                        borderSide: const BorderSide(
+                                          width: 0,
+                                          style: BorderStyle.none,
+                                        ),
+                                        borderRadius: BorderRadius.zero,
+                                      ),
+                                    ),
+                                  ]),
                                 ),
                               ),
-                            );
-                            return style.copyWith(textFieldStyle: textField);
-                          },
+                            ]),
+                          ),
                           builder: (context, style, states, child) => child,
                         )
                       : FTimeField(
@@ -211,30 +220,38 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           focusNode: _startTimeFocusNode,
                           prefixBuilder: null,
                           textAlign: TextAlign.right,
-                          style: (style) {
-                            final textField = style.textFieldStyle.copyWith(
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: theme.spacing.sm,
-                                vertical: theme.spacing.md,
-                              ),
-                              border: style.textFieldStyle.border.map(
-                                (borderStyle) => borderStyle.copyWith(
-                                  borderSide: const BorderSide(
-                                    width: 0,
-                                    style: BorderStyle.none,
+                          style: FTimeFieldStyleDelta.delta(
+                            fieldStyles: FVariantsDelta.delta([
+                              FVariantOperation.all(
+                                FTextFieldStyleDelta.delta(
+                                  contentPadding: EdgeInsetsGeometryDelta.value(
+                                    EdgeInsets.symmetric(
+                                      horizontal: theme.spacing.sm,
+                                      vertical: theme.spacing.md,
+                                    ),
                                   ),
+                                  border: FVariantsValueDelta.delta([
+                                    FVariantValueDeltaOperation.all(
+                                      OutlineInputBorder(
+                                        borderSide: const BorderSide(
+                                          width: 0,
+                                          style: BorderStyle.none,
+                                        ),
+                                        borderRadius: BorderRadius.zero,
+                                      ),
+                                    ),
+                                  ]),
                                 ),
                               ),
-                            );
-                            return style.copyWith(textFieldStyle: textField);
-                          },
+                            ]),
+                          ),
                           builder: (context, style, states, child) => child,
                         ),
                 ),
                 // En dash separator
                 Text(
                   '–',
-                  style: theme.typography.base.copyWith(
+                  style: theme.typography.sm.copyWith(
                     color: theme.colors.mutedForeground,
                     height: 1.0,
                   ),
@@ -250,23 +267,31 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           focusNode: _endTimeFocusNode,
                           prefixBuilder: null,
                           textAlign: TextAlign.left,
-                          style: (style) {
-                            final textField = style.textFieldStyle.copyWith(
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: theme.spacing.sm,
-                                vertical: theme.spacing.md,
-                              ),
-                              border: style.textFieldStyle.border.map(
-                                (borderStyle) => borderStyle.copyWith(
-                                  borderSide: const BorderSide(
-                                    width: 0,
-                                    style: BorderStyle.none,
+                          style: FTimeFieldStyleDelta.delta(
+                            fieldStyles: FVariantsDelta.delta([
+                              FVariantOperation.all(
+                                FTextFieldStyleDelta.delta(
+                                  contentPadding: EdgeInsetsGeometryDelta.value(
+                                    EdgeInsets.symmetric(
+                                      horizontal: theme.spacing.sm,
+                                      vertical: theme.spacing.md,
+                                    ),
                                   ),
+                                  border: FVariantsValueDelta.delta([
+                                    FVariantValueDeltaOperation.all(
+                                      OutlineInputBorder(
+                                        borderSide: const BorderSide(
+                                          width: 0,
+                                          style: BorderStyle.none,
+                                        ),
+                                        borderRadius: BorderRadius.zero,
+                                      ),
+                                    ),
+                                  ]),
                                 ),
                               ),
-                            );
-                            return style.copyWith(textFieldStyle: textField);
-                          },
+                            ]),
+                          ),
                           builder: (context, style, states, child) => child,
                         )
                       : FTimeField(
@@ -277,23 +302,31 @@ class _TimeRangeInputState extends State<TimeRangeInput>
                           focusNode: _endTimeFocusNode,
                           prefixBuilder: null,
                           textAlign: TextAlign.left,
-                          style: (style) {
-                            final textField = style.textFieldStyle.copyWith(
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: theme.spacing.sm,
-                                vertical: theme.spacing.md,
-                              ),
-                              border: style.textFieldStyle.border.map(
-                                (borderStyle) => borderStyle.copyWith(
-                                  borderSide: const BorderSide(
-                                    width: 0,
-                                    style: BorderStyle.none,
+                          style: FTimeFieldStyleDelta.delta(
+                            fieldStyles: FVariantsDelta.delta([
+                              FVariantOperation.all(
+                                FTextFieldStyleDelta.delta(
+                                  contentPadding: EdgeInsetsGeometryDelta.value(
+                                    EdgeInsets.symmetric(
+                                      horizontal: theme.spacing.sm,
+                                      vertical: theme.spacing.md,
+                                    ),
                                   ),
+                                  border: FVariantsValueDelta.delta([
+                                    FVariantValueDeltaOperation.all(
+                                      OutlineInputBorder(
+                                        borderSide: const BorderSide(
+                                          width: 0,
+                                          style: BorderStyle.none,
+                                        ),
+                                        borderRadius: BorderRadius.zero,
+                                      ),
+                                    ),
+                                  ]),
                                 ),
                               ),
-                            );
-                            return style.copyWith(textFieldStyle: textField);
-                          },
+                            ]),
+                          ),
                           builder: (context, style, states, child) => child,
                         ),
                 ),
@@ -325,7 +358,7 @@ class _TimeRangeInputState extends State<TimeRangeInput>
     required FThemeData theme,
   }) {
     return FButton(
-      style: (style) => theme.buttonStyles.ghost,
+      variant: FButtonVariant.ghost,
       onPress: onPressed,
       child: Icon(icon, size: theme.iconSizes.sm),
     );

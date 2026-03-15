@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -287,7 +288,7 @@ class _DurationInputState extends State<DurationInput> {
     required FThemeData theme,
   }) {
     return FButton(
-      style: (style) => theme.buttonStyles.ghost,
+      variant: FButtonVariant.ghost,
       onPress: onPressed,
       child: Icon(icon, size: theme.iconSizes.sm),
     );
@@ -308,19 +309,23 @@ class _DurationInputState extends State<DurationInput> {
             control: .managed(controller: controller), focusNode: focusNode,
             autofocus: autofocus,
             textAlign: TextAlign.center,
-            style: (style) => style.copyWith(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 4,
-                vertical: 8,
-              ),
-              border: style.border.map(
-                (borderStyle) => borderStyle.copyWith(
-                  borderSide: const BorderSide(
-                    width: 0,
-                    style: BorderStyle.none,
-                  ),
+            style: FTextFieldStyleDelta.delta(
+              contentPadding: EdgeInsetsGeometryDelta.value(
+                const EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 8,
                 ),
               ),
+              border: FVariantsValueDelta.delta([
+                FVariantValueDeltaOperation.all(
+                  const OutlineInputBorder(
+                    borderSide: BorderSide(
+                      width: 0,
+                      style: BorderStyle.none,
+                    ),
+                  ),
+                ),
+              ]),
             ),
             inputFormatters: [
               // Allow digits and decimal point for flexible input

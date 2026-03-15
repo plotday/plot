@@ -3,38 +3,30 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
 
-FBottomNavigationBarStyle buildBottomNavigationBarStyle(
+FBottomNavigationBarStyleDelta buildBottomNavigationBarStyleDelta(
   FBottomNavigationBarStyle baseStyle,
   ColourSchemeData colourScheme,
 ) {
-  // ignore: unused_result
-  return baseStyle.copyWith(
-    // ignore: unused_result
-    itemStyle: baseStyle.itemStyle.copyWith(
-      iconStyle: FWidgetStateMap({
-        WidgetState.selected: IconThemeData(
-          color: colourScheme.accent, // Use accent color for selected state
-          size: 24,
-        ),
-        WidgetState.any: IconThemeData(
-          color: colourScheme.toFColorScheme()
-              .disable(colourScheme.foreground),
-          size: 24,
-        ),
-      }),
-      textStyle: FWidgetStateMap({
-        WidgetState.selected: baseStyle.itemStyle.textStyle
-            .resolve({}).copyWith(
-                  color: colourScheme.accent, // Use accent color for selected state
-                  fontSize: 10,
-                ),
-        WidgetState.any: baseStyle.itemStyle.textStyle
-            .resolve({}).copyWith(
-                  color: colourScheme.toFColorScheme()
-                      .disable(colourScheme.foreground),
-                  fontSize: 10,
-                ),
-      }),
+  final colorScheme = colourScheme.toFColorScheme();
+  final disabledForeground = colorScheme.disable(colourScheme.foreground);
+  final baseTextStyle = baseStyle.itemStyle.textStyle.resolve({});
+
+  return FBottomNavigationBarStyleDelta.delta(
+    itemStyle: FBottomNavigationBarItemStyleDelta.delta(
+      iconStyle: FVariants(
+        IconThemeData(color: disabledForeground, size: 24),
+        variants: {
+          [FTappableVariantConstraint.selected]:
+              IconThemeData(color: colourScheme.accent, size: 24),
+        },
+      ),
+      textStyle: FVariants(
+        baseTextStyle.copyWith(color: disabledForeground, fontSize: 10),
+        variants: {
+          [FTappableVariantConstraint.selected]:
+              baseTextStyle.copyWith(color: colourScheme.accent, fontSize: 10),
+        },
+      ),
     ),
   );
 }

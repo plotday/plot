@@ -104,7 +104,7 @@ class _EditorLinkModalContentState extends State<_EditorLinkModalContent> {
       children: [
         Text(
           isEditing ? 'Edit link' : 'Add link',
-          style: theme.typography.base.copyWith(
+          style: theme.typography.md.copyWith(
             fontWeight: FontWeight.w600,
           ),
         ),

@@ -59,20 +59,26 @@ FButtonStyle buttonStyle({
   required Color color,
   required Color foregroundColor,
 }) => FButtonStyle(
-  decoration: FWidgetStateMap({
-    WidgetState.disabled: BoxDecoration(
-      borderRadius: style.borderRadius,
-      color: colors.disable(color),
-    ),
-    WidgetState.hovered | WidgetState.pressed: BoxDecoration(
-      borderRadius: style.borderRadius,
-      color: colors.hover(color),
-    ),
-    WidgetState.any: BoxDecoration(
-      borderRadius: style.borderRadius,
+  decoration: FVariants(
+    BoxDecoration(
+      borderRadius: style.borderRadius.md,
       color: color,
     ),
-  }),
+    variants: {
+      [FTappableVariantConstraint.disabled]: BoxDecoration(
+        borderRadius: style.borderRadius.md,
+        color: colors.disable(color),
+      ),
+      [FTappableVariantConstraint.hovered]: BoxDecoration(
+        borderRadius: style.borderRadius.md,
+        color: colors.hover(color),
+      ),
+      [FTappableVariantConstraint.pressed]: BoxDecoration(
+        borderRadius: style.borderRadius.md,
+        color: colors.hover(color),
+      ),
+    },
+  ),
   focusedOutlineStyle: style.focusedOutlineStyle,
   contentStyle: _buttonContentStyle(
     typography: typography,
@@ -80,13 +86,15 @@ FButtonStyle buttonStyle({
     disabled: colors.disable(foregroundColor, colors.disable(color)),
   ),
   iconContentStyle: FButtonIconContentStyle(
-    iconStyle: FWidgetStateMap({
-      WidgetState.disabled: IconThemeData(
-        color: colors.disable(foregroundColor, colors.disable(color)),
-        size: 20,
-      ),
-      WidgetState.any: IconThemeData(color: foregroundColor, size: 20),
-    }),
+    iconStyle: FVariants(
+      IconThemeData(color: foregroundColor, size: 20),
+      variants: {
+        [FTappableVariantConstraint.disabled]: IconThemeData(
+          color: colors.disable(foregroundColor, colors.disable(color)),
+          size: 20,
+        ),
+      },
+    ),
   ),
   tappableStyle: style.tappableStyle,
 );
@@ -96,30 +104,36 @@ FButtonContentStyle _buttonContentStyle({
   required Color enabled,
   required Color disabled,
 }) => FButtonContentStyle(
-  textStyle: FWidgetStateMap({
-    WidgetState.disabled: typography.base.copyWith(
-      color: disabled,
-      fontWeight: FontWeight.w500,
-      height: 1,
-    ),
-    WidgetState.any: typography.base.copyWith(
+  textStyle: FVariants(
+    typography.sm.copyWith(
       color: enabled,
       fontWeight: FontWeight.w500,
       height: 1,
     ),
-  }),
-  iconStyle: FWidgetStateMap({
-    WidgetState.disabled: IconThemeData(color: disabled, size: 20),
-    WidgetState.any: IconThemeData(color: enabled, size: 20),
-  }),
-  circularProgressStyle: FWidgetStateMap({
-    WidgetState.disabled: FCircularProgressStyle(
-      iconStyle: IconThemeData(color: disabled, size: 20),
-    ),
-    WidgetState.any: FCircularProgressStyle(
+    variants: {
+      [FTappableVariantConstraint.disabled]: typography.sm.copyWith(
+        color: disabled,
+        fontWeight: FontWeight.w500,
+        height: 1,
+      ),
+    },
+  ),
+  iconStyle: FVariants(
+    IconThemeData(color: enabled, size: 20),
+    variants: {
+      [FTappableVariantConstraint.disabled]: IconThemeData(color: disabled, size: 20),
+    },
+  ),
+  circularProgressStyle: FVariants(
+    FCircularProgressStyle(
       iconStyle: IconThemeData(color: enabled, size: 20),
     ),
-  }),
+    variants: {
+      [FTappableVariantConstraint.disabled]: FCircularProgressStyle(
+        iconStyle: IconThemeData(color: disabled, size: 20),
+      ),
+    },
+  ),
   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12.5),
   spacing: 10,
 );

@@ -102,7 +102,7 @@ class TwistDetails extends StatelessWidget {
                   Text(
                     '• ',
                     style: TextStyle(
-                      fontSize: theme.typography.base.fontSize,
+                      fontSize: theme.typography.md.fontSize,
                       color: theme.colors.foreground,
                     ),
                   ),
@@ -110,7 +110,7 @@ class TwistDetails extends StatelessWidget {
                     child: Text(
                       description,
                       style: TextStyle(
-                        fontSize: theme.typography.base.fontSize,
+                        fontSize: theme.typography.md.fontSize,
                         color: theme.colors.foreground,
                       ),
                     ),
@@ -128,7 +128,7 @@ class TwistDetails extends StatelessWidget {
         Text(
           'No permissions required',
           style: TextStyle(
-            fontSize: theme.typography.base.fontSize,
+            fontSize: theme.typography.md.fontSize,
             color: theme.colors.mutedForeground,
           ),
         ),
@@ -153,7 +153,7 @@ class TwistDetails extends StatelessWidget {
                     Text(
                       twist.description!,
                       style: TextStyle(
-                        fontSize: theme.typography.base.fontSize,
+                        fontSize: theme.typography.md.fontSize,
                         // color: theme.colors.mutedForeground,
                       ),
                     ),
@@ -252,7 +252,7 @@ class TwistDetails extends StatelessWidget {
         Text(
           'Installed in',
           style: TextStyle(
-            fontSize: theme.typography.base.fontSize,
+            fontSize: theme.typography.md.fontSize,
             color: theme.colors.mutedForeground,
           ),
         ),
@@ -262,7 +262,7 @@ class TwistDetails extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.right,
             style: TextStyle(
-              fontSize: theme.typography.base.fontSize,
+              fontSize: theme.typography.md.fontSize,
               color: theme.colors.foreground,
             ),
           ),
@@ -279,14 +279,14 @@ class TwistDetails extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: theme.typography.base.fontSize,
+            fontSize: theme.typography.md.fontSize,
             color: theme.colors.mutedForeground,
           ),
         ),
         Text(
           value,
           style: TextStyle(
-            fontSize: theme.typography.base.fontSize,
+            fontSize: theme.typography.md.fontSize,
             color: theme.colors.foreground,
           ),
         ),

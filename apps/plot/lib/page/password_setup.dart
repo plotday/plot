@@ -195,7 +195,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
                 height: 44,
                 child: FButton(
                   onPress: _isLoading ? null : _handleSubmit,
-                  style: FButtonStyle.primary(),
+                  variant: FButtonVariant.primary,
                   child: _isLoading
                       ? const Spinner()
                       : const Text('Create Account'),
@@ -204,7 +204,7 @@ class _PasswordSetupPageState extends State<PasswordSetupPage> {
 
               if (_errorMessage != null) ...[
                 FAlert(
-                  style: FAlertStyle.destructive(),
+                  variant: FAlertVariant.destructive,
                   title: Text(_errorMessage!),
                 ),
               ],

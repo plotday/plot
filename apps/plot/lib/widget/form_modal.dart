@@ -644,7 +644,7 @@ class FormModalState extends State<_FormModal> {
                               children: [
                                 if (stackLength > 1)
                                   FButton.icon(
-                                    style: FButtonStyle.ghost(),
+                                    variant: FButtonVariant.ghost,
                                     onPress: () => Modal.pop<CommandReturn>(
                                       context,
                                       Value.absent(),
@@ -657,7 +657,7 @@ class FormModalState extends State<_FormModal> {
                                 Expanded(
                                   child: Text(
                                     widget.form.title,
-                                    style: context.theme.typography.base
+                                    style: context.theme.typography.md
                                         .copyWith(fontWeight: FontWeight.w600),
                                   ),
                                 ),

@@ -100,7 +100,7 @@ class PrioritiesPage extends StatelessWidget {
                             ),
                           ),
                           if (layoutState.multiPanel)
-                            FAnimatedTheme(
+                            FTheme(
                               data: darkenTheme(
                                 context,
                                 context.theme,

@@ -294,13 +294,13 @@ class _ModalProviderState extends State<ModalProvider> {
                     return FDialog.raw(
                       // ignore: unused_result
                       style: dialogContext.theme.dialogStyle.copyWith(
-                        decoration: BoxDecoration(
+                        decoration: DecorationDelta.value(BoxDecoration(
                           color: dialogContext.theme.colors.background,
                           border: Border.all(
                             color: dialogContext.theme.colors.border,
                           ),
                           borderRadius: BorderRadius.circular(borderRadiusMd),
-                        ),
+                        )),
                       ),
                       constraints: BoxConstraints(
                         maxHeight: min(maxDialogHeight, modalMaxHeight),

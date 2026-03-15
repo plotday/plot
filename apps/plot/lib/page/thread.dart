@@ -457,7 +457,7 @@ class _ThreadFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FAnimatedTheme(
+    return FTheme(
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) => DecoratedBox(
@@ -597,7 +597,7 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
     final sourceUrl = link.sourceUrl;
     final connected = _isUserConnected;
 
-    return FAnimatedTheme(
+    return FTheme(
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) {
@@ -749,10 +749,11 @@ class _LinkAssigneeBadge extends StatelessWidget {
       builder: (context, snapshot) {
         final label = snapshot.data ?? 'Unassigned';
         return FButton(
-          style: FButtonStyle.secondary(
-            (style) => style.copyWith(
-              contentStyle: (cs) => cs.copyWith(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          variant: FButtonVariant.secondary,
+          style: FButtonStyleDelta.delta(
+            contentStyle: FButtonContentStyleDelta.delta(
+              padding: EdgeInsetsGeometryDelta.value(
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               ),
             ),
           ),
@@ -866,10 +867,11 @@ class _LinkStatusBadge extends StatelessWidget {
     final statusTag = currentStatus?.tag != null ? Tag.get(id: currentStatus!.tag!) : null;
 
     return FButton(
-      style: FButtonStyle.secondary(
-        (style) => style.copyWith(
-          contentStyle: (cs) => cs.copyWith(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      variant: FButtonVariant.secondary,
+      style: FButtonStyleDelta.delta(
+        contentStyle: FButtonContentStyleDelta.delta(
+          padding: EdgeInsetsGeometryDelta.value(
+            const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           ),
         ),
       ),

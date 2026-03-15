@@ -315,22 +315,23 @@ class NewThreadPageState extends State<NewThreadPage> {
         Center(
           child: FButton(
             onPress: () => _selectPriority(context, state),
-            style: FButtonStyle.secondary((s) {
-              final borderColor = context.theme.colors.border;
-              return s.copyWith(
-                decoration: _remapDecoration(
-                  s.decoration,
-                  const BorderRadius.all(Radius.circular(24)),
-                  borderColor: borderColor,
-                ),
-                contentStyle: (c) => c.copyWith(
-                  padding: const EdgeInsets.symmetric(
+            variant: FButtonVariant.secondary,
+            style: FButtonStyleDelta.delta(
+              decoration: FVariantsDelta.delta([
+                FVariantOperation.all(DecorationDelta.boxDelta(
+                  borderRadius: const BorderRadius.all(Radius.circular(24)),
+                  border: Border.all(color: context.theme.colors.border),
+                )),
+              ]),
+              contentStyle: FButtonContentStyleDelta.delta(
+                padding: EdgeInsetsGeometryDelta.value(
+                  const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 6,
                   ),
                 ),
-              );
-            }),
+              ),
+            ),
             mainAxisSize: MainAxisSize.min,
             suffix: Icon(
               PlotIcon.verticalExpand,
@@ -358,7 +359,7 @@ class NewThreadPageState extends State<NewThreadPage> {
               ),
               Text(
                 'To do',
-                style: context.theme.typography.base.copyWith(
+                style: context.theme.typography.md.copyWith(
                   height: 1,
                   color: state.draft.todo
                       ? context.theme.colors.primary
@@ -487,10 +488,13 @@ class NewThreadPageState extends State<NewThreadPage> {
               if (hasMore)
                 FButton(
                   onPress: () => _openTwistPicker(context),
-                  style: FButtonStyle.secondary(
-                    (s) => s.copyWith(
-                      decoration: _remapDecoration(s.decoration, chipRadius),
-                      contentStyle: (c) => c.copyWith(padding: chipPadding),
+                  variant: FButtonVariant.secondary,
+                  style: FButtonStyleDelta.delta(
+                    decoration: FVariantsDelta.delta([
+                      FVariantOperation.all(DecorationDelta.boxDelta(borderRadius: chipRadius)),
+                    ]),
+                    contentStyle: FButtonContentStyleDelta.delta(
+                      padding: EdgeInsetsGeometryDelta.value(chipPadding),
                     ),
                   ),
                   mainAxisSize: MainAxisSize.min,
@@ -511,21 +515,18 @@ class NewThreadPageState extends State<NewThreadPage> {
     int? shortcutIndex,
   }) {
     final selected = _selectedTwist?.id == twist.id;
+    final chipStyleDelta = FButtonStyleDelta.delta(
+      decoration: FVariantsDelta.delta([
+        FVariantOperation.all(DecorationDelta.boxDelta(borderRadius: chipRadius)),
+      ]),
+      contentStyle: FButtonContentStyleDelta.delta(
+        padding: EdgeInsetsGeometryDelta.value(chipPadding),
+      ),
+    );
     Widget chip = FButton(
       onPress: () => _selectTwist(twist),
-      style: selected
-          ? FButtonStyle.primary(
-              (s) => s.copyWith(
-                decoration: _remapDecoration(s.decoration, chipRadius),
-                contentStyle: (c) => c.copyWith(padding: chipPadding),
-              ),
-            )
-          : FButtonStyle.secondary(
-              (s) => s.copyWith(
-                decoration: _remapDecoration(s.decoration, chipRadius),
-                contentStyle: (c) => c.copyWith(padding: chipPadding),
-              ),
-            ),
+      variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
+      style: chipStyleDelta,
       mainAxisSize: MainAxisSize.min,
       prefix: _buildTwistLogo(context, twist),
       child: Text(twist.name),
@@ -663,21 +664,18 @@ class NewThreadPageState extends State<NewThreadPage> {
       horizontal: showLabel ? 12 : 10,
       vertical: isMobilePlatform() ? 12 : 6,
     );
+    final typeChipStyleDelta = FButtonStyleDelta.delta(
+      decoration: FVariantsDelta.delta([
+        FVariantOperation.all(DecorationDelta.boxDelta(borderRadius: chipRadius)),
+      ]),
+      contentStyle: FButtonContentStyleDelta.delta(
+        padding: EdgeInsetsGeometryDelta.value(chipPadding),
+      ),
+    );
     Widget chip = FButton(
       onPress: () => _selectType(type),
-      style: selected
-          ? FButtonStyle.primary(
-              (s) => s.copyWith(
-                decoration: _remapDecoration(s.decoration, chipRadius),
-                contentStyle: (c) => c.copyWith(padding: chipPadding),
-              ),
-            )
-          : FButtonStyle.secondary(
-              (s) => s.copyWith(
-                decoration: _remapDecoration(s.decoration, chipRadius),
-                contentStyle: (c) => c.copyWith(padding: chipPadding),
-              ),
-            ),
+      variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
+      style: typeChipStyleDelta,
       mainAxisSize: MainAxisSize.min,
       prefix: showLabel ? Icon(icon, size: context.theme.iconSizes.base) : null,
       child: showLabel
@@ -705,36 +703,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
 
     return chip;
-  }
-
-  static FWidgetStateMap<BoxDecoration> _remapDecoration(
-    FWidgetStateMap<BoxDecoration> source,
-    BorderRadius radius, {
-    Color? borderColor,
-  }) {
-    BoxDecoration applyBorder(BoxDecoration d) {
-      var result = d.copyWith(borderRadius: radius);
-      if (borderColor != null && d.border is Border) {
-        final b = d.border! as Border;
-        result = result.copyWith(
-          border: Border(
-            top: b.top.copyWith(color: borderColor),
-            right: b.right.copyWith(color: borderColor),
-            bottom: b.bottom.copyWith(color: borderColor),
-            left: b.left.copyWith(color: borderColor),
-          ),
-        );
-      }
-      return result;
-    }
-
-    return FWidgetStateMap({
-      WidgetState.disabled: applyBorder(source.resolve({WidgetState.disabled})),
-      WidgetState.hovered | WidgetState.pressed: applyBorder(
-        source.resolve({WidgetState.hovered}),
-      ),
-      WidgetState.any: applyBorder(source.resolve({})),
-    });
   }
 
   Widget _buildScheduleButton(

@@ -536,7 +536,7 @@ class _SearchResultItemButtonState extends State<_SearchResultItemButton> {
             borderRadius: _kBorderRadius,
           ),
           child: DefaultTextStyle(
-            style: context.theme.typography.base.copyWith(
+            style: context.theme.typography.md.copyWith(
               color: _isHovered
                   ? MacosColors.white
                   : brightness.resolve(MacosColors.black, MacosColors.white),

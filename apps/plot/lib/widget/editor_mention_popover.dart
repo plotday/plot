@@ -270,19 +270,26 @@ class EditorMentionPopoverState extends State<EditorMentionPopover> {
           title: Text(item.name),
           selected: isSelected,
           onPress: () => widget.onItemSelected(item),
-          // ignore: unused_result
-          style: context.theme.tileStyle.copyWith(
-            // ignore: unused_result
-            contentStyle: context.theme.tileStyle.contentStyle.copyWith(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-            ),
-            decoration: FWidgetStateMap({
-              WidgetState.any: BoxDecoration(
-                color: isSelected
-                    ? context.theme.colors.primaryForeground
-                    : context.theme.colors.background,
+          style: FItemStyleDelta.delta(
+            contentStyle: FItemContentStyleDelta.delta(
+              suffixedPadding: EdgeInsetsGeometryDelta.value(
+                const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
               ),
-            }),
+              unsuffixedPadding: EdgeInsetsGeometryDelta.value(
+                const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              ),
+            ),
+            decoration: FVariantsDelta.delta([
+              FVariantOperation.all(
+                DecorationDelta.value(
+                  BoxDecoration(
+                    color: isSelected
+                        ? context.theme.colors.primaryForeground
+                        : context.theme.colors.background,
+                  ),
+                ),
+              ),
+            ]),
           ),
         );
       },

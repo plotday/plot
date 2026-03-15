@@ -30,21 +30,10 @@ extension ToastExtension on BuildContext {
           title: Text(title ?? 'Error'),
           description: Text(message),
           duration: duration ?? const Duration(seconds: 5),
+          variant: FToastVariant.destructive,
           suffixBuilder: (context, entry) => _CopyButton(
             text: message,
             color: colors.destructiveForeground,
-          ),
-          style: (style) => style.copyWith(
-            decoration: style.decoration.copyWith(color: colors.destructive),
-            iconStyle: style.iconStyle.copyWith(
-              color: colors.destructiveForeground,
-            ),
-            titleTextStyle: style.titleTextStyle.copyWith(
-              color: colors.destructiveForeground,
-            ),
-            descriptionTextStyle: style.descriptionTextStyle.copyWith(
-              color: colors.destructiveForeground,
-            ),
           ),
         );
       } else {

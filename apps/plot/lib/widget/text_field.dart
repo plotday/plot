@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:platform_builder/platform_builder.dart';
@@ -103,14 +104,17 @@ class TextFieldState extends State<TextField> {
       builder: (_) => FTextField(
         control: .managed(controller: _controller),
         style: widget.style == TextFieldStyle.outline
-            ? null
-            : (style) => style.copyWith(
-                contentPadding: .all(0),
-                border: style.border.map(
-                  (borderStyle) => borderStyle.copyWith(
-                    borderSide: BorderSide(width: 0, style: BorderStyle.none),
+            ? const FTextFieldStyleDelta.context()
+            : FTextFieldStyleDelta.delta(
+                contentPadding: EdgeInsetsGeometryDelta.value(EdgeInsets.zero),
+                border: FVariantsValueDelta.delta([
+                  FVariantValueDeltaOperation.all(
+                    OutlineInputBorder(
+                      borderSide: BorderSide(width: 0, style: BorderStyle.none),
+                      borderRadius: BorderRadius.zero,
+                    ),
                   ),
-                ),
+                ]),
               ),
         hint: widget.label,
         autocorrect: widget.autocorrect,

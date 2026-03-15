@@ -190,7 +190,7 @@ class _PrioritiesListState extends State<PrioritiesList>
         final itemStyle =
             (isLeftPanel
                     ? context.theme.typography.sm
-                    : context.theme.typography.base)
+                    : context.theme.typography.md)
                 .copyWith(fontWeight: FontWeight.w500);
 
         // Automatic expansion logic

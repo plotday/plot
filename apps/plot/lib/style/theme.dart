@@ -35,92 +35,98 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
   var theme = FThemeData(
     colors: colorScheme,
     typography: typography,
+    touch: false,
     extensions: [plotColors, iconSizes, spacing],
   );
 
   // Override global style for warmer, softer appearance
   theme = theme.copyWith(
-    style: (style) => style.copyWith(
-      borderRadius: BorderRadius.circular(10),
+    style: FStyleDelta.delta(
+      borderRadius: const FBorderRadius(),
       borderWidth: 0.5,
-      tappableStyle: (t) => t.copyWith(motion: (_) => FTappableMotion.none),
+      tappableStyle: FTappableStyleDelta.delta(
+        motion: FTappableMotion.none,
+      ),
     ),
   );
 
-  final customTextFieldStyle = buildTextFieldStyle(
-    theme.textFieldStyle,
+  final textFieldStyleDelta = buildTextFieldStyleDelta(
     colourScheme,
     theme.style.borderRadius,
     theme.style.borderWidth,
     typography,
   );
 
+  // Apply the text field style delta to all text field sizes
+  final textFieldSizesDelta = FVariantsDelta<FTextFieldSizeVariantConstraint,
+      FTextFieldSizeVariant, FTextFieldStyle, FTextFieldStyleDelta>.delta([
+    FVariantOperation.all(textFieldStyleDelta),
+  ]);
+
   theme = theme.copyWith(
-    headerStyles: buildHeaderStyles(
-      theme.headerStyles,
-      typography,
-      colourScheme,
+    headerStyles: buildHeaderStylesDelta(typography, colourScheme),
+    textFieldStyles: textFieldSizesDelta,
+    dateFieldStyle: FDateFieldStyleDelta.delta(
+      fieldStyles: textFieldSizesDelta,
     ),
-    textFieldStyle: customTextFieldStyle,
-    dateFieldStyle: (style) =>
-        style.copyWith(textFieldStyle: customTextFieldStyle),
-    timeFieldStyle: (style) =>
-        style.copyWith(textFieldStyle: customTextFieldStyle),
-    buttonStyles: buildButtonStyles(
+    timeFieldStyle: FTimeFieldStyleDelta.delta(
+      fieldStyles: textFieldSizesDelta,
+    ),
+    buttonStyles: buildButtonStylesDelta(
       theme.buttonStyles,
       colourScheme,
       theme.style.borderRadius,
       typography,
       iconSizes,
     ),
-    sidebarStyle: buildSidebarStyle(
-      theme.sidebarStyle,
+    sidebarStyle: buildSidebarStyleDelta(
       typography,
       colourScheme,
       iconSizes,
     ),
-    tileStyle: buildTileStyle(theme.tileStyle, theme.colors),
-    scaffoldStyle: scaffoldStyle(style: theme.style, colors: theme.colors),
-    bottomNavigationBarStyle: buildBottomNavigationBarStyle(
+    tileStyles: buildTileStylesDelta(theme.colors),
+    scaffoldStyle: scaffoldStyle(
+      style: theme.style,
+      colors: theme.colors,
+    ),
+    bottomNavigationBarStyle: buildBottomNavigationBarStyleDelta(
       theme.bottomNavigationBarStyle,
       colourScheme,
     ),
-    toasterStyle: buildToasterStyle(
-      theme.toasterStyle,
+    toasterStyle: buildToasterStyleDelta(
       colourScheme,
       theme.style.borderRadius,
       typography,
       iconSizes,
     ),
-    tooltipStyle: buildTooltipStyle(
-      theme.tooltipStyle,
+    tooltipStyle: buildTooltipStyleDelta(colourScheme, typography),
+    alertStyles: buildAlertStylesDelta(
       colourScheme,
-      theme.style.borderRadius,
-      typography,
-    ),
-    alertStyles: buildAlertStyles(
-      theme.alertStyles,
-      colourScheme,
-      theme.style.borderRadius,
       typography,
       iconSizes,
     ),
-    popoverMenuStyle: (style) => style.copyWith(
-      itemGroupStyle: (groupStyle) => groupStyle.copyWith(
-        itemStyle: (itemStyle) => itemStyle.copyWith(
-          contentStyle: (contentStyle) => contentStyle.copyWith(
-            prefixIconStyle: FWidgetStateMap({
-              WidgetState.disabled: IconThemeData(
-                color: colorScheme.disable(colorScheme.foreground),
-                size: 15,
+    popoverMenuStyle: FPopoverMenuStyleDelta.delta(
+      itemGroupStyle: FItemGroupStyleDelta.delta(
+        itemStyles: FVariantsDelta.delta([
+          FVariantOperation.all(
+            FItemStyleDelta.delta(
+              contentStyle: FItemContentStyleDelta.delta(
+                prefixIconStyle: FVariants(
+                  IconThemeData(
+                    color: colorScheme.foreground,
+                    size: 15,
+                  ),
+                  variants: {
+                    [FTappableVariantConstraint.disabled]: IconThemeData(
+                      color: colorScheme.disable(colorScheme.foreground),
+                      size: 15,
+                    ),
+                  },
+                ),
               ),
-              WidgetState.any: IconThemeData(
-                color: colorScheme.foreground,
-                size: 15,
-              ),
-            }),
+            ),
           ),
-        ),
+        ]),
       ),
     ),
   );

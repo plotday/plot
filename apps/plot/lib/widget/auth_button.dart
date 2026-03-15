@@ -455,7 +455,7 @@ class _AuthButtonState extends State<AuthButton> {
             : _ProviderIcon(provider: widget.provider, size: config.iconSize),
         child: Text(
           config.buttonText,
-          style: context.theme.typography.base.copyWith(
+          style: context.theme.typography.sm.copyWith(
             fontWeight: config.fontWeight,
             fontFamily: config.fontFamily,
             color: _isLoading ? config.disabledTextColor : config.textColor,
@@ -594,48 +594,55 @@ FButtonStyle buildAuthButtonStyle(
   BuildContext context,
   AuthProviderConfig config,
 ) {
+  final baseTextStyle = context.theme.typography.sm.copyWith(
+    fontWeight: config.fontWeight,
+    fontFamily: config.fontFamily,
+    height: 1,
+  );
+  final baseIconStyle = IconThemeData(size: config.iconSize);
+  final baseProgressStyle = FCircularProgressStyle(
+    iconStyle: baseIconStyle,
+  );
+
   return FButtonStyle(
-    decoration: FWidgetStateMap({
-      WidgetState.any: BoxDecoration(
+    decoration: FVariants(
+      BoxDecoration(
         color: config.backgroundColor,
         border: Border.all(color: config.borderColor, width: 1),
         borderRadius: tileBorderRadius,
       ),
-      WidgetState.hovered: BoxDecoration(
-        color: config.hoverColor,
-        border: Border.all(color: config.borderColor, width: 1),
-        borderRadius: tileBorderRadius,
-      ),
-      WidgetState.focused: BoxDecoration(
-        color: config.backgroundColor,
-        border: Border.all(color: config.focusColor, width: 1),
-        borderRadius: tileBorderRadius,
-      ),
-      WidgetState.disabled: BoxDecoration(
-        color: config.backgroundColor.withValues(alpha: 0.6),
-        border: Border.all(
-          color: config.borderColor.withValues(alpha: 0.6),
-          width: 1,
+      variants: {
+        [FTappableVariantConstraint.hovered]: BoxDecoration(
+          color: Color.lerp(config.backgroundColor, config.textColor, 0.07)!,
+          border: Border.all(color: config.borderColor, width: 1),
+          borderRadius: tileBorderRadius,
         ),
-        borderRadius: tileBorderRadius,
-      ),
-    }),
+        [FTappableVariantConstraint.focused]: BoxDecoration(
+          color: config.backgroundColor,
+          border: Border.all(color: config.focusColor, width: 1),
+          borderRadius: tileBorderRadius,
+        ),
+        [FTappableVariantConstraint.disabled]: BoxDecoration(
+          color: config.backgroundColor,
+          border: Border.all(color: config.borderColor, width: 1),
+          borderRadius: tileBorderRadius,
+        ),
+      },
+    ),
     contentStyle: FButtonContentStyle(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      textStyle: FWidgetStateMap.all(
-        context.theme.typography.base.copyWith(
-          fontWeight: config.fontWeight,
-          fontFamily: config.fontFamily,
-          height: 1,
-        ),
-      ),
-      iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
-      circularProgressStyle: FWidgetStateMap.all(
-        context.theme.circularProgressStyle,
-      ),
+      textStyle: FVariants(baseTextStyle, variants: {
+        [FTappableVariantConstraint.disabled]: baseTextStyle,
+      }),
+      iconStyle: FVariants(baseIconStyle, variants: {
+        [FTappableVariantConstraint.disabled]: baseIconStyle,
+      }),
+      circularProgressStyle: FVariants(baseProgressStyle, variants: {
+        [FTappableVariantConstraint.disabled]: baseProgressStyle,
+      }),
     ),
     iconContentStyle: FButtonIconContentStyle(
-      iconStyle: FWidgetStateMap.all(IconThemeData(size: config.iconSize)),
+      iconStyle: FVariants(baseIconStyle, variants: {}),
     ),
     focusedOutlineStyle: FFocusedOutlineStyle(
       borderRadius: tileBorderRadius,

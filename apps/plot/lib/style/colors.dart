@@ -284,6 +284,7 @@ class ColourSchemeData extends Equatable {
       errorForeground: brightness == Brightness.light
           ? const Color(0xFFFAFAFA)
           : const Color(0xFFFAFAFA),
+      card: background,
       border: border,
       disabledOpacity: 0.5,
       systemOverlayStyle: brightness == Brightness.light

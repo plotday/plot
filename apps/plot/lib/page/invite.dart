@@ -185,7 +185,7 @@ class _InvitePageState extends State<InvitePage> {
                         textAlign: TextAlign.center,
                       ),
                       FAlert(
-                        style: FAlertStyle.destructive(),
+                        variant: FAlertVariant.destructive,
                         title: Text(_errorMessage!),
                       ),
                     ] else ...[
@@ -199,7 +199,7 @@ class _InvitePageState extends State<InvitePage> {
                       RichText(
                         textAlign: TextAlign.left,
                         text: TextSpan(
-                          style: context.theme.typography.base.copyWith(
+                          style: context.theme.typography.md.copyWith(
                             height: 1.5,
                           ),
                           children: [
@@ -229,14 +229,14 @@ class _InvitePageState extends State<InvitePage> {
                       ),
                       FButton(
                         onPress: _isRedeeming ? null : _redeemInvitation,
-                        style: FButtonStyle.primary(),
+                        variant: FButtonVariant.primary,
                         child: _isRedeeming
                             ? const Spinner()
                             : const Text('Link Email'),
                       ),
                       if (_errorMessage != null)
                         FAlert(
-                          style: FAlertStyle.destructive(),
+                          variant: FAlertVariant.destructive,
                           title: Text(_errorMessage!),
                         ),
                       RichText(

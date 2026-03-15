@@ -613,7 +613,7 @@ class _ListTileState extends State<ListTile> {
                                                         : context
                                                               .theme
                                                               .typography
-                                                              .base))
+                                                              .md))
                                                 .copyWith(
                                                   color: widget.selected
                                                       ? context
@@ -648,7 +648,7 @@ class _ListTileState extends State<ListTile> {
                                                       context
                                                           .theme
                                                           .typography
-                                                          .base)
+                                                          .md)
                                                   .copyWith(
                                                     color: context
                                                         .theme
@@ -674,7 +674,7 @@ class _ListTileState extends State<ListTile> {
                   hasPhysicalKeyboard())
                 Text(
                   formatShortcut(widget.command?.shortcut),
-                  style: context.theme.typography.base.copyWith(
+                  style: context.theme.typography.md.copyWith(
                     color: context.theme.plotColors.muted,
                   ),
                 ),

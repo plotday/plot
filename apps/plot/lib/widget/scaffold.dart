@@ -58,7 +58,7 @@ class Scaffold extends StatelessWidget {
       return null;
     }
 
-    return FAnimatedTheme(
+    return FTheme(
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) => DecoratedBox(
@@ -128,7 +128,7 @@ class _WindowsDragBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final toolbarPadding = Window.toolbarPadding.resolve(TextDirection.ltr);
-    return FAnimatedTheme(
+    return FTheme(
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) => DecoratedBox(

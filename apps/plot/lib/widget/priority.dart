@@ -230,7 +230,7 @@ class PriorityLabel extends StatelessWidget {
               child: DefaultTextStyle(
                 style: DefaultTextStyle.of(context).style.copyWith(
                   color: ancestorColor,
-                  fontSize: fontSize ?? context.theme.typography.base.fontSize,
+                  fontSize: fontSize ?? context.theme.typography.md.fontSize,
                   height: height,
                 ),
                 child: Tapable(
@@ -256,7 +256,7 @@ class PriorityLabel extends StatelessWidget {
                 key: ValueKey('separator_${ancestor.id}'),
                 style: DefaultTextStyle.of(context).style.copyWith(
                   color: color ?? context.theme.colors.mutedForeground,
-                  fontSize: fontSize ?? context.theme.typography.base.fontSize,
+                  fontSize: fontSize ?? context.theme.typography.md.fontSize,
                   height: height ?? 1,
                 ),
                 child: Text(Priority.separator),
@@ -273,7 +273,7 @@ class PriorityLabel extends StatelessWidget {
                       currentColor,
                       muted: muted,
                     ),
-                fontSize: fontSize ?? context.theme.typography.base.fontSize,
+                fontSize: fontSize ?? context.theme.typography.md.fontSize,
                 height: height,
               ),
               child: Text(

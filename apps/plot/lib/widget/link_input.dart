@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/services.dart';
 
 import 'package:plot/store/store.dart';
@@ -242,30 +243,35 @@ class _LinkInputState extends State<LinkInput> {
                     autofocus: true,
                     autocorrect: false,
                     keyboardType: TextInputType.url,
-                    style: (style) {
-                      final baseTypo = context.theme.typography.base.copyWith(
-                        height: 1.4,
-                      );
-                      return style.copyWith(
-                        contentPadding: .all(0),
-                        contentTextStyle: style.contentTextStyle.map(
-                          (s) => baseTypo.copyWith(color: s.color),
-                        ),
-                        hintTextStyle: style.hintTextStyle.map(
-                          (_) => baseTypo.copyWith(
+                    style: FTextFieldStyleDelta.delta(
+                      contentPadding: EdgeInsetsGeometryDelta.value(
+                        EdgeInsets.zero,
+                      ),
+                      contentTextStyle: FVariantsDelta.delta([
+                        FVariantOperation.all(TextStyleDelta.delta(
+                          fontSize: context.theme.typography.md.fontSize,
+                          height: 1.4,
+                        )),
+                      ]),
+                      hintTextStyle: FVariantsDelta.delta([
+                        FVariantOperation.all(TextStyleDelta.value(
+                          context.theme.typography.md.copyWith(
+                            height: 1.4,
                             color: context.theme.colors.mutedForeground,
                           ),
-                        ),
-                        border: style.border.map(
-                          (borderStyle) => borderStyle.copyWith(
+                        )),
+                      ]),
+                      border: FVariantsValueDelta.delta([
+                        FVariantValueDeltaOperation.all(
+                          const OutlineInputBorder(
                             borderSide: BorderSide(
                               width: 0,
                               style: BorderStyle.none,
                             ),
                           ),
                         ),
-                      );
-                    },
+                      ]),
+                    ),
                     onSubmit: (_) => _activateHighlighted(),
                   ),
                 ),

@@ -150,26 +150,22 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
     // User can tap to request permissions or try again
     return FButton.icon(
       onPress: _toggleListening,
-      style: _buildButtonStyle(context),
+      variant: _isListening ? FButtonVariant.primary : FButtonVariant.ghost,
+      style: FButtonStyleDelta.delta(
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          padding: EdgeInsetsGeometryDelta.value(
+            const EdgeInsets.all(8),
+          ),
+        ),
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ]),
+      ),
       child: Icon(FontAwesomeIcons.microphone, size: context.theme.iconSizes.base),
-    );
-  }
-
-  FButtonStyle _buildButtonStyle(BuildContext context) {
-    final baseStyle = _isListening
-        ? context.theme.buttonStyles.primary
-        : context.theme.buttonStyles.ghost;
-
-    // ignore: unused_result
-    return baseStyle.copyWith(
-      // ignore: unused_result
-      iconContentStyle: baseStyle.iconContentStyle.copyWith(
-        padding: const EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 8),
-      ),
-      decoration: baseStyle.decoration.map(
-        (decoration) =>
-            decoration.copyWith(borderRadius: BorderRadius.circular(999)),
-      ),
     );
   }
 }

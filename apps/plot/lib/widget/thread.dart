@@ -276,6 +276,7 @@ class ThreadWidget extends StatelessWidget {
                           .theme
                           .buttonStyles
                           .ghost
+                          .md
                           .iconContentStyle
                           .padding
                           .resolve(TextDirection.ltr);
@@ -372,6 +373,7 @@ class ThreadWidget extends StatelessWidget {
                                 .theme
                                 .buttonStyles
                                 .ghost
+                                .md
                                 .iconContentStyle
                                 .padding
                                 .resolve(TextDirection.ltr);
@@ -448,6 +450,7 @@ class ThreadWidget extends StatelessWidget {
                         .theme
                         .buttonStyles
                         .ghost
+                        .md
                         .iconContentStyle
                         .padding
                         .resolve(TextDirection.ltr)
@@ -462,7 +465,7 @@ class ThreadWidget extends StatelessWidget {
                           Expanded(
                             child: Text.rich(
                               overflow: TextOverflow.ellipsis,
-                              style: buildContext.theme.typography.base
+                              style: buildContext.theme.typography.md
                                   .copyWith(
                                     color: buildContext.colour.foreground,
                                   ),
@@ -912,7 +915,7 @@ class _ConferencingIconButton extends StatelessWidget {
     return FTooltip(
       tipBuilder: (context, controller) => Text(tooltip),
       child: FButton.icon(
-        style: FButtonStyle.ghost(),
+        variant: FButtonVariant.ghost,
         onPress: () {
           try {
             launchUrl(

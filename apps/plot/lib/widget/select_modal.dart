@@ -595,7 +595,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             children: [
                               if (stackLength > 1)
                                 FButton.icon(
-                                  style: FButtonStyle.ghost(),
+                                  variant: FButtonVariant.ghost,
                                   onPress: _cancel,
                                   child: Icon(
                                     PlotIcon.left,
@@ -630,7 +630,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           padding: context.theme.spacing.paddingSm,
                           alignment: Alignment.centerLeft,
                           child: FButton.icon(
-                            style: FButtonStyle.ghost(),
+                            variant: FButtonVariant.ghost,
                             onPress: _cancel,
                             child: Icon(
                               PlotIcon.left,

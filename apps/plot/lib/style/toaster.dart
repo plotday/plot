@@ -4,31 +4,40 @@ import 'package:forui/forui.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 
-FToasterStyle buildToasterStyle(
-  FToasterStyle baseStyle,
+FToasterStyleDelta buildToasterStyleDelta(
   ColourSchemeData colourScheme,
-  BorderRadius borderRadius,
+  FBorderRadius borderRadius,
   FTypography typography,
   PlotIconSizes iconSizes,
 ) {
-  // ignore: unused_result
-  return baseStyle.copyWith(
-    // ignore: unused_result
-    toastStyle: baseStyle.toastStyle.copyWith(
-      decoration: BoxDecoration(
-        border: Border.all(color: colourScheme.border),
-        borderRadius: borderRadius,
-        color: colourScheme.accentBackground,
+  return FToasterStyleDelta.delta(
+    toastStyles: FVariantsDelta.delta([
+      FVariantOperation.all(
+        FToastStyleDelta.delta(
+          decoration: DecorationDelta.value(
+            BoxDecoration(
+              border: Border.all(color: colourScheme.border),
+              borderRadius: borderRadius.md,
+              color: colourScheme.accentBackground,
+            ),
+          ),
+          iconStyle: IconThemeDataDelta.value(
+            IconThemeData(color: colourScheme.accent, size: iconSizes.lg),
+          ),
+          titleTextStyle: TextStyleDelta.value(
+            typography.sm.copyWith(
+              color: colourScheme.accent,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          descriptionTextStyle: TextStyleDelta.value(
+            typography.sm.copyWith(
+              color: colourScheme.accent,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
       ),
-      iconStyle: IconThemeData(color: colourScheme.accent, size: iconSizes.lg),
-      titleTextStyle: typography.sm.copyWith(
-        color: colourScheme.accent,
-        fontWeight: FontWeight.w500,
-      ),
-      descriptionTextStyle: typography.sm.copyWith(
-        color: colourScheme.accent,
-        overflow: TextOverflow.ellipsis,
-      ),
-    ),
+    ]),
   );
 }

@@ -187,8 +187,9 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
               child: Center(
                 child: FCalendar(
                   control: .managedDate(controller: _calendarController),
-                  style: (style) =>
-                      style.copyWith(decoration: const BoxDecoration()),
+                  style: FCalendarStyleDelta.delta(
+                    decoration: DecorationDelta.value(const BoxDecoration()),
+                  ),
                   onPress: (date) {
                     setState(() {
                       _selectedDate = date;
@@ -256,7 +257,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
                 Expanded(
                   child: FButton(
                     onPress: _freezeTime,
-                    style: FButtonStyle.primary(),
+                    variant: FButtonVariant.primary,
                     child: const Text('Freeze Time'),
                   ),
                 ),
@@ -265,7 +266,7 @@ class _TimeTravelPageState extends State<_TimeTravelPage> {
                   Expanded(
                     child: FButton(
                       onPress: _unfreezeTime,
-                      style: FButtonStyle.secondary(),
+                      variant: FButtonVariant.secondary,
                       child: const Text('Unfreeze'),
                     ),
                   ),
