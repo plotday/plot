@@ -354,78 +354,38 @@ class _AgendaHeaderState extends State<AgendaHeader> {
     if (isGapHeader ||
         (!widget.now && widget.date == null && centerText != null)) {
       final veryMuted = context.theme.plotColors.veryMuted;
-      final contentColor = isGapHeader ? veryMuted : textColor;
+      final contentColor = isGapHeader
+          ? context.theme.colors.mutedForeground
+          : textColor;
       final timeStyle = TextStyle(color: contentColor, fontSize: fontSize);
 
       final Widget child;
       if (centerText != null) {
-        if (!context.isMultiPanel) {
-          // Narrow: right-aligned like thread header
-          // [duration] · [time]
-          child = Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: context.contentPaddingH,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (durationText != null) ...[
-                  Text(
-                    durationText,
-                    style: TextStyle(color: veryMuted, fontSize: fontSize),
-                  ),
-                  Text(
-                    ' · ',
-                    style: TextStyle(color: veryMuted, fontSize: fontSize),
-                  ),
-                ],
+        // Right-aligned: [duration] · [time]
+        child = Padding(
+          padding: EdgeInsets.symmetric(horizontal: context.contentPaddingH),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (durationText != null) ...[
                 Text(
-                  centerText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: timeStyle,
+                  durationText,
+                  style: TextStyle(color: veryMuted, fontSize: fontSize),
+                ),
+                Text(
+                  ' · ',
+                  style: TextStyle(color: veryMuted, fontSize: fontSize),
                 ),
               ],
-            ),
-          );
-        } else {
-          // Wide: centered to match date header day-number column
-          child = Row(
-            children: [
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    centerText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: timeStyle,
-                  ),
-                ),
-              ),
-              SizedBox(
-                child: Center(
-                  child: Text(
-                    '  ·  ',
-                    style: TextStyle(color: veryMuted, fontSize: fontSize),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: durationText != null
-                    ? Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          durationText,
-                          style: TextStyle(
-                              color: veryMuted, fontSize: fontSize),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
+              Text(
+                centerText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: timeStyle,
               ),
             ],
-          );
-        }
+          ),
+        );
       } else {
         final double textHeight = (TextPainter(
           text: TextSpan(

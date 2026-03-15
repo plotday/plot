@@ -268,7 +268,7 @@ class ThreadWidget extends StatelessWidget {
               // Narrow timed events: separate from Transform.translate
               // so only the priority label shifts left while timing
               // stays right-aligned with the gap header.
-              if (isTimedEvent && !buildContext.isMultiPanel)
+              if (isTimedEvent)
                 Builder(
                   builder: (context) {
                     final narrowLabelShift = (() {
@@ -322,9 +322,10 @@ class ThreadWidget extends StatelessWidget {
                       ),
                       child: Padding(
                         padding: EdgeInsets.only(
-                          right:
-                              context.contentPaddingH -
-                              context.theme.spacing.sm,
+                          right: buildContext.isMultiPanel
+                              ? 0
+                              : context.contentPaddingH -
+                                  context.theme.spacing.sm,
                         ),
                         child: Row(
                           children: [
@@ -358,7 +359,7 @@ class ThreadWidget extends StatelessWidget {
                     );
                   },
                 ),
-              if (hasTopLabel && !(isTimedEvent && !buildContext.isMultiPanel))
+              if (hasTopLabel && !isTimedEvent)
                 Builder(
                   builder: (context) {
                     // When narrow, shift the label left so it starts at
@@ -394,122 +395,6 @@ class ThreadWidget extends StatelessWidget {
                         ),
                         child: Builder(
                           builder: (context) {
-                            final timingColor = now
-                                ? TextStyle(
-                                    color: context.colour.colours.fromTheme(
-                                      activity.priority.displayColor,
-                                    ),
-                                  )
-                                : null;
-
-                            // For timed events, show timing info
-                            if (isTimedEvent) {
-                              final timeStr = activity.at!.start!
-                                  .toTimeOfDay()
-                                  .formatShort(context);
-                              final hasDuration =
-                                  activity.at!.duration != null &&
-                                  activity.at!.duration!.inSeconds > 0;
-                              final veryMuted =
-                                  context.theme.plotColors.veryMuted;
-
-                              // Wide: center time+duration across full tile width
-                              final ghostPad = context
-                                  .theme
-                                  .buttonStyles
-                                  .ghost
-                                  .iconContentStyle
-                                  .padding
-                                  .resolve(TextDirection.ltr);
-                              final buttonW =
-                                  context.theme.iconSizes.base +
-                                  ghostPad.horizontal;
-                              final leadingWidth =
-                                  (context.theme.spacing.xl - 7.5) +
-                                  2 * buttonW +
-                                  context.theme.spacing.sm;
-                              final labelHeight = (TextPainter(
-                                text: TextSpan(
-                                  text: 'A',
-                                  style: DefaultTextStyle.of(context).style,
-                                ),
-                                maxLines: 1,
-                                textDirection: TextDirection.ltr,
-                              )..layout()).height;
-
-                              return SizedBox(
-                                height: labelHeight,
-                                child: Stack(
-                                  clipBehavior: Clip.hardEdge,
-                                  children: [
-                                    // Time + duration aligned with date header
-                                    Positioned(
-                                      left: -leadingWidth,
-                                      right: -context.contentPaddingH,
-                                      top: 0,
-                                      bottom: 0,
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              timeStr,
-                                              style: timingColor,
-                                              textAlign: TextAlign.right,
-                                            ),
-                                          ),
-                                          SizedBox(
-                                            child: Center(
-                                              child: Text(
-                                                '  ·  ',
-                                                style: TextStyle(
-                                                  color: veryMuted,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: hasDuration
-                                                ? Text(
-                                                    activity.at!.duration!
-                                                        .format(),
-                                                    style: TextStyle(
-                                                      color: veryMuted,
-                                                    ),
-                                                  )
-                                                : const SizedBox.shrink(),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    // RSVP summary right-aligned within body bounds
-                                    if (activity.hasOtherAttendees)
-                                      Align(
-                                        alignment: Alignment.centerRight,
-                                        child: _RsvpSummary(activity: activity),
-                                      ),
-                                    // Priority label on the left
-                                    if (hasBodyLabel)
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: PriorityLabel(
-                                          priority: activity.priority,
-                                          context: this.context,
-                                          color: headerFg,
-                                          fontSize: context
-                                              .theme
-                                              .typography
-                                              .xs
-                                              .fontSize,
-                                          height: 1,
-                                          muted: headerFg == null,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            }
-
-                            // Non-timed: left-aligned Row
                             return Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
