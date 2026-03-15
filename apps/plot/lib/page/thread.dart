@@ -203,8 +203,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
           onPopInvokedWithResult: (didPop, result) {
             if (!didPop) {
               if (ModalProvider.tryDismissTopModal(context)) return;
-              final provider =
-                  ActivityPanelControllerProvider.maybeOf(context);
+              final provider = ActivityPanelControllerProvider.maybeOf(context);
               if (provider != null && provider.tryCloseSearch()) return;
               if (!layoutStateForPanels.multiPanel) {
                 context.run(ChangeCurrentThread(null));
@@ -331,14 +330,10 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     body: Column(
                       children: [
                         if (state.threadNoteId != null)
-                          _ThreadFilterBar(
-                            threadNoteId: state.threadNoteId!,
-                          ),
+                          _ThreadFilterBar(threadNoteId: state.threadNoteId!),
                         ...state.links.map(
-                          (link) => _ThreadLinkRow(
-                            link: link,
-                            thread: state.thread,
-                          ),
+                          (link) =>
+                              _ThreadLinkRow(link: link, thread: state.thread),
                         ),
                         Flexible(
                           flex: 1,
@@ -354,7 +349,9 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                             ),
                           ),
                         ),
-                        if (state.search.isNotEmpty && !state.showAllNotes && state.notes.length < state.totalNoteCount)
+                        if (state.search.isNotEmpty &&
+                            !state.showAllNotes &&
+                            state.notes.length < state.totalNoteCount)
                           _SearchFilterHint(
                             onShowAll: () => context
                                 .read<ThreadBloc>()
@@ -414,6 +411,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       count: totalItems,
       reverse: true,
       doneEnd: true,
+      cacheExtent: double.infinity,
       fetcher: (first, count) =>
           Future<void>.value(), // No pagination needed for ThreadPage
       builder: (context, index, focusNode, {reorderableIndex}) {
@@ -478,8 +476,7 @@ class _ThreadFilterBar extends StatelessWidget {
             child: Row(
               children: [
                 GestureDetector(
-                  onTap: () =>
-                      context.read<ThreadBloc>().setThreadFilter(null),
+                  onTap: () => context.read<ThreadBloc>().setThreadFilter(null),
                   child: MouseRegion(
                     cursor: SystemMouseCursors.basic,
                     child: Container(
@@ -607,15 +604,15 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
           return GestureDetector(
             onTap: connected
                 ? (sourceUrl != null
-                    ? () {
-                        try {
-                          launchUrl(
-                            Uri.parse(sourceUrl),
-                            mode: LaunchMode.externalApplication,
-                          );
-                        } catch (_) {}
-                      }
-                    : null)
+                      ? () {
+                          try {
+                            launchUrl(
+                              Uri.parse(sourceUrl),
+                              mode: LaunchMode.externalApplication,
+                            );
+                          } catch (_) {}
+                        }
+                      : null)
                 : () {
                     final ptId = link.createdBy;
                     if (ptId == null) return;
@@ -641,7 +638,9 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
                 ),
                 child: Padding(
                   padding: EdgeInsets.symmetric(
-                    horizontal: context.isMultiPanel ? 20.0 : context.contentPaddingH,
+                    horizontal: context.isMultiPanel
+                        ? 20.0
+                        : context.contentPaddingH,
                     vertical: 6,
                   ),
                   child: Column(
@@ -664,16 +663,16 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
                               style: context.theme.typography.sm.copyWith(
                                 color: _hovered
                                     ? context.theme.colors.foreground
-                                    : context.theme.colors.foreground.withValues(
-                                        alpha: 0.7,
-                                      ),
+                                    : context.theme.colors.foreground
+                                          .withValues(alpha: 0.7),
                               ),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                             ),
                           ),
                           if (connected) ...[
-                            if (link.getTypeConfig()?.supportsAssignee == true) ...[
+                            if (link.getTypeConfig()?.supportsAssignee ==
+                                true) ...[
                               const SizedBox(width: 8),
                               _LinkAssigneeBadge(
                                 link: link,
@@ -685,8 +684,9 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
                               _LinkStatusBadge(link: link),
                             ],
                             if (link.actions != null)
-                              for (final action in link.actions!
-                                  .whereType<ConferencingUserAction>()) ...[
+                              for (final action
+                                  in link.actions!
+                                      .whereType<ConferencingUserAction>()) ...[
                                 const SizedBox(width: 8),
                                 _ConferencingButton(action: action),
                               ],
@@ -805,7 +805,8 @@ class _LinkAssigneeBadge extends StatelessWidget {
         final isSelected = option.id == link.assigneeId;
         return ListTile(
           title: option.name,
-          subtitle: (option.id != null &&
+          subtitle:
+              (option.id != null &&
                   option.email != null &&
                   option.email != option.name)
               ? option.email
@@ -813,7 +814,11 @@ class _LinkAssigneeBadge extends StatelessWidget {
           leadingBuilder: (isHovered, hasFocus) => Padding(
             padding: const EdgeInsets.only(left: 16, right: 8),
             child: isSelected
-                ? Icon(PlotIcon.done, size: 14, color: context.theme.colors.primary)
+                ? Icon(
+                    PlotIcon.done,
+                    size: 14,
+                    color: context.theme.colors.primary,
+                  )
                 : const SizedBox(width: 14),
           ),
           disableInternalHover: true,
@@ -843,8 +848,7 @@ class _AssigneeOption {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is _AssigneeOption && id == other.id;
+      identical(this, other) || other is _AssigneeOption && id == other.id;
 
   @override
   int get hashCode => id.hashCode;
@@ -863,8 +867,12 @@ class _LinkStatusBadge extends StatelessWidget {
     final statuses = typeConfig?.statuses;
     final canChange = statuses != null && statuses.length > 1;
     final label = link.statusLabel ?? link.status ?? '';
-    final currentStatus = statuses?.where((s) => s.status == link.status).firstOrNull;
-    final statusTag = currentStatus?.tag != null ? Tag.get(id: currentStatus!.tag!) : null;
+    final currentStatus = statuses
+        ?.where((s) => s.status == link.status)
+        .firstOrNull;
+    final statusTag = currentStatus?.tag != null
+        ? Tag.get(id: currentStatus!.tag!)
+        : null;
 
     return FButton(
       variant: FButtonVariant.secondary,
@@ -882,7 +890,11 @@ class _LinkStatusBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (statusTag != null) ...[
-            Icon(statusTag.icon, size: 12, color: context.theme.colors.mutedForeground),
+            Icon(
+              statusTag.icon,
+              size: 12,
+              color: context.theme.colors.mutedForeground,
+            ),
             const SizedBox(width: 4),
           ],
           Text(
@@ -913,7 +925,11 @@ class _LinkStatusBadge extends StatelessWidget {
           leadingBuilder: (isHovered, hasFocus) => Padding(
             padding: const EdgeInsets.only(left: 16, right: 8),
             child: s.status == link.status
-                ? Icon(PlotIcon.done, size: 14, color: context.theme.colors.primary)
+                ? Icon(
+                    PlotIcon.done,
+                    size: 14,
+                    color: context.theme.colors.primary,
+                  )
                 : const SizedBox(width: 14),
           ),
           disableInternalHover: true,
@@ -1050,58 +1066,62 @@ class _ThreadLinkMenuState extends State<_ThreadLinkMenu> {
   List<FItem> _buildMenuItems() {
     final items = <FItem>[];
     if (widget.thread.at != null) {
-      items.add(FItem(
-        title: const Text('Reschedule'),
-        onPress: () {
-          _controller.hide();
-          RescheduleEvent(widget.thread).run(context);
-        },
-      ));
+      items.add(
+        FItem(
+          title: const Text('Reschedule'),
+          onPress: () {
+            _controller.hide();
+            RescheduleEvent(widget.thread).run(context);
+          },
+        ),
+      );
     }
     final actions = (widget.link.actions ?? [])
         .where((a) => a.type != UserActionType.conferencing)
         .toList();
-    items.addAll(actions.map((action) {
-      switch (action.type) {
-        case UserActionType.external:
-          final ext = action as ExternalUserAction;
-          return FItem(
-            title: Text(ext.title),
-            onPress: () {
-              _controller.hide();
-              try {
-                launchUrl(
-                  Uri.parse(ext.url),
-                  mode: LaunchMode.externalApplication,
-                );
-              } catch (_) {}
-            },
-          );
-        case UserActionType.conferencing:
-          final conf = action as ConferencingUserAction;
-          final confTitle = switch (conf.provider) {
-            ConferencingProvider.googleMeet => 'Join Google Meet',
-            ConferencingProvider.zoom => 'Join on Zoom',
-            ConferencingProvider.microsoftTeams => 'Join on Teams',
-            ConferencingProvider.webex => 'Join Webex',
-            ConferencingProvider.other => 'Join Meeting',
-          };
-          return FItem(
-            title: Text(confTitle),
-            onPress: () {
-              _controller.hide();
-              try {
-                launchUrl(
-                  Uri.parse(conf.url),
-                  mode: LaunchMode.externalApplication,
-                );
-              } catch (_) {}
-            },
-          );
-        default:
-          return FItem(title: const Text('Action'));
-      }
-    }).toList());
+    items.addAll(
+      actions.map((action) {
+        switch (action.type) {
+          case UserActionType.external:
+            final ext = action as ExternalUserAction;
+            return FItem(
+              title: Text(ext.title),
+              onPress: () {
+                _controller.hide();
+                try {
+                  launchUrl(
+                    Uri.parse(ext.url),
+                    mode: LaunchMode.externalApplication,
+                  );
+                } catch (_) {}
+              },
+            );
+          case UserActionType.conferencing:
+            final conf = action as ConferencingUserAction;
+            final confTitle = switch (conf.provider) {
+              ConferencingProvider.googleMeet => 'Join Google Meet',
+              ConferencingProvider.zoom => 'Join on Zoom',
+              ConferencingProvider.microsoftTeams => 'Join on Teams',
+              ConferencingProvider.webex => 'Join Webex',
+              ConferencingProvider.other => 'Join Meeting',
+            };
+            return FItem(
+              title: Text(confTitle),
+              onPress: () {
+                _controller.hide();
+                try {
+                  launchUrl(
+                    Uri.parse(conf.url),
+                    mode: LaunchMode.externalApplication,
+                  );
+                } catch (_) {}
+              },
+            );
+          default:
+            return FItem(title: const Text('Action'));
+        }
+      }).toList(),
+    );
     return items;
   }
 }

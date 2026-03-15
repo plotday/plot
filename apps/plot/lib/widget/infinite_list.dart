@@ -285,6 +285,12 @@ class InfiniteList extends StatefulWidget {
   /// first visible item stays in place.
   final String Function(int index)? itemKey;
 
+  /// Custom cache extent for the underlying [CustomScrollView].
+  /// Set to [double.infinity] to keep all items alive and prevent
+  /// disposal/recreation when scrolling (useful for short lists with
+  /// expensive-to-recreate items like images).
+  final double? cacheExtent;
+
   InfiniteList({
     required this.builder,
     required this.count,
@@ -299,6 +305,7 @@ class InfiniteList extends StatefulWidget {
     this.nonReorderablePrefixCount = 0,
     this.separatorBuilder,
     this.itemKey,
+    this.cacheExtent,
     InfiniteListController? controller,
     super.key,
   }) : doneEnd = doneEnd ?? fetcher == null,
@@ -650,6 +657,7 @@ class InfiniteListState extends State<InfiniteList> {
             key: widget.scrollStorageKey,
             controller: _scrollController,
             reverse: widget.reverse,
+            cacheExtent: widget.cacheExtent,
             slivers: [
               if (_prefixCount > 0) _buildFixedPrefix(),
               _buildSliverList(),
