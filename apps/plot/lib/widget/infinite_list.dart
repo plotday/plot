@@ -533,7 +533,7 @@ class InfiniteListState extends State<InfiniteList> {
         final separator = widget.separatorBuilder?.call(context, index);
 
         return MouseRegion(
-          key: ValueKey('item_$index'),
+          key: child.key ?? ValueKey('item_$index'),
           onEnter: (_) => widget.controller.setHovered(index),
           onExit: (_) => widget.controller.setHovered(null),
           child: separator != null
@@ -548,55 +548,86 @@ class InfiniteListState extends State<InfiniteList> {
     );
   }
 
-  SliverReorderableList _buildSliverList() {
+  Widget _buildItem(BuildContext context, int reorderIndex) {
+    final offset = _prefixCount;
+    final index = reorderIndex + offset;
+    if (index < 0 || index >= widget.count) {
+      return SizedBox(key: ValueKey('empty_$index'), height: 0);
+    }
+
+    // Get or create FocusNode for this item
+    final focusNode = widget.controller.getFocusNode(index);
+    final onReorder = widget.onReorder?.call(index);
+
+    // Pass reorderableIndex to builder if reordering is enabled.
+    // Must use reorderIndex (position within this SliverReorderableList),
+    // not the original index, so ReorderableDragStartListener picks up
+    // the correct item.
+    var child = widget.builder(
+      context,
+      index,
+      focusNode,
+      reorderableIndex: onReorder != null ? reorderIndex : null,
+    );
+
+    if (child == null) {
+      return SizedBox(key: ValueKey('empty_$index'), height: 0);
+    }
+
+    final separator = widget.separatorBuilder?.call(context, index);
+
+    // Use itemKey for stable identity when available, falling back to
+    // child key, then index-based key.
+    final itemKeyValue = widget.itemKey?.call(index);
+    final wrapperKey = itemKeyValue != null
+        ? ValueKey(itemKeyValue)
+        : child.key ?? ValueKey('item_$index');
+
+    return MouseRegion(
+      key: wrapperKey,
+      onEnter: (_) => widget.controller.setHovered(index),
+      onExit: (_) => widget.controller.setHovered(null),
+      child: separator != null
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [separator, child],
+            )
+          : child,
+    );
+  }
+
+  Widget _buildSliverList() {
     final offset = _prefixCount;
     final count = widget.count - offset;
+
+    // When reordering is not needed and itemKey is available, use SliverList
+    // with findChildIndexCallback for key-based element reuse. This prevents
+    // widget state loss (e.g. image reload) when items shift indices.
+    if (widget.onReorder == null && widget.itemKey != null) {
+      return SliverList(
+        key: _listKey,
+        delegate: SliverChildBuilderDelegate(
+          _buildItem,
+          childCount: count,
+          findChildIndexCallback: (Key key) {
+            if (key is ValueKey<String>) {
+              for (var i = 0; i < count; i++) {
+                if (widget.itemKey!(i + offset) == key.value) {
+                  return i;
+                }
+              }
+            }
+            return null;
+          },
+        ),
+      );
+    }
 
     return SliverReorderableList(
       key: _listKey,
       itemCount: count,
-      itemBuilder: (context, reorderIndex) {
-        final index = reorderIndex + offset;
-        if (index < 0 || index >= widget.count) {
-          return SizedBox(key: ValueKey('empty_$index'), height: 0);
-        }
-
-        // Get or create FocusNode for this item
-        final focusNode = widget.controller.getFocusNode(index);
-        final onReorder = widget.onReorder?.call(index);
-
-        // Pass reorderableIndex to builder if reordering is enabled.
-        // Must use reorderIndex (position within this SliverReorderableList),
-        // not the original index, so ReorderableDragStartListener picks up
-        // the correct item.
-        var child = widget.builder(
-          context,
-          index,
-          focusNode,
-          reorderableIndex: onReorder != null ? reorderIndex : null,
-        );
-
-        if (child == null) {
-          return SizedBox(key: ValueKey('empty_$index'), height: 0);
-        }
-
-        final separator = widget.separatorBuilder?.call(context, index);
-
-        // Wrap with MouseRegion to track hover state
-        // Key is required by SliverReorderableList on the outermost widget
-        return MouseRegion(
-          key: ValueKey('item_$index'),
-          onEnter: (_) => widget.controller.setHovered(index),
-          onExit: (_) => widget.controller.setHovered(null),
-          child: separator != null
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [separator, child],
-                )
-              : child,
-        );
-      },
+      itemBuilder: _buildItem,
       onReorderStart: (reorderIndex) {
         widget.controller.setDragging(reorderIndex + offset);
       },

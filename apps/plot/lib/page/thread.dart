@@ -414,6 +414,10 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       cacheExtent: double.infinity,
       fetcher: (first, count) =>
           Future<void>.value(), // No pagination needed for ThreadPage
+      itemKey: (index) {
+        final note = _getNoteAtIndex(state, index);
+        return note?.id.toString() ?? 'empty_$index';
+      },
       builder: (context, index, focusNode, {reorderableIndex}) {
         return _buildItemAtIndex(
           state,
