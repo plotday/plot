@@ -52,21 +52,45 @@ SELECT
         ),
         a.created_at
     ) AS activity_at,
-    -- agenda_at: earliest schedule start (shared, user, or link) for forward-agenda sorting
-    COALESCE(
-        LEAST(
-            (SELECT COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamptz)
-             FROM schedule s_agg WHERE s_agg.thread_id = a.id AND s_agg.user_id IS NULL
-             AND s_agg.archived_at IS NULL
-             ORDER BY COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamptz) ASC NULLS LAST
-             LIMIT 1),
-            (SELECT COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamptz)
-             FROM schedule s_agg WHERE s_agg.thread_id = a.id AND s_agg.user_id = upe.user_id
-             AND s_agg.archived_at IS NULL
-             ORDER BY COALESCE(lower(s_agg.at), lower(s_agg."on")::timestamptz) ASC NULLS LAST
-             LIMIT 1)
+    -- agenda_at: range from earliest schedule start to latest end (or infinity for recurring)
+    tstzrange(
+        COALESCE(
+            LEAST(
+                (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
+                 FROM schedule s_lo WHERE s_lo.thread_id = a.id AND s_lo.user_id IS NULL
+                 AND s_lo.archived_at IS NULL
+                 ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
+                 LIMIT 1),
+                (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
+                 FROM schedule s_lo WHERE s_lo.thread_id = a.id AND s_lo.user_id = upe.user_id
+                 AND s_lo.archived_at IS NULL
+                 ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
+                 LIMIT 1)
+            ),
+            a.created_at
         ),
-        a.created_at
+        COALESCE(
+            CASE WHEN EXISTS (
+                SELECT 1 FROM schedule s_rec
+                WHERE s_rec.thread_id = a.id AND s_rec.archived_at IS NULL
+                AND s_rec.recurrence_rule IS NOT NULL
+            ) THEN 'infinity'::timestamptz
+            ELSE GREATEST(
+                (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
+                 FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id IS NULL
+                 AND s_hi.archived_at IS NULL
+                 ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
+                 LIMIT 1),
+                (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
+                 FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id = upe.user_id
+                 AND s_hi.archived_at IS NULL
+                 ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
+                 LIMIT 1)
+            )
+            END,
+            a.created_at
+        ),
+        '[]'
     ) AS agenda_at
 FROM
     thread_x a
@@ -104,7 +128,7 @@ SELECT
     0::smallint AS importance,
     NULL::text AS urgency,
     a.created_at AS activity_at,
-    a.created_at AS agenda_at
+    tstzrange(a.created_at, a.created_at, '[]') AS agenda_at
 FROM
     thread_x a
     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id

@@ -3795,7 +3795,7 @@ export type Database = {
       thread: {
         Row: {
           activity_at: string | null
-          agenda_at: string | null
+          agenda_at: unknown
           archived_at: string | null
           bumped_at: string | null
           created_at: string | null

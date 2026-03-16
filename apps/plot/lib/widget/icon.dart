@@ -107,7 +107,7 @@ class PlotIcon {
   static const thanks = FontAwesomeIcons.handsPraying;
   static const praise = FontAwesomeIcons.handsClapping;
   static const wave = FontAwesomeIcons.handWave;
-  static const question = FontAwesomeIcons.squareQuestion;
+  static const question = FontAwesomeIcons.commentsQuestion;
   static const flag = FontAwesomeIcons.flag;
 
   // Emotions

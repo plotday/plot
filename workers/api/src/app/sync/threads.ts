@@ -36,7 +36,9 @@ threads.get("/sync/threads", async (c) => {
     if (updatedSince) {
       query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
     } else {
-      query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
+      // When sorting by agenda_at (a tstzrange), sort by its lower bound
+      const sortExpr = sortBy === 'agenda_at' ? sql`lower(agenda_at)` : sql.ref(sortBy);
+      query = query.orderBy(sortExpr, sortDir).orderBy("id", sortDir);
     }
 
     // Don't apply limit for initial pulls
@@ -80,11 +82,23 @@ threads.get("/sync/threads", async (c) => {
     }
 
     // Range filtering (for pullTo pagination by sortBy column)
-    if (rangeStart) {
-      query = query.where(sql<boolean>`${sql.ref(sortBy)} > ${rangeStart}::timestamptz`);
-    }
-    if (rangeEnd) {
-      query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
+    if (sortBy === 'agenda_at') {
+      // agenda_at is a tstzrange — use overlap (&&) operator
+      if (rangeStart && rangeEnd) {
+        query = query.where(sql<boolean>`agenda_at && tstzrange(${rangeStart}::timestamptz, ${rangeEnd}::timestamptz)`);
+      } else if (rangeStart) {
+        query = query.where(sql<boolean>`agenda_at && tstzrange(${rangeStart}::timestamptz, NULL)`);
+      } else if (rangeEnd) {
+        query = query.where(sql<boolean>`agenda_at && tstzrange(NULL, ${rangeEnd}::timestamptz)`);
+      }
+    } else {
+      // Scalar comparison for activity_at, created_at, updated_at
+      if (rangeStart) {
+        query = query.where(sql<boolean>`${sql.ref(sortBy)} > ${rangeStart}::timestamptz`);
+      }
+      if (rangeEnd) {
+        query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
+      }
     }
 
     return query.execute();

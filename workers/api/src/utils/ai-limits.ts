@@ -2,6 +2,7 @@ import type { Kysely } from "kysely";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
+import { rpc } from "../rpc";
 import { UserAiUsage } from "../state/user-ai-usage";
 import { getPersonalPlan } from "./limits";
 
@@ -29,14 +30,66 @@ export async function checkAiLimit(
 }
 
 /**
+ * Priority-aware AI limit check. Checks in order:
+ * 1. Org priorities → always allowed (covered by business plan)
+ * 2. Syncing user → if paid or within free limits, use their quota
+ * 3. Other priority members → if any has capacity, use their quota
+ *
+ * Returns the userId to charge usage against (null for org priorities).
+ */
+export async function checkAiLimitForPriority(
+  env: Bindings,
+  db: Kysely<DB>,
+  priorityId: string,
+  syncingUserId: string,
+  operation: AiOperation
+): Promise<{ allowed: boolean; chargeUserId: string | null }> {
+  // 1. Org priorities are covered by the business plan
+  const priority = await db
+    .selectFrom("priority")
+    .select("organization_id")
+    .where("id", "=", priorityId)
+    .executeTakeFirst();
+
+  if (priority?.organization_id) {
+    return { allowed: true, chargeUserId: null };
+  }
+
+  // 2. Check syncing user first
+  const syncingResult = await checkAiLimit(env, db, syncingUserId, operation);
+  if (syncingResult.allowed) {
+    return { allowed: true, chargeUserId: syncingUserId };
+  }
+
+  // 3. Check other users in the priority
+  // rpc() unwraps single-column TABLE results, so we get string[] directly
+  const usersData = await rpc(db, "get_users_with_priority_access", {
+    target_priority_id: priorityId,
+  });
+  const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
+
+  for (const userId of userIds) {
+    if (userId === syncingUserId) continue;
+    const result = await checkAiLimit(env, db, userId, operation);
+    if (result.allowed) {
+      return { allowed: true, chargeUserId: userId };
+    }
+  }
+
+  return { allowed: false, chargeUserId: null };
+}
+
+/**
  * Record AI usage for a user (fire-and-forget, don't block the response).
+ * Pass null to skip recording (e.g. for org-covered priorities).
  */
 export function recordAiUsage(
   env: Bindings,
-  userId: string,
+  userId: string | null,
   operation: AiOperation,
   count = 1
 ): void {
+  if (!userId) return;
   const usage = UserAiUsage.Get(env, userId);
   usage.increment(operation, count);
 }

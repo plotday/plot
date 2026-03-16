@@ -90,14 +90,50 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
 }
 
 class LinksBase extends BaseTable {
-  LinksBase()
+  LinksBase({this.priorityId, this.priorityPath})
     : super(
         table: 'user_link',
         syncEndpoint: 'links',
         name: 'links',
+        filterName: priorityPath,
         order: 'updated_at',
         ascending: false,
+        supportsArchiving: false,
       );
+
+  final PriorityId? priorityId;
+  final String? priorityPath;
+
+  @override
+  Map<String, String> buildParams({
+    DateTime? updatedSince,
+    String? lastId,
+    bool initial = false,
+    bool archived = false,
+  }) {
+    final params = super.buildParams(
+      updatedSince: updatedSince,
+      lastId: lastId,
+      initial: initial,
+      archived: archived,
+    );
+    if (priorityId != null) {
+      params['priority_id'] = priorityId.toString();
+    }
+    return params;
+  }
+
+  @override
+  Map<String, String> buildRangeParams(DateTimeRange range) {
+    final params = <String, String>{};
+    if (range.start != null) {
+      params['range_start'] = range.start!.toIso8601String();
+    }
+    if (range.end != null) {
+      params['range_end'] = range.end!.toIso8601String();
+    }
+    return params;
+  }
 
   @override
   Insertable<LinkRow> fromBase(Map<String, dynamic> json) {

@@ -1,13 +1,14 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb, createDb } from "../../db";
+import { sql, withUserDb, createDb, type DB, type Kysely } from "../../db";
 import type { Bindings } from "../../env";
 import { assertThreadAccess } from "./authorize";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
-import { rpcUser } from "../../rpc";
+import { rpc, rpcUser } from "../../rpc";
 import { notifySync, getPriorityForThread } from "./notify";
 import { analyzeNote } from "../../queue/note-analysis";
-import { checkAiLimit, recordAiUsage, isAiEnabled } from "../../utils/ai-limits";
+import { createSchedule } from "./smart-schedule";
+import { checkAiLimitForPriority, recordAiUsage, isAiEnabled } from "../../utils/ai-limits";
 
 const notes = new Hono<{ Bindings: Bindings }>();
 
@@ -119,16 +120,26 @@ notes.post("/sync/notes", async (c) => {
   const priorityId = await getPriorityForThread(c.var.db, body.thread_id);
   notifySync(c, priorityId);
 
-  // Generate embedding + AI note analysis (best-effort, don't block the response)
+  // Background processing: unread marking + AI analysis (best-effort, don't block the response)
   const noteId = (result as any)?.id ?? body.id;
   const content = body.content as string | null;
-  if (noteId && content && content.trim().length > 0 && !body.draft) {
+  if (noteId && !body.draft && !body.archived_at) {
     c.executionCtx.waitUntil(
       (async () => {
+        // 1. ALWAYS mark thread unread for other priority members
+        try {
+          await markThreadUnreadForOthers(c.var.db, priorityId, body.thread_id, c.var.user.id);
+        } catch (error) {
+          console.error("[unread] Failed to mark thread unread for others:", error);
+        }
+
+        // 2. AI analysis (optional — upgrades urgency/importance if it runs)
+        if (!content || content.trim().length === 0) return;
+
         // Check ai_enabled setting and free-tier limits before running AI
         const [aiEnabled, aiAllowed] = await Promise.all([
           isAiEnabled(c.var.db, c.var.user.id),
-          checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing"),
+          checkAiLimitForPriority(c.env, c.var.db, priorityId, c.var.user.id, "note_processing"),
         ]);
 
         if (!aiEnabled) {
@@ -137,7 +148,7 @@ notes.post("/sync/notes", async (c) => {
         }
 
         if (!aiAllowed.allowed) {
-          console.log("[embedding:sync] AI limit reached for user, skipping", noteId);
+          console.log("[embedding:sync] AI limit reached for all priority members, skipping", noteId);
           return;
         }
 
@@ -175,15 +186,50 @@ notes.post("/sync/notes", async (c) => {
           }
         }
 
-        // Record usage after both operations complete
-        recordAiUsage(c.env, c.var.user.id, "note_processing");
+        // Record usage against the user whose quota was checked
+        recordAiUsage(c.env, aiAllowed.chargeUserId, "note_processing");
       })()
     );
-  } else {
-    console.log("[embedding:sync] Skipping embedding", { noteId, hasContent: !!content, contentLength: content?.trim().length, draft: body.draft });
+  } else if (noteId) {
+    console.log("[embedding:sync] Skipping background processing", { noteId, hasContent: !!content, contentLength: content?.trim().length, draft: body.draft, archived: !!body.archived_at });
   }
 
   return c.json(result as any);
 });
+
+/**
+ * Mark a thread as unread for all priority members except the syncing user.
+ * Uses default urgency — AI analysis upgrades this later via upsert if it runs.
+ */
+async function markThreadUnreadForOthers(
+  db: Kysely<DB>,
+  priorityId: string,
+  threadId: string,
+  syncingUserId: string
+): Promise<void> {
+  // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
+  // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
+  const usersData = await rpc(db, "get_users_with_priority_access", {
+    target_priority_id: priorityId,
+  });
+  const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
+
+  for (const userId of userIds) {
+    if (userId === syncingUserId) continue;
+
+    try {
+      await rpcUser(db, "upsert_thread_unread", {
+        user_id: userId,
+        p_thread_id: threadId,
+        p_urgency: "inform-updates",
+        p_importance: 50,
+      });
+
+      await createSchedule(db, userId, threadId, "unread");
+    } catch (error) {
+      console.error(`[unread] Failed to mark thread unread for user ${userId}:`, error);
+    }
+  }
+}
 
 export default notes;

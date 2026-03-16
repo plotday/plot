@@ -683,6 +683,10 @@ class Store extends _$Store {
     TableInfo<TABLE, DATA> table,
     Insertable<DATA> data,
   ) async {
+    if (_closing) {
+      throw StateError(
+          'Database is closing, cannot write to ${table.actualTableName}');
+    }
     try {
       Insertable<DATA> finalData = data;
 
@@ -715,6 +719,10 @@ class Store extends _$Store {
     TableInfo<TABLE, DATA> table,
     Iterable<Insertable<DATA>> data,
   ) async {
+    if (_closing) {
+      throw StateError(
+          'Database is closing, cannot batch write to ${table.actualTableName}');
+    }
     try {
       // Auto-set pending to 2 for any items where it's absent or null
       final processedData = data.map((item) {
@@ -752,6 +760,12 @@ class Store extends _$Store {
     log.fine("Saving to ${table.actualTableName}:", data);
     try {
       await add(table, data);
+    } on StateError catch (e) {
+      if (_closing) {
+        log.fine("Suppressed write during close: $e");
+        return;
+      }
+      rethrow;
     } catch (e, t) {
       log.warning("Error saving ${toString()}", e, t);
       rethrow;
@@ -1288,6 +1302,7 @@ class Store extends _$Store {
     TableInfo<TABLE, DATA> table,
     BaseTable baseTable, {
     DateTime? pullTo,
+    DateTime? rangeStart,
     bool ascending = true,
     bool archived = false,
   }) async {
@@ -1370,6 +1385,15 @@ class Store extends _$Store {
               );
             }
           }
+        }
+      }
+
+      // For ascending pagination, clamp effectiveLast upward to rangeStart
+      // so we never fetch items before the floor (e.g. agenda starts from now)
+      if (ascending && rangeStart != null) {
+        final rangeStartMicros = rangeStart.toUtc().microsecondsSinceEpoch;
+        if (effectiveLast == null || effectiveLast < rangeStartMicros) {
+          effectiveLast = rangeStartMicros;
         }
       }
 

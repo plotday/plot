@@ -20,6 +20,10 @@ links.get("/sync/links", async (c) => {
     id,
     sortBy,
     sortDir,
+    priorityId,
+    priorityPath,
+    rangeStart,
+    rangeEnd,
   } = parseReadParams(c);
 
   const rows = await withUserDb(c.var.db, userId, async (trx) => {
@@ -45,6 +49,25 @@ links.get("/sync/links", async (c) => {
     // Cursor pagination
     if (updatedSince) {
       query = query.where(updatedSinceCursor(updatedSince, cursorId));
+    }
+
+    // Priority filter (same pattern as threads)
+    if (priorityId) {
+      query = query.where(
+        sql<boolean>`priority_id IN (SELECT child_id FROM priority_child WHERE priority_id = ${priorityId}::uuid)`
+      );
+    } else if (priorityPath) {
+      query = query.where(
+        sql<boolean>`priority_path <@ ${priorityPath}::ltree`
+      );
+    }
+
+    // Range filtering on updated_at (scalar)
+    if (rangeStart) {
+      query = query.where(sql<boolean>`${sql.ref(sortBy)} > ${rangeStart}::timestamptz`);
+    }
+    if (rangeEnd) {
+      query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
     }
 
     return query.execute();
