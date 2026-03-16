@@ -239,36 +239,40 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   int? _hoveredDividerIndex;
   late final FResizableController _controller;
   static const double _hitRegionExtent = 10.0; // Desktop hit region size
-  BoxConstraints? _previousConstraints;
 
   // Drag hysteresis state: tracks gap between pointer intent and divider position
   int? _draggingDividerIndex;
   double _cumulativeDelta = 0.0;
   double _dragStartOffset = 0.0;
 
+  // Single source of truth for overlay divider positions.
+  // Updated from initialExtent on region changes (instant, no lag),
+  // and from controller during drags (real-time drag positions).
+  List<double> _dividerOffsets = [];
+
+  void _computeOffsetsFromRegions() {
+    double cumulative = 0;
+    _dividerOffsets = [];
+    for (int i = 0; i < widget.regions.length - 1; i++) {
+      cumulative += widget.regions[i].initialExtent;
+      _dividerOffsets.add(cumulative);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _controller = FResizableController.cascade();
     _controller.addListener(_handleResize);
-    // Force rebuild after first layout so overlay dividers
-    // can read the controller's populated regions.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
+    _computeOffsetsFromRegions();
   }
 
   @override
   void didUpdateWidget(covariant _HoverableResizable oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _computeOffsetsFromRegions();
     if (_regionsChanged(widget.regions, oldWidget.regions)) {
       _hoveredDividerIndex = null;
-      // The controller's region offsets update during FResizable's layout phase,
-      // after this build. Force a post-frame rebuild so the overlay dividers
-      // pick up the correct positions.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
-      });
     }
   }
 
@@ -314,12 +318,20 @@ class _HoverableResizableState extends State<_HoverableResizable> {
     if (newMiddleRatio != null) {
       widget.onMiddleRatioChanged(newMiddleRatio);
     }
+
+    // Sync divider offsets from controller during/after drags
+    if (_controller.regions.length == widget.regions.length) {
+      _dividerOffsets = [
+        for (int i = 0; i < _controller.regions.length - 1; i++)
+          _controller.regions[i].offset.max,
+      ];
+    }
   }
 
   void _onDragStart(int dividerIndex) {
     _draggingDividerIndex = dividerIndex;
     _cumulativeDelta = 0.0;
-    _dragStartOffset = _controller.regions[dividerIndex].offset.max;
+    _dragStartOffset = _dividerOffsets[dividerIndex];
   }
 
   void _onDragUpdate(int dividerIndex, double delta) {
@@ -360,19 +372,11 @@ class _HoverableResizableState extends State<_HoverableResizable> {
   Widget build(BuildContext context) {
     final colorScheme = context.colour;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (_previousConstraints != null &&
-            _previousConstraints != constraints) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() {});
-          });
-        }
-        _previousConstraints = constraints;
-
-        return ListenableBuilder(
-          listenable: _controller,
-          builder: (context, child) {
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, child) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
             final overlayHeight = constraints.maxHeight;
 
             return Stack(
@@ -388,15 +392,11 @@ class _HoverableResizableState extends State<_HoverableResizable> {
                 // Use Transform.translate instead of Positioned to
                 // guarantee repaint on position change (RenderTransform
                 // calls markNeedsPaint; Positioned only marks layout).
-                // Skip when controller regions are stale (count mismatch)
-                // to avoid rendering dividers at wrong positions.
-                if (_controller.regions.length == widget.regions.length &&
-                    _controller.regions.isNotEmpty)
-                  for (var i = 0; i < _controller.regions.length - 1; i++)
+                if (_dividerOffsets.length == widget.regions.length - 1)
+                  for (var i = 0; i < _dividerOffsets.length; i++)
                     Transform.translate(
                       offset: Offset(
-                        _controller.regions[i].offset.max -
-                            (_hitRegionExtent / 2),
+                        _dividerOffsets[i] - (_hitRegionExtent / 2),
                         0.0,
                       ),
                       child: GestureDetector(
