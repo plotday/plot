@@ -195,6 +195,16 @@ class ThreadsBase extends BaseTable {
   }
 
   @override
+  String? parseBoundaryValue(String? value) {
+    if (value == null || order != 'agenda_at') return value;
+    // agenda_at is a tstzrange like '["2026-03-15 15:30:00+00",infinity]'
+    // Extract the lower bound for use as the pagination boundary.
+    final inner = value.replaceAll(RegExp(r'[\[\]()"]'), '');
+    final lower = inner.split(',').first.trim();
+    return lower.isEmpty ? null : lower;
+  }
+
+  @override
   Insertable<ThreadRow> fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
     json.remove('sync_depth');

@@ -160,6 +160,11 @@ abstract class BaseTable {
     return rows.toList();
   }
 
+  /// Extract a DateTime-parseable string from the raw boundary value of the
+  /// order column. Override when the order column is not a plain timestamp
+  /// (e.g. a tstzrange like agenda_at).
+  String? parseBoundaryValue(String? value) => value;
+
   /// Build query params for the sync API call.
   /// Subclasses override to add entity-specific params (e.g., priority_path).
   Map<String, String> buildParams({
@@ -1512,7 +1517,7 @@ class Store extends _$Store {
         // (captured before fromBase() which may strip computed columns)
         // For descending: baseRows.last = oldest item (boundary moving backwards)
         // For ascending: baseRows.last = newest item (boundary moving forwards)
-        var boundaryValue = lastRowBoundary;
+        var boundaryValue = baseTable.parseBoundaryValue(lastRowBoundary);
         if (boundaryValue == null) {
           // Fall back to created_at when sort column is null (e.g. infinity
           // timestamps that serialize to null, or missing computed columns)

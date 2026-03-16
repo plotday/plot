@@ -52,7 +52,7 @@ SELECT
         ),
         a.created_at
     ) AS activity_at,
-    -- agenda_at: range from earliest schedule start to latest end (or infinity for recurring)
+    -- agenda_at: range from earliest schedule start to latest end (or infinity for recurring/unbounded)
     tstzrange(
         COALESCE(
             LEAST(
@@ -70,23 +70,32 @@ SELECT
             a.created_at
         ),
         COALESCE(
-            CASE WHEN EXISTS (
-                SELECT 1 FROM schedule s_rec
-                WHERE s_rec.thread_id = a.id AND s_rec.archived_at IS NULL
-                AND s_rec.recurrence_rule IS NOT NULL
-            ) THEN 'infinity'::timestamptz
-            ELSE GREATEST(
-                (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
-                 FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id IS NULL
-                 AND s_hi.archived_at IS NULL
-                 ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
-                 LIMIT 1),
-                (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
-                 FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id = upe.user_id
-                 AND s_hi.archived_at IS NULL
-                 ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
-                 LIMIT 1)
-            )
+            CASE
+                -- Recurring schedules span to infinity
+                WHEN EXISTS (
+                    SELECT 1 FROM schedule s_rec
+                    WHERE s_rec.thread_id = a.id AND s_rec.archived_at IS NULL
+                    AND s_rec.recurrence_rule IS NOT NULL
+                ) THEN 'infinity'::timestamptz
+                -- Unbounded-upper schedules (e.g. [date,)) also span to infinity
+                WHEN EXISTS (
+                    SELECT 1 FROM schedule s_ub
+                    WHERE s_ub.thread_id = a.id AND s_ub.archived_at IS NULL
+                    AND (s_ub.at IS NOT NULL OR s_ub."on" IS NOT NULL)
+                    AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamptz) IS NULL
+                ) THEN 'infinity'::timestamptz
+                ELSE GREATEST(
+                    (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
+                     FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id IS NULL
+                     AND s_hi.archived_at IS NULL
+                     ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
+                     LIMIT 1),
+                    (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
+                     FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id = upe.user_id
+                     AND s_hi.archived_at IS NULL
+                     ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
+                     LIMIT 1)
+                )
             END,
             a.created_at
         ),
