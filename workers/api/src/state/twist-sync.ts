@@ -31,6 +31,8 @@ interface TagChangeRow {
 export class TwistSync extends DurableObject<Bindings> {
   private priorityTwistId: string | null = null;
   private state: TwistSyncState;
+  private lastFingerprint: string | null = null;
+  private repeatCount: number = 0;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -459,7 +461,7 @@ export class TwistSync extends DurableObject<Bindings> {
         | { array: "threadSchedules"; item: (typeof cleanThreadSchedules)[number]; size: number }
         | { array: "scheduleContacts"; item: (typeof cleanScheduleContacts)[number]; size: number };
 
-      const taggedItems: TaggedItem[] = [
+      let taggedItems: TaggedItem[] = [
         ...cleanNewNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
         ...cleanUpdatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: JSON.stringify(item).length })),
         ...cleanUpdatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: JSON.stringify(item).length })),
@@ -470,6 +472,26 @@ export class TwistSync extends DurableObject<Bindings> {
         ...cleanThreadSchedules.map((item) => ({ array: "threadSchedules" as const, item, size: JSON.stringify(item).length })),
         ...cleanScheduleContacts.map((item) => ({ array: "scheduleContacts" as const, item, size: JSON.stringify(item).length })),
       ];
+
+      // Loop detection: if we keep fetching the same items, skip processing to break the loop
+      const itemFingerprint = taggedItems.length > 0
+        ? taggedItems.map((t) => `${t.array}:${(t.item as any).id}`).sort().join(",")
+        : "";
+      if (itemFingerprint && itemFingerprint === this.lastFingerprint) {
+        this.repeatCount++;
+        if (this.repeatCount >= 3) {
+          logger.warn("TwistSync loop detected: same items fetched 3+ consecutive times, skipping", {
+            priority_twist_id: priorityTwistId,
+            repeat_count: this.repeatCount,
+            item_count: taggedItems.length,
+          });
+          // Clear items so we skip batch sending but still advance cursors below
+          taggedItems.length = 0;
+        }
+      } else {
+        this.repeatCount = 0;
+      }
+      this.lastFingerprint = itemFingerprint;
 
       const batches: TaggedItem[][] = [];
       let currentBatch: TaggedItem[] = [];
@@ -562,15 +584,25 @@ export class TwistSync extends DurableObject<Bindings> {
       // UPSERT (INSERT...ON CONFLICT) fixes Bug 1: the trigger only creates rows for the
       // twist that created the activity, but the create view returns items for other twists.
       // Text-based timestamps fix Bug 2: no JS Date round-trip means no μs precision loss.
+      const cursorAdvances: Record<string, string> = {};
+      if (activityUpdateMaxTs) cursorAdvances["thread/update"] = activityUpdateMaxTs;
+      if (noteCreateMaxTs) cursorAdvances["note/create"] = noteCreateMaxTs;
+      if (noteUpdateMaxTs) cursorAdvances["note/update"] = noteUpdateMaxTs;
+      if (channelLinkCreateMaxTs) cursorAdvances["channel_link/create"] = channelLinkCreateMaxTs;
+      if (channelLinkUpdateMaxTs) cursorAdvances["channel_link/update"] = channelLinkUpdateMaxTs;
+      if (channelNoteCreateMaxTs) cursorAdvances["channel_note/create"] = channelNoteCreateMaxTs;
+      if (threadReadUpdateMaxTs) cursorAdvances["thread_read/update"] = threadReadUpdateMaxTs;
+      if (threadScheduleUpdateMaxTs) cursorAdvances["thread_schedule/update"] = threadScheduleUpdateMaxTs;
+      if (scheduleContactUpdateMaxTs) cursorAdvances["schedule_contact/update"] = scheduleContactUpdateMaxTs;
       const syncUpdates: Array<{ name: string; promise: Promise<any> }> = [];
 
       if (activityUpdateMaxTs) {
         syncUpdates.push({
-          name: "activity update sync",
+          name: "thread update sync",
           promise: db.insertInto("priority_twist_sync")
             .values({
               priority_twist_id: priorityTwistId,
-              entity: sql`'activity'`,
+              entity: sql`'thread'`,
               operation: sql`'update'`,
               last_sync_at: sql`${activityUpdateMaxTs}::timestamptz`,
               last_update_at: sql`${activityUpdateMaxTs}::timestamptz`,
@@ -740,6 +772,29 @@ export class TwistSync extends DurableObject<Bindings> {
                 last_sync_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
               })
             )
+            .execute(),
+        });
+      }
+
+      // Advance last_sync_at for any cursor rows where last_update_at > last_sync_at
+      // but no items were returned (e.g. thread/create rows written by triggers
+      // that TwistSync doesn't query). Without this, SyncRecovery sees them as
+      // perpetually stale and re-notifies TwistSync every 30s.
+      const staleCursors = syncInfos.filter(
+        (s) => s.last_update_at_text > s.last_sync_at_text
+      );
+      for (const stale of staleCursors) {
+        // Skip cursors we already advanced above (they have a matching max timestamp)
+        const key = `${stale.entity}/${stale.operation}`;
+        if (cursorAdvances[key]) continue;
+
+        syncUpdates.push({
+          name: `${stale.entity} ${stale.operation} stale cursor`,
+          promise: db.updateTable("priority_twist_sync")
+            .set({ last_sync_at: sql`last_update_at` })
+            .where("priority_twist_id", "=", priorityTwistId)
+            .where("entity", "=", stale.entity)
+            .where("operation", "=", stale.operation)
             .execute(),
         });
       }

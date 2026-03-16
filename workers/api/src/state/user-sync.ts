@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { sql } from "kysely";
 
 import { withDb } from "../db";
 import { rpc } from "../rpc";
@@ -182,13 +183,6 @@ export class UserSync extends DurableObject<Bindings> {
           return;
         }
 
-        // Calculate the sync timestamp from query results (max last_update_at)
-        // This ensures we use database timestamps consistently rather than local server time
-        // and avoids race conditions where new updates could arrive between query and mark complete
-        const syncUpTo = pendingUpdates.reduce((max, update) => {
-          return update.last_update_at > max ? update.last_update_at : max;
-        }, pendingUpdates[0]?.last_update_at);
-
         // Send sync messages for each entity
         for (const update of pendingUpdates) {
           await broadcast.send({
@@ -197,8 +191,9 @@ export class UserSync extends DurableObject<Bindings> {
           });
         }
 
-        // Update last_sync_at for the entities we just synced using the max timestamp from the query
-        // Sort entities alphabetically to ensure consistent lock order and prevent deadlocks
+        // Advance last_sync_at = last_update_at directly in SQL to preserve
+        // full μs precision. Doing this via JS Date loses microseconds, causing
+        // last_update_at > last_sync_at to remain permanently true.
         const entities = pendingUpdates.map((u) => u.entity).sort();
 
         // Retry logic for deadlock errors (PostgreSQL code 40P01)
@@ -210,7 +205,7 @@ export class UserSync extends DurableObject<Bindings> {
           try {
             await db
               .updateTable("user_sync")
-              .set({ last_sync_at: syncUpTo })
+              .set({ last_sync_at: sql`last_update_at` })
               .where("user_id", "=", userId)
               .where("entity", "in", entities)
               .execute();

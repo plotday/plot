@@ -494,8 +494,11 @@ export async function updateThread(
       });
     }
 
-    // Notify sync DOs since triggers skip HTTP calls for twist writes
-    await plot.notifySyncDOs(new Set([plot.priorityId]));
+    // Only notify sync DOs if we actually wrote something
+    const hasTagUpdates = activity.tags !== undefined || activity.twistTags !== undefined;
+    if (hasMeaningfulUpdates || hasTagUpdates) {
+      await plot.notifySyncDOs(new Set([plot.priorityId]));
+    }
   } catch (error) {
     handleDbOperationError(error, "updateThread", plot.priorityTwistId, {
       has_activity_id: "id" in activity && !!activity.id,
