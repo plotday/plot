@@ -20,7 +20,6 @@ class PriorityState extends Equatable {
     List<Actor> actors = const [],
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
-    Priority? targetPriority,
     List<AgendaItem> activityFeedItems = const [],
     bool activityFeedDoneEnd = false,
     List<AgendaItem>? reorderViewItems,
@@ -45,7 +44,6 @@ class PriorityState extends Equatable {
       tagSuggestions: tagSuggestions.isNotEmpty
           ? List.unmodifiable(tagSuggestions)
           : tagSuggestions,
-      targetPriority: targetPriority,
       activityFeedItems: activityFeedItems.isNotEmpty
           ? List.unmodifiable(activityFeedItems)
           : activityFeedItems,
@@ -70,7 +68,6 @@ class PriorityState extends Equatable {
     this.actors = const [],
     this.tags = const [],
     this.tagSuggestions = const [],
-    this.targetPriority,
     this.activityFeedItems = const [],
     this.activityFeedDoneEnd = false,
     this.reorderViewItems,
@@ -89,7 +86,6 @@ class PriorityState extends Equatable {
   final List<Actor> actors;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
-  final Priority? targetPriority;
   final List<AgendaItem> activityFeedItems;
   final bool activityFeedDoneEnd;
 
@@ -974,7 +970,6 @@ class PriorityState extends Equatable {
     List<Actor>? actors,
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,
-    Value<Priority?> targetPriority = const Value.absent(),
     List<AgendaItem>? activityFeedItems,
     bool? activityFeedDoneEnd,
     Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
@@ -1006,7 +1001,6 @@ class PriorityState extends Equatable {
                 ? List.unmodifiable(tagSuggestions)
                 : tagSuggestions)
           : this.tagSuggestions,
-      targetPriority: targetPriority.or(this.targetPriority),
       activityFeedItems: activityFeedItems != null
           ? (activityFeedItems.isNotEmpty
                 ? List.unmodifiable(activityFeedItems)
@@ -1031,7 +1025,6 @@ class PriorityState extends Equatable {
     actors,
     tags,
     tagSuggestions,
-    targetPriority,
     activityFeedItems,
     activityFeedDoneEnd,
     reorderViewItems,

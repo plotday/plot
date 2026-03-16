@@ -21,6 +21,10 @@ class PriorityBloc extends Cubit<PriorityState> {
   final Set<ThreadId> _stickyUnreadIds = {};
   ThreadHeaderNotifier? headerNotifier;
 
+  /// Persisted scroll offsets for scroll restoration across route changes.
+  double agendaScrollOffset = 0.0;
+  double activityFeedScrollOffset = 0.0;
+
   PriorityBloc({required Priority priority, Thread? thread})
     : _subscriptions = [],
       _threadSubscription = null,
@@ -494,12 +498,20 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     }
 
-    // Set target priority without changing context (delay context update until data loads)
+    // Reset scroll offsets for the new priority
+    agendaScrollOffset = 0.0;
+    activityFeedScrollOffset = 0.0;
+
+    // Update context immediately for responsive switching
     emit(
       state.copyWith(
-        targetPriority: Value(newPriority),
+        context: newPriority,
         draft: newDraft,
         draftNote: draftNote,
+        agendaItems: const [],
+        activityFeedItems: const [],
+        agendaDoneEnd: false,
+        activityFeedDoneEnd: false,
       ),
     );
 
@@ -787,12 +799,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   void _loadPriority() {
-    final priorityToLoad = state.targetPriority ?? state.context;
+    final priorityToLoad = state.context;
 
-    // Load draft from database if this is initial load
-    if (state.targetPriority == null) {
-      _loadDraft(priorityToLoad);
-    }
+    _loadDraft(priorityToLoad);
 
     for (final subscription in _subscriptions) {
       subscription.cancel();
@@ -800,10 +809,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _subscriptions.add(
       Priority.watchOne(priorityToLoad.id).listen((priority) {
         log.fine('Priority updated');
-        // Only update context if not switching priorities (targetPriority is null)
-        if (state.targetPriority == null) {
-          emit(state.copyWith(context: priority));
-        }
+        emit(state.copyWith(context: priority));
       }),
     );
     if (state.thread != null) {
@@ -948,7 +954,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   void _loadAgenda({bool triggerSync = true}) {
-    final priorityToLoad = state.targetPriority ?? state.context;
+    final priorityToLoad = state.context;
 
     log.fine('Loading agenda for priority ${priorityToLoad.id}');
     _agendaSubscription?.cancel();
@@ -1052,8 +1058,6 @@ class PriorityBloc extends Cubit<PriorityState> {
 
               emit(
                 state.copyWith(
-                  // If switching priorities, update context atomically with new agenda
-                  context: state.targetPriority,
                   agendaItems: agendaItems,
                   agendaDoneEnd:
                       rawRowCount < _agendaLimit &&
@@ -1062,10 +1066,6 @@ class PriorityBloc extends Cubit<PriorityState> {
                   reorderViewItems: suppressRebuild
                       ? const Value.absent()
                       : const Value(null),
-                  // Clear targetPriority after switching
-                  targetPriority: state.targetPriority != null
-                      ? const Value(null)
-                      : const Value.absent(),
                 ),
               );
             });
@@ -1100,7 +1100,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   void _loadActivityFeed({bool triggerSync = true}) {
-    final priorityToLoad = state.targetPriority ?? state.context;
+    final priorityToLoad = state.context;
     _activityFeedSubscription?.cancel();
     _activityFeedSubscription =
         Thread.watch(

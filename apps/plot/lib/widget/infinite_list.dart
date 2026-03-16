@@ -143,6 +143,21 @@ class InfiniteListController extends ChangeNotifier {
     requestFocus(newIndex);
   }
 
+  /// Whether [jumpToTop] has been requested since the last acknowledgement.
+  bool _jumpToTopRequested = false;
+  bool get jumpToTopRequested => _jumpToTopRequested;
+
+  /// Request the associated [InfiniteList] to scroll to the top.
+  void jumpToTop() {
+    _jumpToTopRequested = true;
+    notifyListeners();
+  }
+
+  /// Acknowledge a pending [jumpToTop] request.
+  void acknowledgeJumpToTop() {
+    _jumpToTopRequested = false;
+  }
+
   @override
   void dispose() {
     // Dispose all focus nodes
@@ -291,6 +306,13 @@ class InfiniteList extends StatefulWidget {
   /// expensive-to-recreate items like images).
   final double? cacheExtent;
 
+  /// Initial scroll offset when creating an internal ScrollController.
+  /// Ignored when [scrollController] is provided externally.
+  final double initialScrollOffset;
+
+  /// Called when the scroll offset changes, allowing callers to persist it.
+  final ValueChanged<double>? onScrollOffsetChanged;
+
   InfiniteList({
     required this.builder,
     required this.count,
@@ -306,6 +328,8 @@ class InfiniteList extends StatefulWidget {
     this.separatorBuilder,
     this.itemKey,
     this.cacheExtent,
+    this.initialScrollOffset = 0.0,
+    this.onScrollOffsetChanged,
     InfiniteListController? controller,
     super.key,
   }) : doneEnd = doneEnd ?? fetcher == null,
@@ -408,7 +432,12 @@ class InfiniteListState extends State<InfiniteList> {
   @override
   void initState() {
     super.initState();
-    _scrollController = widget.scrollController ?? ScrollController();
+    _scrollController = widget.scrollController ??
+        ScrollController(initialScrollOffset: widget.initialScrollOffset);
+    if (widget.onScrollOffsetChanged != null) {
+      _scrollController.addListener(_onScrollChanged);
+    }
+    widget.controller.addListener(_onControllerChanged);
 
     // Call _loadIfNecessary on the first frame after initial render
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -418,8 +447,25 @@ class InfiniteListState extends State<InfiniteList> {
     });
   }
 
+  void _onScrollChanged() {
+    if (_scrollController.hasClients) {
+      widget.onScrollOffsetChanged?.call(_scrollController.offset);
+    }
+  }
+
+  void _onControllerChanged() {
+    if (widget.controller.jumpToTopRequested) {
+      widget.controller.acknowledgeJumpToTop();
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _scrollController.removeListener(_onScrollChanged);
+    widget.controller.removeListener(_onControllerChanged);
     if (widget.scrollController == null) {
       _scrollController.dispose();
     }
@@ -429,6 +475,10 @@ class InfiniteListState extends State<InfiniteList> {
   @override
   void didUpdateWidget(covariant InfiniteList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+    }
     if (widget.onReorder != null && oldWidget.count != widget.count) {
       log.info(
         '[InfiniteList.didUpdateWidget] count=${oldWidget.count}->${widget.count}',

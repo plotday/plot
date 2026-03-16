@@ -597,14 +597,16 @@ class _PriorityPageState extends State<PriorityPage> {
       listener: (context, state) {
         final nowBloc = context.read<NowBloc>();
         nowBloc.setFocus(state.context);
-        // Update theme when priority switch loading completes
-        if (state.targetPriority == null) {
-          nowBloc.setContext(state.context);
+        nowBloc.setContext(state.context);
+        // Reset scroll to top on priority switch
+        _agendaListController.jumpToTop();
+        final scrollController = ScrollControllerContext.of(context);
+        if (scrollController != null && scrollController.hasClients) {
+          scrollController.jumpTo(0);
         }
       },
       listenWhen: (previous, current) =>
-          previous.context.id != current.context.id ||
-          (previous.targetPriority != null && current.targetPriority == null),
+          previous.context.id != current.context.id,
       builder: (context, state) {
         return BlocBuilder<LayoutBloc, LayoutState>(
           builder: (context, layoutState) {
@@ -1046,10 +1048,13 @@ class _PriorityPageState extends State<PriorityPage> {
     final hasThreads = listItems.any((item) => item is AgendaThreadItem);
     final showEmptyHint = !hasThreads;
 
+    final bloc = context.read<PriorityBloc>();
     final list = InfiniteList(
       controller: controller,
       scrollController: scrollController,
       scrollStorageKey: scrollStorageKey,
+      initialScrollOffset: bloc.agendaScrollOffset,
+      onScrollOffsetChanged: (offset) => bloc.agendaScrollOffset = offset,
       count: listItems.length,
       doneEnd: doneEnd,
       itemKey: (index) {
@@ -1461,14 +1466,17 @@ class _PriorityPageState extends State<PriorityPage> {
       );
     }
 
+    final bloc = context.read<PriorityBloc>();
     return InfiniteList(
       controller: controller,
       scrollController: scrollController,
       scrollStorageKey: scrollStorageKey,
+      initialScrollOffset: bloc.activityFeedScrollOffset,
+      onScrollOffsetChanged: (offset) => bloc.activityFeedScrollOffset = offset,
       count: items.length,
       doneEnd: state.activityFeedDoneEnd,
       fetcher: (first, count) =>
-          context.read<PriorityBloc>().fetchMoreActivityFeedItems(first, count),
+          bloc.fetchMoreActivityFeedItems(first, count),
       separatorBuilder: (context, index) =>
           _buildSeparator(context, items, index, state, controller),
       builder: (context, index, focusNode, {reorderableIndex}) {
