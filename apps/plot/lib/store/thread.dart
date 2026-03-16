@@ -1776,6 +1776,7 @@ class Thread extends Equatable implements Comparable<Thread> {
        _active = null,
        _unreadComputed = null,
        _linkSourceCreatedAt = null,
+       _activityDirty = true,
        isLinkScheduleInstance = false;
 
   Thread._fromStore({
@@ -1789,6 +1790,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool? unreadComputed,
     this.isLinkScheduleInstance = false,
     DateTime? linkSourceCreatedAt,
+    bool activityDirty = false,
   }) : _thread = activity,
        _schedule = schedule,
        _userSchedule = userSchedule,
@@ -1796,7 +1798,8 @@ class Thread extends Equatable implements Comparable<Thread> {
        _notes = notes,
        _active = active,
        _unreadComputed = unreadComputed,
-       _linkSourceCreatedAt = linkSourceCreatedAt {
+       _linkSourceCreatedAt = linkSourceCreatedAt,
+       _activityDirty = activityDirty {
     assert(
       priority.id == activity.priorityId,
       "Priority does not match activity",
@@ -1811,6 +1814,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   final bool? _active;
   final bool? _unreadComputed;
   final DateTime? _linkSourceCreatedAt;
+  final bool _activityDirty;
 
   /// Whether this instance represents a link schedule (event from a linked item).
   /// Link schedule instances appear at their event time and are not reorderable.
@@ -2286,6 +2290,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // Update root activity if any thread-specific fields are changing
     var activity = _thread;
+    var activityDirty = false;
     if (priority != null ||
         draft != null ||
         private != null ||
@@ -2295,6 +2300,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         archivedAt.present ||
         bumpedAt.present ||
         title.present) {
+      activityDirty = true;
       activity = _thread.copyWith(
         priorityId: priority?.id,
         draft: draft,
@@ -2510,6 +2516,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     // Set bumpedAt on the thread when bumping (agenda done)
     // Also trigger thread-read sync by marking unreadUpdated so bumped_at gets pushed
     if (bump && todo == false) {
+      activityDirty = true;
       activity = activity.copyWith(
         bumpedAt: Value(DateTime.now()),
         unread: false,
@@ -2525,6 +2532,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       priority: priority ?? this.priority,
       notes: notes.present ? notes.value : _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
+      unreadComputed: unread != null ? null : _unreadComputed,
+      activityDirty: activityDirty,
     );
   }
 
@@ -2671,11 +2680,13 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   Future<void> save() async {
-    await Store.get.save(
-      Store.get.threads,
-      _thread.toCompanion(false),
-      ThreadsBase(),
-    );
+    if (_activityDirty) {
+      await Store.get.save(
+        Store.get.threads,
+        _thread.toCompanion(false),
+        ThreadsBase(),
+      );
+    }
     if (_schedule != null && _schedule.linkId == null) {
       await Store.get.save(
         Store.get.schedules,

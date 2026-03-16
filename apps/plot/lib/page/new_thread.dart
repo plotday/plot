@@ -126,17 +126,14 @@ class NewThreadPageState extends State<NewThreadPage> {
       _applyDefaultType();
     }
 
-    // Check members for initial priority
-    _checkMembers(context.read<PriorityBloc>().state.draft.priority.id);
+    // Check if priority is shared (has members besides current user)
+    _updateHasMembers(context.read<PriorityBloc>().state.draft.priority);
   }
 
-  Future<void> _checkMembers(Uuid priorityId) async {
-    final members = await PriorityMember.getForPriority(priorityId);
-    if (mounted) {
-      setState(() {
-        _hasMembers = members.isNotEmpty;
-      });
-    }
+  void _updateHasMembers(Priority priority) {
+    setState(() {
+      _hasMembers = priority.sharing;
+    });
   }
 
   void _resolveDefaultTwist() {
@@ -219,7 +216,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       // Load twists for the selected priority if different from context
       if (queryPriority != null) {
         await _loadTwistsForPriority(queryPriority);
-        await _checkMembers(queryPriority.id);
+        _updateHasMembers(queryPriority);
       }
     }
   }
@@ -288,7 +285,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       await _loadTwistsForPriority(result.value);
 
       // Check if the new priority has members
-      await _checkMembers(result.value.id);
+      _updateHasMembers(result.value);
 
       log.info(
         '[NewThreadPage._selectPriority] Draft priority update complete',

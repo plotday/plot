@@ -607,289 +607,280 @@ class _PriorityPageState extends State<PriorityPage> {
           (previous.targetPriority != null && current.targetPriority == null),
       builder: (context, state) {
         return BlocBuilder<LayoutBloc, LayoutState>(
-                builder: (context, layoutState) {
-                  final isUpNext = _currentTab == PriorityTab.agenda;
-                  var items = isUpNext
-                      ? state.agendaViewItems
-                      : state.activityFeedItems;
+          builder: (context, layoutState) {
+            final isUpNext = _currentTab == PriorityTab.agenda;
+            var items = isUpNext
+                ? state.agendaViewItems
+                : state.activityFeedItems;
 
-                  // Strip the leading "Now" header so reorder indices from
-                  // InfiniteList align with moveAgendaItem's nowOffset logic.
-                  // On desktop the header is replaced by a fixed panel header;
-                  // on mobile it's redundant with the tab label.
-                  if (isUpNext &&
-                      items.isNotEmpty &&
-                      items.first is AgendaHeaderItem &&
-                      (items.first as AgendaHeaderItem).now) {
-                    items = items.sublist(1);
-                  }
+            // Strip the leading "Now" header so reorder indices from
+            // InfiniteList align with moveAgendaItem's nowOffset logic.
+            // On desktop the header is replaced by a fixed panel header;
+            // on mobile it's redundant with the tab label.
+            if (isUpNext &&
+                items.isNotEmpty &&
+                items.first is AgendaHeaderItem &&
+                (items.first as AgendaHeaderItem).now) {
+              items = items.sublist(1);
+            }
 
-                  // Build shortcuts map conditionally based on panel visibility
-                  final shortcuts = <ShortcutActivator, Intent>{
-                    const SingleActivator(LogicalKeyboardKey.enter):
-                        const OpenFocusedItemActionsIntent(),
-                    const SingleActivator(LogicalKeyboardKey.escape):
-                        const ClearItemFocusIntent(),
-                    // Plain Up/Down to navigate threads and handle focus transfer to ThreadPage
-                    const SingleActivator(LogicalKeyboardKey.arrowUp):
-                        const MoveFocusUpIntent(),
-                    const SingleActivator(LogicalKeyboardKey.arrowDown):
-                        const MoveFocusDownIntent(),
-                  };
+            // Build shortcuts map conditionally based on panel visibility
+            final shortcuts = <ShortcutActivator, Intent>{
+              const SingleActivator(LogicalKeyboardKey.enter):
+                  const OpenFocusedItemActionsIntent(),
+              const SingleActivator(LogicalKeyboardKey.escape):
+                  const ClearItemFocusIntent(),
+              // Plain Up/Down to navigate threads and handle focus transfer to ThreadPage
+              const SingleActivator(LogicalKeyboardKey.arrowUp):
+                  const MoveFocusUpIntent(),
+              const SingleActivator(LogicalKeyboardKey.arrowDown):
+                  const MoveFocusDownIntent(),
+            };
 
-                  // Get activity panel provider to check if ThreadPage is open
-                  final activityProvider =
-                      ActivityPanelControllerProvider.maybeOf(context);
+            // Get activity panel provider to check if ThreadPage is open
+            final activityProvider = ActivityPanelControllerProvider.maybeOf(
+              context,
+            );
 
-                  return Focus(
-                    onKeyEvent: (node, event) {
-                      // Only handle key down events for plain Up/Down (no modifiers)
-                      if (event is! KeyDownEvent) {
-                        return KeyEventResult.ignored;
-                      }
+            return Focus(
+              onKeyEvent: (node, event) {
+                // Only handle key down events for plain Up/Down (no modifiers)
+                if (event is! KeyDownEvent) {
+                  return KeyEventResult.ignored;
+                }
 
-                      // Check if this is plain Up/Down with no modifiers
-                      final hasModifiers =
-                          HardwareKeyboard.instance.isMetaPressed ||
-                          HardwareKeyboard.instance.isControlPressed ||
-                          HardwareKeyboard.instance.isShiftPressed ||
-                          HardwareKeyboard.instance.isAltPressed;
-                      final isPlainUp =
-                          event.logicalKey == LogicalKeyboardKey.arrowUp &&
-                          !hasModifiers;
-                      final isPlainDown =
-                          event.logicalKey == LogicalKeyboardKey.arrowDown &&
-                          !hasModifiers;
+                // Check if this is plain Up/Down with no modifiers
+                final hasModifiers =
+                    HardwareKeyboard.instance.isMetaPressed ||
+                    HardwareKeyboard.instance.isControlPressed ||
+                    HardwareKeyboard.instance.isShiftPressed ||
+                    HardwareKeyboard.instance.isAltPressed;
+                final isPlainUp =
+                    event.logicalKey == LogicalKeyboardKey.arrowUp &&
+                    !hasModifiers;
+                final isPlainDown =
+                    event.logicalKey == LogicalKeyboardKey.arrowDown &&
+                    !hasModifiers;
 
-                      if ((isPlainUp || isPlainDown) &&
-                          activityProvider?._activityListController != null) {
-                        // Transfer focus to ThreadPage list
-                        activityProvider!._activityListController!.moveFocus(
-                          isPlainUp ? -1 : 1,
-                        );
-                        return KeyEventResult.handled;
-                      }
+                if ((isPlainUp || isPlainDown) &&
+                    activityProvider?._activityListController != null) {
+                  // Transfer focus to ThreadPage list
+                  activityProvider!._activityListController!.moveFocus(
+                    isPlainUp ? -1 : 1,
+                  );
+                  return KeyEventResult.handled;
+                }
 
-                      // Let other keys (including Cmd-Up/Down) propagate to shortcuts
-                      return KeyEventResult.ignored;
-                    },
-                    child: InfiniteListSelector(
-                      onActivate: (index) {
-                        final item = index >= 0 && index < items.length
-                            ? items[index]
-                            : null;
-                        item?.when(
-                          header: (header) => null,
-                          activity: (agendaActivity) => context.run(
-                            ChangeCurrentThread(agendaActivity.thread),
-                          ),
-                        );
-                      },
-                      builder: (context, listController) {
-                        final activeController = layoutState.multiPanel && _currentTab == PriorityTab.agenda
-                            ? _agendaListController
-                            : listController;
+                // Let other keys (including Cmd-Up/Down) propagate to shortcuts
+                return KeyEventResult.ignored;
+              },
+              child: InfiniteListSelector(
+                onActivate: (index) {
+                  final item = index >= 0 && index < items.length
+                      ? items[index]
+                      : null;
+                  item?.when(
+                    header: (header) => null,
+                    activity: (agendaActivity) =>
+                        context.run(ChangeCurrentThread(agendaActivity.thread)),
+                  );
+                },
+                builder: (context, listController) {
+                  final activeController =
+                      layoutState.multiPanel &&
+                          _currentTab == PriorityTab.agenda
+                      ? _agendaListController
+                      : listController;
 
-                        final provider =
-                            _PriorityListControllerProvider.maybeOf(context);
-                        provider?.registerController(
-                          layoutState.multiPanel ? _agendaListController : activeController,
-                          activityFeedController: layoutState.multiPanel
-                              ? listController
-                              : null,
-                        );
+                  final provider = _PriorityListControllerProvider.maybeOf(
+                    context,
+                  );
+                  provider?.registerController(
+                    layoutState.multiPanel
+                        ? _agendaListController
+                        : activeController,
+                    activityFeedController: layoutState.multiPanel
+                        ? listController
+                        : null,
+                  );
 
-                        return Shortcuts(
-                          shortcuts: shortcuts,
-                          child: Actions(
-                            actions: {
-                              MoveFocusUpIntent:
-                                  CallbackAction<MoveFocusUpIntent>(
-                                    onInvoke: (intent) {
-                                      final provider =
-                                          _PriorityListControllerProvider.maybeOf(
-                                            context,
-                                          );
-                                      final controller =
-                                          provider?._resolveController(
-                                            context,
-                                          ) ??
-                                          activeController;
-                                      provider?._moveFocusOrStart(
-                                        controller,
-                                        -1,
-                                        context,
-                                      );
-                                      return null;
-                                    },
-                                  ),
-                              MoveFocusDownIntent:
-                                  CallbackAction<MoveFocusDownIntent>(
-                                    onInvoke: (intent) {
-                                      final provider =
-                                          _PriorityListControllerProvider.maybeOf(
-                                            context,
-                                          );
-                                      final controller =
-                                          provider?._resolveController(
-                                            context,
-                                          ) ??
-                                          activeController;
-                                      provider?._moveFocusOrStart(
-                                        controller,
-                                        1,
-                                        context,
-                                      );
-                                      return null;
-                                    },
-                                  ),
-                              OpenFocusedItemActionsIntent:
-                                  CallbackAction<OpenFocusedItemActionsIntent>(
-                                    onInvoke: (_) {
-                                      // Resolve the controller and items for
-                                      // whichever list the user is interacting
-                                      // with (agenda or activity feed).
-                                      final resolvedController =
-                                          provider?._resolveController(
-                                            context,
-                                          ) ??
-                                          activeController;
-                                      final priorityBloc = context
-                                          .read<PriorityBloc>();
-                                      final source = priorityBloc
-                                          .resolveThreadListSource();
-                                      final resolvedItems =
-                                          source == ThreadListSource.agenda
-                                          ? items
-                                          : state.activityFeedItems;
-                                      final focusedIndex =
-                                          resolvedController.focusedIndex;
-                                      if (focusedIndex != null &&
-                                          focusedIndex >= 0 &&
-                                          focusedIndex < resolvedItems.length) {
-                                        context.run(
-                                          OpenFocusedItemActions(
-                                            resolvedController,
-                                            (index) async {
-                                              final item =
-                                                  index >= 0 &&
-                                                      index <
-                                                          resolvedItems.length
-                                                  ? resolvedItems[index]
-                                                  : null;
-                                              if (item == null) {
-                                                return <StaticCommandGroup>[];
-                                              }
-                                              return await item.when<
-                                                Future<List<StaticCommandGroup>>
-                                              >(
-                                                activity: (agendaActivity) =>
-                                                    threadCommandGroups(
-                                                      agendaActivity.thread,
-                                                      compact: !context.isMultiPanel,
-                                                    ),
-                                                header: (_) async =>
-                                                    <StaticCommandGroup>[],
-                                              );
-                                            },
-                                          ),
-                                        );
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                              ClearItemFocusIntent:
-                                  CallbackAction<ClearItemFocusIntent>(
-                                    onInvoke: (_) {
-                                      // Clear the resolved controller (may differ
-                                      // from activeController when navigating the
-                                      // activity feed on desktop)
-                                      final controller =
-                                          provider?._resolveController(
-                                            context,
-                                          ) ??
-                                          activeController;
-                                      controller.clearFocus();
-                                      if (controller != activeController) {
-                                        activeController.clearFocus();
-                                      }
-                                      // When ThreadPage is open, also focus ThreadEditor
-                                      activityProvider
-                                          ?._activityEditorFocusCallback
-                                          ?.call();
-                                      return null;
-                                    },
-                                  ),
-                            },
-                            child: CommandScope(
-                              commandsBuilder: () {
-                                final index = activeController.lastFocusedIndex;
-                                if (index == null) {
-                                  return <StaticCommandGroup>[];
-                                }
-                                final item = index >= 0 && index < items.length
-                                    ? items[index]
-                                    : null;
-                                return item?.when<List<StaticCommandGroup>>(
-                                      activity: (agendaActivity) =>
-                                          threadCommandGroupsSync(
-                                            agendaActivity.thread,
-                                            compact: !context.isMultiPanel,
-                                          ),
-                                      header: (_) => <StaticCommandGroup>[],
-                                    ) ??
-                                    <StaticCommandGroup>[];
+                  return Shortcuts(
+                    shortcuts: shortcuts,
+                    child: Actions(
+                      actions: {
+                        MoveFocusUpIntent: CallbackAction<MoveFocusUpIntent>(
+                          onInvoke: (intent) {
+                            final provider =
+                                _PriorityListControllerProvider.maybeOf(
+                                  context,
+                                );
+                            final controller =
+                                provider?._resolveController(context) ??
+                                activeController;
+                            provider?._moveFocusOrStart(
+                              controller,
+                              -1,
+                              context,
+                            );
+                            return null;
+                          },
+                        ),
+                        MoveFocusDownIntent:
+                            CallbackAction<MoveFocusDownIntent>(
+                              onInvoke: (intent) {
+                                final provider =
+                                    _PriorityListControllerProvider.maybeOf(
+                                      context,
+                                    );
+                                final controller =
+                                    provider?._resolveController(context) ??
+                                    activeController;
+                                provider?._moveFocusOrStart(
+                                  controller,
+                                  1,
+                                  context,
+                                );
+                                return null;
                               },
-                              listenable: activeController,
-                              child: Scaffold(
-                                scrollable: false,
-                                translucent: true,
-                                childPad: false,
-                                body: layoutState.multiPanel
-                                    ? _buildDesktopBody(
-                                        context,
-                                        state,
-                                        listController,
-                                      )
-                                    : isUpNext
-                                    ? ThreadListSourceProvider(
-                                        source: ThreadListSource.agenda,
-                                        child: _buildList(
-                                          context,
-                                          state,
-                                          items,
-                                          listController,
-                                          ScrollControllerContext.of(context),
-                                          enableReorder:
-                                              !state.context.isViewer,
-                                          doneEnd: state.doneEnd,
-                                          scrollStorageKey: PageStorageKey(
-                                            'priority_agenda_${widget.priorityId}',
-                                          ),
-                                        ),
-                                      )
-                                    : ThreadListSourceProvider(
-                                        source: ThreadListSource.activityFeed,
-                                        child: _buildActivityFeed(
-                                          context,
-                                          state,
-                                          items,
-                                          listController,
-                                          ScrollControllerContext.of(context),
-                                          scrollStorageKey: PageStorageKey(
-                                            'priority_feed_${widget.priorityId}',
-                                          ),
-                                        ),
-                                      ),
-                              ),
                             ),
-                          ),
-                        );
+                        OpenFocusedItemActionsIntent:
+                            CallbackAction<OpenFocusedItemActionsIntent>(
+                              onInvoke: (_) {
+                                // Resolve the controller and items for
+                                // whichever list the user is interacting
+                                // with (agenda or activity feed).
+                                final resolvedController =
+                                    provider?._resolveController(context) ??
+                                    activeController;
+                                final priorityBloc = context
+                                    .read<PriorityBloc>();
+                                final source = priorityBloc
+                                    .resolveThreadListSource();
+                                final resolvedItems =
+                                    source == ThreadListSource.agenda
+                                    ? items
+                                    : state.activityFeedItems;
+                                final focusedIndex =
+                                    resolvedController.focusedIndex;
+                                if (focusedIndex != null &&
+                                    focusedIndex >= 0 &&
+                                    focusedIndex < resolvedItems.length) {
+                                  context.run(
+                                    OpenFocusedItemActions(resolvedController, (
+                                      index,
+                                    ) async {
+                                      final item =
+                                          index >= 0 &&
+                                              index < resolvedItems.length
+                                          ? resolvedItems[index]
+                                          : null;
+                                      if (item == null) {
+                                        return <StaticCommandGroup>[];
+                                      }
+                                      return await item.when<
+                                        Future<List<StaticCommandGroup>>
+                                      >(
+                                        activity: (agendaActivity) =>
+                                            threadCommandGroups(
+                                              agendaActivity.thread,
+                                              compact: !context.isMultiPanel,
+                                            ),
+                                        header: (_) async =>
+                                            <StaticCommandGroup>[],
+                                      );
+                                    }),
+                                  );
+                                }
+                                return null;
+                              },
+                            ),
+                        ClearItemFocusIntent: CallbackAction<ClearItemFocusIntent>(
+                          onInvoke: (_) {
+                            // Clear the resolved controller (may differ
+                            // from activeController when navigating the
+                            // activity feed on desktop)
+                            final controller =
+                                provider?._resolveController(context) ??
+                                activeController;
+                            controller.clearFocus();
+                            if (controller != activeController) {
+                              activeController.clearFocus();
+                            }
+                            // When ThreadPage is open, also focus ThreadEditor
+                            activityProvider?._activityEditorFocusCallback
+                                ?.call();
+                            return null;
+                          },
+                        ),
                       },
+                      child: CommandScope(
+                        commandsBuilder: () {
+                          final index = activeController.lastFocusedIndex;
+                          if (index == null) {
+                            return <StaticCommandGroup>[];
+                          }
+                          final item = index >= 0 && index < items.length
+                              ? items[index]
+                              : null;
+                          return item?.when<List<StaticCommandGroup>>(
+                                activity: (agendaActivity) =>
+                                    threadCommandGroupsSync(
+                                      agendaActivity.thread,
+                                      compact: !context.isMultiPanel,
+                                    ),
+                                header: (_) => <StaticCommandGroup>[],
+                              ) ??
+                              <StaticCommandGroup>[];
+                        },
+                        listenable: activeController,
+                        child: Scaffold(
+                          scrollable: false,
+                          translucent: true,
+                          childPad: false,
+                          body: layoutState.multiPanel
+                              ? _buildDesktopBody(
+                                  context,
+                                  state,
+                                  listController,
+                                )
+                              : isUpNext
+                              ? ThreadListSourceProvider(
+                                  source: ThreadListSource.agenda,
+                                  child: _buildList(
+                                    context,
+                                    state,
+                                    items,
+                                    listController,
+                                    ScrollControllerContext.of(context),
+                                    enableReorder: !state.context.isViewer,
+                                    doneEnd: state.doneEnd,
+                                    scrollStorageKey: PageStorageKey(
+                                      'priority_agenda_${widget.priorityId}',
+                                    ),
+                                  ),
+                                )
+                              : ThreadListSourceProvider(
+                                  source: ThreadListSource.activityFeed,
+                                  child: _buildActivityFeed(
+                                    context,
+                                    state,
+                                    items,
+                                    listController,
+                                    ScrollControllerContext.of(context),
+                                    scrollStorageKey: PageStorageKey(
+                                      'priority_feed_${widget.priorityId}',
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ),
                     ),
                   );
                 },
-              );
+              ),
+            );
+          },
+        );
       },
     );
   }
@@ -931,10 +922,12 @@ class _PriorityPageState extends State<PriorityPage> {
         _DesktopTabBar(
           currentTab: _currentTab,
           onTabChanged: _onDesktopTabChanged,
-          hasUnreadActivity: state.activityFeedItems.any((item) => item.when(
-            activity: (a) => a.thread.unread,
-            header: (_) => false,
-          )),
+          hasUnreadActivity: state.activityFeedItems.any(
+            (item) => item.when(
+              activity: (a) => a.thread.unread,
+              header: (_) => false,
+            ),
+          ),
           priority: state.context,
         ),
         Expanded(
@@ -980,7 +973,6 @@ class _PriorityPageState extends State<PriorityPage> {
       _tabNotifier!.value = tab;
     }
   }
-
 
   /// Always 1px tall for stable layout. Default renders as 0.5px border +
   /// 0.5px background (thin). Active states fill the full 1px (bolder, and
@@ -1554,14 +1546,12 @@ class _DesktopTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final borderSide = BorderSide(color: context.theme.colors.border);
     return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: borderSide),
-      ),
+      decoration: BoxDecoration(border: Border(bottom: borderSide)),
       position: DecorationPosition.foreground,
       child: Row(
         children: [
           _DesktopTab(
-            label: 'Now',
+            label: 'Agenda',
             selected: currentTab == PriorityTab.agenda,
             border: Border(right: borderSide),
             onTap: () => onTabChanged(PriorityTab.agenda),
@@ -1616,10 +1606,7 @@ class _DesktopTabState extends State<_DesktopTab> {
         height: _dotSize,
         child: visible
             ? DecoratedBox(
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               )
             : null,
       ),
@@ -1629,9 +1616,12 @@ class _DesktopTabState extends State<_DesktopTab> {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    final darkBg = darkenTheme(context, theme, context.colour, steps: 2)
-        .colors
-        .background;
+    final darkBg = darkenTheme(
+      context,
+      theme,
+      context.colour,
+      steps: 2,
+    ).colors.background;
 
     final Color background;
     if (widget.selected) {
@@ -1654,13 +1644,8 @@ class _DesktopTabState extends State<_DesktopTab> {
           onEnter: (_) => setState(() => _hovered = true),
           onExit: (_) => setState(() => _hovered = false),
           child: Container(
-            decoration: BoxDecoration(
-              color: background,
-              border: widget.border,
-            ),
-            padding: EdgeInsets.symmetric(
-              vertical: theme.spacing.xs,
-            ),
+            decoration: BoxDecoration(color: background, border: widget.border),
+            padding: EdgeInsets.symmetric(vertical: theme.spacing.xs),
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -1680,10 +1665,7 @@ class _DesktopTabState extends State<_DesktopTab> {
                   ],
                 ),
                 if (widget.trailing != null)
-                  Positioned(
-                    right: 0,
-                    child: widget.trailing!,
-                  ),
+                  Positioned(right: 0, child: widget.trailing!),
               ],
             ),
           ),

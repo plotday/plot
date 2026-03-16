@@ -421,14 +421,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     _tagsSubscription?.cancel();
 
     // Load or create draft for new priority
-    // Load the latest draft regardless of archived status, so we can reuse it
     log.info(
       '[setPriority] Switching to priority: ${newPriority.id} (${newPriority.title})',
     );
     final drafts = await Thread.get(
       priorityId: newPriority.id,
       draft: true,
-      archived: null, // Get both archived and non-archived
+      archived: false, // Only get active (non-archived) drafts
     );
     // Sort by updatedAt descending to get the latest
     drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -450,19 +449,19 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Clean up orphaned drafts (keep only the latest)
     if (drafts.length > 1) {
       log.info(
-        '[setPriority] Cleaning up ${drafts.length - 1} orphaned drafts for priority ${newPriority.id}',
+        '[setPriority] Cleaning up ${drafts.length - 1} extra drafts for priority ${newPriority.id}',
       );
       for (final stale in drafts.skip(1)) {
         await stale.delete();
       }
     }
 
-    // Load draft note for the draft thread (also load archived notes)
-    // We get all draft notes (archived or not) and take the latest one
+    // Load the latest active draft note for the draft thread
     final draftNotes =
         await (Store.get.select(Store.get.notes)
               ..where((tbl) => tbl.threadId.equalsValue(newDraft.id))
               ..where((tbl) => tbl.draft.equals(true))
+              ..where((tbl) => tbl.archivedAt.isNull())
               ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)])
               ..limit(1))
             .get();

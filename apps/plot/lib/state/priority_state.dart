@@ -870,7 +870,6 @@ class PriorityState extends Equatable {
 
           items[firstTodoIndex] = AgendaThreadItem(
             firstTodoItem.thread,
-            now: true,
           );
 
           if (!hasPrecedingThread) {
