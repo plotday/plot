@@ -847,6 +847,16 @@ extension TimeOfDayExtension on TimeOfDay {
           (m) => ' ${m[1]!.toLowerCase()}',
         );
   }
+
+  /// Compact format for narrow layouts: "9a", "12:55p" (no space, single letter).
+  String formatNarrow(BuildContext context) {
+    return format(context)
+        .replaceAll(':00', '')
+        .replaceAllMapped(
+          RegExp(r'\s?([AP])M$'),
+          (m) => m[1]!.toLowerCase(),
+        );
+  }
 }
 
 TimeOfDay parseTimeOfDay(String str) {

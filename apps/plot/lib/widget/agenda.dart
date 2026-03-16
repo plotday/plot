@@ -5,10 +5,32 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
+
+/// Width of the ThreadWidget leading builder (unread indicator + icon buttons).
+/// Used by [AgendaHeader] gap rows to right-align times at the same position
+/// where the ThreadWidget body begins.
+double agendaLeadingWidth(BuildContext context) {
+  final isWide = context.isMultiPanel;
+  final ghostPad = context
+      .theme
+      .buttonStyles
+      .ghost
+      .md
+      .iconContentStyle
+      .padding
+      .resolve(TextDirection.ltr);
+  final buttonW = context.theme.iconSizes.base + ghostPad.horizontal;
+  final buttonCount = isWide ? 2 : 1;
+  final leftPad =
+      isWide ? context.theme.spacing.xl - 7.5 : context.theme.spacing.xl;
+  final rightPad = context.theme.spacing.sm;
+  return leftPad + buttonCount * buttonW + rightPad;
+}
 
 class AgendaHeader extends StatefulWidget {
   const AgendaHeader({
@@ -162,7 +184,9 @@ class _AgendaHeaderState extends State<AgendaHeader> {
         // Show time from DateTimeRange
         final timeOfDay = widget.dateTimeRange!.start?.toTimeOfDay();
         if (timeOfDay != null && timeOfDay.isMidnight != true) {
-          centerText = timeOfDay.formatShort(context);
+          centerText = context.isMultiPanel
+              ? timeOfDay.formatShort(context)
+              : timeOfDay.formatNarrow(context);
         }
       } else if (widget.date != null) {
         // Show date split into day-of-week and month+day for centered layout
@@ -359,30 +383,40 @@ class _AgendaHeaderState extends State<AgendaHeader> {
           : textColor;
       final timeStyle = TextStyle(color: contentColor, fontSize: fontSize);
 
+      // Match the ThreadWidget time position: the time right edge
+      // sits at leadingWidth - spacing.md from the body start.
+      final timeColWidth =
+          agendaLeadingWidth(context) - context.theme.spacing.md;
+
       final Widget child;
       if (centerText != null) {
-        // Right-aligned: [duration] · [time]
+        // Left time column (right-aligned to match thread times) + right-aligned duration
         child = Padding(
-          padding: EdgeInsets.symmetric(horizontal: context.contentPaddingH),
+          padding: EdgeInsets.only(right: context.contentPaddingH),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              if (durationText != null) ...[
-                Text(
-                  durationText,
-                  style: TextStyle(color: veryMuted, fontSize: fontSize),
+              SizedBox(
+                width: timeColWidth,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    centerText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: timeStyle,
+                  ),
                 ),
-                Text(
-                  ' · ',
-                  style: TextStyle(color: veryMuted, fontSize: fontSize),
-                ),
-              ],
-              Text(
-                centerText,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: timeStyle,
               ),
+              if (durationText != null)
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      durationText,
+                      style: TextStyle(color: veryMuted, fontSize: fontSize),
+                    ),
+                  ),
+                ),
             ],
           ),
         );

@@ -125,6 +125,7 @@ class ThreadWidget extends StatelessWidget {
     final listTile = ListTile(
       command: CommandWrapper(ChangeCurrentThread(activity), icon: Value(null)),
       longPressCommand: isTouchDevice ? ShowThreadCommands(activity) : null,
+      crossAxisAlignment: CrossAxisAlignment.start,
       title: activity.displayTitle,
       subtitle: activity.preview,
       padding: buildContext.isMultiPanel
@@ -173,9 +174,7 @@ class ThreadWidget extends StatelessWidget {
           todoIcon = Button.icon(
             CommandWrapper(
               ThreadDone(activity, bump: bump),
-              icon: Value(
-                hasPending ? FontAwesomeIcons.circle : PlotIcon.todo,
-              ),
+              icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
               hoverIcon: hasPending
                   ? Value(FontAwesomeIcons.circleCheck)
                   : Value(PlotIcon.finish),
@@ -188,6 +187,7 @@ class ThreadWidget extends StatelessWidget {
         }
 
         final isWide = buildContext.isMultiPanel;
+
         return Stack(
           children: [
             Positioned(
@@ -195,7 +195,7 @@ class ThreadWidget extends StatelessWidget {
               bottom: 0,
               left: isWide
                   ? (buildContext.theme.spacing.xl - 6) / 2
-                  : buildContext.theme.spacing.sm,
+                  : (buildContext.theme.spacing.xl - 6) / 2,
               width: 6,
               child: UnreadIndicator(
                 color: activity.priority.displayColor,
@@ -208,7 +208,7 @@ class ThreadWidget extends StatelessWidget {
                 bottom: buildContext.theme.spacing.sm,
                 left: isWide
                     ? buildContext.theme.spacing.xl - 7.5
-                    : buildContext.theme.spacing.sm,
+                    : buildContext.theme.spacing.xl,
                 right: buildContext.theme.spacing.sm,
               ),
               child: Row(
@@ -219,6 +219,37 @@ class ThreadWidget extends StatelessWidget {
                 ],
               ),
             ),
+            // Time label for timed events, positioned at the top
+            // to align with the body's header row.
+            if (isTimedEvent)
+              Positioned(
+                top: buildContext.theme.spacing.sm - 1,
+                left: 0,
+                width:
+                    agendaLeadingWidth(buildContext) -
+                    buildContext.theme.spacing.md,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    isWide
+                        ? activity.at!.start!.toTimeOfDay().formatShort(
+                            buildContext,
+                          )
+                        : activity.at!.start!.toTimeOfDay().formatNarrow(
+                            buildContext,
+                          ),
+                    style: TextStyle(
+                      color: now
+                          ? buildContext.colour.colours.fromTheme(
+                              activity.priority.displayColor,
+                            )
+                          : buildContext.theme.colors.mutedForeground,
+                      fontSize: buildContext.theme.typography.xs.fontSize,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ),
           ],
         );
       },
@@ -248,33 +279,7 @@ class ThreadWidget extends StatelessWidget {
               if (isTimedEvent)
                 Builder(
                   builder: (context) {
-                    final narrowLabelShift = (() {
-                      final ghostPad = context
-                          .theme
-                          .buttonStyles
-                          .ghost
-                          .md
-                          .iconContentStyle
-                          .padding
-                          .resolve(TextDirection.ltr);
-                      final buttonW =
-                          context.theme.iconSizes.base + ghostPad.horizontal;
-                      return -(buttonW +
-                          context.theme.spacing.md -
-                          context.theme.spacing.xs -
-                          8);
-                    })();
                     final veryMuted = context.theme.plotColors.veryMuted;
-                    final timingColor = now
-                        ? TextStyle(
-                            color: context.colour.colours.fromTheme(
-                              activity.priority.displayColor,
-                            ),
-                          )
-                        : null;
-                    final timeStr = activity.at!.start!
-                        .toTimeOfDay()
-                        .formatShort(context);
                     final hasDuration =
                         activity.at!.duration != null &&
                         activity.at!.duration!.inSeconds > 0;
@@ -287,7 +292,6 @@ class ThreadWidget extends StatelessWidget {
                           activity.at!.duration!.format(),
                           style: TextStyle(color: veryMuted),
                         ),
-                      Text(timeStr, style: timingColor),
                     ];
 
                     return DefaultTextStyle(
@@ -303,26 +307,20 @@ class ThreadWidget extends StatelessWidget {
                           right: buildContext.isMultiPanel
                               ? 0
                               : context.contentPaddingH -
-                                  context.theme.spacing.sm,
+                                    context.theme.spacing.sm,
                         ),
                         child: Row(
                           children: [
                             Expanded(
                               child: hasBodyLabel
-                                  ? Transform.translate(
-                                      offset: Offset(narrowLabelShift, 0),
-                                      child: PriorityLabel(
-                                        priority: activity.priority,
-                                        context: this.context,
-                                        color: headerFg,
-                                        fontSize: context
-                                            .theme
-                                            .typography
-                                            .xs
-                                            .fontSize,
-                                        height: 1,
-                                        muted: headerFg == null,
-                                      ),
+                                  ? PriorityLabel(
+                                      priority: activity.priority,
+                                      context: this.context,
+                                      color: headerFg,
+                                      fontSize:
+                                          context.theme.typography.xs.fontSize,
+                                      height: 1,
+                                      muted: headerFg == null,
                                     )
                                   : const SizedBox.shrink(),
                             ),
@@ -338,77 +336,40 @@ class ThreadWidget extends StatelessWidget {
                   },
                 ),
               if (hasTopLabel && !isTimedEvent)
-                Builder(
-                  builder: (context) {
-                    // When narrow, shift the label left so it starts at
-                    // spacing.xs + 7.5 from the tile's left edge (aligned
-                    // with the leading icon's left edge).
-                    final narrowLabelShift = buildContext.isMultiPanel
-                        ? 0.0
-                        : (() {
-                            final ghostPad = context
-                                .theme
-                                .buttonStyles
-                                .ghost
-                                .md
-                                .iconContentStyle
-                                .padding
-                                .resolve(TextDirection.ltr);
-                            final buttonW =
-                                context.theme.iconSizes.base +
-                                ghostPad.horizontal;
-                            return -(buttonW +
-                                context.theme.spacing.md -
-                                context.theme.spacing.xs -
-                                8);
-                          })();
-                    return Transform.translate(
-                      offset: Offset(narrowLabelShift, 0),
-                      child: DefaultTextStyle(
-                        style: TextStyle(
-                          color:
-                              headerFg ??
-                              buildContext.theme.colors.mutedForeground,
-                          fontSize: buildContext.theme.typography.xs.fontSize,
-                          height: 1,
-                        ),
-                        child: Builder(
-                          builder: (context) {
-                            return Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (hasBodyLabel)
-                                  Flexible(
-                                    child: PriorityLabel(
-                                      priority: activity.priority,
-                                      context: this.context,
-                                      color: headerFg,
-                                      fontSize:
-                                          context.theme.typography.xs.fontSize,
-                                      height: 1,
-                                      muted: headerFg == null,
-                                    ),
-                                  ),
-                                if (hasBodyLabel && hasScheduleLabel)
-                                  Text(' · '),
-                                if (scheduleDate != null) ...[
-                                  Text(
-                                    formatRelativeSchedule(
-                                      scheduleDate,
-                                      context,
-                                    ),
-                                  ),
-                                  if (activity.duration != null &&
-                                      activity.duration!.inSeconds > 0)
-                                    Text(' · ${activity.duration!.format()}'),
-                                ],
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    );
-                  },
+                DefaultTextStyle(
+                  style: TextStyle(
+                    color:
+                        headerFg ?? buildContext.theme.colors.mutedForeground,
+                    fontSize: buildContext.theme.typography.xs.fontSize,
+                    height: 1,
+                  ),
+                  child: Builder(
+                    builder: (context) {
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (hasBodyLabel)
+                            Flexible(
+                              child: PriorityLabel(
+                                priority: activity.priority,
+                                context: this.context,
+                                color: headerFg,
+                                fontSize: context.theme.typography.xs.fontSize,
+                                height: 1,
+                                muted: headerFg == null,
+                              ),
+                            ),
+                          if (hasBodyLabel && hasScheduleLabel) Text(' · '),
+                          if (scheduleDate != null) ...[
+                            Text(formatRelativeSchedule(scheduleDate, context)),
+                            if (activity.duration != null &&
+                                activity.duration!.inSeconds > 0)
+                              Text(' · ${activity.duration!.format()}'),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
                 ),
               // SizedBox + Stack keeps the title row height stable
               // regardless of whether ThreadCommands buttons are
@@ -442,10 +403,9 @@ class ThreadWidget extends StatelessWidget {
                           Expanded(
                             child: Text.rich(
                               overflow: TextOverflow.ellipsis,
-                              style: buildContext.theme.typography.md
-                                  .copyWith(
-                                    color: buildContext.colour.foreground,
-                                  ),
+                              style: buildContext.theme.typography.md.copyWith(
+                                color: buildContext.colour.foreground,
+                              ),
                               TextSpan(
                                 children: [
                                   TextSpan(
