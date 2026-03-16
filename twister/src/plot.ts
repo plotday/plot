@@ -337,6 +337,21 @@ export type ThreadMeta = {
 };
 
 /**
+ * Thread sub-type that determines the thread's icon and category.
+ * Available types depend on whether the priority is shared:
+ * - Private priorities: "notes" (default), "idea", "goal", "decision"
+ * - Shared priorities: all above plus "discussion" (default), "announcement", "ask"
+ */
+export type ThreadType =
+  | "notes"
+  | "idea"
+  | "goal"
+  | "decision"
+  | "discussion"
+  | "announcement"
+  | "ask";
+
+/**
  * Tags on an item, along with the actors who added each tag.
  */
 export type Tags = { [K in Tag]?: ActorId[] };
@@ -379,6 +394,8 @@ type ThreadFields = ThreadCommon & {
   title: string;
   /** The priority context this thread belongs to */
   priority: Priority;
+  /** The thread's sub-type/category. Determines the displayed icon. */
+  type: ThreadType | null;
   /** The schedule associated with this thread, if any */
   schedule?: Schedule;
   /** Source-specific metadata from the thread's link, populated on callbacks */
@@ -468,6 +485,12 @@ export type NewThread = Partial<
     tags?: NewTags;
 
     /**
+     * The thread's sub-type/category. Sets the thread's icon.
+     * If omitted, defaults to "notes" (private) or "discussion" (shared).
+     */
+    type?: ThreadType;
+
+    /**
      * Whether the thread should be marked as unread for users.
      * - undefined/omitted (default): Thread is unread for users, except auto-marked
      *   as read for the author if they are the twist owner (user)
@@ -532,6 +555,11 @@ type ThreadSingleUpdateFields = ThreadBulkUpdateFields & {
    * This is allowed on all threads the twist has access to.
    */
   twistTags?: Partial<Record<Tag, boolean>>;
+
+  /**
+   * Update the thread's sub-type/category.
+   */
+  type?: ThreadType;
 
   /**
    * Optional preview content for the thread. Can be Markdown formatted.
