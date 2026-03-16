@@ -1348,6 +1348,18 @@ class EditTwist extends ShowForm {
   final PriorityTwist priorityTwist;
   final Priority? priority;
 
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final url = isDark && priorityTwist.logoUrlDark != null
+        ? priorityTwist.logoUrlDark
+        : priorityTwist.logoUrl;
+    if (url != null) {
+      return LogoImage(url: url, size: context.theme.iconSizes.base);
+    }
+    return null;
+  }
+
   static Future<FormData> _buildForm(
     BuildContext context,
     PriorityTwist priorityTwist,
@@ -1549,6 +1561,18 @@ class ShowTwistInfo extends ShowForm {
       );
 
   final Twist twist;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    final isDark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final url = isDark && twist.logoUrlDark != null
+        ? twist.logoUrlDark
+        : twist.logoUrl;
+    if (url != null) {
+      return LogoImage(url: url, size: context.theme.iconSizes.base);
+    }
+    return null;
+  }
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

@@ -1,7 +1,7 @@
 name: Deploy Twists & Connectors
 
 env:
-  TWISTS: "plot,chat"
+  TWISTS: "plot,claude,chatgpt,gemini"
   CONNECTORS: "github,gmail,google-calendar,google-contacts,google-drive,linear"
 
 on:

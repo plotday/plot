@@ -23,6 +23,8 @@ class PriorityState extends Equatable {
     List<AgendaItem> activityFeedItems = const [],
     bool activityFeedDoneEnd = false,
     List<AgendaItem>? reorderViewItems,
+    List<String> iconFilter = const [],
+    List<(ThreadSubType, int)> iconCounts = const [],
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -51,6 +53,12 @@ class PriorityState extends Equatable {
       reorderViewItems: reorderViewItems != null
           ? List.unmodifiable(reorderViewItems)
           : null,
+      iconFilter: iconFilter.isNotEmpty
+          ? List.unmodifiable(iconFilter)
+          : iconFilter,
+      iconCounts: iconCounts.isNotEmpty
+          ? List.unmodifiable(iconCounts)
+          : iconCounts,
     );
   }
 
@@ -71,6 +79,8 @@ class PriorityState extends Equatable {
     this.activityFeedItems = const [],
     this.activityFeedDoneEnd = false,
     this.reorderViewItems,
+    this.iconFilter = const [],
+    this.iconCounts = const [],
   });
 
   final Priority context;
@@ -93,6 +103,9 @@ class PriorityState extends Equatable {
   /// [agendaViewItems] returns this directly instead of re-deriving.
   /// Cleared when new agenda data arrives.
   final List<AgendaItem>? reorderViewItems;
+
+  final List<String> iconFilter;
+  final List<(ThreadSubType, int)> iconCounts;
 
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
@@ -139,8 +152,7 @@ class PriorityState extends Equatable {
     }
 
     // If _makeAgenda already created a "Now" text header (e.g. between past
-    // threads and todos), strip orphaned items before it so we don't
-    // synthesize a duplicate.
+    // threads and todos), strip it — we no longer show standalone "Now" headers.
     if (nowEventIdx <= 0) {
       final nowTextIdx = result.indexWhere(
         (item) =>
@@ -151,30 +163,21 @@ class PriorityState extends Equatable {
       );
       if (nowTextIdx > 0) {
         result.removeRange(0, nowTextIdx);
+        // Remove the "Now" text header itself
+        result.removeAt(0);
       }
     }
 
-    // Synthesize a "Now" header at the top if not already present.
-    if (result.isEmpty ||
-        result.first is! AgendaHeaderItem ||
-        !(result.first as AgendaHeaderItem).now) {
-      // Find countdown info: look for the next event
-      DateTimeRange? dateTimeRange;
-      for (final item in agendaItems) {
-        if (item is AgendaHeaderItem &&
-            item.dateTimeRange != null &&
-            item.thread != null) {
-          final eventStart = item.dateTimeRange!.start;
-          if (eventStart != null && eventStart.isAfter(now)) {
-            dateTimeRange = DateTimeRange(now, eventStart);
-          }
-          break;
-        }
+    // Mark the first future event as isNext for countdown display.
+    for (int i = 0; i < result.length; i++) {
+      final item = result[i];
+      if (item is AgendaThreadItem &&
+          !item.now &&
+          item.thread.at?.start != null &&
+          item.thread.at!.start!.isAfter(now)) {
+        result[i] = AgendaThreadItem(item.thread, isNext: true);
+        break;
       }
-      result.insert(
-        0,
-        AgendaHeaderItem(now: true, text: 'Now', dateTimeRange: dateTimeRange),
-      );
     }
 
     return result;
@@ -586,20 +589,6 @@ class PriorityState extends Equatable {
               skipHeaderFor: context,
             );
 
-            items.add(
-              AgendaHeaderItem(
-                dateTimeRange:
-                    afterNowScheduled.firstOrNull?.at?.start != null
-                    ? DateTimeRange(
-                        now,
-                        afterNowScheduled.firstOrNull!.at!.start!,
-                      )
-                    : null,
-                now: true,
-                text: 'Now',
-              ),
-            );
-
             if (otherBeforeNowThreads.isNotEmpty) {
               final sortedTodos = otherBeforeNowThreads.toList()
                 ..sort((a, b) => a.order.compareTo(b.order));
@@ -973,6 +962,8 @@ class PriorityState extends Equatable {
     List<AgendaItem>? activityFeedItems,
     bool? activityFeedDoneEnd,
     Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
+    List<String>? iconFilter,
+    List<(ThreadSubType, int)>? iconCounts,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -1007,6 +998,12 @@ class PriorityState extends Equatable {
                 : activityFeedItems)
           : this.activityFeedItems,
       activityFeedDoneEnd: activityFeedDoneEnd ?? this.activityFeedDoneEnd,
+      iconFilter: iconFilter != null
+          ? (iconFilter.isNotEmpty ? List.unmodifiable(iconFilter) : iconFilter)
+          : this.iconFilter,
+      iconCounts: iconCounts != null
+          ? (iconCounts.isNotEmpty ? List.unmodifiable(iconCounts) : iconCounts)
+          : this.iconCounts,
     );
   }
 
@@ -1028,6 +1025,8 @@ class PriorityState extends Equatable {
     activityFeedItems,
     activityFeedDoneEnd,
     reorderViewItems,
+    iconFilter,
+    iconCounts,
   ];
 
   @override
@@ -1088,13 +1087,14 @@ class AgendaHeaderItem extends AgendaItem {
 }
 
 class AgendaThreadItem extends AgendaItem {
-  const AgendaThreadItem(this.thread, {this.now = false});
+  const AgendaThreadItem(this.thread, {this.now = false, this.isNext = false});
 
   final Thread thread;
   final bool now;
+  final bool isNext;
 
   @override
-  List<Object?> get props => [thread, now];
+  List<Object?> get props => [thread, now, isNext];
 
   @override
   String toString() =>

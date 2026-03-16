@@ -1597,6 +1597,7 @@ export type Database = {
           created_at: string
           created_by: string
           draft: boolean
+          icon: string | null
           id: string
           key: string | null
           last_note_created_at: string | null
@@ -1614,6 +1615,7 @@ export type Database = {
           created_at?: string
           created_by: string
           draft?: boolean
+          icon?: string | null
           id?: string
           key?: string | null
           last_note_created_at?: string | null
@@ -1631,6 +1633,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           draft?: boolean
+          icon?: string | null
           id?: string
           key?: string | null
           last_note_created_at?: string | null
@@ -3312,6 +3315,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           draft: boolean | null
+          icon: string | null
           id: string | null
           key: string | null
           last_note_created_at: string | null
@@ -3796,6 +3800,7 @@ export type Database = {
           bumped_at: string | null
           created_at: string | null
           draft: boolean | null
+          icon: string | null
           id: string | null
           importance: number | null
           last_note_created_at: string | null

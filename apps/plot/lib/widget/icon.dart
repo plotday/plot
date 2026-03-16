@@ -38,6 +38,7 @@ class PlotIcon {
   static const next = FontAwesomeIcons.arrowDownToLine;
   static const previous = FontAwesomeIcons.arrowUpToLine;
   static const note = FontAwesomeIcons.note;
+  static const notes = FontAwesomeIcons.notes;
   static const reschedule = FontAwesomeIcons.calendarPen;
   static const calendarPlus = FontAwesomeIcons.calendarPlus;
   static const calendarXmark = FontAwesomeIcons.calendarXmark;
@@ -49,6 +50,9 @@ class PlotIcon {
   static const private = FontAwesomeIcons.lock;
   static const offline = FontAwesomeIcons.wifiSlash;
   static const notification = FontAwesomeIcons.bellRing;
+  static const agenda = FontAwesomeIcons.calendarStar;
+  static const message = FontAwesomeIcons.message;
+  static const messages = FontAwesomeIcons.messages;
 
   // Task icons
   static const selfTask = FontAwesomeIcons.circlePlus;
@@ -62,8 +66,6 @@ class PlotIcon {
   static const assignRemove = FontAwesomeIcons.circleUserCircleXmark;
 
   // Tags
-  static const now = FontAwesomeIcons.circlePlay;
-  static const agenda = FontAwesomeIcons.calendarStar;
   static const todo = FontAwesomeIcons.play;
   static const addTodo = FontAwesomeIcons.play;
   static const finish = FontAwesomeIcons.stop;
@@ -119,6 +121,9 @@ class PlotIcon {
   static const attend = FontAwesomeIcons.userCheck;
   static const skip = FontAwesomeIcons.userXmark;
   static const undecided = FontAwesomeIcons.userQuestion;
+
+  // Thread sub-types
+  static const bullhorn = FontAwesomeIcons.bullhorn;
 
   // Conferencing
   static const video = FontAwesomeIcons.video;

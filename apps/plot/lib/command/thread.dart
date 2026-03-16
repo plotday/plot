@@ -402,7 +402,10 @@ class AddThreadWithLink extends Command {
 
     // Set the thread title to the fetched page title or the URL
     final threadTitle = linkTitle ?? linkUrl;
-    final thread = draft.copyWith(title: Value(threadTitle));
+    final thread = draft.copyWith(
+      title: Value(threadTitle),
+      icon: Value(linkFavicon ?? 'link'),
+    );
 
     // Save the thread via PriorityBloc.add (handles draft reset)
     final savedThread = await priorityBloc.add(thread);
@@ -1499,6 +1502,50 @@ class ShowThreadCommands extends ShowCommands {
           prompt: thread.title ?? 'Thread',
         ),
       );
+}
+
+class ChangeThreadSubType extends ShowCommands {
+  ChangeThreadSubType(Thread thread)
+    : super(
+        title: 'Change type',
+        icon: PlotIcon.notes,
+        commandsBuilder: (context) async {
+          final types = ThreadSubType.forPriority(
+            sharing: thread.priority.sharing,
+          );
+          return Commands(
+            prompt: 'Select type',
+            groups: [
+              StaticCommandGroup(
+                title: null,
+                commands: types
+                    .map((t) => SetThreadSubType(thread, t))
+                    .toList(),
+              ),
+            ],
+          );
+        },
+      );
+}
+
+class SetThreadSubType extends Command {
+  SetThreadSubType(this.thread, this.subType)
+    : super(
+        title: subType.label,
+        icon: subType.icon,
+        on: thread.icon == subType.value ? true : null,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final Thread thread;
+  final ThreadSubType subType;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await thread.copyWith(icon: Value(subType.value)).save();
+    return const CommandDone();
+  }
 }
 
 // Focus navigation intents and actions for list items

@@ -32,7 +32,8 @@ class LinkTypeConfig {
       statuses: (json['statuses'] as List<dynamic>?)
           ?.map((s) => LinkStatus.fromJson(s as Map<String, dynamic>))
           .toList(),
-      supportsAssignee: json['supportsAssignee'] as bool? ??
+      supportsAssignee:
+          json['supportsAssignee'] as bool? ??
           json['supports_assignee'] as bool? ??
           false,
     );
@@ -46,7 +47,12 @@ class LinkStatus {
   final int? tag;
   final bool done;
 
-  const LinkStatus({required this.status, required this.label, this.tag, this.done = false});
+  const LinkStatus({
+    required this.status,
+    required this.label,
+    this.tag,
+    this.done = false,
+  });
 
   factory LinkStatus.fromJson(Map<String, dynamic> json) {
     return LinkStatus(
@@ -65,23 +71,22 @@ class Links extends Table with SyncableTable, UuidTable, CreatedTable {
   TextColumn get source => text().nullable()();
   DateTimeColumn get sourceCreatedAt =>
       dateTime().map(const LocalDateTimeConverter())();
-  BlobColumn get authorId =>
-      blob().nullable().map(const ActorIdConverter())();
+  BlobColumn get authorId => blob().nullable().map(const ActorIdConverter())();
   BlobColumn get assigneeId =>
       blob().nullable().map(const ActorIdConverter())();
-  BlobColumn get createdBy =>
-      blob().nullable().map(const UuidConverter())();
+  BlobColumn get createdBy => blob().nullable().map(const UuidConverter())();
   TextColumn get title => text().nullable()();
   TextColumn get preview => text().nullable()();
   TextColumn get type => text().nullable()();
   TextColumn get status => text().nullable()();
-  TextColumn get actions => text().nullable().map(const UserActionsConverter())();
-  TextColumn get meta =>
-      text().nullable().map(const JsonConverter())();
+  TextColumn get actions =>
+      text().nullable().map(const UserActionsConverter())();
+  TextColumn get meta => text().nullable().map(const JsonConverter())();
   TextColumn get sourceUrl => text().nullable()();
   TextColumn get channelId => text().nullable()();
   TextColumn get logo => text().nullable()();
-  BlobColumn get mergedFromThreadId => blob().nullable().map(const UuidConverter())();
+  BlobColumn get mergedFromThreadId =>
+      blob().nullable().map(const UuidConverter())();
 }
 
 class LinksBase extends BaseTable {
@@ -156,9 +161,10 @@ class Link extends Equatable {
     final config = getTypeConfig();
     if (config == null || status == null) return status;
     return config.statuses
-        ?.where((s) => s.status == status)
-        .firstOrNull
-        ?.label ?? status;
+            ?.where((s) => s.status == status)
+            .firstOrNull
+            ?.label ??
+        status;
   }
 
   /// Get the logo URL from the link's type config, falling back to per-link logo.
@@ -197,25 +203,25 @@ class Link extends Equatable {
 
   /// Find links by exact source URL match
   static Future<List<Link>> findBySourceUrl(String url) async {
-    final rows = await (Store.get.select(Store.get.links)
-          ..where((l) => l.sourceUrl.equals(url)))
-        .get();
+    final rows = await (Store.get.select(
+      Store.get.links,
+    )..where((l) => l.sourceUrl.equals(url))).get();
     return rows.map((row) => Link(row)).toList();
   }
 
   /// Search links by title (case-insensitive substring match)
   static Future<List<Link>> searchByTitle(String query) async {
-    final rows = await (Store.get.select(Store.get.links)
-          ..where((l) => l.title.like('%$query%')))
-        .get();
+    final rows = await (Store.get.select(
+      Store.get.links,
+    )..where((l) => l.title.like('%$query%'))).get();
     return rows.map((row) => Link(row)).toList();
   }
 
   /// Get links for a given thread
   static Future<List<Link>> getForThread(ThreadId threadId) async {
-    final rows = await (Store.get.select(Store.get.links)
-          ..where((l) => l.threadId.equals(threadId.toBytes())))
-        .get();
+    final rows = await (Store.get.select(
+      Store.get.links,
+    )..where((l) => l.threadId.equals(threadId.toBytes()))).get();
     return rows.map((row) => Link(row)).toList();
   }
 

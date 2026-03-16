@@ -70,6 +70,18 @@ export async function createLink(
       }
     }
 
+    // Look up twist_id for icon
+    const ptRow = await plot.db
+      .selectFrom("priority_twist")
+      .select("twist_id")
+      .where("id", "=", plot.priorityTwistId)
+      .executeTakeFirst();
+    if (ptRow) {
+      threadData.icon = link.type
+        ? `connector:${ptRow.twist_id}:${link.type}`
+        : `connector:${ptRow.twist_id}`;
+    }
+
     let threadId = await createThread(plot, threadData);
 
     // Step 2: Create the link row

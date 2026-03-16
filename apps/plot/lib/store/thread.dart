@@ -24,6 +24,7 @@ class Threads extends Table
   BoolColumn get unreadUpdated => boolean().nullable()();
   DateTimeColumn get bumpedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
+  TextColumn get icon => text().nullable()();
 }
 
 @DataClassName('ScheduleRow')
@@ -621,6 +622,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool self = true,
     ThreadOrder order = ThreadOrder.sorted,
     List<Tag>? filter,
+    List<String>? iconFilter,
     bool includeAllFutureEvents = false,
   }) async {
     return await _get(
@@ -634,6 +636,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       search: search,
       self: self,
       filter: filter,
+      iconFilter: iconFilter,
       includeAllFutureEvents: includeAllFutureEvents,
     );
   }
@@ -650,6 +653,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool self = true,
     ThreadOrder order = ThreadOrder.sorted,
     List<Tag>? filter,
+    List<String>? iconFilter,
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
     int? limit,
@@ -666,6 +670,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       search: search,
       self: self,
       filter: filter,
+      iconFilter: iconFilter,
       includeAllFutureEvents: includeAllFutureEvents,
       includeUnscheduled: includeUnscheduled,
       limit: limit,
@@ -881,6 +886,40 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
+  /// Watches icon value counts for non-archived threads in a priority subtree.
+  static Stream<List<(String, int)>> watchIconCountsForPriority(
+    Path priorityPath,
+  ) {
+    final a = Store.get.threads;
+    final p = Store.get.priorities;
+    final priorityPathLike = '$priorityPath.%';
+
+    final query = Store.get.selectOnly(a)
+      ..addColumns([a.icon, a.id.count()])
+      ..join([
+        innerJoin(
+          p,
+          p.id.equalsExp(a.priorityId) &
+              (p.path.equalsValue(priorityPath) |
+                  p.path.likeExp(Constant(priorityPathLike))),
+        ),
+      ])
+      ..where(a.archivedAt.isNull() & a.draft.equals(false))
+      ..groupBy([a.icon]);
+
+    return query.watch().map((rows) {
+      return rows
+          .map((row) {
+            final icon = row.read(a.icon);
+            final count = row.read(a.id.count());
+            if (icon == null || count == null) return null;
+            return (icon, count);
+          })
+          .whereType<(String, int)>()
+          .toList();
+    });
+  }
+
   static Future<List<Thread>> _get({
     DateRange? range,
     bool strictRange = false,
@@ -897,6 +936,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool includeAllFutureEvents = false,
     String? search,
     List<Tag>? filter,
+    List<String>? iconFilter,
 
     /* Sorting */
     ThreadOrder order = ThreadOrder.sorted,
@@ -920,6 +960,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       includeAllFutureEvents: includeAllFutureEvents,
       search: search,
       filter: filter,
+      iconFilter: iconFilter,
       order: order,
       limit: limit,
       offset: offset,
@@ -948,6 +989,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool includeUnscheduled = true,
     String? search,
     List<Tag>? filter,
+    List<String>? iconFilter,
 
     /* Sorting */
     ThreadOrder order = ThreadOrder.sorted,
@@ -1105,6 +1147,9 @@ class Thread extends Equatable implements Comparable<Thread> {
           '''),
         );
       }
+    }
+    if (iconFilter != null && iconFilter.isNotEmpty) {
+      query.where(a.icon.isIn(iconFilter));
     }
     if (self == false) {
       if (id != null) {
@@ -1717,6 +1762,56 @@ class Thread extends Equatable implements Comparable<Thread> {
         }
       }
     }
+
+    // Bulk-load occurrence-specific tags for generated recurring occurrences.
+    // The main query joins tags via schedule occurrence, so tags saved on
+    // generated occurrences (which have no stored schedule row) are invisible.
+    final missingTagIds = <Uuid>{};
+    for (final thread in threadList) {
+      if (thread._tags == null && thread._schedule?.occurrence != null) {
+        missingTagIds.add(thread.id);
+      }
+    }
+    if (missingTagIds.isNotEmpty) {
+      final tagTable = Store.get.threadTags;
+      final tagQuery = Store.get.select(tagTable)
+        ..where(
+          (t) =>
+              t.id.isIn(missingTagIds.map((id) => id.toBytes()).toList()) &
+              t.occurrence.equals('').not(),
+        );
+      final tagResults = await tagQuery.get();
+
+      if (tagResults.isNotEmpty) {
+        // Index by (threadId, occurrence)
+        final tagMap = <String, ThreadTagsRow>{};
+        for (final row in tagResults) {
+          tagMap['${row.id}:${row.occurrence}'] = row;
+        }
+
+        for (int i = 0; i < threadList.length; i++) {
+          final thread = threadList[i];
+          if (thread._tags == null && thread._schedule?.occurrence != null) {
+            final key = '${thread.id}:${thread._schedule!.occurrence}';
+            final tagRow = tagMap[key];
+            if (tagRow != null) {
+              threadList[i] = Thread._fromStore(
+                activity: thread._thread,
+                schedule: thread._schedule,
+                userSchedule: thread._userSchedule,
+                tags: tagRow,
+                priority: thread.priority,
+                isLinkScheduleInstance: thread.isLinkScheduleInstance,
+                active: thread._active,
+                unreadComputed: thread._unreadComputed,
+                linkSourceCreatedAt: thread._linkSourceCreatedAt,
+              );
+            }
+          }
+        }
+      }
+    }
+
     return threadList;
   }
 
@@ -1777,6 +1872,7 @@ class Thread extends Equatable implements Comparable<Thread> {
        _unreadComputed = null,
        _linkSourceCreatedAt = null,
        _activityDirty = true,
+       _scheduleDirty = true,
        isLinkScheduleInstance = false;
 
   Thread._fromStore({
@@ -1791,6 +1887,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     this.isLinkScheduleInstance = false,
     DateTime? linkSourceCreatedAt,
     bool activityDirty = false,
+    bool scheduleDirty = false,
   }) : _thread = activity,
        _schedule = schedule,
        _userSchedule = userSchedule,
@@ -1799,7 +1896,8 @@ class Thread extends Equatable implements Comparable<Thread> {
        _active = active,
        _unreadComputed = unreadComputed,
        _linkSourceCreatedAt = linkSourceCreatedAt,
-       _activityDirty = activityDirty {
+       _activityDirty = activityDirty,
+       _scheduleDirty = scheduleDirty {
     assert(
       priority.id == activity.priorityId,
       "Priority does not match activity",
@@ -1815,6 +1913,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   final bool? _unreadComputed;
   final DateTime? _linkSourceCreatedAt;
   final bool _activityDirty;
+  final bool _scheduleDirty;
 
   /// Whether this instance represents a link schedule (event from a linked item).
   /// Link schedule instances appear at their event time and are not reorderable.
@@ -1875,6 +1974,63 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   String? get title => _thread.title;
   String? get preview => _thread.preview;
+  String? get icon => _thread.icon;
+
+  /// Resolves a thread icon identifier to a logo URL and fallback icon.
+  static ({String? logoUrl, String? logoDarkUrl, IconData fallbackIcon}) resolveIcon(
+    String? icon, {
+    required bool prioritySharing,
+  }) {
+    if (icon == null) {
+      return (
+        logoUrl: null,
+        logoDarkUrl: null,
+        fallbackIcon: prioritySharing ? PlotIcon.messages : PlotIcon.notes,
+      );
+    }
+    if (icon.startsWith('http')) {
+      return (logoUrl: icon, logoDarkUrl: null, fallbackIcon: PlotIcon.link);
+    }
+    if (icon == 'link') {
+      return (logoUrl: null, logoDarkUrl: null, fallbackIcon: PlotIcon.link);
+    }
+    if (icon.startsWith('twist:')) {
+      final twistId = BigInt.tryParse(icon.substring(6));
+      if (twistId != null) {
+        final pt = PriorityTwist.findByTwistId(twistId);
+        if (pt?.logoUrl != null) {
+          return (logoUrl: pt!.logoUrl, logoDarkUrl: pt.logoUrlDark, fallbackIcon: PlotIcon.twist);
+        }
+      }
+      return (logoUrl: null, logoDarkUrl: null, fallbackIcon: PlotIcon.twist);
+    }
+    if (icon.startsWith('connector:')) {
+      final parts = icon.substring(10).split(':');
+      final twistId = BigInt.tryParse(parts[0]);
+      final type = parts.length > 1 ? parts[1] : null;
+      if (twistId != null) {
+        final pt = PriorityTwist.findByTwistId(twistId);
+        if (pt != null) {
+          if (type != null) {
+            final config = pt.parsedLinkTypes?.where((c) => c.type == type).firstOrNull;
+            if (config?.logo != null) {
+              return (logoUrl: config!.logo, logoDarkUrl: config.logoDark, fallbackIcon: PlotIcon.link);
+            }
+          }
+          if (pt.logoUrl != null) {
+            return (logoUrl: pt.logoUrl, logoDarkUrl: pt.logoUrlDark, fallbackIcon: PlotIcon.link);
+          }
+        }
+      }
+      return (logoUrl: null, logoDarkUrl: null, fallbackIcon: PlotIcon.link);
+    }
+    final subType = ThreadSubType.fromIcon(icon);
+    if (subType != null) {
+      return (logoUrl: null, logoDarkUrl: null, fallbackIcon: subType.icon);
+    }
+    return (logoUrl: null, logoDarkUrl: null, fallbackIcon: prioritySharing ? PlotIcon.messages : PlotIcon.notes);
+  }
+
   List<Uuid>? get mentions => _thread.mentions;
   List<Note>? get notes => _notes;
 
@@ -2256,6 +2412,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool? unread,
     Value<List<Uuid>?> mentions = const Value.absent(),
     Value<String?> preview = const Value.absent(),
+    Value<String?> icon = const Value.absent(),
     Value<List<Note>?> notes = const Value.absent(),
 
     // These fields update the exception if this is a recurrence, or the root activity otherwise
@@ -2297,6 +2454,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         unread != null ||
         mentions.present ||
         preview.present ||
+        icon.present ||
         archivedAt.present ||
         bumpedAt.present ||
         title.present) {
@@ -2307,6 +2465,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         private: private,
         mentions: mentions,
         preview: preview,
+        icon: icon,
         createdAt: draft == false && _thread.draft ? now : null,
         updatedAt: now,
         archivedAt: archivedAt,
@@ -2524,6 +2683,16 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
     }
 
+    final scheduleDirty = at.present ||
+        on.present ||
+        duration.present ||
+        recurrenceRule.present ||
+        recurrenceExdates.present ||
+        recurrenceAt.present ||
+        recurrenceOn.present ||
+        recurrenceDuration.present ||
+        recurrenceDeletedAt.present;
+
     return Thread._fromStore(
       activity: activity,
       schedule: schedule,
@@ -2534,6 +2703,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       isLinkScheduleInstance: isLinkScheduleInstance,
       unreadComputed: unread != null ? null : _unreadComputed,
       activityDirty: activityDirty,
+      scheduleDirty: scheduleDirty,
     );
   }
 
@@ -2687,7 +2857,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         ThreadsBase(),
       );
     }
-    if (_schedule != null && _schedule.linkId == null) {
+    if (_scheduleDirty && _schedule != null && _schedule.linkId == null) {
       await Store.get.save(
         Store.get.schedules,
         _schedule.toCompanion(false),

@@ -66,6 +66,7 @@ part 'thread_fts.dart';
 part 'note_fts.dart';
 part 'session.dart';
 part 'tag.dart';
+part 'thread_sub_type.dart';
 part 'user_settings.dart';
 part 'source_channel.dart';
 
@@ -1828,7 +1829,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 279;
+  int get schemaVersion => 284;
 
   @override
   MigrationStrategy get migration {
@@ -2352,6 +2353,36 @@ class Store extends _$Store {
       // and just sets it to now() without fetching.
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'schedules'",
+      );
+    }
+    if (from < 280) {
+      await _safeAddColumn(m, threads, threads.icon);
+    }
+    if (from < 281) {
+      // Clean up spurious schedule rows created when toggling tags on
+      // recurring event occurrences. These rows have occurrence set (from
+      // the generated occurrence) but no link_id and no user_id, which
+      // should never exist for shared thread-level schedules.
+      await m.database.customStatement('''
+        DELETE FROM schedules
+        WHERE occurrence IS NOT NULL
+          AND link_id IS NULL
+          AND user_id IS NULL
+      ''');
+    }
+    if (from < 283) {
+      await _safeAddColumn(m, threads, threads.icon);
+    }
+    if (from < 284) {
+      // Ensure icon column exists — earlier migrations may have targeted
+      // the wrong table name. Try both possible names.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE activities ADD COLUMN icon TEXT',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE threads ADD COLUMN icon TEXT',
       );
     }
   }

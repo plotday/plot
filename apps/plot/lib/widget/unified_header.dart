@@ -312,13 +312,36 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     // In single panel with a thread visible, show activity title
     if (!layoutState.multiPanel && hasActivity && state.thread != null) {
+      final thread = state.thread!;
+      final resolved = Thread.resolveIcon(
+        thread.icon,
+        prioritySharing: thread.priority.sharing,
+      );
+      final isSubType =
+          ThreadSubType.fromIcon(thread.icon) != null || thread.icon == null;
+
       return Expanded(
         child: Row(
           spacing: 8,
           children: [
+            if (isSubType && !thread.priority.isViewer)
+              GestureDetector(
+                onTap: () => context.run(ChangeThreadSubType(thread)),
+                child: Icon(
+                  resolved.fallbackIcon,
+                  size: 14,
+                  color: context.theme.colors.mutedForeground,
+                ),
+              )
+            else
+              Icon(
+                resolved.fallbackIcon,
+                size: 14,
+                color: context.theme.colors.mutedForeground,
+              ),
             Flexible(
               child: Text(
-                state.thread!.displayTitle,
+                thread.displayTitle,
                 overflow: TextOverflow.ellipsis,
                 style: context.theme.typography.sm,
               ),
@@ -394,6 +417,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   ) {
     // Build filter commands based on visibility
     final filterCommands = <Command>[
+      // Icon sub-type filters
+      ...state.iconCounts.map(
+        (data) => ToggleIconFilter(data.$1, context: context),
+      ),
       // Priority tag filters
       ...state.tags.map(
         (tagData) => ToggleActivityFilter(tagData.$1, context: context),

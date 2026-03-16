@@ -13,7 +13,8 @@ CREATE TABLE "public"."thread" (
     "last_note_created_at" timestamp with time zone,
     "sync_depth" integer,
     "last_note_source_created_at" timestamp with time zone,
-    "key" text
+    "key" text,
+    "icon" text
 );
 
 ALTER TABLE "public"."thread"

@@ -1,6 +1,7 @@
 import type { Database, Json } from "@plotday/db";
 import {
   type Thread,
+  type ThreadType,
   type Link,
   type ThreadMeta,
   type Actor,
@@ -25,6 +26,7 @@ export function fromDbThread(
     title: dbThread.title || "",
     private: dbThread.private ?? false,
     archived: dbThread.archived_at !== null,
+    type: (dbThread.icon as ThreadType) ?? null,
     priority: {
       id: dbThread.priority_id as Uuid,
       title: dbThread.title ?? "Untitled",

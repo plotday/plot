@@ -155,22 +155,27 @@ class BroadcastClient with WidgetsBindingObserver {
       final userId = Base.userId.toString();
 
       // Build WebSocket URL
-      final wsUri = Uri.parse(
-        _wsScheme('${Env.apiRoot}/updates/$userId'),
-      ).replace(queryParameters: {
-        'clientId': _clientId.toString(),
-        'clientVersion': '${AppInfo.version}/${AppInfo.buildNumber}',
-        'clientPlatform': AppInfo.platform,
-      });
+      final wsUri = Uri.parse(_wsScheme('${Env.apiRoot}/updates/$userId'))
+          .replace(
+            queryParameters: {
+              'clientId': _clientId.toString(),
+              'clientVersion': '${AppInfo.version}/${AppInfo.buildNumber}',
+              'clientPlatform': AppInfo.platform,
+            },
+          );
 
-      _channel = createWebSocketChannel(wsUri, ['plot-v1', token]);
+      final channel = createWebSocketChannel(wsUri, ['plot-v1', token]);
+      _channel = channel;
 
       // Wait for connection to be established
       // This will throw WebSocketChannelException if connection fails (e.g., HTTP 401)
-      await _channel!.ready;
+      await channel.ready;
+
+      // Channel may have been cleaned up during the await (e.g. disconnect() called)
+      if (_channel != channel) return;
 
       // Listen for messages
-      _messageSubscription = _channel!.stream.listen(
+      _messageSubscription = channel.stream.listen(
         _handleMessage,
         onError: _handleError,
         onDone: _handleDisconnection,

@@ -61,6 +61,12 @@ class PriorityTwist extends PriorityTwistRow {
   /// Returns null if the twist is not cached.
   static PriorityTwist? fromCache(PriorityTwistId id) => _cache[id];
 
+  /// Find a PriorityTwist by its twist ID (bigint) from the in-memory cache.
+  /// Returns the first match or null if not found.
+  static PriorityTwist? findByTwistId(BigInt twistId) {
+    return _cache.values.where((pt) => pt.twistId == twistId).firstOrNull;
+  }
+
   /// Clear the entire PriorityTwist cache
   static void clearCache() {
     _cache.clear();

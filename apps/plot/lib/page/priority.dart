@@ -1163,6 +1163,7 @@ class _PriorityPageState extends State<PriorityPage> {
                         state.thread != null &&
                         agendaActivity.thread.id == state.thread!.id,
                     now: agendaActivity.now,
+                    isNext: agendaActivity.isNext,
                     focusNode: focusNode,
                     context: state.context,
                     showSubPriority: true,

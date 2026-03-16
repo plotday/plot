@@ -54,8 +54,9 @@ enum Tag {
     PlotIcon.decision,
     'Decision',
     shortcodes: ['decision', 'thinking_face'],
+    addable: false,
   ),
-  goal(103, PlotIcon.goal, 'Goal', shortcodes: ['goal', 'dart']),
+  goal(103, PlotIcon.goal, 'Goal', shortcodes: ['goal', 'dart'], addable: false),
   urgent(101, PlotIcon.urgent, 'Urgent', shortcodes: ['rotating_light']),
   waiting(
     105,
@@ -65,10 +66,10 @@ enum Tag {
   ),
   blocked(106, PlotIcon.blocked, 'Blocked', shortcodes: ['blocked', 'x']),
   warning(107, PlotIcon.warning, 'Warning', shortcodes: ['warning']),
-  question(108, PlotIcon.question, 'Question', shortcodes: ['question']),
+  question(108, PlotIcon.question, 'Question', shortcodes: ['question'], addable: false),
   twist(109, PlotIcon.twist, 'Twisting', shortcodes: ['twist', 'twisting'], addable: false),
   star(110, PlotIcon.star, 'Star', shortcodes: ['star']),
-  idea(111, PlotIcon.idea, 'Idea', shortcodes: ['idea', 'bulb', 'lightbulb']),
+  idea(111, PlotIcon.idea, 'Idea', shortcodes: ['idea', 'bulb', 'lightbulb'], addable: false),
 
   // Count tags
   yes(

@@ -66,6 +66,20 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadPriority();
   }
 
+  void updateIconFilter(String iconValue) {
+    final current = List<String>.from(state.iconFilter);
+    if (current.contains(iconValue)) {
+      current.remove(iconValue);
+    } else {
+      current.add(iconValue);
+    }
+    log.info('Updating icon filter to $current');
+    emit(state.copyWith(iconFilter: current));
+
+    // Reload agenda items with new filter
+    _loadPriority();
+  }
+
   void updateSearch(String search) {
     log.info('Updating search to "$search"');
     emit(state.copyWith(search: search));
@@ -203,6 +217,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
     _activityFeedSubscription?.cancel();
     _tagsSubscription?.cancel();
+    _iconCountsSubscription?.cancel();
     return super.close();
   }
 
@@ -839,6 +854,21 @@ class PriorityBloc extends Cubit<PriorityState> {
       },
     );
 
+    // Watch icon counts for the priority
+    _iconCountsSubscription?.cancel();
+    _iconCountsSubscription = Thread.watchIconCountsForPriority(
+      priorityToLoad.path,
+    ).listen((counts) {
+      final iconCounts = counts
+          .map((c) {
+            final subType = ThreadSubType.fromIcon(c.$1);
+            return subType != null ? (subType, c.$2) : null;
+          })
+          .whereType<(ThreadSubType, int)>()
+          .toList();
+      emit(state.copyWith(iconCounts: iconCounts));
+    });
+
     // Watch twists for the priority (including ancestors)
     _subscriptions.add(
       PriorityTwist.watch(priority: priorityToLoad).listen((twists) {
@@ -964,6 +994,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               priorityPath: priorityToLoad.path,
               archived: state.showArchived,
               filter: state.filter.isNotEmpty ? state.filter : null,
+              iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
               search: state.search.isNotEmpty ? state.search : null,
               order: ThreadOrder.sorted,
               limit: _agendaLimit,
@@ -1108,6 +1139,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           priorityPath: priorityToLoad.path,
           archived: state.showArchived,
           filter: state.filter.isNotEmpty ? state.filter : null,
+          iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
           search: state.search.isNotEmpty ? state.search : null,
           limit: _activityFeedLimit,
         ).listen((result) {
@@ -1242,6 +1274,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<void>? _agendaSubscription;
   StreamSubscription<void>? _activityFeedSubscription;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
+  StreamSubscription<List<(String, int)>>? _iconCountsSubscription;
   int _agendaLimit = 50;
   int _agendaHorizonDays = 90;
   int _activityFeedLimit = 50;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
@@ -14,13 +16,14 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class ThreadWidget extends StatelessWidget {
+class ThreadWidget extends StatefulWidget {
   const ThreadWidget({
     required this.activity,
     this.context,
     this.selected = false,
     this.highlighted = false,
     this.now = false,
+    this.isNext = false,
     this.showSubPriority = false,
     this.showEventTiming = false,
     this.bump = true,
@@ -35,12 +38,71 @@ class ThreadWidget extends StatelessWidget {
   final bool highlighted;
   final bool selected;
   final bool now;
+  final bool isNext;
   final bool showSubPriority;
   final bool showEventTiming;
   final bool bump;
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
+
+  @override
+  State<ThreadWidget> createState() => _ThreadWidgetState();
+}
+
+class _ThreadWidgetState extends State<ThreadWidget> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimerIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(ThreadWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.now != widget.now || oldWidget.isNext != widget.isNext) {
+      _timer?.cancel();
+      _timer = null;
+      _startTimerIfNeeded();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimerIfNeeded() {
+    if (!widget.now && !widget.isNext) return;
+    final now = Time.now();
+    final secondsUntilNextMinute = 60 - now.second;
+    _timer = Timer(Duration(seconds: secondsUntilNextMinute), () {
+      if (mounted) {
+        setState(() {});
+        _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+          if (mounted) {
+            setState(() {});
+          }
+        });
+      }
+    });
+  }
+
+  Thread get activity => widget.activity;
+  Priority? get priorityContext => widget.context;
+  bool get highlighted => widget.highlighted;
+  bool get selected => widget.selected;
+  bool get now => widget.now;
+  bool get isNext => widget.isNext;
+  bool get showSubPriority => widget.showSubPriority;
+  bool get showEventTiming => widget.showEventTiming;
+  bool get bump => widget.bump;
+  FocusNode? get focusNode => widget.focusNode;
+  void Function(bool hovered)? get onHover => widget.onHover;
+  int? get reorderableIndex => widget.reorderableIndex;
 
   Command? _getSwipeRightCommand() {
     if (activity.priority.isViewer) return null;
@@ -63,8 +125,8 @@ class ThreadWidget extends StatelessWidget {
 
     final hasSubPriorityLabel =
         showSubPriority &&
-        context != null &&
-        activity.priority.id != context!.id;
+        priorityContext != null &&
+        activity.priority.id != priorityContext!.id;
 
     final hasEventTime =
         activity.at?.start != null &&
@@ -128,9 +190,13 @@ class ThreadWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       title: activity.displayTitle,
       subtitle: activity.preview,
-      padding: buildContext.isMultiPanel
-          ? EdgeInsets.symmetric(horizontal: buildContext.contentPaddingH)
-          : EdgeInsets.only(right: buildContext.theme.spacing.sm),
+      padding: EdgeInsets.only(
+        right: buildContext.isMultiPanel
+            ? buildContext.theme.spacing.lg + buildContext.theme.spacing.sm
+            : buildContext.theme.buttonStyles.ghost.md.iconContentStyle.padding
+                  .resolve(TextDirection.ltr)
+                  .right,
+      ),
       highlightColor: buildContext.colour.editableBackground,
       selectedColor: selectedBg,
       leadingBuilder: (isHovered, hasFocus) {
@@ -187,66 +253,74 @@ class ThreadWidget extends StatelessWidget {
         }
 
         final isWide = buildContext.isMultiPanel;
+        final spacing = buildContext.theme.spacing;
+        final ghostPad = buildContext
+            .theme
+            .buttonStyles
+            .ghost
+            .md
+            .iconContentStyle
+            .padding
+            .resolve(TextDirection.ltr);
+
+        // Left padding before first button; dot is overlaid centered
+        // between x=0 and the first button's icon left edge.
+        final leftPad = isWide ? spacing.lg : spacing.xl;
+        final dotCenter = (leftPad + ghostPad.left) / 2;
 
         return Stack(
           children: [
+            // Main content row: buttons — sizes the Stack
+            Padding(
+              padding: EdgeInsets.only(
+                top: spacing.sm + labelOffset,
+                bottom: spacing.sm,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(width: leftPad),
+                  if (isWide) calendarIcon,
+                  todoIcon,
+                  SizedBox(width: isWide ? spacing.lg : spacing.sm),
+                ],
+              ),
+            ),
+            // Notification dot centered between screen left and
+            // the first button's icon left edge.
             Positioned(
-              top: labelOffset,
-              bottom: 0,
-              left: isWide
-                  ? (buildContext.theme.spacing.xl - 6) / 2
-                  : (buildContext.theme.spacing.xl - 6) / 2,
+              top: spacing.sm + labelOffset,
+              bottom: spacing.sm,
+              left: dotCenter - 3,
               width: 6,
               child: UnreadIndicator(
                 color: activity.priority.displayColor,
                 unread: activity.unread,
               ),
             ),
-            Padding(
-              padding: EdgeInsets.only(
-                top: buildContext.theme.spacing.sm + labelOffset,
-                bottom: buildContext.theme.spacing.sm,
-                left: isWide
-                    ? buildContext.theme.spacing.xl - 7.5
-                    : buildContext.theme.spacing.xl,
-                right: buildContext.theme.spacing.sm,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (buildContext.isMultiPanel) calendarIcon,
-                  todoIcon,
-                ],
-              ),
-            ),
             // Time label for timed events, positioned at the top
-            // to align with the body's header row.
+            // to align with the body's header row. Right edge aligns
+            // with the start button icon's right edge.
             if (isTimedEvent)
               Positioned(
-                top: buildContext.theme.spacing.sm - 1,
-                left: 0,
-                width:
-                    agendaLeadingWidth(buildContext) -
-                    buildContext.theme.spacing.md,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    isWide
-                        ? activity.at!.start!.toTimeOfDay().formatShort(
-                            buildContext,
+                top: spacing.sm - 1,
+                right: (isWide ? spacing.lg : spacing.sm) + ghostPad.right,
+                child: Text(
+                  isWide
+                      ? activity.at!.start!.toTimeOfDay().formatShort(
+                          buildContext,
+                        )
+                      : activity.at!.start!.toTimeOfDay().formatNarrow(
+                          buildContext,
+                        ),
+                  style: TextStyle(
+                    color: now
+                        ? buildContext.colour.colours.fromTheme(
+                            activity.priority.displayColor,
                           )
-                        : activity.at!.start!.toTimeOfDay().formatNarrow(
-                            buildContext,
-                          ),
-                    style: TextStyle(
-                      color: now
-                          ? buildContext.colour.colours.fromTheme(
-                              activity.priority.displayColor,
-                            )
-                          : buildContext.theme.colors.mutedForeground,
-                      fontSize: buildContext.theme.typography.xs.fontSize,
-                      height: 1,
-                    ),
+                        : buildContext.theme.colors.mutedForeground,
+                    fontSize: buildContext.theme.typography.xs.fontSize,
+                    height: 1,
                   ),
                 ),
               ),
@@ -283,15 +357,97 @@ class ThreadWidget extends StatelessWidget {
                     final hasDuration =
                         activity.at!.duration != null &&
                         activity.at!.duration!.inSeconds > 0;
+                    final accentColor = buildContext.colour.colours.fromTheme(
+                      activity.priority.displayColor,
+                    );
+                    final xsFontSize =
+                        buildContext.theme.typography.xs.fontSize;
+                    final currentTime = Time.now();
 
                     final rightParts = <Widget>[
                       if (activity.hasOtherAttendees)
                         _RsvpSummary(activity: activity),
-                      if (hasDuration)
-                        Text(
-                          activity.at!.duration!.format(),
-                          style: TextStyle(color: veryMuted),
+                      // In-progress: elapsed ↑ · remaining ↓
+                      if (now) ...[
+                        if (activity.at!.start != null &&
+                            currentTime
+                                    .difference(activity.at!.start!)
+                                    .inMinutes >=
+                                1)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FaIcon(
+                                PlotIcon.up,
+                                size: xsFontSize,
+                                color: accentColor,
+                              ),
+                              SizedBox(width: buildContext.theme.spacing.xs),
+                              Text(
+                                Duration(
+                                  minutes: currentTime
+                                      .difference(activity.at!.start!)
+                                      .inMinutes,
+                                ).format(),
+                                style: TextStyle(color: accentColor),
+                              ),
+                            ],
+                          ),
+                        if (activity.at!.end != null &&
+                            activity.at!.end!.isAfter(currentTime))
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                Duration(
+                                  minutes:
+                                      (activity.at!.end!
+                                                  .difference(currentTime)
+                                                  .inSeconds /
+                                              60)
+                                          .ceil(),
+                                ).format(),
+                                style: TextStyle(color: accentColor),
+                              ),
+                              SizedBox(width: buildContext.theme.spacing.xs),
+                              FaIcon(
+                                PlotIcon.down,
+                                size: xsFontSize,
+                                color: accentColor,
+                              ),
+                            ],
+                          ),
+                      ] else if (isNext &&
+                          activity.at!.start != null &&
+                          activity.at!.start!.toDate() == Date.today()) ...[
+                        // Next event: "in Xm" countdown
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            FaIcon(
+                              PlotIcon.schedule,
+                              size: xsFontSize,
+                              color: veryMuted,
+                            ),
+                            SizedBox(width: buildContext.theme.spacing.xs),
+                            Text(
+                              'in ${Duration(minutes: (activity.at!.start!.difference(currentTime).inSeconds / 60).ceil()).format()}',
+                              style: TextStyle(color: veryMuted),
+                            ),
+                          ],
                         ),
+                        if (hasDuration)
+                          Text(
+                            activity.at!.duration!.format(),
+                            style: TextStyle(color: veryMuted),
+                          ),
+                      ] else ...[
+                        if (hasDuration)
+                          Text(
+                            activity.at!.duration!.format(),
+                            style: TextStyle(color: veryMuted),
+                          ),
+                      ],
                     ];
 
                     return DefaultTextStyle(
@@ -302,35 +458,27 @@ class ThreadWidget extends StatelessWidget {
                         fontSize: buildContext.theme.typography.xs.fontSize,
                         height: 1,
                       ),
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          right: buildContext.isMultiPanel
-                              ? 0
-                              : context.contentPaddingH -
-                                    context.theme.spacing.sm,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: hasBodyLabel
-                                  ? PriorityLabel(
-                                      priority: activity.priority,
-                                      context: this.context,
-                                      color: headerFg,
-                                      fontSize:
-                                          context.theme.typography.xs.fontSize,
-                                      height: 1,
-                                      muted: headerFg == null,
-                                    )
-                                  : const SizedBox.shrink(),
-                            ),
-                            for (int i = 0; i < rightParts.length; i++) ...[
-                              if (i > 0)
-                                Text(' · ', style: TextStyle(color: veryMuted)),
-                              rightParts[i],
-                            ],
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: hasBodyLabel
+                                ? PriorityLabel(
+                                    priority: activity.priority,
+                                    context: priorityContext,
+                                    color: headerFg,
+                                    fontSize:
+                                        context.theme.typography.xs.fontSize,
+                                    height: 1,
+                                    muted: headerFg == null,
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                          for (int i = 0; i < rightParts.length; i++) ...[
+                            if (i > 0)
+                              Text(' · ', style: TextStyle(color: veryMuted)),
+                            rightParts[i],
                           ],
-                        ),
+                        ],
                       ),
                     );
                   },
@@ -352,7 +500,7 @@ class ThreadWidget extends StatelessWidget {
                             Flexible(
                               child: PriorityLabel(
                                 priority: activity.priority,
-                                context: this.context,
+                                context: priorityContext,
                                 color: headerFg,
                                 fontSize: context.theme.typography.xs.fontSize,
                                 height: 1,
@@ -399,7 +547,12 @@ class ThreadWidget extends StatelessWidget {
                       alignment: Alignment.centerLeft,
                       child: Row(
                         children: [
-                          _LinkLogos(threadId: activity.id),
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: _ThreadLogo(activity: activity),
+                          ),
+                          SizedBox(width: buildContext.theme.spacing.md),
                           Expanded(
                             child: Text.rich(
                               overflow: TextOverflow.ellipsis,
@@ -448,7 +601,15 @@ class ThreadWidget extends StatelessWidget {
                     // effective background so the title text is cleanly
                     // truncated rather than bleeding through the buttons.
                     Positioned(
-                      right: 0,
+                      right: -buildContext
+                          .theme
+                          .buttonStyles
+                          .ghost
+                          .md
+                          .iconContentStyle
+                          .padding
+                          .resolve(TextDirection.ltr)
+                          .right,
                       top: 0,
                       bottom: 0,
                       child: Builder(
@@ -900,42 +1061,45 @@ class _RsvpSummary extends StatelessWidget {
   }
 }
 
-class _LinkLogos extends HookWidget {
-  const _LinkLogos({required this.threadId});
+class _ThreadLogo extends StatelessWidget {
+  const _ThreadLogo({required this.activity});
 
-  /// Cache of logo URLs by (threadId, brightness) so stream restarts during
-  /// reorder don't flash empty for a frame.
-  static final Map<(ThreadId, Brightness), List<String>> _logoCache = {};
+  final Thread activity;
 
-  final ThreadId threadId;
+  bool get _isTappable =>
+      ThreadSubType.fromIcon(activity.icon) != null || activity.icon == null;
 
   @override
   Widget build(BuildContext context) {
     final brightness = MediaQuery.platformBrightnessOf(context);
-    final links = useStream<List<Link>>(
-      useMemoized(() => Link.watchForThread(threadId), [threadId]),
+    final resolved = Thread.resolveIcon(
+      activity.icon,
+      prioritySharing: activity.priority.sharing,
     );
-    final cacheKey = (threadId, brightness);
-    final List<String> logos;
-    if (links.data != null) {
-      logos = links.data!
-          .map((Link l) => l.logoForBrightness(brightness))
-          .whereType<String>()
-          .where((url) => url.isNotEmpty && !LogoCache.isFailed(url))
-          .toSet()
-          .toList();
-      _logoCache[cacheKey] = logos;
+    final logoUrl = brightness == Brightness.dark
+        ? (resolved.logoDarkUrl ?? resolved.logoUrl)
+        : resolved.logoUrl;
+
+    Widget icon;
+    if (logoUrl != null && !LogoCache.isFailed(logoUrl)) {
+      icon = Opacity(
+        opacity: brightness == Brightness.dark ? 0.7 : 0.9,
+        child: LogoImage(url: logoUrl),
+      );
     } else {
-      logos = _logoCache[cacheKey] ?? <String>[];
+      icon = Icon(
+        resolved.fallbackIcon,
+        size: 16,
+        color: context.theme.plotColors.muted,
+      );
     }
-    if (logos.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: EdgeInsets.only(right: context.theme.spacing.sm),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 8,
-        children: logos.map((String logo) => LogoImage(url: logo)).toList(),
-      ),
-    );
+
+    if (_isTappable && !activity.priority.isViewer) {
+      return GestureDetector(
+        onTap: () => context.run(ChangeThreadSubType(activity)),
+        child: icon,
+      );
+    }
+    return icon;
   }
 }

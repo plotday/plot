@@ -721,6 +721,12 @@ export async function prepareThreadForDb(
       ? { archived_at: activity.archived ? new Date().toISOString() : null }
       : {}),
     ...("id" in activity && activity.id ? { id: activity.id } : {}),
+    // Map SDK 'type' field to database 'icon' column, with 'icon' as fallback for internal callers
+    ...("type" in activity && (activity as any).type !== undefined
+      ? { icon: (activity as any).type }
+      : "icon" in activity && (activity as any).icon !== undefined
+        ? { icon: (activity as any).icon }
+        : {}),
   };
 
   // Source-based threads use upsert, non-source use insert
@@ -744,6 +750,11 @@ export async function prepareThreadForDb(
     }
     if (activity.private !== undefined) {
       upsertFields.private = activity.private;
+    }
+    if ("type" in activity && (activity as any).type !== undefined) {
+      upsertFields.icon = (activity as any).type;
+    } else if ("icon" in activity && (activity as any).icon !== undefined) {
+      upsertFields.icon = (activity as any).icon;
     }
 
     return {

@@ -188,6 +188,46 @@ class ToggleNoteFilter extends Command {
   }
 }
 
+class ToggleIconFilter extends Command {
+  ToggleIconFilter._({required this.subType, super.on})
+    : super(
+        title: subType.label,
+        eventObject: EventObject.filter,
+        eventAction: EventAction.filtered,
+        icon: subType.icon,
+      );
+
+  factory ToggleIconFilter(
+    ThreadSubType subType, {
+    required BuildContext context,
+  }) {
+    final isActive = _isActive(context, subType);
+    return ToggleIconFilter._(subType: subType, on: isActive);
+  }
+
+  final ThreadSubType subType;
+
+  static bool? _isActive(BuildContext context, ThreadSubType subType) {
+    try {
+      final priorityBloc = context.read<PriorityBloc>();
+      return priorityBloc.state.iconFilter.contains(subType.value);
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final priorityBloc = context.read<PriorityBloc>();
+      priorityBloc.updateIconFilter(subType.value);
+    } on ProviderNotFoundException {
+      // PriorityBloc not in scope
+    }
+    return const CommandDone();
+  }
+}
+
 class PickFilterCommand extends ShowCommands {
   PickFilterCommand()
     : super(

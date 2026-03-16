@@ -95,6 +95,28 @@ export async function createThread(
     const { priorityId, authorId, ...prep } =
       await prepareThreadForDb(plot, activity);
 
+    // Set icon for twist-created threads if not already set by caller (e.g. createLink)
+    // Skip auto-icon if the SDK 'type' field was set (mapped to icon by prepareThreadForDb)
+    if (
+      (!("icon" in activity) || (activity as any).icon === undefined) &&
+      (!("type" in activity) || (activity as any).type === undefined)
+    ) {
+      const ptRow = await plot.db
+        .selectFrom("priority_twist")
+        .select("twist_id")
+        .where("id", "=", plot.priorityTwistId)
+        .executeTakeFirst();
+      if (ptRow) {
+        const iconValue = `twist:${ptRow.twist_id}`;
+        if ("insert" in prep) {
+          (prep as any).insert.icon = iconValue;
+        } else if ("upsert" in prep) {
+          (prep as any).upsert.icon = iconValue;
+          (prep as any).defaults.icon = iconValue;
+        }
+      }
+    }
+
     // Insert or upsert activity based on whether it has a source.
     let dbResult: {
       id: string;
@@ -383,6 +405,9 @@ export async function updateThread(
       dbUpdate.archived_at = activity.archived
         ? new Date().toISOString()
         : null;
+    }
+    if ("type" in activity && (activity as any).type !== undefined) {
+      (dbUpdate as any).icon = (activity as any).type;
     }
 
     // Check if there are meaningful updates (beyond updated_by, sync_depth, occurrence)
@@ -733,6 +758,29 @@ export async function createThreads(
         limit(() => prepareThreadForDb(plot, activity))
       )
     );
+
+    // Set icon for twist-created threads (single lookup for all activities)
+    const ptRowBatch = await plot.db
+      .selectFrom("priority_twist")
+      .select("twist_id")
+      .where("id", "=", plot.priorityTwistId)
+      .executeTakeFirst();
+    if (ptRowBatch) {
+      const iconValue = `twist:${ptRowBatch.twist_id}`;
+      for (let i = 0; i < preparedActivities.length; i++) {
+        const activity = processedActivities[i];
+        // Skip if caller already set icon (e.g. createLink) or type (SDK sub-type)
+        if ("icon" in activity && (activity as any).icon !== undefined) continue;
+        if ("type" in activity && (activity as any).type !== undefined) continue;
+        const prepared = preparedActivities[i];
+        if ("insert" in prepared) {
+          (prepared as any).insert.icon = iconValue;
+        } else if ("upsert" in prepared) {
+          (prepared as any).upsert.icon = iconValue;
+          (prepared as any).defaults.icon = iconValue;
+        }
+      }
+    }
 
     // Batch insert non-source activities
     const nonSourceInserts = preparedActivities
