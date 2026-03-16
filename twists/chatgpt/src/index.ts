@@ -13,7 +13,7 @@ import { Options } from "@plotday/twister/options";
 import { AI, type AIMessage, AIModel } from "@plotday/twister/tools/ai";
 import { ThreadAccess, Plot } from "@plotday/twister/tools/plot";
 
-export default class ChatTwist extends Twist<ChatTwist> {
+export default class ChatGPTTwist extends Twist<ChatGPTTwist> {
   build(build: ToolBuilder) {
     return {
       options: build(Options, {
@@ -22,13 +22,11 @@ export default class ChatTwist extends Twist<ChatTwist> {
           label: "AI Model",
           description: "The AI model used for chat responses",
           choices: [
-            { value: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-            { value: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5 (Fast)" },
-            { value: "openai/gpt-5", label: "GPT-5" },
-            { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-            { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash (Fast)" },
+            { value: "openai/o3", label: "o3" },
+            { value: "openai/gpt-4.1", label: "GPT-4.1" },
+            { value: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini (Fast)" },
           ],
-          default: "anthropic/claude-sonnet-4-5",
+          default: "openai/gpt-4.1",
         },
       }),
       ai: build(AI),

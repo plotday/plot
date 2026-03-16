@@ -1,0 +1,25 @@
+{
+  "name": "@plotday/twist-gemini",
+  "plotTwistId": "019cf6f7-275e-71ac-bd03-0c15e75972cb",
+  "displayName": "Gemini",
+  "description": "Chat with Google's Gemini models",
+  "logoUrl": "https://api.iconify.design/simple-icons/googlegemini.svg",
+  "logoUrlDark": "https://api.iconify.design/simple-icons/googlegemini.svg?color=%23ffffff",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "deploy": "plot deploy",
+    "lint": "plot lint",
+    "logs": "plot logs"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^",
+    "typebox": "^1.0.35"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

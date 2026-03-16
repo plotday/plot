@@ -1,0 +1,25 @@
+{
+  "name": "@plotday/twist-claude",
+  "plotTwistId": "019cf6f7-275e-7296-8d42-9f36813b8652",
+  "displayName": "Claude",
+  "description": "Chat with Anthropic's Claude models",
+  "logoUrl": "https://api.iconify.design/simple-icons/anthropic.svg",
+  "logoUrlDark": "https://api.iconify.design/simple-icons/anthropic.svg?color=%23ffffff",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "deploy": "plot deploy",
+    "lint": "plot lint",
+    "logs": "plot logs"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^",
+    "typebox": "^1.0.35"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
