@@ -131,6 +131,25 @@ Future<void> _checkAuthError(http.Response response, String url) async {
   }
 }
 
+/// On 401, refresh the token and retry once. If the retry also 401s, return it.
+Future<http.Response> _retryOn401(
+  Future<http.Response> Function(Map<String, String> headers) request,
+  String url,
+) async {
+  var headers = await getHeaders();
+  var response = await request(headers);
+
+  if (response.statusCode == 401) {
+    await _checkAuthError(response, url);
+    // _checkAuthError refreshes the token; retry with fresh headers
+    headers = await getHeaders();
+    response = await request(headers);
+    // If still 401, fall through to normal error handling
+  }
+
+  return response;
+}
+
 final _random = Random();
 
 /// Retries a request up to 3 times on 429 with exponential backoff + jitter.
@@ -168,14 +187,15 @@ Future<Map<String, String>> getHeaders() async {
 
 Future<T> post<T>(String url, {Object body = const <String, dynamic>{}}) async {
   try {
-    final headers = await getHeaders();
-    final response = await _retryOn429(() => http.post(
-      Uri.parse(Env.apiRoot + url),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30)));
+    final response = await _retryOn401(
+      (headers) => _retryOn429(() => http.post(
+        Uri.parse(Env.apiRoot + url),
+        headers: headers,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 30))),
+      url,
+    );
     if (response.statusCode != 200) {
-      await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
       final errorFields = _parseErrorFields(response);
       throw ApiException(
@@ -205,14 +225,15 @@ Future<T> post<T>(String url, {Object body = const <String, dynamic>{}}) async {
 
 Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
   try {
-    final headers = await getHeaders();
-    final response = await _retryOn429(() => http.put(
-      Uri.parse(Env.apiRoot + url),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30)));
+    final response = await _retryOn401(
+      (headers) => _retryOn429(() => http.put(
+        Uri.parse(Env.apiRoot + url),
+        headers: headers,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 30))),
+      url,
+    );
     if (response.statusCode != 200) {
-      await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
       final errorFields = _parseErrorFields(response);
       throw ApiException(
@@ -242,14 +263,15 @@ Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
 
 Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
   try {
-    final headers = await getHeaders();
-    final response = await _retryOn429(() => http.patch(
-      Uri.parse(Env.apiRoot + url),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30)));
+    final response = await _retryOn401(
+      (headers) => _retryOn429(() => http.patch(
+        Uri.parse(Env.apiRoot + url),
+        headers: headers,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 30))),
+      url,
+    );
     if (response.statusCode != 200) {
-      await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
       final errorFields = _parseErrorFields(response);
       throw ApiException(
@@ -279,13 +301,14 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
 
 Future<T> get<T>(String url) async {
   try {
-    final headers = await getHeaders();
-    final response = await _retryOn429(() => http.get(
-      Uri.parse(Env.apiRoot + url),
-      headers: headers,
-    ).timeout(const Duration(seconds: 30)));
+    final response = await _retryOn401(
+      (headers) => _retryOn429(() => http.get(
+        Uri.parse(Env.apiRoot + url),
+        headers: headers,
+      ).timeout(const Duration(seconds: 30))),
+      url,
+    );
     if (response.statusCode != 200) {
-      await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
       final errorFields = _parseErrorFields(response);
       throw ApiException(
@@ -315,13 +338,14 @@ Future<T> get<T>(String url) async {
 
 Future<T> delete<T>(String url) async {
   try {
-    final headers = await getHeaders();
-    final response = await _retryOn429(() => http.delete(
-      Uri.parse(Env.apiRoot + url),
-      headers: headers,
-    ).timeout(const Duration(seconds: 30)));
+    final response = await _retryOn401(
+      (headers) => _retryOn429(() => http.delete(
+        Uri.parse(Env.apiRoot + url),
+        headers: headers,
+      ).timeout(const Duration(seconds: 30))),
+      url,
+    );
     if (response.statusCode != 200) {
-      await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
       final errorFields = _parseErrorFields(response);
       throw ApiException(
@@ -354,14 +378,15 @@ Future<T> deleteWithBody<T>(
   Map<String, dynamic> body = const {},
 }) async {
   try {
-    final headers = await getHeaders();
-    final response = await _retryOn429(() => http.delete(
-      Uri.parse(Env.apiRoot + url),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30)));
+    final response = await _retryOn401(
+      (headers) => _retryOn429(() => http.delete(
+        Uri.parse(Env.apiRoot + url),
+        headers: headers,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 30))),
+      url,
+    );
     if (response.statusCode != 200) {
-      await _checkAuthError(response, url);
       final errorMessage = _parseErrorMessage(response);
       final errorFields = _parseErrorFields(response);
       throw ApiException(
