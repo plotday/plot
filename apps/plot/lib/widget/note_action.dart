@@ -16,6 +16,7 @@ import 'package:plot/style/layout.dart';
 import 'package:plot/widget/tapable.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/network_exception.dart';
 import 'logging.dart';
 
 /// Widget that displays a single note action with appropriate styling based on type
@@ -163,6 +164,13 @@ class _CallbackActionButtonState extends State<CallbackActionButton> {
       );
 
       log.info('Callback executed successfully for: ${widget.link.title}');
+    } on NetworkException {
+      if (mounted) {
+        context.showToast(
+          message: "You're offline. Please try again when connected.",
+          isError: true,
+        );
+      }
     } catch (e) {
       log.warning('Failed to execute callback for ${widget.link.title}: $e');
       if (mounted) {
@@ -230,6 +238,13 @@ class _CallbackActionWithoutNoteState extends State<_CallbackActionWithoutNote> 
         body: widget.link.toJson(),
       );
       log.info('Callback executed successfully for: ${widget.link.title}');
+    } on NetworkException {
+      if (mounted) {
+        context.showToast(
+          message: "You're offline. Please try again when connected.",
+          isError: true,
+        );
+      }
     } catch (e) {
       log.warning('Failed to execute callback for ${widget.link.title}: $e');
       if (mounted) {
@@ -460,6 +475,13 @@ class _FileLinkButtonState extends State<FileLinkButton> {
         await file.writeAsBytes(bytes);
         final uri = Uri.file(file.path);
         await launchUrl(uri);
+      }
+    } on NetworkException {
+      if (mounted) {
+        context.showToast(
+          message: "You're offline. Please try again when connected.",
+          isError: true,
+        );
       }
     } catch (e, t) {
       log.warning('Failed to download file: ${widget.link.fileName}', e, t);

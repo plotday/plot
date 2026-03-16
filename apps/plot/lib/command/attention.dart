@@ -1,12 +1,13 @@
+import 'dart:async';
+
 import 'package:plot/api/api.dart' as api;
-import 'package:plot/api/api_exception.dart';
-import 'package:plot/api/network_exception.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/store/attention.dart';
 
 import 'base.dart';
+import 'logging.dart';
 
 class ShowAttentionSettings extends ShowForm {
   ShowAttentionSettings(this.priority)
@@ -499,26 +500,50 @@ class _SaveAttentionSettings extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    try {
-      await api.post<Map<String, dynamic>>(
-        '/sync/priority-attention',
-        body: {
-          'priority_id': priorityId.toString(),
-          'attention_window': attentionWindow?.map((w) => w.toJson()).toList(),
-          'set_attention_window': setAttentionWindow,
-          'see_within_requests': seeWithinRequests?.toJson(),
-          'set_see_within_requests': setSeeWithinRequests,
-          'see_within_updates': seeWithinUpdates?.toJson(),
-          'set_see_within_updates': setSeeWithinUpdates,
-        },
-      );
-      await Priority.pull();
-      return const CommandDone();
-    } on ApiException catch (e) {
-      return CommandMessage(e.description, title: e.title, isError: true);
-    } on NetworkException catch (e) {
-      return CommandMessage('Network error: ${e.message}', isError: true);
-    }
+    // Write to local DB first (optimistic update)
+    await (Store.get.update(Store.get.priorities)
+          ..where((t) => t.id.equalsValue(priorityId)))
+        .write(PrioritiesCompanion(
+          attentionWindow: setAttentionWindow
+              ? Value(AttentionWindow.toJsonString(attentionWindow))
+              : const Value.absent(),
+          attentionWindowSet:
+              setAttentionWindow ? const Value(true) : const Value.absent(),
+          seeWithinRequests: setSeeWithinRequests
+              ? Value(SeeWithinTime.toJsonString(seeWithinRequests))
+              : const Value.absent(),
+          seeWithinRequestsSet:
+              setSeeWithinRequests ? const Value(true) : const Value.absent(),
+          seeWithinUpdates: setSeeWithinUpdates
+              ? Value(SeeWithinTime.toJsonString(seeWithinUpdates))
+              : const Value.absent(),
+          seeWithinUpdatesSet:
+              setSeeWithinUpdates ? const Value(true) : const Value.absent(),
+        ));
+
+    // Sync to server in background
+    unawaited(
+      api
+          .post<Map<String, dynamic>>(
+            '/sync/priority-attention',
+            body: {
+              'priority_id': priorityId.toString(),
+              'attention_window':
+                  attentionWindow?.map((w) => w.toJson()).toList(),
+              'set_attention_window': setAttentionWindow,
+              'see_within_requests': seeWithinRequests?.toJson(),
+              'set_see_within_requests': setSeeWithinRequests,
+              'see_within_updates': seeWithinUpdates?.toJson(),
+              'set_see_within_updates': setSeeWithinUpdates,
+            },
+          )
+          .then((_) => Priority.pull())
+          .catchError((Object e) {
+            log.warning('Failed to sync attention settings', e);
+          }),
+    );
+
+    return const CommandDone();
   }
 }
 
@@ -535,22 +560,33 @@ class SetAttentionWindow extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    try {
-      await api.post<Map<String, dynamic>>(
-        '/sync/priority-attention',
-        body: {
-          'priority_id': priorityId.toString(),
-          'attention_window': windows?.map((w) => w.toJson()).toList(),
-          'set_attention_window': true,
-        },
-      );
-      await Priority.pull();
-      return const CommandDone();
-    } on ApiException catch (e) {
-      return CommandMessage(e.description, title: e.title, isError: true);
-    } on NetworkException catch (e) {
-      return CommandMessage('Network error: ${e.message}', isError: true);
-    }
+    // Write to local DB first (optimistic update)
+    await (Store.get.update(Store.get.priorities)
+          ..where((t) => t.id.equalsValue(priorityId)))
+        .write(PrioritiesCompanion(
+          attentionWindow: Value(AttentionWindow.toJsonString(windows)),
+          attentionWindowSet: const Value(true),
+        ));
+
+    // Sync to server in background
+    unawaited(
+      api
+          .post<Map<String, dynamic>>(
+            '/sync/priority-attention',
+            body: {
+              'priority_id': priorityId.toString(),
+              'attention_window':
+                  windows?.map((w) => w.toJson()).toList(),
+              'set_attention_window': true,
+            },
+          )
+          .then((_) => Priority.pull())
+          .catchError((Object e) {
+            log.warning('Failed to sync attention window', e);
+          }),
+    );
+
+    return const CommandDone();
   }
 }
 
@@ -566,21 +602,31 @@ class ClearAttentionWindow extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    try {
-      await api.post<Map<String, dynamic>>(
-        '/sync/priority-attention',
-        body: {
-          'priority_id': priorityId.toString(),
-          'attention_window': null,
-          'set_attention_window': true,
-        },
-      );
-      await Priority.pull();
-      return const CommandDone();
-    } on ApiException catch (e) {
-      return CommandMessage(e.description, title: e.title, isError: true);
-    } on NetworkException catch (e) {
-      return CommandMessage('Network error: ${e.message}', isError: true);
-    }
+    // Write to local DB first (optimistic update)
+    await (Store.get.update(Store.get.priorities)
+          ..where((t) => t.id.equalsValue(priorityId)))
+        .write(const PrioritiesCompanion(
+          attentionWindow: Value(null),
+          attentionWindowSet: Value(true),
+        ));
+
+    // Sync to server in background
+    unawaited(
+      api
+          .post<Map<String, dynamic>>(
+            '/sync/priority-attention',
+            body: {
+              'priority_id': priorityId.toString(),
+              'attention_window': null,
+              'set_attention_window': true,
+            },
+          )
+          .then((_) => Priority.pull())
+          .catchError((Object e) {
+            log.warning('Failed to sync clear attention window', e);
+          }),
+    );
+
+    return const CommandDone();
   }
 }

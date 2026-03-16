@@ -5,6 +5,7 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/network_exception.dart';
 import 'logging.dart';
 
 class TakePhoto extends Command {
@@ -58,6 +59,11 @@ class TakePhoto extends Command {
 
       onLinksChanged([...currentLinks, fileLink]);
       return const CommandDone();
+    } on NetworkException {
+      return const CommandMessage(
+        "You're offline. Please try again when connected.",
+        isError: true,
+      );
     } catch (e, t) {
       log.warning('Failed to upload photo', e, t);
       return const CommandMessage(

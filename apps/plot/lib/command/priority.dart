@@ -586,8 +586,11 @@ class SharePriority extends PriorityCommand {
       return const CommandDone();
     } on ApiException catch (e) {
       return CommandMessage(e.description, title: e.title, isError: true);
-    } on NetworkException catch (e) {
-      return CommandMessage('Network error: ${e.message}', isError: true);
+    } on NetworkException {
+      return const CommandMessage(
+        "You're offline. Please try again when connected.",
+        isError: true,
+      );
     }
   }
 }
@@ -1063,8 +1066,11 @@ class InviteByEmail extends Command {
       return CommandRefresh(message: 'Invitation sent to $email');
     } on ApiException catch (e) {
       return CommandMessage(e.description, title: e.title, isError: true);
-    } on NetworkException catch (e) {
-      return CommandMessage('Network error: ${e.message}', isError: true);
+    } on NetworkException {
+      return const CommandMessage(
+        "You're offline. Please try again when connected.",
+        isError: true,
+      );
     }
   }
 }

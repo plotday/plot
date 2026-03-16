@@ -6,6 +6,7 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/network_exception.dart';
 import 'logging.dart';
 
 const _maxFileSize = 25 * 1024 * 1024; // 25MB
@@ -104,6 +105,11 @@ class AttachFile extends Command {
 
       onLinksChanged([...links, fileLink]);
       return const CommandDone();
+    } on NetworkException {
+      return const CommandMessage(
+        "You're offline. Please try again when connected.",
+        isError: true,
+      );
     } catch (e, t) {
       log.warning('Failed to upload file', e, t);
       return const CommandMessage(
@@ -201,6 +207,13 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
         _links.add(fileLink);
       });
       widget.onLinksChanged(_links);
+    } on NetworkException {
+      if (mounted) {
+        context.showToast(
+          message: "You're offline. Please try again when connected.",
+          isError: true,
+        );
+      }
     } catch (e, t) {
       log.warning('Failed to upload file', e, t);
       if (mounted) {
