@@ -12,6 +12,7 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/theme.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/util/hooks.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1071,7 +1072,7 @@ class _ThreadLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final brightness = MediaQuery.platformBrightnessOf(context);
+    final brightness = context.read<ThemeBloc>().getBrightness(context);
     final resolved = Thread.resolveIcon(
       activity.icon,
       prioritySharing: activity.priority.sharing,
