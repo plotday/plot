@@ -1,7 +1,5 @@
-CREATE OR REPLACE FUNCTION "user".update_thread_tags (user_id uuid, p_thread_id uuid, p_actor_id uuid, p_client_id integer, p_tag_updates jsonb, p_occurrence text DEFAULT NULL::text)
-    RETURNS void
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "update_thread_tags" function
+CREATE OR REPLACE FUNCTION "user"."update_thread_tags" ("user_id" uuid, "p_thread_id" uuid, "p_actor_id" uuid, "p_client_id" integer, "p_tag_updates" jsonb, "p_occurrence" text DEFAULT NULL::text) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
     tag_record record;
     tag_id_int integer;
@@ -130,4 +128,4 @@ BEGIN
         END IF;
 END LOOP;
 END;
-$function$;
+$$;

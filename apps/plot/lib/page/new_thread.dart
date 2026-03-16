@@ -318,17 +318,16 @@ class NewThreadPageState extends State<NewThreadPage> {
             variant: FButtonVariant.secondary,
             style: FButtonStyleDelta.delta(
               decoration: FVariantsDelta.delta([
-                FVariantOperation.all(DecorationDelta.boxDelta(
-                  borderRadius: const BorderRadius.all(Radius.circular(24)),
-                  border: Border.all(color: context.theme.colors.border),
-                )),
+                FVariantOperation.all(
+                  DecorationDelta.boxDelta(
+                    borderRadius: const BorderRadius.all(Radius.circular(24)),
+                    border: Border.all(color: context.theme.colors.border),
+                  ),
+                ),
               ]),
               contentStyle: FButtonContentStyleDelta.delta(
                 padding: EdgeInsetsGeometryDelta.value(
-                  const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 ),
               ),
             ),
@@ -357,13 +356,23 @@ class NewThreadPageState extends State<NewThreadPage> {
                 ),
                 selected: state.draft.todo,
               ),
-              Text(
-                'To do',
-                style: context.theme.typography.md.copyWith(
-                  height: 1,
-                  color: state.draft.todo
-                      ? context.theme.colors.primary
-                      : context.theme.colors.mutedForeground,
+              GestureDetector(
+                onTap: () => context.run(
+                  ToggleThreadToDo(
+                    state.draft,
+                    onUpdate: (thread) async {
+                      await context.read<PriorityBloc>().updateDraft(thread);
+                    },
+                  ),
+                ),
+                child: Text(
+                  'Start',
+                  style: context.theme.typography.md.copyWith(
+                    height: 1,
+                    color: state.draft.todo
+                        ? context.theme.colors.primary
+                        : context.theme.colors.mutedForeground,
+                  ),
                 ),
               ),
               SizedBox(width: 4),
@@ -400,7 +409,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                   _buildTypeChip(
                     context,
                     type: NewThreadType.task,
-                    icon: PlotIcon.inbox,
+                    icon: PlotIcon.selfTask,
                     label: 'Task',
                     shortcutIndex: 0,
                     showLabel: showLabels,
@@ -484,14 +493,22 @@ class NewThreadPageState extends State<NewThreadPage> {
             runSpacing: 8,
             children: [
               for (var i = 0; i < visible.length; i++)
-                _buildTwistChip(context, visible[i], chipRadius, chipPadding, shortcutIndex: i),
+                _buildTwistChip(
+                  context,
+                  visible[i],
+                  chipRadius,
+                  chipPadding,
+                  shortcutIndex: i,
+                ),
               if (hasMore)
                 FButton(
                   onPress: () => _openTwistPicker(context),
                   variant: FButtonVariant.secondary,
                   style: FButtonStyleDelta.delta(
                     decoration: FVariantsDelta.delta([
-                      FVariantOperation.all(DecorationDelta.boxDelta(borderRadius: chipRadius)),
+                      FVariantOperation.all(
+                        DecorationDelta.boxDelta(borderRadius: chipRadius),
+                      ),
                     ]),
                     contentStyle: FButtonContentStyleDelta.delta(
                       padding: EdgeInsetsGeometryDelta.value(chipPadding),
@@ -517,7 +534,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     final selected = _selectedTwist?.id == twist.id;
     final chipStyleDelta = FButtonStyleDelta.delta(
       decoration: FVariantsDelta.delta([
-        FVariantOperation.all(DecorationDelta.boxDelta(borderRadius: chipRadius)),
+        FVariantOperation.all(
+          DecorationDelta.boxDelta(borderRadius: chipRadius),
+        ),
       ]),
       contentStyle: FButtonContentStyleDelta.delta(
         padding: EdgeInsetsGeometryDelta.value(chipPadding),
@@ -532,7 +551,10 @@ class NewThreadPageState extends State<NewThreadPage> {
       child: Text(twist.name),
     );
 
-    if (!kIsWeb && hasPhysicalKeyboard() && shortcutIndex != null && shortcutIndex < _twistShortcuts.length) {
+    if (!kIsWeb &&
+        hasPhysicalKeyboard() &&
+        shortcutIndex != null &&
+        shortcutIndex < _twistShortcuts.length) {
       chip = FTooltip(
         tipBuilder: (context, controller) => Column(
           mainAxisSize: MainAxisSize.min,
@@ -666,7 +688,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
     final typeChipStyleDelta = FButtonStyleDelta.delta(
       decoration: FVariantsDelta.delta([
-        FVariantOperation.all(DecorationDelta.boxDelta(borderRadius: chipRadius)),
+        FVariantOperation.all(
+          DecorationDelta.boxDelta(borderRadius: chipRadius),
+        ),
       ]),
       contentStyle: FButtonContentStyleDelta.delta(
         padding: EdgeInsetsGeometryDelta.value(chipPadding),

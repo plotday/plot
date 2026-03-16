@@ -404,8 +404,8 @@ class Commands {
       // Filter commands within the group
       List<Command> matchingCommands = await group.list(search: search);
 
-      // If any commands match, include the group with matching commands
-      if (matchingCommands.isNotEmpty) {
+      // Include group if it has matching commands or an infoBuilder
+      if (matchingCommands.isNotEmpty || group.infoBuilder != null) {
         filteredCommandGroups.add(
           StaticCommandGroup(
             title: group.title,

@@ -1,3 +1,4 @@
+- Tag buttons on mobile — long-press a thread or note to see a quick row of tappable tag icons instead of scrolling through lists, with a "..." button to see all tags
 - Task icons on threads now appear instantly — no more flickering or delayed icons when scrolling or reordering your list
 - Channel thread creation now has three options: create threads for everything, only for items requiring action, or add links manually — giving you control over noise from high-volume channels
 - Smarter notification timing — push notifications now respect your per-priority "see within" settings, so requests and updates arrive on your schedule instead of fixed delays

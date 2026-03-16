@@ -492,7 +492,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final Widget todoIcon;
     if (!isTodo) {
       todoIcon = Button.icon(
-        CommandWrapper(ThreadToDo(thread), icon: Value(PlotIcon.addTodo)),
+        CommandWrapper(ThreadToDo(thread), icon: Value(PlotIcon.addTodo), title: 'Start'),
         color: context.theme.plotColors.muted,
       );
     } else {
@@ -504,6 +504,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           hoverIcon: hasPending
               ? Value(FontAwesomeIcons.circleCheck)
               : const Value<IconData?>.absent(),
+          title: 'Finish',
         ),
         selected: true,
         selectedColor: threadColor,
@@ -543,7 +544,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       commandsBuilder: (context) async {
         final thread = state.thread;
         final threadGroups = thread != null
-            ? await threadCommandGroups(thread)
+            ? await threadCommandGroups(
+                thread,
+                compact: !context.isMultiPanel,
+              )
             : <StaticCommandGroup>[];
         return Commands(
           groups: [

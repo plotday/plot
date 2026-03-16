@@ -238,7 +238,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               ),
                             ),
                             FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.inbox),
+                              icon: Icon(PlotIcon.agenda),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
                                   style: context.theme.typography.xs,

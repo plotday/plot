@@ -151,6 +151,7 @@ class ThreadWidget extends StatelessWidget {
           selected: isScheduled,
           selectedColor: threadColor,
           color: isScheduled ? null : buildContext.theme.plotColors.veryMuted,
+          hoverColor: isScheduled ? null : buildContext.colour.foreground,
           forceHover: isHovered,
         );
 
@@ -161,9 +162,10 @@ class ThreadWidget extends StatelessWidget {
             CommandWrapper(
               ThreadToDo(activity),
               icon: Value(PlotIcon.addTodo),
-              title: 'Add to do',
+              title: 'Start',
             ),
-            color: buildContext.theme.plotColors.muted,
+            color: buildContext.theme.plotColors.veryMuted,
+            hoverColor: buildContext.colour.foreground,
             forceHover: isHovered,
           );
         } else {
@@ -176,8 +178,8 @@ class ThreadWidget extends StatelessWidget {
               ),
               hoverIcon: hasPending
                   ? Value(FontAwesomeIcons.circleCheck)
-                  : const Value<IconData?>.absent(),
-              title: 'Done',
+                  : Value(PlotIcon.finish),
+              title: 'Finish',
             ),
             selected: true,
             selectedColor: threadColor,

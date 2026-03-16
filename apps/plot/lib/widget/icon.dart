@@ -63,9 +63,10 @@ class PlotIcon {
 
   // Tags
   static const now = FontAwesomeIcons.circlePlay;
-  static const inbox = FontAwesomeIcons.inbox;
-  static const todo = FontAwesomeIcons.inbox;
-  static const addTodo = FontAwesomeIcons.inboxIn;
+  static const agenda = FontAwesomeIcons.calendarStar;
+  static const todo = FontAwesomeIcons.play;
+  static const addTodo = FontAwesomeIcons.play;
+  static const finish = FontAwesomeIcons.stop;
   static const someday = FontAwesomeIcons.circleMoon;
   static const later = FontAwesomeIcons.clock;
   static const alarmClock = FontAwesomeIcons.alarmClock;

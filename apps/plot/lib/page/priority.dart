@@ -786,6 +786,7 @@ class _PriorityPageState extends State<PriorityPage> {
                                                 activity: (agendaActivity) =>
                                                     threadCommandGroups(
                                                       agendaActivity.thread,
+                                                      compact: !context.isMultiPanel,
                                                     ),
                                                 header: (_) async =>
                                                     <StaticCommandGroup>[],
@@ -833,6 +834,7 @@ class _PriorityPageState extends State<PriorityPage> {
                                       activity: (agendaActivity) =>
                                           threadCommandGroupsSync(
                                             agendaActivity.thread,
+                                            compact: !context.isMultiPanel,
                                           ),
                                       header: (_) => <StaticCommandGroup>[],
                                     ) ??

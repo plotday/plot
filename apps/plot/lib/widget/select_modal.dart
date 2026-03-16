@@ -204,14 +204,17 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     // If initial items are provided, use them immediately to avoid empty list
     if (widget.initialItems != null) {
       _groups = widget.initialItems!
-          .where((group) => group.items.isNotEmpty)
+          .where((group) => group.items.isNotEmpty || group.infoBuilder != null)
           .toList();
       _emptySearchCache = _groups;
       final totalItems = _groups.fold<int>(
         0,
         (sum, group) => sum + group.items.length,
       );
-      if (totalItems == 0) {
+      final hasInfoOnly = _groups.any(
+        (g) => g.items.isEmpty && g.infoBuilder != null,
+      );
+      if (totalItems == 0 && !hasInfoOnly) {
         _error = widget.emptyMessage ?? 'No matches';
       }
       _updateHighlightedIndex();
@@ -295,7 +298,10 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
             0,
             (sum, group) => sum + group.items.length,
           );
-          if (totalItems == 0) {
+          final hasInfoOnly = _groups.any(
+            (g) => g.items.isEmpty && g.infoBuilder != null,
+          );
+          if (totalItems == 0 && !hasInfoOnly) {
             _error = widget.emptyMessage ?? 'No matches';
           }
           _updateHighlightedIndex(preserveOnRefresh: refreshing);
@@ -323,8 +329,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       setState(() {
         _error = null;
         _isLoading = false;
-        // Filter out groups with empty items
-        _groups = groupsList.where((group) => group.items.isNotEmpty).toList();
+        // Filter out groups with empty items (keep groups with infoBuilder)
+        _groups = groupsList.where((group) => group.items.isNotEmpty || group.infoBuilder != null).toList();
 
         // Cache results for empty search
         if (searchText == null) {
@@ -336,8 +342,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
           0,
           (sum, group) => sum + group.items.length,
         );
+        final hasInfoOnly = _groups.any(
+          (g) => g.items.isEmpty && g.infoBuilder != null,
+        );
 
-        if (totalItems == 0) {
+        if (totalItems == 0 && !hasInfoOnly) {
           _error = widget.emptyMessage ?? 'No matches';
         }
 
@@ -527,6 +536,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
     final totalCount = _getTotalItemCount();
 
+    // Collect info-only groups (empty items, has infoBuilder)
+    // to render at the bottom of the scroll area.
+    final infoOnlyGroups = _groups
+        .where((g) => g.items.isEmpty && g.infoBuilder != null)
+        .toList();
+    final displayCount = totalCount + infoOnlyGroups.length;
+
     return ListViewSelector(
       scrollController: _scrollController,
       estimatedItemHeight: 50.0,
@@ -657,10 +673,15 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                     child: ListView.builder(
                       controller: _scrollController,
                       shrinkWrap: true,
-                      itemCount: totalCount,
+                      itemCount: displayCount,
                       itemBuilder: (context, index) {
-                        // Check bounds first (protects against out-of-range access)
-                        if (index < 0 || index >= totalCount) {
+                        // Render info-only groups as trailing items
+                        if (index >= totalCount) {
+                          final infoIndex = index - totalCount;
+                          if (infoIndex < infoOnlyGroups.length) {
+                            return infoOnlyGroups[infoIndex]
+                                .infoBuilder!(context);
+                          }
                           return const SizedBox.shrink();
                         }
 

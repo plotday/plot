@@ -255,8 +255,18 @@ class Tracker {
     };
 
     // Catch async errors that occur outside of the Flutter framework
-    PlatformDispatcher.instance.onError =
-        (Object error, StackTrace stackTrace) {
+    PlatformDispatcher
+        .instance
+        .onError = (Object error, StackTrace stackTrace) {
+      // Ignore harmless forui FTappable error: findRenderObject() called on a
+      // defunct element when a button is removed while the pointer is still
+      // down (e.g. tapping a button that closes a modal).
+      if (error is FlutterError &&
+          error.message.contains('renderObject of inactive element') &&
+          stackTrace.toString().contains('tappable.dart')) {
+        return true;
+      }
+
       _log.severe('Uncaught async error', error, stackTrace);
       _backend.captureException(error: error, stackTrace: stackTrace);
       return true; // Marks the error as handled

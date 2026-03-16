@@ -11,6 +11,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
+import 'package:plot/util/platform.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
@@ -626,7 +627,7 @@ abstract class _UpdateThreadCommand extends Command {
 class ToggleThreadToDo extends _UpdateThreadCommand {
   ToggleThreadToDo(super.thread, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'To do',
+        title: thread.todo ? 'Finish' : 'Start',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon
@@ -646,7 +647,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
 class ThreadToDo extends _UpdateThreadCommand {
   ThreadToDo(super.thread, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'To do',
+        title: 'Start',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon ? PlotIcon.note : PlotIcon.todo,
@@ -830,15 +831,19 @@ class ActorGroup extends CommandGroup {
 }
 
 class ScheduleThread extends _UpdateThreadCommand {
-  ScheduleThread(super.thread, {required this.when, super.onUpdate, super.priorityBloc})
-    : super(
-        title: thread.on != null ? 'Reschedule' : 'Schedule',
-        eventObject: EventObject.activity,
-        eventAction: thread.on != null
-            ? EventAction.rescheduled
-            : EventAction.scheduled,
-        icon: PlotIcon.schedule,
-      );
+  ScheduleThread(
+    super.thread, {
+    required this.when,
+    super.onUpdate,
+    super.priorityBloc,
+  }) : super(
+         title: thread.on != null ? 'Reschedule' : 'Schedule',
+         eventObject: EventObject.activity,
+         eventAction: thread.on != null
+             ? EventAction.rescheduled
+             : EventAction.scheduled,
+         icon: PlotIcon.schedule,
+       );
 
   final Date when;
 
@@ -856,15 +861,19 @@ class ScheduleThread extends _UpdateThreadCommand {
 }
 
 class ScheduleEvent extends _UpdateThreadCommand {
-  ScheduleEvent(super.thread, {required this.at, super.onUpdate, super.priorityBloc})
-    : super(
-        title: thread.at != null ? 'Reschedule' : 'Schedule',
-        eventObject: EventObject.activity,
-        eventAction: thread.at != null
-            ? EventAction.rescheduled
-            : EventAction.scheduled,
-        icon: PlotIcon.event,
-      );
+  ScheduleEvent(
+    super.thread, {
+    required this.at,
+    super.onUpdate,
+    super.priorityBloc,
+  }) : super(
+         title: thread.at != null ? 'Reschedule' : 'Schedule',
+         eventObject: EventObject.activity,
+         eventAction: thread.at != null
+             ? EventAction.rescheduled
+             : EventAction.scheduled,
+         icon: PlotIcon.event,
+       );
 
   final DateTimeRange at;
 
@@ -909,8 +918,11 @@ class RescheduleEvent extends Command {
     ).show<DateTimeRange>(context);
 
     if (result.present && context.mounted) {
-      await ScheduleEvent(thread, at: result.value, priorityBloc: priorityBloc)
-          .run(context);
+      await ScheduleEvent(
+        thread,
+        at: result.value,
+        priorityBloc: priorityBloc,
+      ).run(context);
       return const CommandDone();
     }
 
@@ -1479,7 +1491,11 @@ class ShowThreadCommands extends ShowCommands {
         title: 'More commands',
         icon: PlotIcon.menu,
         commandsBuilder: (context) async => Commands(
-          groups: await threadCommandGroups(thread, open: open),
+          groups: await threadCommandGroups(
+            thread,
+            open: open,
+            compact: !context.isMultiPanel,
+          ),
           prompt: thread.title ?? 'Thread',
         ),
       );
@@ -1616,21 +1632,25 @@ class OpenFocusedItemActions extends ShowCommands {
 Future<List<StaticCommandGroup>> threadCommandGroups(
   Thread thread, {
   bool open = true,
+  bool compact = false,
 }) async {
   final hasMerged = await SplitThread.hasMergedContent(thread.id);
   return threadCommandGroupsSync(
     thread,
     open: open,
     showSplitThread: hasMerged,
+    compact: compact,
   );
 }
 
 /// Sync variant for callers that cannot await (e.g. CommandScope).
 /// Does not include SplitThread unless [showSplitThread] is explicitly true.
+/// When [compact] is true, tag groups are replaced with a compact tag row.
 List<StaticCommandGroup> threadCommandGroupsSync(
   Thread thread, {
   bool open = true,
   bool showSplitThread = false,
+  bool compact = false,
 }) {
   final isViewer = thread.priority.isViewer;
   final tags = Tag.getAll()
@@ -1653,6 +1673,73 @@ List<StaticCommandGroup> threadCommandGroupsSync(
             !thread.hasTag(cmd.tag),
       )
       .toList();
+
+  if (compact || !hasPhysicalKeyboard()) {
+    // Compact (touch or single-panel): show tag row instead of Remove/Add tag groups
+    final activeTags = remove.map((cmd) => cmd.tag).toList();
+    final suggestedTags = add.map((cmd) => cmd.tag).toList();
+    final activeTagCounts = {
+      for (final tag in activeTags) tag: thread.tags[tag]?.length ?? 0,
+    };
+
+    return [
+      if (commands.isNotEmpty)
+        StaticCommandGroup(
+          title: 'Thread: ${thread.title}',
+          commands: commands,
+        ),
+      StaticCommandGroup(
+        title: null,
+        commands: [],
+        infoBuilder: (context) => TagRow(
+          activeTags: activeTags,
+          suggestedTags: suggestedTags,
+          activeTagCounts: activeTagCounts,
+          commandBuilder: (tag) => ToggleThreadTag(thread, tag),
+          showAllBuilder: () => ShowCommands(
+            title: 'All tags',
+            icon: PlotIcon.more,
+            commandsBuilder: (_) async {
+              // Fetch fresh tag state when opened
+              final freshThread = await Thread.getOne(thread.id);
+              final freshTags = Tag.getAll()
+                  .where((tag) => !isViewer || tag.type == TagType.count)
+                  .map((tag) => ToggleThreadTag(freshThread, tag))
+                  .toList();
+              final freshRemove = freshTags
+                  .where(
+                    (cmd) =>
+                        cmd.tag.type != TagType.compute &&
+                        freshThread.hasTag(cmd.tag),
+                  )
+                  .toList();
+              final freshAdd = freshTags
+                  .where(
+                    (cmd) =>
+                        cmd.tag.addable == true &&
+                        cmd.tag.type != TagType.compute &&
+                        !freshThread.hasTag(cmd.tag),
+                  )
+                  .toList();
+              return Commands(
+                groups: [
+                  if (freshRemove.isNotEmpty)
+                    StaticCommandGroup(
+                      title: 'Remove tag',
+                      commands: freshRemove,
+                    ),
+                  if (freshAdd.isNotEmpty)
+                    StaticCommandGroup(title: 'Add tag', commands: freshAdd),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    ];
+  }
+
+  // Non-touch: unchanged
   return [
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Thread: ${thread.title}', commands: commands),
@@ -1675,17 +1762,26 @@ List<Command> threadCommands(
     return [if (open) ChangeCurrentThread(thread)];
   }
 
-  final primary = skipPrimary
-      ? null
-      : primaryThreadCommand(thread, stateIcon: false);
-  // For checks, use the actual primary command (not the nullable primary variable)
-  final actualPrimary = primaryThreadCommand(thread, stateIcon: false);
+  Command? primary;
+  if (!skipPrimary) {
+    if (thread.todo) {
+      if (!thread.outstandingTasks) {
+        primary = ThreadDone(thread, stateIcon: false);
+      }
+    } else if (thread.on != null) {
+      primary = PickScheduleThread(thread);
+    } else {
+      primary = ThreadToDo(thread, stateIcon: false);
+    }
+  }
+
+  // For PickScheduleThread inclusion check: is the thread's natural primary a schedule picker?
+  final isPrimarySchedule = !thread.todo && thread.on != null;
   final hideArchive = showEventTiming && thread.hasOtherAttendees;
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,
-    if (actualPrimary is! PickScheduleThread &&
-        !(thread.todo && thread.isFuture))
+    if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
     if (!skipInfrequent) RenameThread(thread),
     MoveThreadToPriority(thread),
@@ -1715,19 +1811,4 @@ List<Command> topThreadTags(Thread thread, List<Tag> tagSuggestions) {
       .take(maxToShow)
       .map((tag) => ToggleThreadTag(thread, tag))
       .toList();
-}
-
-/// Returns the primary command for a thread based on its current schedule state.
-/// This is shown as the leading command in ThreadWidget and as the primary action in ThreadPage header.
-/// Use `selected: true` on the button when thread.todo.
-Command primaryThreadCommand(Thread thread, {bool stateIcon = true}) {
-  if (thread.todo) {
-    return ThreadDone(thread, stateIcon: stateIcon);
-  } else if (thread.on != null) {
-    // Thread has a date range (scheduled for later)
-    return PickScheduleThread(thread);
-  } else {
-    // Unscheduled thread - offer to start
-    return ThreadToDo(thread, stateIcon: stateIcon);
-  }
 }

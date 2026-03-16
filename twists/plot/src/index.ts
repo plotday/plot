@@ -68,12 +68,13 @@ class PlotTwist extends Twist<PlotTwist> {
           content:
             "Plot is your workspace for making progress on what matters most. **Priorities**, **Threads**, and **Notes** are the core building blocks of Plot:\n\n" +
             "- **Priorities**: The roles, goals, and projects in your life — the areas you direct your focus and energy toward. Examples include Work, Personal, Launch New Product, Team Leader, and Learn French.\n" +
-            '- **Threads**: Everything related to something you work on, collected in one place. A thread can contain notes, messages to collaborators, links syncing with external items, and chats with twists. Threads are the core thing you mark "to do" and schedule.\n' +
+            "- **Threads**: Everything related to something you work on, collected in one place. A thread can contain notes, messages to collaborators, links syncing with external items, and chats with twists. Threads are the core thing you Start, Schedule, and Finish.\n" +
             "- **Notes**: The content within threads. Notes can be personal notes, messages to others, or synced comments with connected apps. Individual notes can be marked as tasks and assigned to people.",
         },
         {
           content:
-            'Marking a thread "to do" means you need to do something with it — it could be as simple as reading and thinking, or it could mean taking action. Think of it like starring items in your inbox. Both "to do" and scheduling are personal to you — others in the same priority won\'t see your to-do list. You can also schedule threads so you deal with them at the right time.',
+            "When a thread needs your attention, you **Start** it — it could be as simple as reading and thinking, or it could mean taking action. You can also **Schedule** a thread to choose when you want to act on it. Starting and scheduling build your personal agenda — it's not a shared project board, it's your own action plan.\n\n" +
+            "When you're done with your part, you **Finish** the thread. This marks any of your tasks in the thread as done. You (and others) might Start and Finish a thread multiple times as work progresses. There's also a separate **Done** tag you can add to mark a thread as complete for good for everyone.",
         },
         {
           content:
@@ -210,8 +211,8 @@ class PlotTwist extends Twist<PlotTwist> {
           content:
             "**Touch Gestures**\n\n" +
             "- **Long press** on items to open the menu\n" +
-            "- **Swipe right** on threads: mark To Do (or mark done if already doing)\n" +
-            "- **Swipe left** on threads: schedule to do later\n" +
+            "- **Swipe right** on threads: Start (or Finish if already started)\n" +
+            "- **Swipe left** on threads: Schedule for later\n" +
             "- **Share** a link from another app to Plot using the share sheet (iOS and Android)",
         },
       ],

@@ -25,6 +25,7 @@ class Button extends StatefulWidget {
   }) : iconOnly = false,
        style = ButtonStyle.secondary,
        color = null,
+       hoverColor = null,
        forceHover = false;
 
   const Button.primary(
@@ -38,6 +39,7 @@ class Button extends StatefulWidget {
        selected = false,
        selectedColor = null,
        color = null,
+       hoverColor = null,
        forceHover = false;
 
   const Button.ghost(
@@ -51,6 +53,7 @@ class Button extends StatefulWidget {
   }) : style = ButtonStyle.ghost,
        iconOnly = false,
        color = null,
+       hoverColor = null,
        forceHover = false;
 
   const Button.icon(
@@ -61,6 +64,7 @@ class Button extends StatefulWidget {
     this.selected = false,
     this.selectedColor,
     this.color,
+    this.hoverColor,
     this.forceHover = false,
     super.key,
   }) : iconOnly = true,
@@ -73,6 +77,8 @@ class Button extends StatefulWidget {
   final Color? selectedColor;
   /// Color override for non-selected state icon/text.
   final Color? color;
+  /// Color override for non-selected hover state icon/text.
+  final Color? hoverColor;
   final bool forceHover;
   final bool iconOnly;
   final bool expand;
@@ -315,6 +321,9 @@ class _ButtonState extends State<Button> {
         iconContentStyle: FButtonIconContentStyleDelta.delta(
           iconStyle: _iconVariants(
             base: iconStyle.resolve({}).copyWith(color: widget.color),
+            hovered: widget.hoverColor != null
+                ? iconStyle.resolve({FTappableVariant.hovered}).copyWith(color: widget.hoverColor)
+                : null,
           ),
         ),
       );
