@@ -71,6 +71,12 @@ class PrioritiesBase extends BaseTable {
           ? json['see_within_updates']
           : jsonEncode(json['see_within_updates']);
     }
+    // Ensure order is never null — the server COALESCE should prevent this,
+    // but a null here causes a native SIGSEGV at sqlite3_bind_double
+    json['order'] ??= DateTime.parse(json['created_at'] as String)
+        .millisecondsSinceEpoch
+        .toDouble();
+
     return PriorityRow.fromJson(json);
   }
 
