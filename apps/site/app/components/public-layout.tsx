@@ -112,7 +112,6 @@ export default function Index() {
       <AppHeader />
       <AppShell.Main className={classes.main}>
         <Outlet />
-        <Box h={64} />
         <AppFooter />
       </AppShell.Main>
     </AppShell>
