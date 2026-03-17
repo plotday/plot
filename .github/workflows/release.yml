@@ -394,6 +394,11 @@ jobs:
             --out-file "$GITHUB_WORKSPACE/apps/plot/android/play-deployer-service-key.json" \
             --file-mode 0600
 
+          # Firebase config for Android
+          op read "op://Production/Firebase Cloud Messaging/android/google-services.json" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/android/app/google-services.json" \
+            --file-mode 0600
+
       - name: Create key.properties
         run: |
           cat > apps/plot/android/key.properties << EOF
