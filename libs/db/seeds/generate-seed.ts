@@ -1023,7 +1023,7 @@ function generateSQL(
   lines.push("-- Cleanup existing data for this user");
   lines.push(`DELETE FROM thread WHERE created_by = ${sqlString(userId)};`);
   lines.push(
-    `DELETE FROM priority_settings WHERE user_id = ${sqlString(userId)};`
+    `DELETE FROM priority_setting WHERE user_id = ${sqlString(userId)};`
   );
   lines.push(`DELETE FROM priority_user WHERE user_id = ${sqlString(userId)};`);
   lines.push(`DELETE FROM priority WHERE created_by = ${sqlString(userId)};`);
@@ -1160,6 +1160,18 @@ function generateSQL(
 
   // Generate SQL
 
+  // Placeholder users (for contacts with user_id that need to exist in the user table)
+  const contactsWithUserId = contacts.filter((c) => c.user_id !== null);
+  if (contactsWithUserId.length > 0) {
+    lines.push("-- Placeholder users for shared priority members");
+    for (const c of contactsWithUserId) {
+      lines.push(
+        `INSERT INTO public."user" (id, email, name) VALUES (${sqlString(c.user_id)}, ${sqlString(c.email)}, ${sqlString(c.name)}) ON CONFLICT (id) DO NOTHING;`
+      );
+    }
+    lines.push("");
+  }
+
   // Contacts
   if (contacts.length > 0) {
     const contactEmails = contacts.map((c) => sqlString(c.email)).join(", ");
@@ -1247,24 +1259,32 @@ function generateSQL(
     lines.push("");
   }
 
-  // Priority settings
+  // Priority settings (key/value format)
   if (prioritySettings.length > 0) {
     lines.push("-- Priority settings");
     lines.push(
-      "INSERT INTO priority_settings (priority_id, user_id, color, path, pomodoro, updated_at)"
+      "INSERT INTO priority_setting (priority_id, user_id, key, value, updated_at)"
     );
     lines.push("VALUES");
-    for (let i = 0; i < prioritySettings.length; i++) {
-      const ps = prioritySettings[i];
-      const comma = i < prioritySettings.length - 1 ? "," : ";";
-      lines.push(
-        `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, ${
-          ps.color !== null ? ps.color : "NULL"
-        }, ${sqlString(ps.path)}, ${
-          ps.pomodoro !== null ? ps.pomodoro : "NULL"
-        }, NOW())${comma}`
-      );
+    const settingRows: string[] = [];
+    for (const ps of prioritySettings) {
+      if (ps.color !== null) {
+        settingRows.push(
+          `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, 'color', '${ps.color}'::jsonb, NOW())`
+        );
+      }
+      if (ps.path !== null) {
+        settingRows.push(
+          `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, 'path', ${sqlString(JSON.stringify(ps.path))}::jsonb, NOW())`
+        );
+      }
+      if (ps.pomodoro !== null) {
+        settingRows.push(
+          `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, 'pomodoro', '${ps.pomodoro}'::jsonb, NOW())`
+        );
+      }
     }
+    lines.push(settingRows.join(",\n") + ";");
     lines.push("");
   }
 
