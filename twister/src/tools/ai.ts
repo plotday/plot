@@ -243,11 +243,10 @@ export enum AIModel {
   O3 = "openai/o3",
   O3_MINI = "openai/o3-mini",
 
-  // Anthropic models - Claude 4.x and 3.7 series
-  CLAUDE_SONNET_45 = "anthropic/claude-sonnet-4-5",
+  // Anthropic models - Claude 4.x series
+  CLAUDE_OPUS_46 = "anthropic/claude-opus-4-6",
+  CLAUDE_SONNET_46 = "anthropic/claude-sonnet-4-6",
   CLAUDE_HAIKU_45 = "anthropic/claude-haiku-4-5",
-  CLAUDE_OPUS_41 = "anthropic/claude-opus-4-1",
-  CLAUDE_37_SONNET = "anthropic/claude-3-7-sonnet-latest",
 
   // Google models - Gemini 2.x series
   GEMINI_25_PRO = "google/gemini-2.5-pro",
@@ -289,7 +288,7 @@ export interface AIRequest<
    *
    * @example
    * // With a specific model hint
-   * model: { speed: "balanced", cost: "medium", hint: "anthropic/claude-sonnet-4-5" }
+   * model: { speed: "balanced", cost: "medium", hint: "anthropic/claude-sonnet-4-6" }
    */
   model: ModelPreferences;
 

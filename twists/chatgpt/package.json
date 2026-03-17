@@ -2,7 +2,7 @@
   "name": "@plotday/twist-chatgpt",
   "plotTwistId": "019cf6f7-275e-7123-a443-3fb3b0e777c3",
   "displayName": "ChatGPT",
-  "description": "Chat with OpenAI's GPT models",
+  "description": "Chat with OpenAI's GPT-5",
   "logoUrl": "https://api.iconify.design/simple-icons/openai.svg",
   "logoUrlDark": "https://api.iconify.design/simple-icons/openai.svg?color=%23ffffff",
   "main": "src/index.ts",
