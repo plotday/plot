@@ -27,25 +27,25 @@ const STORY_TABS = [
     label: "Email",
     image: "/assets/email.png",
     title: "A to-do list written by others",
-    copy: "Email bundles up work for others to act on asynchronously. But running our work out of an inbox leaves us at the mercy of the senders. When we reach the mythical inbox zero, we often realize we haven't started on what's most important.",
+    copy: "Email lets us easily pass work to others. But when inboxes drive our day, we spend it playing the inbox zero game. Once we \"win\", we often realize we haven't started on what's most important.",
   },
   {
     label: "Team Chat",
     image: "/assets/chat.png",
     title: "Fast coordination, slow resolution",
-    copy: "Chat makes coordination nearly free. A question doesn't need to wait for a meeting, and the whole team can see and weigh in. But the most vigorous conversations are often the least important, and the essential ones languish unresolved.",
+    copy: "Chat makes coordination nearly free — a question doesn't need to wait for a meeting, and anyone can weigh in. But the loudest threads are often the least important, while the essential ones quietly go unresolved.",
   },
   {
     label: "Project Management",
     image: "/assets/project.png",
     title: "Clarity that becomes its own overhead",
-    copy: "Project management tools create clarity for action. But when nothing can happen without a ticket, the system becomes the bottleneck. Keeping it on the rails becomes its own job, and planning starts taking longer than the work.",
+    copy: "Project management tools bring clarity to work. But when nothing moves without a ticket, the tool becomes the bottleneck. Maintaining it becomes its own job, and planning starts taking longer than the work.",
   },
   {
     label: "Meetings",
     image: "/assets/meetings.png",
     title: "High bandwidth, high cost",
-    copy: "Meetings offer high-bandwidth collaboration\u2014the challenges that snarl email threads get sorted out in minutes. But when nothing can happen without a meeting, we live by our calendars and burn our best energy before the work begins.",
+    copy: "Meetings offer high-bandwidth collaboration that can solve challenges that snarl email threads. But when nothing can happen without a meeting, we live by our calendars and burn our best energy before the work begins.",
   },
 ];
 
@@ -216,7 +216,9 @@ export default function Home() {
       {/* Benefit 2 — Structure without overhead */}
       <Box className={classes.graySection} pt={80} pb={80}>
         <Container size="lg">
-          <Box className={`${classes.benefitSection} ${classes.benefitReverse}`}>
+          <Box
+            className={`${classes.benefitSection} ${classes.benefitReverse}`}
+          >
             <Stack className={classes.benefitText} gap="md">
               <Title order={2} size="h2" className={classes.sectionTitle}>
                 Structure without the overhead
@@ -301,20 +303,21 @@ export default function Home() {
       {/* Benefit 4 — A platform for your work */}
       <Box className={classes.graySection} pt={80} pb={80}>
         <Container size="lg">
-          <Box className={`${classes.benefitSection} ${classes.benefitReverse}`}>
+          <Box
+            className={`${classes.benefitSection} ${classes.benefitReverse}`}
+          >
             <Stack className={classes.benefitText} gap="md">
               <Title order={2} size="h2" className={classes.sectionTitle}>
                 A platform for how your work actually works
               </Title>
               <Text className={classes.sectionBody}>
-                Twists are extensions that add capabilities to
-                Plot—automations, integrations, and custom workflows that run
-                securely inside your workspace. Chat with Claude, ChatGPT, and
-                Gemini right where your work lives. Install twists built by
-                others or create your own with Plot's open SDK. Because twists
-                have access to your connections and your work context, they can
-                answer questions like "What did we decide about X?" with real
-                information.
+                Twists are extensions that add capabilities to Plot—automations,
+                integrations, and custom workflows that run securely inside your
+                workspace. Chat with Claude, ChatGPT, and Gemini right where
+                your work lives. Install twists built by others or create your
+                own with Plot's open SDK. Because twists have access to your
+                connections and your work context, they can answer questions
+                like "What did we decide about X?" with real information.
               </Text>
               <Button
                 className={classes.benefitCta}
