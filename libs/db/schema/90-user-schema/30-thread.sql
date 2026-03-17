@@ -53,7 +53,12 @@ SELECT
         a.created_at
     ) AS activity_at,
     -- agenda_at: range from earliest schedule start to latest end (or infinity for recurring/unbounded)
-    tstzrange(
+    -- Uses GREATEST on upper bound to guarantee upper >= lower (prevents tstzrange error)
+    (SELECT tstzrange(
+        lo,
+        GREATEST(lo, hi),
+        '[]'
+    ) FROM (SELECT
         COALESCE(
             LEAST(
                 (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
@@ -68,7 +73,7 @@ SELECT
                  LIMIT 1)
             ),
             a.created_at
-        ),
+        ) AS lo,
         COALESCE(
             CASE
                 -- Recurring schedules span to infinity
@@ -98,9 +103,8 @@ SELECT
                 )
             END,
             a.created_at
-        ),
-        '[]'
-    ) AS agenda_at
+        ) AS hi
+    ) bounds) AS agenda_at
 FROM
     thread_x a
     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id

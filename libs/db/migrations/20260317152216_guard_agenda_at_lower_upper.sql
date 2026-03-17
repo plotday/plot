@@ -1,0 +1,130 @@
+-- Modify "thread" view
+CREATE OR REPLACE VIEW "user"."thread" (
+  "user_id",
+  "id",
+  "created_at",
+  "updated_at",
+  "updated_by",
+  "archived_at",
+  "priority_id",
+  "priority_path",
+  "draft",
+  "private",
+  "title",
+  "preview",
+  "icon",
+  "last_note_created_at",
+  "last_note_source_created_at",
+  "mentions",
+  "bumped_at",
+  "unread",
+  "importance",
+  "urgency",
+  "activity_at",
+  "agenda_at"
+) AS WITH link_agg AS (
+         SELECT link.thread_id,
+            max(link.source_created_at) AS source_created_at
+           FROM public.link
+          GROUP BY link.thread_id
+        )
+ SELECT upe.user_id,
+    a.id,
+    a.created_at,
+    GREATEST(a.updated_at, COALESCE(a.last_note_created_at, '1970-01-01 00:00:00+00'::timestamp with time zone), COALESCE(tu.updated_at, '1970-01-01 00:00:00+00'::timestamp with time zone)) AS updated_at,
+    a.updated_by,
+    COALESCE(a.archived_at, upe.archived_at) AS archived_at,
+    a.priority_id,
+    upe.path AS priority_path,
+    a.draft,
+    a.private,
+    a.title,
+    a.preview,
+    a.icon,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    a.mentions,
+    tu.bumped_at,
+    COALESCE(tu.read_at IS NULL AND tu.user_id IS NOT NULL, false) AS unread,
+    COALESCE(
+        CASE
+            WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.importance
+            ELSE NULL::smallint
+        END, 0::smallint) AS importance,
+    COALESCE(
+        CASE
+            WHEN tu.read_at IS NULL AND tu.user_id IS NOT NULL THEN tu.urgency
+            ELSE NULL::text
+        END, NULL::text) AS urgency,
+    COALESCE(GREATEST(a.last_note_source_created_at, la.source_created_at, tu.bumped_at, ( SELECT
+                CASE
+                    WHEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamp with time zone) <= now() THEN COALESCE(upper(s_feed.at), upper(s_feed."on")::timestamp with time zone)
+                    ELSE NULL::timestamp with time zone
+                END AS "case"
+           FROM public.schedule s_feed
+          WHERE s_feed.thread_id = a.id AND s_feed.user_id IS NULL AND s_feed.occurrence IS NULL AND s_feed.archived_at IS NULL
+         LIMIT 1)), a.created_at) AS activity_at,
+    ( SELECT tstzrange(bounds.lo, GREATEST(bounds.lo, bounds.hi), '[]'::text) AS tstzrange
+           FROM ( SELECT COALESCE(LEAST(( SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone) AS "coalesce"
+                           FROM public.schedule s_lo
+                          WHERE s_lo.thread_id = a.id AND s_lo.user_id IS NULL AND s_lo.archived_at IS NULL
+                          ORDER BY (COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone))
+                         LIMIT 1), ( SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone) AS "coalesce"
+                           FROM public.schedule s_lo
+                          WHERE s_lo.thread_id = a.id AND s_lo.user_id = upe.user_id AND s_lo.archived_at IS NULL
+                          ORDER BY (COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamp with time zone))
+                         LIMIT 1)), a.created_at) AS lo,
+                    COALESCE(
+                        CASE
+                            WHEN (EXISTS ( SELECT 1
+                               FROM public.schedule s_rec
+                              WHERE s_rec.thread_id = a.id AND s_rec.archived_at IS NULL AND s_rec.recurrence_rule IS NOT NULL)) THEN 'infinity'::timestamp with time zone
+                            WHEN (EXISTS ( SELECT 1
+                               FROM public.schedule s_ub
+                              WHERE s_ub.thread_id = a.id AND s_ub.archived_at IS NULL AND (s_ub.at IS NOT NULL OR s_ub."on" IS NOT NULL) AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamp with time zone) IS NULL)) THEN 'infinity'::timestamp with time zone
+                            ELSE GREATEST(( SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone) AS "coalesce"
+                               FROM public.schedule s_hi
+                              WHERE s_hi.thread_id = a.id AND s_hi.user_id IS NULL AND s_hi.archived_at IS NULL
+                              ORDER BY (COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone)) DESC NULLS LAST
+                             LIMIT 1), ( SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone) AS "coalesce"
+                               FROM public.schedule s_hi
+                              WHERE s_hi.thread_id = a.id AND s_hi.user_id = upe.user_id AND s_hi.archived_at IS NULL
+                              ORDER BY (COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamp with time zone)) DESC NULLS LAST
+                             LIMIT 1))
+                        END, a.created_at) AS hi) bounds) AS agenda_at
+   FROM public.thread_x a
+     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
+     LEFT JOIN public.thread_unread tu ON tu.user_id = upe.user_id AND tu.thread_id = a.id
+     LEFT JOIN link_agg la ON la.thread_id = a.id
+  WHERE (a.draft = false OR a.created_by = upe.user_id) AND
+        CASE
+            WHEN a.private = false THEN true
+            WHEN a.created_by = upe.user_id THEN true
+            ELSE "user".mentioned_in_thread(upe.user_id, a.id)
+        END
+UNION ALL
+ SELECT upe.user_id,
+    a.id,
+    a.created_at,
+    a.updated_at,
+    a.updated_by,
+    COALESCE(a.archived_at, upe.archived_at, a.updated_at) AS archived_at,
+    a.priority_id,
+    upe.path AS priority_path,
+    a.draft,
+    a.private,
+    NULL::text AS title,
+    NULL::text AS preview,
+    a.icon,
+    a.last_note_created_at,
+    a.last_note_source_created_at,
+    NULL::uuid[] AS mentions,
+    NULL::timestamp with time zone AS bumped_at,
+    false AS unread,
+    0::smallint AS importance,
+    NULL::text AS urgency,
+    a.created_at AS activity_at,
+    tstzrange(a.created_at, a.created_at, '[]'::text) AS agenda_at
+   FROM public.thread_x a
+     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
+  WHERE (a.draft = false OR a.created_by = upe.user_id) AND a.private = true AND a.created_by <> upe.user_id AND NOT "user".mentioned_in_thread(upe.user_id, a.id);
