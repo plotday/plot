@@ -2,7 +2,10 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:collection/collection.dart';
+
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/bottom_navigation_provider.dart';
@@ -206,11 +209,8 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                 }
                               }
                             } else if (index == 4) {
-                              // Show command palette (same as Cmd-K)
-                              Commands(
-                                prompt: 'Run a command',
-                                groups: CommandRegistry.of(context).commands,
-                              ).show(context);
+                              // Open settings modal
+                              ShowSettings().run(context);
                             } else {
                               // Index 0: Priorities tab
                               if (currentPath.endsWith('/new')) {
@@ -265,7 +265,41 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               ),
                             ),
                             FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.menu),
+                              icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
+                                builder: (context, state) {
+                                  final plotPriority = state.root?.children
+                                      .firstWhereOrNull((p) => p.key == '@plot');
+                                  final whatsNew = plotPriority?.children
+                                      .firstWhereOrNull((c) => c.key == '@whats-new');
+                                  final helpFeedback = plotPriority?.children
+                                      .firstWhereOrNull(
+                                        (c) => c.key?.startsWith('@help-feedback') == true,
+                                      );
+                                  final hasUnread =
+                                      (whatsNew?.unread ?? false) ||
+                                      (helpFeedback?.unread ?? false);
+
+                                  return Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Icon(PlotIcon.menu),
+                                      if (hasUnread)
+                                        Positioned(
+                                          top: -2,
+                                          right: -4,
+                                          child: Container(
+                                            width: 6.0,
+                                            height: 6.0,
+                                            decoration: BoxDecoration(
+                                              color: context.theme.colors.foreground,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
                                   style: context.theme.typography.xs,

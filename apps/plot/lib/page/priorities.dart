@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
-import 'package:plot/api/broadcast.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
@@ -120,14 +119,7 @@ class PrioritiesPage extends StatelessWidget {
                                   ),
                                   child: Builder(
                                     builder: (context) {
-                                      // Extract @plot children by key
-                                      final gettingStarted = plotPriority
-                                          ?.children
-                                          .firstWhereOrNull(
-                                            (c) =>
-                                                c.key ==
-                                                '@plot.getting-started',
-                                          );
+                                      // Check unread state for What's New and Help+Feedback
                                       final whatsNew = plotPriority?.children
                                           .firstWhereOrNull(
                                             (c) => c.key == '@whats-new',
@@ -141,172 +133,13 @@ class PrioritiesPage extends StatelessWidget {
                                                 ) ==
                                                 true,
                                           );
-                                      final twistDev = plotPriority?.children
-                                          .firstWhereOrNull(
-                                            (c) => c.key == '@plot.twist-dev',
-                                          );
+                                      final hasUnread =
+                                          (whatsNew?.unread ?? false) ||
+                                          (helpFeedback?.unread ?? false);
 
                                       return Column(
                                         children: [
                                           SizedBox(height: 8),
-                                          // 1. Getting Started
-                                          if (gettingStarted != null &&
-                                              gettingStarted.archivedAt == null)
-                                            ListTile(
-                                              title: 'Getting started',
-                                              textStyle:
-                                                  context.theme.typography.sm,
-                                              icon: PlotIcon.gettingStarted,
-                                              muted: true,
-                                              selected:
-                                                  selected?.id ==
-                                                  gettingStarted.id,
-                                              selectedBorder: false,
-                                              command: CommandWrapper(
-                                                ChangeCurrentPriority(
-                                                  gettingStarted,
-                                                ),
-                                                icon: Value(null),
-                                                subtitle: Value(null),
-                                              ),
-                                            ),
-                                          // 2. What's New
-                                          if (whatsNew != null)
-                                            ListTile(
-                                              title: "What's New",
-                                              textStyle:
-                                                  context.theme.typography.sm,
-                                              icon: PlotIcon.sparkles,
-                                              muted: true,
-                                              selected:
-                                                  selected?.id == whatsNew.id,
-                                              selectedBorder: false,
-                                              command: CommandWrapper(
-                                                OpenWhatsNew(whatsNew),
-                                                icon: Value(null),
-                                                subtitle: Value(null),
-                                              ),
-                                              leadingBuilder:
-                                                  (
-                                                    isHovered,
-                                                    hasFocus,
-                                                  ) => SizedBox(
-                                                    width: 20,
-                                                    child: whatsNew.unread
-                                                        ? Center(
-                                                            child: Container(
-                                                              width: 6.0,
-                                                              height: 6.0,
-                                                              decoration: BoxDecoration(
-                                                                color: context
-                                                                    .theme
-                                                                    .colors
-                                                                    .foreground,
-                                                                shape: BoxShape
-                                                                    .circle,
-                                                              ),
-                                                            ),
-                                                          )
-                                                        : null,
-                                                  ),
-                                            ),
-                                          // 3. Connections + Twists
-                                          ValueListenableBuilder<bool>(
-                                            valueListenable: BroadcastClient
-                                                .instance
-                                                .connectionState,
-                                            builder: (context, isConnected, _) {
-                                              if (isConnected) {
-                                                return ListTile(
-                                                  title: 'Connections + Twists',
-                                                  textStyle: context
-                                                      .theme
-                                                      .typography
-                                                      .sm,
-                                                  icon: PlotIcon.connection,
-                                                  muted: true,
-                                                  command: CommandWrapper(
-                                                    ManageConnectionsAndTwists(),
-                                                    icon: Value(null),
-                                                  ),
-                                                );
-                                              }
-                                              return ListTile(
-                                                title: 'Offline',
-                                                textStyle:
-                                                    context.theme.typography.sm,
-                                                icon: PlotIcon.offline,
-                                                muted: true,
-                                                command: CommandWrapper(
-                                                  ShowOfflineInfo(),
-                                                  icon: Value(null),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                          // 3. Twist Development
-                                          if (twistDev != null &&
-                                              twistDev.archivedAt == null)
-                                            ListTile(
-                                              title: 'Twist Development',
-                                              textStyle:
-                                                  context.theme.typography.sm,
-                                              icon: PlotIcon.code,
-                                              muted: true,
-                                              selected:
-                                                  selected?.id == twistDev.id,
-                                              selectedBorder: false,
-                                              command: CommandWrapper(
-                                                ChangeCurrentPriority(twistDev),
-                                                icon: Value(null),
-                                                subtitle: Value(null),
-                                              ),
-                                            ),
-                                          // 4. Help + Feedback
-                                          if (helpFeedback != null &&
-                                              helpFeedback.archivedAt == null)
-                                            ListTile(
-                                              title: 'Help + Feedback',
-                                              textStyle:
-                                                  context.theme.typography.sm,
-                                              icon: PlotIcon.help,
-                                              muted: true,
-                                              selected:
-                                                  selected?.id ==
-                                                  helpFeedback.id,
-                                              selectedBorder: false,
-                                              command: CommandWrapper(
-                                                ChangeCurrentPriority(
-                                                  helpFeedback,
-                                                ),
-                                                icon: Value(null),
-                                                subtitle: Value(null),
-                                              ),
-                                              leadingBuilder:
-                                                  (
-                                                    isHovered,
-                                                    hasFocus,
-                                                  ) => SizedBox(
-                                                    width: 20,
-                                                    child: helpFeedback.unread
-                                                        ? Center(
-                                                            child: Container(
-                                                              width: 6.0,
-                                                              height: 6.0,
-                                                              decoration: BoxDecoration(
-                                                                color: context
-                                                                    .theme
-                                                                    .colors
-                                                                    .foreground,
-                                                                shape: BoxShape
-                                                                    .circle,
-                                                              ),
-                                                            ),
-                                                          )
-                                                        : null,
-                                                  ),
-                                            ),
-                                          // 5. Account
                                           BlocBuilder<UserBloc, UserState>(
                                             builder: (context, userState) {
                                               if (userState is UserReady) {
@@ -331,6 +164,26 @@ class PrioritiesPage extends StatelessWidget {
                                                     ShowSettings(),
                                                     icon: Value(null),
                                                   ),
+                                                  leadingBuilder: hasUnread
+                                                      ? (isHovered, hasFocus) =>
+                                                          SizedBox(
+                                                            width: 20,
+                                                            child: Center(
+                                                              child: Container(
+                                                                width: 6.0,
+                                                                height: 6.0,
+                                                                decoration: BoxDecoration(
+                                                                  color: context
+                                                                      .theme
+                                                                      .colors
+                                                                      .foreground,
+                                                                  shape: BoxShape
+                                                                      .circle,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          )
+                                                      : null,
                                                 );
                                               }
                                               return const SizedBox.shrink();

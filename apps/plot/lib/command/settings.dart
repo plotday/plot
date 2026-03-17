@@ -9,6 +9,7 @@ import 'package:forui/forui.dart';
 
 import 'package:collection/collection.dart';
 import 'package:plot/state/priorities.dart';
+import 'package:plot/state/user.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
@@ -46,6 +47,7 @@ final appearanceCommands = StaticCommandGroup(
 StaticCommandGroup settingsCommandsFromState(
   PrioritiesState? prioritiesState, {
   bool showAllPriorities = false,
+  String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
 }) {
   final hasOrganizations =
@@ -80,6 +82,7 @@ StaticCommandGroup settingsCommandsFromState(
     gettingStartedCmd: gettingStartedCmd,
     whatsNewCmd: whatsNewCmd,
     helpFeedbackCmd: helpFeedbackCmd,
+    email: email,
     adminOrgs: adminOrgs,
   );
 }
@@ -89,6 +92,7 @@ StaticCommandGroup settingsCommands({
   Command? gettingStartedCmd,
   Command? whatsNewCmd,
   Command? helpFeedbackCmd,
+  String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
 }) => StaticCommandGroup(
   title: 'App',
@@ -112,7 +116,7 @@ StaticCommandGroup settingsCommands({
     if (helpFeedbackCmd != null) helpFeedbackCmd,
     FullResync(),
     CopyVersion(),
-    SignOut(),
+    SignOut(email: email),
   ],
 );
 
@@ -128,6 +132,10 @@ class ShowSettings extends ShowCommands {
         icon: PlotIcon.settings,
         commandsBuilder: (context) async {
           final prioritiesState = context.read<PrioritiesBloc>().state;
+          final userState = context.read<UserBloc>().state;
+          final email = userState is UserReady
+              ? userState.user.primaryEmail
+              : null;
 
           // Fetch orgs to find admin orgs for AI preferences
           List<Map<String, dynamic>> adminOrgs = [];
@@ -143,7 +151,11 @@ class ShowSettings extends ShowCommands {
 
           return Commands(
             groups: [
-              settingsCommandsFromState(prioritiesState, adminOrgs: adminOrgs),
+              settingsCommandsFromState(
+                prioritiesState,
+                email: email,
+                adminOrgs: adminOrgs,
+              ),
             ],
             prompt: 'Settings',
           );
@@ -234,9 +246,10 @@ class ChangeEnterBehavior extends Command {
 }
 
 class SignOut extends Command {
-  SignOut()
+  SignOut({String? email})
     : super(
         title: 'Sign out',
+        subtitle: email,
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,
         icon: PlotIcon.signOut,

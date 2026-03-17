@@ -80,6 +80,23 @@ class CommandModal {
           controller: controller,
           command: wrappedCommand,
           showShortcut: true,
+          leadingBuilder: command.unread
+              ? (isHovered, hasFocus) => SizedBox(
+                    width: 20,
+                    child: Center(
+                      child: Builder(
+                        builder: (context) => Container(
+                          width: 6.0,
+                          height: 6.0,
+                          decoration: BoxDecoration(
+                            color: context.theme.colors.foreground,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+              : null,
           details: command.description != null
               ? Builder(
                   builder: (context) => Text(

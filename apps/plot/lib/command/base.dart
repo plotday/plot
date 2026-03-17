@@ -84,6 +84,9 @@ abstract class Command {
   // state for toggle actions
   final bool? on;
 
+  /// Whether this command has unread content (e.g. unread priority).
+  bool get unread => false;
+
   /// Override to provide custom enabled logic based on context.
   /// Returns true by default (command is enabled).
   bool enabled(BuildContext context) => true;
@@ -126,6 +129,9 @@ class CommandWrapper extends Command {
          hoverIcon: hoverIcon.or(command.hoverIcon),
          shortcut: command.shortcut,
        );
+
+  @override
+  bool get unread => command.unread;
 
   @override
   Future<CommandReturn> run(BuildContext context) {
@@ -178,8 +184,7 @@ class ShowCommands extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final commandsInstance =
-          commands ?? await commandsBuilder!(context);
+      final commandsInstance = commands ?? await commandsBuilder!(context);
       if (!context.mounted) {
         log.info(
           'Context no longer mounted, skipping CommandModal for "$title"',
@@ -591,11 +596,10 @@ class CommandScopeState extends State<CommandScope> {
 
     return CallbackShortcuts(
       bindings: {
-        platformSingleActivator(LogicalKeyboardKey.keyK): () =>
-            Commands(
-              prompt: 'Run a command',
-              groups: CommandRegistry.of(context).commands,
-            ).show(context),
+        platformSingleActivator(LogicalKeyboardKey.keyK): () => Commands(
+          prompt: 'Run a command',
+          groups: CommandRegistry.of(context).commands,
+        ).show(context),
         ...commandBindings,
         ...groupBindings,
       },

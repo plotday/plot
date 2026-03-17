@@ -88,6 +88,9 @@ class OpenHelpFeedback extends Command {
   final Priority priority;
 
   @override
+  bool get unread => priority.unread;
+
+  @override
   Future<CommandReturn> run(BuildContext context) async {
     return CommandRoute(
       PriorityRoute(priorityIdString: priority.id.toShortString()),
@@ -105,6 +108,9 @@ class OpenWhatsNew extends Command {
       );
 
   final Priority priority;
+
+  @override
+  bool get unread => priority.unread;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

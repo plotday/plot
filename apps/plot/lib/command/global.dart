@@ -16,6 +16,7 @@ class GlobalShortcuts extends StatelessWidget {
     required bool signedIn,
     PrioritiesState? prioritiesState,
     bool showAllPriorities = false,
+    String? email,
   }) {
     // When signed out, only show settings commands (and debug commands in debug mode)
     if (!signedIn) {
@@ -35,6 +36,7 @@ class GlobalShortcuts extends StatelessWidget {
       settingsCommandsFromState(
         prioritiesState,
         showAllPriorities: showAllPriorities,
+        email: email,
       ),
     ];
 
@@ -68,6 +70,7 @@ class GlobalShortcuts extends StatelessWidget {
                     signedIn: true,
                     prioritiesState: prioritiesState,
                     showAllPriorities: localPrefsState.showAllPriorities,
+                    email: userState.user.primaryEmail,
                   ),
                   child: child,
                 );
