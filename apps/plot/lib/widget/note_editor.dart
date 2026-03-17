@@ -271,7 +271,7 @@ class NoteEditorState extends State<NoteEditor> {
         final editor = Editor(
           key: _editorKey,
           hint: hint,
-          autofocus: true,
+          autofocus: !isMobilePlatform(),
           focusNode: focusNode,
           twists: twists,
           actors: actors,

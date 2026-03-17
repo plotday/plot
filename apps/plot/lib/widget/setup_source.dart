@@ -763,7 +763,8 @@ class _ChannelRowState extends State<_ChannelRow> {
                 left:
                     12.0 + theme.iconSizes.base + 12.0 + (widget.depth * 24.0),
                 right: theme.spacing.sm,
-                bottom: theme.spacing.sm,
+                top: theme.spacing.xs,
+                bottom: theme.spacing.xs,
               ),
               child: Row(
                 children: [

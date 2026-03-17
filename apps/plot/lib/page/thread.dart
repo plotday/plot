@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:plot/util/platform.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
@@ -180,9 +181,18 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
           listener: (context, state) {
             // Focus NoteEditor when thread changes
             // (InfiniteListSelector is keyed by thread.id, so it creates a fresh controller)
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _noteEditorKey.currentState?.focus();
-            });
+            if (isMobilePlatform()) {
+              // Delay focus on mobile to let layout settle before keyboard appears
+              Future.delayed(const Duration(milliseconds: 100), () {
+                if (mounted) {
+                  _noteEditorKey.currentState?.focus();
+                }
+              });
+            } else {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _noteEditorKey.currentState?.focus();
+              });
+            }
           },
           listenWhen: (previous, current) =>
               previous.thread.id != current.thread.id,
