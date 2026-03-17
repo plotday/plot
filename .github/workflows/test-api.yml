@@ -8,6 +8,7 @@ on:
       - "workers/api/**"
       - "libs/**"
       - "public/twister/**"
+      - "pnpm-lock.yaml"
       - ".github/workflows/test-api.yml"
 
 jobs:

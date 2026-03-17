@@ -12,6 +12,7 @@ on:
       - "libs/**"
       - "public"
       - "public/**"
+      - "pnpm-lock.yaml"
       - ".github/workflows/deploy-twists.yml"
   workflow_dispatch:
     inputs:

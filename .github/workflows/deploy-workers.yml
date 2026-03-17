@@ -7,6 +7,7 @@ on:
       - "workers/**"
       - "libs/**"
       - "public/twister/**"
+      - "pnpm-lock.yaml"
       - ".github/workflows/deploy-workers.yml"
   workflow_dispatch:
     inputs:
