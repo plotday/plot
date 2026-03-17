@@ -28,24 +28,28 @@ const STORY_TABS = [
     image: "/assets/email.png",
     title: "A to-do list written by others",
     copy: "Email lets us easily pass work to others. But when inboxes drive our day, we spend it playing the inbox zero game. Once we \"win\", we often realize we haven't started on what's most important.",
+    lightVignette: true,
   },
   {
     label: "Team Chat",
     image: "/assets/chat.png",
     title: "Fast coordination, slow resolution",
     copy: "Chat makes coordination nearly free — a question doesn't need to wait for a meeting, and anyone can weigh in. But the loudest threads are often the least important, while the essential ones quietly go unresolved.",
+    lightVignette: true,
   },
   {
     label: "Project Management",
     image: "/assets/project.png",
     title: "Clarity that becomes its own overhead",
     copy: "Project management tools bring clarity to work. But when nothing moves without a ticket, the tool becomes the bottleneck. Maintaining it becomes its own job, and planning starts taking longer than the work.",
+    lightVignette: true,
   },
   {
     label: "Meetings",
     image: "/assets/meetings.png",
     title: "High bandwidth, high cost",
     copy: "Meetings offer high-bandwidth collaboration that can solve challenges that snarl email threads. But when nothing can happen without a meeting, we live by our calendars and burn our best energy before the work begins.",
+    lightVignette: false,
   },
 ];
 
@@ -144,7 +148,7 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <div className={classes.storyImageWrap}>
+            <div className={`${classes.storyImageWrap} ${STORY_TABS[activeTab].lightVignette ? classes.storyImageLightVignette : ""}`}>
               <img
                 src={STORY_TABS[activeTab].image}
                 alt={STORY_TABS[activeTab].label}
