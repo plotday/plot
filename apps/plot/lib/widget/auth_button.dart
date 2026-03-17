@@ -691,7 +691,7 @@ AuthProviderConfig getAuthProviderConfig(AuthProvider provider) {
         iconSize: iconSize,
         spacing: spacing,
         fontSize: fontSize,
-        fontWeight: fontWeight,
+        fontWeight: FontWeight.w600,
         fontFamily: 'Segoe UI',
         buttonText: 'Continue with Microsoft',
       );
@@ -727,7 +727,7 @@ AuthProviderConfig getAuthProviderConfig(AuthProvider provider) {
         iconSize: iconSize,
         spacing: spacing,
         fontSize: fontSize,
-        fontWeight: fontWeight,
+        fontWeight: FontWeight.w600,
         fontFamily: 'SF Pro Text',
         buttonText: 'Continue with Apple',
       );
