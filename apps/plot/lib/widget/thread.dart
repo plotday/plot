@@ -1091,7 +1091,7 @@ class _ThreadLogo extends StatelessWidget {
       icon = Icon(
         resolved.fallbackIcon,
         size: 16,
-        color: context.theme.plotColors.muted,
+        color: context.theme.plotColors.veryMuted,
       );
     }
 

@@ -6,6 +6,7 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/theme.dart';
 import 'package:plot/widget/widget.dart';
 
 /// Distance from the leading left edge to the start button's icon right edge.
@@ -52,6 +53,7 @@ class AgendaHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final brightness = context.read<ThemeBloc>().getBrightness(context);
     // Determine what to show in the center
     String? centerText = text;
     // Split date into two parts for center-on-month alignment
@@ -103,16 +105,11 @@ class AgendaHeader extends StatelessWidget {
         ? context.colour.colours.fromTheme(priorityContext!.displayColor)
         : context.theme.colors.mutedForeground;
 
-    final textColor = now
-        ? nowColor
-        : context.theme.colors.mutedForeground;
+    final textColor = now ? nowColor : context.theme.colors.mutedForeground;
 
     // Detect gap headers (time gaps between scheduled events)
     final isGapHeader =
-        thread == null &&
-        dateTimeRange != null &&
-        date == null &&
-        !now;
+        thread == null && dateTimeRange != null && date == null && !now;
 
     // Use xs font size for event headers and gap headers to match thread timing labels
     final fontSize = (thread != null && !now) || isGapHeader
@@ -125,8 +122,7 @@ class AgendaHeader extends StatelessWidget {
     // Check if this header represents a past time
     final isPast =
         date != null && date!.isBefore(Date.today()) ||
-        dateTimeRange?.end != null &&
-            dateTimeRange!.end!.isBefore(Time.now());
+        dateTimeRange?.end != null && dateTimeRange!.end!.isBefore(Time.now());
 
     // For headers with scheduleAt (not in the past)
     if (!isPast && (scheduleAt != null || thread?.at != null)) {
@@ -155,8 +151,12 @@ class AgendaHeader extends StatelessWidget {
       final dateFontSize = dateCenterLeft == null
           ? context.theme.typography.xs.fontSize
           : context.theme.typography.md.fontSize;
-      final veryMuted = context.theme.plotColors.veryMuted;
-      final mutedStyle = TextStyle(color: veryMuted, fontSize: dateFontSize);
+      final mutedStyle = TextStyle(
+        color: brightness == Brightness.dark
+            ? context.theme.plotColors.veryMuted
+            : context.theme.plotColors.muted,
+        fontSize: dateFontSize,
+      );
 
       final Widget child;
       if (dateCenterLeft != null) {
@@ -216,8 +216,7 @@ class AgendaHeader extends StatelessWidget {
 
     // Gap/event time headers: centered time, rendered outside ListTile
     // to match date header centering
-    if (isGapHeader ||
-        (!now && date == null && centerText != null)) {
+    if (isGapHeader || (!now && date == null && centerText != null)) {
       final veryMuted = context.theme.plotColors.veryMuted;
       final contentColor = isGapHeader
           ? context.theme.colors.mutedForeground
@@ -308,8 +307,8 @@ class AgendaHeader extends StatelessWidget {
       final timeOfDay = dateTimeRange!.start?.toTimeOfDay();
       final timeText = timeOfDay != null && !timeOfDay.isMidnight
           ? (context.isMultiPanel
-              ? timeOfDay.formatShort(context)
-              : timeOfDay.formatNarrow(context))
+                ? timeOfDay.formatShort(context)
+                : timeOfDay.formatNarrow(context))
           : null;
 
       if (timeText != null) {

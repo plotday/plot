@@ -1476,8 +1476,7 @@ class _PriorityPageState extends State<PriorityPage> {
       onScrollOffsetChanged: (offset) => bloc.activityFeedScrollOffset = offset,
       count: items.length,
       doneEnd: state.activityFeedDoneEnd,
-      fetcher: (first, count) =>
-          bloc.fetchMoreActivityFeedItems(first, count),
+      fetcher: (first, count) => bloc.fetchMoreActivityFeedItems(first, count),
       separatorBuilder: (context, index) =>
           _buildSeparator(context, items, index, state, controller),
       builder: (context, index, focusNode, {reorderableIndex}) {
@@ -1557,21 +1556,45 @@ class _DesktopTabBar extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(border: Border(bottom: borderSide)),
       position: DecorationPosition.foreground,
-      child: Row(
+      child: Stack(
         children: [
-          _DesktopTab(
-            label: 'Agenda',
-            selected: currentTab == PriorityTab.agenda,
-            border: Border(right: borderSide),
-            onTap: () => onTabChanged(PriorityTab.agenda),
+          Row(
+            children: [
+              _DesktopTab(
+                label: 'Agenda',
+                selected: currentTab == PriorityTab.agenda,
+                border: Border(right: borderSide),
+                onTap: () => onTabChanged(PriorityTab.agenda),
+              ),
+              _DesktopTab(
+                label: 'Activity',
+                selected: currentTab == PriorityTab.activityFeed,
+                onTap: () => onTabChanged(PriorityTab.activityFeed),
+                showUnreadDot: hasUnreadActivity,
+                trailing: _NotificationButton(
+                  onTap: () => context.run(ShowAttentionSettings(priority)),
+                ),
+              ),
+            ],
           ),
-          _DesktopTab(
-            label: 'Activity',
-            selected: currentTab == PriorityTab.activityFeed,
-            onTap: () => onTabChanged(PriorityTab.activityFeed),
-            showUnreadDot: hasUnreadActivity,
-            trailing: _NotificationButton(
-              onTap: () => context.run(ShowAttentionSettings(priority)),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 2,
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              alignment: currentTab == PriorityTab.agenda
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              child: FractionallySizedBox(
+                widthFactor: 0.5,
+                heightFactor: 1.0,
+                child: ColoredBox(
+                  color: context.colour.accent.withValues(alpha: 0.3),
+                ),
+              ),
             ),
           ),
         ],
@@ -1667,7 +1690,9 @@ class _DesktopTabState extends State<_DesktopTab> {
                       style: theme.typography.sm.copyWith(
                         fontFamily: theme.typography.defaultFontFamily,
                         color: textColor,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: widget.selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                       ),
                     ),
                     _unreadDot(textColor, visible: false),
