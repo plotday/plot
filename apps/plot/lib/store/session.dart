@@ -270,8 +270,10 @@ class Session extends SessionRow {
 
   final Priority? priority;
 
-  Future<void> save() =>
-      Store.get.save(table, toCompanion(false), SessionsBase());
+  Future<void> save() async {
+    if (!Store.isAvailable) return;
+    await Store.get.save(table, toCompanion(false), SessionsBase());
+  }
 
   BoundedDateTimeRange get at {
     // Handle time travel edge cases where start might be after end

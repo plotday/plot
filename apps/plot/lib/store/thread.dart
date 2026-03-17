@@ -2873,6 +2873,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   Future<void> save() async {
+    if (!Store.isAvailable) return;
     if (_activityDirty) {
       await Store.get.save(
         Store.get.threads,

@@ -624,7 +624,16 @@ class PriorityState extends Equatable {
             ];
           }
         } else {
-          if (beforeNowUnscheduled.isNotEmpty ||
+          // When an event is active, push todos to the next gap so they
+          // stay visible after agendaViewItems truncates to the current
+          // event. Non-todo items (past notes) can stay before the event.
+          final beforeNowNonTodos = beforeNowUnscheduled
+              .where((a) => !a.todo || a.isLinkScheduleInstance)
+              .toList();
+          final beforeNowTodos = beforeNowUnscheduled
+              .where((a) => a.todo && !a.isLinkScheduleInstance)
+              .toList();
+          if (beforeNowNonTodos.isNotEmpty ||
               beforeNowScheduled.isNotEmpty) {
             items.add(
               AgendaHeaderItem(
@@ -635,12 +644,13 @@ class PriorityState extends Equatable {
             );
             createdDateHeader = true;
             addThreadsGrouped(
-              [...beforeNowUnscheduled, ...beforeNowScheduled],
+              [...beforeNowNonTodos, ...beforeNowScheduled],
               scheduleAt: dayScheduleAt,
               skipHeaderFor: context,
             );
           }
           remainingUnscheduled = [
+            ...beforeNowTodos,
             ...afterNowUnscheduled,
             ...pinnedTodos,
           ];
@@ -668,22 +678,26 @@ class PriorityState extends Equatable {
 
             // Add unpinned todos at start of day, before the first event.
             // Pinned todos stay in remainingUnscheduled for makeBlock.
-            final todosForStart = remainingUnscheduled
-                .where(
-                  (a) =>
-                      a.todo &&
-                      !a.isLinkScheduleInstance &&
-                      !a.isPinnedTodo,
-                )
-                .toList();
-            if (todosForStart.isNotEmpty) {
-              todosForStart.sort((a, b) => a.order.compareTo(b.order));
-              items.addAll(
-                todosForStart.map((Thread a) => AgendaThreadItem(a)),
-              );
-              remainingUnscheduled = remainingUnscheduled
-                  .where((a) => !todosForStart.contains(a))
+            // Skip when the upcoming event is the current one — todos will
+            // be placed after it via makeBlock / the next gap instead.
+            if (!nextIsNow) {
+              final todosForStart = remainingUnscheduled
+                  .where(
+                    (a) =>
+                        a.todo &&
+                        !a.isLinkScheduleInstance &&
+                        !a.isPinnedTodo,
+                  )
                   .toList();
+              if (todosForStart.isNotEmpty) {
+                todosForStart.sort((a, b) => a.order.compareTo(b.order));
+                items.addAll(
+                  todosForStart.map((Thread a) => AgendaThreadItem(a)),
+                );
+                remainingUnscheduled = remainingUnscheduled
+                    .where((a) => !todosForStart.contains(a))
+                    .toList();
+              }
             }
           } else if (!startOfDay) {
             items.add(

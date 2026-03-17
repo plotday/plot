@@ -378,12 +378,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              FaIcon(
-                                PlotIcon.up,
-                                size: xsFontSize,
-                                color: accentColor,
-                              ),
-                              SizedBox(width: buildContext.theme.spacing.xs),
                               Text(
                                 Duration(
                                   minutes: currentTime
@@ -391,6 +385,12 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                       .inMinutes,
                                 ).format(),
                                 style: TextStyle(color: accentColor),
+                              ),
+                              SizedBox(width: buildContext.theme.spacing.xs),
+                              FaIcon(
+                                PlotIcon.up,
+                                size: xsFontSize,
+                                color: accentColor,
                               ),
                             ],
                           ),
@@ -543,6 +543,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                         .resolve(TextDirection.ltr)
                         .vertical,
                 child: Stack(
+                  clipBehavior: Clip.none,
                   children: [
                     Align(
                       alignment: Alignment.centerLeft,

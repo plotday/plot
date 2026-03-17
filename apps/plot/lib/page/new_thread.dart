@@ -115,6 +115,9 @@ class NewThreadPageState extends State<NewThreadPage> {
       );
     });
 
+    // Check if priority is shared (has members besides current user)
+    _setHasMembers(context.read<PriorityBloc>().state.draft.priority.sharing);
+
     // Apply query parameters and default type to draft
     if (!_hasAppliedQueryParams) {
       _hasAppliedQueryParams = true;
@@ -126,9 +129,18 @@ class NewThreadPageState extends State<NewThreadPage> {
       _applyQueryParametersToDraft();
       _applyDefaultType();
     }
+  }
 
-    // Check if priority is shared (has members besides current user)
-    _setHasMembers(context.read<PriorityBloc>().state.draft.priority.sharing);
+  ThreadSubType _defaultSubType() {
+    if (_hasMembers) {
+      final priorityId =
+          context.read<PriorityBloc>().state.draft.priority.id.toString();
+      return context
+          .read<LocalPreferencesBloc>()
+          .getSubTypeMru(priorityId)
+          .first;
+    }
+    return ThreadSubType.forPriority(sharing: false).first;
   }
 
   void _setHasMembers(bool sharing) {
@@ -139,7 +151,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       if (_selectedSubType != null &&
           _selectedSubType!.sharedOnly &&
           !_hasMembers) {
-        _selectedSubType = ThreadSubType.defaultFor(sharing: _hasMembers);
+        _selectedSubType = _defaultSubType();
         final bloc = context.read<PriorityBloc>();
         bloc.updateDraftLocal(
           bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
@@ -770,7 +782,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Initialize sub-type for note/task types
     if (_selectedType == NewThreadType.note ||
         _selectedType == NewThreadType.task) {
-      _selectedSubType = ThreadSubType.defaultFor(sharing: _hasMembers);
+      _selectedSubType = _defaultSubType();
       bloc.updateDraftLocal(
         bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
       );
@@ -802,7 +814,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       }
     } else {
       // Restore sub-type icon for note/task
-      _selectedSubType ??= ThreadSubType.defaultFor(sharing: _hasMembers);
+      _selectedSubType ??= _defaultSubType();
       bloc.updateDraftLocal(
         bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
       );
