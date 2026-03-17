@@ -35,15 +35,17 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
-          <Anchor component={Link} to="/connections">
-            Connections
-          </Anchor>
-          <Anchor component={Link} to="/twists">
-            Twists
-          </Anchor>
-          <Anchor component={Link} to="/pricing">
-            Pricing
-          </Anchor>
+          <Group visibleFrom="sm">
+            <Anchor component={Link} to="/connections">
+              Connections
+            </Anchor>
+            <Anchor component={Link} to="/twists">
+              Twists
+            </Anchor>
+            <Anchor component={Link} to="/pricing">
+              Pricing
+            </Anchor>
+          </Group>
           {!hideGetStartedPaths.some((path) =>
             location.pathname.startsWith(path),
           ) && (
@@ -74,10 +76,19 @@ function AppFooter() {
           </Anchor>
         </Group>
         <Group gap="lg">
-          <Anchor component={Link} to={`/terms`}>
+          <Anchor component={Link} to="/connections">
+            Connections
+          </Anchor>
+          <Anchor component={Link} to="/twists">
+            Twists
+          </Anchor>
+          <Anchor component={Link} to="/pricing">
+            Pricing
+          </Anchor>
+          <Anchor component={Link} to="/terms">
             Terms of Service
           </Anchor>
-          <Anchor component={Link} to={`/privacy`}>
+          <Anchor component={Link} to="/privacy">
             Privacy Policy
           </Anchor>
         </Group>
