@@ -11,6 +11,7 @@ export interface SeedData {
   contacts?: Contact[];
   priorities?: Priority[];
   sources?: SeedSource[];
+  twists?: SeedTwist[];
   threads?: Thread[];
 }
 
@@ -73,6 +74,18 @@ export interface SeedLinkType {
 }
 
 // ============================================================================
+// Twists (non-source twists for AI chats, etc.)
+// ============================================================================
+
+export interface SeedTwist {
+  ref: string; // Unique reference for this twist
+  name: string; // Display name (e.g., "Claude")
+  priority_ref: string; // Priority to attach the twist to
+  logo?: string; // Logo URL
+  logo_dark?: string; // Dark mode logo URL
+}
+
+// ============================================================================
 // Threads (formerly Activities)
 // ============================================================================
 
@@ -85,6 +98,8 @@ export interface Thread {
   draft?: boolean; // Default: false
   private?: boolean; // Default: false
   archived_at?: string; // Date offset
+  icon?: string; // Thread icon: "notes", "idea", "goal", "decision", "discussion", "announcement", "ask"
+  twist_ref?: string; // Reference to a twist (sets icon to twist logo)
   tags?: Tags;
   notes?: Note[]; // Notes associated with this thread
   schedule?: Schedule; // Schedule block (at/on/recurrence)
@@ -231,6 +246,7 @@ export interface GeneratedThread {
   private: boolean;
   title: string | null;
   preview: string | null;
+  icon: string | null;
   archived_at: string | null; // ISO timestamp
 }
 

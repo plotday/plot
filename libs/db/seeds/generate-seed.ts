@@ -35,6 +35,7 @@ import type {
   SeedData,
   SeedLink,
   SeedSource,
+  SeedTwist,
   Thread,
   ValidationError,
 } from "./types.js";
@@ -368,6 +369,7 @@ async function applySQL(
         const priorityCount = countPriorities(data.priorities || []);
         const threadCount = data.threads?.length || 0;
         const sourceCount = data.sources?.length || 0;
+        const twistCount = data.twists?.length || 0;
         const noteCount = countNotes(data.threads || []);
         const linkCount = countLinks(data.threads || []);
 
@@ -381,6 +383,9 @@ async function applySQL(
         }
         if (sourceCount > 0) {
           console.error(`  ${sourceCount} source(s)`);
+        }
+        if (twistCount > 0) {
+          console.error(`  ${twistCount} twist(s)`);
         }
         if (threadCount > 0) {
           console.error(`  ${threadCount} thread(s)`);
@@ -638,6 +643,7 @@ function validate(
   const contactRefs = new Set<string>();
   const priorityRefs = new Set<string>();
   const sourceRefs = new Set<string>();
+  const twistRefs = new Set<string>();
   const threadRefs = new Set<string>();
 
   // Validate contacts
@@ -712,6 +718,35 @@ function validate(
     }
   }
 
+  // Validate twists
+  if (data.twists) {
+    for (let i = 0; i < data.twists.length; i++) {
+      const twist = data.twists[i];
+      const path = `twists[${i}]`;
+
+      if (!twist.ref) {
+        addError(`${path}.ref`, "Missing ref");
+      } else if (twistRefs.has(twist.ref)) {
+        addError(`${path}.ref`, `Duplicate ref: ${twist.ref}`);
+      } else {
+        twistRefs.add(twist.ref);
+      }
+
+      if (!twist.name) {
+        addError(`${path}.name`, "Missing name");
+      }
+
+      if (!twist.priority_ref) {
+        addError(`${path}.priority_ref`, "Missing priority_ref");
+      } else if (!priorityRefs.has(twist.priority_ref)) {
+        addError(
+          `${path}.priority_ref`,
+          `Unknown priority_ref: ${twist.priority_ref}`
+        );
+      }
+    }
+  }
+
   // Validate threads
   if (data.threads) {
     for (let i = 0; i < data.threads.length; i++) {
@@ -722,6 +757,7 @@ function validate(
         priorityRefs,
         contactRefs,
         sourceRefs,
+        twistRefs,
         addError
       );
     }
@@ -767,6 +803,7 @@ function validateThread(
   priorityRefs: Set<string>,
   contactRefs: Set<string>,
   sourceRefs: Set<string>,
+  twistRefs: Set<string>,
   addError: (path: string, message: string) => void
 ) {
   if (thread.ref) {
@@ -784,6 +821,19 @@ function validateThread(
       `${path}.priority_ref`,
       `Unknown priority_ref: ${thread.priority_ref}`
     );
+  }
+
+  // Validate icon
+  if (thread.icon) {
+    const validIcons = ["notes", "idea", "goal", "decision", "discussion", "announcement", "ask"];
+    if (!validIcons.includes(thread.icon)) {
+      addError(`${path}.icon`, `Invalid icon: ${thread.icon}. Valid values: ${validIcons.join(", ")}`);
+    }
+  }
+
+  // Validate twist_ref
+  if (thread.twist_ref && !twistRefs.has(thread.twist_ref)) {
+    addError(`${path}.twist_ref`, `Unknown twist_ref: ${thread.twist_ref}`);
   }
 
   // Validate schedule
@@ -986,6 +1036,7 @@ function generateSQL(
   const contactIdMap: RefMap<string> = { user: contactId };
   const priorityIdMap: RefMap<string> = {};
   const sourceIdMap: RefMap<string> = {}; // source ref -> priority_twist_id
+  const twistIdMap: RefMap<string> = {}; // twist ref -> priority_twist_id
   const threadIdMap: RefMap<string> = {};
 
   // Generated entity arrays
@@ -1034,7 +1085,9 @@ function generateSQL(
         priorityIdMap,
         priorities,
         prioritySettings,
-        priorityUsers
+        priorityUsers,
+        contactIdMap,
+        contacts
       );
     }
   }
@@ -1063,6 +1116,22 @@ function generateSQL(
     }
   }
 
+  // Process twists (non-source twists like Claude, ChatGPT)
+  if (data.twists) {
+    for (const twist of data.twists) {
+      processTwist(
+        twist,
+        userId,
+        priorityIdMap,
+        twistIdMap,
+        sourceSQLLines
+      );
+    }
+  }
+
+  // Post-insert SQL lines (e.g., twist_ref icon updates)
+  const postInsertSQLLines: string[] = [];
+
   // Process threads
   let threadOrder = Date.now();
   if (data.threads) {
@@ -1075,6 +1144,7 @@ function generateSQL(
         contactIdMap,
         priorityIdMap,
         sourceIdMap,
+        twistIdMap,
         threadIdMap,
         threads,
         threadTags,
@@ -1082,7 +1152,8 @@ function generateSQL(
         schedules,
         notes,
         noteTags,
-        fileUploads
+        fileUploads,
+        postInsertSQLLines
       );
     }
   }
@@ -1208,7 +1279,7 @@ function generateSQL(
   if (threads.length > 0) {
     lines.push("-- Threads");
     lines.push(
-      "INSERT INTO thread (id, created_by, priority_id, draft, private, title, preview, archived_at, created_at, updated_at)"
+      "INSERT INTO thread (id, created_by, priority_id, draft, private, title, preview, icon, archived_at, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < threads.length; i++) {
@@ -1219,7 +1290,7 @@ function generateSQL(
           t.priority_id
         )}, ${t.draft}, ${t.private}, ${sqlString(t.title)}, ${sqlString(
           t.preview
-        )}, ${sqlString(t.archived_at)}, NOW(), NOW())${comma}`
+        )}, ${sqlString(t.icon)}, ${sqlString(t.archived_at)}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
@@ -1340,6 +1411,13 @@ function generateSQL(
     lines.push("");
   }
 
+  // Post-insert updates (e.g., twist_ref icon resolution)
+  if (postInsertSQLLines.length > 0) {
+    lines.push("-- Post-insert updates (twist icon resolution)");
+    lines.push(...postInsertSQLLines);
+    lines.push("");
+  }
+
   lines.push("COMMIT;");
 
   return { sql: lines.join("\n"), fileUploads };
@@ -1357,7 +1435,9 @@ function processPriority(
   idMap: RefMap<string>,
   outPriorities: GeneratedPriority[],
   outSettings: GeneratedPrioritySettings[],
-  outUsers: GeneratedPriorityUser[]
+  outUsers: GeneratedPriorityUser[],
+  contactIdMap?: RefMap<string>,
+  contacts?: GeneratedContact[]
 ) {
   const id = generateUUID();
   idMap[priority.ref] = id;
@@ -1391,6 +1471,19 @@ function processPriority(
     });
   }
 
+  // Handle shared_with — add priority_user rows for contacts with user_ids
+  if (priority.shared_with && contactIdMap && contacts) {
+    for (const ref of priority.shared_with) {
+      const contact = contacts.find((c) => c.id === contactIdMap[ref]);
+      if (contact?.user_id) {
+        outUsers.push({
+          priority_id: id,
+          user_id: contact.user_id,
+        });
+      }
+    }
+  }
+
   if (priority.children) {
     for (const child of priority.children) {
       processPriority(
@@ -1401,7 +1494,9 @@ function processPriority(
         idMap,
         outPriorities,
         outSettings,
-        outUsers
+        outUsers,
+        contactIdMap,
+        contacts
       );
     }
   }
@@ -1455,6 +1550,49 @@ function processSource(
   outLines.push(
     `  VALUES (${sqlString(priorityTwistId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(source.name)}, '{}'::jsonb);`
   );
+  outLines.push(
+    `  INSERT INTO priority_twist_connection (priority_twist_id, user_id, provider, actor_id)`
+  );
+  outLines.push(
+    `  VALUES (${sqlString(priorityTwistId)}, ${sqlString(userId)}, 'seed', ${sqlString(userId)});`
+  );
+  outLines.push(`END $$;`);
+}
+
+function processTwist(
+  twist: SeedTwist,
+  userId: string,
+  priorityIdMap: RefMap<string>,
+  twistIdMap: RefMap<string>,
+  outLines: string[]
+) {
+  const priorityId = priorityIdMap[twist.priority_ref];
+  const priorityTwistId = generateUUID();
+
+  twistIdMap[twist.ref] = priorityTwistId;
+
+  // Use DO block to chain bigint IDENTITY inserts (same pattern as processSource)
+  outLines.push(`DO $$`);
+  outLines.push(`DECLARE`);
+  outLines.push(`  v_twist_admin_id bigint;`);
+  outLines.push(`  v_twist_id bigint;`);
+  outLines.push(`BEGIN`);
+  outLines.push(
+    `  INSERT INTO twist_admin (user_id) VALUES (${sqlString(userId)}) RETURNING id INTO v_twist_admin_id;`
+  );
+  outLines.push(
+    `  INSERT INTO twist (twist_admin_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
+  );
+  outLines.push(
+    `  VALUES (v_twist_admin_id, 'personal', ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)})`
+  );
+  outLines.push(`  RETURNING id INTO v_twist_id;`);
+  outLines.push(
+    `  INSERT INTO priority_twist (id, twist_id, owner_id, priority_id, name, config)`
+  );
+  outLines.push(
+    `  VALUES (${sqlString(priorityTwistId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(twist.name)}, '{}'::jsonb);`
+  );
   outLines.push(`END $$;`);
 }
 
@@ -1466,6 +1604,7 @@ function processThread(
   contactIdMap: RefMap<string>,
   priorityIdMap: RefMap<string>,
   sourceIdMap: RefMap<string>,
+  twistIdMap: RefMap<string>,
   threadIdMap: RefMap<string>,
   outThreads: GeneratedThread[],
   outTags: GeneratedThreadTag[],
@@ -1473,7 +1612,8 @@ function processThread(
   outSchedules: GeneratedSchedule[],
   outNotes: GeneratedNote[],
   outNoteTags: GeneratedNoteTag[],
-  outFileUploads: SeedFileUpload[]
+  outFileUploads: SeedFileUpload[],
+  outPostInsertSQL: string[]
 ): number {
   const id = generateUUID();
   if (thread.ref) {
@@ -1490,10 +1630,21 @@ function processThread(
     private: thread.private ?? false,
     title: thread.title ?? null,
     preview: null,
+    icon: thread.icon ?? null,
     archived_at: thread.archived_at
       ? parseDateOffset(baseDate, thread.archived_at).toISOString()
       : null,
   });
+
+  // If twist_ref is set, emit a post-insert UPDATE to resolve the twist icon
+  if (thread.twist_ref) {
+    const ptId = twistIdMap[thread.twist_ref];
+    if (ptId) {
+      outPostInsertSQL.push(
+        `UPDATE thread SET icon = 'twist:' || (SELECT twist_id::text FROM priority_twist WHERE id = ${sqlString(ptId)}) WHERE id = ${sqlString(id)};`
+      );
+    }
+  }
 
   // Process schedule
   if (thread.schedule) {

@@ -10,6 +10,7 @@ The seed data format allows you to define:
 - **Priorities**: Hierarchical project/folder structure. All users have a single, root priority called Everything.
   Below it are major areas of their life, like Work, Personal, Social. Add 1-3 levels below each of these.
 - **Sources**: External services (Slack, Gmail, GitHub, etc.) that provide link logos
+- **Twists**: Non-source integrations (e.g., Claude, ChatGPT) whose logos can be used as thread icons
 - **Threads**: Discussions, tasks, events — the primary content items
 - **Notes**: Updates and messages related to a thread (can contain mentions)
 - **Links**: External references attached to threads (emails, messages, issues, etc.)
@@ -35,6 +36,9 @@ priorities:
 
 sources:
   -  # Source definitions (for link logos)
+
+twists:
+  -  # Non-source twist definitions (for AI chat icons, etc.)
 
 threads:
   -  # Thread definitions
@@ -189,6 +193,36 @@ sources:
         logo_dark: "https://api.iconify.design/simple-icons/github.svg?color=%23FFFFFF"
 ```
 
+## Twists
+
+Twists are non-source integrations (e.g., AI chat services like Claude, ChatGPT) that can be referenced by threads via `twist_ref` to display the twist's logo as the thread icon.
+
+**Fields:**
+
+- `ref` (required): Unique reference string (used by threads via `twist_ref`)
+- `name` (required): Display name (e.g., "Claude", "ChatGPT")
+- `priority_ref` (required): Priority to attach the twist to
+- `logo` (optional): Logo URL
+- `logo_dark` (optional): Dark mode logo URL
+
+```yaml
+twists:
+  - ref: claude
+    name: Claude
+    priority_ref: everything
+    logo: "https://api.iconify.design/simple-icons/anthropic.svg"
+    logo_dark: "https://api.iconify.design/simple-icons/anthropic.svg?color=%23D4A574"
+```
+
+Threads can reference twists to display their logo:
+
+```yaml
+threads:
+  - title: "Revenue model assumptions"
+    priority_ref: business_case
+    twist_ref: chatgpt
+```
+
 ## Threads
 
 Threads are the primary content items — discussions, tasks, events, or documents. What a thread represents is inferred from its schedule and links, not from a `type` field.
@@ -203,6 +237,8 @@ Threads are the primary content items — discussions, tasks, events, or documen
 - `draft` (optional, default: false): Whether this is a draft
 - `private` (optional, default: false): Whether this is private
 - `archived_at` (optional): Date offset when archived
+- `icon` (optional): Thread icon type. Valid values: `"notes"`, `"idea"`, `"goal"`, `"decision"`, `"discussion"`, `"announcement"`, `"ask"`
+- `twist_ref` (optional): Reference to a twist (sets the thread icon to the twist's logo)
 - `tags` (optional): Object mapping tag names to actor arrays
 - `notes` (optional): Array of note objects
 - `schedule` (optional): Schedule block for events and tasks

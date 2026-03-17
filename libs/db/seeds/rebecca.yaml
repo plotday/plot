@@ -7,21 +7,27 @@ contacts:
   - ref: keeley
     email: keeley.jones@afcrichmond.com
     name: Keeley Jones
+    user_id: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
   - ref: roy
     email: roy.kent@afcrichmond.com
     name: Roy Kent
+    user_id: "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"
   - ref: nate
     email: nate.shelley@afcrichmond.com
     name: Nate Shelley
+    user_id: "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f"
   - ref: higgins
     email: leslie.higgins@afcrichmond.com
     name: Leslie Higgins
+    user_id: "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a"
   - ref: beard
     email: coach.beard@afcrichmond.com
     name: Coach Beard
+    user_id: "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b"
   - ref: trent
     email: trent.crimm@independent.co.uk
     name: Trent Crimm
+    user_id: "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c"
   - ref: barbara
     email: barbara@bossbabe.uk
     name: Barbara
@@ -44,11 +50,13 @@ priorities:
         title: AFC Richmond
         settings:
           color: 7
+        shared_with: [keeley, roy, higgins]
         children:
           - ref: mens_team
             title: Men's team
             settings:
               color: 1
+            shared_with: [roy, beard, nate]
             children:
               - ref: coaching_staff
                 title: Coaching staff
@@ -60,6 +68,7 @@ priorities:
             title: Women's team development
             settings:
               color: 6
+            shared_with: [keeley, higgins]
             children:
               - ref: business_case
                 title: Business case
@@ -87,6 +96,7 @@ priorities:
         title: Community & supporters
         settings:
           color: 5
+        shared_with: [keeley]
         children:
           - ref: supporter_relations
             title: Supporter relations
@@ -99,6 +109,7 @@ priorities:
             title: Community programs
           - ref: media_pr
             title: Media & PR
+            shared_with: [keeley, trent]
       - ref: personal
         title: Personal
         settings:
@@ -158,6 +169,18 @@ sources:
       - type: spreadsheet
         label: Spreadsheet
         logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%230F9D58"
+
+twists:
+  - ref: claude
+    name: Claude
+    priority_ref: everything
+    logo: "https://api.iconify.design/simple-icons/anthropic.svg"
+    logo_dark: "https://api.iconify.design/simple-icons/anthropic.svg?color=%23D4A574"
+  - ref: chatgpt
+    name: ChatGPT
+    priority_ref: everything
+    logo: "https://api.iconify.design/simple-icons/openai.svg"
+    logo_dark: "https://api.iconify.design/simple-icons/openai.svg?color=%2374AA9C"
 
 threads:
   # Day -2: Quiet observation
@@ -314,6 +337,7 @@ threads:
   - priority_ref: business_case
     title: "Women's team exploration - initial research"
     created: "-1d"
+    icon: idea
     tags:
       idea: [user]
     links:
@@ -342,6 +366,7 @@ threads:
   - priority_ref: business_case
     title: "WOMEN'S TEAM PROPOSAL - Vision and viability"
     created: "-1d"
+    icon: goal
     tags:
       pinned: [user]
       goal: [user]
@@ -573,27 +598,15 @@ threads:
 
           The question is "can we afford not to be who we say we are?"
 
-  - priority_ref: board_process
-    title: "Schedule board presentation for women's team proposal"
-    created: "-1d"
-    schedule:
-      on: "-1d"
-      todo: true
-    tags:
-      todo: [user]
-    links:
-      - source_ref: slack
-        type: message
-        title: "#board-planning"
-        source_url: "https://afcrichmond.slack.com/archives/C04board"
-    notes:
-      - created: "-1d 10:00"
-        content: |
-          Need to get this on the March board agenda.
+  - priority_ref: business_case
+    title: "Revenue model assumptions"
+    created: "+0d"
+    twist_ref: chatgpt
 
-          Will talk to Higgins first. Get his read on board receptiveness. He's good at knowing which battles need prep work.
-        mentions:
-          - higgins
+  - priority_ref: board_process
+    title: "Board presentation talking points"
+    created: "+0d"
+    twist_ref: claude
 
   - priority_ref: social_life
     title: "Drinks with Keeley"
@@ -684,6 +697,7 @@ threads:
   - priority_ref: board_process
     title: "Draft board presentation outline"
     created: "+0d"
+    icon: decision
     schedule:
       on: "+0d"
       todo: true
@@ -790,6 +804,7 @@ threads:
   - priority_ref: fan_comm
     title: "Supporter communication strategy"
     created: "+0d"
+    icon: decision
     schedule:
       on: "+0d"
       todo: true
@@ -841,7 +856,7 @@ threads:
     notes:
       - author_ref: keeley
         created: "-1d 10:15"
-        content: "Babe. BABE. Look what I've been working on. Founding season scarf concept. Tell me this isn't absolutely gorgeous."
+        content: "Ok you need to see this RIGHT NOW. Founding season scarf concept. Tell me this isn't absolutely gorgeous."
         actions:
           - type: file
             fileId: "b7e3f1a2-4d5c-6e8f-9a0b-1c2d3e4f5a6b"
@@ -1139,6 +1154,7 @@ threads:
   - priority_ref: business_case
     title: "Potential coaching candidates - preliminary research"
     created: "-1d"
+    icon: idea
     tags:
       idea: [user]
     links:
@@ -1290,6 +1306,7 @@ threads:
   - priority_ref: business_ops
     title: "Looking ahead - Feb-March priorities"
     created: "-2d"
+    icon: goal
     tags:
       pinned: [user]
     links:
