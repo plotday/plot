@@ -1112,20 +1112,55 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> _triggerAgendaSync(Priority priorityToLoad) async {
     final archived = _effectiveShowArchived;
-    await Thread.pullAgenda(
-      priorityToLoad.id,
-      priorityToLoad.path,
-      archived: archived,
-    );
     final path = priorityToLoad.path.value;
     final suffix = archived ? '_archived' : '';
     final entityName = 'agenda:$path$suffix';
-    final syncState = await (Store.get.select(
-      Store.get.syncStates,
-    )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
-    // If no sync state exists after pulling, the pull was satisfied by an
-    // ancestor's noMore flag — treat this entity as fully synced too.
-    _agendaSyncNoMore = syncState?.noMore ?? true;
+
+    // Fetch-more loop: pull pages until we have enough local items AND the
+    // sync boundary covers the last visible item's date, or server has no more.
+    for (var i = 0; i < 10; i++) {
+      await Thread.pullAgenda(
+        priorityToLoad.id,
+        priorityToLoad.path,
+        archived: archived,
+      );
+
+      final syncState = await (Store.get.select(
+        Store.get.syncStates,
+      )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
+      _agendaSyncNoMore = syncState?.noMore ?? true;
+
+      if (_agendaSyncNoMore) break;
+
+      // Check local agenda to decide if we need more pages.
+      final localThreads = await Thread.get(
+        priorityPath: priorityToLoad.path,
+        archived: archived,
+        order: ThreadOrder.sorted,
+        includeUnscheduled: false,
+        limit: _agendaLimit,
+        range: CustomBoundedDateRange(
+          Date.today(),
+          Date.today().addDays(_agendaHorizonDays),
+        ),
+      );
+
+      final hasEnoughItems = localThreads.length >= _agendaLimit;
+
+      // Compare sync boundary with the last visible item's date.
+      final syncBoundary = syncState?.last != null
+          ? DateTime.fromMicrosecondsSinceEpoch(syncState!.last!, isUtc: true)
+          : null;
+      final lastItemDate =
+          localThreads.isNotEmpty ? localThreads.last.agendaAt : null;
+      final syncedPastLastItem = syncBoundary != null &&
+          lastItemDate != null &&
+          !syncBoundary.isBefore(lastItemDate);
+
+      // Stop when both conditions are met: page is full AND sync covers it.
+      if (hasEnoughItems && syncedPastLastItem) break;
+    }
+
     if (_agendaSyncNoMore && _agendaLastRawRowCount < _agendaLimit) {
       emit(state.copyWith(agendaDoneEnd: true));
     }
@@ -1227,20 +1262,51 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> _triggerActivityFeedSync(Priority priorityToLoad) async {
     final archived = _effectiveShowArchived;
-    await Thread.pullActivityFeed(
-      priorityToLoad.id,
-      priorityToLoad.path,
-      archived: archived,
-    );
     final path = priorityToLoad.path.value;
     final suffix = archived ? '_archived' : '';
     final entityName = 'activity-feed:$path$suffix';
-    final syncState = await (Store.get.select(
-      Store.get.syncStates,
-    )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
-    // If no sync state exists after pulling, the pull was satisfied by an
-    // ancestor's noMore flag — treat this entity as fully synced too.
-    _activityFeedSyncNoMore = syncState?.noMore ?? true;
+
+    // Fetch-more loop: pull pages until we have enough local items AND the
+    // sync boundary covers the last visible item's date, or server has no more.
+    for (var i = 0; i < 10; i++) {
+      await Thread.pullActivityFeed(
+        priorityToLoad.id,
+        priorityToLoad.path,
+        archived: archived,
+      );
+
+      final syncState = await (Store.get.select(
+        Store.get.syncStates,
+      )..where((row) => row.entity.equals(entityName))).getSingleOrNull();
+      _activityFeedSyncNoMore = syncState?.noMore ?? true;
+
+      if (_activityFeedSyncNoMore) break;
+
+      // Check local activity feed to decide if we need more pages.
+      final localThreads = await Thread.get(
+        priorityPath: priorityToLoad.path,
+        archived: archived,
+        order: ThreadOrder.reverse,
+        limit: _activityFeedLimit,
+      );
+
+      final hasEnoughItems = localThreads.length >= _activityFeedLimit;
+
+      // Compare sync boundary with the last visible item's date.
+      // Activity feed is reverse-chronological, so sync boundary moves backward.
+      final syncBoundary = syncState?.last != null
+          ? DateTime.fromMicrosecondsSinceEpoch(syncState!.last!, isUtc: true)
+          : null;
+      final lastItemDate =
+          localThreads.isNotEmpty ? localThreads.last.activityAt : null;
+      final syncedPastLastItem = syncBoundary != null &&
+          lastItemDate != null &&
+          !syncBoundary.isAfter(lastItemDate);
+
+      // Stop when both conditions are met: page is full AND sync covers it.
+      if (hasEnoughItems && syncedPastLastItem) break;
+    }
+
     if (_activityFeedSyncNoMore &&
         _activityFeedLastRawRowCount < _activityFeedLimit) {
       emit(state.copyWith(activityFeedDoneEnd: true));

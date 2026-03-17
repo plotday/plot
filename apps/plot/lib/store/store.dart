@@ -2140,13 +2140,20 @@ class Store extends _$Store {
         );
       }
 
-      // 6. Process buffered broadcast messages
+      // 6. Clear view-level sync states (agenda/activity-feed) so demand-driven
+      //    syncs run fresh. The global pulls above were only to protect rows from
+      //    orphan cleanup — their noMore/boundary shouldn't block child syncs.
+      await customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'agenda:%' OR entity LIKE 'activity-feed:%'",
+      );
+
+      // 7. Process buffered broadcast messages
       _isBufferingBroadcasts = false;
       for (final table in _bufferedTables) {
         _syncDebouncer(table);
       }
       _bufferedTables.clear();
-      // 7. Notify listeners to re-trigger demand-driven syncs
+      // 8. Notify listeners to re-trigger demand-driven syncs
       onFullResync.add(null);
     } finally {
       _isBufferingBroadcasts = false;

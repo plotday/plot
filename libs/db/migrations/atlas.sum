@@ -1,4 +1,4 @@
-h1:LkT/Kq/n7Jhs+90//LkEjvsz8L8SCZOnqQBslOA/PYQ=
+h1:H2P5AN4p2dfJ19SjL3fZuDUtKtPnAFxgZ/HUwkSVTdk=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -117,3 +117,4 @@ h1:LkT/Kq/n7Jhs+90//LkEjvsz8L8SCZOnqQBslOA/PYQ=
 20260316210814_fix_agenda_at_unbounded_upper.sql h1:qgaXj+Ec1ZbB7Z43z9vaStao2FOPC3sQs1VxBv63AJg=
 20260317134606_add_order_jitter.sql h1:5b6MG5Se6nsVKuEj9YkyMLWQXr9m+Y7Cjz4HR+lOQ9U=
 20260317152216_guard_agenda_at_lower_upper.sql h1:B/1LuTUser+pjVdSgFZjOihCGIGC38w9nY+wN3ZKEOI=
+20260317181549_include_link_schedules_in_agenda_at.sql h1:ShTRp9U7l7LpgVKQ2Byei6FuQGBu+0nvBQ8lB7sGVSA=

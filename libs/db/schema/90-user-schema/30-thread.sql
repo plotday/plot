@@ -53,6 +53,7 @@ SELECT
         a.created_at
     ) AS activity_at,
     -- agenda_at: range from earliest schedule start to latest end (or infinity for recurring/unbounded)
+    -- Considers both direct thread schedules (thread_id) and link schedules (link_id → link.thread_id)
     -- Uses GREATEST on upper bound to guarantee upper >= lower (prevents tstzrange error)
     (SELECT tstzrange(
         lo,
@@ -61,13 +62,23 @@ SELECT
     ) FROM (SELECT
         COALESCE(
             LEAST(
+                -- Direct shared schedule start
                 (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
                  FROM schedule s_lo WHERE s_lo.thread_id = a.id AND s_lo.user_id IS NULL
                  AND s_lo.archived_at IS NULL
                  ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
                  LIMIT 1),
+                -- Direct per-user schedule start
                 (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
                  FROM schedule s_lo WHERE s_lo.thread_id = a.id AND s_lo.user_id = upe.user_id
+                 AND s_lo.archived_at IS NULL
+                 ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
+                 LIMIT 1),
+                -- Link schedule start (calendar events from sources)
+                (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
+                 FROM schedule s_lo
+                 JOIN link l_lo ON l_lo.id = s_lo.link_id
+                 WHERE l_lo.thread_id = a.id AND s_lo.user_id IS NULL
                  AND s_lo.archived_at IS NULL
                  ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
                  LIMIT 1)
@@ -76,27 +87,48 @@ SELECT
         ) AS lo,
         COALESCE(
             CASE
-                -- Recurring schedules span to infinity
+                -- Recurring schedules span to infinity (direct or link)
                 WHEN EXISTS (
                     SELECT 1 FROM schedule s_rec
                     WHERE s_rec.thread_id = a.id AND s_rec.archived_at IS NULL
                     AND s_rec.recurrence_rule IS NOT NULL
+                ) OR EXISTS (
+                    SELECT 1 FROM schedule s_rec
+                    JOIN link l_rec ON l_rec.id = s_rec.link_id
+                    WHERE l_rec.thread_id = a.id AND s_rec.archived_at IS NULL
+                    AND s_rec.recurrence_rule IS NOT NULL
                 ) THEN 'infinity'::timestamptz
-                -- Unbounded-upper schedules (e.g. [date,)) also span to infinity
+                -- Unbounded-upper schedules (direct or link)
                 WHEN EXISTS (
                     SELECT 1 FROM schedule s_ub
                     WHERE s_ub.thread_id = a.id AND s_ub.archived_at IS NULL
                     AND (s_ub.at IS NOT NULL OR s_ub."on" IS NOT NULL)
                     AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamptz) IS NULL
+                ) OR EXISTS (
+                    SELECT 1 FROM schedule s_ub
+                    JOIN link l_ub ON l_ub.id = s_ub.link_id
+                    WHERE l_ub.thread_id = a.id AND s_ub.archived_at IS NULL
+                    AND (s_ub.at IS NOT NULL OR s_ub."on" IS NOT NULL)
+                    AND COALESCE(upper(s_ub.at), upper(s_ub."on")::timestamptz) IS NULL
                 ) THEN 'infinity'::timestamptz
                 ELSE GREATEST(
+                    -- Direct shared schedule end
                     (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
                      FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id IS NULL
                      AND s_hi.archived_at IS NULL
                      ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
                      LIMIT 1),
+                    -- Direct per-user schedule end
                     (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
                      FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id = upe.user_id
+                     AND s_hi.archived_at IS NULL
+                     ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
+                     LIMIT 1),
+                    -- Link schedule end
+                    (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
+                     FROM schedule s_hi
+                     JOIN link l_hi ON l_hi.id = s_hi.link_id
+                     WHERE l_hi.thread_id = a.id AND s_hi.user_id IS NULL
                      AND s_hi.archived_at IS NULL
                      ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
                      LIMIT 1)

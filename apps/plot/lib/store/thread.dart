@@ -651,6 +651,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     List<Tag>? filter,
     List<String>? iconFilter,
     bool includeAllFutureEvents = false,
+    bool includeUnscheduled = true,
+    int? limit,
   }) async {
     return await _get(
       range: range,
@@ -665,6 +667,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       filter: filter,
       iconFilter: iconFilter,
       includeAllFutureEvents: includeAllFutureEvents,
+      includeUnscheduled: includeUnscheduled,
+      limit: limit,
     );
   }
 
@@ -961,6 +965,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool? archived = false,
     bool? draft = false,
     bool includeAllFutureEvents = false,
+    bool includeUnscheduled = true,
     String? search,
     List<Tag>? filter,
     List<String>? iconFilter,
@@ -985,6 +990,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       archived: archived,
       draft: draft,
       includeAllFutureEvents: includeAllFutureEvents,
+      includeUnscheduled: includeUnscheduled,
       search: search,
       filter: filter,
       iconFilter: iconFilter,
