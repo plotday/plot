@@ -383,14 +383,6 @@ class NewThreadPageState extends State<NewThreadPage> {
               _buildScheduleButton(context, state.draft, (thread) async {
                 await context.read<PriorityBloc>().updateDraft(thread);
               }),
-              SizedBox(width: 4),
-              Container(
-                width: 1,
-                height: 16,
-                color: context.theme.plotColors.veryMuted,
-              ),
-              SizedBox(width: 4),
-              ..._buildSubTypeIcons(context),
               if (_hasMembers) ...[
                 SizedBox(width: 4),
                 Button.icon(
@@ -403,6 +395,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                   selected: state.draft.private,
                 ),
               ],
+              SizedBox(width: 4),
+              Container(
+                width: 1,
+                height: 16,
+                color: context.theme.plotColors.veryMuted,
+              ),
+              SizedBox(width: 4),
+              ..._buildSubTypeIcons(context),
             ],
           ),
         ),

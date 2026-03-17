@@ -634,15 +634,15 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
     bool stateIcon = false,
     String? title,
   }) : super(
-        title: title ?? (thread.todo ? 'Finish' : 'Start'),
-        eventObject: EventObject.activity,
-        eventAction: EventAction.started,
-        icon: stateIcon
-            ? PlotIcon.note
-            : thread.todo
-            ? PlotIcon.todo
-            : PlotIcon.addTodo,
-      );
+         title: title ?? (thread.todo ? 'Finish' : 'Start'),
+         eventObject: EventObject.activity,
+         eventAction: EventAction.started,
+         icon: stateIcon
+             ? PlotIcon.note
+             : thread.todo
+             ? PlotIcon.todo
+             : PlotIcon.addTodo,
+       );
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -967,7 +967,7 @@ class PickScheduleThread extends Command {
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Text(
-                'Schedule To Do',
+                'Schedule',
                 style: context.theme.typography.xl2.copyWith(
                   fontWeight: FontWeight.w600,
                 ),

@@ -23,7 +23,10 @@ enum ThreadSubType {
       ThreadSubType.values.firstWhereOrNull((t) => t.value == icon);
 
   static List<ThreadSubType> forPriority({required bool sharing}) => sharing
-      ? ThreadSubType.values.toList()
+      ? [
+          ...ThreadSubType.values.where((t) => t.sharedOnly),
+          ...ThreadSubType.values.where((t) => !t.sharedOnly),
+        ]
       : ThreadSubType.values.where((t) => !t.sharedOnly).toList();
 
   static ThreadSubType defaultFor({required bool sharing}) =>

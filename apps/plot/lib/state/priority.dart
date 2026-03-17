@@ -837,7 +837,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       (tags) {
         // Common tags (excluding action tags)
         final commonTagsFiltered = tags
-            .where((tagData) => tagData.$1.type != .compute)
+            .where((tagData) => tagData.$1.type != .compute && tagData.$1.addable)
             .map((tagData) => tagData.$1)
             .toList();
 

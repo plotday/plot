@@ -1096,7 +1096,7 @@ class _PriorityPageState extends State<PriorityPage> {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
-                            'Threads you mark ',
+                            'Threads you ',
                             style: TextStyle(
                               color: context.theme.plotColors.veryMuted,
                               fontSize: context.theme.typography.sm.fontSize,
@@ -1108,7 +1108,7 @@ class _PriorityPageState extends State<PriorityPage> {
                             color: context.theme.plotColors.veryMuted,
                           ),
                           Text(
-                            ' to do or ',
+                            ' start or ',
                             style: TextStyle(
                               color: context.theme.plotColors.veryMuted,
                               fontSize: context.theme.typography.sm.fontSize,
