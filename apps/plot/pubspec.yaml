@@ -109,13 +109,18 @@ dependencies:
   flutter_local_notifications: ^19.0.0
   sqlite3: ^3.2.0
 
-hooks:
-  user_defines:
-    sqlite3:
-      source: process
+dependency_overrides:
+  # ⚠️  PATCHED LOCAL FORK — see third_party/sqlite3/hook/build.dart
+  # When upgrading sqlite3, copy the new version to third_party/sqlite3/ and
+  # re-apply the macOS platform check (one if-statement at the top of build()).
+  # See apps/plot/README.md for full context.
+  sqlite3:
+    path: third_party/sqlite3
 
 dev_dependencies:
   analyzer: ^10.0.1
+  code_assets: ^1.0.0
+  hooks: ^1.0.0
   flutter_test:
     sdk: flutter
 

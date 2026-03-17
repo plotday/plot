@@ -1679,6 +1679,8 @@ class Store extends _$Store {
       return;
     }
 
+    log.info("plot.store: Received broadcast table=$table entity=${entity.debugName}");
+
     if (_isBufferingBroadcasts) {
       _bufferedTables.add(entity.debugName);
       return;
@@ -1917,10 +1919,9 @@ class Store extends _$Store {
     : super(
         driftDatabase(
           name: _databaseName(user.id),
-          // Skip setting sqlite3.tempDirectory — the bundled sqlite3 is
-          // compiled with SQLITE_TEMP_STORE=2 (in-memory temp files), and
-          // resolving the sqlite3_temp_directory native symbol crashes on
-          // Android with native assets.
+          // Skip setting sqlite3.tempDirectory — resolving the
+          // sqlite3_temp_directory symbol can crash on Android with native
+          // assets, and the system sqlite3 handles temp files on its own.
           native: DriftNativeOptions(tempDirectoryPath: () async => null),
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),

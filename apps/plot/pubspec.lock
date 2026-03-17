@@ -283,7 +283,7 @@ packages:
     source: hosted
     version: "1.1.2"
   code_assets:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: code_assets
       sha256: "83ccdaa064c980b5596c35dd64a8d3ecc68620174ab9b90b6343b753aa721687"
@@ -920,7 +920,7 @@ packages:
     source: hosted
     version: "2.1.0"
   hooks:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: hooks
       sha256: "7a08a0d684cb3b8fb604b78455d5d352f502b68079f7b80b831c62220ab0a4f6"
@@ -1775,10 +1775,9 @@ packages:
   sqlite3:
     dependency: "direct main"
     description:
-      name: sqlite3
-      sha256: caa693ad15a587a2b4fde093b728131a1827903872171089dedb16f7665d3a91
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/sqlite3"
+      relative: true
+    source: path
     version: "3.2.0"
   sqlite3_flutter_libs:
     dependency: transitive
