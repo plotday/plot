@@ -60,16 +60,13 @@ const createRateLimitHandler = (
       "unknown";
 
     logger.warn(`${limiterType} rate limit exceeded`, { ip, ...context });
-    c.var.tracker?.captureException(
-      new Error(`${limiterType} rate limit exceeded`),
-      {
-        ...context,
-        ip,
-        limiter_type: limiterType,
-        limit,
-        period,
-      }
-    );
+    c.var.tracker?.capture(`rate_limit_exceeded`, {
+      ...context,
+      ip,
+      limiter_type: limiterType,
+      limit,
+      period,
+    });
 
     return c.json(
       {

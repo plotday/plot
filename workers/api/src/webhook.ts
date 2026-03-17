@@ -17,9 +17,6 @@ import { captureServerError } from "./utils/error-capture";
 
 const webhook = new Hono<{ Bindings: Bindings }>();
 
-// Apply moderate rate limiting to all webhook routes (300 req/min)
-webhook.use("*", webhookRateLimiter);
-
 /**
  * Verifies Svix webhook signature (used by Clerk).
  * https://docs.svix.com/receiving/verifying-payloads/how-manual
@@ -109,7 +106,7 @@ const CLERK_EMAIL_MAP: Record<
 };
 
 // Clerk webhook endpoint - handles email.created events for auth emails
-webhook.post("/hook/clerk", async (c) => {
+webhook.post("/hook/clerk", webhookRateLimiter, async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
@@ -313,7 +310,7 @@ async function verifySlackSignature(
 }
 
 // Slack webhook endpoint - handles Events API webhooks with team-based routing
-webhook.post("/hook/slack", async (c) => {
+webhook.post("/hook/slack", webhookRateLimiter, async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
@@ -387,7 +384,7 @@ webhook.post("/hook/slack", async (c) => {
 });
 
 // Gmail webhook endpoint - handles Google Pub/Sub push notifications
-webhook.post("/hook/gmail/:topicId", async (c) => {
+webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
@@ -489,7 +486,7 @@ webhook.post("/hook/gmail/:topicId", async (c) => {
 });
 
 // Webhook endpoint - handles all HTTP methods for webhook URLs
-webhook.all(Network.PATH, async (c) => {
+webhook.all(Network.PATH, webhookRateLimiter, async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
