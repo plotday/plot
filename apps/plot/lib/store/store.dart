@@ -7,8 +7,6 @@ import 'package:flutter/widgets.dart' show Brightness, IconData;
 import 'package:logging/logging.dart';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:collection/collection.dart';
 import 'package:injector/injector.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -1842,42 +1840,14 @@ class Store extends _$Store {
 
   Store._(User user)
     : super(
-        _openDatabase(user.id),
+        driftDatabase(
+          name: _databaseName(user.id),
+          web: DriftWebOptions(
+            sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+            driftWorker: Uri.parse('drift_worker.js'),
+          ),
+        ),
       );
-
-  /// Opens the drift database, ensuring sqlite3 is only loaded in the
-  /// background worker isolate (not the main isolate). Dual-loading causes
-  /// SIGSEGV crashes under memory pressure when two app instances run.
-  static QueryExecutor _openDatabase(String userId) {
-    // Resolve temp directory path eagerly. path_provider needs Flutter
-    // bindings (main isolate only), but the database opens in a background
-    // isolate, so we capture the path here for use in isolateSetup.
-    String? resolvedTempDir;
-
-    return driftDatabase(
-      name: _databaseName(userId),
-      native: DriftNativeOptions(
-        // Return null so drift_flutter does NOT call sqlite3.tempDirectory
-        // in the main isolate — that would trigger a second dlopen of
-        // sqlite3.framework alongside the background isolate's copy.
-        tempDirectoryPath: () async {
-          resolvedTempDir = (await getTemporaryDirectory()).path;
-          return null;
-        },
-        // Set sqlite3.tempDirectory in the background isolate where the
-        // database is actually opened and all queries run.
-        isolateSetup: () {
-          if (resolvedTempDir != null) {
-            sqlite.sqlite3.tempDirectory = resolvedTempDir;
-          }
-        },
-      ),
-      web: DriftWebOptions(
-        sqlite3Wasm: Uri.parse('sqlite3.wasm'),
-        driftWorker: Uri.parse('drift_worker.js'),
-      ),
-    );
-  }
 
   static String _databaseName(String userId) {
     final profile = CliArgs.profile;
