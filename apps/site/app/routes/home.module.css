@@ -50,17 +50,6 @@
   );
 }
 
-.twoCol {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--mantine-spacing-xl);
-  align-items: center;
-
-  @media (min-width: $mantine-breakpoint-md) {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 .sectionTitle {
   font-family: "Greycliff CF", var(--mantine-font-family);
   font-weight: 800;
@@ -72,70 +61,96 @@
   line-height: 1.7;
 }
 
-.card {
-  border: 1px solid
-    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
-  border-radius: var(--mantine-radius-md);
-  padding: var(--mantine-spacing-lg);
-  background-color: light-dark(
-    var(--mantine-color-white),
-    var(--mantine-color-dark-7)
-  );
-  height: 100%;
-}
-
-.plotCard {
-  composes: card;
-  border-color: var(--mantine-color-brand-4);
-  background-color: light-dark(
-    var(--mantine-color-brand-0),
-    var(--mantine-color-dark-6)
-  );
-}
-
-.plotCardBadge {
-  background-color: light-dark(
-    var(--mantine-color-brand-1),
-    var(--mantine-color-brand-9)
-  );
-  color: light-dark(var(--mantine-color-brand-8), var(--mantine-color-brand-1));
-  border-radius: var(--mantine-radius-sm);
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  font-size: rem(13px);
-  font-weight: 600;
-  margin-top: var(--mantine-spacing-sm);
-  display: inline-block;
-}
-
-.integrationGrid {
+.benefitSection {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--mantine-spacing-md);
-  width: 100%;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-xl);
+  align-items: center;
 
-  @media (min-width: $mantine-breakpoint-sm) {
-    grid-template-columns: repeat(4, 1fr);
+  @media (min-width: $mantine-breakpoint-md) {
+    grid-template-columns: 1fr 1fr;
+    gap: calc(var(--mantine-spacing-xl) * 2);
   }
 }
 
-.integrationTile {
+.benefitReverse {
+  @media (min-width: $mantine-breakpoint-md) {
+    direction: rtl;
+
+    & > * {
+      direction: ltr;
+    }
+  }
+}
+
+.benefitText {
+  max-width: 520px;
+}
+
+.benefitPlaceholder {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--mantine-spacing-xs);
-  padding: var(--mantine-spacing-md) var(--mantine-spacing-xs);
-  border: 1px solid
-    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
-  border-radius: var(--mantine-radius-md);
-  background-color: light-dark(
-    var(--mantine-color-gray-0),
-    var(--mantine-color-dark-6)
+  justify-content: center;
+  min-height: 320px;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--mantine-radius-lg);
+  border: 2px dashed
+    light-dark(
+      var(--mantine-color-brand-2),
+      var(--mantine-color-brand-9)
+    );
+  background: light-dark(
+    linear-gradient(
+      135deg,
+      var(--mantine-color-brand-0) 0%,
+      transparent 100%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.02) 0%,
+      transparent 100%
+    )
   );
 }
 
-.integrationIcon {
-  width: 40px;
-  height: 40px;
+.benefitPlaceholderInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-xl);
+  border-radius: var(--mantine-radius-md);
+  background: light-dark(
+    rgba(255, 255, 255, 0.6),
+    rgba(255, 255, 255, 0.04)
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.benefitPlaceholderIcon {
+  color: light-dark(
+    var(--mantine-color-brand-4),
+    var(--mantine-color-brand-5)
+  );
+  opacity: 0.4;
+}
+
+.benefitPlaceholderLabel {
+  font-size: rem(13px);
+  font-weight: 500;
+  color: light-dark(var(--mantine-color-gray-5), var(--mantine-color-dark-2));
+}
+
+.benefitPlaceholderHint {
+  font-size: rem(11px);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3));
+}
+
+.benefitCta {
+  align-self: flex-start;
 }
 
 .storySection {
@@ -287,26 +302,8 @@
   color: var(--mantine-color-white);
 }
 
-.ctaBody {
-  color: rgba(255, 255, 255, 0.85);
-}
-
 .trustItem {
   color: rgba(255, 255, 255, 0.8);
   font-size: rem(14px);
 }
 
-.checkList {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.checkItem {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-xs);
-  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
-  font-size: rem(16px);
-  line-height: 1.8;
-}
