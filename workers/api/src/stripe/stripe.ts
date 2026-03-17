@@ -35,7 +35,7 @@ stripe.post("/webhook", async (c) => {
     let event: Stripe.Event;
 
     try {
-      event = verifyWebhookSignature(
+      event = await verifyWebhookSignature(
         stripeClient,
         body,
         signature,

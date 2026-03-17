@@ -14,13 +14,13 @@ export function createStripeClient(apiKey: string): Stripe {
 /**
  * Verify Stripe webhook signature
  */
-export function verifyWebhookSignature(
+export async function verifyWebhookSignature(
   stripe: Stripe,
   payload: string,
   signature: string,
   secret: string
-): Stripe.Event {
-  return stripe.webhooks.constructEvent(payload, signature, secret);
+): Promise<Stripe.Event> {
+  return stripe.webhooks.constructEventAsync(payload, signature, secret);
 }
 
 /**
