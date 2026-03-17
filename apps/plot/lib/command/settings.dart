@@ -728,7 +728,14 @@ class FullResync extends Command {
       return CommandMessage('Re-sync complete');
     } catch (e, t) {
       log.warning('Full re-sync failed', e, t);
-      return CommandMessage('Re-sync failed', isError: true);
+      Tracker.trackError(
+        eventObject.value,
+        errorType: e.runtimeType.toString(),
+        errorMessage: e.toString(),
+        stackTrace: extractStackTrace(t),
+        context: 'full_resync',
+      );
+      return CommandMessage('Full re-sync failed', isError: true);
     }
   }
 }
