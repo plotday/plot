@@ -388,42 +388,30 @@ class PriorityState extends Equatable {
         items.add(AgendaThreadItem(event, now: current));
       }
 
-      // Extract pinned todos whose pinnedAfterTime matches this event's
-      // start time and insert them directly after the event.
+      // Pinned-to-event-start todos are handled by the time-match
+      // condition in the priority filter below, so they sort by order
+      // alongside other todos under the event.
       // (Pinned to event end time = gap start → handled in gap section.)
-      if (event.at?.start != null) {
-        final (pinnedHere, unpinned) = threads.partition(
-          (a) =>
-              a.isPinnedTodo &&
-              a.pinnedAfterTime!.isAtSameMomentAs(event.at!.start!),
-        );
-        if (pinnedHere.isNotEmpty) {
-          log.info(
-            '[agenda:makeBlock] ${pinnedHere.length} pinned todo(s) '
-            'after event "${event.title}": '
-            '${pinnedHere.map((t) => '"${t.title}"').join(', ')}',
-          );
-          pinnedHere.sort((a, b) => a.order.compareTo(b.order));
-          items.addAll(
-            pinnedHere.map((Thread a) => AgendaThreadItem(a)),
-          );
-          threads = unpinned;
-        }
-      }
 
       // Split threads into todos vs notes/done
       final todos = threads.where((a) => a.todo).toList();
       final notesAndDone = threads.where((a) => !a.todo).toList();
 
-      // Filter todos by priority
+      // Filter todos by priority or explicit time match (user pinned
+      // a todo from an unrelated priority to this event's time).
       final (matchingTodos, remainingTodos) = todos.partition(
         (Thread a) =>
-            (event.priority.id == a.priority.id ||
-                event.priority.isParent(a.priority)) &&
-            !(a.at?.start != null &&
-                event.at?.start != null &&
-                event.at?.end != null &&
-                a.at!.start!.isSameOrAfter(event.at!.end!)),
+            // Priority match: same or descendant priority
+            ((event.priority.id == a.priority.id ||
+                    event.priority.isParent(a.priority)) &&
+                !(a.at?.start != null &&
+                    event.at?.start != null &&
+                    event.at?.end != null &&
+                    a.at!.start!.isSameOrAfter(event.at!.end!))) ||
+            // Time match: todo explicitly pinned to this event's start
+            (event.at?.start != null &&
+                a.at?.start != null &&
+                a.at!.start!.isAtSameMomentAs(event.at!.start!)),
       );
 
       // Filter notes/done by time (agendaAt within event's time range)
@@ -439,7 +427,13 @@ class PriorityState extends Equatable {
           .where(
             (a) =>
                 event.priority.id == a.priority.id ||
-                event.priority.isParent(a.priority),
+                event.priority.isParent(a.priority) ||
+                // Include todos pinned to this event's time regardless of
+                // priority (user explicitly dragged them here).
+                (a.todo &&
+                    event.at?.start != null &&
+                    a.at?.start != null &&
+                    a.at!.start!.isAtSameMomentAs(event.at!.start!)),
           )
           .toList();
 

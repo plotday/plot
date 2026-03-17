@@ -1311,11 +1311,12 @@ class _PriorityPageState extends State<PriorityPage> {
                       break;
                     }
                   } else if (item is AgendaThreadItem) {
-                    // Detect scheduled events (link schedule instances
-                    // with an end time) — event headers are stripped by
-                    // agendaViewItems, so we detect from threads directly.
+                    // Detect scheduled events — event headers are stripped
+                    // by agendaViewItems, so we detect from threads
+                    // directly. Matches both link schedule instances and
+                    // regular timed activities.
                     if (targetEvent == null &&
-                        item.thread.isLinkScheduleInstance &&
+                        !item.thread.todo &&
                         item.thread.at?.end != null) {
                       targetEvent = item.thread;
                     }
