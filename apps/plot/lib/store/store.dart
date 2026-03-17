@@ -1917,6 +1917,11 @@ class Store extends _$Store {
     : super(
         driftDatabase(
           name: _databaseName(user.id),
+          // Skip setting sqlite3.tempDirectory — the bundled sqlite3 is
+          // compiled with SQLITE_TEMP_STORE=2 (in-memory temp files), and
+          // resolving the sqlite3_temp_directory native symbol crashes on
+          // Android with native assets.
+          native: DriftNativeOptions(tempDirectoryPath: () async => null),
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),
             driftWorker: Uri.parse('drift_worker.js'),

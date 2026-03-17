@@ -364,6 +364,16 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     }
   }
 
+  bool get _shouldShowFilter {
+    if (widget.showFilter == false) return false;
+    if (widget.showFilter == true) return true;
+    // showFilter is null — use item count heuristic on touch
+    if (hasPhysicalKeyboard()) return true;
+    if (_isLoading) return false;
+    final totalItems = _groups.fold<int>(0, (sum, g) => sum + g.items.length);
+    return totalItems >= 12;
+  }
+
   /// Get the total count of items across all groups.
   int _getTotalItemCount() {
     return _groups.fold<int>(0, (sum, group) => sum + group.items.length);
@@ -596,11 +606,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
               builder: (context, constraints) => Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.showFilter ?? hasPhysicalKeyboard())
+                  if (_shouldShowFilter)
                     EditableArea(
                       position: EditableAreaPosition.top,
                       padding: false,
-                      autofocus: true,
+                      autofocus: hasPhysicalKeyboard(),
                       builder: (context, focusNode) => Padding(
                         padding: context.theme.spacing.padding,
                         child: ValueListenableBuilder<int>(
@@ -623,7 +633,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                   maxLines: 1,
                                   style: TextFieldStyle.ghost,
                                   controller: _controller,
-                                  autofocus: true,
+                                  autofocus: hasPhysicalKeyboard(),
                                   label: "${widget.prompt}...",
                                   focusNode: focusNode,
                                   onChanged: (text) => _initItems(),

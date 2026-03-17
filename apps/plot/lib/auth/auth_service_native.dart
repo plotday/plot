@@ -63,20 +63,30 @@ clerk.IdTokenProvider _toClerkProvider(IdTokenProvider p) => switch (p) {
   IdTokenProvider.apple => clerk.IdTokenProvider.apple,
 };
 
-AuthErrorCode _mapErrorCode(clerk.ClerkErrorCode? code) => switch (code) {
-  clerk.ClerkErrorCode.noSuchFirstFactorStrategy =>
-    AuthErrorCode.noSuchFirstFactorStrategy,
-  clerk.ClerkErrorCode.noAssociatedStrategy =>
-    AuthErrorCode.noAssociatedStrategy,
-  clerk.ClerkErrorCode.serverErrorResponse =>
-    AuthErrorCode.serverErrorResponse,
-  _ => AuthErrorCode.unknown,
-};
+AuthErrorCode _mapErrorCode(clerk.ClerkError e) {
+  // For server-side errors, inspect the individual Clerk error codes returned
+  // by the API (e.g. 'external_account_not_found') so they can be mapped to
+  // the correct AuthErrorCode rather than falling through as serverErrorResponse.
+  if (e.code == clerk.ClerkErrorCode.serverErrorResponse) {
+    final clerkCode = e.errors?.error.code;
+    if (clerkCode == 'external_account_not_found') {
+      return AuthErrorCode.noAssociatedStrategy;
+    }
+    return AuthErrorCode.serverErrorResponse;
+  }
+  return switch (e.code) {
+    clerk.ClerkErrorCode.noSuchFirstFactorStrategy =>
+      AuthErrorCode.noSuchFirstFactorStrategy,
+    clerk.ClerkErrorCode.noAssociatedStrategy =>
+      AuthErrorCode.noAssociatedStrategy,
+    _ => AuthErrorCode.unknown,
+  };
+}
 
 AuthError _wrapClerkError(clerk.ClerkError e) => AuthError(
   message: e.message,
   argument: e.argument,
-  code: _mapErrorCode(e.code),
+  code: _mapErrorCode(e),
 );
 
 /// Wraps a function that may throw [clerk.ClerkError] and re-throws as
