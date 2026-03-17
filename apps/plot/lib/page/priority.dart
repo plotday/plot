@@ -1451,7 +1451,7 @@ class _PriorityPageState extends State<PriorityPage> {
     ScrollController? scrollController, {
     PageStorageKey<String>? scrollStorageKey,
   }) {
-    if (items.isEmpty && state.activityFeedDoneEnd) {
+    if (items.isEmpty && state.activityFeedDoneEnd && state.activityFeedLoaded) {
       return Padding(
         padding: EdgeInsets.symmetric(
           horizontal: context.contentPaddingH,

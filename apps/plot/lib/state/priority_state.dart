@@ -22,6 +22,7 @@ class PriorityState extends Equatable {
     List<Tag> tagSuggestions = const [],
     List<AgendaItem> activityFeedItems = const [],
     bool activityFeedDoneEnd = false,
+    bool activityFeedLoaded = false,
     List<AgendaItem>? reorderViewItems,
     List<String> iconFilter = const [],
     List<(ThreadSubType, int)> iconCounts = const [],
@@ -50,6 +51,7 @@ class PriorityState extends Equatable {
           ? List.unmodifiable(activityFeedItems)
           : activityFeedItems,
       activityFeedDoneEnd: activityFeedDoneEnd,
+      activityFeedLoaded: activityFeedLoaded,
       reorderViewItems: reorderViewItems != null
           ? List.unmodifiable(reorderViewItems)
           : null,
@@ -78,6 +80,7 @@ class PriorityState extends Equatable {
     this.tagSuggestions = const [],
     this.activityFeedItems = const [],
     this.activityFeedDoneEnd = false,
+    this.activityFeedLoaded = false,
     this.reorderViewItems,
     this.iconFilter = const [],
     this.iconCounts = const [],
@@ -98,6 +101,7 @@ class PriorityState extends Equatable {
   final List<Tag> tagSuggestions;
   final List<AgendaItem> activityFeedItems;
   final bool activityFeedDoneEnd;
+  final bool activityFeedLoaded;
 
   /// Cached agendaViewItems from an optimistic reorder. When set,
   /// [agendaViewItems] returns this directly instead of re-deriving.
@@ -969,6 +973,7 @@ class PriorityState extends Equatable {
     List<Tag>? tagSuggestions,
     List<AgendaItem>? activityFeedItems,
     bool? activityFeedDoneEnd,
+    bool? activityFeedLoaded,
     Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
     List<String>? iconFilter,
     List<(ThreadSubType, int)>? iconCounts,
@@ -1006,6 +1011,7 @@ class PriorityState extends Equatable {
                 : activityFeedItems)
           : this.activityFeedItems,
       activityFeedDoneEnd: activityFeedDoneEnd ?? this.activityFeedDoneEnd,
+      activityFeedLoaded: activityFeedLoaded ?? this.activityFeedLoaded,
       iconFilter: iconFilter != null
           ? (iconFilter.isNotEmpty ? List.unmodifiable(iconFilter) : iconFilter)
           : this.iconFilter,
@@ -1032,6 +1038,7 @@ class PriorityState extends Equatable {
     tagSuggestions,
     activityFeedItems,
     activityFeedDoneEnd,
+    activityFeedLoaded,
     reorderViewItems,
     iconFilter,
     iconCounts,

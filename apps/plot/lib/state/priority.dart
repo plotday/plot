@@ -527,6 +527,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedItems: const [],
         agendaDoneEnd: false,
         activityFeedDoneEnd: false,
+        activityFeedLoaded: false,
       ),
     );
 
@@ -1251,6 +1252,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             state.copyWith(
               activityFeedItems: items,
               activityFeedDoneEnd: doneEnd,
+              activityFeedLoaded: true,
             ),
           );
         });
