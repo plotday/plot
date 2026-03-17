@@ -53,7 +53,6 @@ class AgendaHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final brightness = context.read<ThemeBloc>().getBrightness(context);
     // Determine what to show in the center
     String? centerText = text;
     // Split date into two parts for center-on-month alignment
@@ -152,9 +151,7 @@ class AgendaHeader extends StatelessWidget {
           ? context.theme.typography.xs.fontSize
           : context.theme.typography.md.fontSize;
       final mutedStyle = TextStyle(
-        color: brightness == Brightness.dark
-            ? context.theme.plotColors.veryMuted
-            : context.theme.plotColors.muted,
+        color: context.theme.plotColors.veryMuted,
         fontSize: dateFontSize,
       );
 

@@ -67,6 +67,7 @@ class PlotIcon {
 
   // Tags
   static const todo = FontAwesomeIcons.play;
+  static const todoFilled = FontAwesomeIcons.solidPlay;
   static const addTodo = FontAwesomeIcons.play;
   static const finish = FontAwesomeIcons.stop;
   static const someday = FontAwesomeIcons.circleMoon;

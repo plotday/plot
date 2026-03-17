@@ -1,9 +1,8 @@
 import 'package:flutter/widgets.dart';
-import 'package:forui/forui.dart';
 
 import 'package:plot/style/colors.dart';
-import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/theme_color.dart';
+import 'package:plot/widget/icon.dart';
 
 class PriorityNotification extends StatelessWidget {
   const PriorityNotification({
@@ -20,52 +19,48 @@ class PriorityNotification extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = context.colour.colours.fromTheme(color);
-    final neutral = context.theme.plotColors.veryMuted;
+    if (active) {
+      return SizedBox.square(
+        dimension: 16,
+        child: Icon(
+          unread ? PlotIcon.todoFilled : PlotIcon.todo,
+          size: 12,
+          color: accent.withValues(alpha: unread ? 0.7 : 0.85),
+        ),
+      );
+    }
 
-    return CustomPaint(
-      size: const Size.square(16),
-      painter: _PriorityNotificationPainter(
-        ringColor: active ? accent.withValues(alpha: 0.65) : null,
-        dotColor: unread
-            ? accent.withValues(alpha: 0.7)
-            : neutral.withValues(alpha: 0.2),
+    if (!unread) return const SizedBox.square(dimension: 16);
+
+    return SizedBox.square(
+      dimension: 16,
+      child: Center(
+        child: CustomPaint(
+          size: const Size.square(6),
+          painter: _DotPainter(color: accent.withValues(alpha: 0.7)),
+        ),
       ),
     );
   }
 }
 
-class _PriorityNotificationPainter extends CustomPainter {
-  _PriorityNotificationPainter({
-    required this.ringColor,
-    required this.dotColor,
-  });
+class _DotPainter extends CustomPainter {
+  _DotPainter({required this.color});
 
-  final Color? ringColor;
-  final Color dotColor;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-
-    // Outer ring — only drawn when active
-    if (ringColor != null) {
-      final ringPaint = Paint()
-        ..color = ringColor!
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2;
-      canvas.drawCircle(center, 5.5, ringPaint);
-    }
-
-    // Inner dot
-    final dotPaint = Paint()
-      ..color = dotColor
+    final paint = Paint()
+      ..color = color
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(center, 3.0, dotPaint);
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height / 2),
+      size.width / 2,
+      paint,
+    );
   }
 
   @override
-  bool shouldRepaint(_PriorityNotificationPainter oldDelegate) {
-    return ringColor != oldDelegate.ringColor ||
-        dotColor != oldDelegate.dotColor;
-  }
+  bool shouldRepaint(_DotPainter oldDelegate) => color != oldDelegate.color;
 }

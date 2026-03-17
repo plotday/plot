@@ -96,6 +96,7 @@ class PriorityWidget extends StatelessWidget {
                   color: hovered
                       ? buildContext.theme.plotColors.muted
                       : buildContext.theme.plotColors.veryMuted,
+                  hoverColor: buildContext.theme.colors.foreground,
                 ),
             ],
           ),

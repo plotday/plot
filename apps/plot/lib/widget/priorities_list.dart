@@ -431,7 +431,14 @@ class _PrioritiesListState extends State<PrioritiesList>
                 ),
                 trailingBuilder: (isHovered, hasFocus) =>
                     (isHovered || hasFocus)
-                    ? Button.icon(ShowPriorityCommands(widget.root))
+                    ? Padding(
+                        padding: EdgeInsets.only(
+                          right: isMultiPanel
+                              ? context.theme.spacing.lg
+                              : context.theme.spacing.sm,
+                        ),
+                        child: Button.icon(ShowPriorityCommands(widget.root)),
+                      )
                     : null,
               ),
 
