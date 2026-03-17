@@ -628,9 +628,13 @@ abstract class _UpdateThreadCommand extends Command {
 }
 
 class ToggleThreadToDo extends _UpdateThreadCommand {
-  ToggleThreadToDo(super.thread, {super.onUpdate, bool stateIcon = false})
-    : super(
-        title: thread.todo ? 'Finish' : 'Start',
+  ToggleThreadToDo(
+    super.thread, {
+    super.onUpdate,
+    bool stateIcon = false,
+    String? title,
+  }) : super(
+        title: title ?? (thread.todo ? 'Finish' : 'Start'),
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon

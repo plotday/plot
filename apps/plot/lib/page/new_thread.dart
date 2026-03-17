@@ -128,19 +128,22 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
 
     // Check if priority is shared (has members besides current user)
-    _updateHasMembers(context.read<PriorityBloc>().state.draft.priority);
+    _setHasMembers(context.read<PriorityBloc>().state.draft.priority.sharing);
   }
 
-  void _updateHasMembers(Priority priority) {
+  void _setHasMembers(bool sharing) {
+    if (sharing == _hasMembers) return;
     setState(() {
-      _hasMembers = priority.sharing;
+      _hasMembers = sharing;
       // Re-validate sub-type selection after sharing change
-      if (_selectedSubType != null && _selectedSubType!.sharedOnly && !_hasMembers) {
+      if (_selectedSubType != null &&
+          _selectedSubType!.sharedOnly &&
+          !_hasMembers) {
         _selectedSubType = ThreadSubType.defaultFor(sharing: _hasMembers);
         final bloc = context.read<PriorityBloc>();
-        bloc.updateDraftLocal(bloc.state.draft.copyWith(
-          icon: Value(_selectedSubType!.value),
-        ));
+        bloc.updateDraftLocal(
+          bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
+        );
       }
     });
   }
@@ -155,9 +158,11 @@ class NewThreadPageState extends State<NewThreadPage> {
     setState(() => _selectedTwist = sorted.first);
     // Set icon on draft
     final bloc = context.read<PriorityBloc>();
-    bloc.updateDraftLocal(bloc.state.draft.copyWith(
-      icon: Value('twist:${_selectedTwist!.twistId}'),
-    ));
+    bloc.updateDraftLocal(
+      bloc.state.draft.copyWith(
+        icon: Value('twist:${_selectedTwist!.twistId}'),
+      ),
+    );
   }
 
   Future<void> _applyQueryParametersToDraft() async {
@@ -230,7 +235,14 @@ class NewThreadPageState extends State<NewThreadPage> {
       // Load twists for the selected priority if different from context
       if (queryPriority != null) {
         await _loadTwistsForPriority(queryPriority);
-        _updateHasMembers(queryPriority);
+        // queryPriority may come from getOne() which lacks sharing enrichment;
+        // re-fetch enriched to get accurate sharing status
+        final enriched = await Priority.get(id: queryPriority.id, archived: null);
+        if (mounted) {
+          _setHasMembers(
+            enriched.isNotEmpty ? enriched.first.sharing : queryPriority.sharing,
+          );
+        }
       }
     }
   }
@@ -298,8 +310,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       // Load twists for the newly selected priority
       await _loadTwistsForPriority(result.value);
 
-      // Check if the new priority has members
-      _updateHasMembers(result.value);
+      // Check if the new priority has members (result is enriched from Priority.get)
+      _setHasMembers(result.value.sharing);
 
       log.info(
         '[NewThreadPage._selectPriority] Draft priority update complete',
@@ -361,35 +373,24 @@ class NewThreadPageState extends State<NewThreadPage> {
               Button.icon(
                 ToggleThreadToDo(
                   state.draft,
+                  title: 'Start',
                   onUpdate: (thread) async {
                     await context.read<PriorityBloc>().updateDraft(thread);
                   },
                 ),
                 selected: state.draft.todo,
               ),
-              GestureDetector(
-                onTap: () => context.run(
-                  ToggleThreadToDo(
-                    state.draft,
-                    onUpdate: (thread) async {
-                      await context.read<PriorityBloc>().updateDraft(thread);
-                    },
-                  ),
-                ),
-                child: Text(
-                  'Start',
-                  style: context.theme.typography.md.copyWith(
-                    height: 1,
-                    color: state.draft.todo
-                        ? context.theme.colors.primary
-                        : context.theme.colors.mutedForeground,
-                  ),
-                ),
-              ),
-              SizedBox(width: 4),
               _buildScheduleButton(context, state.draft, (thread) async {
                 await context.read<PriorityBloc>().updateDraft(thread);
               }),
+              SizedBox(width: 4),
+              Container(
+                width: 1,
+                height: 16,
+                color: context.theme.plotColors.veryMuted,
+              ),
+              SizedBox(width: 4),
+              ..._buildSubTypeIcons(context),
               if (_hasMembers) ...[
                 SizedBox(width: 4),
                 Button.icon(
@@ -590,9 +591,9 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _selectTwist(PriorityTwist twist) {
     setState(() => _selectedTwist = twist);
     final bloc = context.read<PriorityBloc>();
-    bloc.updateDraftLocal(bloc.state.draft.copyWith(
-      icon: Value('twist:${twist.twistId}'),
-    ));
+    bloc.updateDraftLocal(
+      bloc.state.draft.copyWith(icon: Value('twist:${twist.twistId}')),
+    );
   }
 
   Future<void> _openTwistPicker(BuildContext context) async {
@@ -615,9 +616,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     setState(() => _selectedTwist = result.value);
     // Set icon on draft
     final bloc = context.read<PriorityBloc>();
-    bloc.updateDraftLocal(bloc.state.draft.copyWith(
-      icon: Value('twist:${result.value.twistId}'),
-    ));
+    bloc.updateDraftLocal(
+      bloc.state.draft.copyWith(icon: Value('twist:${result.value.twistId}')),
+    );
     // Record MRU so the picked twist appears in the visible chips
     context.read<LocalPreferencesBloc>().recordMentionUsage(
       result.value.id.toString(),
@@ -627,40 +628,37 @@ class NewThreadPageState extends State<NewThreadPage> {
   void _selectSubType(ThreadSubType subType) {
     setState(() => _selectedSubType = subType);
     final bloc = context.read<PriorityBloc>();
-    bloc.updateDraftLocal(bloc.state.draft.copyWith(
-      icon: Value(subType.value),
-    ));
+    bloc.updateDraftLocal(
+      bloc.state.draft.copyWith(icon: Value(subType.value)),
+    );
   }
 
-  Widget _buildSubTypeSelector(BuildContext context) {
+  List<Widget> _buildSubTypeIcons(BuildContext context) {
     final types = ThreadSubType.forPriority(sharing: _hasMembers);
+    final disabled =
+        _selectedType == NewThreadType.link ||
+        _selectedType == NewThreadType.chat;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: types.map((subType) {
-            final selected = _selectedSubType == subType;
-            final color = selected
-                ? context.theme.colors.primary
-                : context.theme.colors.mutedForeground;
-            return FTooltip(
-              tipBuilder: (context, controller) => Text(subType.label),
-              child: FButton.icon(
-                variant: FButtonVariant.ghost,
-                onPress: () => _selectSubType(subType),
-                child: Icon(
-                  subType.icon,
-                  size: context.theme.iconSizes.base,
-                  color: color,
-                ),
-              ),
-            );
-          }).toList(),
+    return types.map((subType) {
+      final selected = !disabled && _selectedSubType == subType;
+      final color = disabled
+          ? context.theme.plotColors.veryMuted
+          : selected
+          ? context.theme.colors.primary
+          : context.theme.colors.mutedForeground;
+      return FTooltip(
+        tipBuilder: (context, controller) => Text(subType.label),
+        child: FButton.icon(
+          variant: FButtonVariant.ghost,
+          onPress: disabled ? null : () => _selectSubType(subType),
+          child: Icon(
+            subType.icon,
+            size: context.theme.iconSizes.base,
+            color: color,
+          ),
         ),
-      ),
-    );
+      );
+    }).toList();
   }
 
   String get _editorHint {
@@ -714,9 +712,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (_selectedType == NewThreadType.note ||
         _selectedType == NewThreadType.task) {
       _selectedSubType = ThreadSubType.defaultFor(sharing: _hasMembers);
-      bloc.updateDraftLocal(bloc.state.draft.copyWith(
-        icon: Value(_selectedSubType!.value),
-      ));
+      bloc.updateDraftLocal(
+        bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
+      );
     }
   }
 
@@ -746,9 +744,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     } else {
       // Restore sub-type icon for note/task
       _selectedSubType ??= ThreadSubType.defaultFor(sharing: _hasMembers);
-      bloc.updateDraftLocal(bloc.state.draft.copyWith(
-        icon: Value(_selectedSubType!.value),
-      ));
+      bloc.updateDraftLocal(
+        bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
+      );
     }
   }
 
@@ -861,7 +859,12 @@ class NewThreadPageState extends State<NewThreadPage> {
             },
       child: BlocBuilder<LayoutBloc, LayoutState>(
         builder: (context, layoutState) {
-          return BlocBuilder<PriorityBloc, PriorityState>(
+          return BlocConsumer<PriorityBloc, PriorityState>(
+            listener: (context, state) {
+              // Sync sharing status when draft changes (e.g. _loadDraft
+              // loads an enriched draft from the database)
+              _setHasMembers(state.draft.priority.sharing);
+            },
             builder: (context, state) {
               return PopScope(
                 canPop: false,
@@ -902,14 +905,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                   horizontal: context.contentPaddingH,
                                 ),
                                 child: _buildTwistSelector(context),
-                              ),
-                            if (_selectedType == NewThreadType.note ||
-                                _selectedType == NewThreadType.task)
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: context.contentPaddingH,
-                                ),
-                                child: _buildSubTypeSelector(context),
                               ),
                             const SizedBox(height: 16),
 
@@ -958,9 +953,6 @@ class NewThreadPageState extends State<NewThreadPage> {
 
                             if (_selectedType == NewThreadType.chat)
                               _buildTwistSelector(context),
-                            if (_selectedType == NewThreadType.note ||
-                                _selectedType == NewThreadType.task)
-                              _buildSubTypeSelector(context),
 
                             SizedBox(height: 16),
 
