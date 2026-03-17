@@ -92,6 +92,7 @@
   align-items: center;
   justify-content: center;
   min-height: 320px;
+  max-width: 100%;
   aspect-ratio: 4 / 3;
   border-radius: var(--mantine-radius-lg);
   border: 2px dashed
