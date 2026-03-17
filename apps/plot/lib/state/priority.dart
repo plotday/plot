@@ -40,13 +40,12 @@ class PriorityBloc extends Cubit<PriorityState> {
       _loadAgenda();
     });
 
-    // Re-trigger demand-driven syncs after a full resync
-    _subscriptions.add(
-      Store.onFullResync.stream.listen((_) {
-        log.fine('Full resync completed, reloading priority');
-        _loadPriority();
-      }),
-    );
+    // Re-trigger demand-driven syncs after a full resync.
+    // This lives outside _subscriptions so it survives priority switches.
+    _fullResyncSubscription = Store.onFullResync.stream.listen((_) {
+      log.fine('Full resync completed, reloading priority');
+      _loadPriority();
+    });
   }
 
   void toggleShowArchived() {
@@ -210,6 +209,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Unregister time change callback
     Time.setOnTimeChanged(null);
 
+    _fullResyncSubscription?.cancel();
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
@@ -821,6 +821,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
+    _subscriptions.clear();
     _subscriptions.add(
       Priority.watchOne(priorityToLoad.id).listen((priority) {
         log.fine('Priority updated');
@@ -1270,6 +1271,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   }
 
   final List<StreamSubscription<void>> _subscriptions;
+  StreamSubscription<void>? _fullResyncSubscription;
   StreamSubscription<void>? _threadSubscription;
   StreamSubscription<void>? _agendaSubscription;
   StreamSubscription<void>? _activityFeedSubscription;
