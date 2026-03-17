@@ -132,6 +132,9 @@ notes.post("/sync/notes", async (c) => {
           // 1. ALWAYS mark thread unread for other priority members
           try {
             await markThreadUnreadForOthers(db, priorityId, body.thread_id, c.var.user.id);
+            // Notify again now that unread rows exist — the initial notifySync fired
+            // before waitUntil, so clients that pulled immediately saw unread=false
+            notifySync(c, priorityId);
           } catch (error) {
             console.error("[unread] Failed to mark thread unread for others:", error);
           }
