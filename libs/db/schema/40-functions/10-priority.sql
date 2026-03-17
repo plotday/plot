@@ -43,7 +43,7 @@ DECLARE
     millis_since_epoch double precision;
 BEGIN
     millis_since_epoch := EXTRACT(epoch FROM CURRENT_TIMESTAMP) * 1000;
-    RETURN millis_since_epoch;
+    RETURN millis_since_epoch + random();
 END;
 $$
 LANGUAGE plpgsql;

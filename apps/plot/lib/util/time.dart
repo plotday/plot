@@ -429,6 +429,7 @@ class CustomBoundedDateRange extends BoundedDateRange {
 
 class DateTimeRange extends Equatable {
   factory DateTimeRange.fromString(String db) {
+    if (db == 'empty') return DateTimeRange(null, null);
     String stripped = db.replaceAll(RegExp(r'[\[\]()"]'), '');
     List<String> dateTimeStrings = stripped.split(',');
     List<DateTime?> dateTimes = dateTimeStrings

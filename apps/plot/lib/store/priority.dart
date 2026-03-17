@@ -11,7 +11,7 @@ class Priorities extends Table
   RealColumn get topOrder => real().nullable().map(const OrderConverter())();
   RealColumn get order => real()
       .map(const OrderConverter())
-      .clientDefault(() => DateTime.now().millisecondsSinceEpoch.toDouble())();
+      .clientDefault(() => DateTime.now().millisecondsSinceEpoch.toDouble() + Random().nextDouble())();
   IntColumn get pomodoro => integer()
       .nullable()
       .withDefault(const Constant(25 * 60))
@@ -518,7 +518,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // Stream 1: Shared schedules (userId IS NULL) — time filtered in-memory
     final s = Store.get.schedules;
     final sharedQuery = Store.get.selectOnly(a)
-      ..addColumns([a.priorityId, s.startAt, s.startOn, s.endAt]);
+      ..addColumns([a.priorityId, s.startAt, s.startOn, s.endAt, s.endOn]);
     sharedQuery.join([
       innerJoin(s, s.threadId.equalsExp(a.id) & s.userId.isNull()),
     ]);
@@ -533,7 +533,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             final startOn = row.read(s.startOn);
             final endAt = row.read(s.endAt);
             if (startOn != null && startAt == null) {
-              return startOn.compareTo(today) <= 0;
+              final endOn = row.read(s.endOn);
+              final end = endOn ?? startOn;
+              return startOn.compareTo(today) <= 0 && end.compareTo(today) >= 0;
             }
             if (startAt != null) {
               final started = startAt.isBefore(now) || startAt.isAtSameMomentAs(now);

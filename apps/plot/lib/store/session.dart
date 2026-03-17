@@ -42,8 +42,9 @@ class SessionsBase extends BaseTable {
     // Handle time travel edge cases where start might be after end
     // This can happen when frozen time is in the past but session dates
     // use real time from DateTime.now()
-    if (start.isAfter(end)) {
+    if (!start.isBefore(end)) {
       // Use a minimal valid range to prevent sync errors during time travel
+      // or when start == end (which PostgreSQL normalizes to 'empty' range)
       end = start.add(const Duration(seconds: 1));
     }
 
@@ -59,8 +60,11 @@ class SessionsBase extends BaseTable {
   SessionRow fromBase(Map<String, dynamic> json) {
     json.remove('updated_by');
     final range = DateTimeRange.fromString(json['at'] as String);
-    json['start'] = range.start?.toDb();
-    json['end'] = range.end?.toDb();
+    // 'empty' ranges (start == end with exclusive upper bound) have null start/end.
+    // Use created_at as a fallback since start/end are non-nullable locally.
+    final fallback = json['created_at'] as String;
+    json['start'] = range.start?.toDb() ?? fallback;
+    json['end'] = range.end?.toDb() ?? fallback;
     return SessionRow.fromJson(json);
   }
 }

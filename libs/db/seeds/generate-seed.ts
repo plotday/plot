@@ -1666,6 +1666,20 @@ function processThread(
     }
   }
 
+  // Auto-set connector icon from first link's source (if no explicit icon or twist_ref)
+  if (!thread.icon && !thread.twist_ref && thread.links?.length) {
+    const firstLinkWithSource = thread.links.find((l) => l.source_ref);
+    if (firstLinkWithSource?.source_ref) {
+      const ptId = sourceIdMap[firstLinkWithSource.source_ref];
+      if (ptId) {
+        const linkType = firstLinkWithSource.type ? `:${firstLinkWithSource.type}` : '';
+        outPostInsertSQL.push(
+          `UPDATE thread SET icon = 'connector:' || (SELECT twist_id::text FROM priority_twist WHERE id = ${sqlString(ptId)}) || '${linkType}' WHERE id = ${sqlString(id)};`
+        );
+      }
+    }
+  }
+
   // Process schedule
   if (thread.schedule) {
     const sched = thread.schedule;

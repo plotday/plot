@@ -1,9 +1,14 @@
+import 'dart:math';
+
 import 'package:drift/drift.dart';
 
 extension type Order._(double value) {
+  static final _random = Random();
   static const lowerBound = -10_000_536_000_000;
-  static double _last() => -DateTime.now().millisecondsSinceEpoch.toDouble();
-  static double _first() => DateTime.now().millisecondsSinceEpoch.toDouble();
+  static double _last() =>
+      -DateTime.now().millisecondsSinceEpoch.toDouble() + _random.nextDouble();
+  static double _first() =>
+      DateTime.now().millisecondsSinceEpoch.toDouble() + _random.nextDouble();
   static double _between(Order? after, Order? before) {
     var a = after?.value;
     var b = before?.value;
@@ -12,6 +17,7 @@ extension type Order._(double value) {
     } else if (b == null) {
       return _first();
     }
+    if (a == b) return a + _random.nextDouble();
     return (a + b) / 2;
   }
 
