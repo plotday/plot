@@ -633,32 +633,91 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
+  Widget _buildSubTypeIcon(
+    BuildContext context,
+    ThreadSubType subType, {
+    required bool disabled,
+  }) {
+    final selected = !disabled && _selectedSubType == subType;
+    final color = disabled
+        ? context.theme.plotColors.veryMuted
+        : selected
+            ? context.theme.colors.primary
+            : context.theme.colors.mutedForeground;
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(subType.label),
+      child: FButton.icon(
+        variant: FButtonVariant.ghost,
+        onPress: disabled ? null : () => _selectSubType(subType),
+        child: Icon(
+          subType.icon,
+          size: context.theme.iconSizes.base,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   List<Widget> _buildSubTypeIcons(BuildContext context) {
     final types = ThreadSubType.forPriority(sharing: _hasMembers);
     final disabled =
         _selectedType == NewThreadType.link ||
         _selectedType == NewThreadType.chat;
 
-    return types.map((subType) {
-      final selected = !disabled && _selectedSubType == subType;
-      final color = disabled
-          ? context.theme.plotColors.veryMuted
-          : selected
-          ? context.theme.colors.primary
-          : context.theme.colors.mutedForeground;
-      return FTooltip(
-        tipBuilder: (context, controller) => Text(subType.label),
+    if (!_hasMembers) {
+      return types
+          .map((t) => _buildSubTypeIcon(context, t, disabled: disabled))
+          .toList();
+    }
+
+    // Shared: show top 3 from MRU + overflow button
+    final priorityId =
+        context.read<PriorityBloc>().state.draft.priority.id.toString();
+    final mruTypes =
+        context.read<LocalPreferencesBloc>().getSubTypeMru(priorityId);
+    final visible = mruTypes.take(3).toList();
+
+    return [
+      ...visible
+          .map((t) => _buildSubTypeIcon(context, t, disabled: disabled)),
+      FTooltip(
+        tipBuilder: (context, controller) => Text('More types'),
         child: FButton.icon(
           variant: FButtonVariant.ghost,
-          onPress: disabled ? null : () => _selectSubType(subType),
+          onPress: disabled ? null : () => _showSubTypeOverflow(context),
           child: Icon(
-            subType.icon,
+            PlotIcon.more,
             size: context.theme.iconSizes.base,
-            color: color,
+            color: disabled
+                ? context.theme.plotColors.veryMuted
+                : context.theme.colors.mutedForeground,
           ),
         ),
-      );
-    }).toList();
+      ),
+    ];
+  }
+
+  Future<void> _showSubTypeOverflow(BuildContext context) async {
+    final types = ThreadSubType.forPriority(sharing: _hasMembers);
+    final priorityId =
+        context.read<PriorityBloc>().state.draft.priority.id.toString();
+    final localPrefs = context.read<LocalPreferencesBloc>();
+
+    final result = await SelectModal.open<ThreadSubType>(
+      context,
+      items: (_) async => [SelectGroup(title: null, items: types)],
+      itemBuilder: (subType, _) => ListTile(
+        icon: subType.icon,
+        body: Text(subType.label),
+        selected: _selectedSubType == subType,
+      ),
+      selectedValue: _selectedSubType,
+      prompt: 'Select type',
+    );
+
+    if (!context.mounted || !result.present) return;
+    await localPrefs.recordSubTypeMru(priorityId, result.value);
+    _selectSubType(result.value);
   }
 
   String get _editorHint {

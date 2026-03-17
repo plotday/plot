@@ -1,6 +1,8 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
+import 'package:plot/store/store.dart' show ThreadSubType;
 import 'package:plot/util/profile_preferences.dart';
 
 part 'local_preferences_state.dart';
@@ -15,6 +17,7 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   static const String _kMentionMruKey = 'mention_mru_ids';
   static const String _kShowAllPrioritiesKey = 'show_all_priorities';
   static const String _kLastNewThreadTypeKey = 'last_new_thread_type';
+  static const String _kSubTypeMruPrefix = 'thread_subtype_mru:';
   static const int _maxMruItems = 50;
 
   /// Record usage of a mention, moving it to the front of the MRU list
@@ -77,6 +80,45 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   Future<void> toggleShowAllPriorities() async {
     emit(state.copyWith(showAllPriorities: !state.showAllPriorities));
     await _persistState();
+  }
+
+  /// Returns the MRU-ordered list of sub-types for this priority.
+  /// If no stored value, returns the default order.
+  List<ThreadSubType> getSubTypeMru(String priorityId) {
+    final prefs = ProfilePreferences.instance;
+    final stored = prefs.getString('$_kSubTypeMruPrefix$priorityId');
+    if (stored != null && stored.isNotEmpty) {
+      final names = stored.split(',');
+      final result = <ThreadSubType>[];
+      for (final name in names) {
+        final subType = ThreadSubType.values.firstWhereOrNull(
+          (t) => t.value == name,
+        );
+        if (subType != null) result.add(subType);
+      }
+      // Add any missing sub-types at the end (e.g. newly added types)
+      final defaults = ThreadSubType.forPriority(sharing: true);
+      for (final t in defaults) {
+        if (!result.contains(t)) result.add(t);
+      }
+      return result;
+    }
+    return ThreadSubType.forPriority(sharing: true);
+  }
+
+  /// Moves [subType] to position 0 in the priority's MRU list and persists.
+  Future<void> recordSubTypeMru(
+    String priorityId,
+    ThreadSubType subType,
+  ) async {
+    final current = getSubTypeMru(priorityId);
+    current.remove(subType);
+    current.insert(0, subType);
+    final prefs = ProfilePreferences.instance;
+    await prefs.setString(
+      '$_kSubTypeMruPrefix$priorityId',
+      current.map((t) => t.value).join(','),
+    );
   }
 
   /// Load state from profile preferences
