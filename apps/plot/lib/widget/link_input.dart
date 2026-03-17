@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart' show OutlineInputBorder;
 import 'package:flutter/services.dart';
 
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import 'package:plot/state/theme.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/url_title.dart' show fetchUrlMetadata;
 import 'package:plot/widget/widget.dart' hide Link;
@@ -338,7 +341,7 @@ class _LinkInputState extends State<LinkInput> {
 
   Widget _buildLinkLogo(BuildContext context, Link link) {
     final logoUrl = link.logoForBrightness(
-      MediaQuery.platformBrightnessOf(context),
+      context.read<ThemeBloc>().getBrightness(context),
     );
     if (logoUrl != null) {
       return LogoImage(

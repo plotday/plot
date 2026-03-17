@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/theme.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/layout.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -604,7 +605,7 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
       child: Builder(
         builder: (context) {
           final linkLogo = link.logoForBrightness(
-            MediaQuery.platformBrightnessOf(context),
+            context.read<ThemeBloc>().getBrightness(context),
           );
           return GestureDetector(
             onTap: connected
