@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Box,
   Button,
@@ -65,6 +66,33 @@ const PRODUCT_ICONS: { name: string; color: string; path: string }[] = [
   },
 ];
 
+const STORY_TABS = [
+  {
+    label: "Email",
+    image: "/assets/email.png",
+    title: "A to-do list written by others",
+    copy: "Email bundles up work for others to act on asynchronously. But running our work out of an inbox leaves us at the mercy of the senders. When we reach the mythical inbox zero, we often realize we haven't started on what's most important.",
+  },
+  {
+    label: "Team Chat",
+    image: "/assets/chat.png",
+    title: "Fast coordination, slow resolution",
+    copy: "Chat makes coordination nearly free. A question doesn't need to wait for a meeting, and the whole team can see and weigh in. But the most vigorous conversations are often the least important, and the essential ones languish unresolved.",
+  },
+  {
+    label: "Project Management",
+    image: "/assets/project.png",
+    title: "Clarity that becomes its own overhead",
+    copy: "Project management tools create clarity for action. But when nothing can happen without a ticket, the system becomes the bottleneck. Keeping it on the rails becomes its own job, and planning starts taking longer than the work.",
+  },
+  {
+    label: "Meetings",
+    image: "/assets/meetings.png",
+    title: "High bandwidth, high cost",
+    copy: "Meetings offer high-bandwidth collaboration\u2014the challenges that snarl email threads get sorted out in minutes. But when nothing can happen without a meeting, we live by our calendars and burn our best energy before the work begins.",
+  },
+];
+
 export function meta(_: Route.MetaArgs) {
   return [
     { title: "Plot | Your best work, every day" },
@@ -81,6 +109,8 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState(0);
+
   return (
     <Stack gap={0}>
       {/* Hero */}
@@ -105,11 +135,11 @@ export default function Home() {
                 variant="subtle"
                 size="lg"
                 component="a"
-                href="#problem"
+                href="#story"
                 onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
                   e.preventDefault();
                   document
-                    .getElementById("problem")
+                    .getElementById("story")
                     ?.scrollIntoView({ behavior: "smooth" });
                 }}
               >
@@ -133,33 +163,55 @@ export default function Home() {
         </Container>
       </Box>
 
-      {/* Problem */}
-      <Box id="problem" className={classes.graySection} pt={80} pb={80}>
+      {/* Productivity Story Tabs */}
+      <Box id="story" className={classes.storySection} pt={80} pb={80}>
         <Container size="lg">
-          <Box className={classes.twoCol}>
-            <Stack gap="md">
-              <Title order={2} size="h2" className={classes.sectionTitle}>
-                We drown in messages while important work stalls
-              </Title>
-              <Text className={classes.sectionBody}>
-                Work has changed. We get more messages across more apps, and now
-                AI demanded our attention, too. Roles have greater breadth with
-                less routine, making prioritization, judgement, and coordination
-                critical.
+          <Title
+            order={2}
+            size="h2"
+            className={classes.sectionTitle}
+            ta="center"
+            mb="xl"
+          >
+            So what's stopping us?
+          </Title>
+          <Box className={classes.storyLayout}>
+            <div className={classes.storyTabs}>
+              {STORY_TABS.map((tab, i) => (
+                <button
+                  key={tab.label}
+                  className={`${classes.storyTab} ${i === activeTab ? classes.storyTabActive : ""}`}
+                  onClick={() => setActiveTab(i)}
+                  type="button"
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className={classes.storyImageWrap}>
+              <img
+                src={STORY_TABS[activeTab].image}
+                alt={STORY_TABS[activeTab].label}
+                className={classes.storyImage}
+              />
+            </div>
+            <div>
+              <div className={classes.storyCopyTitle}>
+                {STORY_TABS[activeTab].title}
+              </div>
+              <Text className={classes.storyCopy}>
+                {STORY_TABS[activeTab].copy}
               </Text>
-              <Text className={classes.sectionBody}>
-                The old ways of working are breaking. Traditional chat tools
-                like Slack and Teams create constant busyness without real
-                progress. The urgent always fills the day while important
-                projects slip through the cracks.
-              </Text>
-            </Stack>
-            <img
-              src="/assets/notifications.png"
-              alt="Overwhelming phone notifications from multiple apps"
-              className={classes.illustrationImage}
-            />
+            </div>
           </Box>
+        </Container>
+        <Container size="md" mt={60}>
+          <Text className={classes.hingeText}>
+            Every one of these solves a real problem.
+            <br />
+            But when they dominate our day, the overhead crowds out our best
+            work.
+          </Text>
         </Container>
       </Box>
 
