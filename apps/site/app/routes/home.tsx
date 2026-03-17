@@ -79,7 +79,7 @@ export default function Home() {
           <Stack align="center" gap="lg" ta="center">
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
-                Your best work, every day
+                Your best work, every&nbsp;day
               </Text>
             </Title>
             <Text className={classes.heroSubtext}>
@@ -148,7 +148,9 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <div className={`${classes.storyImageWrap} ${STORY_TABS[activeTab].lightVignette ? classes.storyImageLightVignette : ""}`}>
+            <div
+              className={`${classes.storyImageWrap} ${STORY_TABS[activeTab].lightVignette ? classes.storyImageLightVignette : ""}`}
+            >
               <img
                 src={STORY_TABS[activeTab].image}
                 alt={STORY_TABS[activeTab].label}
