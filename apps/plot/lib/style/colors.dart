@@ -65,17 +65,17 @@ class OklchColours {
     return switch (themeColor?.index) {
       5 =>
         brightness == Brightness.light
-            ? 0.50
+            ? 0.43
             : 0.80, // orange: boost to avoid brown
       6 =>
         brightness == Brightness.light
-            ? 0.53
+            ? 0.46
             : 0.80, // yellow: needs most boost to avoid olive
       7 =>
         brightness == Brightness.light
-            ? 0.35
+            ? 0.30
             : 0.82, // gray: lower for contrast
-      _ => brightness == Brightness.light ? 0.45 : 0.78,
+      _ => brightness == Brightness.light ? 0.38 : 0.78,
     };
   }
 
@@ -127,7 +127,7 @@ class OklchColours {
         pureBackground: pureBackground,
         pureForeground: pureForeground,
         background: neutral(0.98, 0.01),
-        editableBackground: neutral(0.995, 0.01),
+        editableBackground: neutral(1.0, 0),
         accent: lch(accentLightness, accentChroma),
         accentBackground: lch(
           themeColor.index == 7 ? 0.93 : 0.96,
@@ -136,7 +136,7 @@ class OklchColours {
         highlight: neutral(0.94, 0.03, null, 0.9),
         foreground: neutral(0.25, 0.01),
         muted: neutral(0.48, 0.01),
-        veryMuted: neutral(0.64, 0.01),
+        veryMuted: neutral(0.58, 0.01),
         border: neutral(0.0, 0.0, 0.0, 0.18),
         barrier: neutral(0.0, 0.0, 0.0, 0.3),
         themeColor: themeColor,

@@ -651,21 +651,49 @@ class NewThreadPageState extends State<NewThreadPage> {
     required bool disabled,
   }) {
     final selected = !disabled && _selectedSubType == subType;
-    final color = disabled
-        ? context.theme.plotColors.veryMuted
-        : selected
-            ? context.theme.colors.primary
-            : context.theme.colors.mutedForeground;
+    final colourScheme = context.colour;
+
+    // Build style delta for proper hover + selected color
+    FButtonStyleDelta styleDelta;
+    if (selected) {
+      final color = context.theme.colors.primary;
+      final hoverColor = Color.lerp(color, colourScheme.foreground, 0.3);
+      styleDelta = FButtonStyleDelta.delta(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
+          ),
+        ]),
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          iconStyle: FVariants<FTappableVariantConstraint, FTappableVariant,
+              IconThemeData, IconThemeDataDelta>(
+            IconThemeData(color: color, size: context.theme.iconSizes.lg),
+            variants: {
+              [FTappableVariantConstraint.hovered]:
+                  IconThemeData(color: hoverColor, size: context.theme.iconSizes.lg),
+              [FTappableVariantConstraint.pressed]:
+                  IconThemeData(color: hoverColor, size: context.theme.iconSizes.lg),
+            },
+          ),
+        ),
+      );
+    } else {
+      styleDelta = FButtonStyleDelta.delta(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
+          ),
+        ]),
+      );
+    }
+
     return FTooltip(
       tipBuilder: (context, controller) => Text(subType.label),
       child: FButton.icon(
         variant: FButtonVariant.ghost,
+        style: styleDelta,
         onPress: disabled ? null : () => _selectSubType(subType),
-        child: Icon(
-          subType.icon,
-          size: context.theme.iconSizes.base,
-          color: color,
-        ),
+        child: Icon(subType.icon, size: context.theme.iconSizes.base),
       ),
     );
   }
@@ -696,14 +724,15 @@ class NewThreadPageState extends State<NewThreadPage> {
         tipBuilder: (context, controller) => Text('More types'),
         child: FButton.icon(
           variant: FButtonVariant.ghost,
-          onPress: disabled ? null : () => _showSubTypeOverflow(context),
-          child: Icon(
-            PlotIcon.more,
-            size: context.theme.iconSizes.base,
-            color: disabled
-                ? context.theme.plotColors.veryMuted
-                : context.theme.colors.mutedForeground,
+          style: FButtonStyleDelta.delta(
+            decoration: FVariantsDelta.delta([
+              FVariantOperation.all(
+                DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
+              ),
+            ]),
           ),
+          onPress: disabled ? null : () => _showSubTypeOverflow(context),
+          child: Icon(PlotIcon.more, size: context.theme.iconSizes.base),
         ),
       ),
     ];

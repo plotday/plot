@@ -335,10 +335,10 @@ FButtonStyleDelta _buildGhostStyleDelta(
       spacing: 6,
       textStyle: _textStyleVariants(
         base: typography.md.copyWith(
-          color: colourScheme.muted, fontWeight: FontWeight.w500, height: 1,
+          color: colourScheme.veryMuted, fontWeight: FontWeight.w500, height: 1,
         ),
         disabled: typography.md.copyWith(
-          color: colourScheme.muted, fontWeight: FontWeight.w500, height: 1,
+          color: colourScheme.veryMuted, fontWeight: FontWeight.w500, height: 1,
         ),
         hovered: typography.md.copyWith(
           color: colourScheme.foreground, fontWeight: FontWeight.w500, height: 1,
@@ -348,9 +348,9 @@ FButtonStyleDelta _buildGhostStyleDelta(
         ),
       ),
       iconStyle: _iconVariants(
-        base: IconThemeData(color: colourScheme.muted, size: iconSizes.base),
+        base: IconThemeData(color: colourScheme.veryMuted, size: iconSizes.base),
         disabled: IconThemeData(
-          color: colourScheme.muted.withValues(alpha: 0.5),
+          color: colourScheme.veryMuted.withValues(alpha: 0.5),
           size: iconSizes.base,
         ),
         hovered: IconThemeData(
@@ -364,9 +364,9 @@ FButtonStyleDelta _buildGhostStyleDelta(
     iconContentStyle: FButtonIconContentStyleDelta.delta(
       padding: EdgeInsetsGeometryDelta.value(mobileIconPadding),
       iconStyle: _iconVariants(
-        base: IconThemeData(color: colourScheme.muted, size: iconSizes.lg),
+        base: IconThemeData(color: colourScheme.veryMuted, size: iconSizes.lg),
         disabled: IconThemeData(
-          color: colourScheme.muted.withValues(alpha: 0.5),
+          color: colourScheme.veryMuted.withValues(alpha: 0.5),
           size: iconSizes.lg,
         ),
         hovered: IconThemeData(
