@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import {
   Box,
   Button,
@@ -207,10 +208,9 @@ export default function Home() {
         </Container>
         <Container size="md" mt={60}>
           <Text className={classes.hingeText}>
-            Every one of these solves a real problem.
+            Every solves a real problem.
             <br />
-            But when they dominate our day, the overhead crowds out our best
-            work.
+            Unchecked, they can crowd out our best work.
           </Text>
         </Container>
       </Box>

@@ -139,10 +139,11 @@
 }
 
 .storySection {
-  background-color: light-dark(
-    var(--mantine-color-gray-0),
-    var(--mantine-color-dark-6)
-  );
+  background-color: light-dark(#1c1f23, #0e1012);
+}
+
+.storySection .sectionTitle {
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .storyLayout {
@@ -175,7 +176,7 @@
   font-size: rem(15px);
   font-weight: 600;
   border-radius: var(--mantine-radius-xl);
-  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-gray-5));
+  color: rgba(255, 255, 255, 0.35);
   transition:
     color 0.15s,
     background-color 0.15s,
@@ -189,30 +190,55 @@
 }
 
 .storyTab:hover {
-  color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-gray-1));
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .storyTabActive {
-  color: light-dark(var(--mantine-color-brand-7), var(--mantine-color-brand-4));
-  background-color: light-dark(
-    var(--mantine-color-brand-0),
-    var(--mantine-color-brand-9)
-  );
+  color: rgba(255, 255, 255, 0.85);
+  background-color: rgba(255, 255, 255, 0.1);
 
   @media (min-width: $mantine-breakpoint-md) {
     background-color: transparent;
-    border-left-color: var(--mantine-color-brand-6);
+    border-left-color: light-dark(
+      var(--mantine-color-brand-6),
+      var(--mantine-color-brand-4)
+    );
   }
 }
 
 .storyImageWrap {
+  position: relative;
   height: 320px;
   overflow: hidden;
   border-radius: var(--mantine-radius-md);
-  box-shadow:
-    0 1px 0 light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.06)),
-    0 8px 32px light-dark(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.4));
-  border: 1px solid light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+}
+
+.storyImageWrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    linear-gradient(
+      to right,
+      light-dark(#1c1f23, #0e1012) 0%,
+      transparent 18%,
+      transparent 82%,
+      light-dark(#1c1f23, #0e1012) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      light-dark(#1c1f23, #0e1012) 0%,
+      transparent 15%,
+      transparent 80%,
+      light-dark(#1c1f23, #0e1012) 100%
+    ),
+    radial-gradient(
+      ellipse at center,
+      transparent 50%,
+      light-dark(rgba(28, 31, 35, 0.4), rgba(14, 16, 18, 0.4)) 100%
+    );
 }
 
 .storyImage {
@@ -221,12 +247,8 @@
   object-fit: cover;
   object-position: top left;
   display: block;
-
-  opacity: 0.65;
-
-  @media (prefers-color-scheme: dark) {
-    opacity: 0.7;
-  }
+  filter: grayscale(0.7) saturate(0.5);
+  opacity: 0.55;
 }
 
 .storyCopyTitle {
@@ -234,12 +256,12 @@
   font-weight: 800;
   font-size: rem(20px);
   line-height: 1.3;
-  color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-white));
+  color: rgba(255, 255, 255, 0.88);
   margin-bottom: var(--mantine-spacing-xs);
 }
 
 .storyCopy {
-  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  color: rgba(255, 255, 255, 0.45);
   line-height: 1.7;
   font-size: rem(16px);
 }
@@ -250,7 +272,7 @@
   font-weight: 500;
   font-size: rem(20px);
   line-height: 1.5;
-  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  color: rgba(255, 255, 255, 0.38);
 }
 
 .ctaSection {
