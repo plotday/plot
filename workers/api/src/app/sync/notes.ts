@@ -121,73 +121,74 @@ notes.post("/sync/notes", async (c) => {
   notifySync(c, priorityId);
 
   // Background processing: unread marking + AI analysis (best-effort, don't block the response)
+  // Uses its own DB connection since the request-scoped one is destroyed after the response
   const noteId = (result as any)?.id ?? body.id;
   const content = body.content as string | null;
   if (noteId && !body.draft && !body.archived_at) {
     c.executionCtx.waitUntil(
       (async () => {
-        // 1. ALWAYS mark thread unread for other priority members
+        const db = createDb(c.env);
         try {
-          await markThreadUnreadForOthers(c.var.db, priorityId, body.thread_id, c.var.user.id);
-        } catch (error) {
-          console.error("[unread] Failed to mark thread unread for others:", error);
-        }
-
-        // 2. AI analysis (optional — upgrades urgency/importance if it runs)
-        if (!content || content.trim().length === 0) return;
-
-        // Check ai_enabled setting and free-tier limits before running AI
-        const [aiEnabled, aiAllowed] = await Promise.all([
-          isAiEnabled(c.var.db, c.var.user.id),
-          checkAiLimitForPriority(c.env, c.var.db, priorityId, c.var.user.id, "note_processing"),
-        ]);
-
-        if (!aiEnabled) {
-          console.log("[embedding:sync] AI disabled for user, skipping", noteId);
-          return;
-        }
-
-        if (!aiAllowed.allowed) {
-          console.log("[embedding:sync] AI limit reached for all priority members, skipping", noteId);
-          return;
-        }
-
-        // Generate embedding
-        try {
-          console.log("[embedding:sync] Generating embedding for note", noteId, "content length:", content.length);
-          const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
-            text: content,
-          })) as { data: number[][] };
-          console.log("[embedding:sync] Got embedding response", noteId, "dimensions:", response?.data?.[0]?.length);
-          const embedding = response.data[0];
-          const db = createDb(c.env);
+          // 1. ALWAYS mark thread unread for other priority members
           try {
+            await markThreadUnreadForOthers(db, priorityId, body.thread_id, c.var.user.id);
+          } catch (error) {
+            console.error("[unread] Failed to mark thread unread for others:", error);
+          }
+
+          // 2. AI analysis (optional — upgrades urgency/importance if it runs)
+          if (!content || content.trim().length === 0) return;
+
+          // Check ai_enabled setting and free-tier limits before running AI
+          const [aiEnabled, aiAllowed] = await Promise.all([
+            isAiEnabled(db, c.var.user.id),
+            checkAiLimitForPriority(c.env, db, priorityId, c.var.user.id, "note_processing"),
+          ]);
+
+          if (!aiEnabled) {
+            console.log("[embedding:sync] AI disabled for user, skipping", noteId);
+            return;
+          }
+
+          if (!aiAllowed.allowed) {
+            console.log("[embedding:sync] AI limit reached for all priority members, skipping", noteId);
+            return;
+          }
+
+          // Generate embedding
+          try {
+            console.log("[embedding:sync] Generating embedding for note", noteId, "content length:", content.length);
+            const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
+              text: content,
+            })) as { data: number[][] };
+            console.log("[embedding:sync] Got embedding response", noteId, "dimensions:", response?.data?.[0]?.length);
+            const embedding = response.data[0];
             await db
               .updateTable("note")
               .set({ embedding: JSON.stringify(embedding) })
               .where("id", "=", noteId)
               .execute();
             console.log("[embedding:sync] Stored embedding for note", noteId);
-          } finally {
-            await db.destroy();
-          }
-        } catch (error) {
-          console.error("[embedding:sync] Failed to generate embedding for note", noteId, error);
-        }
-
-        // AI note analysis for auto-tagging
-        const isRecent = !body.source_created_at ||
-          (Date.now() - new Date(body.source_created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
-        if (isRecent) {
-          try {
-            await analyzeNote(c.env, noteId, body.thread_id, c.var.user.id);
           } catch (error) {
-            console.error("[note-analysis] Failed to analyze note", noteId, error);
+            console.error("[embedding:sync] Failed to generate embedding for note", noteId, error);
           }
-        }
 
-        // Record usage against the user whose quota was checked
-        recordAiUsage(c.env, aiAllowed.chargeUserId, "note_processing");
+          // AI note analysis for auto-tagging
+          const isRecent = !body.source_created_at ||
+            (Date.now() - new Date(body.source_created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
+          if (isRecent) {
+            try {
+              await analyzeNote(c.env, noteId, body.thread_id, c.var.user.id);
+            } catch (error) {
+              console.error("[note-analysis] Failed to analyze note", noteId, error);
+            }
+          }
+
+          // Record usage against the user whose quota was checked
+          recordAiUsage(c.env, aiAllowed.chargeUserId, "note_processing");
+        } finally {
+          await db.destroy();
+        }
       })()
     );
   } else if (noteId) {
