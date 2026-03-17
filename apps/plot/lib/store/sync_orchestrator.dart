@@ -141,6 +141,45 @@ class SyncOrchestrator {
   ];
 
   // ============================================================================
+  // INITIAL SYNC ENTITY DEFINITIONS
+  // ============================================================================
+
+  /// Thread entity for critical initial sync — only pulls agenda + activity feed.
+  /// Skips unread threads, schedules initial, and incremental pull.
+  static final _threadCritical = SyncEntity(
+    debugName: 'thread_critical',
+    dependsOn: [priority, actor],
+    pushFn: () async => true,
+    pullFn: () async {
+      // Set pulledAt baseline for links so future incremental pulls work
+      await Store.get.pull(Store.get.links, LinksBase());
+      // Pull agenda and activity feed in parallel
+      await Future.wait([
+        Thread.pullAgenda(null, null),
+        Thread.pullActivityFeed(null, null),
+      ]);
+    },
+  );
+
+  /// PriorityTwist for critical initial sync — initial only, no updates.
+  static final _priorityTwistCritical = SyncEntity(
+    debugName: 'priority_twist_critical',
+    dependsOn: [priority],
+    pushFn: () async => true,
+    pullFn: PriorityTwist.pullInitial,
+  );
+
+  /// Entities needed for the critical initial sync (minimum to render UI).
+  static final _criticalEntities = [
+    actor,
+    userSettings,
+    priority,
+    priorityUser,
+    _threadCritical,
+    _priorityTwistCritical,
+  ];
+
+  // ============================================================================
   // PUBLIC API
   // ============================================================================
 
@@ -206,6 +245,61 @@ class SyncOrchestrator {
     }
 
     _syncOrchestratorLog.info('Completed syncAll');
+  }
+
+  /// Performs minimal sync for first-time users.
+  /// Pulls only the entities needed to render the initial UI.
+  /// No push phase (new users have nothing to push).
+  Future<void> syncInitialCritical() async {
+    await _waitForRateLimitCooldown();
+    _syncOrchestratorLog.info('Starting critical initial sync');
+
+    final pullLevels = _topologicalSort(_criticalEntities, forward: true);
+    _syncOrchestratorLog.fine(
+      'Critical pull levels: ${pullLevels.map((l) => l.map((e) => e.debugName).toList()).toList()}',
+    );
+
+    for (var i = 0; i < pullLevels.length; i++) {
+      final level = pullLevels[i];
+      _syncOrchestratorLog.fine(
+        'Critical pulling level $i: ${level.map((e) => e.debugName).toList()}',
+      );
+      await _executePullLevel(level);
+    }
+
+    _syncOrchestratorLog.info('Completed critical initial sync');
+  }
+
+  /// Completes remaining sync work after critical path.
+  /// Runs in background while app is already interactive.
+  Future<void> syncInitialDeferred() async {
+    await _waitForRateLimitCooldown();
+    _syncOrchestratorLog.info('Starting deferred initial sync');
+
+    // Complete the full thread pull (unread threads, schedules, incremental)
+    // pullInitial and pull use sync state to skip already-pulled data.
+    await pull(thread);
+
+    // Pull non-critical entities in parallel where possible
+    await Future.wait([
+      pull(priorityActor),
+      pull(session),
+      pull(priorityMember),
+      pull(sourceChannel),
+      pull(note),
+    ], eagerError: false);
+
+    // Complete priorityTwist updates (initial was done in critical)
+    await pull(priorityTwist);
+
+    // Push phase - all entities
+    final pushLevels = _computePushLevels();
+    for (var i = 0; i < pushLevels.length; i++) {
+      final level = pushLevels[i];
+      await _executePushLevel(level);
+    }
+
+    _syncOrchestratorLog.info('Completed deferred initial sync');
   }
 
   /// Syncs a subset of entities with their transitive dependencies.

@@ -482,27 +482,29 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     if (pulledTo == null) return;
 
-    await Store.get.pullTo(
-      Store.get.links,
-      LinksBase(priorityId: priorityId, priorityPath: path),
-      pullTo: pulledTo,
-      ascending: false,
-      archived: archived,
-    );
-    await Store.get.pullTo(
-      Store.get.schedules,
-      SchedulesBase(priorityId: priorityId, priorityPath: path),
-      pullTo: pulledTo,
-      ascending: false,
-      archived: archived,
-    );
-    await Store.get.pullTo(
-      Store.get.threadTags,
-      ThreadTagsBase(priorityId: priorityId, priorityPath: path),
-      pullTo: pulledTo,
-      ascending: false,
-      archived: archived,
-    );
+    await Future.wait([
+      Store.get.pullTo(
+        Store.get.links,
+        LinksBase(priorityId: priorityId, priorityPath: path),
+        pullTo: pulledTo,
+        ascending: false,
+        archived: archived,
+      ),
+      Store.get.pullTo(
+        Store.get.schedules,
+        SchedulesBase(priorityId: priorityId, priorityPath: path),
+        pullTo: pulledTo,
+        ascending: false,
+        archived: archived,
+      ),
+      Store.get.pullTo(
+        Store.get.threadTags,
+        ThreadTagsBase(priorityId: priorityId, priorityPath: path),
+        pullTo: pulledTo,
+        ascending: false,
+        archived: archived,
+      ),
+    ]);
   }
 
   /// Pull one page of agenda (forward from today).
@@ -530,27 +532,29 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     if (pulledTo == null) return;
 
-    await Store.get.pullTo(
-      Store.get.links,
-      LinksBase(priorityId: priorityId, priorityPath: path),
-      pullTo: pulledTo,
-      ascending: true,
-      archived: archived,
-    );
-    await Store.get.pullTo(
-      Store.get.schedules,
-      SchedulesBase(priorityId: priorityId, priorityPath: path),
-      pullTo: pulledTo,
-      ascending: true,
-      archived: archived,
-    );
-    await Store.get.pullTo(
-      Store.get.threadTags,
-      ThreadTagsBase(priorityId: priorityId, priorityPath: path),
-      pullTo: pulledTo,
-      ascending: true,
-      archived: archived,
-    );
+    await Future.wait([
+      Store.get.pullTo(
+        Store.get.links,
+        LinksBase(priorityId: priorityId, priorityPath: path),
+        pullTo: pulledTo,
+        ascending: true,
+        archived: archived,
+      ),
+      Store.get.pullTo(
+        Store.get.schedules,
+        SchedulesBase(priorityId: priorityId, priorityPath: path),
+        pullTo: pulledTo,
+        ascending: true,
+        archived: archived,
+      ),
+      Store.get.pullTo(
+        Store.get.threadTags,
+        ThreadTagsBase(priorityId: priorityId, priorityPath: path),
+        pullTo: pulledTo,
+        ascending: true,
+        archived: archived,
+      ),
+    ]);
   }
 
   static Future<bool> push() async {

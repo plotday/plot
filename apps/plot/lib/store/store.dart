@@ -496,23 +496,23 @@ class Store extends _$Store {
         // User has existing local data, start sync in background (non-blocking)
         inst._setupConnectivityListener();
       } else {
-        // New user or no local data - need to sync before app can be used
-        log.info("New user sync: starting connectivity check and sync");
+        // New user or no local data - critical sync blocks, rest is deferred
+        log.info("New user sync: starting connectivity check and critical sync");
         onStartStatus?.call('Connecting...');
         try {
           await Future(() async {
             await inst._waitForNetworkConnectivity();
-            log.info("New user sync: connectivity confirmed, starting sync");
+            log.info("New user sync: connectivity confirmed, starting critical sync");
             onStartStatus?.call('Syncing your data...');
-            await inst._startSync();
-            log.info("New user sync: sync complete");
-          }).timeout(const Duration(seconds: 60));
+            await inst._startSyncCritical();
+            log.info("New user sync: critical sync complete");
+          }).timeout(const Duration(seconds: 30));
         } on TimeoutException {
-          log.warning("New user sync timed out after 60s");
+          log.warning("New user critical sync timed out after 30s");
           Tracker.trackError(
             'auth',
             errorType: 'TimeoutException',
-            errorMessage: 'New user sync timed out after 60s',
+            errorMessage: 'New user critical sync timed out after 30s',
             context: 'sign_in_sync_timeout',
           );
           rethrow;
@@ -528,6 +528,11 @@ class Store extends _$Store {
           }
           return; // Exit early since sign-out will trigger UserBloc state change
         }
+
+        // Complete remaining sync in background, then set up connectivity
+        inst._startSyncDeferred().whenComplete(() {
+          inst._setupConnectivityListener();
+        });
       }
     });
   }
@@ -1724,6 +1729,76 @@ class Store extends _$Store {
       if (!completer.isCompleted) {
         completer.complete();
       }
+    }
+  }
+
+  /// Critical sync for new users — blocks until minimum data is available.
+  /// WebSocket is subscribed and broadcasts are buffered for the deferred phase.
+  Future<void> _startSyncCritical() async {
+    if (_closing) return;
+
+    _isSyncing = true;
+    try {
+      _unsubscribeFromUpdates();
+      await _waitForNetworkConnectivity();
+
+      final tokenResult = await Base.getSessionTokenWithReason();
+      if (tokenResult.failure == TokenFailureReason.sessionInvalid) {
+        log.warning('Session invalid before sync — skipping sync');
+        Base.handleTokenResult(tokenResult);
+        return;
+      }
+
+      // Subscribe to WebSocket, buffering messages during sync
+      _isBufferingBroadcasts = true;
+      _bufferedTables.clear();
+      await _subscribeToUpdates();
+
+      await SyncOrchestrator.instance.syncInitialCritical();
+    } catch (e) {
+      // On failure, clean up buffering state so deferred phase doesn't hang
+      _isBufferingBroadcasts = false;
+      _isSyncing = false;
+      rethrow;
+    }
+    // Note: _isSyncing and _isBufferingBroadcasts stay true for _startSyncDeferred
+  }
+
+  /// Deferred sync for new users — runs in background after app is interactive.
+  Future<void> _startSyncDeferred() async {
+    try {
+      await SyncOrchestrator.instance.syncInitialDeferred();
+      if (_closing) return;
+
+      // Process any messages received during both sync phases
+      _isBufferingBroadcasts = false;
+      if (_bufferedTables.isNotEmpty) {
+        log.fine(
+          "Processing ${_bufferedTables.length} buffered broadcast tables",
+        );
+      }
+      for (final table in _bufferedTables) {
+        _syncDebouncer(table);
+      }
+      _bufferedTables.clear();
+      _resetAuthFailures();
+    } catch (e, stackTrace) {
+      if (_isAuthError(e)) {
+        log.warning("Auth error during deferred sync", e, stackTrace);
+        await _handleAuthError();
+      } else if (!SyncOrchestrator.instance._isExpectedError(e)) {
+        Tracker.trackError(
+          'sync',
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+          stackTrace: stackTrace.toString(),
+          context: 'sync_deferred',
+        );
+      }
+      log.warning("Error during deferred sync", e, stackTrace);
+    } finally {
+      _isBufferingBroadcasts = false;
+      _isSyncing = false;
     }
   }
 
