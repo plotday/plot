@@ -965,6 +965,20 @@ class _ArchiveSourceCommand extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       await TwistApi.archiveAndRemoveTwist(priorityTwistId);
+
+      // Update local database to immediately reflect the archive
+      final twist = PriorityTwist.fromCache(Uuid.fromString(priorityTwistId));
+      if (twist != null) {
+        await Store.get.save(
+          PriorityTwist.table,
+          twist.copyWith(
+            archivedAt: Value(DateTime.now()),
+            updatedAt: DateTime.now(),
+          ),
+          PriorityTwistsBase(),
+        );
+      }
+
       return CommandMessage('Connection "$name" archived successfully');
     } catch (e, t) {
       log.warning('Failed to archive source', e, t);
@@ -1437,7 +1451,7 @@ class EditTwist extends ShowForm {
             ],
           ),
           if (optionItems != null)
-            StaticFormGroup(title: 'Settings', items: optionItems.items),
+            StaticFormGroup(items: optionItems.items),
           StaticFormGroup(
             items: [
               FormButton(
@@ -1454,6 +1468,7 @@ class EditTwist extends ShowForm {
                   );
                 },
               ),
+              FormDivider(key: 'divider'),
               FormButton(
                 key: 'details',
                 buildCommand: (_) =>

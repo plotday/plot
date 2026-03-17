@@ -40,12 +40,12 @@ const BYOK_MODEL_MAP: Record<
   },
   balanced: {
     openai: AIModel.GPT_5_MINI,
-    anthropic: AIModel.CLAUDE_37_SONNET,
+    anthropic: AIModel.CLAUDE_SONNET_46,
     google: AIModel.GEMINI_25_FLASH,
   },
   capable: {
     openai: AIModel.GPT_5,
-    anthropic: AIModel.CLAUDE_SONNET_45,
+    anthropic: AIModel.CLAUDE_SONNET_46,
     google: AIModel.GEMINI_25_PRO,
   },
 };
@@ -203,7 +203,7 @@ export class AI extends Tool implements IAI {
       } else {
         // Anthropic: Hybrid reasoning model with fast responses and deeper thinking
         // Alternatives: GPT_5, GEMINI_25_FLASH
-        return AIModel.CLAUDE_37_SONNET;
+        return AIModel.CLAUDE_SONNET_46;
       }
     }
 
@@ -215,11 +215,11 @@ export class AI extends Tool implements IAI {
       } else if (cost === "medium") {
         // Anthropic: Advanced reasoning with thinking mode
         // Alternatives: GEMINI_25_PRO, GPT_5_PRO
-        return AIModel.CLAUDE_37_SONNET;
+        return AIModel.CLAUDE_SONNET_46;
       } else {
         // Anthropic: Best-in-class reasoning and problem-solving
         // Alternatives: GPT_5_PRO, GEMINI_25_PRO
-        return AIModel.CLAUDE_SONNET_45;
+        return AIModel.CLAUDE_SONNET_46;
       }
     }
 

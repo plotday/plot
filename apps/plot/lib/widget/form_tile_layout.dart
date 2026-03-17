@@ -40,7 +40,10 @@ class FormTileLayout extends StatelessWidget {
           Positioned.fill(child: Container(color: rightBackgroundColor)),
         // Content layer (with padding)
         Padding(
-          padding: context.theme.spacing.paddingSm,
+          padding: EdgeInsets.symmetric(
+            horizontal: context.theme.spacing.xl,
+            vertical: context.theme.spacing.sm,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
