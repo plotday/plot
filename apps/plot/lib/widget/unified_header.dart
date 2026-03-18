@@ -18,7 +18,6 @@ import 'package:plot/style/theme.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
-import 'package:auto_route/auto_route.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/priority_selector.dart';
@@ -236,7 +235,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         ),
         _buildSearchField(context, layoutState, state, notifier),
       ] else
-        _buildTitleWithSearch(context, layoutState, state, hasActivity),
+        _buildTitleWithSearch(context, layoutState, state, hasActivity, notifier),
     ];
 
     // --- Build suffixes ---
@@ -251,8 +250,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // New Thread button (multiPanel only, since bottom nav has it otherwise)
       if (layoutState.multiPanel) Button.icon(NewThread()),
 
-      // Menu button (hide on NewThreadPage in single panel mode)
-      if (layoutState.multiPanel || !hasActivity || state.thread != null)
+      // Menu button (desktop only — mobile uses title tap target)
+      if (layoutState.multiPanel)
         Button.icon(_buildMenuCommand(state, layoutState, notifier)),
 
       // Windows window control padding
@@ -310,6 +309,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     LayoutState layoutState,
     PriorityState state,
     bool hasActivity,
+    ThreadHeaderNotifier? notifier,
   ) {
     final search = _searchButton();
 
@@ -327,26 +327,46 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         child: Row(
           spacing: 8,
           children: [
-            if (isSubType && !thread.priority.isViewer)
-              GestureDetector(
-                onTap: () => context.run(ChangeThreadSubType(thread)),
-                child: Icon(
-                  resolved.fallbackIcon,
-                  size: 14,
-                  color: context.theme.colors.mutedForeground,
-                ),
-              )
-            else
-              Icon(
-                resolved.fallbackIcon,
-                size: 14,
-                color: context.theme.colors.mutedForeground,
-              ),
             Flexible(
-              child: Text(
-                thread.displayTitle,
-                overflow: TextOverflow.ellipsis,
-                style: context.theme.typography.sm,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => context.run(_buildMenuCommand(state, layoutState, notifier)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 4,
+                  children: [
+                    if (isSubType && !thread.priority.isViewer)
+                      GestureDetector(
+                        onTap: () => context.run(ChangeThreadSubType(thread)),
+                        child: Icon(
+                          resolved.fallbackIcon,
+                          size: 14,
+                          color: context.theme.colors.mutedForeground,
+                        ),
+                      )
+                    else
+                      Icon(
+                        resolved.fallbackIcon,
+                        size: 14,
+                        color: context.theme.colors.mutedForeground,
+                      ),
+                    Flexible(
+                      child: Text(
+                        thread.displayTitle,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.theme.typography.sm.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      PlotIcon.menu,
+                      size: context.theme.iconSizes.xs,
+                      color: context.theme.plotColors.muted,
+                    ),
+                  ],
+                ),
               ),
             ),
             search,
@@ -360,7 +380,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       return const Expanded(child: SizedBox.shrink());
     }
 
-    // Single panel: tap priority to open priorities tab
+    // Single panel: tap priority to open menu
     if (!layoutState.multiPanel) {
       return Expanded(
         child: Row(
@@ -368,7 +388,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           children: [
             Flexible(
               child: GestureDetector(
-                onTap: () => AutoTabsRouter.of(context).setActiveIndex(0),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => context.run(_buildMenuCommand(state, layoutState, notifier)),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   spacing: 4,
@@ -376,12 +397,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                     Flexible(
                       child: PriorityLabel(
                         priority: state.context,
-                        onSelect: (_) =>
-                            AutoTabsRouter.of(context).setActiveIndex(0),
                       ),
                     ),
                     Icon(
-                      PlotIcon.verticalExpand,
+                      PlotIcon.menu,
                       size: context.theme.iconSizes.xs,
                       color: context.theme.plotColors.muted,
                     ),
