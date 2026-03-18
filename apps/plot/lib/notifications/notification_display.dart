@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:plot/logging.dart';
@@ -137,6 +138,7 @@ class NotificationDisplay {
       priority: priority,
       autoCancel: true,
       icon: '@drawable/ic_stat_notification',
+      color: const Color(0xFF239870),
     );
 
     const iosDetails = DarwinNotificationDetails(
