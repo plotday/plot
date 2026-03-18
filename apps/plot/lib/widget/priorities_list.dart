@@ -705,7 +705,14 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
           ),
           child: Row(
             children: [
-              SizedBox(width: 20),
+              // Match PriorityWidget leading: leadingH + 16px notification + spacing.sm
+              SizedBox(
+                width: (context.isMultiPanel
+                        ? context.theme.spacing.lg
+                        : context.theme.spacing.sm) +
+                    16 +
+                    context.theme.spacing.sm,
+              ),
               Expanded(
                 child: Padding(
                   padding: context.theme.spacing.paddingSm.copyWith(
