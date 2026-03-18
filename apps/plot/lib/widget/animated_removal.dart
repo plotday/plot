@@ -34,6 +34,7 @@ class AnimatedRemovalState extends State<AnimatedRemoval>
   late final Animation<double> _fadeAnimation;
 
   bool _removing = false;
+  bool _removed = false;
 
   @override
   void initState() {
@@ -91,11 +92,16 @@ class AnimatedRemovalState extends State<AnimatedRemoval>
 
     await _collapseController.forward();
     if (!mounted) return;
+    // Stay at zero height until the widget is removed from the tree.
+    // This prevents a flash if the bloc rebuild takes an extra frame.
+    setState(() => _removed = true);
     widget.onRemoved?.call();
   }
 
   @override
   Widget build(BuildContext context) {
+    // After animation completes, render nothing until removed from tree.
+    if (_removed) return const SizedBox.shrink();
     if (!_removing) return widget.child;
 
     Widget child = widget.child;
