@@ -1,4 +1,4 @@
--- Create/join @whats-new priority for a user as a viewer member
+-- Create/join @plot.whats-new priority for a user as a viewer member
 -- The first user to activate creates the global priority; subsequent users just join
 -- Positions under @plot via priority_settings
 CREATE OR REPLACE FUNCTION public.setup_whats_new_priority (p_user_id uuid)
@@ -15,22 +15,22 @@ DECLARE
     v_override_path ltree;
     v_user_root_path_part text;
 BEGIN
-    -- Get or create @whats-new priority
+    -- Get or create @plot.whats-new priority
     SELECT
         id, path INTO v_priority_id, v_priority_path
     FROM
         priority
     WHERE
-        key = '@whats-new'
+        key = '@plot.whats-new'
     LIMIT 1;
 
     IF v_priority_id IS NULL THEN
         v_priority_path := generate_path (NULL);
         INSERT INTO priority (created_by, title, path, color, key, updated_by)
-            VALUES (p_user_id, 'What''s New', v_priority_path, 7, '@whats-new', 0)
+            VALUES (p_user_id, 'What''s New', v_priority_path, 7, '@plot.whats-new', 0)
         RETURNING
             id INTO v_priority_id;
-        -- The insert_priority_user trigger won't fire for @whats-new since it starts with @
+        -- The insert_priority_user trigger won't fire for @plot.whats-new since it starts with @
         -- and isn't @plot, but clean up any personal entry just in case
         DELETE FROM priority_user
         WHERE user_id = p_user_id

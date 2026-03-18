@@ -68,9 +68,9 @@ StaticCommandGroup settingsCommandsFromState(
 
         if (child.key == '@plot.getting-started') {
           gettingStartedCmd = OpenGettingStarted(child);
-        } else if (child.key?.startsWith('@help-feedback') == true) {
+        } else if (child.key?.startsWith('@plot.help-feedback') == true) {
           helpFeedbackCmd = OpenHelpFeedback(child);
-        } else if (child.key == '@whats-new') {
+        } else if (child.key == '@plot.whats-new') {
           whatsNewCmd = OpenWhatsNew(child);
         }
       }

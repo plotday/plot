@@ -305,10 +305,10 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                   final plotPriority = state.root?.children
                                       .firstWhereOrNull((p) => p.key == '@plot');
                                   final whatsNew = plotPriority?.children
-                                      .firstWhereOrNull((c) => c.key == '@whats-new');
+                                      .firstWhereOrNull((c) => c.key == '@plot.whats-new');
                                   final helpFeedback = plotPriority?.children
                                       .firstWhereOrNull(
-                                        (c) => c.key?.startsWith('@help-feedback') == true,
+                                        (c) => c.key?.startsWith('@plot.help-feedback') == true,
                                       );
                                   final hasUnread =
                                       (whatsNew?.unread ?? false) ||

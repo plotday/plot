@@ -297,7 +297,7 @@ export class Usage extends DurableObject<Bindings> {
       const helpPriority = await db
         .selectFrom("priority")
         .select("id")
-        .where("key", "=", `@help-feedback-${pt.owner_id}`)
+        .where("key", "=", `@plot.help-feedback-${pt.owner_id}`)
         .executeTakeFirst();
 
       if (helpPriority) {
@@ -383,7 +383,7 @@ export class Usage extends DurableObject<Bindings> {
         const helpPriority = await db
           .selectFrom("priority")
           .select("id")
-          .where("key", "=", `@help-feedback-${pt.owner_id}`)
+          .where("key", "=", `@plot.help-feedback-${pt.owner_id}`)
           .executeTakeFirst();
 
         if (helpPriority) {

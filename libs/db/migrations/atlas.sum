@@ -1,4 +1,4 @@
-h1:Xl+r7/WkCThrNfyB2VWADjmXDmJBRfEIRKaOy7jnpxI=
+h1:616OOs+Nl1eLbxWNUHhbaxQOAynrOiaPsglzUUb5tU0=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -122,3 +122,4 @@ h1:Xl+r7/WkCThrNfyB2VWADjmXDmJBRfEIRKaOy7jnpxI=
 20260318011537_add_read_at_guard_to_clear_thread_unread.sql h1:MGOSkTmnn8xLRgRAKngiB13kn5ZjRMH3oP518zWPxPg=
 20260318133142_fix_upsert_thread_unread_preserve_read_at.sql h1:IkqdA/8TE+1WfUD2VAh9u8epZvn1ABrVGQZf2zU/4e8=
 20260318152252_fix_user_contact_id_primary.sql h1:4NL+G+LycJTTbaxwYG/L/V/8gw0HaQ+JVW6okmtei54=
+20260318174456_rename_plot_child_keys.sql h1:u5+ktMN47EtwL+u7JpOyCN26J79zTeO5Uf0vsLqdcn0=

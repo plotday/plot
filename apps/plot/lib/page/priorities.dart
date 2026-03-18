@@ -122,14 +122,14 @@ class PrioritiesPage extends StatelessWidget {
                                       // Check unread state for What's New and Help+Feedback
                                       final whatsNew = plotPriority?.children
                                           .firstWhereOrNull(
-                                            (c) => c.key == '@whats-new',
+                                            (c) => c.key == '@plot.whats-new',
                                           );
                                       final helpFeedback = plotPriority
                                           ?.children
                                           .firstWhereOrNull(
                                             (c) =>
                                                 c.key?.startsWith(
-                                                  '@help-feedback',
+                                                  '@plot.help-feedback',
                                                 ) ==
                                                 true,
                                           );
