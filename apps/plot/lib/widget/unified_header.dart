@@ -150,6 +150,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (hasActivity && !layoutState.multiPanel)
         Button.icon(
           CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
+          color: context.theme.colors.foreground,
         )
       // Right-only with thread (960–1309px): back button
       else if (hasActivity &&
@@ -159,10 +160,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
         Button.icon(
           CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
+          color: context.theme.colors.foreground,
         )
       // Single-panel without thread: back to Priorities tab
       else if (!layoutState.multiPanel && !hasActivity)
-        Button.icon(BackToPrioritiesTabCommand())
+        Button.icon(
+          BackToPrioritiesTabCommand(),
+          color: context.theme.colors.foreground,
+        )
       // 2-panel with thread (960–1309px): cycle + priorities slide
       else if (hasActivity &&
           layoutState.isTwoPanel &&
@@ -363,7 +368,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                     Icon(
                       PlotIcon.menu,
                       size: context.theme.iconSizes.xs,
-                      color: context.theme.plotColors.muted,
+                      color: context.theme.colors.foreground.withValues(alpha: 0.45),
                     ),
                   ],
                 ),
@@ -402,7 +407,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                     Icon(
                       PlotIcon.menu,
                       size: context.theme.iconSizes.xs,
-                      color: context.theme.plotColors.muted,
+                      color: context.theme.colors.foreground.withValues(alpha: 0.45),
                     ),
                   ],
                 ),
