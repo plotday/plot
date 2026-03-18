@@ -48,6 +48,7 @@ class BroadcastClient with WidgetsBindingObserver {
   MessageHandler? _messageHandler;
   int? _clientId;
   bool get isConnected => _isConnected;
+  int? get clientId => _clientId;
 
   /// Initialize the broadcast client with a message handler
   Future<void> connect(MessageHandler messageHandler, int clientId) async {
@@ -92,13 +93,16 @@ class BroadcastClient with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        _shouldReconnect &&
-        !_isConnected) {
-      _resetBackoff(); // Reset backoff for immediate reconnect
-      _reconnectTimer?.cancel();
-      _reconnectTimer = null;
-      _connect();
+    if (state == AppLifecycleState.resumed) {
+      if (_shouldReconnect && !_isConnected) {
+        _resetBackoff(); // Reset backoff for immediate reconnect
+        _reconnectTimer?.cancel();
+        _reconnectTimer = null;
+        _connect();
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _sendPing(active: false);
     }
   }
 
@@ -224,17 +228,22 @@ class BroadcastClient with WidgetsBindingObserver {
         errorString.contains('no internet');
   }
 
+  /// Send a structured ping to the server indicating active/inactive state.
+  void _sendPing({required bool active}) {
+    if (_isConnected && _channel != null) {
+      try {
+        _channel!.sink.add(jsonEncode({'type': 'ping', 'active': active}));
+      } catch (_) {
+        // Connection is broken; will be handled by error/disconnection handlers
+      }
+    }
+  }
+
   /// Start sending periodic ping frames to keep the connection alive
   void _startPingTimer() {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(_pingInterval, (_) {
-      if (_isConnected && _channel != null) {
-        try {
-          _channel!.sink.add('ping');
-        } catch (_) {
-          // Connection is broken; will be handled by error/disconnection handlers
-        }
-      }
+      _sendPing(active: true);
     });
   }
 

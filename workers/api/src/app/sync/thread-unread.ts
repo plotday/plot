@@ -18,10 +18,12 @@ threadUnread.post("/sync/thread-unread", async (c) => {
     const records = Array.isArray(body) ? body : [body];
     for (const record of records) {
       if (record.read_at) {
-        // Mark as read
+        // Mark as read — pass client's read_at so we don't clear unread rows
+        // that were created after the client's last sync (new activity from others).
         await rpcUser(trx, "clear_thread_unread", {
           user_id: userId,
           p_thread_id: record.thread_id,
+          p_read_at: record.read_at,
         });
       } else {
         // Mark as unread

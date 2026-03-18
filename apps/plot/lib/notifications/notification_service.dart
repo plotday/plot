@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/broadcast.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/logging.dart';
 import 'package:plot/notifications/notification_display.dart';
@@ -23,6 +24,12 @@ class NotificationService {
   StreamSubscription<RemoteMessage>? _foregroundSubscription;
   StreamSubscription<RemoteMessage>? _messageOpenedSubscription;
   String? _currentToken;
+
+  /// Tracks notifications that have been shown: priorityId → notification id.
+  /// Used for retraction when threads are read on another device.
+  final Map<String, int> _shownNotifications = {};
+
+  static const Duration _suppressionWindow = Duration(minutes: 5);
 
   /// Callback for navigating to a priority when a notification is tapped.
   void Function(String priorityId)? onNavigateToPriority;
@@ -150,20 +157,97 @@ class NotificationService {
 
       // 2. Query local DB for unread threads grouped by first-level priority
       final batches = await _buildNotificationBatches(store);
+
+      // 3. Retract any notifications whose threads have since been read
+      await _retractStaleNotifications(batches);
+
       if (batches.isEmpty) return;
 
-      // 3. Call the API to generate AI summaries
-      final summaries = await _fetchSummaries(batches);
-      if (summaries == null) {
-        // Fallback: show simple notifications without AI summary
-        await _showFallbackNotifications(batches);
-        return;
-      }
-
-      // 4. Display local notifications
-      await _showNotifications(summaries);
+      // 4. Check if another device was recently active — suppress if so
+      await _checkAndShowNotifications(batches, store);
     } catch (e) {
       log.warning('Error handling sync_wake notification', e);
+    }
+  }
+
+  /// Suppress notifications if another device was active within the last 5
+  /// minutes. Re-checks once the window expires, then shows if still unread.
+  Future<void> _checkAndShowNotifications(
+    List<NotificationBatch> batches,
+    Store store,
+  ) async {
+    try {
+      final clientId = BroadcastClient.instance.clientId;
+      final query = clientId != null ? '?excludeClient=$clientId' : '';
+      final response = await api.get<Map<String, dynamic>>(
+        '/device/others-active$query',
+      );
+      final lastActiveAtStr = response['lastActiveAt'] as String?;
+
+      if (lastActiveAtStr != null) {
+        final lastActiveAt = DateTime.tryParse(lastActiveAtStr);
+        if (lastActiveAt != null) {
+          final age = DateTime.now().toUtc().difference(lastActiveAt);
+          if (age < _suppressionWindow) {
+            // Another device was recently active — wait out the window then retry
+            final remaining = _suppressionWindow - age;
+            log.info(
+              'Suppressing notification: another device active '
+              '${age.inSeconds}s ago; retrying in ${remaining.inSeconds}s',
+            );
+            Timer(remaining, () async {
+              try {
+                final freshBatches = await _buildNotificationBatches(store);
+                await _retractStaleNotifications(freshBatches);
+                if (freshBatches.isNotEmpty) {
+                  await _showBatches(freshBatches);
+                }
+              } catch (e) {
+                log.warning('Error in delayed notification check', e);
+              }
+            });
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      // If the suppression check fails, fall through and show notifications
+      log.warning('Failed to check others-active, showing notification', e);
+    }
+
+    await _showBatches(batches);
+  }
+
+  /// Show notifications from batches, fetching AI summaries when possible.
+  Future<void> _showBatches(List<NotificationBatch> batches) async {
+    final summaries = await _fetchSummaries(batches);
+    if (summaries == null) {
+      await _showFallbackNotifications(batches);
+      return;
+    }
+    await _showNotifications(summaries);
+  }
+
+  /// Cancel any shown notifications whose priority no longer has unread threads.
+  /// Pass the fresh batch list from [_buildNotificationBatches] to compare.
+  Future<void> _retractStaleNotifications(
+    List<NotificationBatch> freshBatches,
+  ) async {
+    if (_shownNotifications.isEmpty) return;
+
+    final freshPriorityIds = freshBatches
+        .map((b) => b.targetPriorityId ?? b.firstLevelPriorityId)
+        .toSet();
+
+    final staleKeys = <String>[];
+    for (final entry in _shownNotifications.entries) {
+      if (!freshPriorityIds.contains(entry.key)) {
+        await NotificationDisplay.instance.cancel(entry.value);
+        staleKeys.add(entry.key);
+      }
+    }
+    for (final key in staleKeys) {
+      _shownNotifications.remove(key);
     }
   }
 
@@ -355,6 +439,9 @@ class NotificationService {
         body: body,
         targetPriorityId: targetPriorityId,
       );
+      if (targetPriorityId.isNotEmpty) {
+        _shownNotifications[targetPriorityId] = i;
+      }
     }
   }
 
@@ -367,13 +454,15 @@ class NotificationService {
           ? batch.threads.first.title ?? 'New update'
           : '${batch.threads.length} new updates';
 
+      final displayId = batch.targetPriorityId ?? batch.firstLevelPriorityId;
       await NotificationDisplay.instance.showBatchNotification(
         id: i,
         title: title,
         body: body,
-        targetPriorityId: batch.targetPriorityId ?? batch.firstLevelPriorityId,
+        targetPriorityId: displayId,
         urgency: batch.highestUrgency,
       );
+      _shownNotifications[displayId] = i;
     }
   }
 

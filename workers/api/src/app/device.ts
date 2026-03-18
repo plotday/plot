@@ -103,4 +103,29 @@ device.delete("/device", async (c) => {
   }
 });
 
+/**
+ * GET /device/others-active - Check if any other device for this user was
+ * recently active. Returns the timestamp of the most recent activity from
+ * any device other than the one identified by `excludeClient`.
+ */
+device.get("/device/others-active", async (c) => {
+  const user = c.var.user;
+  if (!user) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  const excludeClient = c.req.query("excludeClient") ?? "";
+
+  const broadcastId = c.env.BROADCAST.idFromName(user.id);
+  const broadcast = c.env.BROADCAST.get(broadcastId);
+
+  const response = await broadcast.fetch(
+    new Request(
+      `http://do/others-active?excludeClient=${encodeURIComponent(excludeClient)}`
+    )
+  );
+
+  return response;
+});
+
 export default device;

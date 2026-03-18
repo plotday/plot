@@ -247,8 +247,13 @@ class ThreadsBase extends BaseTable {
             activityRow.bumpedAt == local.bumpedAt) {
           // Server confirms our local state - clear the pending flag
           merged = merged.copyWith(unreadUpdated: const Value(null));
+        } else if (activityRow.unread && !local.unread) {
+          // Server has newer unread state (new activity from another user arrived
+          // after the local read). Accept server's unread=true and clear the flag.
+          merged = merged.copyWith(unreadUpdated: const Value(null));
         } else {
-          // Server still has stale data - preserve local state
+          // Server says read but we locally think unread — server hasn't
+          // processed our push yet. Preserve local state until confirmed.
           merged = merged.copyWith(
             unread: local.unread,
             importance: local.importance,

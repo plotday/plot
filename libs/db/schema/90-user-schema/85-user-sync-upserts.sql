@@ -883,7 +883,8 @@ $function$;
 
 CREATE OR REPLACE FUNCTION "user".clear_thread_unread (
     user_id uuid,
-    p_thread_id uuid
+    p_thread_id uuid,
+    p_read_at timestamptz DEFAULT now()
 )
     RETURNS void
     LANGUAGE plpgsql
@@ -903,14 +904,18 @@ BEGIN
     END IF;
     PERFORM "user".assert_priority_access(clear_thread_unread.user_id, v_priority_id);
 
+    -- Only clear unread rows that were created/updated before the client's read_at.
+    -- If updated_at > p_read_at, a new activity arrived after the client last synced,
+    -- so we should not clear it (the client hasn't seen that activity yet).
     UPDATE thread_unread
     SET
-        read_at = now(),
+        read_at = p_read_at,
         updated_at = now()
     WHERE
         thread_unread.user_id = clear_thread_unread.user_id
         AND thread_unread.thread_id = p_thread_id
-        AND thread_unread.read_at IS NULL;
+        AND thread_unread.read_at IS NULL
+        AND thread_unread.updated_at <= p_read_at;
 END;
 $function$;
 

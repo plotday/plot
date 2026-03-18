@@ -16,10 +16,34 @@ export class Broadcast extends DurableObject<Bindings> {
   private lastMessageTime: number = 0;
   private batchTimeout: ReturnType<typeof setTimeout> | null = null;
   private userId: string | null = null;
+  // Track last DB write time per client to rate-limit activity writes to 1/minute
+  private lastActivityWrite: Map<string, number> = new Map();
+  private deviceActivityTableReady = false;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     // User ID will be set during first authentication
+  }
+
+  private ensureDeviceActivityTable(): void {
+    if (this.deviceActivityTableReady) return;
+    this.ctx.storage.sql.exec(
+      "CREATE TABLE IF NOT EXISTS device_activity (client_id TEXT PRIMARY KEY, last_active_at INTEGER)"
+    );
+    this.deviceActivityTableReady = true;
+  }
+
+  private maybeRecordActivity(clientId: string): void {
+    const now = Date.now();
+    const lastWrite = this.lastActivityWrite.get(clientId) ?? 0;
+    if (now - lastWrite < 60_000) return; // rate-limit: 1 write/minute per client
+    this.lastActivityWrite.set(clientId, now);
+    this.ensureDeviceActivityTable();
+    this.ctx.storage.sql.exec(
+      "INSERT OR REPLACE INTO device_activity (client_id, last_active_at) VALUES (?, ?)",
+      clientId,
+      now
+    );
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -30,6 +54,21 @@ export class Broadcast extends DurableObject<Bindings> {
     const url = new URL(request.url);
     if (url.pathname === "/hasConnectedClients" && request.method === "GET") {
       return Response.json({ hasConnectedClients: this.hasConnectedClients() });
+    }
+
+    if (url.pathname === "/others-active" && request.method === "GET") {
+      const excludeClient = url.searchParams.get("excludeClient") ?? "";
+      this.ensureDeviceActivityTable();
+      const cursor = this.ctx.storage.sql.exec(
+        "SELECT MAX(last_active_at) AS max_active FROM device_activity WHERE client_id != ?",
+        excludeClient
+      );
+      const rows = [...cursor];
+      const maxActive = rows[0]?.max_active as number | null | undefined;
+      const lastActiveAt = maxActive != null
+        ? new Date(maxActive).toISOString()
+        : null;
+      return Response.json({ lastActiveAt });
     }
 
     return new Response("Not found", { status: 404 });
@@ -167,10 +206,22 @@ export class Broadcast extends DurableObject<Bindings> {
     });
 
     server.addEventListener("message", (event) => {
-      // Respond to keepalive pings silently
+      // Handle keepalive pings — support both plain string and structured JSON
       if (event.data === "ping") {
         server.send("pong");
         return;
+      }
+      try {
+        const msg = JSON.parse(event.data as string) as Record<string, unknown>;
+        if (msg.type === "ping") {
+          server.send("pong");
+          if (msg.active === true) {
+            this.maybeRecordActivity(clientId);
+          }
+          return;
+        }
+      } catch {
+        // Not JSON — fall through to generic handler
       }
       logger.info("Received message from client", { client_id: clientId });
     });

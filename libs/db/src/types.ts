@@ -3864,7 +3864,7 @@ export type Database = {
         Returns: undefined
       }
       clear_thread_unread: {
-        Args: { p_thread_id: string; user_id: string }
+        Args: { p_read_at?: string; p_thread_id: string; user_id: string }
         Returns: undefined
       }
       delete_thread_read: {

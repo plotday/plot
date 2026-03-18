@@ -158,6 +158,12 @@ class NotificationDisplay {
     );
   }
 
+  /// Cancel a specific notification by id.
+  Future<void> cancel(int id) async {
+    if (!_initialized) return;
+    await _plugin.cancel(id);
+  }
+
   /// Cancel all displayed notifications.
   Future<void> cancelAll() async {
     if (!_initialized) return;

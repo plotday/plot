@@ -131,12 +131,25 @@ notes.post("/sync/notes", async (c) => {
         try {
           // 1. ALWAYS mark thread unread for other priority members
           try {
-            await markThreadUnreadForOthers(db, priorityId, body.thread_id, c.var.user.id);
-            // Notify again now that unread rows exist — the initial notifySync fired
-            // before waitUntil, so clients that pulled immediately saw unread=false
-            notifySync(c, priorityId);
+            const markedUserIds = await markThreadUnreadForOthers(db, priorityId, body.thread_id, c.var.user.id);
+            // Notify each affected user's UserSync DO directly — bypasses SyncNotify
+            // debounce, which would swallow the second call if the first alarm hasn't fired yet
+            for (const userId of markedUserIds) {
+              try {
+                const userSyncId = c.env.USER_SYNC.idFromName(userId);
+                const userSyncDO = c.env.USER_SYNC.get(userSyncId);
+                await userSyncDO.fetch(
+                  new Request("http://do/notify", {
+                    method: "POST",
+                    body: JSON.stringify({ id: userId }),
+                  })
+                );
+              } catch (error) {
+                console.error(`Failed to notify UserSync for user ${userId}:`, error);
+              }
+            }
           } catch (error) {
-            console.error("[unread] Failed to mark thread unread for others:", error);
+            console.error("Failed to mark thread unread for others:", error);
           }
 
           // 2. AI analysis (optional — upgrades urgency/importance if it runs)
@@ -204,13 +217,14 @@ notes.post("/sync/notes", async (c) => {
 /**
  * Mark a thread as unread for all priority members except the syncing user.
  * Uses default urgency — AI analysis upgrades this later via upsert if it runs.
+ * Returns the list of user IDs that were successfully marked unread.
  */
 async function markThreadUnreadForOthers(
   db: Kysely<DB>,
   priorityId: string,
   threadId: string,
   syncingUserId: string
-): Promise<void> {
+): Promise<string[]> {
   // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
   // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
   const usersData = await rpc(db, "get_users_with_priority_access", {
@@ -218,6 +232,7 @@ async function markThreadUnreadForOthers(
   });
   const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
 
+  const markedUserIds: string[] = [];
   for (const userId of userIds) {
     if (userId === syncingUserId) continue;
 
@@ -230,10 +245,13 @@ async function markThreadUnreadForOthers(
       });
 
       await createSchedule(db, userId, threadId, "unread");
+      markedUserIds.push(userId);
     } catch (error) {
-      console.error(`[unread] Failed to mark thread unread for user ${userId}:`, error);
+      console.error(`Failed to mark thread unread for user ${userId}:`, error);
     }
   }
+
+  return markedUserIds;
 }
 
 export default notes;
