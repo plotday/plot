@@ -101,10 +101,13 @@ export function getBillingCycleDates(subscription: Stripe.Subscription): {
   start: Date;
   end: Date;
 } {
-  return {
-    start: new Date(subscription.current_period_start * 1000),
-    end: new Date(subscription.current_period_end * 1000),
-  };
+  const start = subscription.current_period_start
+    ? new Date(subscription.current_period_start * 1000)
+    : new Date();
+  const end = subscription.current_period_end
+    ? new Date(subscription.current_period_end * 1000)
+    : new Date();
+  return { start, end };
 }
 
 /**
