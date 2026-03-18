@@ -585,27 +585,34 @@ class _PrioritiesListState extends State<PrioritiesList>
     if (children.length <= 5) return null;
     if (_showAllChildren.contains(parentId)) return null;
 
-    final unreadChildren = children
-        .where((c) => _hasDescendantUnread(c))
+    final activeChildren = children
+        .where((c) => _hasDescendantActive(c))
         .toList();
+    final unreadOnlyChildren = children
+        .where((c) => !_hasDescendantActive(c) && _hasDescendantUnread(c))
+        .toList();
+    final importantChildren = [...activeChildren, ...unreadOnlyChildren];
 
-    // Case 1: All children are unread — show top 4 by order
-    if (unreadChildren.length == children.length) {
+    // Case 1: All children are important — show top 4 by order
+    if (importantChildren.length == children.length) {
       return children.take(4).toList();
     }
 
-    // Case 2: 5+ unread (but not all) — show all unread
-    if (unreadChildren.length >= 5) {
-      return unreadChildren;
+    // Case 2: 5+ important — show all important
+    if (importantChildren.length >= 5) {
+      // Return in natural (original) order
+      final visible = importantChildren.toSet();
+      return children.where((c) => visible.contains(c)).toList();
     }
 
-    // Case 3: <5 unread — fill 4 slots with top-by-order first, unread bubbling up
-    final slotsForOrdered = 4 - unreadChildren.length;
+    // Case 3: <5 important — fill 4 slots, important first then top-by-order
+    final slotsForOrdered = 4 - importantChildren.length;
+    final importantSet = importantChildren.toSet();
     final topByOrder = children
-        .where((c) => !_hasDescendantUnread(c))
+        .where((c) => !importantSet.contains(c))
         .take(slotsForOrdered)
         .toList();
-    final visible = <Priority>{...topByOrder, ...unreadChildren};
+    final visible = <Priority>{...topByOrder, ...importantChildren};
     // Return in natural (original) order
     return children.where((c) => visible.contains(c)).toList();
   }
@@ -693,7 +700,9 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
           decoration: BoxDecoration(
             color: _isHovered ? context.theme.plotColors.highlight : null,
           ),
-          padding: EdgeInsets.only(left: widget.indentLevel * 16),
+          padding: EdgeInsets.only(
+            left: widget.indentLevel * (16 + context.theme.spacing.sm),
+          ),
           child: Row(
             children: [
               SizedBox(width: 20),
