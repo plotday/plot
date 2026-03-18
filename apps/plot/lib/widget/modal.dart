@@ -56,7 +56,7 @@ class Modal extends StatelessWidget {
     }
 
     if (result is CommandMessage && result.isError) {
-      modalContext.showToast(
+      modalContext.showOverlayToast(
         title: result.title,
         message: result.message,
         isError: true,
