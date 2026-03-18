@@ -94,7 +94,7 @@ class AppRouter extends RootStackRouter {
               final priorityId = resolver.context
                   .read<NowBloc>()
                   .loadedState
-                  .priority
+                  .defaultPriority
                   .id;
               router.replaceAll([
                 PriorityRoute(priorityIdString: priorityId.toShortString()),

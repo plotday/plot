@@ -146,7 +146,7 @@ class RootProviderState extends State<RootProvider> {
                 // _routerInitialized is still false (router not yet built),
                 // so the router's own initial navigation handles it.
                 if (_routerInitialized && context.mounted) {
-                  final priorityId = nowBloc.loadedState.priority.id;
+                  final priorityId = nowBloc.loadedState.defaultPriority.id;
                   router.replaceAll([
                     PriorityRoute(
                       priorityIdString: priorityId.toShortString(),
