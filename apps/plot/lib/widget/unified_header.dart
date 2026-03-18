@@ -333,12 +333,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     // In single panel with a thread visible, show activity title
     if (!layoutState.multiPanel && hasActivity && state.thread != null) {
       final thread = state.thread!;
-      final resolved = Thread.resolveIcon(
-        thread.icon,
-        prioritySharing: thread.priority.sharing,
-      );
-      final isSubType =
-          ThreadSubType.fromIcon(thread.icon) != null || thread.icon == null;
 
       return Expanded(
         child: Row(
@@ -354,21 +348,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                   mainAxisSize: MainAxisSize.min,
                   spacing: 4,
                   children: [
-                    if (isSubType && !thread.priority.isViewer)
-                      GestureDetector(
-                        onTap: () => context.run(ChangeThreadSubType(thread)),
-                        child: Icon(
-                          resolved.fallbackIcon,
-                          size: 14,
-                          color: context.theme.colors.mutedForeground,
-                        ),
-                      )
-                    else
-                      Icon(
-                        resolved.fallbackIcon,
-                        size: 14,
-                        color: context.theme.colors.mutedForeground,
-                      ),
                     Flexible(
                       child: Text(
                         thread.displayTitle,
