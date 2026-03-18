@@ -18,7 +18,7 @@ notificationContent.get("/notification-content", async (c) => {
     // Get the root priority path for this user to determine hierarchy depth
     const rootResult = await sql<{ path: string }>`
       SELECT path::text AS path
-      FROM user_priority
+      FROM "user".priority
       WHERE user_id = ${userId}::uuid AND root = true
       LIMIT 1
     `.execute(db);

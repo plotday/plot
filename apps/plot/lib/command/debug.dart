@@ -6,6 +6,8 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/notifications/notification_display.dart';
+import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/time_service.dart';
@@ -16,7 +18,7 @@ import 'command.dart';
 final debugCommands = kDebugMode
     ? StaticCommandGroup(
         title: 'Debug',
-        commands: [TimeTravel(), if (Time.isFrozen()) UnfreezeTime(), TriggerTestPush()],
+        commands: [TimeTravel(), if (Time.isFrozen()) UnfreezeTime(), TriggerTestPush(), ShowTestNotification()],
       )
     : null;
 
@@ -70,6 +72,37 @@ class TriggerTestPush extends Command {
       return CommandMessage('Push sent to $sent device${sent == 1 ? '' : 's'}');
     } catch (e) {
       return CommandMessage('Failed to trigger push: $e', isError: true);
+    }
+  }
+}
+
+/// Command to directly show a local notification, bypassing FCM entirely.
+/// Use this to verify notification display works before debugging the pipeline.
+class ShowTestNotification extends Command {
+  ShowTestNotification()
+    : super(
+        title: 'Show test notification',
+        subtitle: 'Display a local notification immediately (no FCM)',
+        icon: FontAwesomeIcons.solidBell,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await NotificationDisplay.instance.initialize();
+      await showSummaryNotifications([
+        {
+          'title': 'Plot',
+          'body': 'Test notification — direct display test',
+          'target_priority_id': '',
+          'urgency': 'inform-updates',
+        },
+      ]);
+      return CommandMessage('Notification shown');
+    } catch (e) {
+      return CommandMessage('Failed: $e', isError: true);
     }
   }
 }

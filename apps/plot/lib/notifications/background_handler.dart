@@ -19,6 +19,8 @@ import 'package:plot/notifications/notification_service.dart';
 /// a local notification.
 @pragma('vm:entry-point')
 Future<void> handleBackgroundMessage(RemoteMessage message) async {
+  // ignore: avoid_print
+  print('[BG_HANDLER] message received type=${message.data['type']}');
   if (message.data['type'] != 'sync_wake') return;
 
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,14 +29,28 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   final apiRoot = prefs.getString('api_root');
   final publishableKey = prefs.getString('clerk_publishable_key');
   final userId = prefs.getString('notification_user_id');
-  if (apiRoot == null || publishableKey == null || userId == null) return;
+  // ignore: avoid_print
+  print('[BG_HANDLER] prefs: apiRoot=$apiRoot userId=$userId publishableKey=${publishableKey != null}');
+  if (apiRoot == null || publishableKey == null || userId == null) {
+    // ignore: avoid_print
+    print('[BG_HANDLER] missing prefs — aborting');
+    return;
+  }
 
   // Obtain a fresh session token using Clerk's persisted cache
+  // ignore: avoid_print
+  print('[BG_HANDLER] getting session token...');
   final token = await _getSessionToken(publishableKey);
+  // ignore: avoid_print
+  print('[BG_HANDLER] token=${token != null ? 'ok' : 'null'}');
   if (token == null) return;
 
   // Fetch up-to-date notification summaries from the API
+  // ignore: avoid_print
+  print('[BG_HANDLER] fetching notification content from $apiRoot...');
   final summaries = await _fetchNotificationContent(apiRoot, token);
+  // ignore: avoid_print
+  print('[BG_HANDLER] summaries=${summaries?.length ?? 'null'}');
   if (summaries == null || summaries.isEmpty) return;
 
   // Initialize local notification display
@@ -42,6 +58,8 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
 
   // Check whether we're currently in quiet hours
   final scheduleAt = computeNotifyTime(prefs);
+  // ignore: avoid_print
+  print('[BG_HANDLER] scheduleAt=$scheduleAt — showing notification');
   if (scheduleAt != null) {
     // Quiet hours: show notifications when they end
     await _scheduleNotifications(summaries, scheduleAt);
@@ -67,7 +85,9 @@ Future<String?> _getSessionToken(String publishableKey) async {
     final token = await auth.sessionToken();
     auth.terminate();
     return token.jwt;
-  } catch (_) {
+  } catch (e) {
+    // ignore: avoid_print
+    print('[BG_HANDLER] _getSessionToken error: $e');
     return null;
   }
 }
@@ -93,7 +113,11 @@ Future<List<Map<String, dynamic>>?> _fetchNotificationContent(
         .get(uri, headers: {'Authorization': 'Bearer $token'})
         .timeout(const Duration(seconds: 15));
 
-    if (response.statusCode != 200) return null;
+    if (response.statusCode != 200) {
+      // ignore: avoid_print
+      print('[BG_HANDLER] notification-content HTTP ${response.statusCode}: ${response.body}');
+      return null;
+    }
 
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final summaries = body['summaries'] as List?;
