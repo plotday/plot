@@ -91,8 +91,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       _searchController.clear();
     });
     // Clear PriorityBloc search and filters
-    context.read<PriorityBloc>().updateSearch('');
-    context.read<PriorityBloc>().updateFilter([]);
+    final priorityBloc = context.read<PriorityBloc>();
+    priorityBloc.updateSearch('');
+    priorityBloc.updateFilter([]);
+    // Clear icon filters one by one (toggles them off)
+    for (final icon in List<String>.from(priorityBloc.state.iconFilter)) {
+      priorityBloc.updateIconFilter(icon);
+    }
     // Clear PrioritiesBloc search
     context.read<PrioritiesBloc>().updateSearch('');
     // Clear activity search
@@ -312,7 +317,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         searchExpanded: _searchExpanded,
         onToggle: _toggleSearch,
       ),
-      color: context.theme.colors.foreground,
+      color: context.theme.colors.foreground.withValues(alpha: 0.7),
     );
   }
 
@@ -453,26 +458,35 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     PriorityState state,
     ThreadHeaderNotifier? notifier,
   ) {
-    // Build filter commands based on visibility
-    final filterCommands = <Command>[
-      // Icon sub-type filters
-      ...state.iconCounts.map(
-        (data) => ToggleIconFilter(data.$1, context: context),
-      ),
-      // Priority tag filters
-      ...state.tags.map(
-        (tagData) => ToggleActivityFilter(tagData.$1, context: context),
-      ),
-      // Active filter tags not in current priority
-      ...state.filter
-          .where((tag) => !state.tags.any((t) => t.$1 == tag))
-          .map((tag) => ToggleActivityFilter(tag, context: context)),
-      // Activity note filters (when activity is visible)
-      if (notifier?.isThreadVisible == true)
-        ...notifier!.tags.map(
-          (tagData) => ToggleNoteFilter(tagData.$1, context: context),
+    List<Command> buildFilters(BuildContext ctx) {
+      // Merge priority tags and note tags, deduplicated by Tag identity
+      final allTags = <Tag, (Tag, int)>{};
+      for (final tagData in state.tags) {
+        allTags[tagData.$1] = tagData;
+      }
+      if (notifier?.isThreadVisible == true) {
+        for (final tagData in notifier!.tags) {
+          allTags.putIfAbsent(tagData.$1, () => tagData);
+        }
+      }
+
+      return [
+        ...state.iconCounts.map(
+          (d) => ToggleIconFilter(d.$1, context: ctx),
         ),
-    ];
+        ...allTags.keys.map(
+          (tag) => ToggleActivityFilter(tag, context: ctx),
+        ),
+        // Active filters not in current tag counts
+        ...state.filter
+            .where((tag) => !allTags.containsKey(tag))
+            .map((tag) => ToggleActivityFilter(tag, context: ctx)),
+      ];
+    }
+
+    final hasActiveFilters = state.filter.isNotEmpty ||
+        state.iconFilter.isNotEmpty ||
+        (notifier?.filter.isNotEmpty == true);
 
     return Expanded(
       child: Align(
@@ -500,28 +514,23 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                   ),
                 ),
                 suffixBuilder: (context, style, states) {
-                  final children = <Widget>[
-                    ...filterCommands.asMap().entries.map((entry) {
-                      final key = ValueKey(
-                        Object.hash(entry.value.hashCode, entry.key),
-                      );
-                      return Button.icon(
-                        entry.value,
-                        key: key,
-                        selected: entry.value.on == true,
-                      );
-                    }),
-                    Button.icon(
-                      ToggleSearchCommand(
-                        searchExpanded: _searchExpanded,
-                        onToggle: _closeSearch,
-                      ),
-                    ),
-                  ];
-
                   return Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: children,
+                    children: [
+                      if (buildFilters(context).isNotEmpty)
+                        Button.icon(
+                          PickFilterCommand(
+                            filterCommandsBuilder: buildFilters,
+                          ),
+                          selected: hasActiveFilters,
+                        ),
+                      Button.icon(
+                        ToggleSearchCommand(
+                          searchExpanded: _searchExpanded,
+                          onToggle: _closeSearch,
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
