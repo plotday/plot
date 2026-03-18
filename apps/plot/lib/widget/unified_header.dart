@@ -161,6 +161,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         Button.icon(
           CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
         )
+      // Single-panel without thread: back to Priorities tab
+      else if (!layoutState.multiPanel && !hasActivity)
+        Button.icon(BackToPrioritiesTabCommand())
       // 2-panel with thread (960–1309px): cycle + priorities slide
       else if (hasActivity &&
           layoutState.isTwoPanel &&
