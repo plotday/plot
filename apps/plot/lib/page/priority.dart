@@ -1211,6 +1211,9 @@ class _PriorityPageState extends State<PriorityPage> {
                           await context.run(command);
                         }
                       },
+                      onDesktopFinish: () async {
+                        await removalKey.currentState?.remove(fade: true);
+                      },
                       reorderableIndex:
                           enableReorder &&
                               !agendaActivity.thread.isLinkScheduleInstance

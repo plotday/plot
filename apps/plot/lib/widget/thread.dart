@@ -32,6 +32,7 @@ class ThreadWidget extends StatefulWidget {
     this.onHover,
     this.reorderableIndex,
     this.onSwipeExit,
+    this.onDesktopFinish,
     super.key,
   });
 
@@ -48,6 +49,10 @@ class ThreadWidget extends StatefulWidget {
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
   final Future<void> Function(Command command)? onSwipeExit;
+
+  /// Called before a finish command runs on desktop (icon click path).
+  /// Should trigger the fade+collapse removal animation.
+  final Future<void> Function()? onDesktopFinish;
 
   @override
   State<ThreadWidget> createState() => _ThreadWidgetState();
@@ -130,7 +135,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   Command? _getSwipeLeftLongCommand() {
     if (activity.priority.isViewer || activity.at != null) return null;
     if (!activity.todo) return null;
-    return FinishThread(activity, bump: bump);
+    return FinishThread(activity, bump: bump, onBeforeRun: widget.onSwipeExit != null ? (_) async {} : null);
   }
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
@@ -254,7 +259,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           final hasPending = activity.outstandingTasks;
           todoIcon = Button.icon(
             CommandWrapper(
-              FinishThread(activity, bump: bump),
+              FinishThread(
+                activity,
+                bump: bump,
+                onBeforeRun: widget.onDesktopFinish != null
+                    ? (_) => widget.onDesktopFinish!()
+                    : null,
+              ),
               icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
               hoverIcon: hasPending
                   ? Value(FontAwesomeIcons.circleCheck)
@@ -653,6 +664,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                   showCommands: isHighlighted,
                                   showEventTiming: showEventTiming,
                                   bump: bump,
+                                  onDesktopFinish: widget.onDesktopFinish,
                                 ),
                               ),
                             ],
@@ -827,6 +839,7 @@ class ThreadCommands extends HookWidget {
     this.showCommands = false,
     this.showEventTiming = false,
     this.bump = true,
+    this.onDesktopFinish,
     super.key,
   });
 
@@ -835,6 +848,7 @@ class ThreadCommands extends HookWidget {
   final bool showCommands;
   final bool showEventTiming;
   final bool bump;
+  final Future<void> Function()? onDesktopFinish;
 
   @override
   Widget build(BuildContext context) {
@@ -860,7 +874,14 @@ class ThreadCommands extends HookWidget {
 
         // Use FinishThread when clicking Tag.todo on a "todo" thread
         final command = tag == Tag.todo
-            ? FinishThread(activity, stateIcon: true, bump: bump)
+            ? FinishThread(
+                activity,
+                stateIcon: true,
+                bump: bump,
+                onBeforeRun: onDesktopFinish != null
+                    ? (_) => onDesktopFinish!()
+                    : null,
+              )
             : ToggleThreadTag(activity, tag);
 
         // Get actor names for tooltip
@@ -957,7 +978,14 @@ class ThreadCommands extends HookWidget {
                   .map((tag) {
                     final key = ValueKey(Object.hash(activity.id, tag.id));
                     final command = tag == Tag.todo
-                        ? FinishThread(activity, stateIcon: true, bump: bump)
+                        ? FinishThread(
+                            activity,
+                            stateIcon: true,
+                            bump: bump,
+                            onBeforeRun: onDesktopFinish != null
+                                ? (_) => onDesktopFinish!()
+                                : null,
+                          )
                         : ToggleThreadTag(activity, tag);
                     final count = activity.tags[tag]?.length ?? 0;
                     // Twist tags are display-only (not interactive)

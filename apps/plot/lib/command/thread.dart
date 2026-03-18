@@ -689,12 +689,30 @@ class StartThread extends _UpdateThreadCommand {
   }
 }
 
+class MarkReadThread extends _UpdateThreadCommand {
+  MarkReadThread(super.thread, {super.onUpdate})
+    : super(
+        title: 'Mark read',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: FontAwesomeIcons.eye,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (!thread.unread) return const CommandDone();
+    await saveOptimistically(context, thread.copyWith(unread: false));
+    return const CommandDone();
+  }
+}
+
 class FinishThread extends _UpdateThreadCommand {
   FinishThread(
     super.thread, {
     super.onUpdate,
     bool stateIcon = false,
     this.bump = true,
+    this.onBeforeRun,
   }) : super(
          title: 'Finish',
          eventObject: EventObject.activity,
@@ -709,10 +727,21 @@ class FinishThread extends _UpdateThreadCommand {
 
   final bool bump;
 
+  /// Optional callback invoked before the finish logic runs.
+  /// When set, the caller is responsible for optimistic removal (e.g. via
+  /// animation). When null, FinishThread calls optimisticallyRemoveThread
+  /// directly as a fallback (keyboard shortcuts, command palette, etc.).
+  final Future<void> Function(BuildContext context)? onBeforeRun;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Optimistic removal for instant UI feedback
-    context.read<PriorityBloc?>()?.optimisticallyRemoveThread(thread.id);
+    if (onBeforeRun != null) {
+      // Animation layer handles optimistic removal
+      await onBeforeRun!(context);
+    } else {
+      // No animation: immediate optimistic removal (keyboard, command palette)
+      context.read<PriorityBloc?>()?.optimisticallyRemoveThread(thread.id);
+    }
     HapticFeedback.mediumImpact();
     await onUpdate(thread.copyWith(todo: false, bump: bump));
 
