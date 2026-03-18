@@ -47,8 +47,6 @@ class PlotTwist extends Twist<PlotTwist> {
   }
 
   async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
-    const todoActors = context?.actor ? [{ id: context.actor.id }] : [];
-
     const onboardingPriority = await this.tools.plot.createPriority({
       title: "Getting Started",
       key: "@plot.getting-started",
@@ -60,8 +58,27 @@ class PlotTwist extends Twist<PlotTwist> {
       return;
     }
 
+    // Get owner contact for task assignment and per-user schedules.
+    // context.actor.id is a user ID, not a contact ID — use getOwner() for the
+    // contact ID needed by tag actor references and recompute_outstanding_tasks.
+    const owner = context?.actor ? await this.tools.plot.getOwner() : null;
+    const todoActors = owner ? [{ id: owner.id }] : [];
+
+    // Compute schedule dates
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+    const dayAfterTomorrow = new Date();
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+    const dayAfterTomorrowStr = dayAfterTomorrow.toISOString().slice(0, 10);
+
+    const twoDaysAfterTomorrow = new Date();
+    twoDaysAfterTomorrow.setDate(twoDaysAfterTomorrow.getDate() + 3);
+    const twoDaysAfterTomorrowStr = twoDaysAfterTomorrow.toISOString().slice(0, 10);
+
     // Welcome to Plot!
-    await this.tools.plot.createThread({
+    const welcomeId = await this.tools.plot.createThread({
       title: "Welcome to Plot!",
       notes: [
         {
@@ -74,7 +91,19 @@ class PlotTwist extends Twist<PlotTwist> {
         {
           content:
             "When a thread needs your attention, you **Start** it — it could be as simple as reading and thinking, or it could mean taking action. You can also **Schedule** a thread to choose when you want to act on it. Starting and scheduling build your personal agenda — it's not a shared project board, it's your own action plan.\n\n" +
-            "When you're done with your part, you **Finish** the thread. This marks any of your tasks in the thread as done. You (and others) might Start and Finish a thread multiple times as work progresses. There's also a separate **Done** tag you can add to mark a thread as complete for good for everyone.",
+            "When you're done with your part, you **Finish** the thread. This marks any of your tasks in the thread as done and completes linked items in connected apps — for example, closing a Linear ticket. You (and others) might Start and Finish a thread multiple times as work progresses. There's also a separate **Done** tag you can add to mark a thread as complete for good for everyone.",
+        },
+        {
+          content:
+            "The **Agenda** is everything you plan to work on — started and scheduled threads, " +
+            "arranged in your preferred order. You can reorder items freely, move them to a " +
+            "different time or date, or remove them without losing the thread.\n\n" +
+            "The **Activity** view shows what's happening across your priorities — new threads, " +
+            "updates, and unread items. From Activity, you can add anything to your Agenda by " +
+            "Starting (act on it now) or Scheduling (act on it later).\n\n" +
+            "A useful pattern: when a meeting or event appears in Activity from a calendar " +
+            "connection, tap **Start** to add a planning slot in your Agenda — useful for " +
+            "blocking time to prepare or to follow up afterward.",
         },
         {
           content:
@@ -84,9 +113,17 @@ class PlotTwist extends Twist<PlotTwist> {
       preview: "Plot is your workspace for making progress on what matters.",
       priority: onboardingPriority,
     });
+    if (owner) {
+      await this.tools.plot.createSchedule({
+        threadId: welcomeId,
+        start: "1970-01-01",
+        userId: owner.id,
+        order: 100,
+      });
+    }
 
     // Create your initial Priorities (TO DO)
-    await this.tools.plot.createThread({
+    const prioritiesId = await this.tools.plot.createThread({
       title: "Create your initial Priorities",
       tags: { [Tag.Todo]: todoActors },
       notes: [
@@ -102,14 +139,27 @@ class PlotTwist extends Twist<PlotTwist> {
           content:
             "**Best practice:** Organize from broad to specific. Example: Work > Marketing Campaign > Content Strategy, or Personal > Home Renovation > Kitchen Planning. Start with top-level contexts (Work, Personal, Family) then add specific projects within each. This allows you to zoom in for focus, and zoom out to make sure you're not missing anything.",
         },
+        {
+          content:
+            "Create your first priority — for example, **Work** or **Personal**. You can always add more or nest them later.",
+          tags: { [Tag.Todo]: todoActors },
+        },
       ],
       preview:
         "Priorities are contexts for focus and often correspond to roles (like VP Marketing and Parent) and goals (like Launch New Product and Run a Marathon). **Nesting priorities** creates a hierarchy — for example, Work > Projects > Feature X > Planning — that lets you organize at different levels of detail.",
       priority: onboardingPriority,
     });
+    if (owner) {
+      await this.tools.plot.createSchedule({
+        threadId: prioritiesId,
+        start: "1970-01-01",
+        userId: owner.id,
+        order: 200,
+      });
+    }
 
     // Add your Connections (TO DO)
-    await this.tools.plot.createThread({
+    const connectionsId = await this.tools.plot.createThread({
       title: "Add your Connections",
       tags: { [Tag.Todo]: todoActors },
       notes: [
@@ -121,74 +171,27 @@ class PlotTwist extends Twist<PlotTwist> {
           content:
             "Each connection has channels you can enable or disable, letting you control exactly what syncs. Use the **Manage connections** command to browse available connections, vote for upcoming ones, and manage which are active.",
         },
+        {
+          content:
+            "Set up your first connection using the **Manage connections** command.",
+          tags: { [Tag.Todo]: todoActors },
+        },
       ],
       preview:
         "**Connections** sync items from your other apps and services into Plot, often two-way. For example, connect your calendar to see events as threads, or connect your email to bring in conversations. You can view and interact with items right from Plot — see and add comments on documents, respond to messages, update issues — the goal is to bring everything into one place.",
       priority: onboardingPriority,
     });
-
-    // Explore Twists (TO DO)
-    await this.tools.plot.createThread({
-      title: "Explore Twists",
-      tags: { [Tag.Todo]: todoActors },
-      notes: [
-        {
-          content:
-            "**Twists** are automations, workflows, and agents that do helpful things with your threads — often working with items from your connections. For example, a twist might triage your inbox, summarize meeting notes, or create follow-up tasks from action items.",
-        },
-        {
-          content:
-            "You can also **create your own twists**, either by describing what you want (Plot AI will generate it for you) or by writing code. Custom twists can automate any workflow specific to your needs.",
-          actions: [
-            {
-              type: ActionType.external,
-              title: "Learn more about creating twists",
-              url: "https://twist.plot.day",
-            },
-          ],
-        },
-        {
-          content:
-            "You can also **@mention Plot** in any thread to ask questions about your notes and links. Plot will search your content and answer using AI.",
-        },
-      ],
-      preview:
-        "**Twists** are automations, workflows, and agents that do helpful things with your threads — often working with items from your connections. For example, a twist might triage your inbox, summarize meeting notes, or create follow-up tasks from action items.",
-      priority: onboardingPriority,
-    });
-
-    // Set up Notifications (TO DO)
-    await this.tools.plot.createThread({
-      title: "Set up Notifications",
-      tags: { [Tag.Todo]: todoActors },
-      notes: [
-        {
-          content:
-            "Plot has smart notifications that are timed based on urgency rather than sending everything immediately. " +
-            "This means new messages and updates won't interrupt you the moment they arrive — instead, they're delivered within a timeframe you control. " +
-            "If you're used to getting notified immediately for every message, you may want to adjust these defaults.",
-        },
-        {
-          content:
-            "Each priority has two timing settings:\n\n" +
-            "- **See requests within** (default: 30 minutes) — how quickly you're notified about messages and mentions\n" +
-            "- **See updates within** (default: 1 hour) — how quickly you're notified about other changes\n\n" +
-            "To adjust, open a priority's command menu and choose **Notifications**, or tap the notification icon on a priority. " +
-            "Settings inherit from parent priorities, so you can set timing once at the top level and all children will follow.",
-        },
-        {
-          content:
-            "Plot also has **quiet hours** (default: 9 PM – 7 AM) during which notifications are silenced. " +
-            "You can customize quiet hours per priority in the same Notifications settings.",
-        },
-      ],
-      preview:
-        "Plot delivers notifications based on urgency, not instantly. Adjust per-priority timing to match how you work.",
-      priority: onboardingPriority,
-    });
+    if (owner) {
+      await this.tools.plot.createSchedule({
+        threadId: connectionsId,
+        start: "1970-01-01",
+        userId: owner.id,
+        order: 300,
+      });
+    }
 
     // Getting Around
-    await this.tools.plot.createThread({
+    const gettingAroundId = await this.tools.plot.createThread({
       title: "Getting Around",
       notes: [
         {
@@ -219,24 +222,125 @@ class PlotTwist extends Twist<PlotTwist> {
       preview: "Keyboard and touch shortcuts",
       priority: onboardingPriority,
     });
+    if (owner) {
+      await this.tools.plot.createSchedule({
+        threadId: gettingAroundId,
+        start: "1970-01-01",
+        userId: owner.id,
+        order: 400,
+      });
+    }
 
-    // Clean up without losing anything
-    await this.tools.plot.createThread({
-      title: "Clean up without losing anything",
+    // Explore Twists (TO DO)
+    const twistsId = await this.tools.plot.createThread({
+      title: "Explore Twists",
+      tags: { [Tag.Todo]: todoActors },
       notes: [
         {
           content:
-            "When you're done with the Getting Started threads and no longer need this priority, you can **archive it**. Archived priorities and their threads are always available in Plot — they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
+            "**Twists** are automations, workflows, and agents that do helpful things with your threads — often working with items from your connections. For example, a twist might triage your inbox, summarize meeting notes, or create follow-up tasks from action items.",
         },
         {
-          content: "Archive the Getting Started priority",
+          content:
+            "You can also **create your own twists**, either by describing what you want (Plot AI will generate it for you) or by writing code. Custom twists can automate any workflow specific to your needs.",
+          actions: [
+            {
+              type: ActionType.external,
+              title: "Learn more about creating twists",
+              url: "https://twist.plot.day",
+            },
+          ],
+        },
+        {
+          content:
+            "You can also **@mention Plot** in any thread to ask questions about your notes and links. Plot will search your content and answer using AI.",
+        },
+        {
+          content:
+            "Try **@mentioning Plot** in any thread to ask a question about your notes.",
           tags: { [Tag.Todo]: todoActors },
         },
       ],
       preview:
-        "When you're done with the Getting Started threads and no longer need this priority, you can **archive it**. Archived priorities and their threads are always available in Plot — they're just hidden from your main view to reduce clutter. You can view and unarchive them anytime if you need to reference them again.",
+        "**Twists** are automations, workflows, and agents that do helpful things with your threads — often working with items from your connections. For example, a twist might triage your inbox, summarize meeting notes, or create follow-up tasks from action items.",
       priority: onboardingPriority,
     });
+    if (owner) {
+      await this.tools.plot.createSchedule({
+        threadId: twistsId,
+        start: tomorrowStr,
+        userId: owner.id,
+        order: 100,
+      });
+    }
+
+    // Set up Notifications (TO DO)
+    const notificationsId = await this.tools.plot.createThread({
+      title: "Set up Notifications",
+      tags: { [Tag.Todo]: todoActors },
+      notes: [
+        {
+          content:
+            "Plot has smart notifications that are timed based on urgency rather than sending everything immediately. " +
+            "This means new messages and updates won't interrupt you the moment they arrive — instead, they're delivered within a timeframe you control. " +
+            "If you're used to getting notified immediately for every message, you may want to adjust these defaults.",
+        },
+        {
+          content:
+            "Each priority has two timing settings:\n\n" +
+            "- **See requests within** (default: 30 minutes) — how quickly you're notified about messages and mentions\n" +
+            "- **See updates within** (default: 1 hour) — how quickly you're notified about other changes\n\n" +
+            "To adjust, open a priority's command menu and choose **Notifications**, or tap the notification icon on a priority. " +
+            "Settings inherit from parent priorities, so you can set timing once at the top level and all children will follow.",
+        },
+        {
+          content:
+            "Plot also has **quiet hours** (default: 9 PM – 7 AM) during which notifications are silenced. " +
+            "You can customize quiet hours per priority in the same Notifications settings.",
+        },
+        {
+          content: "Adjust notification timing for your most important priority.",
+          tags: { [Tag.Todo]: todoActors },
+        },
+      ],
+      preview:
+        "Plot delivers notifications based on urgency, not instantly. Adjust per-priority timing to match how you work.",
+      priority: onboardingPriority,
+    });
+    if (owner) {
+      await this.tools.plot.createSchedule({
+        threadId: notificationsId,
+        start: dayAfterTomorrowStr,
+        userId: owner.id,
+        order: 100,
+      });
+    }
+
+    // Clean up without losing anything
+    const cleanUpId = await this.tools.plot.createThread({
+      title: "Clean up without losing anything",
+      notes: [
+        {
+          content:
+            "When something is no longer actively in progress — a completed project, an old priority, a finished thread — you can **archive it**. Archived items are hidden from your main view but never deleted. You can view archived items or unarchive them anytime.",
+        },
+        {
+          content:
+            "You can archive both **priorities** and **threads**. Use the command menu on any priority or thread to find the archive option. Archiving a priority hides it and all its threads from the main view.",
+        },
+      ],
+      preview:
+        "When something is no longer actively in progress — a completed project, an old priority, a finished thread — you can **archive it**. Archived items are hidden from your main view but never deleted. You can view archived items or unarchive them anytime.",
+      priority: onboardingPriority,
+    });
+    if (owner) {
+      await this.tools.plot.createSchedule({
+        threadId: cleanUpId,
+        start: twoDaysAfterTomorrowStr,
+        userId: owner.id,
+        order: 100,
+      });
+    }
   }
 
   async onSearchQuery(note: Note): Promise<void> {
