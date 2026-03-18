@@ -35,7 +35,7 @@ class NotificationDisplay {
     if (_initialized) return;
     if (kIsWeb || !(Platform.isIOS || Platform.isAndroid)) return;
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings('@drawable/ic_stat_notification');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -136,6 +136,7 @@ class NotificationDisplay {
       importance: importance,
       priority: priority,
       autoCancel: true,
+      icon: '@drawable/ic_stat_notification',
     );
 
     const iosDetails = DarwinNotificationDetails(
