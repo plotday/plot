@@ -36,7 +36,7 @@ export async function analyzeNote(
     await applyUnreadStatus(
       db,
       threadId,
-      context.noteAuthorId,
+      userId,
       context.members,
       result.unread
     );
@@ -445,13 +445,13 @@ function parseClassificationOverride(
 async function applyUnreadStatus(
   db: Kysely<DB>,
   threadId: string,
-  noteAuthorId: string,
+  noteAuthorUserId: string,
   members: Array<{ id: string; name: string | null; userId: string | null }>,
   unread: AnalysisResult["unread"]
 ): Promise<void> {
   for (const member of members) {
     if (!member.userId) continue;
-    if (member.id === noteAuthorId) continue; // Author never gets unread
+    if (member.userId === noteAuthorUserId) continue; // Author never gets unread
 
     const override = unread.overrides[member.id];
     const urgency = override?.urgency ?? unread.default.urgency;

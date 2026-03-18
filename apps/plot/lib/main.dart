@@ -1,12 +1,13 @@
 import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logging/logging.dart';
 import 'package:super_editor/super_editor.dart' show LogNames;
 import 'package:app_links/app_links.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'analytics/tracker.dart';
@@ -18,6 +19,7 @@ import 'base.dart';
 import 'cli_args.dart';
 import 'firebase_options.dart';
 import 'logging.dart';
+import 'notifications/background_handler.dart';
 import 'widget/window.dart';
 import 'widget/auth_button.dart';
 import 'util/time_service.dart' show Time;
@@ -61,6 +63,8 @@ Future<void> run(List<String> args) async {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
+      // Register background message handler before runApp
+      FirebaseMessaging.onBackgroundMessage(handleBackgroundMessage);
     } catch (e, stackTrace) {
       // Firebase init is non-blocking — app works without push notifications
       log.warning('Firebase initialization failed', e, stackTrace);
@@ -174,6 +178,17 @@ Future<void> run(List<String> args) async {
 
     // Initialize Env first so Tracker can be set up early
     await Env.init();
+
+    // Persist values needed by the background isolate (which can't load dotenv)
+    if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('api_root', Env.apiRoot);
+        await prefs.setString('clerk_publishable_key', Env.clerkPublishableKey);
+      } catch (e) {
+        log.warning('Failed to persist env values to SharedPreferences', e);
+      }
+    }
 
     // Initialize Tracker immediately after Env so it's ready to capture startup errors
     await Tracker.init();

@@ -41,6 +41,7 @@ coverage
 .claude/plans/
 .claude/.cache/
 .claude/worktrees/
+.superpowers
 
 # Ruby bundler (for Fastlane)
 .bundle/

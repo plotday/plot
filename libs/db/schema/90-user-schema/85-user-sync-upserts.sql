@@ -872,7 +872,7 @@ BEGIN
         DO UPDATE SET
             urgency = EXCLUDED.urgency,
             importance = EXCLUDED.importance,
-            read_at = EXCLUDED.read_at,
+            read_at = COALESCE(EXCLUDED.read_at, thread_unread.read_at),
             bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END,
             updated_at = now()
     RETURNING * INTO v_row;

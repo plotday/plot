@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/broadcast.dart';
@@ -40,8 +41,16 @@ class NotificationService {
   /// Initialize Firebase Messaging, request permissions, and register the
   /// device token with the API. Call after Firebase.initializeApp() and
   /// after the user has signed in.
-  Future<void> start() async {
+  Future<void> start({required String userId}) async {
     if (!isSupported) return;
+
+    // Persist user ID for background isolate access
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('notification_user_id', userId);
+    } catch (e) {
+      log.warning('Failed to persist notification user ID', e);
+    }
 
     // Initialize local notification display
     await NotificationDisplay.instance.initialize();
@@ -111,6 +120,14 @@ class NotificationService {
   /// Call on sign-out.
   Future<void> stop() async {
     if (!isSupported) return;
+
+    // Remove persisted user ID so background handler won't fire
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('notification_user_id');
+    } catch (e) {
+      log.warning('Failed to remove notification user ID', e);
+    }
 
     // Cancel listeners first
     await _tokenRefreshSubscription?.cancel();
@@ -427,22 +444,8 @@ class NotificationService {
 
   /// Show notifications using AI-generated summaries.
   Future<void> _showNotifications(List<Map<String, dynamic>> summaries) async {
-    for (var i = 0; i < summaries.length; i++) {
-      final summary = summaries[i];
-      final title = summary['title'] as String? ?? 'Updates';
-      final body = summary['body'] as String? ?? 'You have new updates';
-      final targetPriorityId = summary['target_priority_id'] as String? ?? '';
-
-      await NotificationDisplay.instance.showBatchNotification(
-        id: i,
-        title: title,
-        body: body,
-        targetPriorityId: targetPriorityId,
-      );
-      if (targetPriorityId.isNotEmpty) {
-        _shownNotifications[targetPriorityId] = i;
-      }
-    }
+    final shown = await showSummaryNotifications(summaries);
+    _shownNotifications.addAll(shown);
   }
 
   /// Fallback: show simple notifications without AI summary.
@@ -522,4 +525,37 @@ class NotificationThread {
     required this.urgency,
     required this.priorityId,
   });
+}
+
+/// Show local notifications from a list of API summary objects.
+///
+/// Each summary map must have: `title`, `body`, `target_priority_id`, and
+/// optionally `urgency`. Returns a map of targetPriorityId → notification id
+/// for all notifications shown.
+///
+/// This function is package-level so it can be called from both
+/// [NotificationService] (foreground) and the background handler.
+Future<Map<String, int>> showSummaryNotifications(
+  List<Map<String, dynamic>> summaries,
+) async {
+  final shown = <String, int>{};
+  for (var i = 0; i < summaries.length; i++) {
+    final summary = summaries[i];
+    final title = summary['title'] as String? ?? 'Updates';
+    final body = summary['body'] as String? ?? 'You have new updates';
+    final targetPriorityId = summary['target_priority_id'] as String? ?? '';
+    final urgency = summary['urgency'] as String?;
+
+    await NotificationDisplay.instance.showBatchNotification(
+      id: i,
+      title: title,
+      body: body,
+      targetPriorityId: targetPriorityId,
+      urgency: urgency ?? 'inform-updates',
+    );
+    if (targetPriorityId.isNotEmpty) {
+      shown[targetPriorityId] = i;
+    }
+  }
+  return shown;
 }

@@ -139,7 +139,7 @@ class RootProviderState extends State<RootProvider> {
                 await PriorityTwist.start();
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
-                unawaited(NotificationService.instance.start());
+                unawaited(NotificationService.instance.start(userId: state.user.id));
                 if (context.mounted) _setupReAuthListener(context);
 
                 // Navigate to main app after re-sign-in. On first startup

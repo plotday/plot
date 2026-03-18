@@ -64,7 +64,7 @@ notificationSummary.post("/notification-summary", async (c) => {
   }
 });
 
-async function generateSummary(
+export async function generateSummary(
   ai: Ai,
   threads: z.infer<typeof ThreadSchema>[]
 ): Promise<string> {
@@ -118,7 +118,7 @@ async function generateSummary(
   }
 }
 
-function fallbackSummary(threads: z.infer<typeof ThreadSchema>[]): string {
+export function fallbackSummary(threads: z.infer<typeof ThreadSchema>[]): string {
   if (threads.length === 1) {
     return threads[0].title || "1 new update";
   }

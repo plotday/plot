@@ -753,6 +753,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.0.4"
+  flutter_timezone:
+    dependency: "direct main"
+    description:
+      name: flutter_timezone
+      sha256: ea53c61c9152f271a5e30624a624184804947b6a733ff2b64186bb2579446892
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.1"
   flutter_web_auth_2:
     dependency: "direct main"
     description:
@@ -1924,7 +1932,7 @@ packages:
     source: hosted
     version: "3.7.1"
   timezone:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: timezone
       sha256: dd14a3b83cfd7cb19e7888f1cbc20f258b8d71b54c06f79ac585f14093a287d1
