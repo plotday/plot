@@ -27,6 +27,8 @@ import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
+import 'package:plot/main.dart' show navigatorKey;
+import 'package:plot/widget/toast.dart';
 import 'command.dart';
 import 'page_link.dart';
 import 'logging.dart';
@@ -733,10 +735,16 @@ class FullResync extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    try {
-      await Store.get.fullResync();
-      return CommandMessage('Re-sync complete');
-    } catch (e, t) {
+    if (Store.get.isSyncing) {
+      return CommandMessage('A sync is already in progress');
+    }
+
+    Store.get.fullResync().then((_) {
+      final ctx = navigatorKey?.currentContext;
+      if (ctx != null && ctx.mounted) {
+        ctx.showToast(message: 'Re-sync complete');
+      }
+    }).catchError((Object e, StackTrace t) {
       log.warning('Full re-sync failed', e, t);
       Tracker.trackError(
         eventObject.value,
@@ -745,8 +753,13 @@ class FullResync extends Command {
         stackTrace: extractStackTrace(t),
         context: 'full_resync',
       );
-      return CommandMessage('Full re-sync failed', isError: true);
-    }
+      final ctx = navigatorKey?.currentContext;
+      if (ctx != null && ctx.mounted) {
+        ctx.showToast(message: 'Full re-sync failed', isError: true);
+      }
+    });
+
+    return CommandMessage('Re-sync started');
   }
 }
 

@@ -675,6 +675,7 @@ class Store extends _$Store {
   BroadcastClient? _broadcastClient;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
+  bool get isSyncing => _isSyncing;
   bool _isOnline = false;
   bool _isBufferingBroadcasts = false;
   bool _closing = false;

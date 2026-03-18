@@ -88,9 +88,9 @@ extension ToastExtension on BuildContext {
 
       // Auto-remove after duration
       Future.delayed(duration ?? const Duration(seconds: 3), () {
-        if (entry.mounted) {
+        try {
           entry.remove();
-        }
+        } catch (_) {}
       });
     } catch (e, t) {
       log.warning("Failed to show overlay toast: $message", e, t);
