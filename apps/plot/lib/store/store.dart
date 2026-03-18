@@ -3,7 +3,13 @@ import 'dart:io';
 import 'dart:math';
 
 import 'dart:convert';
-import 'package:flutter/widgets.dart' show Brightness, IconData;
+import 'package:flutter/widgets.dart'
+    show
+        AppLifecycleState,
+        Brightness,
+        IconData,
+        WidgetsBinding,
+        WidgetsBindingObserver;
 import 'package:logging/logging.dart';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
@@ -495,6 +501,7 @@ class Store extends _$Store {
       if (hasDefault) {
         // User has existing local data, start sync in background (non-blocking)
         inst._setupConnectivityListener();
+        inst._setupLifecycleListener();
       } else {
         // New user or no local data - critical sync blocks, rest is deferred
         log.info("New user sync: starting connectivity check and critical sync");
@@ -532,6 +539,7 @@ class Store extends _$Store {
         // Complete remaining sync in background, then set up connectivity
         inst._startSyncDeferred().whenComplete(() {
           inst._setupConnectivityListener();
+          inst._setupLifecycleListener();
         });
       }
     });
@@ -674,6 +682,7 @@ class Store extends _$Store {
 
   BroadcastClient? _broadcastClient;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  _StoreLifecycleObserver? _lifecycleObserver;
   bool _isSyncing = false;
   bool get isSyncing => _isSyncing;
   bool _isOnline = false;
@@ -1916,6 +1925,11 @@ class Store extends _$Store {
     }
   }
 
+  void _setupLifecycleListener() {
+    _lifecycleObserver = _StoreLifecycleObserver(this);
+    WidgetsBinding.instance.addObserver(_lifecycleObserver!);
+  }
+
   Store._(User user)
     : super(
         driftDatabase(
@@ -2018,6 +2032,10 @@ class Store extends _$Store {
     _unsubscribeFromUpdates();
     _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
+    if (_lifecycleObserver != null) {
+      WidgetsBinding.instance.removeObserver(_lifecycleObserver!);
+      _lifecycleObserver = null;
+    }
 
     // Cancel all pending debounce timers
     _syncDebouncer.dispose();
@@ -2610,6 +2628,24 @@ class Store extends _$Store {
       } catch (e) {
         log.warning('Failed to drop $type $name on second pass: $e');
       }
+    }
+  }
+}
+
+class _StoreLifecycleObserver extends WidgetsBindingObserver {
+  static final _log = Logger('Store');
+
+  final Store store;
+  _StoreLifecycleObserver(this.store);
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !store._isSyncing) {
+      _log.info('App resumed, triggering incremental sync');
+      store._startSync().catchError((Object error, StackTrace stackTrace) {
+        _log.warning('Resume-triggered sync failed', error, stackTrace);
+        return null;
+      });
     }
   }
 }
