@@ -630,6 +630,36 @@ jobs:
           cd apps/plot
           flutter pub run build_runner build --delete-conflicting-outputs
 
+      - name: Configure manual signing for CI
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
+          # Install macOS provisioning profile
+          APP_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/macos.provisionprofile")")
+          APP_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/macos.provisionprofile")")
+          cp "$RUNNER_TEMP/macos.provisionprofile" "$HOME/Library/MobileDevice/Provisioning Profiles/${APP_PROFILE_UUID}.provisionprofile"
+          echo "Installed macOS profile: $APP_PROFILE_NAME ($APP_PROFILE_UUID)"
+
+          PBXPROJ="apps/plot/macos/Runner.xcodeproj/project.pbxproj"
+
+          # Switch from automatic to manual signing for all targets
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBXPROJ"
+
+          # Set provisioning profile specifier for the Runner target
+          python3 -c "
+          import re
+          content = open('$PBXPROJ').read()
+          profile_name = '$APP_PROFILE_NAME'
+          content = re.sub(
+              r'(PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";)',
+              f'PRODUCT_BUNDLE_IDENTIFIER = day.plot.app;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"{profile_name}\";',
+              content
+          )
+          open('$PBXPROJ', 'w').write(content)
+          "
+
+          echo "Manual signing configured for macOS."
+
       - name: Install Shorebird
         uses: shorebirdtech/setup-shorebird@v1
 
