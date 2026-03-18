@@ -429,9 +429,15 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
 
             if (!layoutState.multiPanel) {
               child = PopScope(
-                canPop: !_isSearchExpanded,
+                canPop: false,
                 onPopInvokedWithResult: (didPop, result) {
-                  if (!didPop) tryCloseSearch();
+                  if (!didPop) {
+                    if (_isSearchExpanded) {
+                      tryCloseSearch();
+                    } else {
+                      AutoTabsRouter.of(context).setActiveIndex(0);
+                    }
+                  }
                 },
                 child: child,
               );
