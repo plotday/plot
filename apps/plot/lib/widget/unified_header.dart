@@ -240,7 +240,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         ),
         _buildSearchField(context, layoutState, state, notifier),
       ] else
-        _buildTitleWithSearch(context, layoutState, state, hasActivity, notifier),
+        _buildTitleWithSearch(
+          context,
+          layoutState,
+          state,
+          hasActivity,
+          notifier,
+        ),
     ];
 
     // --- Build suffixes ---
@@ -306,6 +312,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         searchExpanded: _searchExpanded,
         onToggle: _toggleSearch,
       ),
+      color: context.theme.colors.foreground,
     );
   }
 
@@ -335,7 +342,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             Flexible(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => context.run(_buildMenuCommand(state, layoutState, notifier)),
+                onTap: () => context.run(
+                  _buildMenuCommand(state, layoutState, notifier),
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   spacing: 4,
@@ -368,7 +377,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                     Icon(
                       PlotIcon.menu,
                       size: context.theme.iconSizes.xs,
-                      color: context.theme.colors.foreground.withValues(alpha: 0.45),
+                      color: context.theme.colors.foreground.withValues(
+                        alpha: 0.7,
+                      ),
                     ),
                   ],
                 ),
@@ -394,20 +405,20 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             Flexible(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => context.run(_buildMenuCommand(state, layoutState, notifier)),
+                onTap: () => context.run(
+                  _buildMenuCommand(state, layoutState, notifier),
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   spacing: 4,
                   children: [
-                    Flexible(
-                      child: PriorityLabel(
-                        priority: state.context,
-                      ),
-                    ),
+                    Flexible(child: PriorityLabel(priority: state.context)),
                     Icon(
                       PlotIcon.menu,
                       size: context.theme.iconSizes.xs,
-                      color: context.theme.colors.foreground.withValues(alpha: 0.45),
+                      color: context.theme.colors.foreground.withValues(
+                        alpha: 0.7,
+                      ),
                     ),
                   ],
                 ),
@@ -546,14 +557,18 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final Widget todoIcon;
     if (!isTodo) {
       todoIcon = Button.icon(
-        CommandWrapper(ThreadToDo(thread), icon: Value(PlotIcon.addTodo), title: 'Start'),
+        CommandWrapper(
+          StartThread(thread),
+          icon: Value(PlotIcon.addTodo),
+          title: 'Start',
+        ),
         color: context.theme.plotColors.muted,
       );
     } else {
       final hasPending = thread.outstandingTasks;
       todoIcon = Button.icon(
         CommandWrapper(
-          ThreadDone(thread),
+          FinishThread(thread),
           icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
           hoverIcon: hasPending
               ? Value(FontAwesomeIcons.circleCheck)
@@ -598,15 +613,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       commandsBuilder: (context) async {
         final thread = state.thread;
         final threadGroups = thread != null
-            ? await threadCommandGroups(
-                thread,
-                compact: !context.isMultiPanel,
-              )
+            ? await threadCommandGroups(thread)
             : <StaticCommandGroup>[];
         return Commands(
           groups: [
             ...threadGroups,
-            ...currentPriorityCommandGroups(state.context),
+            ...currentPriorityCommandGroups(
+              state.thread?.priority ?? state.context,
+            ),
           ],
         );
       },
