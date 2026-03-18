@@ -61,6 +61,8 @@ PODS:
     - nanopb (~> 3.30910.0)
   - flutter_local_notifications (0.0.1):
     - FlutterMacOS
+  - flutter_timezone (0.1.0):
+    - FlutterMacOS
   - flutter_web_auth_2 (3.0.0):
     - FlutterMacOS
   - FlutterMacOS (1.0.0)
@@ -158,6 +160,7 @@ DEPENDENCIES:
   - firebase_core (from `Flutter/ephemeral/.symlinks/plugins/firebase_core/macos`)
   - firebase_messaging (from `Flutter/ephemeral/.symlinks/plugins/firebase_messaging/macos`)
   - flutter_local_notifications (from `Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos`)
+  - flutter_timezone (from `Flutter/ephemeral/.symlinks/plugins/flutter_timezone/macos`)
   - flutter_web_auth_2 (from `Flutter/ephemeral/.symlinks/plugins/flutter_web_auth_2/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - google_sign_in_ios (from `Flutter/ephemeral/.symlinks/plugins/google_sign_in_ios/darwin`)
@@ -215,6 +218,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/firebase_messaging/macos
   flutter_local_notifications:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos
+  flutter_timezone:
+    :path: Flutter/ephemeral/.symlinks/plugins/flutter_timezone/macos
   flutter_web_auth_2:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_web_auth_2/macos
   FlutterMacOS:
@@ -266,6 +271,7 @@ SPEC CHECKSUMS:
   FirebaseInstallations: 317270fec08a5d418fdbc8429282238cab3ac843
   FirebaseMessaging: 3b26e2cee503815e01c3701236b020aa9b576f09
   flutter_local_notifications: 4bf37a31afde695b56091b4ae3e4d9c7a7e6cda0
+  flutter_timezone: bed4b9a391e5727a612e722d7f518882c5da205d
   flutter_web_auth_2: 62b08da29f15a20fa63f144234622a1488d45b65
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   google_sign_in_ios: 00dfa94252eb10278b64828c81bcb7158a81a53a
