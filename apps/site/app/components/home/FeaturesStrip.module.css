@@ -1,0 +1,29 @@
+.strip {
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.headline {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-xl);
+
+  @media (min-width: $mantine-breakpoint-md) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.icon {
+  color: light-dark(
+    var(--mantine-color-brand-6),
+    var(--mantine-color-brand-4)
+  );
+}

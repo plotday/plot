@@ -1,0 +1,29 @@
+import { Anchor, Box, Container, Stack, Text, Title } from "@mantine/core";
+import { Link } from "react-router";
+
+import classes from "./PlatformCallout.module.css";
+
+export function PlatformCallout() {
+  return (
+    <Box className={classes.section} pt={80} pb={80}>
+      <Container size="lg">
+        <div className={classes.card}>
+          <Stack align="center" ta="center" gap="md">
+            <Title order={2} size="h2" className={classes.sectionTitle}>
+              Plot's Twist platform
+            </Title>
+            <Text className={classes.sectionBody} maw={560}>
+              Twists are extensions that run securely inside your workspace —
+              automations, integrations, and AI workflows that have access to
+              your connections and your work context. Install twists built by
+              others, or build your own with Plot's open SDK.
+            </Text>
+            <Anchor component={Link} to="/twists" className={classes.link}>
+              Explore Twists →
+            </Anchor>
+          </Stack>
+        </div>
+      </Container>
+    </Box>
+  );
+}

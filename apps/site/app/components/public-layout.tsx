@@ -36,14 +36,14 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
         </Group>
         <Group>
           <Group visibleFrom="sm">
-            <Anchor component={Link} to="/connections">
-              Connections
-            </Anchor>
-            <Anchor component={Link} to="/twists">
-              Twists
+            <Anchor component={Link} to="/#benefits">
+              Product
             </Anchor>
             <Anchor component={Link} to="/pricing">
               Pricing
+            </Anchor>
+            <Anchor component={Link} to="/connections">
+              Connections
             </Anchor>
           </Group>
           {!hideGetStartedPaths.some((path) =>

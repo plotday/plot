@@ -10,15 +10,12 @@ import {
   Title,
 } from "@mantine/core";
 
-import {
-  IconCheck,
-  IconHierarchy2,
-  IconInbox,
-  IconMessages,
-  IconPuzzle,
-} from "@tabler/icons-react";
+import { IconCheck } from "@tabler/icons-react";
 import { Link } from "react-router";
 
+import { BenefitSection } from "~/components/home/BenefitSection";
+import { FeaturesStrip } from "~/components/home/FeaturesStrip";
+import { PlatformCallout } from "~/components/home/PlatformCallout";
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
@@ -176,181 +173,26 @@ export default function Home() {
         </Container>
       </Box>
 
-      {/* Benefit 1 — Everything in one place */}
-      <Box className={classes.whiteSection} pt={80} pb={80}>
-        <Container size="lg">
-          <Box className={classes.benefitSection}>
-            <Stack className={classes.benefitText} gap="md">
-              <Title order={2} size="h2" className={classes.sectionTitle}>
-                Everything in one place, ready for action
-              </Title>
-              <Text className={classes.sectionBody}>
-                Tasks, messages, events, notes, and links live
-                together—organized by priority, not arrival time. Plot pulls
-                work from Google Calendar, Slack, Linear, Gmail, and more.
-                Related items collect into threads. Smart notifications surface
-                what actually needs your attention. Nothing falls through the
-                cracks.
-              </Text>
-              <Button
-                className={classes.benefitCta}
-                variant="subtle"
-                component={Link}
-                to="/start"
-              >
-                Try Plot →
-              </Button>
-            </Stack>
-            <Box className={classes.benefitPlaceholder}>
-              <div className={classes.benefitPlaceholderInner}>
-                <IconInbox
-                  size={56}
-                  className={classes.benefitPlaceholderIcon}
-                />
-                <Text className={classes.benefitPlaceholderLabel}>
-                  Unified activity view
-                </Text>
-                <Text className={classes.benefitPlaceholderHint}>
-                  Screenshot coming soon
-                </Text>
-              </div>
-            </Box>
-          </Box>
-        </Container>
-      </Box>
-
-      {/* Benefit 2 — Structure without overhead */}
-      <Box className={classes.graySection} pt={80} pb={80}>
-        <Container size="lg">
-          <Box
-            className={`${classes.benefitSection} ${classes.benefitReverse}`}
-          >
-            <Stack className={classes.benefitText} gap="md">
-              <Title order={2} size="h2" className={classes.sectionTitle}>
-                Structure without the overhead
-              </Title>
-              <Text className={classes.sectionBody}>
-                Organize work the way you think—by project, client, team, or
-                life area. Priorities nest as deep as you need and reorder with
-                a drag. No boards to configure, no fields to fill out. Changes
-                in your calendar or issue tracker show up automatically. Add a
-                tag when it helps. Skip the ceremony when it doesn't.
-              </Text>
-              <Button
-                className={classes.benefitCta}
-                variant="subtle"
-                component={Link}
-                to="/start"
-              >
-                Try Plot →
-              </Button>
-            </Stack>
-            <Box className={classes.benefitPlaceholder}>
-              <div className={classes.benefitPlaceholderInner}>
-                <IconHierarchy2
-                  size={56}
-                  className={classes.benefitPlaceholderIcon}
-                />
-                <Text className={classes.benefitPlaceholderLabel}>
-                  Nested priorities
-                </Text>
-                <Text className={classes.benefitPlaceholderHint}>
-                  Screenshot coming soon
-                </Text>
-              </div>
-            </Box>
-          </Box>
-        </Container>
-      </Box>
-
-      {/* Benefit 3 — Collaboration without noise */}
-      <Box className={classes.whiteSection} pt={80} pb={80}>
-        <Container size="lg">
-          <Box className={classes.benefitSection}>
-            <Stack className={classes.benefitText} gap="md">
-              <Title order={2} size="h2" className={classes.sectionTitle}>
-                Collaboration without the noise
-              </Title>
-              <Text className={classes.sectionBody}>
-                Conversations happen on the work they're about. Notes, messages,
-                and links stay threaded on the activity they belong to—not
-                buried in a scrolling feed. Everyone sees what's relevant with
-                their own unread tracking. Share priorities with your team, keep
-                what's private to yourself, and never send a "just checking in"
-                message again.
-              </Text>
-              <Button
-                className={classes.benefitCta}
-                variant="subtle"
-                component={Link}
-                to="/start"
-              >
-                Try Plot →
-              </Button>
-            </Stack>
-            <Box className={classes.benefitPlaceholder}>
-              <div className={classes.benefitPlaceholderInner}>
-                <IconMessages
-                  size={56}
-                  className={classes.benefitPlaceholderIcon}
-                />
-                <Text className={classes.benefitPlaceholderLabel}>
-                  Threaded conversations
-                </Text>
-                <Text className={classes.benefitPlaceholderHint}>
-                  Screenshot coming soon
-                </Text>
-              </div>
-            </Box>
-          </Box>
-        </Container>
-      </Box>
-
-      {/* Benefit 4 — A platform for your work */}
-      <Box className={classes.graySection} pt={80} pb={80}>
-        <Container size="lg">
-          <Box
-            className={`${classes.benefitSection} ${classes.benefitReverse}`}
-          >
-            <Stack className={classes.benefitText} gap="md">
-              <Title order={2} size="h2" className={classes.sectionTitle}>
-                A platform for how your work actually works
-              </Title>
-              <Text className={classes.sectionBody}>
-                Twists are extensions that add capabilities to Plot—automations,
-                integrations, and custom workflows that run securely inside your
-                workspace. Chat with Claude, ChatGPT, and Gemini right where
-                your work lives. Install twists built by others or create your
-                own with Plot's open SDK. Because twists have access to your
-                connections and your work context, they can answer questions
-                like "What did we decide about X?" with real information.
-              </Text>
-              <Button
-                className={classes.benefitCta}
-                variant="subtle"
-                component={Link}
-                to="/start"
-              >
-                Try Plot →
-              </Button>
-            </Stack>
-            <Box className={classes.benefitPlaceholder}>
-              <div className={classes.benefitPlaceholderInner}>
-                <IconPuzzle
-                  size={56}
-                  className={classes.benefitPlaceholderIcon}
-                />
-                <Text className={classes.benefitPlaceholderLabel}>
-                  Twists & AI chat
-                </Text>
-                <Text className={classes.benefitPlaceholderHint}>
-                  Screenshot coming soon
-                </Text>
-              </div>
-            </Box>
-          </Box>
-        </Container>
-      </Box>
+      <Box id="benefits" />
+      <BenefitSection
+        title="Everything in one place"
+        body="Your meeting gets a thread. Your task gets a note. Your email gets context. Plot pulls work from Google Calendar, Slack, Linear, Gmail, and more — organized by priority, not arrival time. Related items collect automatically. Smart notifications surface what actually needs your attention. Nothing falls through the cracks."
+        screenshotLabel="Unified activity view"
+      />
+      <BenefitSection
+        title="Ready for action"
+        body={'Your agenda is your day — and Plot makes sure it\'s ready when you are. See everything due today across every tool, in one place. Open an item and find the notes, messages, and context already there. No tab-switching, no hunting for links, no "let me find that thread."'}
+        screenshotLabel="Your agenda, your day"
+        reverse
+        background="gray"
+      />
+      <BenefitSection
+        title="Momentum on what matters"
+        body="Most tools break down at the boundary between planning and doing. Plot closes that gap. Zoom out to see your priorities and what's moving. Zoom in to focus on the work in front of you. Everything you need — context, collaborators, next steps — is already in the same place you do the work."
+        screenshotLabel="Zoom in, zoom out"
+      />
+      <FeaturesStrip />
+      <PlatformCallout />
 
       {/* Closing CTA */}
       <Box className={classes.ctaSection} pt={80} pb={80}>

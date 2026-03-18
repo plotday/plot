@@ -1,0 +1,73 @@
+.section[data-bg="white"] {
+  background-color: light-dark(
+    var(--mantine-color-white),
+    var(--mantine-color-dark-7)
+  );
+}
+
+.section[data-bg="gray"] {
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-6)
+  );
+}
+
+.sectionTitle {
+  font-family: "Greycliff CF", var(--mantine-font-family);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sectionBody {
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
+  line-height: 1.7;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-xl);
+  align-items: center;
+
+  @media (min-width: $mantine-breakpoint-md) {
+    grid-template-columns: 1fr 1fr;
+    gap: calc(var(--mantine-spacing-xl) * 2);
+  }
+}
+
+.gridReverse {
+  @media (min-width: $mantine-breakpoint-md) {
+    direction: rtl;
+
+    & > * {
+      direction: ltr;
+    }
+  }
+}
+
+.text {
+  max-width: 520px;
+}
+
+.cta {
+  align-self: flex-start;
+}
+
+.placeholder {
+  aspect-ratio: 16 / 9;
+  background: #1a1a1a;
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    0 1px 0 light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.06)),
+    0 8px 32px light-dark(rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.4));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.placeholderLabel {
+  font-size: rem(13px);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.35);
+}
