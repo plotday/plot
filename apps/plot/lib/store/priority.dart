@@ -1061,6 +1061,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Returns true if this priority has a viewer role (read-only).
   bool get isViewer => role == 'viewer';
 
+  /// Whether this priority is the @plot system priority or a descendant of it.
+  /// All @plot children must have keys starting with '@plot'.
+  bool get isPlot => key == '@plot' || key?.startsWith('@plot.') == true;
+
   /// Parsed attention window settings (inherited from this priority or ancestors).
   List<AttentionWindow>? get attentionWindows =>
       AttentionWindow.fromJsonString(attentionWindow);

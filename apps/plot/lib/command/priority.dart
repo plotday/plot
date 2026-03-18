@@ -138,18 +138,16 @@ class PriorityGroup extends CommandGroup {
 }
 
 class ChangeCurrentPriorityCommands extends Commands {
-  ChangeCurrentPriorityCommands({
-    super.prompt = 'Change Current Priority',
-    Priority? initialPriority,
-  }) : super(
-         groups: [
-           PriorityGroup(
-             title: 'Priorities',
-             builder: (priority) => ChangeCurrentPriority(priority!),
-           ),
-         ],
-         secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
-       );
+  ChangeCurrentPriorityCommands({Priority? initialPriority})
+    : super(
+        groups: [
+          PriorityGroup(
+            title: 'Priorities',
+            builder: (priority) => ChangeCurrentPriority(priority!),
+          ),
+        ],
+        secondaryCommand: (prompt) => NewPriority(parent: initialPriority),
+      );
 }
 
 class OpenPriority extends Command {
@@ -460,22 +458,21 @@ class ShowPriorityCommands extends ShowCommands {
           groups: current
               ? currentPriorityCommandGroups(priority)
               : priorityCommandGroups(priority),
-          prompt: priority.title,
         ),
       );
 }
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
-  if (!priority.isViewer) EditPriorityCommand(priority),
+  if (!priority.isViewer && !priority.isPlot) EditPriorityCommand(priority),
   if (!priority.isViewer) ManagePrioritySharing(priority),
   if (!priority.isViewer) ShowAttentionSettings(priority),
   if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
   if (!priority.isViewer) NewPriority(parent: priority),
-  if (!priority.root && !priority.isViewer) TogglePriorityArchived(priority),
+  if (!priority.root && !priority.isViewer && !priority.isPlot)
+    TogglePriorityArchived(priority),
 ];
 
 List<Command> priorityCommands(Priority priority) => [
-  OpenPriority(priority),
   ...prioritySecondaryCommands(priority),
 ];
 
@@ -609,6 +606,7 @@ class ManagePrioritySharing extends ShowCommands {
         title: priority.sharing ? 'Manage sharing' : 'Share priority',
         icon: priority.sharing ? PlotIcon.shared : PlotIcon.share,
         commandsBuilder: (context) => _getSharingCommands(priority),
+        showFilter: true,
       );
 
   final Priority priority;

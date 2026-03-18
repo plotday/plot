@@ -148,7 +148,7 @@ class _PrioritiesListState extends State<PrioritiesList>
     if (widget.selected == null) return true;
 
     // Don't expand @plot children when "Everything" (root) is selected
-    if (widget.selected!.id == widget.root.id && _isPlotDescendant(priority)) {
+    if (widget.selected!.id == widget.root.id && priority.isPlot) {
       return false;
     }
 
@@ -165,15 +165,6 @@ class _PrioritiesListState extends State<PrioritiesList>
       return true;
     }
 
-    return false;
-  }
-
-  bool _isPlotDescendant(Priority priority) {
-    Priority? current = priority;
-    while (current != null) {
-      if (current.key == '@plot') return true;
-      current = current.parent;
-    }
     return false;
   }
 
