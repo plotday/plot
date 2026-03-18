@@ -53,8 +53,12 @@ class NotificationService {
     }
 
     // Initialize local notification display
-    await NotificationDisplay.instance.initialize();
-    NotificationDisplay.instance.onNotificationTap = _handlePayloadTap;
+    try {
+      await NotificationDisplay.instance.initialize();
+      NotificationDisplay.instance.onNotificationTap = _handlePayloadTap;
+    } catch (e) {
+      log.warning('Failed to initialize notification display', e);
+    }
 
     final messaging = FirebaseMessaging.instance;
 
