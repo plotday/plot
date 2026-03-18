@@ -157,7 +157,6 @@ class ShowSettings extends ShowCommands {
                 adminOrgs: adminOrgs,
               ),
             ],
-            prompt: 'Settings',
           );
         },
         shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
@@ -169,7 +168,7 @@ class ChangeAppearance extends ShowCommands {
     : super(
         title: 'Change light/dark mode',
         icon: FontAwesomeIcons.sun,
-        commands: Commands(groups: [appearanceCommands], prompt: 'Appearance'),
+        commands: Commands(groups: [appearanceCommands]),
       );
 }
 
@@ -228,7 +227,6 @@ class ChangeEnterBehavior extends Command {
         );
       },
       selectedValue: currentBehavior,
-      prompt: 'Choose Enter key behavior',
     );
 
     if (context.mounted && result.present) {
@@ -325,7 +323,6 @@ class ManageOrganizations extends Command {
             ],
           ),
         ),
-        prompt: 'Select organization',
       );
 
       if (context.mounted && selected.present) {

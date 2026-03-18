@@ -17,7 +17,7 @@ import 'toast.dart';
 
 /// A group of items to display in a SelectModal.
 class SelectGroup<T> {
-  SelectGroup({this.title, required this.items, this.infoBuilder, this.hint});
+  SelectGroup({this.title, required this.items, this.infoBuilder, this.hint, this.onActivate});
 
   /// The title of the group (displayed as a header).
   final String? title;
@@ -30,6 +30,9 @@ class SelectGroup<T> {
 
   /// Optional hint shown on the right side (usally a keyboard shortcut).
   final String? hint;
+
+  /// Called when an info-only group row is activated (Enter key or tap).
+  final void Function(BuildContext)? onActivate;
 }
 
 /// A generic selection modal for selecting items from a list.
@@ -40,7 +43,7 @@ class SelectModal<T> extends Modal {
     required this.items,
     required this.itemBuilder,
     this.selectedValue,
-    this.prompt = 'Search',
+    this.prompt,
     this.subtitle,
     this.onSelect,
     this.initialItems,
@@ -76,7 +79,8 @@ class SelectModal<T> extends Modal {
   final T? selectedValue;
 
   /// The placeholder text for the search input.
-  final String prompt;
+  /// When null, displays a search icon with "Search..." placeholder.
+  final String? prompt;
 
   /// Optional subtitle displayed below the search area and above the list.
   final String? subtitle;
@@ -110,7 +114,7 @@ class SelectModal<T> extends Modal {
     required Future<List<SelectGroup<T>>> Function(String? search) items,
     required Widget Function(T, bool isLoading) itemBuilder,
     T? selectedValue,
-    String prompt = 'Search',
+    String? prompt,
     String? subtitle,
     Future<bool> Function(BuildContext context, T item, String searchText)?
     onSelect,
@@ -153,7 +157,7 @@ class _SelectModal<T> extends StatefulWidget {
     required this.items,
     required this.itemBuilder,
     this.selectedValue,
-    required this.prompt,
+    this.prompt,
     this.subtitle,
     this.onSelect,
     this.initialItems,
@@ -165,7 +169,7 @@ class _SelectModal<T> extends StatefulWidget {
   final Future<List<SelectGroup<T>>> Function(String? search) items;
   final Widget Function(T, bool isLoading) itemBuilder;
   final T? selectedValue;
-  final String prompt;
+  final String? prompt;
   final String? subtitle;
   final Future<bool> Function(BuildContext context, T item, String searchText)?
   onSelect;
@@ -181,6 +185,7 @@ class _SelectModal<T> extends StatefulWidget {
 class _SelectModalState<T> extends State<_SelectModal<T>> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _listFocusNode = FocusNode(debugLabel: 'SelectModal-list');
   List<SelectGroup<T>> _groups = [];
   List<SelectGroup<T>>? _emptySearchCache;
   String? _error;
@@ -234,6 +239,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   void dispose() {
     _isDisposed = true;
+    _listFocusNode.dispose();
     _scrollController.dispose();
     _controller.dispose();
     super.dispose();
@@ -367,8 +373,6 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   bool get _shouldShowFilter {
     if (widget.showFilter == false) return false;
     if (widget.showFilter == true) return true;
-    // showFilter is null — use item count heuristic on touch
-    if (hasPhysicalKeyboard()) return true;
     if (_isLoading) return false;
     final totalItems = _groups.fold<int>(0, (sum, g) => sum + g.items.length);
     return totalItems >= 12;
@@ -410,9 +414,14 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   void _moveHighlight(int offset) {
     setState(() {
       final totalCount = _getTotalItemCount();
-      if (totalCount == 0) return;
+      final infoOnlyGroups = _groups
+          .where((g) => g.items.isEmpty && g.infoBuilder != null)
+          .toList();
+      final totalDisplay = totalCount + infoOnlyGroups.length;
+      if (totalDisplay == 0) return;
 
-      _highlightedIndex = (_highlightedIndex + offset).clamp(0, totalCount - 1);
+      _highlightedIndex = (_highlightedIndex + offset)
+          .clamp(0, totalDisplay - 1);
     });
     _scrollToIndex(_highlightedIndex);
   }
@@ -475,10 +484,16 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     Future.microtask(() => _enterHandled = false);
 
     final totalItems = _getTotalItemCount();
-    if (totalItems > 0 &&
-        _highlightedIndex >= 0 &&
-        _highlightedIndex < totalItems) {
+    if (_highlightedIndex >= 0 && _highlightedIndex < totalItems) {
       _selectItem(_getItemAtIndexUnsafe(_highlightedIndex));
+    } else if (_highlightedIndex >= totalItems) {
+      final infoOnlyGroups = _groups
+          .where((g) => g.items.isEmpty && g.infoBuilder != null)
+          .toList();
+      final infoIndex = _highlightedIndex - totalItems;
+      if (infoIndex < infoOnlyGroups.length) {
+        infoOnlyGroups[infoIndex].onActivate?.call(context);
+      }
     }
   }
 
@@ -563,7 +578,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       },
       builder: (context, listController) {
         // Set bounds for the controller
-        listController.clamp(0, totalCount - 1);
+        listController.clamp(0, totalCount + infoOnlyGroups.length - 1);
 
         return Shortcuts(
           shortcuts: const {
@@ -629,15 +644,30 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                   ),
                                 ),
                               Expanded(
-                                child: TextField(
-                                  maxLines: 1,
-                                  style: TextFieldStyle.ghost,
-                                  controller: _controller,
-                                  autofocus: hasPhysicalKeyboard(),
-                                  label: "${widget.prompt}...",
-                                  focusNode: focusNode,
-                                  onChanged: (text) => _initItems(),
-                                  onSubmitted: (_) => _handleEnter(),
+                                child: Row(
+                                  children: [
+                                    if (widget.prompt == null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: Icon(
+                                          PlotIcon.search,
+                                          size: context.theme.iconSizes.sm,
+                                          color: context.theme.colors.mutedForeground,
+                                        ),
+                                      ),
+                                    Expanded(
+                                      child: TextField(
+                                        maxLines: 1,
+                                        style: TextFieldStyle.ghost,
+                                        controller: _controller,
+                                        autofocus: hasPhysicalKeyboard(),
+                                        label: widget.prompt != null ? "${widget.prompt}..." : "Search...",
+                                        focusNode: focusNode,
+                                        onChanged: (text) => _initItems(),
+                                        onSubmitted: (_) => _handleEnter(),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -646,22 +676,38 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       ),
                     )
                   else
-                    ValueListenableBuilder<int>(
-                      valueListenable: ModalProvider.of(
-                        context,
-                      ).modalStackNotifier,
-                      builder: (context, stackLength, _) {
-                        if (stackLength <= 1) return const SizedBox.shrink();
-                        return Container(
-                          padding: context.theme.spacing.paddingSm,
-                          alignment: Alignment.centerLeft,
-                          child: FButton.icon(
-                            variant: FButtonVariant.ghost,
-                            onPress: _cancel,
-                            child: Icon(
-                              PlotIcon.left,
-                              size: context.theme.iconSizes.sm,
-                            ),
+                    // When the filter bar is hidden, use a Focus widget to
+                    // grab keyboard focus so arrow keys / Enter / Escape work.
+                    Builder(
+                      builder: (context) {
+                        if (hasPhysicalKeyboard() && !_listFocusNode.hasFocus) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted && !_listFocusNode.hasFocus) {
+                              _listFocusNode.requestFocus();
+                            }
+                          });
+                        }
+                        return Focus(
+                          focusNode: _listFocusNode,
+                          child: ValueListenableBuilder<int>(
+                            valueListenable: ModalProvider.of(
+                              context,
+                            ).modalStackNotifier,
+                            builder: (context, stackLength, _) {
+                              if (stackLength <= 1) return const SizedBox.shrink();
+                              return Container(
+                                padding: context.theme.spacing.paddingSm,
+                                alignment: Alignment.centerLeft,
+                                child: FButton.icon(
+                                  variant: FButtonVariant.ghost,
+                                  onPress: _cancel,
+                                  child: Icon(
+                                    PlotIcon.left,
+                                    size: context.theme.iconSizes.sm,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         );
                       },
@@ -689,8 +735,41 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         if (index >= totalCount) {
                           final infoIndex = index - totalCount;
                           if (infoIndex < infoOnlyGroups.length) {
-                            return infoOnlyGroups[infoIndex]
-                                .infoBuilder!(context);
+                            final isHighlighted = index == _highlightedIndex;
+                            final group = infoOnlyGroups[infoIndex];
+                            return MouseRegion(
+                              onEnter: (_) {
+                                if (!_mouseHasMoved) return;
+                                listController.setHovered(index);
+                                setState(() => _highlightedIndex = index);
+                              },
+                              onExit: (_) {
+                                if (!_mouseHasMoved) return;
+                                listController.setHovered(null);
+                                setState(() => _highlightedIndex = -1);
+                              },
+                              onHover: (_) {
+                                if (!_mouseHasMoved) {
+                                  setState(() => _mouseHasMoved = true);
+                                  listController.setHovered(index);
+                                  setState(() => _highlightedIndex = index);
+                                }
+                              },
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: group.onActivate != null
+                                    ? () => group.onActivate!(context)
+                                    : null,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: isHighlighted
+                                        ? context.theme.colors.secondary
+                                        : null,
+                                  ),
+                                  child: group.infoBuilder!(context),
+                                ),
+                              ),
+                            );
                           }
                           return const SizedBox.shrink();
                         }

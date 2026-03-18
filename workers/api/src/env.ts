@@ -157,6 +157,7 @@ export type Bindings = {
   readonly AI_KEY_ENCRYPTION_KEY: string;
 
   readonly SYNC_TIMING_ENABLED?: string;
+  readonly NOTIFICATION_DELAY_MULTIPLIER?: string;
 
   readonly TWIST_CONFIG: KVNamespace;
   readonly VOTES: KVNamespace;

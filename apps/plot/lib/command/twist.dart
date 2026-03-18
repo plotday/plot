@@ -50,7 +50,6 @@ class ManageConnectionsAndTwists extends ShowCommands {
         title: 'Connections and twists',
         icon: PlotIcon.connection,
         commands: Commands(
-          prompt: 'Connections and twists',
           groups: [
             StaticCommandGroup(commands: [ManageConnections(), ManageTwists()]),
           ],
@@ -156,7 +155,6 @@ class ManageConnections extends Command {
         context,
         items: (search) => _fetchItems(search),
         itemBuilder: (item, isLoading) => _buildItem(item, isLoading),
-        prompt: 'Connections',
         onRefreshNeeded: (refresh) => refreshFn = refresh,
         onSelect: (ctx, item, _) async {
           if (item is _LimitBanner) {

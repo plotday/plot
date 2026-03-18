@@ -292,7 +292,6 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                               return noteCommandGroups(
                                 note,
                                 activityBloc: threadBloc,
-                                compact: !context.isMultiPanel,
                               );
                             }),
                           );

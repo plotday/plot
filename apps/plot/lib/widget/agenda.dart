@@ -6,7 +6,6 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/theme.dart';
 import 'package:plot/widget/widget.dart';
 
 /// Distance from the leading left edge to the start button's icon right edge.

@@ -16,7 +16,10 @@ sealed class CommandReturn {
 
 // Command completed successfully
 class CommandDone extends CommandReturn {
-  const CommandDone();
+  const CommandDone({this.message});
+
+  /// Optional success message to show as a toast
+  final String? message;
 }
 
 // The user aborted the command (e.g. by pressing Escape)
@@ -70,6 +73,10 @@ abstract class Command {
     this.shortcut,
     this.on,
   });
+
+  /// Set by keyboard shortcut handlers before running a command.
+  /// Read and cleared by [BuildContextCommandExtension.run] to force filter visibility.
+  static bool triggeredByShortcut = false;
 
   final String title;
   final EventObject eventObject;
@@ -152,8 +159,7 @@ class CommandWrapper extends Command {
 /// A command for showing a set of commands.
 ///
 /// Provide either [commands] (static) or [commandsBuilder] (async/dynamic),
-/// not both. Dynamic command lists automatically show the filter field on
-/// mobile so users can search or create entries (e.g. invite by email).
+/// not both.
 class ShowCommands extends Command {
   ShowCommands({
     required super.title,
@@ -163,6 +169,7 @@ class ShowCommands extends Command {
     super.shortcut,
     this.commands,
     this.commandsBuilder,
+    this.showFilter,
     EventObject? eventObject,
     EventAction? eventAction,
   }) : assert(
@@ -177,9 +184,13 @@ class ShowCommands extends Command {
   final Commands? commands;
   final Future<Commands> Function(BuildContext context)? commandsBuilder;
 
-  /// Whether this command list is dynamic (async builder).
-  /// Dynamic lists always show the filter field on mobile.
-  bool get isDynamic => commandsBuilder != null;
+  /// Controls filter visibility. `null` = auto (item-count heuristic),
+  /// `true` = always show, `false` = never show.
+  final bool? showFilter;
+
+  /// Set by [BuildContextCommandExtension.run] when the command was
+  /// triggered via a keyboard shortcut.
+  bool _fromShortcut = false;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -194,7 +205,7 @@ class ShowCommands extends Command {
       return await CommandModal(
         commandsInstance,
         rootContext: context,
-        showFilter: isDynamic ? true : null,
+        showFilter: showFilter ?? (_fromShortcut ? true : null),
         commandsBuilder: commandsBuilder != null
             ? () => commandsBuilder!(context)
             : null,
@@ -233,6 +244,13 @@ class ShowPage extends Command {
 
 extension BuildContextCommandExtension on BuildContext {
   Future<CommandReturn> run(Command command) async {
+    // Capture and clear the keyboard shortcut flag
+    final fromShortcut = Command.triggeredByShortcut;
+    Command.triggeredByShortcut = false;
+    if (command is ShowCommands && fromShortcut) {
+      command._fromShortcut = true;
+    }
+
     // Start timing the command execution
     final startTime = DateTime.now();
     final commandType = command.runtimeType.toString();
@@ -251,7 +269,9 @@ extension BuildContextCommandExtension on BuildContext {
         errorMessage = result.message;
       }
 
-      if (result is CommandMessage) {
+      if (result is CommandDone && result.message != null) {
+        showToast(message: result.message!);
+      } else if (result is CommandMessage) {
         if (result.isError) {
           showToast(
             title: result.title,
@@ -312,12 +332,15 @@ extension BuildContextCommandExtension on BuildContext {
 }
 
 abstract class CommandGroup {
-  CommandGroup({this.title, this.subtitle, this.infoBuilder, this.shortcut});
+  CommandGroup({this.title, this.subtitle, this.infoBuilder, this.shortcut, this.onActivate});
 
   final String? title;
   final String? subtitle; // count
   final Widget Function(BuildContext)? infoBuilder;
   final ShortcutActivator? shortcut;
+
+  /// Called when an info-only group row is activated (Enter key or tap).
+  final void Function(BuildContext)? onActivate;
 
   Future<List<Command>> list({String? search});
 
@@ -369,6 +392,7 @@ class StaticCommandGroup extends CommandGroup {
     super.subtitle,
     super.infoBuilder,
     super.shortcut,
+    super.onActivate,
     required this.commands,
   });
 
@@ -382,20 +406,20 @@ class StaticCommandGroup extends CommandGroup {
 
 class Commands {
   const Commands({
-    String? prompt,
+    this.prompt,
     required this.groups,
     this.secondaryCommand,
     this.emptyMessage,
-  }) : prompt = prompt ?? 'Run a command';
+  });
 
-  final String prompt;
+  final String? prompt;
   final List<CommandGroup> groups;
   final Command? Function(String promptValue)? secondaryCommand;
   final String? emptyMessage;
 
-  Future<CommandReturn> show(BuildContext context) async {
+  Future<CommandReturn> show(BuildContext context, {bool? showFilter}) async {
     try {
-      return await CommandModal(this, rootContext: context).run(context);
+      return await CommandModal(this, rootContext: context, showFilter: showFilter).run(context);
     } on Error catch (e, t) {
       log.warning('Error running command bar', e, t);
       rethrow;
@@ -417,6 +441,7 @@ class Commands {
             subtitle: group.subtitle,
             infoBuilder: group.infoBuilder,
             shortcut: group.shortcut,
+            onActivate: group.onActivate,
             commands: matchingCommands,
           ),
         );
@@ -564,6 +589,7 @@ class CommandScopeState extends State<CommandScope> {
                   ...bindings,
                   command.shortcut!: () {
                     try {
+                      Command.triggeredByShortcut = true;
                       context.run(command);
                     } catch (e, t) {
                       log.warning('Error running command', e, t);
@@ -583,9 +609,9 @@ class CommandScopeState extends State<CommandScope> {
                   group.shortcut!: () {
                     try {
                       Commands(
-                        prompt: group.title ?? 'Run a command',
+                        prompt: group.title,
                         groups: [group],
-                      ).show(context);
+                      ).show(context, showFilter: true);
                     } catch (e, t) {
                       log.warning('Error opening command group', e, t);
                       rethrow;
@@ -597,9 +623,8 @@ class CommandScopeState extends State<CommandScope> {
     return CallbackShortcuts(
       bindings: {
         platformSingleActivator(LogicalKeyboardKey.keyK): () => Commands(
-          prompt: 'Run a command',
           groups: CommandRegistry.of(context).commands,
-        ).show(context),
+        ).show(context, showFilter: true),
         ...commandBindings,
         ...groupBindings,
       },

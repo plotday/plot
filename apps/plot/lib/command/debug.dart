@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/api.dart' as api;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/time_service.dart';
@@ -15,7 +16,7 @@ import 'command.dart';
 final debugCommands = kDebugMode
     ? StaticCommandGroup(
         title: 'Debug',
-        commands: [TimeTravel(), if (Time.isFrozen()) UnfreezeTime()],
+        commands: [TimeTravel(), if (Time.isFrozen()) UnfreezeTime(), TriggerTestPush()],
       )
     : null;
 
@@ -44,6 +45,32 @@ class UnfreezeTime extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     Time.unfreeze();
     return CommandMessage('Time unfrozen - returned to live time');
+  }
+}
+
+/// Command to send a test push notification to the current device.
+class TriggerTestPush extends Command {
+  TriggerTestPush()
+    : super(
+        title: 'Trigger test push',
+        subtitle: 'Send a sync_wake push to this device',
+        icon: FontAwesomeIcons.bell,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final result = await api.post<Map<String, dynamic>>(
+        '/test/trigger-push',
+        body: {},
+      );
+      final sent = result['sent'] as int? ?? 0;
+      return CommandMessage('Push sent to $sent device${sent == 1 ? '' : 's'}');
+    } catch (e) {
+      return CommandMessage('Failed to trigger push: $e', isError: true);
+    }
   }
 }
 

@@ -50,6 +50,22 @@ Future<void> run(List<String> args) async {
   // Initialize bindings first - required for platform channels used by Env.init()
   WidgetsFlutterBinding.ensureInitialized();
 
+  // During hot restart or startup, Flutter may receive duplicate KeyDownEvents
+  // for modifier keys held during the transition. The second event hits an
+  // assertion in HardwareKeyboard and would break the keyboard pipeline.
+  // Catch it here so the keyboard continues to work. Debug-only: assertions
+  // are no-ops in release builds.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    if (error is AssertionError &&
+        stack.toString().contains('hardware_keyboard.dart')) {
+      debugPrint(
+        'Suppressed keyboard state assertion (hot restart artifact): $error',
+      );
+      return true; // Handled — keyboard state is still consistent
+    }
+    return false;
+  };
+
   // On Windows, Dart's BoringSSL doesn't use the system certificate store,
   // causing CERTIFICATE_VERIFY_FAILED errors. Override to accept all certs
   // (matching browser behavior which uses the Windows cert store).

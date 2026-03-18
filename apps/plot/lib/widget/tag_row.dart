@@ -156,23 +156,7 @@ class _TagRowState extends State<TagRow> {
 
     final spacing = context.theme.spacing;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: spacing.paddingSm.copyWith(
-            right: spacing.xxl,
-          ),
-          child: Text(
-            'Tags',
-            style: TextStyle(
-              color: context.theme.colors.mutedForeground,
-              fontSize: context.theme.typography.sm.fontSize,
-            ),
-          ),
-        ),
-        Padding(
+    return Padding(
           padding: spacing.paddingSm.copyWith(
             top: 0,
             bottom: 0,
@@ -208,8 +192,6 @@ class _TagRowState extends State<TagRow> {
           );
         },
       ),
-        ),
-      ],
     );
   }
 }

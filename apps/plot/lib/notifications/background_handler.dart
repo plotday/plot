@@ -9,8 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/notifications/notification_display.dart';
+import 'package:plot/notifications/notification_quiet_hours.dart';
 import 'package:plot/notifications/notification_service.dart';
-import 'package:plot/store/attention.dart';
 
 /// Top-level background message handler registered with Firebase Messaging.
 ///
@@ -41,7 +41,7 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   await NotificationDisplay.instance.initialize();
 
   // Check whether we're currently in quiet hours
-  final scheduleAt = _computeNotifyTime(prefs);
+  final scheduleAt = computeNotifyTime(prefs);
   if (scheduleAt != null) {
     // Quiet hours: show notifications when they end
     await _scheduleNotifications(summaries, scheduleAt);
@@ -98,70 +98,6 @@ Future<List<Map<String, dynamic>>?> _fetchNotificationContent(
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     final summaries = body['summaries'] as List?;
     return summaries?.cast<Map<String, dynamic>>();
-  } catch (_) {
-    return null;
-  }
-}
-
-/// Returns the [DateTime] at which notifications should be shown if quiet
-/// hours are currently in effect, or null if notifications should show now.
-DateTime? _computeNotifyTime(SharedPreferences prefs) {
-  try {
-    final windowsJson = prefs.getString('attention_windows');
-    final List<AttentionWindow> windows;
-    if (windowsJson != null) {
-      windows = AttentionWindow.fromJsonString(windowsJson) ?? [];
-    } else {
-      windows = AttentionWindow.defaultQuietHours;
-    }
-
-    if (windows.isEmpty) return null;
-
-    final now = DateTime.now();
-    final dayOfWeek = now.weekday; // 1=Mon..7=Sun
-    final currentMinutes = now.hour * 60 + now.minute;
-
-    // Check if now is inside a quiet window (i.e., NOT in an attention window)
-    // Quiet hours are the periods outside all attention windows.
-    // If the windows list represents quiet hours (default: 9pm–7am daily),
-    // we check whether now falls inside any window.
-    for (final w in windows) {
-      if (!w.days.contains(dayOfWeek)) continue;
-      final startParts = w.start.split(':');
-      final endParts = w.end.split(':');
-      final startMinutes =
-          int.parse(startParts[0]) * 60 + int.parse(startParts[1]);
-      final endMinutes = int.parse(endParts[0]) * 60 + int.parse(endParts[1]);
-
-      final inWindow = startMinutes < endMinutes
-          ? currentMinutes >= startMinutes && currentMinutes < endMinutes
-          : currentMinutes >= startMinutes || currentMinutes < endMinutes;
-
-      if (inWindow) {
-        // We're in a quiet window — compute when it ends
-        if (startMinutes < endMinutes) {
-          // Same-day window
-          return DateTime(
-            now.year,
-            now.month,
-            now.day,
-            endMinutes ~/ 60,
-            endMinutes % 60,
-          );
-        } else {
-          // Window crosses midnight — end is next day
-          final tomorrow = now.add(const Duration(days: 1));
-          return DateTime(
-            tomorrow.year,
-            tomorrow.month,
-            tomorrow.day,
-            endMinutes ~/ 60,
-            endMinutes % 60,
-          );
-        }
-      }
-    }
-    return null; // Not in quiet hours, notify immediately
   } catch (_) {
     return null;
   }

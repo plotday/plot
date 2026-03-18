@@ -15,7 +15,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "cloudflare:workers": new URL(
-        "./src/agent/__tests__/utils/cloudflare-workers-mock.ts",
+        "./src/twist/__tests__/utils/cloudflare-workers-mock.ts",
         import.meta.url
       ).pathname,
     },

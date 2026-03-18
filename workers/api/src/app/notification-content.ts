@@ -205,7 +205,7 @@ notificationContent.get("/notification-content", async (c) => {
 });
 
 /** Compute lowest common ancestor path for a set of ltree paths. */
-function computeLcaPath(paths: string[], fallback: string): string {
+export function computeLcaPath(paths: string[], fallback: string): string {
   if (paths.length === 0) return fallback;
   if (paths.length === 1) return paths[0];
 

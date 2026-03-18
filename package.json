@@ -43,7 +43,8 @@
     "tunnel:start": "bash scripts/tunnel start-bg",
     "tunnel:stop": "bash scripts/tunnel stop",
     "tunnel:status": "bash scripts/tunnel status",
-    "tunnel:setup": "bash scripts/tunnel setup"
+    "tunnel:setup": "bash scripts/tunnel setup",
+    "test:notifications": "tsx scripts/test-notifications.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",

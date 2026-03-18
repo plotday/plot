@@ -72,6 +72,7 @@ export function buildThreadFromDbRecord(
       key: null,
       color: null,
     },
+    type: null,
     title: threadRecord.title || "",
     private: threadRecord.private ?? false,
     archived: threadRecord.archived_at !== null,

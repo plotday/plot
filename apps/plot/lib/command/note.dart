@@ -5,9 +5,7 @@ import 'package:plot/router.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
-import 'package:plot/state/layout.dart';
 import 'package:plot/state/thread.dart';
-import 'package:plot/util/platform.dart';
 import 'package:plot/state/now.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -402,6 +400,7 @@ class PickNoteAssignee extends ShowCommands {
         title: note.assignees.isEmpty ? 'Assign' : 'Assigned',
         icon: _computeIcon(note),
         commandsBuilder: (context) => _getAssigneeCommands(note),
+        showFilter: true,
         eventObject: EventObject.note,
         eventAction: EventAction.updated,
       );
@@ -505,7 +504,6 @@ class AssignNoteActor extends NoteCommand {
 List<StaticCommandGroup> noteCommandGroups(
   Note note, {
   ThreadBloc? activityBloc,
-  bool compact = false,
 }) {
   final actorId = Base.actorId;
   final isViewer = activityBloc?.state.thread.priority.isViewer ?? false;
@@ -529,78 +527,67 @@ List<StaticCommandGroup> noteCommandGroups(
       )
       .toList();
 
-  if (compact || !hasPhysicalKeyboard()) {
-    // Compact (touch or single-panel): show tag row instead of Remove/Add tag groups
-    final activeTags = remove.map((cmd) => cmd.tag).toList();
-    final suggestedTags = add.map((cmd) => cmd.tag).toList();
-    final activeTagCounts = {
-      for (final tag in activeTags) tag: note.tags[tag]?.length ?? 0,
-    };
+  final activeTags = remove.map((cmd) => cmd.tag).toList();
+  final suggestedTags = add.map((cmd) => cmd.tag).toList();
+  final activeTagCounts = {
+    for (final tag in activeTags) tag: note.tags[tag]?.length ?? 0,
+  };
 
-    return [
-      if (commands.isNotEmpty)
-        StaticCommandGroup(title: 'Note', commands: commands),
-      if (!note.draft && !isViewer)
-        StaticCommandGroup(title: '', commands: [ArchiveNote(note)]),
-      StaticCommandGroup(
-        title: null,
-        commands: [],
-        infoBuilder: (context) => TagRow(
-          activeTags: activeTags,
-          suggestedTags: suggestedTags,
-          activeTagCounts: activeTagCounts,
-          commandBuilder: (tag) => ToggleNoteTag(note, tag, actorId),
-          showAllBuilder: () => ShowCommands(
-            title: 'All tags',
-            icon: PlotIcon.more,
-            commandsBuilder: (_) async {
-              // Fetch fresh tag state when opened
-              final freshTags = Tag.getAll()
-                  .where((tag) => !isViewer || tag.type == TagType.count)
-                  .map((tag) => ToggleNoteTag(note, tag, actorId))
-                  .toList();
-              final freshRemove = freshTags
-                  .where(
-                    (cmd) =>
-                        cmd.tag.type != TagType.compute &&
-                        note.hasTag(cmd.tag, actorId),
-                  )
-                  .toList();
-              final freshAdd = freshTags
-                  .where(
-                    (cmd) =>
-                        cmd.tag.addable == true &&
-                        cmd.tag.type != TagType.compute &&
-                        !note.hasTag(cmd.tag, actorId),
-                  )
-                  .toList();
-              return Commands(
-                groups: [
-                  if (freshRemove.isNotEmpty)
-                    StaticCommandGroup(
-                      title: 'Remove tag',
-                      commands: freshRemove,
-                    ),
-                  if (freshAdd.isNotEmpty)
-                    StaticCommandGroup(title: 'Add tag', commands: freshAdd),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    ];
-  }
+  ShowCommands makeShowAll() => ShowCommands(
+    title: 'All tags',
+    icon: PlotIcon.more,
+    commandsBuilder: (_) async {
+      // Fetch fresh tag state when opened
+      final freshTags = Tag.getAll()
+          .where((tag) => !isViewer || tag.type == TagType.count)
+          .map((tag) => ToggleNoteTag(note, tag, actorId))
+          .toList();
+      final freshRemove = freshTags
+          .where(
+            (cmd) =>
+                cmd.tag.type != TagType.compute &&
+                note.hasTag(cmd.tag, actorId),
+          )
+          .toList();
+      final freshAdd = freshTags
+          .where(
+            (cmd) =>
+                cmd.tag.addable == true &&
+                cmd.tag.type != TagType.compute &&
+                !note.hasTag(cmd.tag, actorId),
+          )
+          .toList();
+      return Commands(
+        groups: [
+          if (freshRemove.isNotEmpty)
+            StaticCommandGroup(
+              title: 'Remove tag',
+              commands: freshRemove,
+            ),
+          if (freshAdd.isNotEmpty)
+            StaticCommandGroup(title: 'Add tag', commands: freshAdd),
+        ],
+      );
+    },
+  );
 
-  // Non-touch: unchanged
   return [
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Note', commands: commands),
-    if (remove.isNotEmpty)
-      StaticCommandGroup(title: 'Remove tag', commands: remove),
-    if (add.isNotEmpty) StaticCommandGroup(title: 'Add tag', commands: add),
     if (!note.draft && !isViewer)
       StaticCommandGroup(title: '', commands: [ArchiveNote(note)]),
+    StaticCommandGroup(
+      title: null,
+      commands: [],
+      infoBuilder: (context) => TagRow(
+        activeTags: activeTags,
+        suggestedTags: suggestedTags,
+        activeTagCounts: activeTagCounts,
+        commandBuilder: (tag) => ToggleNoteTag(note, tag, actorId),
+        showAllBuilder: makeShowAll,
+      ),
+      onActivate: (ctx) => makeShowAll().run(ctx),
+    ),
   ];
 }
 
@@ -700,7 +687,6 @@ class ShowNoteCommands extends ShowCommands {
           groups: noteCommandGroups(
             note,
             activityBloc: activityBloc,
-            compact: !context.isMultiPanel,
           ),
         ),
       );
@@ -717,6 +703,7 @@ class PickDraftNoteAssignee extends ShowCommands {
          icon: _computeIcon(note),
          commandsBuilder: (context) =>
              _getAssigneeCommands(note, priorityId, onUpdate),
+         showFilter: true,
          eventObject: EventObject.note,
          eventAction: EventAction.updated,
        );

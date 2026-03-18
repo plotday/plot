@@ -151,6 +151,7 @@ export class Plot extends Tool implements IPlot {
   public ai: AI;
   public syncDepth: number = 1;
   private _actor?: Actor;
+  private _owner?: Actor;
   private _twistId?: number;
   private _userId?: string;
   private _priorityRoot?: string;
@@ -302,6 +303,36 @@ export class Plot extends Tool implements IPlot {
     }
 
     return this._userId!;
+  }
+
+  /**
+   * Gets the primary contact Actor for the twist owner, fetching and caching on first access.
+   * Email is only included if the twist has ContactAccess.Read permission.
+   * @returns The owner's Actor (contact ID, name, and optionally email)
+   */
+  async getOwner(): Promise<Actor> {
+    if (!this._owner) {
+      const userId = await this.getUserId();
+      const hasContactRead =
+        this.plotOptions?.contact?.access !== undefined &&
+        this.plotOptions.contact.access >= ContactAccess.Read;
+      const row = await this.db
+        .selectFrom("contact")
+        .select(hasContactRead ? ["id", "name", "email"] : ["id", "name"])
+        .where("user_id", "=", userId)
+        .where("primary", "=", true)
+        .executeTakeFirstOrThrow();
+      const email = hasContactRead
+        ? (row as { id: string; name: string | null; email: string | null }).email
+        : null;
+      this._owner = {
+        id: row.id as ActorId,
+        type: ActorType.Contact,
+        name: row.name ?? null,
+        ...(email ? { email } : {}),
+      };
+    }
+    return this._owner!;
   }
 
   /**
@@ -1370,6 +1401,15 @@ export class Plot extends Tool implements IPlot {
       thread_id: schedule.threadId,
     });
     const userId = await this.getUserId();
+    // Translate ActorId (contact ID) to users.id for per-user schedules
+    if (dbSchedule.user_id) {
+      const contact = await this.db
+        .selectFrom("contact")
+        .select("user_id")
+        .where("id", "=", dbSchedule.user_id as string)
+        .executeTakeFirstOrThrow();
+      dbSchedule.user_id = contact.user_id;
+    }
     const result = await rpcUser(this.db, "upsert_schedule", {
       user_id: userId,
       p_schedule: dbSchedule as Json,
@@ -1389,6 +1429,14 @@ export class Plot extends Tool implements IPlot {
         schedule.contacts,
         thread.priority_id
       );
+    }
+
+    // For per-user schedules, recompute outstanding_tasks so threads with
+    // existing todo-tagged notes are reflected immediately (the sync endpoints
+    // that normally trigger this don't run during twist-created content).
+    const scheduleUserId = dbSchedule.user_id as string | undefined;
+    if (scheduleUserId) {
+      await sql`SELECT recompute_outstanding_tasks(${schedule.threadId}::uuid, ${scheduleUserId}::uuid)`.execute(this.db);
     }
 
     return convertDbToSchedule(result as Record<string, unknown>);

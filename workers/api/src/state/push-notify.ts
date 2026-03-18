@@ -146,15 +146,17 @@ export class PushNotify extends DurableObject<Bindings> {
 
     const currentAlarm = await this.ctx.storage.getAlarm();
 
+    const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
+
     if (!currentAlarm) {
       // No pending alarm — schedule one
-      await this.ctx.storage.setAlarm(now + delayMs);
+      await this.ctx.storage.setAlarm(now + delayMs * multiplier);
     } else if (
       previousUrgency &&
       (URGENCY_RANK[maxUrgency] ?? 2) < (URGENCY_RANK[previousUrgency] ?? 2)
     ) {
       // New urgency is higher — reschedule to sooner
-      const newAlarmTime = now + delayMs;
+      const newAlarmTime = now + delayMs * multiplier;
       if (newAlarmTime < currentAlarm) {
         await this.ctx.storage.setAlarm(newAlarmTime);
       }
@@ -205,9 +207,11 @@ export class PushNotify extends DurableObject<Bindings> {
       const lastSentAt =
         (await this.ctx.storage.get<number>("lastNotificationSentAt")) ?? 0;
       const now = Date.now();
-      if (now - lastSentAt < MIN_PUSH_INTERVAL_MS && this.highestUrgency !== "interrupt") {
+      const multiplier = parseFloat(this.env.NOTIFICATION_DELAY_MULTIPLIER ?? "1.0");
+      const effectiveMinInterval = MIN_PUSH_INTERVAL_MS * multiplier;
+      if (now - lastSentAt < effectiveMinInterval && this.highestUrgency !== "interrupt") {
         // Too soon — reschedule
-        const remainingMs = MIN_PUSH_INTERVAL_MS - (now - lastSentAt);
+        const remainingMs = effectiveMinInterval - (now - lastSentAt);
         await this.ctx.storage.setAlarm(now + remainingMs);
         return;
       }
@@ -243,7 +247,7 @@ export class PushNotify extends DurableObject<Bindings> {
 }
 
 /** Convert a see_within JSON value like {"value":30,"unit":"minutes"} to milliseconds */
-function seeWithinToMs(raw: string | null): number | null {
+export function seeWithinToMs(raw: string | null): number | null {
   if (!raw) return null;
   try {
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;

@@ -247,7 +247,42 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               ),
                             ),
                             FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.activity),
+                              icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
+                                builder: (context, state) {
+                                  final pathSegments = context.router.currentPath
+                                      .split('/')
+                                      .where((s) => s.isNotEmpty)
+                                      .toList();
+                                  final priorityIdString =
+                                      pathSegments.isNotEmpty ? pathSegments[0] : null;
+                                  final priority = priorityIdString != null
+                                      ? state.priorities.firstWhereOrNull(
+                                          (p) => p.id.toShortString() == priorityIdString,
+                                        )
+                                      : null;
+                                  final hasUnread = priority?.unread ?? false;
+
+                                  return Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Icon(PlotIcon.activity),
+                                      if (hasUnread)
+                                        Positioned(
+                                          top: -2,
+                                          right: -4,
+                                          child: Container(
+                                            width: 6.0,
+                                            height: 6.0,
+                                            decoration: BoxDecoration(
+                                              color: context.theme.colors.foreground,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
                                   style: context.theme.typography.xs,

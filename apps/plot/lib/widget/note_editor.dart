@@ -91,7 +91,8 @@ class NoteEditorState extends State<NoteEditor> {
       final isAuthor = threadState.notes.any(
         (n) => n.authorId.toUuid() == twist.id,
       );
-      final shouldDefault = (isAuthor && twist.defaultMentionCreated) ||
+      final shouldDefault =
+          (isAuthor && twist.defaultMentionCreated) ||
           twist.defaultMentionMentioned;
       if (!shouldDefault) {
         _disabledTwists.add(twist.id);
@@ -531,7 +532,9 @@ class NoteEditorState extends State<NoteEditor> {
       variant: disabled ? FButtonVariant.secondary : FButtonVariant.primary,
       style: FButtonStyleDelta.delta(
         decoration: FVariantsDelta.delta([
-          FVariantOperation.all(DecorationDelta.boxDelta(borderRadius: chipRadius)),
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(borderRadius: chipRadius),
+          ),
         ]),
         contentStyle: FButtonContentStyleDelta.delta(
           padding: EdgeInsetsGeometryDelta.value(chipPadding),
@@ -683,7 +686,8 @@ class NoteEditorState extends State<NoteEditor> {
             opacity: _saving ? 0.6 : 1.0,
             child: Row(
               children: [
-                if (widget.showScheduleActions && !thread.priority.isViewer) ...[
+                if (widget.showScheduleActions &&
+                    !thread.priority.isViewer) ...[
                   // Left side: Todo toggle (on == today)
                   Button.icon(
                     ToggleThreadToDo(
@@ -699,7 +703,7 @@ class NoteEditorState extends State<NoteEditor> {
                       return Button.icon(
                         isScheduled
                             ? CommandWrapper(
-                                ThreadDone(
+                                FinishThread(
                                   thread,
                                   onUpdate: (t) => widget.onDraftChanged!(t),
                                 ),
@@ -714,7 +718,9 @@ class NoteEditorState extends State<NoteEditor> {
                     },
                   ),
                 ],
-                if (!thread.priority.personal && !thread.private && !thread.priority.isViewer)
+                if (!thread.priority.personal &&
+                    !thread.private &&
+                    !thread.priority.isViewer)
                   Button.icon(
                     ToggleThreadPrivate(
                       thread,

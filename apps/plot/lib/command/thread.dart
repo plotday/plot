@@ -11,7 +11,6 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
-import 'package:plot/util/platform.dart';
 import 'package:plot/router.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/now.dart';
@@ -544,14 +543,14 @@ class SkipRsvpSeries extends _UpdateThreadCommand {
   }
 }
 
-class RenameThread extends ShowForm {
-  RenameThread(Thread thread)
+class EditThread extends ShowForm {
+  EditThread(Thread thread)
     : super(
-        title: 'Rename',
+        title: 'Edit',
         icon: FontAwesomeIcons.pen,
         form: (context) async {
           return FormData(
-            title: 'Rename',
+            title: 'Edit',
             groups: [
               StaticFormGroup(
                 items: [
@@ -561,11 +560,26 @@ class RenameThread extends ShowForm {
                     initialValue: thread.title,
                     required: true,
                   ),
+                  FormSelect<ThreadSubType>(
+                    key: 'type',
+                    label: 'Type',
+                    initialValue:
+                        ThreadSubType.fromIcon(thread.icon) ??
+                        ThreadSubType.defaultFor(
+                          sharing: thread.priority.sharing,
+                        ),
+                    items: (_) async => ThreadSubType.forPriority(
+                      sharing: thread.priority.sharing,
+                    ),
+                    titleBuilder: (t) => t.label,
+                    leadingBuilder: (t) => Icon(t.icon, size: 16),
+                  ),
                   FormButton(
                     key: 'save',
                     buildCommand: (values) {
                       final title = values['title'] as String;
-                      return _SaveThreadTitle(thread, title);
+                      final type = values['type'] as ThreadSubType?;
+                      return _SaveThreadEdit(thread, title, type);
                     },
                   ),
                 ],
@@ -576,8 +590,8 @@ class RenameThread extends ShowForm {
       );
 }
 
-class _SaveThreadTitle extends _UpdateThreadCommand {
-  _SaveThreadTitle(super.thread, this.newTitle)
+class _SaveThreadEdit extends _UpdateThreadCommand {
+  _SaveThreadEdit(super.thread, this.newTitle, this.newType)
     : super(
         title: 'Save',
         eventObject: EventObject.activity,
@@ -585,10 +599,17 @@ class _SaveThreadTitle extends _UpdateThreadCommand {
       );
 
   final String newTitle;
+  final ThreadSubType? newType;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(context, thread.copyWith(title: Value(newTitle)));
+    await saveOptimistically(
+      context,
+      thread.copyWith(
+        title: Value(newTitle),
+        icon: Value(newType?.value),
+      ),
+    );
     return const CommandDone();
   }
 }
@@ -651,8 +672,8 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
   }
 }
 
-class ThreadToDo extends _UpdateThreadCommand {
-  ThreadToDo(super.thread, {super.onUpdate, bool stateIcon = false})
+class StartThread extends _UpdateThreadCommand {
+  StartThread(super.thread, {super.onUpdate, bool stateIcon = false})
     : super(
         title: 'Start',
         eventObject: EventObject.activity,
@@ -668,14 +689,14 @@ class ThreadToDo extends _UpdateThreadCommand {
   }
 }
 
-class ThreadDone extends _UpdateThreadCommand {
-  ThreadDone(
+class FinishThread extends _UpdateThreadCommand {
+  FinishThread(
     super.thread, {
     super.onUpdate,
     bool stateIcon = false,
     this.bump = true,
   }) : super(
-         title: 'Done',
+         title: 'Finish',
          eventObject: EventObject.activity,
          eventAction: EventAction.finished,
          icon: stateIcon && thread.todo
@@ -798,7 +819,6 @@ class ThreadDone extends _UpdateThreadCommand {
               );
             },
             selectedValue: link.status,
-            prompt: 'Set status for ${link.title ?? "link"}',
           );
           if (result.present) {
             await Link.updateStatus(link, result.value);
@@ -1027,7 +1047,7 @@ class PickScheduleThread extends Command {
                   child: FButton(
                     variant: FButtonVariant.secondary,
                     onPress: () async {
-                      final actionReturn = await ThreadDone(
+                      final actionReturn = await FinishThread(
                         _thread,
                         onUpdate: _onUpdate,
                       ).run(context);
@@ -1156,7 +1176,7 @@ class MoveToNewThread extends Command {
 class MoveThreadToPriority extends ShowCommands {
   MoveThreadToPriority(this.thread)
     : super(
-        title: 'Move to another priority',
+        title: 'Move',
         icon: PlotIcon.move,
         shortcut: platformSingleActivator(LogicalKeyboardKey.period),
         commandsBuilder: (context) => _getMoveCommands(thread),
@@ -1188,7 +1208,7 @@ class MoveThreadToPriority extends ShowCommands {
 class MergeThreadInto extends ShowCommands {
   MergeThreadInto(this.thread)
     : super(
-        title: 'Merge into...',
+        title: 'Merge',
         icon: FontAwesomeIcons.codeMerge,
         commandsBuilder: (context) => _getMergeTargets(thread),
       );
@@ -1204,7 +1224,6 @@ class MergeThreadInto extends ShowCommands {
     );
     final filtered = threads.where((t) => t.id != thread.id).toList();
     return Commands(
-      prompt: 'Merge into',
       groups: [
         StaticCommandGroup(
           title: 'Threads',
@@ -1424,7 +1443,6 @@ class SplitThread extends Command {
 
     // Show picker
     final commands = Commands(
-      prompt: 'Split from',
       groups: [
         StaticCommandGroup(
           title: 'Source Threads',
@@ -1498,12 +1516,7 @@ class ShowThreadCommands extends ShowCommands {
         title: 'More commands',
         icon: PlotIcon.menu,
         commandsBuilder: (context) async => Commands(
-          groups: await threadCommandGroups(
-            thread,
-            open: open,
-            compact: !context.isMultiPanel,
-          ),
-          prompt: thread.title ?? 'Thread',
+          groups: await threadCommandGroups(thread, open: open),
         ),
       );
 }
@@ -1518,7 +1531,6 @@ class ChangeThreadSubType extends ShowCommands {
             sharing: thread.priority.sharing,
           );
           return Commands(
-            prompt: 'Select type',
             groups: [
               StaticCommandGroup(
                 title: null,
@@ -1683,25 +1695,21 @@ class OpenFocusedItemActions extends ShowCommands {
 Future<List<StaticCommandGroup>> threadCommandGroups(
   Thread thread, {
   bool open = true,
-  bool compact = false,
 }) async {
   final hasMerged = await SplitThread.hasMergedContent(thread.id);
   return threadCommandGroupsSync(
     thread,
     open: open,
     showSplitThread: hasMerged,
-    compact: compact,
   );
 }
 
 /// Sync variant for callers that cannot await (e.g. CommandScope).
 /// Does not include SplitThread unless [showSplitThread] is explicitly true.
-/// When [compact] is true, tag groups are replaced with a compact tag row.
 List<StaticCommandGroup> threadCommandGroupsSync(
   Thread thread, {
   bool open = true,
   bool showSplitThread = false,
-  bool compact = false,
 }) {
   final isViewer = thread.priority.isViewer;
   final tags = Tag.getAll()
@@ -1725,78 +1733,62 @@ List<StaticCommandGroup> threadCommandGroupsSync(
       )
       .toList();
 
-  if (compact || !hasPhysicalKeyboard()) {
-    // Compact (touch or single-panel): show tag row instead of Remove/Add tag groups
-    final activeTags = remove.map((cmd) => cmd.tag).toList();
-    final suggestedTags = add.map((cmd) => cmd.tag).toList();
-    final activeTagCounts = {
-      for (final tag in activeTags) tag: thread.tags[tag]?.length ?? 0,
-    };
+  final activeTags = remove.map((cmd) => cmd.tag).toList();
+  final suggestedTags = add.map((cmd) => cmd.tag).toList();
+  final activeTagCounts = {
+    for (final tag in activeTags) tag: thread.tags[tag]?.length ?? 0,
+  };
 
-    return [
-      if (commands.isNotEmpty)
-        StaticCommandGroup(
-          title: 'Thread: ${thread.title}',
-          commands: commands,
-        ),
-      StaticCommandGroup(
-        title: null,
-        commands: [],
-        infoBuilder: (context) => TagRow(
-          activeTags: activeTags,
-          suggestedTags: suggestedTags,
-          activeTagCounts: activeTagCounts,
-          commandBuilder: (tag) => ToggleThreadTag(thread, tag),
-          showAllBuilder: () => ShowCommands(
-            title: 'All tags',
-            icon: PlotIcon.more,
-            commandsBuilder: (_) async {
-              // Fetch fresh tag state when opened
-              final freshThread = await Thread.getOne(thread.id);
-              final freshTags = Tag.getAll()
-                  .where((tag) => !isViewer || tag.type == TagType.count)
-                  .map((tag) => ToggleThreadTag(freshThread, tag))
-                  .toList();
-              final freshRemove = freshTags
-                  .where(
-                    (cmd) =>
-                        cmd.tag.type != TagType.compute &&
-                        freshThread.hasTag(cmd.tag),
-                  )
-                  .toList();
-              final freshAdd = freshTags
-                  .where(
-                    (cmd) =>
-                        cmd.tag.addable == true &&
-                        cmd.tag.type != TagType.compute &&
-                        !freshThread.hasTag(cmd.tag),
-                  )
-                  .toList();
-              return Commands(
-                groups: [
-                  if (freshRemove.isNotEmpty)
-                    StaticCommandGroup(
-                      title: 'Remove tag',
-                      commands: freshRemove,
-                    ),
-                  if (freshAdd.isNotEmpty)
-                    StaticCommandGroup(title: 'Add tag', commands: freshAdd),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    ];
-  }
+  ShowCommands makeShowAll() => ShowCommands(
+    title: 'All tags',
+    icon: PlotIcon.more,
+    commandsBuilder: (_) async {
+      // Fetch fresh tag state when opened
+      final freshThread = await Thread.getOne(thread.id);
+      final freshTags = Tag.getAll()
+          .where((tag) => !isViewer || tag.type == TagType.count)
+          .map((tag) => ToggleThreadTag(freshThread, tag))
+          .toList();
+      final freshRemove = freshTags
+          .where(
+            (cmd) =>
+                cmd.tag.type != TagType.compute && freshThread.hasTag(cmd.tag),
+          )
+          .toList();
+      final freshAdd = freshTags
+          .where(
+            (cmd) =>
+                cmd.tag.addable == true &&
+                cmd.tag.type != TagType.compute &&
+                !freshThread.hasTag(cmd.tag),
+          )
+          .toList();
+      return Commands(
+        groups: [
+          if (freshRemove.isNotEmpty)
+            StaticCommandGroup(title: 'Remove tag', commands: freshRemove),
+          if (freshAdd.isNotEmpty)
+            StaticCommandGroup(title: 'Add tag', commands: freshAdd),
+        ],
+      );
+    },
+  );
 
-  // Non-touch: unchanged
   return [
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Thread: ${thread.title}', commands: commands),
-    if (remove.isNotEmpty)
-      StaticCommandGroup(title: 'Remove tag', commands: remove),
-    if (add.isNotEmpty) StaticCommandGroup(title: 'Add tag', commands: add),
+    StaticCommandGroup(
+      title: null,
+      commands: [],
+      infoBuilder: (context) => TagRow(
+        activeTags: activeTags,
+        suggestedTags: suggestedTags,
+        activeTagCounts: activeTagCounts,
+        commandBuilder: (tag) => ToggleThreadTag(thread, tag),
+        showAllBuilder: makeShowAll,
+      ),
+      onActivate: (ctx) => makeShowAll().run(ctx),
+    ),
   ];
 }
 
@@ -1817,12 +1809,12 @@ List<Command> threadCommands(
   if (!skipPrimary) {
     if (thread.todo) {
       if (!thread.outstandingTasks) {
-        primary = ThreadDone(thread, stateIcon: false);
+        primary = FinishThread(thread, stateIcon: false);
       }
     } else if (thread.on != null) {
       primary = PickScheduleThread(thread);
     } else {
-      primary = ThreadToDo(thread, stateIcon: false);
+      primary = StartThread(thread, stateIcon: false);
     }
   }
 
@@ -1834,7 +1826,7 @@ List<Command> threadCommands(
     ?primary,
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
-    if (!skipInfrequent) RenameThread(thread),
+    if (!skipInfrequent) EditThread(thread),
     MoveThreadToPriority(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),

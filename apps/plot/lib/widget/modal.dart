@@ -98,8 +98,19 @@ class Modal extends StatelessWidget {
       return false; // Already closed
     }
 
-    // Check if command opens its own modal - keep parent modal open
-    if (command is ShowCommands || command is ShowForm || command is ShowPage) {
+    // ShowCommands: propagate CommandDone to close parent modal stack
+    if (command is ShowCommands) {
+      if (result is CommandDone) {
+        return true; // Child completed — close parent too
+      }
+      if (result is! CommandSkipped && onRefresh != null) {
+        await onRefresh();
+      }
+      return false;
+    }
+
+    // ShowForm/ShowPage: always keep parent modal open
+    if (command is ShowForm || command is ShowPage) {
       if (result is! CommandSkipped && onRefresh != null) {
         await onRefresh();
       }

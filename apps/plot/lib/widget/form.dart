@@ -332,7 +332,12 @@ class FormSelect<T> extends FormItem {
             child: Row(
               children: [
                 if (leading != null) ...[
-                  leading,
+                  IconTheme(
+                    data: IconThemeData(
+                      color: context.theme.colors.foreground,
+                    ),
+                    child: leading,
+                  ),
                   SizedBox(width: context.theme.spacing.md),
                 ],
                 Expanded(child: labelWidget),
@@ -353,7 +358,12 @@ class FormSelect<T> extends FormItem {
           child: Row(
             children: [
               if (leading != null) ...[
-                leading,
+                IconTheme(
+                  data: IconThemeData(
+                    color: context.theme.colors.foreground,
+                  ),
+                  child: leading,
+                ),
                 SizedBox(width: context.theme.spacing.md),
               ],
               Expanded(
@@ -402,7 +412,10 @@ class FormSelect<T> extends FormItem {
       label: label ?? key,
       value: _hasValue ? titleBuilder!(_value as T) : null,
       leading: _hasValue && leadingBuilder != null
-          ? leadingBuilder!(_value as T)
+          ? IconTheme(
+              data: IconThemeData(color: context.theme.colors.foreground),
+              child: leadingBuilder!(_value as T),
+            )
           : null,
       placeholder: placeholder,
       highlighted: highlightedSubIndex >= 0,

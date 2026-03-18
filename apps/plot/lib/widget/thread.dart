@@ -109,7 +109,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     if (activity.priority.isViewer) return null;
     if (activity.at != null) return null;
     return activity.todo
-        ? ThreadDone(activity, bump: bump)
+        ? FinishThread(activity, bump: bump)
         : ToggleThreadToDo(activity);
   }
 
@@ -228,7 +228,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         if (!isTodo) {
           todoIcon = Button.icon(
             CommandWrapper(
-              ThreadToDo(activity),
+              StartThread(activity),
               icon: Value(PlotIcon.addTodo),
               title: 'Start',
             ),
@@ -240,7 +240,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           final hasPending = activity.outstandingTasks;
           todoIcon = Button.icon(
             CommandWrapper(
-              ThreadDone(activity, bump: bump),
+              FinishThread(activity, bump: bump),
               icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
               hoverIcon: hasPending
                   ? Value(FontAwesomeIcons.circleCheck)
@@ -838,7 +838,7 @@ class ThreadCommands extends HookWidget {
 
         // Use FinishThread when clicking Tag.todo on a "todo" thread
         final command = tag == Tag.todo
-            ? ThreadDone(activity, stateIcon: true, bump: bump)
+            ? FinishThread(activity, stateIcon: true, bump: bump)
             : ToggleThreadTag(activity, tag);
 
         // Get actor names for tooltip
@@ -935,7 +935,7 @@ class ThreadCommands extends HookWidget {
                   .map((tag) {
                     final key = ValueKey(Object.hash(activity.id, tag.id));
                     final command = tag == Tag.todo
-                        ? ThreadDone(activity, stateIcon: true, bump: bump)
+                        ? FinishThread(activity, stateIcon: true, bump: bump)
                         : ToggleThreadTag(activity, tag);
                     final count = activity.tags[tag]?.length ?? 0;
                     // Twist tags are display-only (not interactive)

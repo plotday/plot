@@ -52,6 +52,7 @@ class CommandModal {
                 items: cg.commands,
                 infoBuilder: cg.infoBuilder,
                 hint: formatShortcut(cg.shortcut),
+                onActivate: cg.onActivate,
               ),
             )
             .toList();

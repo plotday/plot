@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
@@ -10,9 +11,11 @@ import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/theme.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
 import 'package:plot/util/shortcut.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:logging/logging.dart';
@@ -81,10 +84,27 @@ class PriorityWrapper implements AutoRouteWrapper {
                       child: ResizablePanelLayout(
                         left: PrioritiesPage(),
                         middle: PriorityPage(priorityId: priorityId),
-                        child: AutoRouter(
-                          key: _routerKey,
-                          placeholder: (context) => const LoadingPage(),
-                          clipBehavior: Clip.none,
+                        child: BlocSelector<PriorityBloc, PriorityState, int>(
+                          selector: (state) =>
+                              (state.thread?.priority.displayColor ??
+                                      state.draft.priority.displayColor)
+                                  .index,
+                          builder: (context, threadColorIndex) {
+                            final threadColor = ThemeColor(threadColorIndex);
+                            final brightness =
+                                context.read<ThemeBloc>().getBrightness(context);
+                            return ProxyProvider0<ColourSchemeData>(
+                              update: (_, _) => ColourSchemeData(
+                                themeColor: threadColor,
+                                brightness: brightness,
+                              ),
+                              child: AutoRouter(
+                                key: _routerKey,
+                                placeholder: (context) => const LoadingPage(),
+                                clipBehavior: Clip.none,
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -109,7 +129,8 @@ class _PriorityCommandScope extends StatelessWidget {
   Widget build(BuildContext context) {
     final bloc = context.watch<PriorityBloc>();
     return CommandScope(
-      commands: currentPriorityCommandGroups(bloc.state.context),
+      commands: currentPriorityCommandGroups(
+          bloc.state.thread?.priority ?? bloc.state.context),
       child: child,
     );
   }
@@ -791,7 +812,6 @@ class _PriorityPageState extends State<PriorityPage> {
                                         activity: (agendaActivity) =>
                                             threadCommandGroups(
                                               agendaActivity.thread,
-                                              compact: !context.isMultiPanel,
                                             ),
                                         header: (_) async =>
                                             <StaticCommandGroup>[],
@@ -834,7 +854,6 @@ class _PriorityPageState extends State<PriorityPage> {
                                 activity: (agendaActivity) =>
                                     threadCommandGroupsSync(
                                       agendaActivity.thread,
-                                      compact: !context.isMultiPanel,
                                     ),
                                 header: (_) => <StaticCommandGroup>[],
                               ) ??

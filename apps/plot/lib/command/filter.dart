@@ -242,7 +242,6 @@ class PickFilterCommand extends ShowCommands {
           final add = commands.where((cmd) => cmd.on != true).toList();
 
           return Commands(
-            prompt: 'Pick filters',
             groups: [
               StaticCommandGroup(title: 'Remove filter', commands: remove),
               StaticCommandGroup(title: 'Add filter', commands: add),
