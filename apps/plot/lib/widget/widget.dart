@@ -1,6 +1,7 @@
 export 'package:flutter/widgets.dart';
 export 'package:forui/forui.dart';
 
+export 'animated_removal.dart';
 export 'thread.dart';
 export 'alert.dart';
 export 'note.dart';
