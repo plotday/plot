@@ -70,8 +70,6 @@ Internal catalog of product features for marketing content generation. Direct an
 - Activity assignment
 - Author tracking (activities and notes)
 - @-mentions for notifications
-- Smart push notifications with urgency-based delivery timing, respecting per-priority "see within" settings
-- AI-generated notification summaries grouped by priority
 - Per-user unread tracking
 - Real-time sync across users and devices
 
@@ -200,12 +198,31 @@ Internal catalog of product features for marketing content generation. Direct an
 - Manual reordering for prioritization
 - Duration tracking for time budgeting
 
+### Daily Planning
+- Flag items as Do Now or Do Later to build your daily plan
+- Schedule activities with specific dates or times to block your calendar
+- Reassign timing on the fly — move items between Now/Later or reschedule with minimal friction
+- Do Now view surfaces everything current and overdue in one place
+- Agenda view shows your day chronologically across all priorities
+
+### Smart Notifications
+- AI classifies each notification by urgency — urgent items (direct requests, time-sensitive changes) are delivered immediately; routine updates are held and batched
+- Respects per-priority "see within" schedules — low-priority updates wait until your preferred window instead of interrupting you immediately
+- Batched updates are summarized by AI, grouped by top-level priority, so you get one coherent digest instead of a flood of individual pings
+- No manual do-not-disturb rules needed — the system infers what matters based on content and your preferences
+
 ### Smart Features
 - AI-powered title generation
 - Auto-categorization (Now/Later/Done)
 - Unread intelligence across priorities
 - Active actions filtering
 - Quick priority switching (keyboard shortcuts)
+
+### AI Chat
+- Built-in Chat connection for conversational AI within Plot
+- Supports top models: Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google)
+- Chat in the context of your priorities and threads
+- BYOK: use your own API keys for supported providers
 
 ### Automation (via Twists)
 - Calendar sync (Google/Outlook auto-import)
