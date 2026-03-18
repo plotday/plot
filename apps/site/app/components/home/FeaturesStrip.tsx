@@ -3,6 +3,7 @@ import { Box, Container, Stack, Text, Title } from "@mantine/core";
 import {
   IconCloudOff,
   IconDevices,
+  IconKeyboard,
   IconSparkles,
   IconUsers,
 } from "@tabler/icons-react";
@@ -26,7 +27,13 @@ const FEATURES = [
     icon: IconUsers,
     label: "Made for high-agency teams",
     description:
-      "Share priorities. No per-seat fees holding back collaboration. Plot is the coordination layer that empowers everyone to do their best work.",
+      "No per-seat fees holding back collaboration. Plot works alongside your existing team chat, but you might find you're not using it anymore.",
+  },
+  {
+    icon: IconKeyboard,
+    label: "Fast keyboard navigation",
+    description:
+      "Cmd-K, keyboard shortcuts, and full keyboard navigation. Fly through your work and get where you need to be.",
   },
   {
     icon: IconSparkles,

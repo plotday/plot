@@ -19,6 +19,10 @@
   @media (min-width: $mantine-breakpoint-md) {
     grid-template-columns: 1fr 1fr;
   }
+
+  @media (min-width: $mantine-breakpoint-lg) {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
 }
 
 .icon {
