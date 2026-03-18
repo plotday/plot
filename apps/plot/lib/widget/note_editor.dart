@@ -3,7 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/util/string.dart';
-import 'package:plot/state/theme.dart';
+
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
@@ -512,7 +512,7 @@ class NoteEditorState extends State<NoteEditor> {
 
   Widget _buildTwistToggleChip(BuildContext context, PriorityTwist twist) {
     final disabled = _disabledTwists.contains(twist.id);
-    final isDark = context.read<ThemeBloc>().isDarkMode(context);
+    final isDark = context.colour.brightness == Brightness.dark;
     final logoUrl = isDark && twist.logoUrlDark != null
         ? twist.logoUrlDark
         : twist.logoUrl;

@@ -12,9 +12,10 @@ import 'package:forui/forui.dart';
 
 import 'package:plot/store/store.dart' hide Priority;
 import 'package:plot/store/store.dart' as store show Priority;
-import 'package:plot/state/theme.dart';
+
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
@@ -580,7 +581,7 @@ class EditorState extends State<Editor> {
 
   @override
   Widget build(BuildContext context) {
-    bool isDark = context.read<ThemeBloc>().isDarkMode(context);
+    bool isDark = context.colour.brightness == Brightness.dark;
     final settingsState = context.watch<SettingsBloc>().state;
 
     return OverlayPortal(
@@ -1653,7 +1654,7 @@ class ViewerState extends State<Viewer> {
 
   @override
   Widget build(BuildContext context) {
-    bool isDark = context.read<ThemeBloc>().isDarkMode(context);
+    bool isDark = context.colour.brightness == Brightness.dark;
     return BoxToSliverAdapter(
       child: SuperReader(
         editor: _editor,

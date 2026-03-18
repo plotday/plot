@@ -5,7 +5,7 @@ import 'package:auto_route/auto_route.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
-import 'package:plot/state/theme.dart';
+
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/command/command.dart';
@@ -477,7 +477,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     PriorityTwist twist, {
     double size = 14,
   }) {
-    final isDark = context.read<ThemeBloc>().isDarkMode(context);
+    final isDark = context.colour.brightness == Brightness.dark;
     final url = isDark && twist.logoUrlDark != null
         ? twist.logoUrlDark
         : twist.logoUrl;

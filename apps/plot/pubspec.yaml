@@ -39,7 +39,7 @@ dependencies:
   flutter_bloc: ^9.1.1
   equatable: ^2.0.5
   bloc_concurrency: ^0.3.0
-  adaptive_theme: ^3.4.1
+
   google_sign_in: ^7.1.1
   sign_in_with_apple: ^6.1.2
   dart_date: ^1.4.0

@@ -11,7 +11,7 @@ import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
-import 'package:plot/state/theme.dart';
+
 import 'package:plot/command/command.dart';
 import 'package:plot/router.dart';
 import 'package:plot/util/shortcut.dart';
@@ -92,7 +92,7 @@ class PriorityWrapper implements AutoRouteWrapper {
                           builder: (context, threadColorIndex) {
                             final threadColor = ThemeColor(threadColorIndex);
                             final brightness =
-                                context.read<ThemeBloc>().getBrightness(context);
+                                context.colour.brightness;
                             return ProxyProvider0<ColourSchemeData>(
                               update: (_, _) => ColourSchemeData(
                                 themeColor: threadColor,

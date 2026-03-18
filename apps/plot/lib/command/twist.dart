@@ -8,10 +8,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:flutter_bloc/flutter_bloc.dart';
-
 import 'command.dart';
-import 'package:plot/state/theme.dart';
+
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/widget/auth_button.dart'
@@ -773,7 +771,7 @@ class _SourceLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.read<ThemeBloc>().isDarkMode(context);
+    final isDark = context.colour.brightness == Brightness.dark;
     final url = isDark && logoUrlDark != null ? logoUrlDark : logoUrl;
     if (url != null) {
       return LogoImage(url: url, size: size, fallback: _fallback());
@@ -1365,7 +1363,7 @@ class EditTwist extends ShowForm {
 
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
-    final isDark = context.read<ThemeBloc>().isDarkMode(context);
+    final isDark = context.colour.brightness == Brightness.dark;
     final url = isDark && priorityTwist.logoUrlDark != null
         ? priorityTwist.logoUrlDark
         : priorityTwist.logoUrl;
@@ -1580,7 +1578,7 @@ class ShowTwistInfo extends ShowForm {
 
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
-    final isDark = context.read<ThemeBloc>().isDarkMode(context);
+    final isDark = context.colour.brightness == Brightness.dark;
     final url = isDark && twist.logoUrlDark != null
         ? twist.logoUrlDark
         : twist.logoUrl;

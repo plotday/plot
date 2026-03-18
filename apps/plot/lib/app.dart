@@ -3,7 +3,6 @@ import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
 import 'package:platform_builder/platform_builder.dart';
-import 'package:adaptive_theme/adaptive_theme.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
@@ -57,33 +56,23 @@ class AppState extends State<App> {
                   child: FToaster(
                     child: RootProvider(
                       builder: (routerConfig) => PlatformBuilder(
-                        builder: (context) => AdaptiveTheme(
-                          light: material.ThemeData(
+                        builder: (context) => material.MaterialApp.router(
+                          title: 'Plot',
+                          scrollBehavior: const PlotScrollBehavior(),
+                          localizationsDelegates:
+                              FLocalizations.localizationsDelegates,
+                          supportedLocales:
+                              FLocalizations.supportedLocales,
+                          theme: material.ThemeData(
                             colorScheme: material.ColorScheme.fromSeed(
                               seedColor: const Color(0x002BDD66),
-                              brightness: material.Brightness.light,
+                              brightness:
+                                  context.colour.brightness == Brightness.light
+                                      ? material.Brightness.light
+                                      : material.Brightness.dark,
                             ),
                           ),
-                          dark: material.ThemeData(
-                            colorScheme: material.ColorScheme.fromSeed(
-                              seedColor: const Color(0x002BDD66),
-                              brightness: material.Brightness.dark,
-                            ),
-                          ),
-                          debugShowFloatingThemeButton: true,
-                          initial: AdaptiveThemeMode.system,
-                          builder: (theme, darkTheme) =>
-                              material.MaterialApp.router(
-                                title: 'Plot',
-                                scrollBehavior: const PlotScrollBehavior(),
-                                localizationsDelegates:
-                                    FLocalizations.localizationsDelegates,
-                                supportedLocales:
-                                    FLocalizations.supportedLocales,
-                                theme: theme,
-                                darkTheme: darkTheme,
-                                routerConfig: routerConfig,
-                              ),
+                          routerConfig: routerConfig,
                         ),
                         macOSBuilder: (context) => macos.MacosApp.router(
                           title: 'Plot',
