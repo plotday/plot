@@ -267,6 +267,13 @@ class Tracker {
         return true;
       }
 
+      // Ignore DNS lookup failures when polling for Clerk session tokens.
+      // These occur when the device is offline and are already caught and
+      // handled internally by the clerk_auth library.
+      if (error.toString().contains("Failed host lookup: 'clerk.plot.day'")) {
+        return true;
+      }
+
       _log.severe('Uncaught async error', error, stackTrace);
       _backend.captureException(error: error, stackTrace: stackTrace);
       return true; // Marks the error as handled
