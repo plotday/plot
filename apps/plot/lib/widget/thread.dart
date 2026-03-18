@@ -31,6 +31,7 @@ class ThreadWidget extends StatefulWidget {
     this.focusNode,
     this.onHover,
     this.reorderableIndex,
+    this.onSwipeExit,
     super.key,
   });
 
@@ -46,6 +47,7 @@ class ThreadWidget extends StatefulWidget {
   final FocusNode? focusNode;
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
+  final Future<void> Function(Command command)? onSwipeExit;
 
   @override
   State<ThreadWidget> createState() => _ThreadWidgetState();
@@ -105,18 +107,30 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   void Function(bool hovered)? get onHover => widget.onHover;
   int? get reorderableIndex => widget.reorderableIndex;
 
-  Command? _getSwipeRightCommand() {
-    if (activity.priority.isViewer) return null;
-    if (activity.at != null) return null;
-    return activity.todo
-        ? FinishThread(activity, bump: bump)
-        : ToggleThreadToDo(activity);
+  // Short right: Start (only if not already a todo)
+  Command? _getSwipeRightShortCommand() {
+    if (activity.priority.isViewer || activity.at != null) return null;
+    if (activity.todo) return null;
+    return StartThread(activity);
   }
 
-  Command? _getSwipeLeftCommand() {
-    if (activity.priority.isViewer) return null;
-    if (activity.at != null) return null;
+  // Long right: Schedule
+  Command? _getSwipeRightLongCommand() {
+    if (activity.priority.isViewer || activity.at != null) return null;
     return PickScheduleThread(activity);
+  }
+
+  // Short left: Mark read (only if unread)
+  Command? _getSwipeLeftShortCommand() {
+    if (!activity.unread) return null;
+    return MarkReadThread(activity);
+  }
+
+  // Long left: Finish (only if todo)
+  Command? _getSwipeLeftLongCommand() {
+    if (activity.priority.isViewer || activity.at != null) return null;
+    if (!activity.todo) return null;
+    return FinishThread(activity, bump: bump);
   }
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
@@ -747,10 +761,12 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       );
     }
 
-    final swipeRightCommand = _getSwipeRightCommand();
-    final swipeLeftCommand = _getSwipeLeftCommand();
-    final hasSwipeCommands =
-        swipeRightCommand != null || swipeLeftCommand != null;
+    final swipeRightShort = _getSwipeRightShortCommand();
+    final swipeRightLong = _getSwipeRightLongCommand();
+    final swipeLeftShort = _getSwipeLeftShortCommand();
+    final swipeLeftLong = _getSwipeLeftLongCommand();
+    final hasSwipeCommands = swipeRightShort != null || swipeRightLong != null ||
+        swipeLeftShort != null || swipeLeftLong != null;
 
     // Mobile with reorderable: trailing drag handle, swipeable only wraps content
     if (reorderableIndex != null) {
@@ -770,8 +786,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       final content = hasSwipeCommands
           ? Swipeable(
               key: ValueKey(activity.id),
-              startCommand: swipeRightCommand,
-              endCommand: swipeLeftCommand,
+              startCommand: swipeRightShort,
+              startLongCommand: swipeRightLong,
+              endCommand: swipeLeftShort,
+              endLongCommand: swipeLeftLong,
+              exitOnActivation: widget.onSwipeExit,
               child: listTile,
             )
           : listTile;
@@ -788,8 +807,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     if (hasSwipeCommands) {
       return Swipeable(
         key: ValueKey(activity.id),
-        startCommand: swipeRightCommand,
-        endCommand: swipeLeftCommand,
+        startCommand: swipeRightShort,
+        startLongCommand: swipeRightLong,
+        endCommand: swipeLeftShort,
+        endLongCommand: swipeLeftLong,
+        exitOnActivation: widget.onSwipeExit,
         child: listTile,
       );
     }
