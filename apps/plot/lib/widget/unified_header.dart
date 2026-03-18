@@ -292,7 +292,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             child: FHeader(
               style: FHeaderStyleDelta.delta(
                 padding: EdgeInsetsGeometryDelta.add(
-                  const EdgeInsets.symmetric(vertical: 4),
+                  layoutState.multiPanel
+                      ? EdgeInsets.zero
+                      : const EdgeInsets.symmetric(vertical: 4),
                 ),
               ),
               title: Row(spacing: 8, children: titleChildren),
