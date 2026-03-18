@@ -112,16 +112,16 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   void Function(bool hovered)? get onHover => widget.onHover;
   int? get reorderableIndex => widget.reorderableIndex;
 
-  // Short right: Start (only if not already a todo)
+  // Short right: Start (only if not already started/user-scheduled)
   Command? _getSwipeRightShortCommand() {
-    if (activity.priority.isViewer || activity.at != null) return null;
+    if (activity.priority.isViewer) return null;
     if (activity.todo) return null;
     return StartThread(activity);
   }
 
-  // Long right: Schedule
+  // Long right: Schedule (any thread)
   Command? _getSwipeRightLongCommand() {
-    if (activity.priority.isViewer || activity.at != null) return null;
+    if (activity.priority.isViewer) return null;
     return PickScheduleThread(activity);
   }
 
@@ -131,9 +131,9 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     return MarkReadThread(activity);
   }
 
-  // Long left: Finish (only if todo)
+  // Long left: Finish (only if started/user-scheduled)
   Command? _getSwipeLeftLongCommand() {
-    if (activity.priority.isViewer || activity.at != null) return null;
+    if (activity.priority.isViewer) return null;
     if (!activity.todo) return null;
     return FinishThread(activity, bump: bump, onBeforeRun: widget.onSwipeExit != null ? (_) async {} : null);
   }

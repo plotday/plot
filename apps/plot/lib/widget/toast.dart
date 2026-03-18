@@ -57,13 +57,17 @@ extension ToastExtension on BuildContext {
   ///
   /// Parameters:
   /// - [message]: The main message to display
-  /// - [title]: Optional title (defaults to message itself)
-  /// - [duration]: Custom duration (defaults to 3s)
+  /// - [title]: Optional title (defaults to "Error" for errors, or message itself for success)
+  /// - [isError]: Whether this is an error toast (uses destructive styling)
+  /// - [duration]: Custom duration (defaults: 5s for errors, 3s for success)
   void showOverlayToast({
     required String message,
     String? title,
+    bool isError = false,
     Duration? duration,
   }) {
+    final colors = theme.colors;
+
     try {
       // Get the root overlay
       final overlay = Overlay.of(this, rootOverlay: true);
@@ -76,8 +80,17 @@ extension ToastExtension on BuildContext {
           right: 16,
           child: SafeArea(
             child: FToast(
-              title: Text(title ?? message),
-              description: title != null ? Text(message) : null,
+              variant: isError ? FToastVariant.destructive : FToastVariant.primary,
+              title: Text(isError ? (title ?? 'Error') : (title ?? message)),
+              description: isError
+                  ? Text(message)
+                  : (title != null ? Text(message) : null),
+              suffix: isError
+                  ? _CopyButton(
+                      text: message,
+                      color: colors.destructiveForeground,
+                    )
+                  : null,
             ),
           ),
         ),
@@ -87,7 +100,9 @@ extension ToastExtension on BuildContext {
       overlay.insert(entry);
 
       // Auto-remove after duration
-      Future.delayed(duration ?? const Duration(seconds: 3), () {
+      final defaultDuration =
+          isError ? const Duration(seconds: 5) : const Duration(seconds: 3);
+      Future.delayed(duration ?? defaultDuration, () {
         try {
           entry.remove();
         } catch (_) {}
@@ -95,7 +110,7 @@ extension ToastExtension on BuildContext {
     } catch (e, t) {
       log.warning("Failed to show overlay toast: $message", e, t);
       // Fallback to regular toast
-      showToast(message: message, title: title, duration: duration);
+      showToast(message: message, title: title, isError: isError, duration: duration);
     }
   }
 }

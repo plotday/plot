@@ -330,16 +330,16 @@ class _SwipeableState extends State<Swipeable>
               left: isRightSwipe ? 0 : contentInset,
               right: isRightSwipe ? contentInset : 0,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.max,
               children: [
-                if (displayCommand.icon != null) ...[
+                if (displayCommand.icon != null)
                   Icon(displayCommand.icon, size: context.theme.iconSizes.lg, color: foregroundColor),
-                  const SizedBox(width: 6),
-                ],
+                const SizedBox(height: 4),
                 Text(
                   displayCommand.title,
-                  style: context.theme.typography.sm.copyWith(
+                  style: context.theme.typography.xs.copyWith(
                     color: foregroundColor,
                   ),
                   overflow: TextOverflow.ellipsis,
