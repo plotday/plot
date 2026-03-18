@@ -197,3 +197,19 @@ class ToggleSearchCommand extends Command {
     return const CommandDone();
   }
 }
+
+class BackToPrioritiesTabCommand extends Command {
+  BackToPrioritiesTabCommand()
+    : super(
+        title: 'Priorities',
+        eventObject: EventObject.navigation,
+        eventAction: EventAction.clicked,
+        icon: PlotIcon.back,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    AutoTabsRouter.of(context).setActiveIndex(0);
+    return const CommandDone();
+  }
+}
