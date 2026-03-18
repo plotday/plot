@@ -375,7 +375,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     if (widget.showFilter == true) return true;
     if (_isLoading) return false;
     final totalItems = _groups.fold<int>(0, (sum, g) => sum + g.items.length);
-    return totalItems >= 12;
+    return totalItems >= 20;
   }
 
   /// Get the total count of items across all groups.
