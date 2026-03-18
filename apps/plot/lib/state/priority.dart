@@ -452,16 +452,21 @@ class PriorityBloc extends Cubit<PriorityState> {
     drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     final existingDraft = drafts.firstOrNull;
 
+    // Enrich the priority so sharing/sharingAncestorId are populated
+    final enrichedList = await Priority.get(id: newPriority.id, archived: null);
+    final contextPriority =
+        enrichedList.isNotEmpty ? enrichedList.first : newPriority;
+
     Thread newDraft;
     if (existingDraft != null) {
-      newDraft = existingDraft;
+      newDraft = existingDraft.copyWith(priority: contextPriority);
       log.info(
         '[setPriority] Loaded existing draft: id=${existingDraft.id}, priority=${existingDraft.priority.id} (${existingDraft.priority.title}), archived=${existingDraft.archivedAt != null}',
       );
     } else {
-      newDraft = Thread(priority: newPriority, draft: true);
+      newDraft = Thread(priority: contextPriority, draft: true);
       log.info(
-        '[setPriority] Creating new draft for priority: id=${newDraft.id}, priority=${newPriority.id} (${newPriority.title})',
+        '[setPriority] Creating new draft for priority: id=${newDraft.id}, priority=${contextPriority.id} (${contextPriority.title})',
       );
     }
 
@@ -520,7 +525,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Update context immediately for responsive switching
     emit(
       state.copyWith(
-        context: newPriority,
+        context: contextPriority,
         draft: newDraft,
         draftNote: draftNote,
         agendaItems: const [],
@@ -925,7 +930,12 @@ class PriorityBloc extends Cubit<PriorityState> {
     final existingDraft = await Thread.getDraftByPriority(priority.id);
     if (existingDraft != null) {
       if (_draftModified) return;
-      emit(state.copyWith(draft: existingDraft));
+      // Use state.context (enriched in setPriority) so sharing is correct
+      emit(
+        state.copyWith(
+          draft: existingDraft.copyWith(priority: state.context),
+        ),
+      );
     }
   }
 
