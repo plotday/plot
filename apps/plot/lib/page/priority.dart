@@ -1177,27 +1177,46 @@ class _PriorityPageState extends State<PriorityPage> {
               },
               activity: (agendaActivity) {
                 final isBeingDragged = controller.draggingIndex == index;
+                final removalKey = GlobalKey<AnimatedRemovalState>(
+                  debugLabel: 'removal_${agendaActivity.thread.id}',
+                );
                 return [
-                  ThreadWidget(
-                    key: ValueKey(
-                      'activitywidget_${agendaActivity.thread.id}${agendaActivity.thread.occurrence != null ? '_${agendaActivity.thread.occurrence}' : ''}${agendaActivity.thread.isLinkScheduleInstance ? '_link' : ''}',
+                  AnimatedRemoval(
+                    key: removalKey,
+                    onRemoved: () {
+                      context.read<PriorityBloc>().optimisticallyRemoveThread(
+                        agendaActivity.thread.id,
+                      );
+                    },
+                    child: ThreadWidget(
+                      key: ValueKey(
+                        'activitywidget_${agendaActivity.thread.id}${agendaActivity.thread.occurrence != null ? '_${agendaActivity.thread.occurrence}' : ''}${agendaActivity.thread.isLinkScheduleInstance ? '_link' : ''}',
+                      ),
+                      activity: agendaActivity.thread,
+                      selected:
+                          !isBeingDragged &&
+                          state.thread != null &&
+                          agendaActivity.thread.id == state.thread!.id,
+                      now: agendaActivity.now,
+                      isNext: agendaActivity.isNext,
+                      focusNode: focusNode,
+                      context: state.context,
+                      showSubPriority: true,
+                      showEventTiming: true,
+                      onSwipeExit: (command) async {
+                        // Swipeable already slid the thread off-screen.
+                        // Now collapse the gap, then execute the command.
+                        await removalKey.currentState?.remove();
+                        if (context.mounted) {
+                          await context.run(command);
+                        }
+                      },
+                      reorderableIndex:
+                          enableReorder &&
+                              !agendaActivity.thread.isLinkScheduleInstance
+                          ? reorderableIndex
+                          : null,
                     ),
-                    activity: agendaActivity.thread,
-                    selected:
-                        !isBeingDragged &&
-                        state.thread != null &&
-                        agendaActivity.thread.id == state.thread!.id,
-                    now: agendaActivity.now,
-                    isNext: agendaActivity.isNext,
-                    focusNode: focusNode,
-                    context: state.context,
-                    showSubPriority: true,
-                    showEventTiming: true,
-                    reorderableIndex:
-                        enableReorder &&
-                            !agendaActivity.thread.isLinkScheduleInstance
-                        ? reorderableIndex
-                        : null,
                   ),
                 ];
               },
