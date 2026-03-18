@@ -455,7 +455,7 @@ class _AuthButtonState extends State<AuthButton> {
             : _ProviderIcon(provider: widget.provider, size: config.iconSize),
         child: Text(
           config.buttonText,
-          style: context.theme.typography.sm.copyWith(
+          style: context.theme.typography.md.copyWith(
             fontWeight: config.fontWeight,
             fontFamily: config.fontFamily,
             color: _isLoading ? config.disabledTextColor : config.textColor,
@@ -594,7 +594,7 @@ FButtonStyle buildAuthButtonStyle(
   BuildContext context,
   AuthProviderConfig config,
 ) {
-  final baseTextStyle = context.theme.typography.sm.copyWith(
+  final baseTextStyle = context.theme.typography.md.copyWith(
     fontWeight: config.fontWeight,
     fontFamily: config.fontFamily,
     height: 1,
