@@ -571,11 +571,11 @@ List<StaticCommandGroup> noteCommandGroups(
     },
   );
 
+  if (!note.draft && !isViewer) commands.add(ArchiveNote(note));
+
   return [
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Note', commands: commands),
-    if (!note.draft && !isViewer)
-      StaticCommandGroup(title: '', commands: [ArchiveNote(note)]),
     StaticCommandGroup(
       title: null,
       commands: [],
