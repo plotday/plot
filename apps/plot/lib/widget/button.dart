@@ -172,13 +172,19 @@ class _ButtonState extends State<Button> {
                   prefix: icon != null
                       ? Icon(icon, size: context.theme.iconSizes.base)
                       : null,
-                  child: Flexible(
-                    child: Text(
-                      widget.command.title,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ),
+                  child: widget.expand
+                      ? Flexible(
+                          child: Text(
+                            widget.command.title,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        )
+                      : Text(
+                          widget.command.title,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                 );
         },
       ),
