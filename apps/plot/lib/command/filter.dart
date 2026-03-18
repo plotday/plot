@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:forui/forui.dart';
 import 'package:provider/provider.dart';
 
 import 'command.dart';
@@ -7,6 +8,8 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/thread.dart';
+import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/icon.dart';
 import 'logging.dart';
 
@@ -228,25 +231,67 @@ class ToggleIconFilter extends Command {
   }
 }
 
-class PickFilterCommand extends ShowCommands {
-  PickFilterCommand()
+class _AccentWhenOn extends CommandWrapper {
+  _AccentWhenOn(super.command)
     : super(
-        title: 'Pick filter',
-        icon: PlotIcon.filter,
-        commandsBuilder: (context) async {
-          final tags = Tag.getAll();
-          final commands = tags
-              .map((tag) => ToggleActivityFilter(tag, context: context))
-              .toList();
-          final remove = commands.where((cmd) => cmd.on == true).toList();
-          final add = commands.where((cmd) => cmd.on != true).toList();
-
-          return Commands(
-            groups: [
-              StaticCommandGroup(title: 'Remove filter', commands: remove),
-              StaticCommandGroup(title: 'Add filter', commands: add),
-            ],
-          );
+        run: (c, ctx) async {
+          await c.run(ctx);
+          return const CommandRefresh();
         },
       );
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    final iconData = command.icon;
+    if (iconData == null) return null;
+    return Icon(
+      iconData,
+      size: context.theme.iconSizes.base,
+      color: command.on == true
+          ? context.theme.colors.primary
+          : context.theme.plotColors.muted,
+    );
+  }
+}
+
+class PickFilterCommand extends ShowCommands {
+  PickFilterCommand({
+    required List<Command> Function(BuildContext) filterCommandsBuilder,
+  }) : super(
+         title: 'Filters',
+         icon: PlotIcon.filter,
+         commandsBuilder: (context) async {
+           final commands = filterCommandsBuilder(context);
+           final iconFilters =
+               commands.whereType<ToggleIconFilter>().toList();
+           final tagFilters =
+               commands.whereType<ToggleActivityFilter>().toList();
+           final stateFilters = tagFilters
+               .where((c) => c.tag == Tag.archived)
+               .toList();
+           final otherTagFilters = tagFilters
+               .where((c) => c.tag != Tag.archived)
+               .toList();
+
+           return Commands(
+             groups: [
+               if (iconFilters.isNotEmpty)
+                 StaticCommandGroup(
+                   title: 'Thread type',
+                   commands: iconFilters.map(_AccentWhenOn.new).toList(),
+                 ),
+               if (otherTagFilters.isNotEmpty)
+                 StaticCommandGroup(
+                   title: 'Tags',
+                   commands: otherTagFilters.map(_AccentWhenOn.new).toList(),
+                 ),
+               if (stateFilters.isNotEmpty)
+                 StaticCommandGroup(
+                   title: 'State',
+                   commands: stateFilters.map(_AccentWhenOn.new).toList(),
+                 ),
+             ],
+           );
+         },
+       );
 }
