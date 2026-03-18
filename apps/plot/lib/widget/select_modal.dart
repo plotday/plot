@@ -379,45 +379,57 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   }
 
   /// Get the total count of items across all groups.
-  int _getTotalItemCount() {
-    return _groups.fold<int>(0, (sum, group) => sum + group.items.length);
+  /// Get the number of display slots for a group.
+  /// Info-only groups (no items, has infoBuilder) get 1 slot.
+  int _groupSlotCount(SelectGroup<T> group) {
+    if (group.items.isEmpty && group.infoBuilder != null) return 1;
+    return group.items.length;
   }
 
-  /// Get the group that contains the item at the given flattened index.
+  /// Get the total number of display slots across all groups.
+  int _getTotalDisplayCount() {
+    return _groups.fold<int>(0, (sum, group) => sum + _groupSlotCount(group));
+  }
+
+  /// Get the group that contains the display slot at the given flattened index.
   /// Returns null if index is out of bounds.
   SelectGroup<T>? _getGroupAtIndex(int index) {
     if (index < 0) return null;
 
     int currentIndex = 0;
     for (final group in _groups) {
-      if (index < currentIndex + group.items.length) {
+      final slots = _groupSlotCount(group);
+      if (index < currentIndex + slots) {
         return group;
       }
-      currentIndex += group.items.length;
+      currentIndex += slots;
     }
     return null;
   }
 
-  /// Get the item at the given flattened index (assumes index is valid).
-  /// This method should only be called after validating the index is in bounds.
+  /// Whether the display slot at [index] is an info-only group.
+  bool _isInfoOnlySlot(int index) {
+    final group = _getGroupAtIndex(index);
+    return group != null && group.items.isEmpty && group.infoBuilder != null;
+  }
+
+  /// Get the item at the given flattened index (assumes index is valid and
+  /// not an info-only slot).
   T _getItemAtIndexUnsafe(int index) {
     int currentIndex = 0;
     for (final group in _groups) {
-      if (index < currentIndex + group.items.length) {
+      final slots = _groupSlotCount(group);
+      if (index < currentIndex + slots) {
         return group.items[index - currentIndex];
       }
-      currentIndex += group.items.length;
+      currentIndex += slots;
     }
     throw StateError('Index $index out of bounds');
   }
 
   void _moveHighlight(int offset) {
     setState(() {
-      final totalCount = _getTotalItemCount();
-      final infoOnlyGroups = _groups
-          .where((g) => g.items.isEmpty && g.infoBuilder != null)
-          .toList();
-      final totalDisplay = totalCount + infoOnlyGroups.length;
+      final totalDisplay = _getTotalDisplayCount();
       if (totalDisplay == 0) return;
 
       _highlightedIndex = (_highlightedIndex + offset)
@@ -483,17 +495,14 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     // Reset flag after microtask to allow future Enter presses
     Future.microtask(() => _enterHandled = false);
 
-    final totalItems = _getTotalItemCount();
-    if (_highlightedIndex >= 0 && _highlightedIndex < totalItems) {
+    final totalDisplay = _getTotalDisplayCount();
+    if (_highlightedIndex < 0 || _highlightedIndex >= totalDisplay) return;
+
+    if (_isInfoOnlySlot(_highlightedIndex)) {
+      final group = _getGroupAtIndex(_highlightedIndex);
+      group?.onActivate?.call(context);
+    } else {
       _selectItem(_getItemAtIndexUnsafe(_highlightedIndex));
-    } else if (_highlightedIndex >= totalItems) {
-      final infoOnlyGroups = _groups
-          .where((g) => g.items.isEmpty && g.infoBuilder != null)
-          .toList();
-      final infoIndex = _highlightedIndex - totalItems;
-      if (infoIndex < infoOnlyGroups.length) {
-        infoOnlyGroups[infoIndex].onActivate?.call(context);
-      }
     }
   }
 
@@ -559,26 +568,19 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       );
     }
 
-    final totalCount = _getTotalItemCount();
-
-    // Collect info-only groups (empty items, has infoBuilder)
-    // to render at the bottom of the scroll area.
-    final infoOnlyGroups = _groups
-        .where((g) => g.items.isEmpty && g.infoBuilder != null)
-        .toList();
-    final displayCount = totalCount + infoOnlyGroups.length;
+    final displayCount = _getTotalDisplayCount();
 
     return ListViewSelector(
       scrollController: _scrollController,
       estimatedItemHeight: 50.0,
       onActivate: (index) {
-        if (index >= 0 && index < totalCount) {
+        if (index >= 0 && index < displayCount && !_isInfoOnlySlot(index)) {
           _selectItem(_getItemAtIndexUnsafe(index));
         }
       },
       builder: (context, listController) {
         // Set bounds for the controller
-        listController.clamp(0, totalCount + infoOnlyGroups.length - 1);
+        listController.clamp(0, displayCount - 1);
 
         return Shortcuts(
           shortcuts: const {
@@ -731,56 +733,54 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       shrinkWrap: true,
                       itemCount: displayCount,
                       itemBuilder: (context, index) {
-                        // Render info-only groups as trailing items
-                        if (index >= totalCount) {
-                          final infoIndex = index - totalCount;
-                          if (infoIndex < infoOnlyGroups.length) {
-                            final isHighlighted = index == _highlightedIndex;
-                            final group = infoOnlyGroups[infoIndex];
-                            return MouseRegion(
-                              onEnter: (_) {
-                                if (!_mouseHasMoved) return;
-                                listController.setHovered(index);
-                                setState(() => _highlightedIndex = index);
-                              },
-                              onExit: (_) {
-                                if (!_mouseHasMoved) return;
-                                listController.setHovered(null);
-                                setState(() => _highlightedIndex = -1);
-                              },
-                              onHover: (_) {
-                                if (!_mouseHasMoved) {
-                                  setState(() => _mouseHasMoved = true);
-                                  listController.setHovered(index);
-                                  setState(() => _highlightedIndex = index);
-                                }
-                              },
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: group.onActivate != null
-                                    ? () => group.onActivate!(context)
-                                    : null,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: isHighlighted
-                                        ? context.theme.colors.secondary
-                                        : null,
-                                  ),
-                                  child: group.infoBuilder!(context),
-                                ),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        }
-
                         final group = _getGroupAtIndex(index);
                         // Safety check (should never happen if bounds are correct)
                         if (group == null) {
                           return const SizedBox.shrink();
                         }
 
-                        // Get item (safe to use after bounds check)
+                        final isInfoOnly = _isInfoOnlySlot(index);
+
+                        // Info-only group: render infoBuilder as a
+                        // keyboard-navigable, highlightable row.
+                        if (isInfoOnly) {
+                          final isHighlighted = index == _highlightedIndex;
+                          return MouseRegion(
+                            onEnter: (_) {
+                              if (!_mouseHasMoved) return;
+                              listController.setHovered(index);
+                              setState(() => _highlightedIndex = index);
+                            },
+                            onExit: (_) {
+                              if (!_mouseHasMoved) return;
+                              listController.setHovered(null);
+                              setState(() => _highlightedIndex = -1);
+                            },
+                            onHover: (_) {
+                              if (!_mouseHasMoved) {
+                                setState(() => _mouseHasMoved = true);
+                                listController.setHovered(index);
+                                setState(() => _highlightedIndex = index);
+                              }
+                            },
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: group.onActivate != null
+                                  ? () => group.onActivate!(context)
+                                  : null,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: isHighlighted
+                                      ? context.theme.colors.secondary
+                                      : null,
+                                ),
+                                child: group.infoBuilder!(context),
+                              ),
+                            ),
+                          );
+                        }
+
+                        // Regular item in a group with items.
                         final item = _getItemAtIndexUnsafe(index);
 
                         // Check if we need to show a group header
@@ -790,7 +790,6 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                             group != _getGroupAtIndex(index - 1)) {
                           // Show group header if it has a title
                           if (group.title != null) {
-                            // Check if this group has a shortcut (metadata will be ShortcutActivator)
                             header = Padding(
                               padding: context.theme.spacing.paddingSm.copyWith(
                                 right: context.theme.spacing.xxl,
@@ -840,18 +839,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
                           // Show group info if it has an infoBuilder
                           if (group.infoBuilder != null) {
-                            info = Container(
-                              padding: const EdgeInsets.all(0),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color: context.theme.colors.border,
-                                    width: 1,
-                                  ),
-                                ),
-                              ),
-                              child: group.infoBuilder!(context),
-                            );
+                            info = group.infoBuilder!(context);
                           }
                         }
 
