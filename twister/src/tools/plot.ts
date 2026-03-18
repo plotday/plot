@@ -499,6 +499,13 @@ export abstract class Plot extends ITool {
   abstract getActors(ids: ActorId[]): Promise<Actor[]>;
 
   /**
+   * Returns the full Actor for the user who installed this twist.
+   * Useful for per-user operations like schedule creation, or when
+   * the owner's name or email is needed.
+   */
+  abstract getOwner(): Promise<Actor>;
+
+  /**
    * Creates a new schedule for a thread.
    *
    * Schedules define when a thread occurs in time. A thread can have
