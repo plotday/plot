@@ -195,17 +195,6 @@ Future<void> run(List<String> args) async {
     // Initialize Env first so Tracker can be set up early
     await Env.init();
 
-    // Persist values needed by the background isolate (which can't load dotenv)
-    if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('api_root', Env.apiRoot);
-        await prefs.setString('clerk_publishable_key', Env.clerkPublishableKey);
-      } catch (e) {
-        log.warning('Failed to persist env values to SharedPreferences', e);
-      }
-    }
-
     // Initialize Tracker immediately after Env so it's ready to capture startup errors
     await Tracker.init();
 
@@ -262,6 +251,18 @@ Future<void> run(List<String> args) async {
     final profile = CliArgs.profile;
     if (profile != null) {
       SharedPreferences.setPrefix('flutter.profile.$profile.');
+    }
+
+    // Persist values needed by the background isolate (which can't load dotenv).
+    // Must be after setPrefix to avoid "setPrefix after getInstance" error.
+    if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('api_root', Env.apiRoot);
+        await prefs.setString('clerk_publishable_key', Env.clerkPublishableKey);
+      } catch (e) {
+        log.warning('Failed to persist env values to SharedPreferences', e);
+      }
     }
 
     // Initialize profile-aware preferences (must be after CliArgs, before Window)

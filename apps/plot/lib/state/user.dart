@@ -37,6 +37,9 @@ class UserBloc extends Cubit<UserState> {
           Store.onStartStatus = (status) => statusNotifier.value = status;
           await Store.start(user);
           Store.onStartStatus = null;
+          // If sign-out was triggered during Store.start (e.g. invalid
+          // session after migration reset), skip remaining setup.
+          if (state is UserSignedOut) return;
           log.info('Store.start completed in ${stopwatch.elapsedMilliseconds}ms');
 
           statusNotifier.value = 'Almost ready...';
@@ -76,6 +79,8 @@ class UserBloc extends Cubit<UserState> {
       }
 
       statusNotifier.value = null;
+      // Don't emit UserReady if sign-out was triggered during setup
+      if (state is UserSignedOut) return;
       emit(UserReady(user));
     });
   }
