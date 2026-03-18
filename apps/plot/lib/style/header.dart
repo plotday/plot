@@ -14,8 +14,8 @@ FVariantsDelta<FHeaderVariantConstraint, FHeaderVariant, FHeaderStyle,
       FHeaderStyleDelta.delta(
         titleTextStyle: TextStyleDelta.value(
           typography.md.copyWith(
-            color: colourScheme.muted,
-            fontWeight: FontWeight.w500,
+            color: colourScheme.foreground,
+            fontWeight: FontWeight.w600,
             height: 1,
           ),
         ),

@@ -276,7 +276,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             child: FHeader(
               style: FHeaderStyleDelta.delta(
                 padding: EdgeInsetsGeometryDelta.add(
-                  EdgeInsets.only(bottom: -2),
+                  const EdgeInsets.symmetric(vertical: 4),
                 ),
               ),
               title: Row(spacing: 8, children: titleChildren),
