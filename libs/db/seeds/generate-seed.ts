@@ -16,6 +16,20 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { parse as parseYAML } from "yaml";
 
+// Load environment variables from libs/db/.env
+const envPath = join(dirname(new URL(import.meta.url).pathname), "..", ".env");
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) continue;
+    const key = trimmed.slice(0, eqIndex);
+    const value = trimmed.slice(eqIndex + 1);
+    if (!process.env[key]) process.env[key] = value;
+  }
+}
+
 import type {
   Contact,
   GeneratedContact,
@@ -140,7 +154,8 @@ async function getOrCreateClerkUser(
 async function getOrCreateUser(
   email: string,
   userName: string,
-  existingClerkId?: string
+  existingClerkId?: string,
+  dbUrl?: string
 ): Promise<{ userId: string; contactId: string }> {
   // Load from .env.development.local if needed
   loadEnvFromFile();
@@ -150,11 +165,12 @@ async function getOrCreateUser(
     ? (console.error(`✓ Using provided Clerk user: ${existingClerkId}`), existingClerkId)
     : await getOrCreateClerkUser(email, userName);
 
-  const dbUrl =
+  const connectionString =
+    dbUrl ||
     process.env.DATABASE_URL ||
     "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
-  const pool = new pg.Pool({ connectionString: dbUrl });
+  const pool = new pg.Pool({ connectionString });
 
   try {
     // Check if user exists in public."user"
@@ -293,20 +309,21 @@ Examples:
     }
 
     // Get or create user
+    const dbUrl =
+      (values["db-url"] as string) ||
+      process.env.DATABASE_URL ||
+      "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
     const { userId, contactId } = await getOrCreateUser(
       data.config.email,
       data.config.userName,
-      values["clerk-id"] as string | undefined
+      values["clerk-id"] as string | undefined,
+      dbUrl
     );
 
     const { sql, fileUploads } = generateSQL(data, userId, contactId);
 
     if (values.apply) {
       // Apply mode: execute SQL via psql
-      const dbUrl =
-        (values["db-url"] as string) ||
-        "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-
       await applySQL(sql, dbUrl, data);
 
       // Upload seed files to local R2
@@ -351,6 +368,10 @@ async function applySQL(
 
     psql.stderr.on("data", (data) => {
       stderr += data.toString();
+    });
+
+    psql.stdin.on("error", () => {
+      // Ignore EPIPE — psql exited early; the close handler will report the real error
     });
 
     psql.on("error", (error) => {
