@@ -825,12 +825,12 @@ jobs:
           VERSION_NAME="${{ needs.bump-version.outputs.version_name }}"
           BUILD_NUMBER="${{ needs.bump-version.outputs.build_number }}"
 
-          # Convert semantic version to 4-part MSIX version (e.g., 1.0.0 -> 1.0.0.BUILD_NUMBER)
+          # Convert to 4-part MSIX version with revision=0 (Windows Store requires revision=0)
+          # Format: MAJOR.MINOR.BUILD_NUMBER.0 (e.g., 1.1.296.0)
           IFS='.' read -ra VERSION_PARTS <<< "$VERSION_NAME"
           MAJOR="${VERSION_PARTS[0]}"
           MINOR="${VERSION_PARTS[1]}"
-          PATCH="${VERSION_PARTS[2]}"
-          MSIX_VERSION="${MAJOR}.${MINOR}.${PATCH}.${BUILD_NUMBER}"
+          MSIX_VERSION="${MAJOR}.${MINOR}.${BUILD_NUMBER}.0"
 
           sed -i "s/msix_version: .*/msix_version: $MSIX_VERSION/" pubspec.yaml
           echo "Updated MSIX version to $MSIX_VERSION (local only, not committed)"
