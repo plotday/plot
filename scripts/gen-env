@@ -155,7 +155,7 @@ if [ "$ENV" = "production" ]; then
     op read "op://Production/Android Signing/plot-release.jks" \
       --account plotco \
       --out-file "$KEYSTORE_OUTPUT" \
-      --file-mode 0600
+      --file-mode 0600 > /dev/null
     if [ $? -eq 0 ]; then
       echo "✓ Android signing keystore fetched successfully" >&2
     else
@@ -173,7 +173,7 @@ if [ "$ENV" = "production" ]; then
     op read "op://Production/Android Signing/Play Store/play-deployer-service-key.json" \
       --account plotco \
       --out-file "$PLAY_API_KEY_OUTPUT" \
-      --file-mode 0600
+      --file-mode 0600 > /dev/null
     if [ $? -eq 0 ]; then
       echo "✓ Google Play API key fetched successfully" >&2
     else
@@ -191,7 +191,7 @@ if [ "$ENV" = "production" ]; then
     op read "op://Production/Firebase Cloud Messaging/android/google-services.json" \
       --account plotco \
       --out-file "$GOOGLE_SERVICES_OUTPUT" \
-      --file-mode 0600
+      --file-mode 0600 > /dev/null
     if [ $? -eq 0 ]; then
       echo "✓ Firebase google-services.json fetched successfully" >&2
     else
@@ -209,7 +209,7 @@ if [ "$ENV" = "production" ]; then
     op read "op://Production/Firebase Cloud Messaging/apple/GoogleService-Info.plist" \
       --account plotco \
       --out-file "$GOOGLE_SERVICE_INFO_OUTPUT" \
-      --file-mode 0600
+      --file-mode 0600 > /dev/null
     if [ $? -eq 0 ]; then
       echo "✓ Firebase GoogleService-Info.plist fetched successfully" >&2
     else
@@ -229,7 +229,7 @@ if [ "$ENV" = "production" ]; then
     op read "op://Production/Apple/App Store Connect/key.p8" \
       --account plotco \
       --out-file "$ASC_KEY_FILE" \
-      --file-mode 0600
+      --file-mode 0600 > /dev/null
     if [ $? -eq 0 ]; then
       echo "✓ App Store Connect API key fetched successfully" >&2
     else
@@ -248,7 +248,7 @@ if [ "$ENV" = "production" ]; then
     op read "op://Production/Windows Signing/plot-codesign.pfx" \
       --account plotco \
       --out-file "$WINDOWS_CERT_OUTPUT" \
-      --file-mode 0600
+      --file-mode 0600 > /dev/null
     if [ $? -eq 0 ]; then
       echo "✓ Windows signing certificate fetched successfully" >&2
     else
