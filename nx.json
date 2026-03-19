@@ -45,6 +45,5 @@
     }
   },
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "defaultBase": "main",
-  "nxCloudId": "6777e9b3e81c511e7d1c3116"
+  "defaultBase": "main"
 }
