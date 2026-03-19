@@ -300,6 +300,20 @@ jobs:
           cd apps/plot
           shorebird release ios -- --export-options-plist=ios/ExportOptions.plist
 
+      - name: Verify .env in IPA
+        run: |
+          IPA_PATH=$(find apps/plot/build/ios/ipa -name "*.ipa" -print -quit)
+          TEMP_DIR=$(mktemp -d)
+          unzip -q "$IPA_PATH" -d "$TEMP_DIR"
+          ENV_CONTENT=$(find "$TEMP_DIR" -path "*/flutter_assets/.env" -exec cat {} \;)
+          if [ -z "$ENV_CONTENT" ]; then
+            echo "ERROR: .env is empty in the IPA bundle!"
+            rm -rf "$TEMP_DIR"
+            exit 1
+          fi
+          echo "✓ .env is correctly bundled ($(echo "$ENV_CONTENT" | wc -l) lines)"
+          rm -rf "$TEMP_DIR"
+
       - name: Upload to App Store Connect
         run: |
           IPA_PATH=$(find apps/plot/build/ios/ipa -name "*.ipa" -print -quit 2>/dev/null)
