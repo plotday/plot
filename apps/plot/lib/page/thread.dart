@@ -412,7 +412,6 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       count: totalItems,
       reverse: true,
       doneEnd: true,
-      cacheExtent: double.infinity,
       fetcher: (first, count) =>
           Future<void>.value(), // No pagination needed for ThreadPage
       itemKey: (index) {

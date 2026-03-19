@@ -152,12 +152,16 @@ class FileUserAction extends UserAction {
     required this.fileName,
     required this.fileSize,
     required this.mimeType,
+    this.imageWidth,
+    this.imageHeight,
   }) : super(type: UserActionType.file);
 
   final String fileId;
   final String fileName;
   final int fileSize;
   final String mimeType;
+  final int? imageWidth;
+  final int? imageHeight;
 
   bool get isImage => mimeType.startsWith('image/');
 
@@ -167,6 +171,8 @@ class FileUserAction extends UserAction {
       fileName: json['fileName'] as String,
       fileSize: json['fileSize'] as int,
       mimeType: json['mimeType'] as String,
+      imageWidth: json['imageWidth'] as int?,
+      imageHeight: json['imageHeight'] as int?,
     );
   }
 
@@ -178,11 +184,14 @@ class FileUserAction extends UserAction {
       'fileName': fileName,
       'fileSize': fileSize,
       'mimeType': mimeType,
+      if (imageWidth != null) 'imageWidth': imageWidth,
+      if (imageHeight != null) 'imageHeight': imageHeight,
     };
   }
 
   @override
-  List<Object?> get props => [type, fileId, fileName, fileSize, mimeType];
+  List<Object?> get props =>
+      [type, fileId, fileName, fileSize, mimeType, imageWidth, imageHeight];
 }
 
 class ThreadUserAction extends UserAction {

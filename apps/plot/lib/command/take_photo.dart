@@ -1,7 +1,10 @@
+import 'dart:io' show File;
+
 import 'package:image_picker/image_picker.dart';
 
 import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/util/image_utils.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/store/store.dart';
 import 'package:plot/api/api.dart' as api;
@@ -50,11 +53,25 @@ class TakePhoto extends Command {
         priorityId: priorityId,
       );
 
+      int? imageWidth;
+      int? imageHeight;
+      final mimeType = response['mimeType'] as String;
+      if (mimeType.startsWith('image/')) {
+        final imageBytes = await File(photo.path).readAsBytes();
+        final dims = await getImageDimensions(imageBytes);
+        if (dims != null) {
+          imageWidth = dims.$1;
+          imageHeight = dims.$2;
+        }
+      }
+
       final fileLink = FileUserAction(
         fileId: response['fileId'] as String,
         fileName: response['fileName'] as String,
         fileSize: response['fileSize'] as int,
-        mimeType: response['mimeType'] as String,
+        mimeType: mimeType,
+        imageWidth: imageWidth,
+        imageHeight: imageHeight,
       );
 
       onLinksChanged([...currentLinks, fileLink]);

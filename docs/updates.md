@@ -1,3 +1,4 @@
+- Smoother image loading — image attachments now show a correctly-sized placeholder while loading instead of jumping when the image appears
 - Plan your day with ease — flag items as Do Now or Do Later, schedule when you want to work on them, and quickly adapt as your day changes
 - Chat with AI directly in Plot — use the Chat connection to converse with Claude, ChatGPT, or Gemini in the context of your priorities and threads
 - Calendar events now reliably appear after a full re-sync — previously, synced calendar events could disappear until you visited the specific priority containing them

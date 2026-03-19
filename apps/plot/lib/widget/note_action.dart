@@ -6,12 +6,14 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:forui/forui.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:flutter_bloc/flutter_bloc.dart';
+
 import 'package:plot/router.dart';
+import 'package:plot/state/theme.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/auth_button.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/modal.dart';
-import 'package:plot/widget/spinner.dart';
 import 'package:plot/style/layout.dart';
 import 'package:plot/widget/tapable.dart';
 import 'package:plot/widget/toast.dart';
@@ -584,10 +586,55 @@ class _FileImageWidgetState extends State<FileImageWidget> {
       return FileLinkButton(link: widget.link);
     }
 
+    final w = widget.link.imageWidth;
+    final h = widget.link.imageHeight;
+    final hasDimensions = w != null && h != null && w > 0 && h > 0;
+
+    // When dimensions are known, keep a single stable-sized container for both
+    // loading and loaded states.  AspectRatio sizes from constraints + ratio,
+    // ignoring the child's intrinsic size, so there is no zero-height frame
+    // while Image.memory decodes.
+    if (hasDimensions) {
+      Widget child;
+      if (_loading) {
+        child = const _SkeletonBox();
+      } else {
+        child = Image.memory(
+          _bytes!,
+          fit: BoxFit.cover,
+          errorBuilder: (_, error, _) {
+            log.warning(
+              '[FileImage] decode failed for ${widget.link.fileName}: $error',
+            );
+            return FileLinkButton(link: widget.link);
+          },
+        );
+      }
+
+      final container = ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadiusMd),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 200),
+          child: AspectRatio(
+            aspectRatio: w / h,
+            child: child,
+          ),
+        ),
+      );
+
+      if (_loading) return container;
+      return Tapable(onTap: _openViewer, child: container);
+    }
+
+    // No dimensions (legacy images) — separate loading / loaded trees.
     if (_loading) {
-      return ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
-        child: const Center(child: Spinner()),
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadiusMd),
+        child: const SizedBox(
+          height: 200,
+          width: 300,
+          child: _SkeletonBox(),
+        ),
       );
     }
 
@@ -609,6 +656,73 @@ class _FileImageWidgetState extends State<FileImageWidget> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Animated shimmer placeholder: a gradient highlight sweeps across a
+/// muted rounded rectangle.  Adapts base/highlight colours to light vs dark
+/// mode via [ThemeBloc].
+class _SkeletonBox extends StatefulWidget {
+  const _SkeletonBox();
+
+  @override
+  State<_SkeletonBox> createState() => _SkeletonBoxState();
+}
+
+class _SkeletonBoxState extends State<_SkeletonBox>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.read<ThemeBloc>().isDarkMode(context);
+    final base = isDark
+        ? const Color(0xFF2A2A2A)
+        : const Color(0xFFE8E8E8);
+    final highlight = isDark
+        ? const Color(0xFF3A3A3A)
+        : const Color(0xFFF5F5F5);
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        // Slide the gradient stop window from left to right.
+        final t = _controller.value;
+        final start = -0.5 + t * 2.0; // range -0.5 → 1.5
+        final end = start + 0.5;
+
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(borderRadiusMd),
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [base, highlight, base],
+              stops: [
+                start.clamp(0.0, 1.0),
+                ((start + end) / 2).clamp(0.0, 1.0),
+                end.clamp(0.0, 1.0),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
