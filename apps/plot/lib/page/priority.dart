@@ -583,6 +583,14 @@ class _PriorityPageState extends State<PriorityPage> {
   PriorityTab _currentTab = PriorityTab.agenda;
   PriorityTabNotifier? _tabNotifier;
   final InfiniteListController _agendaListController = InfiniteListController();
+  final Map<String, GlobalKey<AnimatedRemovalState>> _removalKeys = {};
+
+  GlobalKey<AnimatedRemovalState> _getRemovalKey(String threadId) {
+    return _removalKeys.putIfAbsent(
+      threadId,
+      () => GlobalKey<AnimatedRemovalState>(debugLabel: 'removal_$threadId'),
+    );
+  }
 
   void _onTabNotifierChanged() {
     if (_tabNotifier != null && _tabNotifier!.value != _currentTab) {
@@ -627,6 +635,7 @@ class _PriorityPageState extends State<PriorityPage> {
         nowBloc.setContext(state.context);
         // Reset scroll to top on priority switch
         _agendaListController.jumpToTop();
+        _removalKeys.clear();
         final scrollController = ScrollControllerContext.of(context);
         if (scrollController != null && scrollController.hasClients) {
           scrollController.jumpTo(0);
@@ -1177,8 +1186,8 @@ class _PriorityPageState extends State<PriorityPage> {
               },
               activity: (agendaActivity) {
                 final isBeingDragged = controller.draggingIndex == index;
-                final removalKey = GlobalKey<AnimatedRemovalState>(
-                  debugLabel: 'removal_${agendaActivity.thread.id}',
+                final removalKey = _getRemovalKey(
+                  '${agendaActivity.thread.id}${agendaActivity.thread.occurrence != null ? '_${agendaActivity.thread.occurrence}' : ''}${agendaActivity.thread.isLinkScheduleInstance ? '_link' : ''}',
                 );
                 return [
                   AnimatedRemoval(

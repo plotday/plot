@@ -130,6 +130,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// thread has the expected schedule.
   (ThreadId, DateTimeRange?)? _pendingOptimisticSchedule;
 
+  /// Data-driven suppression for optimistic removals: keeps suppressing
+  /// stream rebuilds until the stream data confirms the thread is gone,
+  /// preventing sync events from briefly restoring removed threads.
+  final Set<ThreadId> _pendingRemovedIds = {};
+
   /// Optimistic reorder: caches the moved agendaViewItems so the UI
   /// doesn't re-derive them (which can produce different item counts).
   void moveAgendaItem(
@@ -227,6 +232,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// The stream-based update will confirm the same state when it catches up.
   /// Keeps link schedule instances so they remain at their scheduled times.
   void optimisticallyRemoveThread(ThreadId id) {
+    _pendingRemovedIds.add(id);
     _optimisticTimestamp = DateTime.now();
     final updatedItems = state.agendaItems
         .where(
@@ -1000,6 +1006,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     log.fine('Loading agenda for priority ${priorityToLoad.id}');
     _agendaSubscription?.cancel();
+    _pendingRemovedIds.clear();
 
     _agendaSubscription =
         Thread.watch(
@@ -1055,9 +1062,25 @@ class PriorityBloc extends Cubit<PriorityState> {
                 suppressOptimisticSchedule = false;
               }
 
+              // Data-driven suppression for optimistic removals: keep suppressing
+              // until the stream confirms the removed thread is gone.
+              final bool suppressOptimisticRemoval;
+              if (_pendingRemovedIds.isNotEmpty) {
+                final stillPresent = threads.any(
+                  (t) => _pendingRemovedIds.contains(t.id),
+                );
+                suppressOptimisticRemoval = stillPresent;
+                if (!stillPresent) {
+                  _pendingRemovedIds.clear();
+                }
+              } else {
+                suppressOptimisticRemoval = false;
+              }
+
               // Time-based suppression for other optimistic thread updates (non-reorder).
               final suppressOptimistic =
                   suppressOptimisticSchedule ||
+                  suppressOptimisticRemoval ||
                   (_optimisticTimestamp != null &&
                       now.difference(_optimisticTimestamp!) <
                           const Duration(milliseconds: 500));
