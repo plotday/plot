@@ -735,16 +735,7 @@ class FullResync extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    if (Store.get.isSyncing) {
-      return CommandMessage('A sync is already in progress');
-    }
-
-    Store.get.fullResync().then((_) {
-      final ctx = navigatorKey?.currentContext;
-      if (ctx != null && ctx.mounted) {
-        ctx.showToast(message: 'Re-sync complete');
-      }
-    }).catchError((Object e, StackTrace t) {
+    Store.get.fullResync().catchError((Object e, StackTrace t) {
       log.warning('Full re-sync failed', e, t);
       Tracker.trackError(
         eventObject.value,

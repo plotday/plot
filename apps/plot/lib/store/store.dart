@@ -2091,7 +2091,11 @@ class Store extends _$Store {
   /// on items that still exist), then deletes orphaned rows that still have
   /// the sentinel. Regular sync is suspended during the entire operation.
   Future<void> fullResync() async {
-    if (_isSyncing) return;
+    // Wait briefly for any in-progress regular sync to finish (up to 5s)
+    for (var i = 0; i < 50 && _isSyncing; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    if (_isSyncing) throw StateError('A sync is already in progress');
     _isSyncing = true;
     _isBufferingBroadcasts = true;
     _bufferedTables.clear();
