@@ -477,7 +477,7 @@ jobs:
       - name: Upload to Google Play (internal testing)
         run: |
           cd apps/plot/android
-          fastlane beta
+          fastlane beta aab:$GITHUB_WORKSPACE/apps/plot/build/app/outputs/bundle/release/app-release.aab
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
