@@ -399,15 +399,6 @@ jobs:
             --out-file "$GITHUB_WORKSPACE/apps/plot/android/app/google-services.json" \
             --file-mode 0600
 
-      - name: Create key.properties
-        run: |
-          cat > apps/plot/android/key.properties << EOF
-          storePassword=$ANDROID_KEYSTORE_PASSWORD
-          keyPassword=$ANDROID_KEY_PASSWORD
-          keyAlias=plot-release
-          storeFile=../plot-release.jks
-          EOF
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -427,6 +418,15 @@ jobs:
       - name: Write .env file
         run: |
           cd apps/plot && pnpm get-env && pnpm set-env prod
+
+      - name: Create key.properties
+        run: |
+          cat > apps/plot/android/key.properties << EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=plot-release
+          storeFile=../plot-release.jks
+          EOF
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
