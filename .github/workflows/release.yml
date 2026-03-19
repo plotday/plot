@@ -713,7 +713,7 @@ jobs:
             --component "${APP_PATH}" /Applications \
             "${PKG_PATH}"
 
-          echo "PKG_PATH=${PKG_PATH}" >> "$GITHUB_ENV"
+          echo "PKG_PATH=apps/plot/${PKG_PATH}" >> "$GITHUB_ENV"
           echo "Package created: ${PKG_PATH}"
 
       - name: Upload to App Store Connect
