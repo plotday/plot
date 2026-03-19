@@ -1,11 +1,11 @@
 name: Deploy App (Web)
 on:
-  workflow_run:
-    workflows: ["Version Bump"]
-    types:
-      - completed
-    branches:
-      - main
+  push:
+    branches: [main]
+    paths:
+      - "apps/plot/**"
+      - ".env"
+      - ".env.production"
   workflow_dispatch:
 
 concurrency:
@@ -20,7 +20,7 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     env:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
@@ -46,21 +46,19 @@ jobs:
           submodules: true
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Get version from pubspec.yaml
+      - name: Generate build number
         id: version
         run: |
-          cd apps/plot
-          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
-          VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
-          BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
+          BUILD_TIMESTAMP=$(date -u +"%y%m%d.%H%M")
+          VERSION_NAME=$(cd apps/plot && grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d ' ')
 
           {
-            echo "version=$CURRENT_VERSION"
+            echo "build_number=$BUILD_TIMESTAMP"
             echo "version_name=$VERSION_NAME"
-            echo "build_number=$BUILD_NUMBER"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Deploying version: $CURRENT_VERSION"
+          echo "Build number: $BUILD_TIMESTAMP"
+          echo "Version name: $VERSION_NAME"
 
       - name: Load secrets
         uses: 1password/load-secrets-action@v3
@@ -84,19 +82,14 @@ jobs:
           flutter-version-file: apps/plot/pubspec.yaml
           cache: true
 
-      - name: Install derry
-        run: dart pub global activate derry
-
       - name: Get dependencies
         run: cd apps/plot && flutter pub get
 
       - name: Build
-        run: cd apps/plot && derry build web
-
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
-        with:
-          run_install: false
+        run: |
+          cd apps/plot
+          flutter pub run build_runner build
+          flutter build web --release --source-maps --base-href=/ --build-number="${{ steps.version.outputs.build_number }}"
 
       - name: Install wrangler
         run: pnpm install -w wrangler
@@ -114,7 +107,8 @@ jobs:
           {
             echo "## ✅ Web App Deployment Complete"
             echo ""
-            echo "**Version:** ${{ steps.version.outputs.version }}"
+            echo "**Version:** ${{ steps.version.outputs.version_name }}"
+            echo "**Build:** ${{ steps.version.outputs.build_number }}"
             echo "**Platform:** Web (Flutter)"
             echo ""
             echo "### URLs"
