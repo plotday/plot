@@ -85,7 +85,7 @@
 .storySection {
   background-color: light-dark(
     var(--mantine-color-gray-2),
-    #0e1012
+    var(--mantine-color-dark-8)
   );
 }
 
@@ -169,17 +169,17 @@
   background:
     linear-gradient(
       to right,
-      light-dark(transparent, #0e1012) 0%,
+      light-dark(transparent, var(--mantine-color-dark-8)) 0%,
       transparent 18%,
       transparent 82%,
-      light-dark(transparent, #0e1012) 100%
+      light-dark(transparent, var(--mantine-color-dark-8)) 100%
     ),
     linear-gradient(
       to bottom,
-      light-dark(transparent, #0e1012) 0%,
+      light-dark(transparent, var(--mantine-color-dark-8)) 0%,
       transparent 15%,
       transparent 80%,
-      light-dark(transparent, #0e1012) 100%
+      light-dark(transparent, var(--mantine-color-dark-8)) 100%
     ),
     radial-gradient(
       ellipse at center,
@@ -192,17 +192,17 @@
   background:
     linear-gradient(
       to right,
-      light-dark(var(--mantine-color-gray-2), #0e1012) 0%,
+      light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-8)) 0%,
       transparent 18%,
       transparent 82%,
-      light-dark(var(--mantine-color-gray-2), #0e1012) 100%
+      light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-8)) 100%
     ),
     linear-gradient(
       to bottom,
-      light-dark(var(--mantine-color-gray-2), #0e1012) 0%,
+      light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-8)) 0%,
       transparent 15%,
       transparent 80%,
-      light-dark(var(--mantine-color-gray-2), #0e1012) 100%
+      light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-8)) 100%
     ),
     radial-gradient(
       ellipse at center,
