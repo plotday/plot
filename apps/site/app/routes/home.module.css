@@ -34,6 +34,7 @@
 
 .heroScreenshot {
   width: 100%;
+  aspect-ratio: 1512 / 805;
   border-radius: var(--mantine-radius-md);
   box-shadow: 0 20px 60px light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.5));
   transform: rotateX(2deg);
