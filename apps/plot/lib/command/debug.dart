@@ -10,17 +10,25 @@ import 'package:plot/notifications/notification_display.dart';
 import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/util/developer_mode.dart';
 import 'package:plot/util/time_service.dart';
 import 'package:plot/widget/modal.dart';
 import 'command.dart';
 
-/// Debug command group - only available in kDebugMode
-final debugCommands = kDebugMode
-    ? StaticCommandGroup(
-        title: 'Debug',
-        commands: [TimeTravel(), if (Time.isFrozen()) UnfreezeTime(), TriggerTestPush(), ShowTestNotification()],
-      )
-    : null;
+/// Build the debug command group if available in the current mode.
+/// Returns null if neither kDebugMode nor DeveloperMode is enabled.
+StaticCommandGroup? buildDebugCommands() {
+  if (!kDebugMode && !DeveloperMode.isEnabled) return null;
+  return StaticCommandGroup(
+    title: 'Debug',
+    commands: [
+      TimeTravel(),
+      if (Time.isFrozen()) UnfreezeTime(),
+      TriggerTestPush(),
+      ShowTestNotification(),
+    ],
+  );
+}
 
 /// Command to freeze time to a specific date/time for testing and screenshots.
 class TimeTravel extends ShowPage {

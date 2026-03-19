@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -21,8 +20,9 @@ class GlobalShortcuts extends StatelessWidget {
     // When signed out, only show settings commands (and debug commands in debug mode)
     if (!signedIn) {
       final commands = [signedOutSettingsCommands];
-      if (kDebugMode && debugCommands != null) {
-        commands.add(debugCommands!);
+      final debugCmds = buildDebugCommands();
+      if (debugCmds != null) {
+        commands.add(debugCmds);
       }
       return commands;
     }
@@ -40,9 +40,10 @@ class GlobalShortcuts extends StatelessWidget {
       ),
     ];
 
-    // Add debug commands in debug mode
-    if (kDebugMode && debugCommands != null) {
-      commands.add(debugCommands!);
+    // Add debug commands in debug mode or developer mode
+    final debugCmds = buildDebugCommands();
+    if (debugCmds != null) {
+      commands.add(debugCmds);
     }
 
     return commands;

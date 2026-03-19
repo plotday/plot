@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
+import 'package:plot/util/developer_mode.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -404,6 +405,11 @@ class CopyVersion extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    if (DeveloperMode.recordTap()) {
+      return CommandMessage(
+        DeveloperMode.isEnabled ? 'Developer mode enabled' : 'Developer mode disabled',
+      );
+    }
     try {
       await Clipboard.setData(ClipboardData(text: AppInfo.versionString));
       return CommandMessage('Version copied to clipboard');

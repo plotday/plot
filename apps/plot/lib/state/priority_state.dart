@@ -322,9 +322,7 @@ class PriorityState extends Equatable {
       // Add all todos first as a flat list sorted by user-defined order
       if (allTodos.isNotEmpty) {
         allTodos.sort((a, b) => a.order.compareTo(b.order));
-        items.addAll(
-          allTodos.map((Thread a) => AgendaThreadItem(a)),
-        );
+        items.addAll(allTodos.map((Thread a) => AgendaThreadItem(a)));
       }
 
       // Add non-todo threads grouped by priority
@@ -351,13 +349,9 @@ class PriorityState extends Equatable {
 
           if (entry.key.id != skipHeaderFor?.id ||
               prioritizedThreads.length > 1) {
-            items.add(
-              AgendaHeaderItem(scheduleAt: scheduleAt),
-            );
+            items.add(AgendaHeaderItem(scheduleAt: scheduleAt));
           }
-          items.addAll(
-            sortedThreads.map((Thread a) => AgendaThreadItem(a)),
-          );
+          items.addAll(sortedThreads.map((Thread a) => AgendaThreadItem(a)));
         }
       }
     }
@@ -374,10 +368,7 @@ class PriorityState extends Equatable {
       if (startOfDay) {
         // Add date header
         items.add(
-          AgendaHeaderItem(
-            date: event.at?.start?.toDate(),
-            now: current,
-          ),
+          AgendaHeaderItem(date: event.at?.start?.toDate(), now: current),
         );
       } else {
         // Add header for the event (with time and duration)
@@ -460,9 +451,9 @@ class PriorityState extends Equatable {
     }
 
     // Sort dates for iteration
-    final sortedDates = threadsByDate.keys
-        .where((date) => !date.isBefore(today))
-        .toList()..sort();
+    final sortedDates =
+        threadsByDate.keys.where((date) => !date.isBefore(today)).toList()
+          ..sort();
 
     bool processedToday = false;
     for (final date in sortedDates) {
@@ -471,11 +462,17 @@ class PriorityState extends Equatable {
       final todayStartIndex = isToday ? items.length : -1;
 
       // Separate scheduled (timed events) from unscheduled
-      final scheduled = dayThreads
-          .where((a) => (a.at != null && !a.todo) || a.isLinkScheduleInstance)
-          .toList()
-        ..sort((a, b) => (a.at?.start ?? DateTime(0)).compareTo(
-            b.at?.start ?? DateTime(0)));
+      final scheduled =
+          dayThreads
+              .where(
+                (a) => (a.at != null && !a.todo) || a.isLinkScheduleInstance,
+              )
+              .toList()
+            ..sort(
+              (a, b) => (a.at?.start ?? DateTime(0)).compareTo(
+                b.at?.start ?? DateTime(0),
+              ),
+            );
       final unscheduled = dayThreads
           .where((a) => (a.at == null || a.todo) && !a.isLinkScheduleInstance)
           .toList();
@@ -565,9 +562,10 @@ class PriorityState extends Equatable {
             .toList();
 
         if (currentEvent == null && beforeNowUnscheduled.isNotEmpty) {
-          final (pastThreads, otherBeforeNowThreads) =
-              beforeNowUnscheduled.partition(
-                  (thread) => !thread.todo || thread.isLinkScheduleInstance);
+          final (pastThreads, otherBeforeNowThreads) = beforeNowUnscheduled
+              .partition(
+                (thread) => !thread.todo || thread.isLinkScheduleInstance,
+              );
 
           if (pastThreads.isNotEmpty) {
             if (!createdDateHeader) {
@@ -590,15 +588,10 @@ class PriorityState extends Equatable {
             if (otherBeforeNowThreads.isNotEmpty) {
               final sortedTodos = otherBeforeNowThreads.toList()
                 ..sort((a, b) => a.order.compareTo(b.order));
-              items.addAll(
-                sortedTodos.map((Thread a) => AgendaThreadItem(a)),
-              );
+              items.addAll(sortedTodos.map((Thread a) => AgendaThreadItem(a)));
             }
 
-            remainingUnscheduled = [
-              ...afterNowUnscheduled,
-              ...pinnedTodos,
-            ];
+            remainingUnscheduled = [...afterNowUnscheduled, ...pinnedTodos];
           } else {
             if (beforeNowUnscheduled.isNotEmpty ||
                 beforeNowScheduled.isNotEmpty) {
@@ -616,10 +609,7 @@ class PriorityState extends Equatable {
                 skipHeaderFor: context,
               );
             }
-            remainingUnscheduled = [
-              ...afterNowUnscheduled,
-              ...pinnedTodos,
-            ];
+            remainingUnscheduled = [...afterNowUnscheduled, ...pinnedTodos];
           }
         } else {
           // When an event is active, push todos to the next gap so they
@@ -631,8 +621,7 @@ class PriorityState extends Equatable {
           final beforeNowTodos = beforeNowUnscheduled
               .where((a) => a.todo && !a.isLinkScheduleInstance)
               .toList();
-          if (beforeNowNonTodos.isNotEmpty ||
-              beforeNowScheduled.isNotEmpty) {
+          if (beforeNowNonTodos.isNotEmpty || beforeNowScheduled.isNotEmpty) {
             items.add(
               AgendaHeaderItem(
                 date: date,
@@ -682,9 +671,7 @@ class PriorityState extends Equatable {
               final todosForStart = remainingUnscheduled
                   .where(
                     (a) =>
-                        a.todo &&
-                        !a.isLinkScheduleInstance &&
-                        !a.isPinnedTodo,
+                        a.todo && !a.isLinkScheduleInstance && !a.isPinnedTodo,
                   )
                   .toList();
               if (todosForStart.isNotEmpty) {
@@ -715,10 +702,8 @@ class PriorityState extends Equatable {
                     a.pinnedAfterTime!.isAtSameMomentAs(gapStart),
               );
               // Keep remaining pinned todos for later gaps/events.
-              final pinned =
-                  rest.where((a) => a.isPinnedTodo).toList();
-              final nonPinned =
-                  rest.where((a) => !a.isPinnedTodo).toList();
+              final pinned = rest.where((a) => a.isPinnedTodo).toList();
+              final nonPinned = rest.where((a) => !a.isPinnedTodo).toList();
               // Add non-pinned items first via addThreadsGrouped.
               final gapItemsStart = items.length;
               addThreadsGrouped(
@@ -730,29 +715,18 @@ class PriorityState extends Equatable {
               // gap items so they interleave correctly with existing
               // items (e.g. link schedule instances).
               if (pinnedHere.isNotEmpty) {
-                log.info(
-                  '[agenda:gap] ${pinnedHere.length} pinned todo(s) '
-                  'in gap starting $gapStart: '
-                  '${pinnedHere.map((t) => '"${t.title}"').join(', ')}',
-                );
                 pinnedHere.sort((a, b) => a.order.compareTo(b.order));
                 for (final pinnedTodo in pinnedHere) {
                   var insertAt = items.length;
                   for (var j = gapItemsStart; j < items.length; j++) {
                     final item = items[j];
                     if (item is AgendaThreadItem &&
-                        pinnedTodo.order.compareTo(
-                              item.thread.order,
-                            ) <
-                            0) {
+                        pinnedTodo.order.compareTo(item.thread.order) < 0) {
                       insertAt = j;
                       break;
                     }
                   }
-                  items.insert(
-                    insertAt,
-                    AgendaThreadItem(pinnedTodo),
-                  );
+                  items.insert(insertAt, AgendaThreadItem(pinnedTodo));
                 }
               }
               remainingUnscheduled = pinned;
@@ -802,8 +776,7 @@ class PriorityState extends Equatable {
           // Extract pinned todos matching this gap's start time.
           final (pinnedHere, rest) = remainingUnscheduled.partition(
             (a) =>
-                a.isPinnedTodo &&
-                a.pinnedAfterTime!.isAtSameMomentAs(gapStart),
+                a.isPinnedTodo && a.pinnedAfterTime!.isAtSameMomentAs(gapStart),
           );
           // Add non-pinned items first via addThreadsGrouped.
           final gapItemsStart = items.length;
@@ -826,18 +799,12 @@ class PriorityState extends Equatable {
               for (var j = gapItemsStart; j < items.length; j++) {
                 final item = items[j];
                 if (item is AgendaThreadItem &&
-                    pinnedTodo.order.compareTo(
-                          item.thread.order,
-                        ) <
-                        0) {
+                    pinnedTodo.order.compareTo(item.thread.order) < 0) {
                   insertAt = j;
                   break;
                 }
               }
-              items.insert(
-                insertAt,
-                AgendaThreadItem(pinnedTodo),
-              );
+              items.insert(insertAt, AgendaThreadItem(pinnedTodo));
             }
           }
         }
@@ -865,9 +832,7 @@ class PriorityState extends Equatable {
             }
           }
 
-          items[firstTodoIndex] = AgendaThreadItem(
-            firstTodoItem.thread,
-          );
+          items[firstTodoIndex] = AgendaThreadItem(firstTodoItem.thread);
 
           if (!hasPrecedingThread) {
             for (int i = firstTodoIndex - 1; i >= todayStartIndex; i--) {
@@ -896,11 +861,7 @@ class PriorityState extends Equatable {
       final dayScheduleStart = now.isAfter(nineAM) ? now : nineAM;
 
       items.add(
-        AgendaHeaderItem(
-          date: today,
-          now: true,
-          scheduleAt: dayScheduleStart,
-        ),
+        AgendaHeaderItem(date: today, now: true, scheduleAt: dayScheduleStart),
       );
     }
 
@@ -917,12 +878,7 @@ class PriorityState extends Equatable {
     for (var date = today; date <= horizon; date = date.addDays(1)) {
       if (!existingDates.contains(date)) {
         final nineAM = date.toStart().add(const Duration(hours: 9));
-        missingHeaders.add(
-          AgendaHeaderItem(
-            date: date,
-            scheduleAt: nineAM,
-          ),
-        );
+        missingHeaders.add(AgendaHeaderItem(date: date, scheduleAt: nineAM));
       }
     }
 
@@ -1094,7 +1050,14 @@ class AgendaHeaderItem extends AgendaItem {
   final DateTime? scheduleAt;
 
   @override
-  List<Object?> get props => [dateTimeRange, date, now, thread, text, scheduleAt];
+  List<Object?> get props => [
+    dateTimeRange,
+    date,
+    now,
+    thread,
+    text,
+    scheduleAt,
+  ];
 
   @override
   String toString() =>
@@ -1112,6 +1075,5 @@ class AgendaThreadItem extends AgendaItem {
   List<Object?> get props => [thread, now, isNext];
 
   @override
-  String toString() =>
-      'AgendaThreadItem(thread: ${thread.title}, now: $now)';
+  String toString() => 'AgendaThreadItem(thread: ${thread.title}, now: $now)';
 }
