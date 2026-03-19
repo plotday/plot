@@ -645,6 +645,10 @@ jobs:
           # Switch from automatic to manual signing for all targets
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBXPROJ"
 
+          # Set distribution signing identity (CI only has Apple Distribution, not Mac Development)
+          sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=macosx\*\]" = "Apple Development"/"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution"/g' "$PBXPROJ"
+
           # Set provisioning profile specifier for the Runner target
           python3 -c "
           import re
