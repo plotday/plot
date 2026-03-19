@@ -300,11 +300,13 @@ class NoteEditorState extends State<NoteEditor> {
         );
 
         return Padding(
-          padding: const EdgeInsets.only(
+          padding: EdgeInsets.only(
             left: 12,
             right: 12,
             top: 4,
-            bottom: 12,
+            bottom: 12 + (widget.flushToBottom
+                ? MediaQuery.paddingOf(context).bottom
+                : 0),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

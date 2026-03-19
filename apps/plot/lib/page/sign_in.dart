@@ -32,6 +32,7 @@ class SignInPage extends StatefulWidget {
 
 class _SignInPageState extends State<SignInPage> {
   bool _isLoading = false;
+  bool _isEmailLoading = false;
 
   bool _isExternalAccountNotFound(AuthError error) {
     // Use the error code (mapped from Clerk's 'external_account_not_found')
@@ -140,7 +141,6 @@ class _SignInPageState extends State<SignInPage> {
         return;
       }
       log.warning('Error signing in with OAuth', e, t);
-      Tracker.captureException(e, t);
       if (_isExternalAccountNotFound(e)) {
         try {
           log.info('External account not found, attempting sign-up');
@@ -172,6 +172,7 @@ class _SignInPageState extends State<SignInPage> {
           return;
         }
       }
+      Tracker.captureException(errorToShow, t);
       if (!mounted) return;
       String message = errorToShow.toString();
       if (message.contains('google_one_tap') ||
@@ -364,16 +365,28 @@ class _SignInPageState extends State<SignInPage> {
 
                           // Continue with email button
                           FButton(
-                            onPress: () {
-                              context.router.navigate(
-                                EmailSignInRoute(returnTo: widget.returnTo),
-                              );
-                            },
+                            onPress: _isEmailLoading
+                                ? null
+                                : () async {
+                                    setState(() => _isEmailLoading = true);
+                                    await context.router.navigate(
+                                      EmailSignInRoute(
+                                        returnTo: widget.returnTo,
+                                      ),
+                                    );
+                                    if (mounted) {
+                                      setState(() => _isEmailLoading = false);
+                                    }
+                                  },
                             variant: FButtonVariant.secondary,
-                            prefix: FaIcon(
-                              FontAwesomeIcons.envelope,
-                              color: context.theme.colors.foreground,
-                            ),
+                            prefix: _isEmailLoading
+                                ? Spinner(
+                                    color: context.theme.colors.foreground,
+                                  )
+                                : FaIcon(
+                                    FontAwesomeIcons.envelope,
+                                    color: context.theme.colors.foreground,
+                                  ),
                             mainAxisSize: .min,
                             child: Text(
                               'Continue with email',

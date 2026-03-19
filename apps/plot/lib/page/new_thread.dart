@@ -134,8 +134,13 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   ThreadSubType _defaultSubType() {
     if (_hasMembers) {
-      final priorityId =
-          context.read<PriorityBloc>().state.draft.priority.id.toString();
+      final priorityId = context
+          .read<PriorityBloc>()
+          .state
+          .draft
+          .priority
+          .id
+          .toString();
       return context
           .read<LocalPreferencesBloc>()
           .getSubTypeMru(priorityId)
@@ -250,10 +255,15 @@ class NewThreadPageState extends State<NewThreadPage> {
         await _loadTwistsForPriority(queryPriority);
         // queryPriority may come from getOne() which lacks sharing enrichment;
         // re-fetch enriched to get accurate sharing status
-        final enriched = await Priority.get(id: queryPriority.id, archived: null);
+        final enriched = await Priority.get(
+          id: queryPriority.id,
+          archived: null,
+        );
         if (mounted) {
           _setHasMembers(
-            enriched.isNotEmpty ? enriched.first.sharing : queryPriority.sharing,
+            enriched.isNotEmpty
+                ? enriched.first.sharing
+                : queryPriority.sharing,
           );
         }
       }
@@ -388,12 +398,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                   state.draft,
                   title: 'Start',
                   onUpdate: (thread) async {
+                    if (!context.mounted) return;
                     await context.read<PriorityBloc>().updateDraft(thread);
                   },
                 ),
                 selected: state.draft.todo,
               ),
               _buildScheduleButton(context, state.draft, (thread) async {
+                if (!context.mounted) return;
                 await context.read<PriorityBloc>().updateDraft(thread);
               }),
               if (_hasMembers) ...[
@@ -402,20 +414,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                   ToggleThreadPrivate(
                     state.draft,
                     onUpdate: (thread) async {
+                      if (!context.mounted) return;
                       await context.read<PriorityBloc>().updateDraft(thread);
                     },
                   ),
                   selected: state.draft.private,
                 ),
               ],
-              SizedBox(width: 4),
-              Container(
-                width: 1,
-                height: 16,
-                color: context.theme.plotColors.veryMuted,
-              ),
-              SizedBox(width: 4),
-              ..._buildSubTypeIcons(context),
+              _buildSubTypeButton(context),
             ],
           ),
         ),
@@ -424,7 +430,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         Builder(
           builder: (context) {
             // Hide labels when narrow (single panel)
-            final showLabels = context.isMultiPanel;
+            final showLabels = true;
             return Center(
               child: Wrap(
                 spacing: spacing,
@@ -646,103 +652,48 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  Widget _buildSubTypeIcon(
-    BuildContext context,
-    ThreadSubType subType, {
-    required bool disabled,
-  }) {
-    final selected = !disabled && _selectedSubType == subType;
-    final colourScheme = context.colour;
-
-    // Build style delta for proper hover + selected color
-    FButtonStyleDelta styleDelta;
-    if (selected) {
-      final color = context.theme.colors.primary;
-      final hoverColor = Color.lerp(color, colourScheme.foreground, 0.3);
-      styleDelta = FButtonStyleDelta.delta(
-        decoration: FVariantsDelta.delta([
-          FVariantOperation.all(
-            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
-          ),
-        ]),
-        iconContentStyle: FButtonIconContentStyleDelta.delta(
-          iconStyle: FVariants<FTappableVariantConstraint, FTappableVariant,
-              IconThemeData, IconThemeDataDelta>(
-            IconThemeData(color: color, size: context.theme.iconSizes.lg),
-            variants: {
-              [FTappableVariantConstraint.hovered]:
-                  IconThemeData(color: hoverColor, size: context.theme.iconSizes.lg),
-              [FTappableVariantConstraint.pressed]:
-                  IconThemeData(color: hoverColor, size: context.theme.iconSizes.lg),
-            },
-          ),
-        ),
-      );
-    } else {
-      styleDelta = FButtonStyleDelta.delta(
-        decoration: FVariantsDelta.delta([
-          FVariantOperation.all(
-            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
-          ),
-        ]),
-      );
-    }
-
-    return FTooltip(
-      tipBuilder: (context, controller) => Text(subType.label),
-      child: FButton.icon(
-        variant: FButtonVariant.ghost,
-        style: styleDelta,
-        onPress: disabled ? null : () => _selectSubType(subType),
-        child: Icon(subType.icon, size: context.theme.iconSizes.base),
-      ),
-    );
-  }
-
-  List<Widget> _buildSubTypeIcons(BuildContext context) {
-    final types = ThreadSubType.forPriority(sharing: _hasMembers);
+  Widget _buildSubTypeButton(BuildContext context) {
+    final subType = _selectedSubType;
     final disabled =
         _selectedType == NewThreadType.link ||
         _selectedType == NewThreadType.chat;
 
-    if (!_hasMembers) {
-      return types
-          .map((t) => _buildSubTypeIcon(context, t, disabled: disabled))
-          .toList();
-    }
+    if (subType == null || disabled) return const SizedBox.shrink();
 
-    // Shared: show top 3 from MRU + overflow button
-    final priorityId =
-        context.read<PriorityBloc>().state.draft.priority.id.toString();
-    final mruTypes =
-        context.read<LocalPreferencesBloc>().getSubTypeMru(priorityId);
-    final visible = mruTypes.take(3).toList();
-
-    return [
-      ...visible
-          .map((t) => _buildSubTypeIcon(context, t, disabled: disabled)),
-      FTooltip(
-        tipBuilder: (context, controller) => Text('More types'),
-        child: FButton.icon(
-          variant: FButtonVariant.ghost,
-          style: FButtonStyleDelta.delta(
-            decoration: FVariantsDelta.delta([
-              FVariantOperation.all(
-                DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
-              ),
-            ]),
+    return FButton.icon(
+      onPress: () => _showSubTypeOverflow(context),
+      variant: FButtonVariant.ghost,
+      style: FButtonStyleDelta.delta(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(24)),
           ),
-          onPress: disabled ? null : () => _showSubTypeOverflow(context),
-          child: Icon(PlotIcon.more, size: context.theme.iconSizes.base),
-        ),
+        ]),
       ),
-    ];
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
+        children: [
+          Icon(subType.icon, size: context.theme.iconSizes.base),
+          Icon(
+            PlotIcon.verticalExpand,
+            size: context.theme.iconSizes.xs,
+            color: context.theme.plotColors.muted,
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showSubTypeOverflow(BuildContext context) async {
     final types = ThreadSubType.forPriority(sharing: _hasMembers);
-    final priorityId =
-        context.read<PriorityBloc>().state.draft.priority.id.toString();
+    final priorityId = context
+        .read<PriorityBloc>()
+        .state
+        .draft
+        .priority
+        .id
+        .toString();
     final localPrefs = context.read<LocalPreferencesBloc>();
 
     final result = await SelectModal.open<ThreadSubType>(
@@ -861,30 +812,69 @@ class NewThreadPageState extends State<NewThreadPage> {
   }) {
     final selected = _selectedType == type;
     const chipRadius = BorderRadius.all(Radius.circular(24));
-    final chipPadding = EdgeInsets.symmetric(
-      horizontal: showLabel ? 12 : 10,
-      vertical: isMobilePlatform() ? 12 : 6,
-    );
-    final typeChipStyleDelta = FButtonStyleDelta.delta(
-      decoration: FVariantsDelta.delta([
-        FVariantOperation.all(
-          DecorationDelta.boxDelta(borderRadius: chipRadius),
+
+    Widget chip;
+    if (showLabel && isMobilePlatform()) {
+      // Mobile: stacked icon-above-label (narrower, fits 4 chips in a row)
+      chip = FButton(
+        onPress: () => _selectType(type),
+        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
+        style: FButtonStyleDelta.delta(
+          decoration: FVariantsDelta.delta([
+            FVariantOperation.all(
+              DecorationDelta.boxDelta(borderRadius: chipRadius),
+            ),
+          ]),
+          contentStyle: FButtonContentStyleDelta.delta(
+            padding: EdgeInsetsGeometryDelta.value(
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            ),
+          ),
         ),
-      ]),
-      contentStyle: FButtonContentStyleDelta.delta(
-        padding: EdgeInsetsGeometryDelta.value(chipPadding),
-      ),
-    );
-    Widget chip = FButton(
-      onPress: () => _selectType(type),
-      variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
-      style: typeChipStyleDelta,
-      mainAxisSize: MainAxisSize.min,
-      prefix: showLabel ? Icon(icon, size: context.theme.iconSizes.base) : null,
-      child: showLabel
-          ? Text(label)
-          : Icon(icon, size: context.theme.iconSizes.lg),
-    );
+        mainAxisSize: MainAxisSize.min,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 2,
+          children: [
+            Icon(icon, size: context.theme.iconSizes.base),
+            Text(
+              label,
+              style: context.theme.typography.xs.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Desktop: side-by-side icon + label
+      final chipPadding = EdgeInsets.symmetric(
+        horizontal: showLabel ? 12 : 10,
+        vertical: isMobilePlatform() ? 12 : 6,
+      );
+      final typeChipStyleDelta = FButtonStyleDelta.delta(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(borderRadius: chipRadius),
+          ),
+        ]),
+        contentStyle: FButtonContentStyleDelta.delta(
+          padding: EdgeInsetsGeometryDelta.value(chipPadding),
+        ),
+      );
+      chip = FButton(
+        onPress: () => _selectType(type),
+        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
+        style: typeChipStyleDelta,
+        mainAxisSize: MainAxisSize.min,
+        prefix: showLabel
+            ? Icon(icon, size: context.theme.iconSizes.base)
+            : null,
+        child: showLabel
+            ? Text(label)
+            : Icon(icon, size: context.theme.iconSizes.lg),
+      );
+    }
 
     if (!kIsWeb && hasPhysicalKeyboard()) {
       chip = FTooltip(
@@ -1023,6 +1013,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 twists: _draftTwists ?? state.twists,
                                 actors: state.actors,
                                 onDraftChanged: (thread, {note}) async {
+                                  if (!context.mounted) return;
                                   await context
                                       .read<PriorityBloc>()
                                       .updateDraft(thread, note: note);
@@ -1072,6 +1063,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         twists: _draftTwists ?? state.twists,
                                         actors: state.actors,
                                         onDraftChanged: (thread, {note}) async {
+                                          if (!context.mounted) return;
                                           await context
                                               .read<PriorityBloc>()
                                               .updateDraft(thread, note: note);

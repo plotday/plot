@@ -374,6 +374,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     if (widget.showFilter == false) return false;
     if (widget.showFilter == true) return true;
     if (_isLoading) return false;
+    // Always show filter when nested so back button shares the row
+    if (ModalProvider.of(context).modalStackNotifier.value > 1) return true;
     final totalItems = _groups.fold<int>(0, (sum, g) => sum + g.items.length);
     return totalItems >= 20;
   }
