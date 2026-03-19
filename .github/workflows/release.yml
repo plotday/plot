@@ -385,7 +385,7 @@ jobs:
         run: |
           # Android signing keystore
           op read "op://Production/Android Signing/plot-release.jks" \
-            --out-file "$GITHUB_WORKSPACE/apps/plot/plot-release.jks" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/android/plot-release.jks" \
             --file-mode 0600
 
           # Google Play API service key
