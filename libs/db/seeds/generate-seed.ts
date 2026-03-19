@@ -134,17 +134,21 @@ async function getOrCreateClerkUser(
 /**
  * Get or create a user by email using direct PostgreSQL queries.
  * Also creates a corresponding Clerk user for authentication.
+ * @param existingClerkId If provided, skip Clerk user creation and use this ID directly.
  * @returns Object with userId and contactId
  */
 async function getOrCreateUser(
   email: string,
-  userName: string
+  userName: string,
+  existingClerkId?: string
 ): Promise<{ userId: string; contactId: string }> {
   // Load from .env.development.local if needed
   loadEnvFromFile();
 
-  // Create Clerk user first (or find existing)
-  const clerkId = await getOrCreateClerkUser(email, userName);
+  // Use provided Clerk ID or create/find one
+  const clerkId = existingClerkId
+    ? (console.error(`✓ Using provided Clerk user: ${existingClerkId}`), existingClerkId)
+    : await getOrCreateClerkUser(email, userName);
 
   const dbUrl =
     process.env.DATABASE_URL ||
@@ -231,6 +235,7 @@ async function main() {
       help: { type: "boolean", short: "h" },
       apply: { type: "boolean" },
       "db-url": { type: "string" },
+      "clerk-id": { type: "string" },
     },
     allowPositionals: true,
   });
@@ -245,6 +250,9 @@ Options:
   --apply                 Apply the seed directly to the database
   --db-url <url>          Database connection string
                           (default: postgresql://postgres:postgres@127.0.0.1:54322/postgres)
+  --clerk-id <id>         Use an existing Clerk user ID instead of creating one.
+                          The DB user.email will be set to the YAML email (demo address),
+                          while authentication uses the Clerk account's real credentials.
 
 Examples:
   # Generate SQL and output to stdout
@@ -258,6 +266,9 @@ Examples:
 
   # Apply seed to custom database
   pnpm gen-seed my-data.yaml --apply --db-url postgresql://user:pass@host:port/db
+
+  # Apply seed using a pre-created Clerk user (for production demo accounts)
+  CLERK_SECRET_KEY=sk_live_... pnpm gen-seed my-data.yaml --apply --db-url postgresql://... --clerk-id user_2abc...
 `);
     process.exit(values.help ? 0 : 1);
   }
@@ -284,7 +295,8 @@ Examples:
     // Get or create user
     const { userId, contactId } = await getOrCreateUser(
       data.config.email,
-      data.config.userName
+      data.config.userName,
+      values["clerk-id"] as string | undefined
     );
 
     const { sql, fileUploads } = generateSQL(data, userId, contactId);

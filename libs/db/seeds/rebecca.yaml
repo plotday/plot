@@ -60,10 +60,13 @@ priorities:
             children:
               - ref: coaching_staff
                 title: Coaching staff
+                shared_with: [roy, beard]
               - ref: player_performance
                 title: Player performance
+                shared_with: [roy, beard, nate]
               - ref: match_prep
                 title: Match preparation
+                shared_with: [roy, beard, nate]
           - ref: womens_team
             title: Women's team development
             settings:
@@ -72,44 +75,53 @@ priorities:
             children:
               - ref: business_case
                 title: Business case
+                shared_with: [higgins, keeley]
               - ref: board_process
                 title: Board approval
+                shared_with: [higgins]
               - ref: facility_planning
                 title: Facility planning
+                shared_with: [higgins]
           - ref: business_ops
             title: Business operations
             settings:
               color: 0
+            shared_with: [higgins, keeley]
             children:
               - ref: financial_mgmt
                 title: Financial management
+                shared_with: [higgins]
               - ref: commercial
                 title: Commercial partnerships
+                shared_with: [keeley]
           - ref: facilities
             title: Facilities & infrastructure
+            shared_with: [higgins]
             children:
               - ref: training_ground
                 title: Training ground
+                shared_with: [beard, higgins]
               - ref: stadium_ops
                 title: Stadium operations
-      - ref: community
-        title: Community & supporters
-        settings:
-          color: 5
-        shared_with: [keeley]
-        children:
-          - ref: supporter_relations
-            title: Supporter relations
+                shared_with: [higgins]
+          - ref: community
+            title: Community & supporters
+            settings:
+              color: 5
+            shared_with: [keeley]
             children:
-              - ref: richmond_trust
-                title: Richmond Trust
-              - ref: fan_comm
-                title: Fan communication
-          - ref: community_programs
-            title: Community programs
-          - ref: media_pr
-            title: Media & PR
-            shared_with: [keeley, trent]
+              - ref: supporter_relations
+                title: Supporter relations
+                children:
+                  - ref: richmond_trust
+                    title: Richmond Trust
+                  - ref: fan_comm
+                    title: Fan communication
+              - ref: community_programs
+                title: Community programs
+              - ref: media_pr
+                title: Media & PR
+                shared_with: [keeley, trent]
       - ref: personal
         title: Personal
         settings:
@@ -174,8 +186,8 @@ twists:
   - ref: claude
     name: Claude
     priority_ref: everything
-    logo: "https://api.iconify.design/simple-icons/anthropic.svg"
-    logo_dark: "https://api.iconify.design/simple-icons/anthropic.svg?color=%23D4A574"
+    logo: "https://api.iconify.design/simple-icons/claude.svg"
+    logo_dark: "https://api.iconify.design/simple-icons/claude.svg?color=%23D4A574"
   - ref: chatgpt
     name: ChatGPT
     priority_ref: everything
@@ -187,6 +199,7 @@ threads:
   - priority_ref: player_performance
     title: "Match review - Bournemouth loss (1-2)"
     created: "-2d"
+    icon: discussion
     tags:
       warning: [user]
     links:
@@ -220,6 +233,7 @@ threads:
   - priority_ref: coaching_staff
     title: "Review coaching strategy with Roy and Beard"
     created: "-2d"
+    icon: discussion
     schedule:
       on: "-2d"
       todo: true
@@ -243,6 +257,7 @@ threads:
     priority_ref: media_pr
     title: "Supporter sentiment - social media summary"
     created: "-2d"
+    icon: announcement
     tags:
       pinned: [user]
     links:
@@ -315,6 +330,7 @@ threads:
   - priority_ref: match_prep
     title: "Chelsea match tactics"
     created: "-1d"
+    icon: discussion
     schedule:
       at: "+0d 10:15 / +0d 11:00"
     links:
@@ -588,25 +604,101 @@ threads:
         title: "Focus: Launch women's team"
         source_url: "https://calendar.google.com/calendar/event?eid=morningfocus"
     notes:
-      - created: "-1d 09:45"
+      - created: "-1d 21:45"
         content: |
-          Early morning in the office before anyone else arrives. This is when I think clearest.
+          Tomorrow morning agenda — before anyone else arrives:
 
-          Refined the women's team proposal. Checked the numbers again. They work. They're ambitious, but they work.
+          1. **Scarf design** — Keeley sent the founding season concept. It's gorgeous. Need to confirm the order with the Manchester supplier before her deadline.
+          2. **Revenue model** — Run the Year 1–5 assumptions through ChatGPT. Higgins gave me the benchmarking data from three Championship clubs. Lock the numbers down before he reviews.
+          3. **Board talking points** — Ask Claude to help me frame this right. Sustainable investment, not vanity project. Both can be true, but the board needs to hear it one way first.
 
-          The question isn't "can we afford this?"
+          Three things. One hour. Let's go.
+      - created: "+0d 08:05"
+        content: |
+          Scarf design confirmed. Keeley's concept is exactly right — the crest detail is understated but unmistakably Richmond. Told the supplier to do a run large enough for the supporters' trust event.
 
-          The question is "can we afford not to be who we say we are?"
+          Imagining the unveiling alongside the women's team announcement. The fans will lose their minds.
+        mentions:
+          - keeley
+      - created: "+0d 08:30"
+        content: |
+          Revenue model locked. ChatGPT helped me stress-test the assumptions — Year 1 conservative, Year 3 realistic, Year 5 self-sustaining. Club B's trajectory (attendance up 340% from launch) is the closest comparable to what Richmond could do.
+
+          The numbers work. They're ambitious but they're real.
+      - created: "+0d 08:50"
+        content: |
+          Board talking points drafted with Claude's help. The frame that landed: **strategic club development that happens to feel good.** Not leading with values — leading with data, then letting the values be obvious.
+
+          Higgins was right. Same outcome, different story.
 
   - priority_ref: business_case
     title: "Revenue model assumptions"
     created: "+0d"
     twist_ref: chatgpt
+    schedule:
+      on: "+0d"
+      todo: true
+    notes:
+      - created: "+0d 08:20"
+        content: |
+          **@chatgpt, help me stress-test the revenue assumptions for a women's football team launching in the FA Women's Championship. Year 1 startup costs ~£2.5M, projected revenue £800K. I have benchmarking data from three comparable clubs. What are the most important assumptions to validate?**
+        ai_query: true
+      - created: "+0d 08:20"
+        content: |
+          **ChatGPT:**
+
+          The assumptions most likely to make or break a Year 1 revenue model for a new Championship-level women's team:
+
+          **Attendance (highest variance):**
+          - First-season fan crossover from men's fanbase typically runs 8–15%
+          - Brand integration (shared badge, shared comms) significantly improves this — benchmark clubs with full integration outperform standalone by ~40%
+          - Conservative: 800–1,200 per match. Optimistic: 1,500–2,000
+
+          **Sponsorship (most sensitive to brand positioning):**
+          - Women's football sponsorship market growing ~25% YoY
+          - Clubs that announced women's teams as "completing the club" vs. "adding a women's team" secured deals 30–50% larger
+          - Year 1 sponsorship of £400K is achievable if you leverage existing Aegon/shirt sponsor relationships first
+
+          **Year 3 break-even sensitivity:**
+          - Primary driver: whether attendance compounds (viral launch moment helps enormously)
+          - Club A hit break-even mid-Year 2 because their launch event generated significant local press
+          - A founders' season scarf or community unveiling event is exactly the kind of launch moment that drives this
+
+          **Recommendation:** Model three scenarios — conservative (flat attendance growth), base (15% YoY), optimistic (25% YoY + sponsorship uplift). Present all three to the board; it shows rigor and sets honest expectations.
 
   - priority_ref: board_process
     title: "Board presentation talking points"
     created: "+0d"
     twist_ref: claude
+    schedule:
+      on: "+0d"
+      todo: true
+    notes:
+      - created: "+0d 08:40"
+        content: |
+          **@claude, I need help framing a board presentation for launching a women's football team. The board will be worried about timing — the men's team is in a slump. I want to make the case that this is strategic long-term investment, not a distraction or a feel-good project. Help me with the key talking points.**
+        ai_query: true
+      - created: "+0d 08:40"
+        content: |
+          **Claude:**
+
+          The frame that tends to land with skeptical boards: **"This is what stable clubs do."**
+
+          **Opening:** Don't defend the timing — own it. "The men's team is going through a difficult run. That's precisely why now is the right moment to show the board's long-term conviction."
+
+          **Key talking points:**
+
+          1. **Strategic, not reactive** — This decision was in development before the slump. It demonstrates the club is building for a decade, not reacting to a quarter.
+
+          2. **The data makes the case** — Lead with the benchmarking numbers, not the vision. Three comparable Championship clubs. Club A: broke even mid-Year 2. Club B: attendance up 340%. Sponsors exceeded projections by 25%. Let the numbers carry the emotion.
+
+          3. **Brand integration is the multiplier** — Clubs that launched women's teams as a separate entity underperformed those that treated it as completing the club. Richmond's brand advantage is precisely this: the culture already exists.
+
+          4. **Risk framing** — Acknowledge the risks explicitly before anyone else raises them. Shows rigor. "Here's what could go wrong, and here's how we've structured this to mitigate it."
+
+          5. **Close with values, not first** — End with the culture argument. "This is who Richmond is." But only after the strategic case is made. Let them arrive at the values conclusion themselves.
+
+          **What to avoid:** Don't lead with Ted. It reads as sentimental to a skeptical board. Earn the emotional close by winning the analytical argument first.
 
   - priority_ref: social_life
     title: "Drinks with Keeley"
@@ -850,6 +942,7 @@ threads:
   - priority_ref: commercial
     title: "Founding season scarf design"
     created: "-1d"
+    icon: discussion
     schedule:
       on: "+0d"
       todo: true
@@ -949,6 +1042,7 @@ threads:
   - priority_ref: board_process
     title: "Women's team board strategy"
     created: "-2d"
+    icon: discussion
     schedule:
       at: "+0d 11:15 / +0d 12:00"
     tags:
@@ -992,6 +1086,7 @@ threads:
   - priority_ref: match_prep
     title: "Upcoming fixture - Chelsea (away)"
     created: "-1d"
+    icon: announcement
     links:
       - source_ref: gmail
         type: email
@@ -1047,6 +1142,7 @@ threads:
   - priority_ref: supporter_relations
     title: "Review supporter engagement initiatives"
     created: "-1d"
+    icon: discussion
     links:
       - source_ref: sheets
         type: spreadsheet
@@ -1096,6 +1192,7 @@ threads:
   - priority_ref: coaching_staff
     title: "Training report - confidence exercises"
     created: "-1d"
+    icon: discussion
     links:
       - source_ref: gmail
         type: email
@@ -1337,6 +1434,7 @@ threads:
   - priority_ref: personal_dev
     title: "Reflection - what Ted built here"
     created: "-2d"
+    icon: idea
     notes:
       - created: "-2d 22:00"
         content: |
