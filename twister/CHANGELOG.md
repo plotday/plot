@@ -1,5 +1,18 @@
 # @plotday/twister
 
+## 0.43.0
+
+### Added
+
+- `imageWidth` and `imageHeight` optional fields to file action type for image dimension metadata ([`95b2e1d`](https://github.com/plotday/plot/commit/95b2e1d69993541bf69280f2c6aea65fe73e53bc))
+- Reply count tag (Tag.Reply = 1019) for flagging notes that need a response ([`0b24fe5`](https://github.com/plotday/plot/commit/0b24fe5ab3d839aa59d7f209d876422972493c1f))
+- `getOwner()` method on the Plot tool — returns the full Actor (id, name, email) for the twist owner ([`80dcd07`](https://github.com/plotday/plot/commit/80dcd07e4a0ba37858561c61f1eaca5e6fdad398))
+- `ThreadType` type and `type` field on `Thread`, `NewThread`, and `ThreadUpdate` for setting thread sub-type/category ([`5446cf7`](https://github.com/plotday/plot/commit/5446cf7f1ecc933fbba56d0801fcbca8cf5bc7c1))
+
+### Changed
+
+- Update AIModel enum to latest model versions — added Claude Opus 4.6 and Sonnet 4.6, removed Claude Sonnet 4.5, Opus 4.1, and Claude 3.7 Sonnet ([`4b85122`](https://github.com/plotday/plot/commit/4b85122a815008c6fe2dd943d744ff2687c1dfa4))
+
 ## 0.42.0
 
 ### Added
