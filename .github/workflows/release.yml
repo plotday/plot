@@ -255,6 +255,8 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Write .env file
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
           cd apps/plot && pnpm get-env && pnpm set-env prod
 
@@ -430,6 +432,8 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Write .env file
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
           cd apps/plot && pnpm get-env && pnpm set-env prod
 
@@ -617,6 +621,8 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Write .env file
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
           cd apps/plot && pnpm get-env && pnpm set-env prod
 
