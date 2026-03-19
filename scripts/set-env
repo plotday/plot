@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Switches the active env by updating the symlink.
+# Switches the active env by copying the target env file.
 #
 # Usage: set-env <dev|prod>
 #
@@ -32,7 +32,7 @@ if [ ! -f "$SOURCE" ]; then
 fi
 
 rm -f "$NATIVE"
-ln -s "$SOURCE" "$NATIVE"
+cp "$SOURCE" "$NATIVE"
 
 # Validation for production Flutter builds
 if [ "$ENV" = "production" ] && [ -f pubspec.yaml ]; then

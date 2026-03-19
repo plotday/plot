@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Generates both .env.development and .env.production (or .dev.vars.*)
-# for the current package. Creates a symlink to the development file
-# if no symlink exists yet.
+# for the current package. Copies the development file if no env file
+# exists yet.
 #
 # Usage: get-env (run from package directory via pnpm)
 #
@@ -25,8 +25,8 @@ fi
 bash "$SCRIPTS_DIR/gen-env" development $VARS > "${NATIVE}.development"
 bash "$SCRIPTS_DIR/gen-env" production $VARS > "${NATIVE}.production"
 
-# Create symlink if none exists (default to development)
-if [ ! -L "$NATIVE" ]; then
+# Copy development env if no file exists or if it's a stale symlink (default to development)
+if [ ! -f "$NATIVE" ] || [ -L "$NATIVE" ]; then
   rm -f "$NATIVE"
-  ln -s "${NATIVE}.development" "$NATIVE"
+  cp "${NATIVE}.development" "$NATIVE"
 fi
