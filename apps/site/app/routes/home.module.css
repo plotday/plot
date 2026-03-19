@@ -1,9 +1,4 @@
 .heroSection {
-  min-height: 65vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   background-color: light-dark(
     var(--mantine-color-white),
     var(--mantine-color-dark-7)
