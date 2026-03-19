@@ -31,6 +31,21 @@ if (keystorePropertiesFile.exists()) {
     }
 }
 
+// Debug: print signing config info during build
+println "=== SIGNING CONFIG DEBUG ==="
+println "key.properties path: ${keystorePropertiesFile.absolutePath}"
+println "key.properties exists: ${keystorePropertiesFile.exists()}"
+println "keyAlias: ${keystoreProperties['keyAlias']}"
+println "storeFile prop: ${keystoreProperties['storeFile']}"
+if (keystoreProperties['storeFile']) {
+    def sf = file(keystoreProperties['storeFile'])
+    println "storeFile resolved: ${sf.absolutePath}"
+    println "storeFile exists: ${sf.exists()}"
+}
+println "storePassword set: ${keystoreProperties['storePassword'] != null}"
+println "keyPassword set: ${keystoreProperties['keyPassword'] != null}"
+println "=== END SIGNING CONFIG DEBUG ==="
+
 android {
     namespace "day.plot.app"
     compileSdkVersion flutter.compileSdkVersion

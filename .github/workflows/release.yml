@@ -465,11 +465,6 @@ jobs:
       - name: Install Shorebird
         uses: shorebirdtech/setup-shorebird@v1
 
-      - name: Test Flutter build (debug signing)
-        run: |
-          cd apps/plot
-          flutter build appbundle --release --target-platform=android-arm,android-arm64,android-x64
-
       - name: Build Android app (Shorebird release)
         run: |
           cd apps/plot
