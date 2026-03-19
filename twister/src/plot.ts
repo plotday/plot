@@ -290,6 +290,10 @@ export type Action =
       fileSize: number;
       /** MIME type of the file */
       mimeType: string;
+      /** Intrinsic width of the image in pixels (only for image files) */
+      imageWidth?: number | null;
+      /** Intrinsic height of the image in pixels (only for image files) */
+      imageHeight?: number | null;
     }
   | {
       /** Thread reference action for navigating to a related thread */
