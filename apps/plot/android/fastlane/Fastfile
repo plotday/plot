@@ -44,12 +44,13 @@ platform :android do
   end
 
   desc "Upload a new beta version to the Google Play (Internal Testing)"
-  lane :beta do
+  lane :beta do |options|
     # Upload pre-built AAB to Google Play Internal Testing track
     # (build is done externally by Shorebird or Flutter)
+    aab_path = options[:aab] || '../../build/app/outputs/bundle/release/app-release.aab'
     upload_to_play_store(
       track: 'internal',
-      aab: '../../build/app/outputs/bundle/release/app-release.aab',
+      aab: aab_path,
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,
