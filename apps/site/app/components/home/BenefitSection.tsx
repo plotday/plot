@@ -6,7 +6,10 @@ import classes from "./BenefitSection.module.css";
 interface BenefitSectionProps {
   title: string;
   body: string;
-  screenshotLabel: string;
+  image: string;
+  imageDark: string;
+  imageAlt: string;
+  fade?: boolean;
   reverse?: boolean;
   background?: "white" | "gray";
 }
@@ -14,7 +17,10 @@ interface BenefitSectionProps {
 export function BenefitSection({
   title,
   body,
-  screenshotLabel,
+  image,
+  imageDark,
+  imageAlt,
+  fade = false,
   reverse = false,
   background = "white",
 }: BenefitSectionProps) {
@@ -36,8 +42,11 @@ export function BenefitSection({
               Try Plot →
             </Button>
           </Stack>
-          <div className={classes.placeholder}>
-            <Text className={classes.placeholderLabel}>{screenshotLabel}</Text>
+          <div className={`${classes.imageWrap} ${fade ? classes.fade : ""}`}>
+            <picture>
+              <source srcSet={imageDark} media="(prefers-color-scheme: dark)" />
+              <img src={image} alt={imageAlt} className={classes.screenshot} loading="lazy" />
+            </picture>
           </div>
         </Box>
       </Container>

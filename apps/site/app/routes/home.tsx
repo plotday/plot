@@ -179,19 +179,26 @@ export default function Home() {
       <BenefitSection
         title="Everything in one place"
         body="Your meeting gets a thread. Your task gets a note. Your email gets context. Plot pulls work from Google Calendar, Slack, Linear, Gmail, and more — organized by priority, not arrival time. Related items collect automatically. Smart notifications surface what actually needs your attention. Nothing falls through the cracks."
-        screenshotLabel="Unified activity view"
+        image="/assets/activity.png"
+        imageDark="/assets/activity-d.png"
+        imageAlt="Plot activity view showing unified items from multiple sources"
       />
       <BenefitSection
         title="Ready for action"
         body={'Your agenda is your day — and Plot makes sure it\'s ready when you are. See everything due today across every tool, in one place. Open an item and find the notes, messages, and context already there. No tab-switching, no hunting for links, no "let me find that thread."'}
-        screenshotLabel="Your agenda, your day"
+        image="/assets/agenda.png"
+        imageDark="/assets/agenda-d.png"
+        imageAlt="Plot agenda view showing today's tasks and events"
         reverse
         background="gray"
       />
       <BenefitSection
         title="Momentum on what matters"
         body="Most tools break down at the boundary between planning and doing. Plot closes that gap. Zoom out to see your priorities and what's moving. Zoom in to focus on the work in front of you. Everything you need — context, collaborators, next steps — is already in the same place you do the work."
-        screenshotLabel="Zoom in, zoom out"
+        image="/assets/priorities.png"
+        imageDark="/assets/priorities-d.png"
+        imageAlt="Plot priorities view showing nested project hierarchy"
+        fade
       />
       <FeaturesStrip />
       <PlatformCallout />
