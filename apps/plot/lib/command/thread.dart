@@ -461,6 +461,21 @@ class ArchiveThread extends Command {
     final thread = await _thread;
     final isArchived = thread.archivedAt != null;
 
+    // Capture navigation BEFORE archive (only when archiving, not un-archiving)
+    if (!context.mounted) return const CommandDone();
+    final priorityBloc = context.read<PriorityBloc?>();
+    final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
+    final isAgenda =
+        priorityBloc?.resolveThreadListSource() == ThreadListSource.agenda;
+    CommandReturn? navigationResult;
+    if (!isArchived && isCurrentThread && isAgenda) {
+      navigationResult = await OpenNextThread().run(context);
+      if (navigationResult is CommandSkipped) {
+        if (!context.mounted) return const CommandDone();
+        navigationResult = await NewThread().run(context);
+      }
+    }
+
     if (isArchived) {
       // Un-archive: set archivedAt to null
       await thread.copyWith(archivedAt: const Value(null)).save();
@@ -468,7 +483,7 @@ class ArchiveThread extends Command {
       // Archive: set archivedAt to current time
       await thread.delete();
     }
-    return const CommandDone();
+    return navigationResult ?? const CommandDone();
   }
 }
 
@@ -735,12 +750,36 @@ class FinishThread extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Capture navigation BEFORE removal (thread must still be in agenda list)
+    final priorityBloc = context.read<PriorityBloc?>();
+    final isCurrentThread = priorityBloc?.state.thread?.id == thread.id;
+    final isAgenda =
+        priorityBloc?.resolveThreadListSource() == ThreadListSource.agenda;
+    CommandReturn? navigationResult;
+    if (isCurrentThread && isAgenda) {
+      navigationResult = await OpenNextThread().run(context);
+      if (navigationResult is CommandSkipped) {
+        if (!context.mounted) return const CommandDone();
+        navigationResult = await NewThread().run(context);
+      }
+    }
+
+    // Navigate now, while context is still mounted. The onBeforeRun animation
+    // (onDesktopFinish) awaits a widget removal that unmounts this context, so
+    // we cannot defer navigation to the runner — it would arrive too late.
+    if (navigationResult is CommandRoute) {
+      if (!context.mounted) return const CommandDone();
+      await navigationResult.go(context);
+      navigationResult = null;
+    }
+
+    if (!context.mounted) return const CommandDone();
     if (onBeforeRun != null) {
       // Animation layer handles optimistic removal
       await onBeforeRun!(context);
     } else {
       // No animation: immediate optimistic removal (keyboard, command palette)
-      context.read<PriorityBloc?>()?.optimisticallyRemoveThread(thread.id);
+      priorityBloc?.optimisticallyRemoveThread(thread.id);
     }
     HapticFeedback.mediumImpact();
     await onUpdate(thread.copyWith(todo: false, bump: bump));
@@ -759,7 +798,7 @@ class FinishThread extends _UpdateThreadCommand {
       await _setLinkDoneStatusForUser(context, thread.id, actorId);
     }
 
-    return const CommandDone();
+    return navigationResult ?? const CommandDone();
   }
 
   static Future<void> _setLinkDoneStatusForUser(
