@@ -7,7 +7,6 @@ import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { rpc, rpcUser } from "../../rpc";
 import { notifySync, getPriorityForThread } from "./notify";
 import { analyzeNote } from "../../queue/note-analysis";
-import { createSchedule } from "./smart-schedule";
 import { checkAiLimitForPriority, recordAiUsage, isAiEnabled } from "../../utils/ai-limits";
 
 const notes = new Hono<{ Bindings: Bindings }>();
@@ -244,7 +243,6 @@ async function markThreadUnreadForOthers(
         p_importance: 50,
       });
 
-      await createSchedule(db, userId, threadId, "unread");
       markedUserIds.push(userId);
     } catch (error) {
       console.error(`Failed to mark thread unread for user ${userId}:`, error);
