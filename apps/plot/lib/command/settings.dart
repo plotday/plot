@@ -406,13 +406,13 @@ class CopyVersion extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     if (DeveloperMode.recordTap()) {
-      return CommandMessage(
-        DeveloperMode.isEnabled ? 'Developer mode enabled' : 'Developer mode disabled',
+      return CommandRefresh(
+        message: DeveloperMode.isEnabled ? 'Developer mode enabled' : 'Developer mode disabled',
       );
     }
     try {
       await Clipboard.setData(ClipboardData(text: AppInfo.versionString));
-      return CommandMessage('Version copied to clipboard');
+      return CommandRefresh(message: 'Version copied to clipboard');
     } catch (e, t) {
       log.warning("Copy version failed", e, t);
       return CommandMessage('Failed to copy version', isError: true);
