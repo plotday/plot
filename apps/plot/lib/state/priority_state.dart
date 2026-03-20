@@ -405,8 +405,8 @@ class PriorityState extends Equatable {
                     a.at!.start!.isSameOrAfter(event.at!.end!))) ||
             // Time match: todo explicitly pinned to this event's start
             (event.at?.start != null &&
-                a.at?.start != null &&
-                a.at!.start!.isAtSameMomentAs(event.at!.start!)),
+                (a.pinnedAfterTime ?? a.at?.start) != null &&
+                (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(event.at!.start!)),
       );
 
       // Filter notes/done by time (agendaAt within event's time range)
@@ -427,8 +427,8 @@ class PriorityState extends Equatable {
                 // priority (user explicitly dragged them here).
                 (a.todo &&
                     event.at?.start != null &&
-                    a.at?.start != null &&
-                    a.at!.start!.isAtSameMomentAs(event.at!.start!)),
+                    (a.pinnedAfterTime ?? a.at?.start) != null &&
+                    (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(event.at!.start!)),
           )
           .toList();
 

@@ -2201,6 +2201,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       // User schedule date takes priority (explicit user override via reorder).
       final schedDate =
           _userSchedule?.startOn?.toDateTime() ??
+          pinnedAfterTime ??
           at?.start ??
           on?.start?.toDateTime();
       if (schedDate == null || schedDate.toDate().isBefore(Date.today())) {
@@ -2317,6 +2318,9 @@ class Thread extends Equatable implements Comparable<Thread> {
     // so the icon is consistent with the date the thread appears under.
     if (todo && _userSchedule?.startOn != null) {
       return _userSchedule!.startOn!.isAfter(Date.today());
+    }
+    if (todo && pinnedAfterTime != null) {
+      return pinnedAfterTime!.toDate().isAfter(Date.today());
     }
     return on?.start?.isAfter(Date.today()) == true ||
         (on == null && at?.start?.toDate().isAfter(Date.today()) == true);
