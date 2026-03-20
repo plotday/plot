@@ -491,6 +491,13 @@ BEGIN
     _is_move := (_priority_exists
         AND _actual_path IS NOT NULL
         AND _old_actual_path IS DISTINCT FROM _actual_path);
+    -- If the visual path hasn't changed, this is not a move.
+    -- The visual-to-actual path resolution can produce false positives for shared
+    -- root priorities (where visual path includes personal root prefix or alias).
+    IF _is_move AND _old IS NOT NULL AND _input.path IS NOT DISTINCT FROM _old.path THEN
+        _is_move := FALSE;
+        _actual_path := _old_actual_path;
+    END IF;
     IF _is_move THEN
         -- Block moving root priorities
         IF _input.root THEN
