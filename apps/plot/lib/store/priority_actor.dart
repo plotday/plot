@@ -5,6 +5,7 @@ class PriorityActors extends Table with SyncableTable, CreatedTable, DeletableTa
   BlobColumn get userId => blob().map(const UuidConverter())();
   TextColumn get priorityPath => text().map(const PathConverter())();
   BlobColumn get actorId => blob().map(const ActorIdConverter())();
+  IntColumn get depth => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {userId, priorityPath, actorId};
@@ -56,6 +57,7 @@ class PriorityActor extends PriorityActorRow {
         userId: row.userId,
         priorityPath: row.priorityPath,
         actorId: row.actorId,
+        depth: row.depth,
         updatedAt: row.updatedAt,
         pending: row.pending,
         createdAt: row.createdAt,

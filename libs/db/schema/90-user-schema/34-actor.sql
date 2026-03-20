@@ -12,7 +12,8 @@ WITH upa_agg AS (
             MAX(upa.archived_at)
         ELSE
             NULL
-        END AS archived_at
+        END AS archived_at,
+        MIN(upa.depth) FILTER (WHERE upa.archived_at IS NULL) AS min_depth
     FROM
         "user".priority_actor upa
     GROUP BY
@@ -25,6 +26,7 @@ SELECT
     a.created_at,
     GREATEST (ua.updated_at, a.updated_at) AS updated_at,
     COALESCE(a.archived_at, ua.archived_at) AS archived_at,
+    ua.min_depth,
     a.type,
     a.name,
     a.email,

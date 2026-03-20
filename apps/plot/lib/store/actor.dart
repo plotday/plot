@@ -7,6 +7,7 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   TextColumn get name => text().nullable()();
   TextColumn get email => text().nullable()();
   TextColumn get avatarUrl => text().nullable()();
+  IntColumn get minDepth => integer().nullable()();
   BoolColumn get self => boolean()();
 
   @override
@@ -191,7 +192,8 @@ class Actor extends ActorRow {
 
   /// Returns all actor IDs that belong to the current user.
   /// Uses the Actor cache for synchronous lookup.
-  /// Returns a list containing at least Base.actorId if cache is empty.
+  /// Falls back to Base.actorId if cache is empty, or returns empty list
+  /// if actorId is not yet available.
   static List<ActorId> getCurrentUserActorIds() {
     final userActorIds = _cache.values
         .where((actor) => actor.self)
@@ -200,7 +202,9 @@ class Actor extends ActorRow {
 
     // Fallback to Base.actorId if cache is empty
     if (userActorIds.isEmpty) {
-      return [Base.actorId];
+      final id = Base.actorIdOrNull;
+      if (id != null) return [id];
+      return [];
     }
 
     return userActorIds;
@@ -294,6 +298,14 @@ class Actor extends ActorRow {
       query.where(a.name.like(searchPattern) | a.email.like(searchPattern));
     }
 
+    // Order by proximity when filtering by priority path
+    if (priorityPath != null) {
+      query.orderBy([
+        OrderingTerm.asc(pa.depth.min()),
+        OrderingTerm.asc(a.name),
+      ]);
+    }
+
     // Apply limit
     if (limit != null) {
       query.limit(limit);
@@ -313,6 +325,7 @@ class Actor extends ActorRow {
         name: row.name,
         email: row.email,
         avatarUrl: row.avatarUrl,
+        minDepth: row.minDepth,
         self: row.self,
       );
 
@@ -326,6 +339,7 @@ class Actor extends ActorRow {
     Value<String?> name = const Value.absent(),
     Value<String?> email = const Value.absent(),
     Value<String?> avatarUrl = const Value.absent(),
+    Value<int?> minDepth = const Value.absent(),
     bool? self,
     Value<int?> pending = const Value.absent(),
   }) => Actor.fromStore(
@@ -338,6 +352,7 @@ class Actor extends ActorRow {
       name: name,
       email: email,
       avatarUrl: avatarUrl,
+      minDepth: minDepth,
       self: self,
       pending: pending,
     ),

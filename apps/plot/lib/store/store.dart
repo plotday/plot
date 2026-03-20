@@ -1954,7 +1954,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 284;
+  int get schemaVersion => 285;
 
   @override
   MigrationStrategy get migration {
@@ -2524,6 +2524,10 @@ class Store extends _$Store {
         m,
         'ALTER TABLE threads ADD COLUMN icon TEXT',
       );
+    }
+    if (from < 285) {
+      await _safeAddColumn(m, priorityActors, priorityActors.depth);
+      await _safeAddColumn(m, actors, actors.minDepth);
     }
   }
 

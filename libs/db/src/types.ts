@@ -3592,6 +3592,7 @@ export type Database = {
           created_at: string | null
           email: string | null
           id: string | null
+          min_depth: number | null
           name: string | null
           self: boolean | null
           type: string | null
@@ -3699,6 +3700,7 @@ export type Database = {
           actor_id: string | null
           archived_at: string | null
           created_at: string | null
+          depth: number | null
           priority_path: unknown
           updated_at: string | null
           user_id: string | null
@@ -3864,7 +3866,12 @@ export type Database = {
         Returns: undefined
       }
       clear_thread_unread: {
-        Args: { p_read_at?: string; p_thread_id: string; user_id: string }
+        Args: {
+          p_bumped_at?: string
+          p_read_at?: string
+          p_thread_id: string
+          user_id: string
+        }
         Returns: undefined
       }
       delete_thread_read: {

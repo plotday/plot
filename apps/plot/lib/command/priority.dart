@@ -612,9 +612,10 @@ class ManagePrioritySharing extends ShowCommands {
   final Priority priority;
 
   static Future<Commands> _getSharingCommands(Priority priority) async {
-    // Fetch all actors for initial ContactGroup cache
+    // Fetch all actors for initial ContactGroup cache, ordered by proximity
     final allActors = await Actor.get(
       types: [ActorType.user, ActorType.contact],
+      priorityId: priority.id,
       limit: 100,
     );
 
@@ -665,6 +666,7 @@ class ContactGroup extends CommandGroup {
       actors = await Actor.get(
         types: [ActorType.user, ActorType.contact],
         search: search,
+        priorityId: priority.id,
         limit: 50,
       );
     }
