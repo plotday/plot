@@ -411,9 +411,12 @@ class SyncOrchestrator {
           stackTrace: stackTrace.toString(),
           context: 'sync_orchestrator_push',
         );
+        completer.completeError(e, stackTrace);
+      } else {
+        // Expected errors (network, auth, rate limit): complete normally
+        // to avoid orphaned error futures triggering PlatformDispatcher.onError
+        completer.complete(false);
       }
-
-      completer.completeError(e, stackTrace);
       return false;
     } finally {
       _pushCompleters.remove(entity);
@@ -461,9 +464,12 @@ class SyncOrchestrator {
           stackTrace: stackTrace.toString(),
           context: 'sync_orchestrator_pull',
         );
+        completer.completeError(e, stackTrace);
+      } else {
+        // Expected errors (network, auth, rate limit): complete normally
+        // to avoid orphaned error futures triggering PlatformDispatcher.onError
+        completer.complete();
       }
-
-      completer.completeError(e, stackTrace);
     } finally {
       _pullCompleters.remove(entity);
     }

@@ -20,6 +20,7 @@ import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
+import '../api/network_exception.dart';
 import '../env.dart';
 import 'conventions.dart';
 import 'properties.dart';
@@ -271,6 +272,13 @@ class Tracker {
       // These occur when the device is offline and are already caught and
       // handled internally by the clerk_auth library.
       if (error.toString().contains("Failed host lookup: 'clerk.plot.day'")) {
+        return true;
+      }
+
+      // Ignore network errors (timeouts, connection failures, socket errors).
+      // These are expected during offline periods and are already handled
+      // by the sync orchestrator.
+      if (error is NetworkException) {
         return true;
       }
 
