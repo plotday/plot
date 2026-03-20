@@ -225,10 +225,15 @@ async function getOrCreateUser(
 
     if (contactResult.rows.length > 0) {
       contactId = contactResult.rows[0].id;
+      // Ensure the contact is marked as primary (matches /activate behavior)
+      await pool.query(
+        'UPDATE contact SET "primary" = true WHERE id = $1 AND "primary" = false',
+        [contactId]
+      );
     } else {
-      // Create contact if it doesn't exist
+      // Create contact if it doesn't exist (with primary = true to match /activate)
       const newContact = await pool.query(
-        "INSERT INTO contact (email, name, user_id) VALUES ($1, $2, $3) RETURNING id",
+        'INSERT INTO contact (email, name, user_id, "primary") VALUES ($1, $2, $3, true) RETURNING id',
         [email, userName, userId]
       );
       contactId = newContact.rows[0].id;
