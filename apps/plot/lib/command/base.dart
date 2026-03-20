@@ -53,10 +53,18 @@ class CommandRoute extends CommandReturn {
   final bool replace;
 
   Future<void> go(BuildContext context) async {
-    if (replace) {
-      await context.router.root.replace(route);
-    } else {
-      await context.router.root.navigate(route);
+    if (!context.mounted) return;
+    try {
+      if (replace) {
+        await context.router.root.replace(route);
+      } else {
+        await context.router.root.navigate(route);
+      }
+    } on TypeError {
+      // AutoRouter.of(context) uses `!` on null when no router ancestor exists
+      // (e.g. command triggered from a modal/overlay outside the router tree).
+      // In release mode this throws _TypeError instead of the debug FlutterError.
+      log.warning('Router not available for navigation to $route');
     }
   }
 }

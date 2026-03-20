@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/cli_args.dart';
 import 'package:plot/command/command.dart';
@@ -191,6 +192,7 @@ class RootProviderState extends State<RootProvider> {
                 }
               } catch (error, stackTrace) {
                 log.severe('Failed to start app', error, stackTrace);
+                await Tracker.captureException(error, stackTrace);
                 if (context.mounted) {
                   context.showToast(message: 'Failed to load', isError: true);
                 }
