@@ -671,12 +671,36 @@ account.post("/activate", async (c) => {
   // Look up the user's primary contact ID for the response
   let contactId: string | null = null;
   try {
-    const contact = await c.var.db
+    let contact = await c.var.db
       .selectFrom("contact")
       .select("id")
       .where("user_id", "=", user.id)
       .where("primary", "=", true)
       .executeTakeFirst();
+
+    // Self-healing: if no primary contact exists but a contact does, promote it
+    if (!contact) {
+      const anyContact = await c.var.db
+        .selectFrom("contact")
+        .select("id")
+        .where("user_id", "=", user.id)
+        .executeTakeFirst();
+      if (anyContact) {
+        await c.var.db
+          .updateTable("contact")
+          .set({ primary: true })
+          .where("id", "=", anyContact.id)
+          .execute();
+        contact = anyContact;
+        const context = extractRequestContext(c);
+        const logger = createLogger(context);
+        logger.warn("Self-healed: promoted non-primary contact to primary", {
+          user_id: user.id,
+          contact_id: anyContact.id,
+        });
+      }
+    }
+
     contactId = contact?.id ?? null;
   } catch (err) {
     const context = extractRequestContext(c);
