@@ -5,6 +5,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/util/platform.dart';
 import 'package:plot/widget/widget.dart';
 
 class PrioritiesList extends StatefulWidget {
@@ -399,6 +400,9 @@ class _PrioritiesListState extends State<PrioritiesList>
               ListTile(
                 title: widget.root.title,
                 command: ChangeCurrentPriority(widget.root),
+                longPressCommand: !hasPhysicalKeyboard()
+                    ? ShowPriorityCommands(widget.root)
+                    : null,
                 selected: widget.selected?.id == widget.root.id,
                 leadingBuilder: (isHovered, hasFocus) => Padding(
                   padding: EdgeInsets.only(
