@@ -1702,8 +1702,9 @@ class Thread extends Equatable implements Comparable<Thread> {
             // Overwrite occurrences with stored schedule occurrences
             for (final result in group) {
               final scheduleRow = result.readTableOrNull(sched);
-              if (scheduleRow == null || scheduleRow.occurrence == null)
+              if (scheduleRow == null || scheduleRow.occurrence == null) {
                 continue;
+            }
               // Remove archived occurrences (e.g. cancelled recurring event instances)
               if (scheduleRow.archivedAt != null) {
                 occurrences.remove(scheduleRow.occurrence!);

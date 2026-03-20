@@ -4,7 +4,6 @@ import 'package:plot/state/root_provider.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
-import 'package:plot/util/theme_color.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
