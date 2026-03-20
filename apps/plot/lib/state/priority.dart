@@ -292,27 +292,34 @@ class PriorityBloc extends Cubit<PriorityState> {
             )
             .toList();
       } else {
+        // Match the specific item (not sibling occurrences of recurring
+        // threads) for schedule-change detection and repositioning.
+        bool exactMatch(Thread a) =>
+            a.id == updatedThread.id &&
+            a.occurrence == updatedThread.occurrence &&
+            a.isLinkScheduleInstance == updatedThread.isLinkScheduleInstance;
+
         // Check if the event's schedule changed — if so, reposition
         // instead of doing an in-place replacement.
-        final oldAt = state.agendaItems
+        final exactItem = state.agendaItems
             .whereType<AgendaThreadItem>()
-            .firstWhere((a) => a.thread.id == updatedThread.id)
-            .thread
-            .at;
-        final scheduleChanged = oldAt != updatedThread.at;
+            .where((a) => exactMatch(a.thread))
+            .firstOrNull;
+        final oldAt = exactItem?.thread.at;
+        final scheduleChanged = exactItem != null && oldAt != updatedThread.at;
 
         if (scheduleChanged && updatedThread.at != null) {
           // Record expected schedule for data-driven suppression
           _pendingOptimisticSchedule = (updatedThread.id, updatedThread.at);
 
-          // Remove old item and its associated event header
+          // Remove only the specific item and its associated event header
           updatedAgendaItems = state.agendaItems.where((item) {
             if (item is AgendaHeaderItem &&
-                item.thread?.id == updatedThread.id) {
+                item.thread != null &&
+                exactMatch(item.thread!)) {
               return false;
             }
-            if (item is AgendaThreadItem &&
-                item.thread.id == updatedThread.id) {
+            if (item is AgendaThreadItem && exactMatch(item.thread)) {
               return false;
             }
             return true;
@@ -368,22 +375,48 @@ class PriorityBloc extends Cubit<PriorityState> {
             AgendaThreadItem(updatedThread),
           );
         } else {
-          // In-place replacement (schedule unchanged or no schedule)
+          // In-place replacement (schedule unchanged or no schedule).
+          // Update the exact item with the full updatedThread; for sibling
+          // occurrences of the same thread, propagate todo state only
+          // (preserving each occurrence's own schedule and event time).
           updatedAgendaItems = state.agendaItems.map((item) {
             return item.when(
-              header: (h) => h.thread?.id == updatedThread.id
-                  ? AgendaHeaderItem(
-                      dateTimeRange: updatedThread.at,
-                      date: h.date,
-                      now: h.now,
-                      thread: updatedThread,
-                      text: h.text,
-                      scheduleAt: h.scheduleAt,
-                    )
-                  : item,
-              activity: (a) => a.thread.id == updatedThread.id
-                  ? AgendaThreadItem(updatedThread, now: a.now)
-                  : item,
+              header: (h) {
+                if (h.thread == null || h.thread!.id != updatedThread.id) {
+                  return item;
+                }
+                if (exactMatch(h.thread!)) {
+                  return AgendaHeaderItem(
+                    dateTimeRange: updatedThread.at,
+                    date: h.date,
+                    now: h.now,
+                    thread: updatedThread,
+                    text: h.text,
+                    scheduleAt: h.scheduleAt,
+                  );
+                }
+                // Sibling occurrence: propagate todo state only
+                return AgendaHeaderItem(
+                  dateTimeRange: h.dateTimeRange,
+                  date: h.date,
+                  now: h.now,
+                  thread: h.thread!.copyWith(todo: updatedThread.todo),
+                  text: h.text,
+                  scheduleAt: h.scheduleAt,
+                );
+              },
+              activity: (a) {
+                if (a.thread.id != updatedThread.id) return item;
+                if (exactMatch(a.thread)) {
+                  return AgendaThreadItem(updatedThread, now: a.now);
+                }
+                // Sibling occurrence: propagate todo state only
+                return AgendaThreadItem(
+                  a.thread.copyWith(todo: updatedThread.todo),
+                  now: a.now,
+                  isNext: a.isNext,
+                );
+              },
             );
           }).toList();
         }

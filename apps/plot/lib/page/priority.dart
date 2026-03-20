@@ -1277,6 +1277,7 @@ class _PriorityPageState extends State<PriorityPage> {
                     onRemoved: () {
                       context.read<PriorityBloc>().optimisticallyRemoveThread(
                         agendaActivity.thread.id,
+                        finishTodo: true,
                       );
                     },
                     child: ThreadWidget(
