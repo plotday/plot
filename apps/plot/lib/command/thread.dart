@@ -774,6 +774,7 @@ class FinishThread extends _UpdateThreadCommand {
     }
 
     if (!context.mounted) return const CommandDone();
+    HapticFeedback.mediumImpact();
     if (onBeforeRun != null) {
       // Animation layer handles optimistic removal
       await onBeforeRun!(context);
@@ -781,7 +782,6 @@ class FinishThread extends _UpdateThreadCommand {
       // No animation: immediate optimistic removal (keyboard, command palette)
       priorityBloc?.optimisticallyRemoveThread(thread.id);
     }
-    HapticFeedback.mediumImpact();
     await onUpdate(thread.copyWith(todo: false, bump: bump));
 
     // Complete notes assigned to current user
@@ -1660,6 +1660,14 @@ class FocusAgendaIntent extends Intent {
 
 class FocusActivityListIntent extends Intent {
   const FocusActivityListIntent();
+}
+
+class ToggleStartFinishCurrentThreadIntent extends Intent {
+  const ToggleStartFinishCurrentThreadIntent();
+}
+
+class ArchiveCurrentThreadIntent extends Intent {
+  const ArchiveCurrentThreadIntent();
 }
 
 class MoveFocusUp extends Command {

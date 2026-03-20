@@ -208,7 +208,9 @@ class PlotTwist extends Twist<PlotTwist> {
             "- **Cmd+Shift+T** (Ctrl+Shift+T on Windows): Focus a thread in the activity list, then Up/Down to navigate and Enter to open the command menu\n" +
             "- **Cmd+Up/Down** (Ctrl+Up/Down on Windows): Open previous/next thread\n" +
             "- **Cmd+N** (Ctrl+N on Windows): Create a new note (Cmd+Shift+N / Ctrl+Shift+N on web browsers)\n" +
-            "- **Cmd+Enter** (Ctrl+Enter on Windows): On the new thread page, create a task instead of a note",
+            "- **Cmd+Enter** (Ctrl+Enter on Windows): On the new thread page, create a task instead of a note\n" +
+            "- **Cmd+D** (Ctrl+D on Windows): Start the current thread (or Finish if already started)\n" +
+            "- **Cmd+Backspace** (Ctrl+Backspace on Windows): Archive the current thread",
         },
         {
           content:
@@ -219,7 +221,7 @@ class PlotTwist extends Twist<PlotTwist> {
             "- **Share** a link from another app to Plot using the share sheet (iOS and Android)",
         },
       ],
-      preview: "Keyboard and touch shortcuts",
+      preview: "Keyboard and touch shortcuts for navigation and actions",
       priority: onboardingPriority,
     });
     if (owner) {

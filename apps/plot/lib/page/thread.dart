@@ -260,6 +260,36 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     }
                   }
 
+                  // Handle Cmd+D / Ctrl+D to toggle start/finish the open thread
+                  if (event.logicalKey == LogicalKeyboardKey.keyD &&
+                      (HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed) &&
+                      !HardwareKeyboard.instance.isShiftPressed &&
+                      !HardwareKeyboard.instance.isAltPressed) {
+                    final thread = context.read<PriorityBloc>().state.thread;
+                    if (thread != null) {
+                      if (thread.todo) {
+                        FinishThread(thread).run(context);
+                      } else {
+                        StartThread(thread).run(context);
+                      }
+                      return KeyEventResult.handled;
+                    }
+                  }
+
+                  // Handle Cmd+Backspace / Ctrl+Backspace to archive the open thread
+                  if (event.logicalKey == LogicalKeyboardKey.backspace &&
+                      (HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed) &&
+                      !HardwareKeyboard.instance.isShiftPressed &&
+                      !HardwareKeyboard.instance.isAltPressed) {
+                    final thread = context.read<PriorityBloc>().state.thread;
+                    if (thread != null) {
+                      ArchiveThread(thread).run(context);
+                      return KeyEventResult.handled;
+                    }
+                  }
+
                   // Only handle plain arrow keys/enter/escape (no modifiers)
                   // Cmd-Up/Down should bubble up to global PriorityPage handler
                   if (!hasModifiers) {

@@ -207,6 +207,36 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
     _searchToggleCallback = null;
   }
 
+  /// Returns the thread at the currently focused list index, or falls back
+  /// to the currently opened thread (`priorityBloc.state.thread`).
+  Thread? _resolveFocusedOrCurrentThread(BuildContext context) {
+    final priorityBloc = context.read<PriorityBloc>();
+    final controller = _resolveController(context);
+    if (controller != null && controller.focusedIndex != null) {
+      final source = priorityBloc.resolveThreadListSource();
+      var items = source == ThreadListSource.agenda
+          ? priorityBloc.state.agendaViewItems
+          : priorityBloc.state.activityFeedItems;
+
+      // On desktop, the "Now" header is stripped from the rendered agenda list,
+      // so strip it here too to keep indices in sync.
+      final layoutState = context.read<LayoutBloc>().state;
+      if (source == ThreadListSource.agenda &&
+          layoutState.multiPanel &&
+          items.isNotEmpty &&
+          items.first is AgendaHeaderItem &&
+          (items.first as AgendaHeaderItem).now) {
+        items = items.sublist(1);
+      }
+
+      final idx = controller.focusedIndex!;
+      if (idx >= 0 && idx < items.length && items[idx] is AgendaThreadItem) {
+        return (items[idx] as AgendaThreadItem).thread;
+      }
+    }
+    return priorityBloc.state.thread;
+  }
+
   /// Moves focus to the next/previous thread item, skipping headers.
   /// When nothing is focused, starts from the currently opened thread
   /// (or lastFocusedIndex), falling back to the first thread item.
@@ -422,6 +452,30 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                         return null;
                       },
                     ),
+                ToggleStartFinishCurrentThreadIntent:
+                    CallbackAction<ToggleStartFinishCurrentThreadIntent>(
+                      onInvoke: (_) {
+                        final thread = _resolveFocusedOrCurrentThread(context);
+                        if (thread != null) {
+                          if (thread.todo) {
+                            FinishThread(thread).run(context);
+                          } else {
+                            StartThread(thread).run(context);
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                ArchiveCurrentThreadIntent:
+                    CallbackAction<ArchiveCurrentThreadIntent>(
+                      onInvoke: (_) {
+                        final thread = _resolveFocusedOrCurrentThread(context);
+                        if (thread != null) {
+                          ArchiveThread(thread).run(context);
+                        }
+                        return null;
+                      },
+                    ),
               },
               child: Shortcuts(
                 shortcuts: <ShortcutActivator, Intent>{
@@ -431,6 +485,10 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                       const FocusActivityListIntent(),
                   platformSingleActivator(LogicalKeyboardKey.slash):
                       const ToggleSearchIntent(),
+                  platformSingleActivator(LogicalKeyboardKey.keyD):
+                      const ToggleStartFinishCurrentThreadIntent(),
+                  platformSingleActivator(LogicalKeyboardKey.backspace):
+                      const ArchiveCurrentThreadIntent(),
                   // Global Escape handler - focus ThreadEditor when ThreadPage is open
                   if (_activityEditorFocusCallback != null)
                     const SingleActivator(LogicalKeyboardKey.escape):
@@ -1219,6 +1277,9 @@ class _PriorityPageState extends State<PriorityPage> {
                         if (context.mounted) {
                           await context.run(command);
                         }
+                      },
+                      onMobileFinish: () async {
+                        await removalKey.currentState?.remove();
                       },
                       onDesktopFinish: () async {
                         await removalKey.currentState?.remove(fade: true);
