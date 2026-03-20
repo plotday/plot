@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/util/developer_mode.dart';
 import 'command.dart';
 
 class GlobalShortcuts extends StatelessWidget {
@@ -57,7 +58,8 @@ class GlobalShortcuts extends StatelessWidget {
 
         if (!signedIn) {
           return CommandScope(
-            commands: _getCommands(signedIn: false),
+            commandsBuilder: () => _getCommands(signedIn: false),
+            listenable: DeveloperMode.notifier,
             child: child,
           );
         }
@@ -73,6 +75,7 @@ class GlobalShortcuts extends StatelessWidget {
                     showAllPriorities: localPrefsState.showAllPriorities,
                     email: userState.user.primaryEmail,
                   ),
+                  listenable: DeveloperMode.notifier,
                   child: child,
                 );
               },

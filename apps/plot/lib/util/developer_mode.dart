@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// In-memory singleton for developer mode toggle.
 /// Resets on app restart — no persistence.
 class DeveloperMode {
@@ -7,6 +9,9 @@ class DeveloperMode {
   static final List<DateTime> _tapTimes = [];
   static const _tapWindow = Duration(seconds: 2);
   static const _tapsRequired = 3;
+
+  /// Listen to this to rebuild when developer mode is toggled.
+  static final notifier = ChangeNotifier();
 
   static bool get isEnabled => _enabled;
 
@@ -19,6 +24,8 @@ class DeveloperMode {
     if (_tapTimes.length >= _tapsRequired) {
       _tapTimes.clear();
       _enabled = !_enabled;
+      // ignore: invalid_use_of_visible_for_testing_member, invalid_use_of_protected_member
+      notifier.notifyListeners();
       return true;
     }
     return false;

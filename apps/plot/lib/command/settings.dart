@@ -152,15 +152,18 @@ class ShowSettings extends ShowCommands {
             // Non-critical — settings still work without org AI preferences
           }
 
-          return Commands(
-            groups: [
-              settingsCommandsFromState(
-                prioritiesState,
-                email: email,
-                adminOrgs: adminOrgs,
-              ),
-            ],
-          );
+          final groups = [
+            settingsCommandsFromState(
+              prioritiesState,
+              email: email,
+              adminOrgs: adminOrgs,
+            ),
+          ];
+          final debugCmds = buildDebugCommands();
+          if (debugCmds != null) {
+            groups.add(debugCmds);
+          }
+          return Commands(groups: groups);
         },
         shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
       );
