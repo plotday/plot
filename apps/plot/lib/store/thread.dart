@@ -1244,6 +1244,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       // Active todo: always include threads with an active user schedule (has dates)
       Expression<bool> activeTodo =
           userSched.id.isNotNull() &
+          userSched.archivedAt.isNull() &
           (userSched.startOn.isNotNull() | userSched.startAt.isNotNull());
       condition = condition | activeTodo;
 
@@ -2277,6 +2278,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   bool get todo =>
       _userSchedule != null &&
+      _userSchedule.archivedAt == null &&
       (_userSchedule.startOn != null || _userSchedule.startAt != null);
 
   /// Returns the pinned-after time for a todo that was dragged after an event.
