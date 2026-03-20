@@ -2400,6 +2400,21 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
+  /// Returns a copy with [isLinkScheduleInstance] set to false.
+  /// Used for optimistic insertion of the base todo duplicate when starting
+  /// a link schedule thread.
+  Thread toBaseTodo() {
+    return Thread._fromStore(
+      activity: _thread,
+      schedule: _schedule,
+      userSchedule: _userSchedule,
+      tags: _tags,
+      priority: priority,
+      notes: _notes,
+      isLinkScheduleInstance: false,
+    );
+  }
+
   /// Reorder this thread. Updates the per-user schedule order.
   /// Shared schedules cannot have order (DB constraint: schedule_order_user).
   Thread reorder(Order order) {

@@ -419,6 +419,48 @@ class PriorityBloc extends Cubit<PriorityState> {
               },
             );
           }).toList();
+
+          // When a link schedule instance becomes a todo, also insert the
+          // base todo duplicate in today's section so it appears instantly.
+          if (updatedThread.isLinkScheduleInstance &&
+              updatedThread.todo &&
+              !state.agendaItems.any(
+                (item) => item.when(
+                  header: (_) => false,
+                  activity: (a) =>
+                      a.thread.id == updatedThread.id &&
+                      !a.thread.isLinkScheduleInstance,
+                ),
+              )) {
+            final baseTodo = updatedThread.toBaseTodo();
+            final today = Date.today();
+            int insertIndex = -1;
+            bool inTodaySection = false;
+            for (int i = 0; i < updatedAgendaItems.length; i++) {
+              final item = updatedAgendaItems[i];
+              if (item is AgendaHeaderItem && item.date != null) {
+                if (!item.date!.isAfter(today)) {
+                  inTodaySection = true;
+                  if (insertIndex == -1) insertIndex = i + 1;
+                } else if (inTodaySection) {
+                  break;
+                }
+              }
+              if (inTodaySection &&
+                  item is AgendaThreadItem &&
+                  item.thread.todo &&
+                  !item.thread.isLinkScheduleInstance) {
+                insertIndex = i + 1;
+              }
+            }
+            if (insertIndex == -1) {
+              insertIndex = updatedAgendaItems.isNotEmpty ? 1 : 0;
+            }
+            updatedAgendaItems.insert(
+              insertIndex,
+              AgendaThreadItem(baseTodo),
+            );
+          }
         }
       }
     } else if (updatedThread.todo) {
