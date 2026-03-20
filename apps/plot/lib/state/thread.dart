@@ -7,6 +7,8 @@ import 'package:collection/collection.dart';
 
 import 'package:plot/store/store.dart';
 import 'package:plot/page/loading.dart';
+import 'package:plot/command/command.dart';
+import 'package:plot/widget/toast.dart';
 import 'logging.dart';
 
 part 'thread_state.dart';
@@ -249,6 +251,7 @@ class ThreadBlocProvider extends StatefulWidget {
 
 class ThreadBlocProviderState extends State<ThreadBlocProvider> {
   late Future<ThreadBloc> _bloc;
+  bool _hasNavigatedAway = false;
 
   @override
   void initState() {
@@ -300,6 +303,19 @@ class ThreadBlocProviderState extends State<ThreadBlocProvider> {
     return FutureBuilder(
       future: _bloc,
       builder: (context, snapshot) {
+        if (snapshot.hasError && !_hasNavigatedAway) {
+          _hasNavigatedAway = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              context.showToast(
+                message: 'This thread is no longer available.',
+                isError: true,
+              );
+              context.run(ChangeCurrentThread(null));
+            }
+          });
+          return const LoadingPage();
+        }
         if (!snapshot.hasData) {
           return const LoadingPage();
         }

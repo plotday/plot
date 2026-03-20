@@ -625,7 +625,23 @@ class Thread extends Equatable implements Comparable<Thread> {
       ];
 
       if (records.isNotEmpty) {
-        await api.post<dynamic>('/sync/thread-unread', body: records);
+        final response =
+            await api.post<dynamic>('/sync/thread-unread', body: records);
+
+        // Server returns { failed: [...threadIds] } for threads we can't access
+        if (response is Map && response['failed'] is List) {
+          final failedIds = (response['failed'] as List).cast<String>();
+          if (failedIds.isNotEmpty) {
+            log.warning(
+                'Server rejected ${failedIds.length} thread-unread records: $failedIds');
+            final failedUuids =
+                failedIds.map((id) => Uuid.fromString(id).toBytes()).toList();
+            await (Store.get.update(Store.get.threads)
+                  ..where((t) => t.id.isIn(failedUuids)))
+                .write(
+                    const ThreadsCompanion(unreadUpdated: Value(null)));
+          }
+        }
       }
 
       // Don't clear unreadUpdated here - let processPulledRows clear it
@@ -634,9 +650,20 @@ class Thread extends Equatable implements Comparable<Thread> {
       // (started before the activity_read push) can overwrite unread with
       // the stale server value because unreadUpdated was already null.
     } catch (e) {
-      log.severe('Failed to push activity_read changes: $e');
-      // unreadUpdated stays true, will be retried on next push
-      rethrow;
+      if (e is ApiException && Store._isPermanentError(e)) {
+        // Permanent error (403, 404, 422, etc.) — these threads will never
+        // sync successfully. Clear unreadUpdated to stop retrying.
+        log.warning(
+            'Permanent error pushing thread-unread, clearing ${unreadActivities.length} records: $e');
+        final allIds =
+            unreadActivities.map((a) => a.id.toBytes()).toList();
+        await (Store.get.update(Store.get.threads)
+              ..where((t) => t.id.isIn(allIds)))
+            .write(const ThreadsCompanion(unreadUpdated: Value(null)));
+      } else {
+        log.severe('Failed to push activity_read changes: $e');
+        rethrow;
+      }
     }
 
     return success;
@@ -1216,7 +1243,8 @@ class Thread extends Equatable implements Comparable<Thread> {
 
       // Active todo: always include threads with an active user schedule (has dates)
       Expression<bool> activeTodo =
-          userSched.id.isNotNull() & userSched.startOn.isNotNull();
+          userSched.id.isNotNull() &
+          (userSched.startOn.isNotNull() | userSched.startAt.isNotNull());
       condition = condition | activeTodo;
 
       // Activity is scheduled within the range (Date-based)
