@@ -43,6 +43,7 @@ class Base {
 
   static Uuid get userId => Injector.appInstance.get<Base>()._userId!;
   static ActorId get actorId => Injector.appInstance.get<Base>()._actorId!;
+  static ActorId? get actorIdOrNull => Injector.appInstance.get<Base>()._actorId;
 
   /// True when identity was set via sign-in or /activate (not restored from
   /// local storage). UserBloc uses this to decide whether to call /activate

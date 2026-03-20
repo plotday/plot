@@ -1462,7 +1462,12 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // Fallback to primary contact if cache is empty
     if (userActorIds.isEmpty) {
-      userActorIds.add(Base.actorId.toBytes());
+      final id = Base.actorIdOrNull;
+      if (id != null) {
+        userActorIds.add(id.toBytes());
+      } else {
+        return {};
+      }
     }
 
     final a = Store.get.threads;

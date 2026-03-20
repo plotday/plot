@@ -604,7 +604,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .map((actor) => actor.id.toBytes())
         .toList();
     if (userActorIds.isEmpty) {
-      userActorIds.add(Base.actorId.toBytes());
+      final id = Base.actorIdOrNull;
+      if (id != null) {
+        userActorIds.add(id.toBytes());
+      } else {
+        return {};
+      }
     }
 
     final query = db.selectOnly(pm, distinct: true)
@@ -630,7 +635,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .map((actor) => actor.id.toBytes())
         .toList();
     if (userActorIds.isEmpty) {
-      userActorIds.add(Base.actorId.toBytes());
+      final id = Base.actorIdOrNull;
+      if (id != null) {
+        userActorIds.add(id.toBytes());
+      } else {
+        // actorId not yet available — return empty until identity is set
+        return Stream.value(<PriorityId>{});
+      }
     }
 
     final query = db.selectOnly(pm, distinct: true)
