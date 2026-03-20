@@ -205,17 +205,20 @@ class PlotTwist extends Twist<PlotTwist> {
             "- **Cmd+K** (Ctrl+K on Windows): Open the command palette for quick actions\n" +
             "- **Up/Down arrows**: Select a note within a thread, then Cmd+K (Ctrl+K) to open commands for that note\n" +
             "- **Cmd+T** (Ctrl+T on Windows): Focus a thread in the agenda list, then Up/Down to navigate and Enter to open the command menu\n" +
-            "- **Cmd+Shift+T** (Ctrl+Shift+T on Windows): Focus a thread in the activity list, then Up/Down to navigate and Enter to open the command menu\n" +
+            "- **Cmd+Shift+T** (Ctrl+Shift+T on Windows): Toggle between the agenda and activity tabs\n" +
             "- **Cmd+Up/Down** (Ctrl+Up/Down on Windows): Open previous/next thread\n" +
             "- **Cmd+N** (Ctrl+N on Windows): Create a new note (Cmd+Shift+N / Ctrl+Shift+N on web browsers)\n" +
             "- **Cmd+Enter** (Ctrl+Enter on Windows): On the new thread page, create a task instead of a note\n" +
             "- **Cmd+D** (Ctrl+D on Windows): Start the current thread (or Finish if already started)\n" +
-            "- **Cmd+Backspace** (Ctrl+Backspace on Windows): Archive the current thread",
+            "- **Cmd+Shift+D** (Ctrl+Shift+D on Windows): Schedule the current thread\n" +
+            "- **Cmd+Backspace** (Ctrl+Backspace on Windows): Archive the current thread\n" +
+            "- **Right-click** the play/calendar button to schedule a thread",
         },
         {
           content:
             "**Touch Gestures**\n\n" +
             "- **Long press** on items to open the menu\n" +
+            "- **Long press** the play/calendar button to schedule a thread\n" +
             "- **Swipe right** on threads: Start (or Finish if already started)\n" +
             "- **Swipe left** on threads: Schedule for later\n" +
             "- **Share** a link from another app to Plot using the share sheet (iOS and Android)",

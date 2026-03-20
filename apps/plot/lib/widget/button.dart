@@ -26,7 +26,8 @@ class Button extends StatefulWidget {
        style = ButtonStyle.secondary,
        color = null,
        hoverColor = null,
-       forceHover = false;
+       forceHover = false,
+       onLongPress = null;
 
   const Button.primary(
     this.command, {
@@ -40,7 +41,8 @@ class Button extends StatefulWidget {
        selectedColor = null,
        color = null,
        hoverColor = null,
-       forceHover = false;
+       forceHover = false,
+       onLongPress = null;
 
   const Button.ghost(
     this.command, {
@@ -54,7 +56,8 @@ class Button extends StatefulWidget {
        iconOnly = false,
        color = null,
        hoverColor = null,
-       forceHover = false;
+       forceHover = false,
+       onLongPress = null;
 
   const Button.icon(
     this.command, {
@@ -66,6 +69,7 @@ class Button extends StatefulWidget {
     this.color,
     this.hoverColor,
     this.forceHover = false,
+    this.onLongPress,
     super.key,
   }) : iconOnly = true,
        expand = false;
@@ -83,6 +87,8 @@ class Button extends StatefulWidget {
   final bool iconOnly;
   final bool expand;
   final Command command;
+  /// Optional long-press callback (icon-only buttons).
+  final VoidCallback? onLongPress;
 
   @override
   State<Button> createState() => _ButtonState();
@@ -189,6 +195,16 @@ class _ButtonState extends State<Button> {
         },
       ),
     );
+
+    if (widget.onLongPress != null) {
+      return _wrapButton(
+        GestureDetector(
+          onLongPress: widget.onLongPress,
+          onSecondaryTap: widget.onLongPress,
+          child: button,
+        ),
+      );
+    }
 
     return _wrapButton(button);
   }

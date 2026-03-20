@@ -277,6 +277,19 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                     }
                   }
 
+                  // Handle Cmd+Shift+D / Ctrl+Shift+D to schedule the open thread
+                  if (event.logicalKey == LogicalKeyboardKey.keyD &&
+                      (HardwareKeyboard.instance.isMetaPressed ||
+                          HardwareKeyboard.instance.isControlPressed) &&
+                      HardwareKeyboard.instance.isShiftPressed &&
+                      !HardwareKeyboard.instance.isAltPressed) {
+                    final thread = context.read<PriorityBloc>().state.thread;
+                    if (thread != null) {
+                      PickScheduleThread(thread).run(context);
+                      return KeyEventResult.handled;
+                    }
+                  }
+
                   // Handle Cmd+Backspace / Ctrl+Backspace to archive the open thread
                   if (event.logicalKey == LogicalKeyboardKey.backspace &&
                       (HardwareKeyboard.instance.isMetaPressed ||

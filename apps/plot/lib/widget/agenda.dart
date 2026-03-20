@@ -17,14 +17,14 @@ double agendaLeadingWidth(BuildContext context) {
       .resolve(TextDirection.ltr);
   final buttonW = context.theme.iconSizes.base + ghostPad.horizontal;
   final spacing = context.theme.spacing;
-  // Left padding matches thread leading (dot is overlaid, not in the Row).
-  final leftPad = isWide ? spacing.lg : spacing.xl;
   if (isWide) {
-    // |leftPad|scheduleBtn|todoBtn| — up to icon right edge
-    return leftPad + 2 * buttonW - ghostPad.right;
-  } else {
+    final leftPad = spacing.lg;
     // |leftPad|todoBtn| — up to icon right edge
     return leftPad + buttonW - ghostPad.right;
+  } else {
+    // Button is centered between screen edge and body start.
+    final sideSpace = (spacing.md + 4 + spacing.sm) / 2;
+    return sideSpace + buttonW - ghostPad.right;
   }
 }
 
@@ -235,16 +235,21 @@ class AgendaHeader extends StatelessWidget {
             .padding
             .resolve(TextDirection.ltr)
             .right;
+        final isWide = context.isMultiPanel;
+        final spacing = context.theme.spacing;
+        // Narrow: right-align time with spacing.sm gap to body start,
+        // matching the ThreadWidget time label position.
+        final narrowSideSpace = (spacing.md + 4 + spacing.sm) / 2;
+        final narrowTimeColWidth =
+            timeColWidth + ghostPadRight + narrowSideSpace - spacing.sm;
         child = Padding(
           padding: EdgeInsets.only(
-            right: context.isMultiPanel
-                ? context.theme.spacing.lg + context.theme.spacing.sm
-                : ghostPadRight,
+            right: isWide ? spacing.lg + spacing.sm : ghostPadRight,
           ),
           child: Row(
             children: [
               SizedBox(
-                width: timeColWidth,
+                width: isWide ? timeColWidth : narrowTimeColWidth,
                 child: Align(
                   alignment: Alignment.centerRight,
                   child: Text(
@@ -317,18 +322,21 @@ class AgendaHeader extends StatelessWidget {
             .padding
             .resolve(TextDirection.ltr)
             .right;
+        final isWide = context.isMultiPanel;
+        final spacing = context.theme.spacing;
+        final narrowSideSpace = (spacing.md + 4 + spacing.sm) / 2;
+        final narrowTimeColWidth =
+            timeColWidth + ghostPadRight + narrowSideSpace - spacing.sm;
         Widget result = Padding(
           padding: EdgeInsets.symmetric(vertical: verticalMargin),
           child: Padding(
-            padding: EdgeInsets.symmetric(vertical: context.theme.spacing.xs),
+            padding: EdgeInsets.symmetric(vertical: spacing.xs),
             child: Padding(
               padding: EdgeInsets.only(
-                right: context.isMultiPanel
-                    ? context.theme.spacing.lg + context.theme.spacing.sm
-                    : ghostPadRight,
+                right: isWide ? spacing.lg + spacing.sm : ghostPadRight,
               ),
               child: SizedBox(
-                width: timeColWidth,
+                width: isWide ? timeColWidth : narrowTimeColWidth,
                 child: Align(
                   alignment: Alignment.centerRight,
                   child: Text(

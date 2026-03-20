@@ -444,6 +444,9 @@ class ArchiveThread extends Command {
             ? EventAction.unarchived
             : EventAction.archived,
         icon: PlotIcon.archived,
+        shortcut: thread.archivedAt == null
+            ? platformSingleActivator(LogicalKeyboardKey.backspace)
+            : null,
       );
 
   ArchiveThread.future(this._thread)
@@ -639,6 +642,7 @@ abstract class _UpdateThreadCommand extends Command {
     required super.eventAction,
     super.icon,
     super.hoverIcon,
+    super.shortcut,
   }) : onUpdate = onUpdate ?? ((thread) => thread.save());
 
   final Thread thread;
@@ -695,6 +699,7 @@ class StartThread extends _UpdateThreadCommand {
         eventAction: EventAction.started,
         icon: stateIcon ? PlotIcon.note : PlotIcon.todo,
         hoverIcon: stateIcon ? PlotIcon.todo : null,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
       );
 
   @override
@@ -738,6 +743,7 @@ class FinishThread extends _UpdateThreadCommand {
          hoverIcon: stateIcon && thread.todo
              ? FontAwesomeIcons.circleCheck
              : null,
+         shortcut: platformSingleActivator(LogicalKeyboardKey.keyD),
        );
 
   final bool bump;
@@ -1033,6 +1039,7 @@ class PickScheduleThread extends Command {
         icon: PlotIcon.schedule,
         eventObject: EventObject.modal,
         eventAction: EventAction.opened,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyD, shift: true),
       );
 
   final Thread _thread;
@@ -1668,6 +1675,14 @@ class ToggleStartFinishCurrentThreadIntent extends Intent {
 
 class ArchiveCurrentThreadIntent extends Intent {
   const ArchiveCurrentThreadIntent();
+}
+
+class ToggleTabIntent extends Intent {
+  const ToggleTabIntent();
+}
+
+class ScheduleCurrentThreadIntent extends Intent {
+  const ScheduleCurrentThreadIntent();
 }
 
 class MoveFocusUp extends Command {

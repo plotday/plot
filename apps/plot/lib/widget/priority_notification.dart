@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'package:plot/style/colors.dart';
+import 'package:plot/util/platform.dart';
 import 'package:plot/util/theme_color.dart';
 import 'package:plot/widget/icon.dart';
 
@@ -24,7 +25,7 @@ class PriorityNotification extends StatelessWidget {
         dimension: 16,
         child: Icon(
           unread ? PlotIcon.todoFilled : PlotIcon.todo,
-          size: 12,
+          size: isMobilePlatform() ? 13 : 12,
           color: accent.withValues(alpha: unread ? 0.7 : 0.85),
         ),
       );

@@ -57,7 +57,7 @@ export 'toggle.dart';
 export 'twist_details.dart';
 export 'setup_source.dart';
 export 'twist_options.dart';
-export 'unread_indicator.dart';
+
 
 // Style exports
 export 'package:plot/style/colors.dart';

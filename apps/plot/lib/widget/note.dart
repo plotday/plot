@@ -190,9 +190,18 @@ class _NoteWidgetState extends State<NoteWidget> {
                 // NoteCommands can expand to full width
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: NoteCommands(
-                    note: widget.note,
-                    showCommands: highlighted,
+                  child: Transform.translate(
+                    offset: Offset(
+                      6 - context.theme.buttonStyles.ghost.md
+                          .iconContentStyle.padding
+                          .resolve(TextDirection.ltr)
+                          .left,
+                      0,
+                    ),
+                    child: NoteCommands(
+                      note: widget.note,
+                      showCommands: highlighted,
+                    ),
                   ),
                 ),
                 // Author/timestamp positioned on the right, overlapping if needed

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
@@ -34,6 +33,7 @@ class ThreadWidget extends StatefulWidget {
     this.reorderableIndex,
     this.onSwipeExit,
     this.onDesktopFinish,
+    this.onMobileFinish,
     super.key,
   });
 
@@ -54,6 +54,10 @@ class ThreadWidget extends StatefulWidget {
   /// Called before a finish command runs on desktop (icon click path).
   /// Should trigger the fade+collapse removal animation.
   final Future<void> Function()? onDesktopFinish;
+
+  /// Called before a finish command runs on mobile (toggle tap path).
+  /// Should trigger collapse-only removal animation.
+  final Future<void> Function()? onMobileFinish;
 
   @override
   State<ThreadWidget> createState() => _ThreadWidgetState();
@@ -136,7 +140,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   Command? _getSwipeLeftLongCommand() {
     if (activity.priority.isViewer) return null;
     if (!activity.todo) return null;
-    return FinishThread(activity, bump: bump, onBeforeRun: widget.onSwipeExit != null ? (_) async {} : null);
+    return FinishThread(
+      activity,
+      bump: bump,
+      onBeforeRun: widget.onSwipeExit != null ? (_) async {} : null,
+    );
   }
 
   Widget _buildListTile(BuildContext buildContext, bool isTouchDevice) {
@@ -224,37 +232,26 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final bool isTodo = activity.todo;
         final bool isScheduled = isTodo && activity.isFuture;
 
-        // Icon 1: Calendar scheduling icon
-        final schedDateTime =
-            activity.on?.start?.toDateTime() ?? activity.at?.start;
-        final schedLabel = isScheduled && schedDateTime != null
-            ? 'Scheduled for ${formatRelativeSchedule(schedDateTime, buildContext)}'
-            : 'Schedule';
-        final calendarIcon = Button.icon(
-          CommandWrapper(
-            PickScheduleThread(activity),
-            icon: Value(PlotIcon.schedule),
-            title: schedLabel,
-          ),
-          selected: isScheduled,
-          selectedColor: threadColor,
-          color: isScheduled ? null : buildContext.theme.plotColors.veryMuted,
-          hoverColor: isScheduled ? null : buildContext.colour.foreground,
-          forceHover: isHovered,
-        );
-
-        // Icon 2: To-do state icon
+        // Leading button: to-do state icon (shows calendar icon when scheduled)
+        final longPress = activity.priority.isViewer
+            ? null
+            : () => buildContext.run(PickScheduleThread(activity));
         final Widget todoIcon;
         if (!isTodo) {
           todoIcon = Button.icon(
             CommandWrapper(
               StartThread(activity),
-              icon: Value(PlotIcon.addTodo),
+              icon: Value(
+                activity.unread ? PlotIcon.todoFilled : PlotIcon.addTodo,
+              ),
               title: 'Start',
             ),
-            color: buildContext.theme.plotColors.veryMuted,
+            color: activity.unread
+                ? buildContext.theme.plotColors.muted
+                : buildContext.theme.plotColors.veryMuted,
             hoverColor: buildContext.colour.foreground,
             forceHover: isHovered,
+            onLongPress: longPress,
           );
         } else {
           final hasPending = activity.outstandingTasks;
@@ -263,11 +260,19 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               FinishThread(
                 activity,
                 bump: bump,
-                onBeforeRun: widget.onDesktopFinish != null
+                onBeforeRun: widget.onMobileFinish != null
+                    ? (_) => widget.onMobileFinish!()
+                    : widget.onDesktopFinish != null
                     ? (_) => widget.onDesktopFinish!()
                     : null,
               ),
-              icon: Value(hasPending ? FontAwesomeIcons.circle : PlotIcon.todo),
+              icon: Value(
+                isScheduled
+                    ? PlotIcon.schedule
+                    : hasPending
+                    ? FontAwesomeIcons.circle
+                    : (activity.unread ? PlotIcon.todoFilled : PlotIcon.todo),
+              ),
               hoverIcon: hasPending
                   ? Value(FontAwesomeIcons.circleCheck)
                   : Value(PlotIcon.finish),
@@ -276,6 +281,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             selected: true,
             selectedColor: threadColor,
             forceHover: isHovered,
+            onLongPress: longPress,
           );
         }
 
@@ -290,14 +296,12 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             .padding
             .resolve(TextDirection.ltr);
 
-        // Left padding before first button; dot is overlaid centered
-        // between x=0 and the first button's icon left edge.
-        final leftPad = isWide ? spacing.lg : spacing.xl;
-        final dotCenter = (leftPad + ghostPad.left) / 2;
+        final leftPad = spacing.lg;
+        // Narrow: center button between screen edge and body start.
+        final narrowSideSpace = (spacing.lg + spacing.sm) / 2;
 
         return Stack(
           children: [
-            // Main content row: buttons — sizes the Stack
             Padding(
               padding: EdgeInsets.only(
                 top: spacing.sm + labelOffset,
@@ -306,40 +310,25 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(width: leftPad),
-                  if (isWide) calendarIcon,
+                  SizedBox(width: isWide ? leftPad : narrowSideSpace),
                   todoIcon,
-                  SizedBox(width: isWide ? spacing.lg : spacing.sm),
+                  SizedBox(width: isWide ? spacing.lg : narrowSideSpace),
                 ],
               ),
             ),
-            // Notification dot centered between screen left and
-            // the first button's icon left edge.
-            Positioned(
-              top: spacing.sm + labelOffset,
-              bottom: spacing.sm,
-              left: dotCenter - 3,
-              width: 6,
-              child: UnreadIndicator(
-                color: activity.priority.displayColor,
-                unread: activity.unread,
-              ),
-            ),
-            // Time label for timed events, positioned at the top
-            // to align with the body's header row. Right edge aligns
-            // with the start button icon's right edge.
             if (isTimedEvent)
               Positioned(
                 top: spacing.sm - 1,
-                right: (isWide ? spacing.lg : spacing.sm) + ghostPad.right,
+                right: isWide ? spacing.lg + ghostPad.right : spacing.sm,
                 child: Text(
-                  isWide
-                      ? activity.at!.start!.toTimeOfDay().formatShort(
-                          buildContext,
-                        )
-                      : activity.at!.start!.toTimeOfDay().formatNarrow(
-                          buildContext,
-                        ),
+                  '12:55p',
+                  // isWide
+                  //     ? activity.at!.start!.toTimeOfDay().formatShort(
+                  //         buildContext,
+                  //       )
+                  //     : activity.at!.start!.toTimeOfDay().formatNarrow(
+                  //         buildContext,
+                  //       ),
                   style: TextStyle(
                     color: now
                         ? buildContext.colour.colours.fromTheme(
@@ -451,14 +440,8 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            FaIcon(
-                              PlotIcon.schedule,
-                              size: xsFontSize,
-                              color: veryMuted,
-                            ),
-                            SizedBox(width: buildContext.theme.spacing.xs),
                             Text(
-                              'in ${Duration(minutes: (activity.at!.start!.difference(currentTime).inSeconds / 60).ceil()).format()}',
+                              'In ${Duration(minutes: (activity.at!.start!.difference(currentTime).inSeconds / 60).ceil()).format()}',
                               style: TextStyle(color: veryMuted),
                             ),
                           ],
@@ -778,8 +761,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     final swipeRightLong = _getSwipeRightLongCommand();
     final swipeLeftShort = _getSwipeLeftShortCommand();
     final swipeLeftLong = _getSwipeLeftLongCommand();
-    final hasSwipeCommands = swipeRightShort != null || swipeRightLong != null ||
-        swipeLeftShort != null || swipeLeftLong != null;
+    final hasSwipeCommands =
+        swipeRightShort != null ||
+        swipeRightLong != null ||
+        swipeLeftShort != null ||
+        swipeLeftLong != null;
 
     // Mobile with reorderable: trailing drag handle, swipeable only wraps content
     if (reorderableIndex != null) {
@@ -841,6 +827,7 @@ class ThreadCommands extends HookWidget {
     this.showEventTiming = false,
     this.bump = true,
     this.onDesktopFinish,
+    this.onMobileFinish,
     super.key,
   });
 
@@ -850,6 +837,7 @@ class ThreadCommands extends HookWidget {
   final bool showEventTiming;
   final bool bump;
   final Future<void> Function()? onDesktopFinish;
+  final Future<void> Function()? onMobileFinish;
 
   @override
   Widget build(BuildContext context) {
@@ -879,7 +867,9 @@ class ThreadCommands extends HookWidget {
                 activity,
                 stateIcon: true,
                 bump: bump,
-                onBeforeRun: onDesktopFinish != null
+                onBeforeRun: onMobileFinish != null
+                    ? (_) => onMobileFinish!()
+                    : onDesktopFinish != null
                     ? (_) => onDesktopFinish!()
                     : null,
               )
@@ -983,7 +973,9 @@ class ThreadCommands extends HookWidget {
                             activity,
                             stateIcon: true,
                             bump: bump,
-                            onBeforeRun: onDesktopFinish != null
+                            onBeforeRun: onMobileFinish != null
+                                ? (_) => onMobileFinish!()
+                                : onDesktopFinish != null
                                 ? (_) => onDesktopFinish!()
                                 : null,
                           )

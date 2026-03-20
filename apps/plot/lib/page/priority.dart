@@ -476,17 +476,42 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                         return null;
                       },
                     ),
+                ToggleTabIntent: CallbackAction<ToggleTabIntent>(
+                  onInvoke: (_) {
+                    final tabNotifier = PriorityTabProvider.maybeOf(context);
+                    if (tabNotifier != null) {
+                      final target =
+                          tabNotifier.value == PriorityTab.agenda
+                              ? ThreadListSource.activityFeed
+                              : ThreadListSource.agenda;
+                      _focusListSource(context, target);
+                    }
+                    return null;
+                  },
+                ),
+                ScheduleCurrentThreadIntent:
+                    CallbackAction<ScheduleCurrentThreadIntent>(
+                      onInvoke: (_) {
+                        final thread = _resolveFocusedOrCurrentThread(context);
+                        if (thread != null) {
+                          PickScheduleThread(thread).run(context);
+                        }
+                        return null;
+                      },
+                    ),
               },
               child: Shortcuts(
                 shortcuts: <ShortcutActivator, Intent>{
                   platformSingleActivator(LogicalKeyboardKey.keyT):
                       const FocusAgendaIntent(),
                   platformSingleActivator(LogicalKeyboardKey.keyT, shift: true):
-                      const FocusActivityListIntent(),
+                      const ToggleTabIntent(),
                   platformSingleActivator(LogicalKeyboardKey.slash):
                       const ToggleSearchIntent(),
                   platformSingleActivator(LogicalKeyboardKey.keyD):
                       const ToggleStartFinishCurrentThreadIntent(),
+                  platformSingleActivator(LogicalKeyboardKey.keyD, shift: true):
+                      const ScheduleCurrentThreadIntent(),
                   platformSingleActivator(LogicalKeyboardKey.backspace):
                       const ArchiveCurrentThreadIntent(),
                   // Global Escape handler - focus ThreadEditor when ThreadPage is open
