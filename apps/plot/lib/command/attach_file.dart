@@ -14,6 +14,63 @@ import 'logging.dart';
 
 const _maxFileSize = 25 * 1024 * 1024; // 25MB
 
+/// Uploads a single [PlatformFile] and returns the resulting [FileUserAction].
+///
+/// Returns `null` if the file bytes/path could not be read.
+Future<FileUserAction> _uploadFile({
+  required PlatformFile file,
+  required String priorityId,
+}) async {
+  final Map<String, dynamic> response;
+
+  if (kIsWeb) {
+    final bytes = file.bytes;
+    if (bytes == null) throw StateError('Could not read file bytes.');
+    response = await api.uploadFile(
+      filePath: '',
+      fileName: file.name,
+      priorityId: priorityId,
+      bytes: bytes,
+    );
+  } else {
+    final path = file.path;
+    if (path == null) throw StateError('Could not read file path.');
+    response = await api.uploadFile(
+      filePath: path,
+      fileName: file.name,
+      priorityId: priorityId,
+    );
+  }
+
+  final mimeType = response['mimeType'] as String;
+  int? imageWidth;
+  int? imageHeight;
+  if (mimeType.startsWith('image/')) {
+    Uint8List? imageBytes;
+    if (kIsWeb) {
+      imageBytes = file.bytes;
+    } else if (file.path != null) {
+      imageBytes = await File(file.path!).readAsBytes();
+    }
+    if (imageBytes != null) {
+      final dims = await getImageDimensions(imageBytes);
+      if (dims != null) {
+        imageWidth = dims.$1;
+        imageHeight = dims.$2;
+      }
+    }
+  }
+
+  return FileUserAction(
+    fileId: response['fileId'] as String,
+    fileName: response['fileName'] as String,
+    fileSize: response['fileSize'] as int,
+    mimeType: mimeType,
+    imageWidth: imageWidth,
+    imageHeight: imageHeight,
+  );
+}
+
 class AttachFile extends Command {
   AttachFile({
     required this.priorityId,
@@ -51,96 +108,57 @@ class AttachFile extends Command {
   }
 
   Future<CommandReturn> _pickAndUpload(List<UserAction> links) async {
-    final result = await FilePicker.platform.pickFiles();
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
     if (result == null || result.files.isEmpty) {
       return const CommandSkipped();
     }
 
-    final file = result.files.first;
-    final fileName = file.name;
-    final fileSize = file.size;
+    final skipped = <String>[];
+    final newFileLinks = <FileUserAction>[];
 
-    if (fileSize > _maxFileSize) {
-      return const CommandMessage(
-        'File is too large. Maximum size is 25 MB.',
+    for (final file in result.files) {
+      if (file.size > _maxFileSize) {
+        skipped.add(file.name);
+        continue;
+      }
+
+      try {
+        final fileLink = await _uploadFile(
+          file: file,
+          priorityId: priorityId,
+        );
+        newFileLinks.add(fileLink);
+      } on NetworkException {
+        return CommandMessage(
+          "You're offline. Please try again when connected."
+              '${newFileLinks.isNotEmpty ? ' ${newFileLinks.length} file(s) were uploaded before the error.' : ''}',
+          isError: true,
+        );
+      } catch (e, t) {
+        log.warning('Failed to upload file: ${file.name}', e, t);
+        skipped.add(file.name);
+      }
+    }
+
+    if (newFileLinks.isNotEmpty) {
+      onLinksChanged([...links, ...newFileLinks]);
+    }
+
+    if (skipped.isNotEmpty) {
+      return CommandMessage(
+        'Skipped ${skipped.length} file(s) (too large or failed): ${skipped.join(', ')}',
         isError: true,
       );
     }
 
-    try {
-      final Map<String, dynamic> response;
-
-      if (kIsWeb) {
-        final bytes = file.bytes;
-        if (bytes == null) {
-          return const CommandMessage(
-            'Could not read file.',
-            isError: true,
-          );
-        }
-        response = await api.uploadFile(
-          filePath: '',
-          fileName: fileName,
-          priorityId: priorityId,
-          bytes: bytes,
-        );
-      } else {
-        final path = file.path;
-        if (path == null) {
-          return const CommandMessage(
-            'Could not read file.',
-            isError: true,
-          );
-        }
-        response = await api.uploadFile(
-          filePath: path,
-          fileName: fileName,
-          priorityId: priorityId,
-        );
-      }
-
-      final mimeType = response['mimeType'] as String;
-      int? imageWidth;
-      int? imageHeight;
-      if (mimeType.startsWith('image/')) {
-        Uint8List? imageBytes;
-        if (kIsWeb) {
-          imageBytes = file.bytes;
-        } else if (file.path != null) {
-          imageBytes = await File(file.path!).readAsBytes();
-        }
-        if (imageBytes != null) {
-          final dims = await getImageDimensions(imageBytes);
-          if (dims != null) {
-            imageWidth = dims.$1;
-            imageHeight = dims.$2;
-          }
-        }
-      }
-
-      final fileLink = FileUserAction(
-        fileId: response['fileId'] as String,
-        fileName: response['fileName'] as String,
-        fileSize: response['fileSize'] as int,
-        mimeType: mimeType,
-        imageWidth: imageWidth,
-        imageHeight: imageHeight,
-      );
-
-      onLinksChanged([...links, fileLink]);
-      return const CommandDone();
-    } on NetworkException {
+    if (newFileLinks.isEmpty) {
       return const CommandMessage(
-        "You're offline. Please try again when connected.",
-        isError: true,
-      );
-    } catch (e, t) {
-      log.warning('Failed to upload file', e, t);
-      return const CommandMessage(
-        'Failed to upload file. Please try again.',
+        'No files were uploaded.',
         isError: true,
       );
     }
+
+    return const CommandDone();
   }
 }
 
@@ -161,7 +179,9 @@ class _AttachmentsModal extends StatefulWidget {
 
 class _AttachmentsModalState extends State<_AttachmentsModal> {
   late List<UserAction> _links;
-  bool _isUploading = false;
+  (int current, int total)? _uploadProgress;
+
+  bool get _isUploading => _uploadProgress != null;
 
   List<FileUserAction> get _fileLinks =>
       _links.whereType<FileUserAction>().toList();
@@ -181,96 +201,68 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
   }
 
   Future<void> _addFile() async {
-    final result = await FilePicker.platform.pickFiles();
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
     if (result == null || result.files.isEmpty) return;
 
-    final file = result.files.first;
+    final validFiles = <PlatformFile>[];
+    final skipped = <String>[];
 
-    if (file.size > _maxFileSize) {
-      if (mounted) {
-        context.showToast(
-          message: 'File is too large. Maximum size is 25 MB.',
-          isError: true,
-        );
+    for (final file in result.files) {
+      if (file.size > _maxFileSize) {
+        skipped.add(file.name);
+      } else {
+        validFiles.add(file);
       }
-      return;
     }
 
-    setState(() => _isUploading = true);
-
-    try {
-      final Map<String, dynamic> response;
-
-      if (kIsWeb) {
-        final bytes = file.bytes;
-        if (bytes == null) return;
-        response = await api.uploadFile(
-          filePath: '',
-          fileName: file.name,
-          priorityId: widget.priorityId,
-          bytes: bytes,
-        );
-      } else {
-        final path = file.path;
-        if (path == null) return;
-        response = await api.uploadFile(
-          filePath: path,
-          fileName: file.name,
-          priorityId: widget.priorityId,
-        );
-      }
-
-      final mimeType = response['mimeType'] as String;
-      int? imageWidth;
-      int? imageHeight;
-      if (mimeType.startsWith('image/')) {
-        Uint8List? imageBytes;
-        if (kIsWeb) {
-          imageBytes = file.bytes;
-        } else if (file.path != null) {
-          imageBytes = await File(file.path!).readAsBytes();
-        }
-        if (imageBytes != null) {
-          final dims = await getImageDimensions(imageBytes);
-          if (dims != null) {
-            imageWidth = dims.$1;
-            imageHeight = dims.$2;
-          }
-        }
-      }
-
-      final fileLink = FileUserAction(
-        fileId: response['fileId'] as String,
-        fileName: response['fileName'] as String,
-        fileSize: response['fileSize'] as int,
-        mimeType: mimeType,
-        imageWidth: imageWidth,
-        imageHeight: imageHeight,
+    if (skipped.isNotEmpty && mounted) {
+      context.showToast(
+        message:
+            'Skipped ${skipped.length} file(s) over 25 MB: ${skipped.join(', ')}',
+        isError: true,
       );
+    }
 
-      setState(() {
-        _links.add(fileLink);
-      });
-      widget.onLinksChanged(_links);
-    } on NetworkException {
+    if (validFiles.isEmpty) return;
+
+    setState(() => _uploadProgress = (1, validFiles.length));
+
+    for (var i = 0; i < validFiles.length; i++) {
+      final file = validFiles[i];
       if (mounted) {
-        context.showToast(
-          message: "You're offline. Please try again when connected.",
-          isError: true,
+        setState(() => _uploadProgress = (i + 1, validFiles.length));
+      }
+
+      try {
+        final fileLink = await _uploadFile(
+          file: file,
+          priorityId: widget.priorityId,
         );
+        if (mounted) {
+          setState(() => _links.add(fileLink));
+          widget.onLinksChanged(_links);
+        }
+      } on NetworkException {
+        if (mounted) {
+          context.showToast(
+            message: "You're offline. Please try again when connected.",
+            isError: true,
+          );
+        }
+        break;
+      } catch (e, t) {
+        log.warning('Failed to upload file: ${file.name}', e, t);
+        if (mounted) {
+          context.showToast(
+            message: 'Failed to upload ${file.name}.',
+            isError: true,
+          );
+        }
       }
-    } catch (e, t) {
-      log.warning('Failed to upload file', e, t);
-      if (mounted) {
-        context.showToast(
-          message: 'Failed to upload file. Please try again.',
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
+    }
+
+    if (mounted) {
+      setState(() => _uploadProgress = null);
     }
   }
 
@@ -278,6 +270,13 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  String get _uploadButtonText {
+    final progress = _uploadProgress;
+    if (progress == null) return 'Add more';
+    if (progress.$2 == 1) return 'Uploading...';
+    return 'Uploading ${progress.$1} of ${progress.$2}...';
   }
 
   @override
@@ -326,7 +325,7 @@ class _AttachmentsModalState extends State<_AttachmentsModal> {
                   ? null
                   : Icon(PlotIcon.add, size: 14,
                       color: theme.colors.foreground),
-              child: Text(_isUploading ? 'Uploading...' : 'Add another'),
+              child: Text(_uploadButtonText),
             ),
             const Spacer(),
             FButton(
