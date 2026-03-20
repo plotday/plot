@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { sql } from "kysely";
 
 import type { Bindings } from "../env";
 import { rpcUser } from "../rpc";
@@ -81,12 +82,20 @@ files.get("/files/:fileId", async (c) => {
     return c.json({ message: "File not found" }, 404);
   }
 
-  const priorityId = object.customMetadata?.priorityId;
+  // Look up priority from DB: note.actions -> thread.priority_id
+  const noteRow = await c.var.db
+    .selectFrom("note")
+    .innerJoin("thread", "thread.id", "note.thread_id")
+    .select("thread.priority_id")
+    .where(sql<boolean>`note.actions @> ${JSON.stringify([{ fileId }])}::jsonb`)
+    .executeTakeFirst();
+
+  // Fall back to R2 metadata for files not yet attached to a note
+  const priorityId = noteRow?.priority_id ?? object.customMetadata?.priorityId;
   if (!priorityId) {
     return c.json({ message: "File metadata missing" }, 500);
   }
 
-  // Verify user has access to the priority
   const hasAccess = await rpcUser(c.var.db, "has_priority_access", {
     user_id: user.id,
     priority_id: priorityId,
