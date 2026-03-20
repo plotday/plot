@@ -1,3 +1,4 @@
+- Cleaner priority browsing — selecting "Everything" now shows top-level priorities collapsed, tapping a priority on mobile expands it first then navigates on a second tap, and the Activity unread dot now reflects unread items in child priorities too
 - Select multiple files at once when attaching to notes — no more picking one at a time
 - Simplified agenda layout — the leading area now shows a single button instead of two, with long press or right-click to schedule
 - Smoother image loading — image attachments now show a correctly-sized placeholder while loading instead of jumping when the image appears
