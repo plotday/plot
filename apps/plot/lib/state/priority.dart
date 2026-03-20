@@ -231,7 +231,9 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Optimistically remove a thread from the agenda for instant UI feedback.
   /// The stream-based update will confirm the same state when it catches up.
   /// Keeps link schedule instances so they remain at their scheduled times.
-  void optimisticallyRemoveThread(ThreadId id) {
+  /// When [finishTodo] is true, remaining link schedule instances are also
+  /// updated to todo=false so the leading icon reflects the finished state.
+  void optimisticallyRemoveThread(ThreadId id, {bool finishTodo = false}) {
     _pendingRemovedIds.add(id);
     _optimisticTimestamp = DateTime.now();
     final updatedItems = state.agendaItems
@@ -242,6 +244,19 @@ class PriorityBloc extends Cubit<PriorityState> {
                 a.thread.id != id || a.thread.isLinkScheduleInstance,
           ),
         )
+        .map((item) {
+          if (!finishTodo) return item;
+          return item.when(
+            header: (_) => item,
+            activity: (a) => a.thread.id == id
+                ? AgendaThreadItem(
+                    a.thread.copyWith(todo: false),
+                    now: a.now,
+                    isNext: a.isNext,
+                  )
+                : item,
+          );
+        })
         .toList();
     emit(state.copyWith(agendaItems: updatedItems));
   }
@@ -424,6 +439,13 @@ class PriorityBloc extends Cubit<PriorityState> {
         activityFeedItems: updatedFeedItems,
       ),
     );
+  }
+
+  /// Force the agenda to rebuild from fresh stream data. Call after an
+  /// optimistic update + save when the number of agenda items may have changed
+  /// (e.g. starting a link schedule thread creates a base todo duplicate).
+  void refreshAgenda() {
+    _loadAgenda(triggerSync: false);
   }
 
   Future<void> setPriority(Priority newPriority) async {

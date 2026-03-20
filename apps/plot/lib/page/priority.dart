@@ -91,8 +91,7 @@ class PriorityWrapper implements AutoRouteWrapper {
                                   .index,
                           builder: (context, threadColorIndex) {
                             final threadColor = ThemeColor(threadColorIndex);
-                            final brightness =
-                                context.colour.brightness;
+                            final brightness = context.colour.brightness;
                             return ProxyProvider0<ColourSchemeData>(
                               update: (_, _) => ColourSchemeData(
                                 themeColor: threadColor,
@@ -130,7 +129,8 @@ class _PriorityCommandScope extends StatelessWidget {
     final bloc = context.watch<PriorityBloc>();
     return CommandScope(
       commands: currentPriorityCommandGroups(
-          bloc.state.thread?.priority ?? bloc.state.context),
+        bloc.state.thread?.priority ?? bloc.state.context,
+      ),
       child: child,
     );
   }
@@ -480,10 +480,9 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                   onInvoke: (_) {
                     final tabNotifier = PriorityTabProvider.maybeOf(context);
                     if (tabNotifier != null) {
-                      final target =
-                          tabNotifier.value == PriorityTab.agenda
-                              ? ThreadListSource.activityFeed
-                              : ThreadListSource.agenda;
+                      final target = tabNotifier.value == PriorityTab.agenda
+                          ? ThreadListSource.activityFeed
+                          : ThreadListSource.agenda;
                       _focusListSource(context, target);
                     }
                     return null;
@@ -1593,7 +1592,9 @@ class _PriorityPageState extends State<PriorityPage> {
     ScrollController? scrollController, {
     PageStorageKey<String>? scrollStorageKey,
   }) {
-    if (items.isEmpty && state.activityFeedDoneEnd && state.activityFeedLoaded) {
+    if (items.isEmpty &&
+        state.activityFeedDoneEnd &&
+        state.activityFeedLoaded) {
       return Padding(
         padding: EdgeInsets.symmetric(
           horizontal: context.contentPaddingH,
@@ -1827,7 +1828,10 @@ class _DesktopTabState extends State<_DesktopTab> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _unreadDot(textColor, visible: widget.showUnreadDot),
+                    _unreadDot(
+                      context.colour.accent.withValues(alpha: 0.7),
+                      visible: widget.showUnreadDot,
+                    ),
                     Text(
                       widget.label,
                       style: theme.typography.sm.copyWith(

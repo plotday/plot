@@ -884,7 +884,8 @@ $function$;
 CREATE OR REPLACE FUNCTION "user".clear_thread_unread (
     user_id uuid,
     p_thread_id uuid,
-    p_read_at timestamptz DEFAULT now()
+    p_read_at timestamptz DEFAULT now(),
+    p_bumped_at timestamptz DEFAULT NULL
 )
     RETURNS void
     LANGUAGE plpgsql
@@ -910,7 +911,8 @@ BEGIN
     UPDATE thread_unread
     SET
         read_at = p_read_at,
-        updated_at = now()
+        updated_at = now(),
+        bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END
     WHERE
         thread_unread.user_id = clear_thread_unread.user_id
         AND thread_unread.thread_id = p_thread_id

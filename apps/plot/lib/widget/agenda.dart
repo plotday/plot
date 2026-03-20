@@ -2,30 +2,27 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
 
-/// Distance from the leading left edge to the start button's icon right edge.
-/// Used by [AgendaHeader] gap rows to right-align times at the same position
-/// as the ThreadWidget's leading time label.
+/// Width of the leading column: widest possible time string + horizontal padding.
+/// Used by both [AgendaHeader] gap rows and [ThreadWidget] leading areas.
 double agendaLeadingWidth(BuildContext context) {
   final isWide = context.isMultiPanel;
-  final ghostPad = context.theme.buttonStyles.ghost.md.iconContentStyle.padding
-      .resolve(TextDirection.ltr);
-  final buttonW = context.theme.iconSizes.base + ghostPad.horizontal;
-  final spacing = context.theme.spacing;
-  if (isWide) {
-    final leftPad = spacing.lg;
-    // |leftPad|todoBtn| — up to icon right edge
-    return leftPad + buttonW - ghostPad.right;
-  } else {
-    // Button is centered between screen edge and body start.
-    final sideSpace = (spacing.md + 4 + spacing.sm) / 2;
-    return sideSpace + buttonW - ghostPad.right;
-  }
+  final maxTimeText = isWide ? '12:55 pm' : '12:55p';
+  final fontSize = context.theme.typography.xs.fontSize;
+  final textWidth = (TextPainter(
+    text: TextSpan(
+      text: maxTimeText,
+      style: TextStyle(fontSize: fontSize),
+    ),
+    maxLines: 1,
+    textDirection: TextDirection.ltr,
+  )..layout()).width;
+  final pad = isWide ? context.theme.spacing.sm : context.theme.spacing.sm;
+  return textWidth + pad * 2;
 }
 
 class AgendaHeader extends StatelessWidget {
@@ -225,38 +222,32 @@ class AgendaHeader extends StatelessWidget {
 
       final Widget child;
       if (centerText != null) {
-        // Left time column (right-aligned to match thread times) + right-aligned duration
-        final ghostPadRight = context
-            .theme
-            .buttonStyles
-            .ghost
-            .md
-            .iconContentStyle
-            .padding
-            .resolve(TextDirection.ltr)
-            .right;
-        final isWide = context.isMultiPanel;
         final spacing = context.theme.spacing;
-        // Narrow: right-align time with spacing.sm gap to body start,
-        // matching the ThreadWidget time label position.
-        final narrowSideSpace = (spacing.md + 4 + spacing.sm) / 2;
-        final narrowTimeColWidth =
-            timeColWidth + ghostPadRight + narrowSideSpace - spacing.sm;
+        // Match the ListTile's right padding so duration aligns with
+        // the thread tag button icons.
+        final isWide = context.isMultiPanel;
         child = Padding(
           padding: EdgeInsets.only(
-            right: isWide ? spacing.lg + spacing.sm : ghostPadRight,
+            right: isWide
+                ? spacing.lg
+                : context.theme.buttonStyles.ghost.md.iconContentStyle.padding
+                      .resolve(TextDirection.ltr)
+                      .right,
           ),
           child: Row(
             children: [
               SizedBox(
-                width: isWide ? timeColWidth : narrowTimeColWidth,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    centerText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: timeStyle,
+                width: timeColWidth,
+                child: Padding(
+                  padding: EdgeInsets.only(right: spacing.sm),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      centerText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: timeStyle,
+                    ),
                   ),
                 ),
               ),
@@ -313,30 +304,14 @@ class AgendaHeader extends StatelessWidget {
           : null;
 
       if (timeText != null) {
-        final ghostPadRight = context
-            .theme
-            .buttonStyles
-            .ghost
-            .md
-            .iconContentStyle
-            .padding
-            .resolve(TextDirection.ltr)
-            .right;
-        final isWide = context.isMultiPanel;
-        final spacing = context.theme.spacing;
-        final narrowSideSpace = (spacing.md + 4 + spacing.sm) / 2;
-        final narrowTimeColWidth =
-            timeColWidth + ghostPadRight + narrowSideSpace - spacing.sm;
         Widget result = Padding(
           padding: EdgeInsets.symmetric(vertical: verticalMargin),
           child: Padding(
-            padding: EdgeInsets.symmetric(vertical: spacing.xs),
-            child: Padding(
-              padding: EdgeInsets.only(
-                right: isWide ? spacing.lg + spacing.sm : ghostPadRight,
-              ),
-              child: SizedBox(
-                width: isWide ? timeColWidth : narrowTimeColWidth,
+            padding: EdgeInsets.symmetric(vertical: context.theme.spacing.xs),
+            child: SizedBox(
+              width: timeColWidth,
+              child: Padding(
+                padding: EdgeInsets.only(right: context.theme.spacing.sm),
                 child: Align(
                   alignment: Alignment.centerRight,
                   child: Text(

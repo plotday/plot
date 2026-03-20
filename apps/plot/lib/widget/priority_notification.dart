@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/state/theme.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/theme_color.dart';
@@ -20,14 +22,27 @@ class PriorityNotification extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = context.colour.colours.fromTheme(color);
+    final iconSize = isMobilePlatform() ? 13.0 : 12.0;
     if (active) {
+      if (unread) {
+        final isDark = context.read<ThemeBloc>().isDarkMode(context);
+        return SizedBox.square(
+          dimension: 16,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Opacity(
+                opacity: isDark ? 0.55 : 0.2,
+                child: Icon(PlotIcon.todoFilled, size: iconSize, color: accent),
+              ),
+              Icon(PlotIcon.todo, size: iconSize, color: accent),
+            ],
+          ),
+        );
+      }
       return SizedBox.square(
         dimension: 16,
-        child: Icon(
-          unread ? PlotIcon.todoFilled : PlotIcon.todo,
-          size: isMobilePlatform() ? 13 : 12,
-          color: accent.withValues(alpha: unread ? 0.7 : 0.85),
-        ),
+        child: Icon(PlotIcon.todo, size: iconSize, color: accent),
       );
     }
 

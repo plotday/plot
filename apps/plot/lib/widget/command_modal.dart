@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/command/command.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/util/shortcut.dart';
 import 'list_tile.dart';
@@ -90,7 +91,7 @@ class CommandModal {
                           width: 6.0,
                           height: 6.0,
                           decoration: BoxDecoration(
-                            color: context.theme.colors.foreground,
+                            color: context.colour.accent.withValues(alpha: 0.7),
                             shape: BoxShape.circle,
                           ),
                         ),

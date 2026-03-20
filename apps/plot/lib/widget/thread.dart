@@ -12,6 +12,7 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/theme.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/util/hooks.dart';
@@ -65,6 +66,7 @@ class ThreadWidget extends StatefulWidget {
 
 class _ThreadWidgetState extends State<ThreadWidget> {
   Timer? _timer;
+  bool _leadingHovered = false;
 
   @override
   void initState() {
@@ -143,7 +145,14 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     return FinishThread(
       activity,
       bump: bump,
-      onBeforeRun: widget.onSwipeExit != null ? (_) async {} : null,
+      // Link schedule instances stay visible after finish, so skip removal
+      // animation. For swipe, the non-link-schedule path uses an empty
+      // callback so onSwipeExit handles the visual removal instead.
+      onBeforeRun: activity.isLinkScheduleInstance
+          ? null
+          : widget.onSwipeExit != null
+          ? (_) async {}
+          : null,
     );
   }
 
@@ -221,7 +230,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       subtitle: activity.preview,
       padding: EdgeInsets.only(
         right: buildContext.isMultiPanel
-            ? buildContext.theme.spacing.lg + buildContext.theme.spacing.sm
+            ? buildContext.theme.spacing.lg
             : buildContext.theme.buttonStyles.ghost.md.iconContentStyle.padding
                   .resolve(TextDirection.ltr)
                   .right,
@@ -236,47 +245,80 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final longPress = activity.priority.isViewer
             ? null
             : () => buildContext.run(PickScheduleThread(activity));
+
+        // The command that the leading tap target triggers
+        final Command leadingCommand;
+        if (!isTodo) {
+          leadingCommand = StartThread(activity);
+        } else if (isScheduled) {
+          leadingCommand = PickScheduleThread(activity);
+        } else {
+          leadingCommand = FinishThread(
+            activity,
+            bump: bump,
+            // Link schedule instances must stay visible after finish (only the
+            // base todo duplicate is removed), so skip the removal animation.
+            onBeforeRun: activity.isLinkScheduleInstance
+                ? null
+                : widget.onMobileFinish != null
+                ? (_) => widget.onMobileFinish!()
+                : widget.onDesktopFinish != null
+                ? (_) => widget.onDesktopFinish!()
+                : null,
+          );
+        }
+
+        final leadingW = agendaLeadingWidth(buildContext);
+        final spacing = buildContext.theme.spacing;
+
         final Widget todoIcon;
         if (!isTodo) {
           todoIcon = Button.icon(
-            CommandWrapper(
-              StartThread(activity),
-              icon: Value(
-                activity.unread ? PlotIcon.todoFilled : PlotIcon.addTodo,
-              ),
+            _ThreadLeadingCommand(
+              leadingCommand,
+              outlineIcon: PlotIcon.todo,
+              filledIcon: PlotIcon.todoFilled,
+              showEmpty: !activity.unread,
+              dotColor: activity.unread
+                  ? buildContext.colour.accent.withValues(alpha: 0.7)
+                  : null,
+              iconHoverColor: _leadingHovered
+                  ? buildContext.colour.foreground
+                  : null,
+              hoverIcon: Value(PlotIcon.todo),
               title: 'Start',
             ),
-            color: activity.unread
-                ? buildContext.theme.plotColors.muted
-                : buildContext.theme.plotColors.veryMuted,
-            hoverColor: buildContext.colour.foreground,
             forceHover: isHovered,
             onLongPress: longPress,
           );
         } else {
           final hasPending = activity.outstandingTasks;
+          final outlineIcon = isScheduled
+              ? PlotIcon.schedule
+              : hasPending
+              ? FontAwesomeIcons.circle
+              : PlotIcon.todo;
+          final filledIcon = isScheduled
+              ? FontAwesomeIcons.solidCalendar
+              : hasPending
+              ? FontAwesomeIcons.solidCircle
+              : PlotIcon.todoFilled;
+          final hoverActionIcon = hasPending
+              ? FontAwesomeIcons.circleCheck
+              : isScheduled
+              ? PlotIcon.schedule
+              : PlotIcon.finish;
           todoIcon = Button.icon(
-            CommandWrapper(
-              FinishThread(
-                activity,
-                bump: bump,
-                onBeforeRun: widget.onMobileFinish != null
-                    ? (_) => widget.onMobileFinish!()
-                    : widget.onDesktopFinish != null
-                    ? (_) => widget.onDesktopFinish!()
-                    : null,
-              ),
-              icon: Value(
-                isScheduled
-                    ? PlotIcon.schedule
-                    : hasPending
-                    ? FontAwesomeIcons.circle
-                    : (activity.unread ? PlotIcon.todoFilled : PlotIcon.todo),
-              ),
-              hoverIcon: hasPending
-                  ? Value(FontAwesomeIcons.circleCheck)
-                  : Value(PlotIcon.finish),
-              title: 'Finish',
+            _ThreadLeadingCommand(
+              leadingCommand,
+              outlineIcon: outlineIcon,
+              filledIcon: filledIcon,
+              showFill: activity.unread,
+              iconHoverColor: _leadingHovered
+                  ? buildContext.colour.foreground
+                  : null,
+              hoverIcon: Value(hoverActionIcon),
+              title: isScheduled ? 'Reschedule' : 'Finish',
             ),
             selected: true,
             selectedColor: threadColor,
@@ -285,62 +327,57 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           );
         }
 
-        final isWide = buildContext.isMultiPanel;
-        final spacing = buildContext.theme.spacing;
-        final ghostPad = buildContext
-            .theme
-            .buttonStyles
-            .ghost
-            .md
-            .iconContentStyle
-            .padding
-            .resolve(TextDirection.ltr);
-
-        final leftPad = spacing.lg;
-        // Narrow: center button between screen edge and body start.
-        final narrowSideSpace = (spacing.lg + spacing.sm) / 2;
-
-        return Stack(
-          children: [
-            Padding(
-              padding: EdgeInsets.only(
-                top: spacing.sm + labelOffset,
-                bottom: spacing.sm,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(width: isWide ? leftPad : narrowSideSpace),
-                  todoIcon,
-                  SizedBox(width: isWide ? spacing.lg : narrowSideSpace),
-                ],
-              ),
+        return SizedBox(
+          width: leadingW,
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: spacing.sm + labelOffset,
+              bottom: spacing.sm,
             ),
-            if (isTimedEvent)
-              Positioned(
-                top: spacing.sm - 1,
-                right: isWide ? spacing.lg + ghostPad.right : spacing.sm,
-                child: Text(
-                  '12:55p',
-                  // isWide
-                  //     ? activity.at!.start!.toTimeOfDay().formatShort(
-                  //         buildContext,
-                  //       )
-                  //     : activity.at!.start!.toTimeOfDay().formatNarrow(
-                  //         buildContext,
-                  //       ),
-                  style: TextStyle(
-                    color: now
-                        ? buildContext.colour.colours.fromTheme(
-                            activity.priority.displayColor,
-                          )
-                        : buildContext.theme.colors.mutedForeground,
-                    fontSize: buildContext.theme.typography.xs.fontSize,
-                    height: 1,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // Full-area tap/hover target
+                Positioned.fill(
+                  child: MouseRegion(
+                    onEnter: (_) => setState(() => _leadingHovered = true),
+                    onExit: (_) => setState(() => _leadingHovered = false),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => buildContext.run(leadingCommand),
+                      onLongPress: longPress,
+                    ),
                   ),
                 ),
-              ),
-          ],
+                // Centered icon (visual only)
+                Center(child: IgnorePointer(child: todoIcon)),
+                // Right-aligned time for timed events
+                if (isTimedEvent)
+                  Positioned(
+                    top: -labelOffset - 1,
+                    right: spacing.sm,
+                    child: Text(
+                      buildContext.isMultiPanel
+                          ? activity.at!.start!.toTimeOfDay().formatShort(
+                              buildContext,
+                            )
+                          : activity.at!.start!.toTimeOfDay().formatNarrow(
+                              buildContext,
+                            ),
+                      style: TextStyle(
+                        color: now
+                            ? buildContext.colour.colours.fromTheme(
+                                activity.priority.displayColor,
+                              )
+                            : buildContext.theme.colors.mutedForeground,
+                        fontSize: buildContext.theme.typography.xs.fontSize,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         );
       },
       bodyBuilder: (buildCtx, isHighlighted) {
@@ -612,15 +649,18 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                     // effective background so the title text is cleanly
                     // truncated rather than bleeding through the buttons.
                     Positioned(
-                      right: -buildContext
-                          .theme
-                          .buttonStyles
-                          .ghost
-                          .md
-                          .iconContentStyle
-                          .padding
-                          .resolve(TextDirection.ltr)
-                          .right,
+                      right:
+                          -buildContext
+                              .theme
+                              .buttonStyles
+                              .ghost
+                              .md
+                              .iconContentStyle
+                              .padding
+                              .resolve(TextDirection.ltr)
+                              .right +
+                          buildContext.theme.spacing.xs +
+                          1,
                       top: 0,
                       bottom: 0,
                       child: Builder(
@@ -867,7 +907,9 @@ class ThreadCommands extends HookWidget {
                 activity,
                 stateIcon: true,
                 bump: bump,
-                onBeforeRun: onMobileFinish != null
+                onBeforeRun: activity.isLinkScheduleInstance
+                    ? null
+                    : onMobileFinish != null
                     ? (_) => onMobileFinish!()
                     : onDesktopFinish != null
                     ? (_) => onDesktopFinish!()
@@ -973,7 +1015,9 @@ class ThreadCommands extends HookWidget {
                             activity,
                             stateIcon: true,
                             bump: bump,
-                            onBeforeRun: onMobileFinish != null
+                            onBeforeRun: activity.isLinkScheduleInstance
+                                ? null
+                                : onMobileFinish != null
                                 ? (_) => onMobileFinish!()
                                 : onDesktopFinish != null
                                 ? (_) => onDesktopFinish!()
@@ -1147,4 +1191,96 @@ class _ThreadLogo extends StatelessWidget {
     }
     return icon;
   }
+}
+
+class _ThreadLeadingCommand extends CommandWrapper {
+  final IconData outlineIcon;
+  final IconData filledIcon;
+  final bool showFill;
+  final bool showEmpty;
+  final Color? dotColor;
+  final Color? iconHoverColor;
+
+  _ThreadLeadingCommand(
+    super.command, {
+    required this.outlineIcon,
+    required this.filledIcon,
+    this.showFill = false,
+    this.showEmpty = false,
+    this.dotColor,
+    this.iconHoverColor,
+    super.hoverIcon,
+    super.title,
+  }) : super(icon: Value(outlineIcon));
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    final baseSize = context.theme.iconSizes.base;
+    if (hoverIcon) {
+      // Apply foreground color directly since IgnorePointer prevents
+      // FButton from detecting its own hover state.
+      if (iconHoverColor != null) {
+        return Icon(
+          this.hoverIcon ?? outlineIcon,
+          size: baseSize,
+          color: iconHoverColor,
+        );
+      }
+      return null;
+    }
+    if (showFill) {
+      final isDark = context.read<ThemeBloc>().isDarkMode(context);
+      return SizedBox(
+        width: baseSize,
+        height: baseSize,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Opacity(
+              opacity: isDark ? 0.55 : 0.2,
+              child: Icon(filledIcon, size: baseSize),
+            ),
+            Icon(outlineIcon, size: baseSize),
+          ],
+        ),
+      );
+    }
+    if (dotColor != null) {
+      return SizedBox(
+        width: baseSize,
+        height: baseSize,
+        child: Center(
+          child: CustomPaint(
+            size: const Size.square(6),
+            painter: _DotPainter(color: dotColor!),
+          ),
+        ),
+      );
+    }
+    if (showEmpty) {
+      return SizedBox(width: baseSize, height: baseSize);
+    }
+    return null;
+  }
+}
+
+class _DotPainter extends CustomPainter {
+  _DotPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height / 2),
+      size.width / 2,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_DotPainter oldDelegate) => color != oldDelegate.color;
 }

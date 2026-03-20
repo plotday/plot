@@ -664,6 +664,11 @@ abstract class _UpdateThreadCommand extends Command {
     }
     bloc?.optimisticallyUpdateThread(updatedThread);
     await onUpdate(updatedThread);
+    // After save, reload the agenda from fresh stream data so changes that
+    // add/remove items (e.g. starting a link schedule thread creates a base
+    // todo duplicate) appear immediately instead of waiting for the next
+    // unsuppressed stream emission.
+    bloc?.refreshAgenda();
   }
 }
 
@@ -785,8 +790,12 @@ class FinishThread extends _UpdateThreadCommand {
       // Animation layer handles optimistic removal
       await onBeforeRun!(context);
     } else {
-      // No animation: immediate optimistic removal (keyboard, command palette)
-      priorityBloc?.optimisticallyRemoveThread(thread.id);
+      // No animation: remove the base todo and update remaining link schedule
+      // instances to todo=false so the icon reflects the finished state.
+      priorityBloc?.optimisticallyRemoveThread(
+        thread.id,
+        finishTodo: true,
+      );
     }
     await onUpdate(thread.copyWith(todo: false, bump: bump));
 

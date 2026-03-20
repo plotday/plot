@@ -24,6 +24,7 @@ threadUnread.post("/sync/thread-unread", async (c) => {
           user_id: userId,
           p_thread_id: record.thread_id,
           p_read_at: record.read_at,
+          ...(record.bumped_at ? { p_bumped_at: record.bumped_at } : {}),
         });
       } else {
         // Mark as unread

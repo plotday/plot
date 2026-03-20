@@ -398,14 +398,14 @@ class _ButtonState extends State<Button> {
               if (hasSubtitle)
                 Text(
                   widget.command.subtitle!,
-                  style: context.theme.typography.sm.copyWith(
+                  style: context.theme.typography.xs.copyWith(
                     color: context.theme.colors.mutedForeground,
                   ),
                 ),
               if (shortcutText.isNotEmpty)
                 Text(
                   shortcutText,
-                  style: context.theme.typography.sm.copyWith(
+                  style: context.theme.typography.xs.copyWith(
                     color: context.theme.colors.mutedForeground,
                   ),
                 ),

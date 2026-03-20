@@ -9,6 +9,7 @@ import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/widget/bottom_navigation_provider.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/page/priority.dart';
 
@@ -274,7 +275,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                             width: 6.0,
                                             height: 6.0,
                                             decoration: BoxDecoration(
-                                              color: context.theme.colors.foreground,
+                                              color: context.colour.accent.withValues(alpha: 0.7),
                                               shape: BoxShape.circle,
                                             ),
                                           ),
@@ -326,7 +327,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                             width: 6.0,
                                             height: 6.0,
                                             decoration: BoxDecoration(
-                                              color: context.theme.colors.foreground,
+                                              color: context.colour.accent.withValues(alpha: 0.7),
                                               shape: BoxShape.circle,
                                             ),
                                           ),

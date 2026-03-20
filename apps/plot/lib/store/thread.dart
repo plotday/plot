@@ -65,7 +65,8 @@ class Schedules extends Table with SyncableTable, UuidTable {
   TextColumn get contacts => text().nullable()();
   TextColumn get currentUserStatus => text().nullable()();
   TextColumn get reason => text().nullable()();
-  BoolColumn get outstandingTasks => boolean().withDefault(const Constant(false))();
+  BoolColumn get outstandingTasks =>
+      boolean().withDefault(const Constant(false))();
 }
 
 class ScheduleContact {
@@ -161,15 +162,15 @@ class ThreadsBase extends BaseTable {
     String? sortBy,
     super.ascending = false,
   }) : super(
-        table: 'user_thread',
-        syncEndpoint: 'threads',
-        name: syncName ?? "threads",
-        filterName: priorityPath,
-        order: sortBy ?? 'activity_at',
-        limit: initial
-            ? null
-            : 200, // No limit for initial pull (active OR unread)
-      );
+         table: 'user_thread',
+         syncEndpoint: 'threads',
+         name: syncName ?? "threads",
+         filterName: priorityPath,
+         order: sortBy ?? 'activity_at',
+         limit: initial
+             ? null
+             : 200, // No limit for initial pull (active OR unread)
+       );
 
   final PriorityId? priorityId;
   final String? priorityPath;
@@ -444,11 +445,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
 
     // Pull schedules so they survive fullResync orphan cleanup
-    await Store.get.pull(
-      Store.get.schedules,
-      SchedulesBase(),
-      initial: true,
-    );
+    await Store.get.pull(Store.get.schedules, SchedulesBase(), initial: true);
 
     // Fetch current agenda and recent feed so views have data immediately
     await Thread.pullAgenda(null, null);
@@ -615,6 +612,8 @@ class Thread extends Equatable implements Comparable<Thread> {
           (activity) => <String, dynamic>{
             'thread_id': activity.id.toString(),
             'read_at': readAt.toIso8601String(),
+            if (activity.bumpedAt != null)
+              'bumped_at': activity.bumpedAt!.toUtc().toIso8601String(),
           },
         ),
         ...toMarkUnread.map(
@@ -711,17 +710,19 @@ class Thread extends Equatable implements Comparable<Thread> {
       includeUnscheduled: includeUnscheduled,
       limit: limit,
       offset: offset,
-    ).watch().asyncMap(
-      (results) async {
-        if (!Store.isAvailable) return (threads: <Thread>[], rawRowCount: 0);
-        final threads = await _mapResultsToThreads(results, archived: archived, range: occurrenceRange ?? range);
-        // Re-sort activity feed for precise recurring event ordering
-        if (order == ThreadOrder.reverse) {
-          threads.sort((a, b) => b.activityAt.compareTo(a.activityAt));
-        }
-        return (threads: threads, rawRowCount: results.length);
-      },
-    );
+    ).watch().asyncMap((results) async {
+      if (!Store.isAvailable) return (threads: <Thread>[], rawRowCount: 0);
+      final threads = await _mapResultsToThreads(
+        results,
+        archived: archived,
+        range: occurrenceRange ?? range,
+      );
+      // Re-sort activity feed for precise recurring event ordering
+      if (order == ThreadOrder.reverse) {
+        threads.sort((a, b) => b.activityAt.compareTo(a.activityAt));
+      }
+      return (threads: threads, rawRowCount: results.length);
+    });
   }
 
   static Future<Thread> getOne(ThreadId id) async {
@@ -740,18 +741,22 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   static Stream<Thread> watchOne(ThreadId id) {
     return _getQuery(
-      id: id,
-      archived: null,
-      draft: null,
-      order: ThreadOrder.sorted,
-    ).watch().asyncMap((results) async {
-      if (!Store.isAvailable) return null;
-      final threads = await _mapResultsToThreads(results, range: null);
-      if (threads.isEmpty) {
-        throw Exception('Thread not found');
-      }
-      return threads.first;
-    }).where((t) => t != null).cast<Thread>();
+          id: id,
+          archived: null,
+          draft: null,
+          order: ThreadOrder.sorted,
+        )
+        .watch()
+        .asyncMap((results) async {
+          if (!Store.isAvailable) return null;
+          final threads = await _mapResultsToThreads(results, range: null);
+          if (threads.isEmpty) {
+            throw Exception('Thread not found');
+          }
+          return threads.first;
+        })
+        .where((t) => t != null)
+        .cast<Thread>();
   }
 
   /// Get the most recent draft thread for a specific priority
@@ -879,13 +884,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       archivedCountStream,
       unreadCountStream,
       archivedPriorityCountStream,
-      (
-        rows,
-        nowCount,
-        archivedCount,
-        unreadCount,
-        archivedPriorityCount,
-      ) {
+      (rows, nowCount, archivedCount, unreadCount, archivedPriorityCount) {
         final Map<Tag, int> tagCounts = {};
 
         // Count stored tags
@@ -1171,8 +1170,10 @@ class Thread extends Equatable implements Comparable<Thread> {
       if (ftsWords.isNotEmpty) {
         // Each word must appear in either link title or source_url
         final linkConditions = sanitizedWords
-            .map((word) =>
-                "(ll.title LIKE '%$word%' OR ll.source_url LIKE '%$word%')")
+            .map(
+              (word) =>
+                  "(ll.title LIKE '%$word%' OR ll.source_url LIKE '%$word%')",
+            )
             .join(' AND ');
 
         query.where(
@@ -1215,8 +1216,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
       // Active todo: always include threads with an active user schedule (has dates)
       Expression<bool> activeTodo =
-          userSched.id.isNotNull() &
-          userSched.startOn.isNotNull();
+          userSched.id.isNotNull() & userSched.startOn.isNotNull();
       condition = condition | activeTodo;
 
       // Activity is scheduled within the range (Date-based)
@@ -1357,7 +1357,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       // Exclude archived per-user schedules (done items).
       // Only include threads where the user schedule is absent, not archived,
       // or has a link schedule.
-      condition = condition &
+      condition =
+          condition &
           (userSched.id.isNull() |
               userSched.archivedAt.isNull() |
               linkSched.id.isNotNull());
@@ -1405,7 +1406,11 @@ class Thread extends Equatable implements Comparable<Thread> {
           orElse: epoch,
         );
         final feedSort = FunctionCallExpression('MAX', [
-          coalesce([a.lastNoteSourceCreatedAt, linkTable.sourceCreatedAt, a.createdAt]),
+          coalesce([
+            a.lastNoteSourceCreatedAt,
+            linkTable.sourceCreatedAt,
+            a.createdAt,
+          ]),
           coalesce([a.bumpedAt, epoch]),
           schedEnd,
         ]);
@@ -1645,7 +1650,8 @@ class Thread extends Equatable implements Comparable<Thread> {
         // - link schedules exist (the instances will appear at their own dates)
         // - thread is not a todo (todos need to appear under today)
         // - thread has no own shared schedule (no event time of its own)
-        final hasOwnSchedule = baseScheduleRow?.startOn != null ||
+        final hasOwnSchedule =
+            baseScheduleRow?.startOn != null ||
             baseScheduleRow?.startAt != null;
         if (linkSchedules.isEmpty || baseActivity.todo || hasOwnSchedule) {
           threadList.add(baseActivity);
@@ -1663,7 +1669,8 @@ class Thread extends Equatable implements Comparable<Thread> {
             // Overwrite occurrences with stored schedule occurrences
             for (final result in group) {
               final scheduleRow = result.readTableOrNull(sched);
-              if (scheduleRow == null || scheduleRow.occurrence == null) continue;
+              if (scheduleRow == null || scheduleRow.occurrence == null)
+                continue;
               // Remove archived occurrences (e.g. cancelled recurring event instances)
               if (scheduleRow.archivedAt != null) {
                 occurrences.remove(scheduleRow.occurrence!);
@@ -1733,8 +1740,9 @@ class Thread extends Equatable implements Comparable<Thread> {
             );
             final occurrences = <String, Thread>{};
             try {
-              for (final occ
-                  in baseThread.generateOccurrences(range.toBounded())) {
+              for (final occ in baseThread.generateOccurrences(
+                range.toBounded(),
+              )) {
                 occurrences[occ._schedule!.occurrence!] = occ;
               }
             } catch (e, t) {
@@ -1781,9 +1789,11 @@ class Thread extends Equatable implements Comparable<Thread> {
               );
               if (range.bounded == true) {
                 final r = range.toBounded();
-                final linkStart = linkScheduleRow.startAt ??
+                final linkStart =
+                    linkScheduleRow.startAt ??
                     linkScheduleRow.startOn?.toDateTime();
-                final linkEnd = linkScheduleRow.endAt ??
+                final linkEnd =
+                    linkScheduleRow.endAt ??
                     linkScheduleRow.endOn?.toDateTime() ??
                     linkStart;
                 if (linkStart != null) {
@@ -2015,10 +2025,8 @@ class Thread extends Equatable implements Comparable<Thread> {
   String? get icon => _thread.icon;
 
   /// Resolves a thread icon identifier to a logo URL and fallback icon.
-  static ({String? logoUrl, String? logoDarkUrl, IconData fallbackIcon}) resolveIcon(
-    String? icon, {
-    required bool prioritySharing,
-  }) {
+  static ({String? logoUrl, String? logoDarkUrl, IconData fallbackIcon})
+  resolveIcon(String? icon, {required bool prioritySharing}) {
     if (icon == null) {
       return (
         logoUrl: null,
@@ -2037,7 +2045,11 @@ class Thread extends Equatable implements Comparable<Thread> {
       if (twistId != null) {
         final pt = PriorityTwist.findByTwistId(twistId);
         if (pt?.logoUrl != null) {
-          return (logoUrl: pt!.logoUrl, logoDarkUrl: pt.logoUrlDark, fallbackIcon: PlotIcon.twist);
+          return (
+            logoUrl: pt!.logoUrl,
+            logoDarkUrl: pt.logoUrlDark,
+            fallbackIcon: PlotIcon.twist,
+          );
         }
       }
       return (logoUrl: null, logoDarkUrl: null, fallbackIcon: PlotIcon.twist);
@@ -2050,13 +2062,23 @@ class Thread extends Equatable implements Comparable<Thread> {
         final pt = PriorityTwist.findByTwistId(twistId);
         if (pt != null) {
           if (type != null) {
-            final config = pt.parsedLinkTypes?.where((c) => c.type == type).firstOrNull;
+            final config = pt.parsedLinkTypes
+                ?.where((c) => c.type == type)
+                .firstOrNull;
             if (config?.logo != null) {
-              return (logoUrl: config!.logo, logoDarkUrl: config.logoDark, fallbackIcon: PlotIcon.link);
+              return (
+                logoUrl: config!.logo,
+                logoDarkUrl: config.logoDark,
+                fallbackIcon: PlotIcon.link,
+              );
             }
           }
           if (pt.logoUrl != null) {
-            return (logoUrl: pt.logoUrl, logoDarkUrl: pt.logoUrlDark, fallbackIcon: PlotIcon.link);
+            return (
+              logoUrl: pt.logoUrl,
+              logoDarkUrl: pt.logoUrlDark,
+              fallbackIcon: PlotIcon.link,
+            );
           }
         }
       }
@@ -2066,7 +2088,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (subType != null) {
       return (logoUrl: null, logoDarkUrl: null, fallbackIcon: subType.icon);
     }
-    return (logoUrl: null, logoDarkUrl: null, fallbackIcon: prioritySharing ? PlotIcon.messages : PlotIcon.notes);
+    return (
+      logoUrl: null,
+      logoDarkUrl: null,
+      fallbackIcon: prioritySharing ? PlotIcon.messages : PlotIcon.notes,
+    );
   }
 
   List<Uuid>? get mentions => _thread.mentions;
@@ -2088,7 +2114,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (isLinkScheduleInstance) {
       if (_schedule?.startAt != null) {
         final start = _schedule!.startAt!;
-        final endAt = _schedule.endAt ??
+        final endAt =
+            _schedule.endAt ??
             (_schedule.duration != null
                 ? start.add(_schedule.duration!)
                 : start);
@@ -2104,6 +2131,7 @@ class Thread extends Equatable implements Comparable<Thread> {
             : null) ??
         on?.toDateTimeRange();
   }
+
   DateRange? get on {
     if (isLinkScheduleInstance) {
       return _schedule?.startOn != null
@@ -2118,6 +2146,7 @@ class Thread extends Equatable implements Comparable<Thread> {
             ? CustomDateRange(_userSchedule.startOn!, _userSchedule.endOn)
             : null);
   }
+
   Duration? get duration {
     if (isLinkScheduleInstance) {
       return _schedule?.duration ?? on?.duration ?? at?.duration;
@@ -2278,7 +2307,9 @@ class Thread extends Equatable implements Comparable<Thread> {
       final List<dynamic> parsed = jsonDecode(contactsJson) as List<dynamic>;
       return parsed
           .map((e) => ScheduleContact.fromJson(e as Map<String, dynamic>))
-          .where((c) => c.status != null || c.role != null) // filter out empty/archived
+          .where(
+            (c) => c.status != null || c.role != null,
+          ) // filter out empty/archived
           .toList();
     } catch (_) {
       return [];
@@ -2510,7 +2541,9 @@ class Thread extends Equatable implements Comparable<Thread> {
         bumpedAt: bumpedAt,
         title: !recurring ? title : const Value.absent(),
         unread: unread,
-        unreadUpdated: unread != null || bumpedAt.present ? Value(true) : const Value.absent(),
+        unreadUpdated: unread != null || bumpedAt.present
+            ? Value(true)
+            : const Value.absent(),
       );
     }
 
@@ -2682,9 +2715,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         (at.present || on.present) &&
         todo != true &&
         todo != false) {
-      userSchedule = userSchedule.copyWith(
-        reason: const Value('schedule'),
-      );
+      userSchedule = userSchedule.copyWith(reason: const Value('schedule'));
     }
 
     if (todo == false) {
@@ -2721,7 +2752,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
     }
 
-    final scheduleDirty = at.present ||
+    final scheduleDirty =
+        at.present ||
         on.present ||
         duration.present ||
         recurrenceRule.present ||
@@ -3105,6 +3137,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           currentUserStatus: _schedule?.currentUserStatus,
           outstandingTasks: false,
         ),
+        userSchedule: _userSchedule,
         priority: priority,
         tags: _tags,
         isLinkScheduleInstance: isLinkScheduleInstance,
