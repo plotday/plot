@@ -1,10 +1,15 @@
+import 'package:plot/app_info.dart';
+import 'package:plot/base.dart';
 import 'package:plot/state/root_provider.dart';
 import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
+import 'package:plot/util/theme_color.dart';
 import 'package:platform_builder/platform_builder.dart';
 import 'package:flutter/material.dart' as material;
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:macos_ui/macos_ui.dart' as macos;
 
 import 'widget/window.dart';
@@ -22,7 +27,8 @@ class PlotScrollBehavior extends material.MaterialScrollBehavior {
   ) {
     // Only Android uses the Material stretch/glow overscroll indicator.
     // iOS/macOS use bounce physics (inherent feedback), Windows/web have none.
-    if (material.Theme.of(context).platform == material.TargetPlatform.android) {
+    if (material.Theme.of(context).platform ==
+        material.TargetPlatform.android) {
       return super.buildOverscrollIndicator(context, child, details);
     }
     return child;
@@ -61,15 +67,14 @@ class AppState extends State<App> {
                           scrollBehavior: const PlotScrollBehavior(),
                           localizationsDelegates:
                               FLocalizations.localizationsDelegates,
-                          supportedLocales:
-                              FLocalizations.supportedLocales,
+                          supportedLocales: FLocalizations.supportedLocales,
                           theme: material.ThemeData(
                             colorScheme: material.ColorScheme.fromSeed(
                               seedColor: const Color(0x002BDD66),
                               brightness:
                                   context.colour.brightness == Brightness.light
-                                      ? material.Brightness.light
-                                      : material.Brightness.dark,
+                                  ? material.Brightness.light
+                                  : material.Brightness.dark,
                             ),
                           ),
                           routerConfig: routerConfig,
@@ -102,10 +107,41 @@ class AppState extends State<App> {
   }
 }
 
-class ErrorApp extends StatelessWidget {
+class ErrorApp extends StatefulWidget {
   final Object error;
 
   const ErrorApp({required this.error, super.key});
+
+  @override
+  State<ErrorApp> createState() => _ErrorAppState();
+}
+
+class _ErrorAppState extends State<ErrorApp> {
+  bool _copied = false;
+
+  String get _errorDetails {
+    final buffer = StringBuffer()
+      ..writeln('Failed to start Plot.')
+      ..writeln()
+      ..writeln('Error: ${widget.error}');
+
+    try {
+      buffer
+        ..writeln()
+        ..writeln(AppInfo.versionString);
+    } catch (_) {
+      // AppInfo may not be initialized yet
+    }
+
+    return buffer.toString();
+  }
+
+  Future<void> _copyError() async {
+    await Clipboard.setData(ClipboardData(text: _errorDetails));
+    setState(() => _copied = true);
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (mounted) setState(() => _copied = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,14 +158,47 @@ class ErrorApp extends StatelessWidget {
               body: Directionality(
                 textDirection: TextDirection.ltr,
                 child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    spacing: 8,
-                    children: [
-                      const Text('Failed to start Plot.'),
-                      Text('Error: $error'),
-                      Button(SignOut(), expand: false),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 480),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        spacing: 8,
+                        children: [
+                          const Text('Failed to start Plot.'),
+                          SelectionArea(
+                            child: Text(
+                              'Error: ${widget.error}',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            spacing: 8,
+                            children: [
+                              FButton(
+                                variant: FButtonVariant.outline,
+                                onPress: () => Base.signOut(),
+                                prefix: const Icon(PlotIcon.signOut, size: 16),
+                                child: const Text('Sign out'),
+                              ),
+                              FButton.icon(
+                                variant: FButtonVariant.outline,
+                                onPress: _copyError,
+                                child: Icon(
+                                  _copied
+                                      ? FontAwesomeIcons.check
+                                      : FontAwesomeIcons.copy,
+                                  size: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
