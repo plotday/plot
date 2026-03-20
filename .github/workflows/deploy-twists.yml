@@ -3,6 +3,7 @@ name: Deploy Twists & Connectors
 env:
   TWISTS: "plot,claude,chatgpt,gemini"
   CONNECTORS: "github,gmail,google-calendar,google-contacts,google-drive,linear"
+  NX_NO_CLOUD: true
 
 on:
   push:
