@@ -765,6 +765,14 @@ class PriorityState extends Equatable {
             scheduleAt: dayScheduleAt,
             skipHeaderFor: context,
           );
+        } else if (startOfDay && remainingUnscheduled.isNotEmpty) {
+          // Date header already created but remaining items (e.g. pinned
+          // todos) still need to be added after the earlier section.
+          addThreadsGrouped(
+            remainingUnscheduled,
+            scheduleAt: dayScheduleAt,
+            skipHeaderFor: context,
+          );
         } else if (!startOfDay) {
           items.add(
             AgendaHeaderItem(
