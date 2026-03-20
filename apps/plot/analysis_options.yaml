@@ -16,6 +16,7 @@ analyzer:
     strict-raw-types: true
   exclude:
     - "**/*.g.dart"
+    - "third_party/**"
 
 linter:
   # The lint rules applied to this project can be customized in the
