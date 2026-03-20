@@ -207,6 +207,7 @@ upgrade.post("/upgrade/checkout", async (c) => {
       mode: "subscription",
       success_url: `${siteRoot}/upgrade?success=true&org=${orgId}`,
       cancel_url: `${siteRoot}/upgrade?canceled=true`,
+      allow_promotion_codes: true,
       subscription_data: {
         metadata: { plan: "business", organization_id: orgId },
       },
@@ -255,6 +256,7 @@ upgrade.post("/upgrade/checkout", async (c) => {
       },
     ],
     mode: "subscription",
+    allow_promotion_codes: true,
     success_url: `${siteRoot}/upgrade?success=true`,
     cancel_url: `${siteRoot}/upgrade?canceled=true`,
     subscription_data: {
