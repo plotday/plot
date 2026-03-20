@@ -8,6 +8,8 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/resizable_panel_layout.dart';
 import 'package:plot/widget/unified_header.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
+import 'package:collection/collection.dart';
+import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
@@ -1037,16 +1039,20 @@ class _PriorityPageState extends State<PriorityPage> {
 
     return Column(
       children: [
-        _DesktopTabBar(
-          currentTab: _currentTab,
-          onTabChanged: _onDesktopTabChanged,
-          hasUnreadActivity: state.activityFeedItems.any(
-            (item) => item.when(
-              activity: (a) => a.thread.unread,
-              header: (_) => false,
-            ),
+        BlocSelector<PrioritiesBloc, PrioritiesState, bool>(
+          selector: (prioritiesState) {
+            final p = prioritiesState.priorities.firstWhereOrNull(
+              (p) => p.id == state.context.id,
+            );
+            if (p == null) return false;
+            return p.unread || p.descendants().any((d) => d.unread);
+          },
+          builder: (context, hasUnread) => _DesktopTabBar(
+            currentTab: _currentTab,
+            onTabChanged: _onDesktopTabChanged,
+            hasUnreadActivity: hasUnread,
+            priority: state.context,
           ),
-          priority: state.context,
         ),
         Expanded(
           child: isNowTab

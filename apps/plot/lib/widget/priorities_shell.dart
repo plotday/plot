@@ -261,7 +261,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                           (p) => p.id.toShortString() == priorityIdString,
                                         )
                                       : null;
-                                  final hasUnread = priority?.unread ?? false;
+                                  final hasUnread = priority != null &&
+                                      (priority.unread ||
+                                          priority.descendants().any((p) => p.unread));
 
                                   return Stack(
                                     clipBehavior: Clip.none,

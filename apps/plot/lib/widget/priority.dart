@@ -22,6 +22,7 @@ class PriorityWidget extends StatelessWidget {
     this.unread,
     this.active,
     this.reorderableIndex,
+    this.onTap,
     super.key,
   });
 
@@ -56,6 +57,9 @@ class PriorityWidget extends StatelessWidget {
   /// Index for reorderable list. If provided on mobile, shows trailing drag handle.
   final int? reorderableIndex;
 
+  /// Optional tap callback that overrides the default navigation behavior.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext buildContext) {
     bool isContext = priority == context;
@@ -66,6 +70,7 @@ class PriorityWidget extends StatelessWidget {
       command: !isContext
           ? ChangeCurrentPriority(priority, ancestry: showAncestry)
           : null,
+      onTap: onTap,
       longPressCommand: !hasPhysicalKeyboard()
           ? ShowPriorityCommands(priority)
           : null,

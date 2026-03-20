@@ -172,6 +172,9 @@ class ListTile extends StatefulWidget {
     /// When true, text and icon use muted color by default and foreground on hover.
     this.muted = false,
 
+    /// Optional tap callback that overrides the command's tap behavior.
+    this.onTap,
+
     super.key,
   }) : subtitle = subtitle ?? command?.subtitle;
 
@@ -212,6 +215,7 @@ class ListTile extends StatefulWidget {
   final bool showShortcut;
   final bool iconOnly;
   final bool muted;
+  final VoidCallback? onTap;
 
   @override
   State<ListTile> createState() => _ListTileState();
@@ -408,9 +412,10 @@ class _ListTileState extends State<ListTile> {
                           // Desktop: GestureDetector participates in gesture arena,
                           // properly competes with ReorderableDragStartListener
                           ? GestureDetector(
-                              onTap: widget.command != null
-                                  ? () => run()
-                                  : null,
+                              onTap: widget.onTap ??
+                                  (widget.command != null
+                                      ? () => run()
+                                      : null),
                               onLongPress: widget.longPressCommand != null
                                   ? _runLongPress
                                   : null,
@@ -432,7 +437,9 @@ class _ListTileState extends State<ListTile> {
                                   );
                                   if (delta.distance < 10 &&
                                       duration < Duration(milliseconds: 500)) {
-                                    if (widget.command != null) {
+                                    if (widget.onTap != null) {
+                                      widget.onTap!();
+                                    } else if (widget.command != null) {
                                       run();
                                     }
                                   }

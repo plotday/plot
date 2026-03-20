@@ -37,6 +37,9 @@ class _PrioritiesListState extends State<PrioritiesList>
   bool _isFirstBuild = true;
   final Set<String> _showAllChildren = {};
 
+  // Manual expansion state for single panel mode
+  final Map<String, bool> _manualExpansion = {};
+
   @override
   void initState() {
     super.initState();
@@ -145,11 +148,13 @@ class _PrioritiesListState extends State<PrioritiesList>
   }
 
   bool _shouldExpand(Priority priority, bool isMultiPanel) {
-    if (!isMultiPanel) return true;
+    if (!isMultiPanel) {
+      return _manualExpansion[priority.id.toString()] ?? false;
+    }
     if (widget.selected == null) return true;
 
-    // Don't expand @plot children when "Everything" (root) is selected
-    if (widget.selected!.id == widget.root.id && priority.isPlot) {
+    // Collapse all when root ("Everything") is selected
+    if (widget.selected!.id == widget.root.id) {
       return false;
     }
 
@@ -225,6 +230,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                         ? true
                         : null),
               reorderableIndex: reorderableIndex,
+              onTap: !isMultiPanel
+                  ? () => _onSinglePanelTap(context, priority)
+                  : null,
             ),
             if (priority.children.isNotEmpty)
               _AnimatedPriorityChildren(
@@ -292,6 +300,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                     : null,
                 active: !priorityExpanded && _hasDescendantActive(priority)
                     ? true
+                    : null,
+                onTap: !isMultiPanel
+                    ? () => _onSinglePanelTap(context, priority)
                     : null,
               ),
               if (priority.children.isNotEmpty)
@@ -361,6 +372,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                           ? true
                           : null,
                       reorderableIndex: reorderableIndex,
+                      onTap: !isMultiPanel
+                          ? () => _onSinglePanelTap(context, priority)
+                          : null,
                     ),
                     if (priority.children.isNotEmpty)
                       _AnimatedPriorityChildren(
@@ -570,6 +584,21 @@ class _PrioritiesListState extends State<PrioritiesList>
         );
       },
     );
+  }
+
+  /// Handles single-panel tap: expand first, navigate on second tap.
+  void _onSinglePanelTap(BuildContext context, Priority priority) {
+    final id = priority.id.toString();
+    if (priority.children.isNotEmpty && !(_manualExpansion[id] ?? false)) {
+      // First tap: expand
+      setState(() {
+        _manualExpansion[id] = true;
+      });
+      _updateExpansionState();
+    } else {
+      // Second tap (or no children): navigate
+      context.run(ChangeCurrentPriority(priority));
+    }
   }
 
   /// Returns true if the priority or any of its descendants has unread activities
