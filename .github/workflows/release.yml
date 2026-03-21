@@ -25,15 +25,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  bump-version:
+  prepare-release:
     runs-on: ubuntu-latest
     concurrency:
       group: version-bump
     outputs:
-      new_version: ${{ steps.version.outputs.new_version }}
+      release_version: ${{ steps.version.outputs.release_version }}
       version_name: ${{ steps.version.outputs.version_name }}
       build_number: ${{ steps.version.outputs.build_number }}
-      commit_sha: ${{ steps.commit.outputs.sha }}
+      release_branch: ${{ steps.version.outputs.release_branch }}
+      release_sha: ${{ steps.branch.outputs.sha }}
 
     steps:
       - name: Generate GitHub App Token
@@ -56,47 +57,61 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      - name: Increment build number
+      - name: Read current version
         id: version
         run: |
           cd apps/plot
-          CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
-          VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
-          BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
-          NEW_BUILD_NUMBER=$((BUILD_NUMBER + 1))
-          NEW_VERSION="${VERSION_NAME}+${NEW_BUILD_NUMBER}"
-
-          sed -i "s/version: .*/version: ${NEW_VERSION}/" pubspec.yaml
+          RELEASE_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION_NAME=$(echo "$RELEASE_VERSION" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$RELEASE_VERSION" | cut -d'+' -f2)
 
           {
-            echo "new_version=$NEW_VERSION"
+            echo "release_version=$RELEASE_VERSION"
             echo "version_name=$VERSION_NAME"
-            echo "build_number=$NEW_BUILD_NUMBER"
+            echo "build_number=$BUILD_NUMBER"
+            echo "release_branch=release/$RELEASE_VERSION"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Version: $CURRENT_VERSION -> $NEW_VERSION"
+          echo "Release version: $RELEASE_VERSION"
 
-      - name: Commit and push version bump
-        id: commit
+      - name: Create release branch
+        id: branch
         run: |
+          RELEASE_BRANCH="${{ steps.version.outputs.release_branch }}"
+          git checkout -b "$RELEASE_BRANCH"
+          git push origin "$RELEASE_BRANCH"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Created release branch: $RELEASE_BRANCH"
+
+      - name: Bump main to next build number
+        run: |
+          git checkout main
+
+          cd apps/plot
+          NEXT_BUILD_NUMBER=$((${{ steps.version.outputs.build_number }} + 1))
+          NEXT_VERSION="${{ steps.version.outputs.version_name }}+${NEXT_BUILD_NUMBER}"
+          sed -i "s/version: .*/version: ${NEXT_VERSION}/" pubspec.yaml
+
           git config user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
           git config user.email '${{ steps.app-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
           git add apps/plot/pubspec.yaml
-          git commit -m "Bump version to ${{ steps.version.outputs.new_version }} [skip ci]"
+          git commit -m "Bump version to ${NEXT_VERSION} [skip ci]"
           git push
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          echo "Bumped main to: $NEXT_VERSION"
 
       - name: Summary
         run: |
           {
-            echo "## Version Bump"
+            echo "## Release Prepared"
             echo ""
-            echo "**Version:** ${{ steps.version.outputs.new_version }}"
-            echo "**Commit:** ${{ steps.commit.outputs.sha }}"
+            echo "**Release version:** ${{ steps.version.outputs.release_version }}"
+            echo "**Release branch:** ${{ steps.version.outputs.release_branch }}"
+            echo "**Main bumped to:** ${{ steps.version.outputs.version_name }}+$((${{ steps.version.outputs.build_number }} + 1))"
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-ios:
-    needs: bump-version
+    needs: prepare-release
     if: inputs.ios
     runs-on: macos-26
 
@@ -119,7 +134,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.bump-version.outputs.commit_sha }}
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
@@ -331,6 +346,11 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
+      - name: Tag store submission
+        run: |
+          git tag "ios/${{ needs.prepare-release.outputs.release_version }}"
+          git push origin "ios/${{ needs.prepare-release.outputs.release_version }}"
+
       - name: Clean up keychain
         if: always()
         run: |
@@ -342,7 +362,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build-${{ needs.bump-version.outputs.new_version }}
+          name: ios-build-${{ needs.prepare-release.outputs.release_version }}
           path: apps/plot/build/ios/ipa/*.ipa
           retention-days: 30
 
@@ -351,12 +371,12 @@ jobs:
           {
             echo "## iOS Release Complete"
             echo ""
-            echo "**Version:** ${{ needs.bump-version.outputs.new_version }}"
+            echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect (TestFlight)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-android:
-    needs: bump-version
+    needs: prepare-release
     if: inputs.android
     runs-on: ubuntu-latest
 
@@ -379,7 +399,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.bump-version.outputs.commit_sha }}
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
@@ -507,10 +527,15 @@ jobs:
           cd apps/plot/android
           fastlane beta aab:$GITHUB_WORKSPACE/apps/plot/build/app/outputs/bundle/release/app-release.aab
 
+      - name: Tag store submission
+        run: |
+          git tag "android/${{ needs.prepare-release.outputs.release_version }}"
+          git push origin "android/${{ needs.prepare-release.outputs.release_version }}"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-build-${{ needs.bump-version.outputs.new_version }}
+          name: android-build-${{ needs.prepare-release.outputs.release_version }}
           path: apps/plot/build/app/outputs/bundle/release/app-release.aab
           retention-days: 30
 
@@ -519,12 +544,12 @@ jobs:
           {
             echo "## Android Release Complete"
             echo ""
-            echo "**Version:** ${{ needs.bump-version.outputs.new_version }}"
+            echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** Google Play (internal testing)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-macos:
-    needs: bump-version
+    needs: prepare-release
     if: inputs.macos
     runs-on: macos-26
 
@@ -547,7 +572,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.bump-version.outputs.commit_sha }}
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
@@ -763,6 +788,11 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
+      - name: Tag store submission
+        run: |
+          git tag "macos/${{ needs.prepare-release.outputs.release_version }}"
+          git push origin "macos/${{ needs.prepare-release.outputs.release_version }}"
+
       - name: Clean up keychain
         if: always()
         run: |
@@ -774,7 +804,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-build-${{ needs.bump-version.outputs.new_version }}
+          name: macos-build-${{ needs.prepare-release.outputs.release_version }}
           path: ${{ env.PKG_PATH }}
           retention-days: 30
 
@@ -783,12 +813,12 @@ jobs:
           {
             echo "## macOS Release Complete"
             echo ""
-            echo "**Version:** ${{ needs.bump-version.outputs.new_version }}"
+            echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect"
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-windows:
-    needs: bump-version
+    needs: prepare-release
     if: inputs.windows
     runs-on: windows-latest
 
@@ -825,7 +855,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.bump-version.outputs.commit_sha }}
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
@@ -861,8 +891,8 @@ jobs:
         shell: bash
         run: |
           cd apps/plot
-          VERSION_NAME="${{ needs.bump-version.outputs.version_name }}"
-          BUILD_NUMBER="${{ needs.bump-version.outputs.build_number }}"
+          VERSION_NAME="${{ needs.prepare-release.outputs.version_name }}"
+          BUILD_NUMBER="${{ needs.prepare-release.outputs.build_number }}"
 
           # Convert to 4-part MSIX version with revision=0 (Windows Store requires revision=0)
           # Format: MAJOR.MINOR.BUILD_NUMBER.0 (e.g., 1.1.296.0)
@@ -957,14 +987,14 @@ jobs:
         shell: bash
         run: |
           cd apps/plot/build/windows/x64/runner/Release
-          7z a "Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip" ./*
-          ls -lh "Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip"
+          7z a "Plot-${{ needs.prepare-release.outputs.release_version }}-portable.zip" ./*
+          ls -lh "Plot-${{ needs.prepare-release.outputs.release_version }}-portable.zip"
 
       - name: Rename MSIX with version
         shell: bash
         run: |
           cd apps/plot/build/windows/x64/runner/Release
-          mv "plot.msix" "Plot-${{ needs.bump-version.outputs.new_version }}.msix"
+          mv "plot.msix" "Plot-${{ needs.prepare-release.outputs.release_version }}.msix"
 
       - name: Upload files to R2
         shell: bash
@@ -977,7 +1007,7 @@ jobs:
 
           R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
           BUCKET="s3://${R2_BUCKET_NAME}"
-          VERSION="${{ needs.bump-version.outputs.new_version }}"
+          VERSION="${{ needs.prepare-release.outputs.release_version }}"
           MSIX_FILE="Plot-${VERSION}.msix"
           ZIP_FILE="Plot-${VERSION}-portable.zip"
 
@@ -1002,8 +1032,8 @@ jobs:
         run: |
           cd apps/plot/build/windows/x64/runner/Release
 
-          MSIX_FILE="Plot-${{ needs.bump-version.outputs.new_version }}.msix"
-          ZIP_FILE="Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip"
+          MSIX_FILE="Plot-${{ needs.prepare-release.outputs.release_version }}.msix"
+          ZIP_FILE="Plot-${{ needs.prepare-release.outputs.release_version }}-portable.zip"
 
           MSIX_SIZE=$(stat -c%s "$MSIX_FILE" 2>/dev/null || stat -f%z "$MSIX_FILE")
           MSIX_HASH=$(sha256sum "$MSIX_FILE" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$MSIX_FILE" | awk '{print $1}')
@@ -1013,17 +1043,17 @@ jobs:
 
           cat > latest-windows.json << EOF
           {
-            "version": "${{ needs.bump-version.outputs.new_version }}",
-            "versionName": "${{ needs.bump-version.outputs.version_name }}",
-            "buildNumber": ${{ needs.bump-version.outputs.build_number }},
+            "version": "${{ needs.prepare-release.outputs.release_version }}",
+            "versionName": "${{ needs.prepare-release.outputs.version_name }}",
+            "buildNumber": ${{ needs.prepare-release.outputs.build_number }},
             "platform": "windows",
             "msix": {
-              "url": "https://download.plot.day/releases/${{ needs.bump-version.outputs.new_version }}/windows/$MSIX_FILE",
+              "url": "https://download.plot.day/releases/${{ needs.prepare-release.outputs.release_version }}/windows/$MSIX_FILE",
               "size": $MSIX_SIZE,
               "sha256": "$MSIX_HASH"
             },
             "portable": {
-              "url": "https://download.plot.day/releases/${{ needs.bump-version.outputs.new_version }}/windows/$ZIP_FILE",
+              "url": "https://download.plot.day/releases/${{ needs.prepare-release.outputs.release_version }}/windows/$ZIP_FILE",
               "size": $ZIP_SIZE,
               "sha256": "$ZIP_HASH"
             },
@@ -1047,10 +1077,10 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build-${{ needs.bump-version.outputs.new_version }}
+          name: windows-build-${{ needs.prepare-release.outputs.release_version }}
           path: |
-            apps/plot/build/windows/x64/runner/Release/Plot-${{ needs.bump-version.outputs.new_version }}.msix
-            apps/plot/build/windows/x64/runner/Release/Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip
+            apps/plot/build/windows/x64/runner/Release/Plot-${{ needs.prepare-release.outputs.release_version }}.msix
+            apps/plot/build/windows/x64/runner/Release/Plot-${{ needs.prepare-release.outputs.release_version }}-portable.zip
             apps/plot/build/windows/x64/runner/Release/latest-windows.json
           retention-days: 30
 
@@ -1061,10 +1091,10 @@ jobs:
         run: |
           cd apps/plot/build/windows/x64/runner/Release
 
-          MSIX_FILE="Plot-${{ needs.bump-version.outputs.new_version }}.msix"
-          ZIP_FILE="Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip"
-          TAG_NAME="windows@${{ needs.bump-version.outputs.new_version }}"
-          RELEASE_TITLE="Plot Windows ${{ needs.bump-version.outputs.new_version }}"
+          MSIX_FILE="Plot-${{ needs.prepare-release.outputs.release_version }}.msix"
+          ZIP_FILE="Plot-${{ needs.prepare-release.outputs.release_version }}-portable.zip"
+          TAG_NAME="windows@${{ needs.prepare-release.outputs.release_version }}"
+          RELEASE_TITLE="Plot Windows ${{ needs.prepare-release.outputs.release_version }}"
 
           MSIX_SIZE=$(cat latest-windows.json | grep -A 3 '"msix"' | grep '"size"' | sed 's/.*: \([0-9]*\).*/\1/')
           MSIX_HASH=$(cat latest-windows.json | grep -A 3 '"msix"' | grep '"sha256"' | sed 's/.*: "\(.*\)".*/\1/')
@@ -1073,22 +1103,22 @@ jobs:
           RELEASE_DATE=$(cat latest-windows.json | grep '"releaseDate"' | sed 's/.*: "\(.*\)".*/\1/')
 
           cat > release-notes.md << EOF
-          ## Plot Windows ${{ needs.bump-version.outputs.new_version }}
+          ## Plot Windows ${{ needs.prepare-release.outputs.release_version }}
 
-          **Version:** ${{ needs.bump-version.outputs.version_name }}
-          **Build Number:** ${{ needs.bump-version.outputs.build_number }}
+          **Version:** ${{ needs.prepare-release.outputs.version_name }}
+          **Build Number:** ${{ needs.prepare-release.outputs.build_number }}
           **Platform:** Windows
           **Release Date:** ${RELEASE_DATE}
 
           ### Download
 
           #### MSIX Installer (Recommended)
-          - **File**: [Plot-${{ needs.bump-version.outputs.new_version }}.msix](https://download.plot.day/releases/${{ needs.bump-version.outputs.new_version }}/windows/Plot-${{ needs.bump-version.outputs.new_version }}.msix)
+          - **File**: [Plot-${{ needs.prepare-release.outputs.release_version }}.msix](https://download.plot.day/releases/${{ needs.prepare-release.outputs.release_version }}/windows/Plot-${{ needs.prepare-release.outputs.release_version }}.msix)
           - **Size**: ${MSIX_SIZE} bytes
           - **SHA256**: \`${MSIX_HASH}\`
 
           #### Portable ZIP
-          - **File**: [Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip](https://download.plot.day/releases/${{ needs.bump-version.outputs.new_version }}/windows/Plot-${{ needs.bump-version.outputs.new_version }}-portable.zip)
+          - **File**: [Plot-${{ needs.prepare-release.outputs.release_version }}-portable.zip](https://download.plot.day/releases/${{ needs.prepare-release.outputs.release_version }}/windows/Plot-${{ needs.prepare-release.outputs.release_version }}-portable.zip)
           - **Size**: ${ZIP_SIZE} bytes
           - **SHA256**: \`${ZIP_HASH}\`
 
@@ -1121,13 +1151,19 @@ jobs:
             "$MSIX_FILE" \
             "$ZIP_FILE"
 
+      - name: Tag store submission
+        shell: bash
+        run: |
+          git tag "windows/${{ needs.prepare-release.outputs.release_version }}"
+          git push origin "windows/${{ needs.prepare-release.outputs.release_version }}"
+
       - name: Build summary
         shell: bash
         run: |
           {
             echo "## Windows Release Complete"
             echo ""
-            echo "**Version:** ${{ needs.bump-version.outputs.new_version }}"
+            echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo ""
             echo "### Stable URLs"
             echo "- MSIX: https://download.plot.day/windows"

@@ -51,6 +51,14 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: Get release version
+        id: version
+        run: |
+          cd apps/plot
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
+
       - name: Load secrets from 1Password
         uses: 1password/load-secrets-action@v3
         with:
@@ -217,13 +225,22 @@ jobs:
       - name: Patch iOS
         run: |
           cd apps/plot
-          shorebird patch ios -- --export-options-plist=ios/ExportOptions.plist
+          shorebird patch ios \
+            --release-version="${{ steps.version.outputs.version }}" \
+            -- --export-options-plist=ios/ExportOptions.plist
+
+      - name: Tag successful patch
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag -f "patched/ios/$VERSION"
+          git push origin "patched/ios/$VERSION" --force
 
       - name: Build summary
         run: |
           {
             echo "## iOS Patch Complete"
             echo ""
+            echo "**Version:** ${{ steps.version.outputs.version }}"
             echo "Shorebird OTA patch delivered."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -260,6 +277,14 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+
+      - name: Get release version
+        id: version
+        run: |
+          cd apps/plot
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
 
       - name: Load secrets from 1Password
         uses: 1password/load-secrets-action@v3
@@ -347,13 +372,21 @@ jobs:
       - name: Patch Android
         run: |
           cd apps/plot
-          shorebird patch android
+          shorebird patch android \
+            --release-version="${{ steps.version.outputs.version }}"
+
+      - name: Tag successful patch
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag -f "patched/android/$VERSION"
+          git push origin "patched/android/$VERSION" --force
 
       - name: Build summary
         run: |
           {
             echo "## Android Patch Complete"
             echo ""
+            echo "**Version:** ${{ steps.version.outputs.version }}"
             echo "Shorebird OTA patch delivered."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -382,6 +415,14 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+
+      - name: Get release version
+        id: version
+        run: |
+          cd apps/plot
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
 
       - name: Load secrets from 1Password
         uses: 1password/load-secrets-action@v3
@@ -513,13 +554,21 @@ jobs:
       - name: Patch macOS
         run: |
           cd apps/plot
-          shorebird patch macos
+          shorebird patch macos \
+            --release-version="${{ steps.version.outputs.version }}"
+
+      - name: Tag successful patch
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag -f "patched/macos/$VERSION"
+          git push origin "patched/macos/$VERSION" --force
 
       - name: Build summary
         run: |
           {
             echo "## macOS Patch Complete"
             echo ""
+            echo "**Version:** ${{ steps.version.outputs.version }}"
             echo "Shorebird OTA patch delivered."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -557,6 +606,15 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+
+      - name: Get release version
+        id: version
+        shell: bash
+        run: |
+          cd apps/plot
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
 
       - name: Load secrets from 1Password
         uses: 1password/load-secrets-action@v3
@@ -625,7 +683,15 @@ jobs:
         shell: bash
         run: |
           cd apps/plot
-          shorebird patch windows
+          shorebird patch windows \
+            --release-version="${{ steps.version.outputs.version }}"
+
+      - name: Tag successful patch
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag -f "patched/windows/$VERSION"
+          git push origin "patched/windows/$VERSION" --force
 
       - name: Build summary
         shell: bash
@@ -633,5 +699,6 @@ jobs:
           {
             echo "## Windows Patch Complete"
             echo ""
+            echo "**Version:** ${{ steps.version.outputs.version }}"
             echo "Shorebird OTA patch delivered."
           } >> "$GITHUB_STEP_SUMMARY"

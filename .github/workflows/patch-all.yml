@@ -1,0 +1,114 @@
+name: Patch All Recent Releases
+
+on:
+  workflow_dispatch:
+
+jobs:
+  discover-and-patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
+
+      - name: Find releases needing patches
+        id: discover
+        run: |
+          CUTOFF=$(date -d '14 days ago' +%s)
+          PATCHES_NEEDED="[]"
+
+          # Find all platform release tags from the last 14 days
+          for tag in $(git tag -l 'ios/*' 'android/*' 'macos/*' 'windows/*'); do
+            TAG_DATE=$(git log -1 --format=%ct "$tag" 2>/dev/null || echo 0)
+            if [ "$TAG_DATE" -lt "$CUTOFF" ]; then
+              continue
+            fi
+
+            PLATFORM="${tag%%/*}"
+            VERSION="${tag#*/}"
+            BRANCH="release/$VERSION"
+
+            # Check release branch exists
+            if ! git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+              echo "Skipping $tag: no branch $BRANCH"
+              continue
+            fi
+
+            # Get branch HEAD and compare to last patched state
+            BRANCH_HEAD=$(git rev-parse "origin/$BRANCH")
+            PATCHED_TAG="patched/$PLATFORM/$VERSION"
+            if git rev-parse --verify "$PATCHED_TAG" >/dev/null 2>&1; then
+              LAST_PATCHED=$(git rev-parse "$PATCHED_TAG")
+            else
+              # No patch tag — compare against the release tag (original release commit)
+              LAST_PATCHED=$(git rev-parse "$tag")
+            fi
+
+            if [ "$BRANCH_HEAD" != "$LAST_PATCHED" ]; then
+              echo "Patch needed: $PLATFORM $VERSION (branch HEAD $BRANCH_HEAD != last patched $LAST_PATCHED)"
+              PATCHES_NEEDED=$(echo "$PATCHES_NEEDED" | jq -c --arg p "$PLATFORM" --arg v "$VERSION" --arg b "$BRANCH" '. + [{"platform": $p, "version": $v, "branch": $b}]')
+            else
+              echo "Up to date: $PLATFORM $VERSION"
+            fi
+          done
+
+          echo "patches=$PATCHES_NEEDED" >> "$GITHUB_OUTPUT"
+          echo ""
+          echo "=== Summary ==="
+          echo "$PATCHES_NEEDED" | jq '.'
+
+      - name: Trigger patch workflows
+        if: steps.discover.outputs.patches != '[]'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PATCHES: ${{ steps.discover.outputs.patches }}
+        run: |
+          # Group by branch — one patch workflow per branch with all needed platforms
+          echo "$PATCHES" | jq -c 'group_by(.branch)[]' | while read -r group; do
+            BRANCH=$(echo "$group" | jq -r '.[0].branch')
+            IOS=$(echo "$group" | jq 'any(.platform == "ios")')
+            ANDROID=$(echo "$group" | jq 'any(.platform == "android")')
+            MACOS=$(echo "$group" | jq 'any(.platform == "macos")')
+            WINDOWS=$(echo "$group" | jq 'any(.platform == "windows")')
+
+            echo "Triggering patch for $BRANCH: ios=$IOS android=$ANDROID macos=$MACOS windows=$WINDOWS"
+
+            gh workflow run patch.yml \
+              --ref "$BRANCH" \
+              -f ios="$IOS" \
+              -f android="$ANDROID" \
+              -f macos="$MACOS" \
+              -f windows="$WINDOWS"
+          done
+
+      - name: Summary
+        if: always()
+        env:
+          PATCHES: ${{ steps.discover.outputs.patches }}
+        run: |
+          COUNT=$(echo "$PATCHES" | jq 'length')
+
+          {
+            echo "## Patch All Results"
+            echo ""
+            if [ "$COUNT" -eq 0 ]; then
+              echo "No releases need patching. All recent release branches are up to date."
+            else
+              echo "Triggered patches for **$COUNT** platform/version combinations:"
+              echo ""
+              echo "$PATCHES" | jq -r '.[] | "- \(.platform) \(.version) (branch: \(.branch))"'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
