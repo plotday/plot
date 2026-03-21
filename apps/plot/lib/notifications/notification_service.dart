@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/app_info.dart';
@@ -16,7 +19,7 @@ import 'package:plot/store/store.dart';
 /// Manages push notification token registration and message handling.
 ///
 /// Call [start] after sign-in and [stop] on sign-out.
-class NotificationService {
+class NotificationService with WidgetsBindingObserver {
   static final NotificationService _instance = NotificationService._();
   static NotificationService get instance => _instance;
   NotificationService._();
@@ -25,6 +28,19 @@ class NotificationService {
   StreamSubscription<RemoteMessage>? _foregroundSubscription;
   StreamSubscription<RemoteMessage>? _messageOpenedSubscription;
   String? _currentToken;
+  bool _started = false;
+
+  /// Whether the token has been successfully registered with the API.
+  bool _tokenRegistered = false;
+
+  /// Whether the user denied notification permission.
+  bool _permissionDenied = false;
+
+  /// Retry state for token registration.
+  int _retryCount = 0;
+  Timer? _retryTimer;
+  static const int _maxRetries = 5;
+  static const Duration _baseRetryDelay = Duration(seconds: 2);
 
   /// Tracks notifications that have been shown: priorityId → notification id.
   /// Used for retraction when threads are read on another device.
@@ -38,11 +54,20 @@ class NotificationService {
   /// Whether push notifications are supported on this platform.
   static bool get isSupported => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
+  /// Whether the user has denied notification permission.
+  /// Check this to show a "re-enable" option in settings.
+  bool get isPermissionDenied => _permissionDenied;
+
+  /// Whether the device token is registered with the server.
+  bool get isTokenRegistered => _tokenRegistered;
+
   /// Initialize Firebase Messaging, request permissions, and register the
   /// device token with the API. Call after Firebase.initializeApp() and
   /// after the user has signed in.
   Future<void> start({required String userId}) async {
     if (!isSupported) return;
+
+    _started = true;
 
     // Persist user ID for background isolate access
     try {
@@ -60,49 +85,17 @@ class NotificationService {
       log.warning('Failed to initialize notification display', e);
     }
 
-    final messaging = FirebaseMessaging.instance;
+    // Register for app lifecycle events to re-register on resume
+    WidgetsBinding.instance.addObserver(this);
 
-    // Request permission (shows system dialog on iOS; requests
-    // POST_NOTIFICATIONS on Android 13+)
-    try {
-      final settings = await messaging.requestPermission();
-      if (settings.authorizationStatus == AuthorizationStatus.denied) {
-        log.info('Push notification permission denied by user');
-        return;
-      }
-    } catch (e) {
-      log.warning('Failed to request notification permission', e);
-      return;
-    }
-
-    // Get current token and register
-    try {
-      final token = await messaging.getToken();
-      if (token != null) {
-        _currentToken = token;
-        await _registerToken(token);
-      }
-    } catch (e) {
-      log.warning('Failed to get FCM token', e);
-    }
-
-    // Listen for token refresh
-    _tokenRefreshSubscription =
-        messaging.onTokenRefresh.listen((token) async {
-      _currentToken = token;
-      try {
-        await _registerToken(token);
-      } catch (e) {
-        log.warning('Failed to register refreshed FCM token', e);
-      }
-    });
+    await _requestPermissionAndRegister();
 
     // Data message handler — triggers sync and local notification display
-    _foregroundSubscription =
+    _foregroundSubscription ??=
         FirebaseMessaging.onMessage.listen(_handleDataMessage);
 
     // Notification tap handler (app was in background)
-    _messageOpenedSubscription =
+    _messageOpenedSubscription ??=
         FirebaseMessaging.onMessageOpenedApp.listen((message) {
       log.info('Notification tapped: ${message.data}');
       _handleNotificationTap(message);
@@ -110,7 +103,7 @@ class NotificationService {
 
     // Check if app was opened from a terminated state via notification
     try {
-      final initialMessage = await messaging.getInitialMessage();
+      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
       if (initialMessage != null) {
         log.info('App opened from notification: ${initialMessage.data}');
         _handleNotificationTap(initialMessage);
@@ -120,10 +113,215 @@ class NotificationService {
     }
   }
 
+  /// Request permission and register the FCM token.
+  /// Called on start and can be re-called to retry after permission denial.
+  Future<void> _requestPermissionAndRegister() async {
+    final messaging = FirebaseMessaging.instance;
+
+    // Check current permission status first (doesn't prompt)
+    final currentSettings = await messaging.getNotificationSettings();
+    log.info('Push notification permission: ${currentSettings.authorizationStatus}');
+
+    if (currentSettings.authorizationStatus == AuthorizationStatus.denied) {
+      // On Android, denied means explicitly denied — requestPermission won't
+      // re-prompt. On iOS, it means not yet decided or denied.
+      if (Platform.isAndroid) {
+        _permissionDenied = true;
+        log.info('Push notifications denied — user must enable in system settings');
+        return;
+      }
+    }
+
+    if (currentSettings.authorizationStatus == AuthorizationStatus.notDetermined) {
+      // First time — show the permission dialog
+      try {
+        final settings = await messaging.requestPermission();
+        if (settings.authorizationStatus == AuthorizationStatus.denied) {
+          _permissionDenied = true;
+          log.info('Push notification permission denied by user');
+          return;
+        }
+      } catch (e) {
+        log.warning('Failed to request notification permission', e);
+        return;
+      }
+    }
+
+    _permissionDenied = false;
+
+    // Get current token and register
+    await _getTokenAndRegister();
+
+    // Listen for token refresh
+    _tokenRefreshSubscription ??=
+        messaging.onTokenRefresh.listen((token) async {
+      _currentToken = token;
+      try {
+        await _registerToken(token);
+        _tokenRegistered = true;
+        _retryCount = 0;
+      } catch (e) {
+        log.warning('Failed to register refreshed FCM token', e);
+        _scheduleRetry();
+      }
+    });
+  }
+
+  /// Get the FCM token and register it with the API, with retry on failure.
+  Future<void> _getTokenAndRegister() async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        _currentToken = token;
+        log.info('FCM token obtained, registering...');
+        await _registerToken(token);
+        _tokenRegistered = true;
+        _retryCount = 0;
+        log.info('Device token registered successfully');
+      } else {
+        log.warning('FCM getToken() returned null — will retry');
+        Tracker.trackError(
+          'notification',
+          errorType: 'FCMTokenNull',
+          errorMessage: 'FirebaseMessaging.getToken() returned null',
+          context: 'push_token_acquisition',
+        );
+        _scheduleRetry();
+      }
+    } catch (e) {
+      log.warning('Failed to get/register FCM token', e);
+      Tracker.trackError(
+        'notification',
+        errorType: e.runtimeType.toString(),
+        errorMessage: e.toString(),
+        context: 'push_token_registration',
+      );
+      _scheduleRetry();
+    }
+  }
+
+  /// Schedule a retry with exponential backoff and jitter.
+  void _scheduleRetry() {
+    if (_retryCount >= _maxRetries) {
+      log.warning('FCM token registration failed after $_maxRetries retries');
+      Tracker.trackError(
+        'notification',
+        errorType: 'FCMRegistrationFailed',
+        errorMessage: 'Token registration failed after $_maxRetries retries',
+        context: 'push_token_registration',
+      );
+      return;
+    }
+
+    _retryTimer?.cancel();
+    _retryCount++;
+    final delayMs = _baseRetryDelay.inMilliseconds * pow(2, _retryCount - 1).toInt();
+    final jitter = Random().nextInt(delayMs ~/ 2);
+    final delay = Duration(milliseconds: delayMs + jitter);
+
+    log.info('Scheduling FCM registration retry $_retryCount/$_maxRetries in ${delay.inSeconds}s');
+
+    _retryTimer = Timer(delay, () async {
+      if (!_started) return;
+      await _getTokenAndRegister();
+    });
+  }
+
+  /// Re-register on app resume. Handles cases where:
+  /// - Initial registration failed (network was down at startup)
+  /// - Token became stale while app was backgrounded
+  /// - User granted permission in system settings after previously denying
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_started) return;
+
+    // If permission was previously denied, re-check — user may have
+    // enabled notifications in system settings
+    if (_permissionDenied) {
+      _recheckPermission();
+      return;
+    }
+
+    // If token was never registered, try again
+    if (!_tokenRegistered) {
+      _retryCount = 0; // Reset retries on resume
+      _getTokenAndRegister();
+    }
+  }
+
+  /// Re-check permission status after returning from system settings.
+  Future<void> _recheckPermission() async {
+    try {
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      if (settings.authorizationStatus != AuthorizationStatus.denied) {
+        log.info('Notification permission now granted — registering token');
+        _permissionDenied = false;
+        _retryCount = 0;
+        await _requestPermissionAndRegister();
+      }
+    } catch (e) {
+      log.warning('Failed to re-check notification permission', e);
+    }
+  }
+
+  /// Re-request notification permission and register.
+  /// Call from settings UI when user wants to enable notifications.
+  Future<NotificationPermissionResult> requestPermission() async {
+    if (!isSupported) return NotificationPermissionResult.unsupported;
+
+    final messaging = FirebaseMessaging.instance;
+    final settings = await messaging.getNotificationSettings();
+
+    if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+        settings.authorizationStatus == AuthorizationStatus.provisional) {
+      // Already authorized — just ensure token is registered
+      _permissionDenied = false;
+      if (!_tokenRegistered) {
+        _retryCount = 0;
+        await _getTokenAndRegister();
+      }
+      return NotificationPermissionResult.granted;
+    }
+
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      // On Android, once denied, the OS won't show the dialog again.
+      // User must go to system settings.
+      if (Platform.isAndroid) {
+        return NotificationPermissionResult.deniedPermanently;
+      }
+    }
+
+    // Try requesting (works on iOS for notDetermined, or Android first-time)
+    try {
+      final result = await messaging.requestPermission();
+      if (result.authorizationStatus == AuthorizationStatus.denied) {
+        _permissionDenied = true;
+        return NotificationPermissionResult.denied;
+      }
+
+      _permissionDenied = false;
+      _retryCount = 0;
+      await _getTokenAndRegister();
+      return NotificationPermissionResult.granted;
+    } catch (e) {
+      log.warning('Failed to request notification permission', e);
+      return NotificationPermissionResult.error;
+    }
+  }
+
   /// Deregister the device token and clean up listeners.
   /// Call on sign-out.
   Future<void> stop() async {
     if (!isSupported) return;
+
+    _started = false;
+    _tokenRegistered = false;
+    _permissionDenied = false;
+    _retryCount = 0;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+
+    WidgetsBinding.instance.removeObserver(this);
 
     // Remove persisted user ID so background handler won't fire
     try {
@@ -161,7 +359,6 @@ class NotificationService {
       'pushToken': token,
       'appVersion': '${AppInfo.version}+${AppInfo.buildNumber}',
     });
-    log.info('Device token registered ($platform)');
   }
 
   /// Handle incoming FCM data messages (silent push from server).
@@ -493,6 +690,24 @@ class NotificationService {
       onNavigateToPriority?.call(payload);
     }
   }
+}
+
+/// Result of requesting notification permission.
+enum NotificationPermissionResult {
+  /// Permission granted — token is being registered.
+  granted,
+
+  /// User denied the permission dialog.
+  denied,
+
+  /// User previously denied and must enable in system settings (Android).
+  deniedPermanently,
+
+  /// Platform doesn't support push notifications.
+  unsupported,
+
+  /// An error occurred during the request.
+  error,
 }
 
 /// A batch of unread threads for a single first-level priority.

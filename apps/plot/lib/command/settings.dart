@@ -9,6 +9,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:collection/collection.dart';
+import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -108,6 +109,7 @@ StaticCommandGroup settingsCommands({
     CopyPageLink(), OpenCopiedPageLink(),
     ChangeAppearance(),
     ChangeAiPreference(),
+    if (NotificationService.isSupported && !NotificationService.instance.isTokenRegistered) EnableNotifications(),
     for (final org in adminOrgs)
       OrgAiPreferences(
         orgId: org['id'] as String,
@@ -505,6 +507,46 @@ class ChangeAiPreference extends ShowForm {
           ],
         ),
       ],
+    );
+  }
+}
+
+class EnableNotifications extends Command {
+  EnableNotifications()
+    : super(
+        title: 'Enable notifications',
+        subtitle: NotificationService.instance.isPermissionDenied
+            ? 'Permission denied — tap to fix'
+            : 'Not yet registered',
+        icon: FontAwesomeIcons.bell,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final result = await NotificationService.instance.requestPermission();
+
+    return switch (result) {
+      NotificationPermissionResult.granted =>
+        CommandMessage('Notifications enabled'),
+      NotificationPermissionResult.denied =>
+        CommandMessage(
+          'Permission denied. You can enable notifications in your device settings.',
+          isError: true,
+        ),
+      NotificationPermissionResult.deniedPermanently =>
+        _openSystemSettings(),
+      NotificationPermissionResult.unsupported =>
+        CommandMessage('Notifications are not supported on this platform', isError: true),
+      NotificationPermissionResult.error =>
+        CommandMessage('Failed to enable notifications', isError: true),
+    };
+  }
+
+  CommandReturn _openSystemSettings() {
+    return CommandMessage(
+      'Please enable notifications in your device settings, then return to Plot.',
     );
   }
 }

@@ -110,13 +110,22 @@ export async function sendDataNotificationToUser(
 
   const devices = await db
     .selectFrom("device")
-    .select(["id", "push_token"])
+    .select(["id", "push_token", "platform"])
     .where("user_id", "=", userId)
     .execute();
 
   if (devices.length === 0) {
+    logger.warn("No registered devices for user — push skipped", {
+      user_id: userId,
+    });
     return;
   }
+
+  logger.info("Sending data notification", {
+    user_id: userId,
+    device_count: devices.length,
+    platforms: devices.map((d) => d.platform),
+  });
 
   const config = {
     projectId: env.GCP_PROJECT_ID,

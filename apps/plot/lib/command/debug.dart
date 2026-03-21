@@ -1,11 +1,16 @@
+import 'dart:io';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/app_info.dart';
 import 'package:plot/notifications/notification_display.dart';
 import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/style/plot_colors.dart';
@@ -26,6 +31,7 @@ StaticCommandGroup? buildDebugCommands() {
       if (Time.isFrozen()) UnfreezeTime(),
       TriggerTestPush(),
       ShowTestNotification(),
+      DiagnosePushNotifications(),
     ],
   );
 }
@@ -112,6 +118,93 @@ class ShowTestNotification extends Command {
     } catch (e) {
       return CommandMessage('Failed: $e', isError: true);
     }
+  }
+}
+
+/// Diagnostic command that checks every step of the push notification pipeline
+/// and reports exactly where it fails.
+class DiagnosePushNotifications extends Command {
+  DiagnosePushNotifications()
+    : super(
+        title: 'Diagnose push notifications',
+        subtitle: 'Check FCM token, permissions, and registration',
+        icon: FontAwesomeIcons.stethoscope,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final lines = <String>[];
+
+    // 1. Platform check
+    final platform = Platform.isIOS ? 'ios' : (Platform.isAndroid ? 'android' : 'other');
+    lines.add('Platform: $platform');
+    lines.add('Supported: ${NotificationService.isSupported}');
+    if (!NotificationService.isSupported) {
+      return CommandMessage(lines.join('\n'), isError: true);
+    }
+
+    // 2. Permission status
+    try {
+      final messaging = FirebaseMessaging.instance;
+      final settings = await messaging.getNotificationSettings();
+      lines.add('Permission: ${settings.authorizationStatus.name}');
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        lines.add('BLOCKED: Permission denied — user must grant in system settings');
+        return CommandMessage(lines.join('\n'), isError: true);
+      }
+    } catch (e) {
+      lines.add('Permission check FAILED: $e');
+      return CommandMessage(lines.join('\n'), isError: true);
+    }
+
+    // 3. FCM token
+    String? fcmToken;
+    try {
+      fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken != null) {
+        lines.add('FCM token: ${fcmToken.substring(0, 20)}...');
+      } else {
+        lines.add('FCM token: NULL — Firebase may not be configured correctly');
+        return CommandMessage(lines.join('\n'), isError: true);
+      }
+    } catch (e) {
+      lines.add('FCM token FAILED: $e');
+      return CommandMessage(lines.join('\n'), isError: true);
+    }
+
+    // 4. SharedPreferences state
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('notification_user_id');
+      final apiRoot = prefs.getString('api_root');
+      final clerkKey = prefs.getString('clerk_publishable_key');
+      lines.add('Prefs user_id: ${userId != null ? '${userId.substring(0, 8)}...' : 'NULL'}');
+      lines.add('Prefs api_root: ${apiRoot ?? 'NULL'}');
+      lines.add('Prefs clerk_key: ${clerkKey != null ? 'set' : 'NULL'}');
+    } catch (e) {
+      lines.add('SharedPreferences FAILED: $e');
+    }
+
+    // 5. Service state
+    final svc = NotificationService.instance;
+    lines.add('Service registered: ${svc.isTokenRegistered}');
+    lines.add('Permission denied: ${svc.isPermissionDenied}');
+
+    // 6. Try registering the token now
+    try {
+      await api.put<Map<String, dynamic>>('/device', body: {
+        'platform': platform,
+        'pushToken': fcmToken,
+        'appVersion': '${AppInfo.version}+${AppInfo.buildNumber}',
+      });
+      lines.add('Token registration: SUCCESS');
+    } catch (e) {
+      lines.add('Token registration FAILED: $e');
+    }
+
+    return CommandMessage(lines.join('\n'));
   }
 }
 

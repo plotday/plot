@@ -12,6 +12,8 @@ interface QueuedMessage {
 
 export class Broadcast extends DurableObject<Bindings> {
   private connections: Map<string, WebSocket> = new Map();
+  /** Clients that have sent `active: false` (app backgrounded). */
+  private inactiveClients: Set<string> = new Set();
   private messageQueue: QueuedMessage[] = [];
   private lastMessageTime: number = 0;
   private batchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -199,10 +201,12 @@ export class Broadcast extends DurableObject<Bindings> {
     // Handle WebSocket events
     server.addEventListener("close", () => {
       this.connections.delete(clientId);
+      this.inactiveClients.delete(clientId);
     });
 
     server.addEventListener("error", () => {
       this.connections.delete(clientId);
+      this.inactiveClients.delete(clientId);
     });
 
     server.addEventListener("message", (event) => {
@@ -216,7 +220,10 @@ export class Broadcast extends DurableObject<Bindings> {
         if (msg.type === "ping") {
           server.send("pong");
           if (msg.active === true) {
+            this.inactiveClients.delete(clientId);
             this.maybeRecordActivity(clientId);
+          } else if (msg.active === false) {
+            this.inactiveClients.add(clientId);
           }
           return;
         }
@@ -328,11 +335,17 @@ export class Broadcast extends DurableObject<Bindings> {
   }
 
   /**
-   * Check if there are any connected clients
-   * Used by UserSync DO to skip sync when no clients are connected
+   * Check if there are any actively connected clients (not backgrounded).
+   * Used by UserSync DO to decide between WebSocket sync and push notification.
    */
   hasConnectedClients(): boolean {
-    return this.connections.size > 0;
+    // Only count clients that haven't sent active: false
+    for (const clientId of this.connections.keys()) {
+      if (!this.inactiveClients.has(clientId)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -354,5 +367,6 @@ export class Broadcast extends DurableObject<Bindings> {
       }
     }
     this.connections.clear();
+    this.inactiveClients.clear();
   }
 }
