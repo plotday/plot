@@ -1,3 +1,4 @@
+- Items assigned to you in Linear, Jira, Asana, and GitHub now automatically appear in your agenda as tasks
 - Fixed sharing links to Plot on Android — shared URLs now open in the new thread page instead of just showing the agenda
 - Cleaner priority browsing — selecting "Everything" now shows top-level priorities collapsed, tapping a priority on mobile expands it first then navigates on a second tap, and the Activity unread dot now reflects unread items in child priorities too
 - Select multiple files at once when attaching to notes — no more picking one at a time

@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 
 import {
   type Actor,
@@ -45,6 +45,7 @@ import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
 import type { Store } from "./store";
 import { Tool } from "./tool";
+import { createSchedule } from "../../app/sync/smart-schedule";
 
 /** Internal provider config used by the Integrations tool. */
 type IntegrationProviderConfig = {
@@ -393,6 +394,9 @@ export class Integrations extends Tool implements IAuth {
     // Propagate status tags to the thread
     await this.propagateLinkStatusTags(plot, threadId);
 
+    // Create task schedule for assigned links
+    await this.createTaskScheduleForLink(threadId);
+
     return threadId;
   }
 
@@ -497,6 +501,62 @@ export class Integrations extends Tool implements IAuth {
         .where("occurrence", "is", null)
         .where("archived_at", "is", null)
         .execute();
+    }
+  }
+
+  /**
+   * Check if a link type+status represents completion based on provider configs.
+   */
+  private isStatusDone(
+    type: string | null | undefined,
+    status: string | null | undefined
+  ): boolean {
+    if (!type || !status) return false;
+    const allLinkTypes = this.providerConfigs.flatMap((p) => p.linkTypes ?? []);
+    const typeConfig = allLinkTypes.find((lt) => lt.type === type);
+    if (!typeConfig?.statuses) return false;
+    const statusDef = typeConfig.statuses.find((s) => s.status === status);
+    return statusDef?.done === true;
+  }
+
+  /**
+   * Create a task schedule for the assignee of a link, if applicable.
+   * Queries the link row for assignee_id, resolves the contact's user_id,
+   * creates a task schedule if non-done, and always recomputes outstanding_tasks.
+   */
+  private async createTaskScheduleForLink(
+    threadId: Uuid
+  ): Promise<void> {
+    try {
+      // Query the link to get the resolved assignee_id
+      const dbLink = await this.db
+        .selectFrom("link")
+        .select(["assignee_id", "type", "status"])
+        .where("thread_id", "=", threadId as string)
+        .where("created_by", "=", this.priorityTwistId)
+        .orderBy("updated_at", "desc")
+        .executeTakeFirst();
+
+      if (!dbLink?.assignee_id) return;
+
+      // Resolve the contact's user_id
+      const contact = await this.db
+        .selectFrom("contact")
+        .select("user_id")
+        .where("id", "=", dbLink.assignee_id)
+        .executeTakeFirst();
+
+      if (!contact?.user_id) return;
+
+      // Create schedule only if status is not done
+      if (!this.isStatusDone(dbLink.type, dbLink.status)) {
+        await createSchedule(this.db, contact.user_id, threadId as string, "task");
+      }
+
+      // Always recompute outstanding_tasks (handles done→undone transitions)
+      await sql`SELECT recompute_outstanding_tasks(${threadId}::uuid, ${contact.user_id}::uuid)`.execute(this.db);
+    } catch (error) {
+      console.error("[schedule] Failed to create task schedule from link assignment:", error);
     }
   }
 
