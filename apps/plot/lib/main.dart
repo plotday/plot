@@ -26,6 +26,7 @@ import 'util/time_service.dart' show Time;
 import 'util/profile_preferences.dart';
 import 'util/instance_lock.dart';
 import 'command/page_link.dart';
+import 'command/command.dart' show BuildContextCommandExtension;
 import 'command/share.dart';
 import 'page/invite.dart';
 import 'share_intent.dart';
@@ -142,7 +143,7 @@ Future<void> run(List<String> args) async {
       onShareReceived: (url) {
         final context = navigatorKey?.currentContext;
         if (context?.mounted == true) {
-          OpenSharedLink(url).run(context!);
+          context!.run(OpenSharedLink(url));
         } else {
           PendingShare.url = url;
         }
