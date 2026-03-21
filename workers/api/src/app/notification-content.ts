@@ -15,21 +15,6 @@ notificationContent.get("/notification-content", async (c) => {
     const db = c.var.db;
     const userId = c.var.user.id;
 
-    // Get the root priority path for this user to determine hierarchy depth
-    const rootResult = await sql<{ path: string }>`
-      SELECT path::text AS path
-      FROM "user".priority
-      WHERE user_id = ${userId}::uuid AND root = true
-      LIMIT 1
-    `.execute(db);
-
-    if (rootResult.rows.length === 0) {
-      return c.json({ summaries: [] });
-    }
-
-    const rootPath = rootResult.rows[0].path;
-    const rootDepth = rootPath.split(".").length;
-
     // Get all unread non-passive threads with their priority paths
     const threadsResult = await sql<{
       urgency: string;
@@ -66,7 +51,17 @@ notificationContent.get("/notification-content", async (c) => {
       return c.json({ summaries: [] });
     }
 
-    // Get all first-level priorities (direct children of root)
+    // Collect all unique first-level paths (depth 2 under each tree root).
+    // For threads directly in a root priority (depth 1), use the root itself.
+    const firstLevelPaths = new Set<string>();
+    for (const row of threadsResult.rows) {
+      const segments = row.priority_path.split(".");
+      // First-level = first two segments (root.child), or the root itself if depth 1
+      const firstLevelPath = segments.slice(0, Math.min(2, segments.length)).join(".");
+      firstLevelPaths.add(firstLevelPath);
+    }
+
+    // Look up priority info for all first-level paths
     const firstLevelResult = await sql<{
       id: string;
       path: string;
@@ -74,8 +69,7 @@ notificationContent.get("/notification-content", async (c) => {
     }>`
       SELECT id::text AS id, path::text AS path, title
       FROM priority
-      WHERE nlevel(path::ltree) = ${rootDepth + 1}
-        AND path::ltree <@ ${rootPath}::ltree
+      WHERE path::text = ANY(${[...firstLevelPaths]})
     `.execute(db);
 
     const firstLevelByPath = new Map<string, { id: string; title: string }>();
@@ -106,9 +100,8 @@ notificationContent.get("/notification-content", async (c) => {
     const batchMap = new Map<string, BatchData>();
 
     for (const row of threadsResult.rows) {
-      const pathSegments = row.priority_path.split(".");
-      if (pathSegments.length <= rootDepth) continue;
-      const firstLevelPath = pathSegments.slice(0, rootDepth + 1).join(".");
+      const segments = row.priority_path.split(".");
+      const firstLevelPath = segments.slice(0, Math.min(2, segments.length)).join(".");
       const firstLevelInfo = firstLevelByPath.get(firstLevelPath);
       if (!firstLevelInfo) continue;
 
