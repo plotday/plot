@@ -77,20 +77,24 @@ export class PushNotify extends DurableObject<Bindings> {
       await this.ctx.storage.put("firstNotifyTime", now);
     }
 
-    // Query the max urgency and effective see_within delay for this user's unread threads
+    // Query the max urgency, latest unread timestamp, and effective see_within
+    // delay for this user's unread threads
     let maxUrgency: string | null = null;
     let delayMs = 0;
+    let latestUnreadAt: string | null = null;
     try {
       const result = await withDb(this.env, async (db) => {
         const urgencyResult = await sql<{
           urgency: string;
           see_within_requests: string | null;
           see_within_updates: string | null;
+          latest_updated_at: string;
         }>`
           SELECT
             tu.urgency,
             psi.see_within_requests,
-            psi.see_within_updates
+            psi.see_within_updates,
+            MAX(tu.updated_at)::text AS latest_updated_at
           FROM thread_unread tu
           JOIN thread t ON t.id = tu.thread_id
           LEFT JOIN LATERAL (
@@ -102,6 +106,7 @@ export class PushNotify extends DurableObject<Bindings> {
           ) psi ON true
           WHERE tu.user_id = ${userId}::uuid AND tu.read_at IS NULL
             AND tu.urgency != 'passive'
+          GROUP BY tu.urgency, psi.see_within_requests, psi.see_within_updates
           ORDER BY CASE tu.urgency
             WHEN 'interrupt' THEN 0
             WHEN 'inform-requests' THEN 1
@@ -113,6 +118,14 @@ export class PushNotify extends DurableObject<Bindings> {
         if (urgencyResult.rows.length === 0) return null;
 
         const topUrgency = urgencyResult.rows[0].urgency;
+
+        // Find the latest updated_at across all unread threads
+        let maxUpdatedAt = urgencyResult.rows[0].latest_updated_at;
+        for (const row of urgencyResult.rows) {
+          if (row.latest_updated_at > maxUpdatedAt) {
+            maxUpdatedAt = row.latest_updated_at;
+          }
+        }
 
         // Find shortest delay across all unread threads matching the top urgency type
         let shortestDelay = DEFAULT_DELAY_MS[topUrgency] ?? DEFAULT_DELAY_MS["inform-updates"];
@@ -133,12 +146,13 @@ export class PushNotify extends DurableObject<Bindings> {
           }
         }
 
-        return { urgency: topUrgency, delayMs: shortestDelay };
+        return { urgency: topUrgency, delayMs: shortestDelay, latestUnreadAt: maxUpdatedAt };
       });
 
       if (result) {
         maxUrgency = result.urgency;
         delayMs = result.delayMs;
+        latestUnreadAt = result.latestUnreadAt;
       }
     } catch (error) {
       // If DB query fails, default to inform-updates
@@ -154,6 +168,16 @@ export class PushNotify extends DurableObject<Bindings> {
       await this.ctx.storage.delete("highestUrgency");
       await this.ctx.storage.delete("firstNotifyTime");
       return;
+    }
+
+    // Skip if we already notified about these exact unreads (no new activity)
+    if (latestUnreadAt) {
+      const lastNotifiedUnreadAt =
+        await this.ctx.storage.get<string>("lastNotifiedUnreadAt");
+      if (lastNotifiedUnreadAt && latestUnreadAt <= lastNotifiedUnreadAt) {
+        // No new unread activity since last push — don't re-notify
+        return;
+      }
     }
 
     const previousUrgency = this.highestUrgency;
@@ -232,14 +256,30 @@ export class PushNotify extends DurableObject<Bindings> {
         return;
       }
 
-      // Send data-only FCM wake signal
+      // Query the latest unread timestamp to record what we're notifying about
+      let latestUnreadAt: string | null = null;
       await withDb(this.env, async (db) => {
+        const result = await sql<{ latest: string }>`
+          SELECT MAX(updated_at)::text AS latest
+          FROM thread_unread
+          WHERE user_id = ${this.userId!}::uuid
+            AND read_at IS NULL
+            AND urgency != 'passive'
+        `.execute(db);
+        latestUnreadAt = result.rows[0]?.latest ?? null;
+
+        // Send data-only FCM wake signal
         await sendDataNotificationToUser(this.env, db, this.userId!, {
           type: "sync_wake",
         });
       });
 
       await this.ctx.storage.put("lastNotificationSentAt", now);
+
+      // Record what we notified about so we don't re-notify for the same unreads
+      if (latestUnreadAt) {
+        await this.ctx.storage.put("lastNotifiedUnreadAt", latestUnreadAt);
+      }
 
       logger.info("Push notification sent", {
         user_id: this.userId,
@@ -260,6 +300,8 @@ export class PushNotify extends DurableObject<Bindings> {
     this.firstNotifyTime = 0;
     await this.ctx.storage.delete("highestUrgency");
     await this.ctx.storage.delete("firstNotifyTime");
+    // Note: lastNotifiedUnreadAt and lastNotificationSentAt are NOT cleared —
+    // they persist across notification cycles to prevent re-notifying.
   }
 }
 
