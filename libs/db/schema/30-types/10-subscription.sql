@@ -1,7 +1,7 @@
 CREATE TYPE subscription_plan AS ENUM (
     'free',
     'pro',
-    'business'
+    'team'
 );
 
 CREATE TYPE subscription_status AS ENUM (

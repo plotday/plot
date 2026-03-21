@@ -22,7 +22,7 @@ type Billing = "monthly" | "annual";
 
 const PRICES = {
   pro: { monthly: 25, annual: 20 },
-  business: { monthly: 124, annual: 99 },
+  team: { monthly: 124, annual: 99 },
 } as const;
 
 const PLANS = [
@@ -75,10 +75,10 @@ const PLANS = [
     unit: null,
   },
   {
-    key: "business",
-    name: "Business",
+    key: "team",
+    name: "Team",
     bestFor: "For ambitious teams who move fast together",
-    price: (billing: Billing) => `$${PRICES.business[billing]}`,
+    price: (billing: Billing) => `$${PRICES.team[billing]}`,
     priceNote: null,
     period: "/mo",
     description:
@@ -95,7 +95,7 @@ const PLANS = [
     ],
     cta: "Get started",
     ctaLink: (billing: Billing) =>
-      `/upgrade?plan=business&billing=${billing}`,
+      `/upgrade?plan=team&billing=${billing}`,
     ctaVariant: "filled" as const,
     highlight: false,
     badge: null,
@@ -117,7 +117,7 @@ const FAQS = [
   {
     question: "What happens if I hit my connection limit?",
     answer:
-      "On the Free plan, you'll be prompted to upgrade to Pro or remove an existing connection. On Business plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle.",
+      "On the Free plan, you'll be prompted to upgrade to Pro or remove an existing connection. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle.",
   },
   {
     question: "Can I try Plot before committing to a paid plan?",
@@ -135,7 +135,7 @@ const FAQS = [
       "Plot includes AI features like smart search, auto-tagging, and summaries. On the Free plan, these features are available with monthly usage limits. Paid plans include unlimited AI processing. When you install twists that use AI, you pay for the tokens consumed — at cost, with no markup. You can also bring your own API keys and pay your provider directly. We show full usage breakdowns per model and per twist, and you can set budgets so there are never surprises. Plot never profits from your AI usage.",
   },
   {
-    question: "How do I add more connections on a Business plan?",
+    question: "How do I add more connections on a Team plan?",
     answer:
       "Connections are added in groups of 50. You can add more at any time from your account settings. On annual plans, additional groups are prorated for the remainder of your billing cycle. The price updates dynamically so you can see the cost before confirming.",
   },
@@ -157,7 +157,7 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Simple pricing with no per-seat fees. Free for individuals, Pro for power users, Business for teams.",
+        "Simple pricing with no per-seat fees. Free for individuals, Pro for power users, Team for organizations.",
     },
     { "og:title": "Plot Pricing" },
     {

@@ -11,7 +11,7 @@ import {
 } from "./utils";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
-import { PLAN_LIMITS, BUSINESS_CONNECTIONS_PER_GROUP } from "../utils/limits";
+import { PLAN_LIMITS, TEAM_CONNECTIONS_PER_GROUP } from "../utils/limits";
 import { backfillEmbeddings } from "../queue/backfill-embeddings";
 
 const stripe = new Hono<{ Bindings: Bindings }>();
@@ -122,9 +122,9 @@ async function handleSubscriptionUpdate(
   const status = mapStripeStatus(subscription.status);
 
   // Determine plan from subscription metadata, validated against known values
-  const validPlans = ["free", "pro", "business"];
+  const validPlans = ["free", "pro", "team"];
   const plan = validPlans.includes(subscription.metadata.plan)
-    ? (subscription.metadata.plan as "free" | "pro" | "business")
+    ? (subscription.metadata.plan as "free" | "pro" | "team")
     : "free";
 
   // Try user_subscription first, then organization_subscription
@@ -356,9 +356,9 @@ async function enforceDowngradeLimits(
 
   if (orgSub) {
     const orgId = String(orgSub.organization_id);
-    const orgLimit = (orgSub.connection_group_quantity ?? 1) * BUSINESS_CONNECTIONS_PER_GROUP;
+    const orgLimit = (orgSub.connection_group_quantity ?? 1) * TEAM_CONNECTIONS_PER_GROUP;
 
-    // For free orgs, limit is 0; for business, use group-based limit
+    // For free orgs, limit is 0; for team, use group-based limit
     const effectiveLimit = newPlan === "free" ? 0 : orgLimit;
 
     const excessOrgConns = await db

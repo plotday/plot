@@ -685,7 +685,7 @@ organization.post("/organization/:id/upgrade/checkout", async (c) => {
     cancel_url: `${siteRoot}/organization/${orgId}?canceled=true`,
     subscription_data: {
       metadata: {
-        plan: "business",
+        plan: "team",
         organization_id: orgId as any,
       },
     },

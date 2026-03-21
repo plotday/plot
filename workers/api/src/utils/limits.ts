@@ -8,10 +8,10 @@ import { FREE_AI_LIMITS } from "./ai-limits";
 export const PLAN_LIMITS = {
   free: { connections: 3, twists: 1 },
   pro: { connections: Infinity, twists: Infinity },
-  business: { connections: Infinity, twists: Infinity }, // org pool handled separately
+  team: { connections: Infinity, twists: Infinity }, // org pool handled separately
 };
 
-export const BUSINESS_CONNECTIONS_PER_GROUP = 50;
+export const TEAM_CONNECTIONS_PER_GROUP = 50;
 
 export class PlanLimitError extends Error {
   readonly limitType: "connection" | "twist";
@@ -121,8 +121,8 @@ export async function getOrgConnectionLimit(
     .where("organization_id", "=", organizationId)
     .executeTakeFirst();
 
-  if (!sub) return BUSINESS_CONNECTIONS_PER_GROUP; // default 1 group
-  return sub.connection_group_quantity * BUSINESS_CONNECTIONS_PER_GROUP;
+  if (!sub) return TEAM_CONNECTIONS_PER_GROUP; // default 1 group
+  return sub.connection_group_quantity * TEAM_CONNECTIONS_PER_GROUP;
 }
 
 /**
@@ -158,7 +158,7 @@ export async function getPersonalTwistCount(
 export async function getPersonalPlan(
   db: Kysely<DB>,
   userId: string
-): Promise<"free" | "pro" | "business"> {
+): Promise<"free" | "pro" | "team"> {
   const sub = await db
     .selectFrom("user_subscription")
     .select(["plan", "status"])
@@ -166,7 +166,7 @@ export async function getPersonalPlan(
     .executeTakeFirst();
 
   return sub && sub.status === "active"
-    ? (sub.plan as "free" | "pro" | "business")
+    ? (sub.plan as "free" | "pro" | "team")
     : "free";
 }
 
@@ -221,11 +221,11 @@ export async function checkConnectionLimit(
 
     const orgPlan =
       orgSub && orgSub.status === "active"
-        ? (orgSub.plan as "free" | "pro" | "business")
+        ? (orgSub.plan as "free" | "pro" | "team")
         : "free";
 
-    // Business plan has per-group limits
-    if (orgPlan === "business") {
+    // Team plan has per-group limits
+    if (orgPlan === "team") {
       const count = await getOrgConnectionCount(db, organizationId);
       const limit = await getOrgConnectionLimit(db, organizationId);
       if (count >= limit) {
@@ -382,7 +382,7 @@ export async function getUsage(
       const orgId = String(org.organization_id);
       const orgConnectionCount = await getOrgConnectionCount(db, orgId);
       const groupQty = org.connection_group_quantity ?? 1;
-      const orgConnectionLimit = groupQty * BUSINESS_CONNECTIONS_PER_GROUP;
+      const orgConnectionLimit = groupQty * TEAM_CONNECTIONS_PER_GROUP;
 
       return {
         id: orgId,

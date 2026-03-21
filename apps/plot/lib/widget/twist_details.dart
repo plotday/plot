@@ -23,7 +23,7 @@ class TwistDetails extends StatelessWidget {
   /// Whether the user has any AI API keys configured. Null = not fetched.
   final bool? hasAiKeys;
 
-  /// The user's effective plan (e.g. 'free', 'pro', 'business'). Null = not fetched.
+  /// The user's effective plan (e.g. 'free', 'pro', 'team'). Null = not fetched.
   final String? effectivePlan;
 
   bool get _isFree => effectivePlan == 'free';

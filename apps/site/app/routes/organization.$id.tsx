@@ -289,7 +289,7 @@ export default function OrganizationPage({
 
         {isSuccess && (
           <Alert color="green" title="Subscription active" mb="md">
-            Your Business subscription is now active.
+            Your Team subscription is now active.
           </Alert>
         )}
 

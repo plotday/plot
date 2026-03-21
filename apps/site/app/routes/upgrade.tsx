@@ -55,7 +55,7 @@ type SubscriptionInfo = {
 
 const PRICES = {
   pro: { monthly: 25, annual: 20 },
-  business: { monthly: 124, annual: 99 },
+  team: { monthly: 124, annual: 99 },
 } as const;
 
 const QUANTITY_OPTIONS = Array.from({ length: 40 }, (_, i) => ({
@@ -92,7 +92,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const [billing, setBilling] = useState<Billing>(
     (searchParams.get("billing") as Billing) || "annual"
   );
-  const [businessQuantity, setBusinessQuantity] = useState("1");
+  const [teamQuantity, setTeamQuantity] = useState("1");
   const [orgName, setOrgName] = useState("");
   const [domainAutoJoin, setDomainAutoJoin] = useState(true);
 
@@ -128,7 +128,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     fetchSubscription();
   }, [isSignedIn, getToken, loaderData.apiUrl]);
 
-  const handleCheckout = async (plan: "pro" | "business") => {
+  const handleCheckout = async (plan: "pro" | "team") => {
     setActionLoading(true);
     setError(null);
 
@@ -138,12 +138,12 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
       const body: Record<string, unknown> = {
         priceLookupKey: lookupKey,
       };
-      if (plan === "business") {
-        body.quantity = parseInt(businessQuantity);
+      if (plan === "team") {
+        body.quantity = parseInt(teamQuantity);
         if (!subscription?.organization) {
           // Creating a new org
           if (!orgName.trim()) {
-            setError("Organization name is required for Business plan");
+            setError("Organization name is required for Team plan");
             setActionLoading(false);
             return;
           }
@@ -220,8 +220,8 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   if (!isSignedIn) {
     const planParam = searchParams.get("plan");
     const planLabel =
-      planParam === "business"
-        ? "Plot Business"
+      planParam === "team"
+        ? "Plot Team"
         : planParam === "pro"
           ? "Plot Pro"
           : "Plot";
@@ -260,7 +260,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
           Your plan is now active.
           {successOrgId
             ? " Your organization has been set up."
-            : ` Welcome to Plot ${subscription?.effective_plan === "business" ? "Business" : "Pro"}!`}
+            : ` Welcome to Plot ${subscription?.effective_plan === "team" ? "Team" : "Pro"}!`}
         </Alert>
       )}
       {isCanceled && (
@@ -290,7 +290,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
           {alerts}
           <Box className={classes.currentPlan}>
             <Text fw={600} size="lg">
-              Plot {effectivePlan === "business" ? "Business" : "Pro"}
+              Plot {effectivePlan === "team" ? "Team" : "Pro"}
               {isOrgPlan && subscription?.organization
                 ? ` via ${subscription.organization.name}`
                 : ""}
@@ -417,16 +417,16 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             </Button>
           </Stack>
 
-          {/* Business */}
+          {/* Team */}
           <Stack
             className={
-              preselectedPlan === "business"
+              preselectedPlan === "team"
                 ? classes.planCardHighlight
                 : classes.planCard
             }
             gap="md"
           >
-            <Text className={classes.planName}>Business</Text>
+            <Text className={classes.planName}>Team</Text>
             <Text className={classes.bestFor}>
               For ambitious teams who move fast together
             </Text>
@@ -451,8 +451,8 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             </Stack>
             <Box className={classes.priceDivider} />
             <Select
-              value={businessQuantity}
-              onChange={(v) => v && setBusinessQuantity(v)}
+              value={teamQuantity}
+              onChange={(v) => v && setTeamQuantity(v)}
               data={QUANTITY_OPTIONS}
               size="sm"
             />
@@ -480,7 +480,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             <Box className={classes.priceDivider} />
             <Box className={classes.priceBox}>
               <Text className={classes.planPrice}>
-                ${PRICES.business[billing] * parseInt(businessQuantity)}
+                ${PRICES.team[billing] * parseInt(teamQuantity)}
               </Text>
               <Text className={classes.planPricePeriod}>/mo</Text>
             </Box>
@@ -490,11 +490,11 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
               </Text>
             )}
             <Button
-              onClick={() => handleCheckout("business")}
+              onClick={() => handleCheckout("team")}
               loading={actionLoading}
               fullWidth
             >
-              Upgrade to Business
+              Upgrade to Team
             </Button>
           </Stack>
         </Box>

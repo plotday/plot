@@ -31,7 +31,7 @@ export async function checkAiLimit(
 
 /**
  * Priority-aware AI limit check. Checks in order:
- * 1. Org priorities → always allowed (covered by business plan)
+ * 1. Org priorities → always allowed (covered by team plan)
  * 2. Syncing user → if paid or within free limits, use their quota
  * 3. Other priority members → if any has capacity, use their quota
  *
@@ -44,7 +44,7 @@ export async function checkAiLimitForPriority(
   syncingUserId: string,
   operation: AiOperation
 ): Promise<{ allowed: boolean; chargeUserId: string | null }> {
-  // 1. Org priorities are covered by the business plan
+  // 1. Org priorities are covered by the team plan
   const priority = await db
     .selectFrom("priority")
     .select("organization_id")

@@ -5,7 +5,7 @@ import 'api.dart' as api;
 class ResourceUsage extends Equatable {
   final int count;
 
-  /// Null means unlimited (pro/business plan)
+  /// Null means unlimited (pro/team plan)
   final int? limit;
 
   const ResourceUsage({required this.count, this.limit});

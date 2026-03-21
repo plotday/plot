@@ -42,7 +42,7 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type OrganizationRole = "admin" | "member";
 
-export type SubscriptionPlan = "business" | "free" | "pro";
+export type SubscriptionPlan = "free" | "pro" | "team";
 
 export type SubscriptionStatus = "active" | "canceled" | "incomplete" | "incomplete_expired" | "past_due" | "trialing" | "unpaid";
 
@@ -496,6 +496,7 @@ export interface PrioritySettingInherited {
   key: string | null;
   priority_id: string | null;
   source_path: string | null;
+  updated_at: Timestamp | null;
   user_id: string | null;
   value: Json | null;
 }
@@ -816,6 +817,7 @@ export interface Schedule {
   occurrence: string | null;
   on: string | null;
   order: number | null;
+  outstanding_tasks: Generated<boolean>;
   reason: string | null;
   recurrence_exdates: ArrayType<Timestamp> | null;
   recurrence_rule: string | null;
@@ -886,6 +888,7 @@ export interface Thread {
    */
   created_by: string;
   draft: Generated<boolean>;
+  icon: string | null;
   id: Generated<string>;
   /**
    * Internal identifier for deduplication within a priority. Used with priority_id for upsert behavior. Not synced to clients.
@@ -954,6 +957,7 @@ export interface ThreadX {
   created_at: Timestamp | null;
   created_by: string | null;
   draft: boolean | null;
+  icon: string | null;
   id: string | null;
   key: string | null;
   last_note_created_at: Timestamp | null;
@@ -1036,6 +1040,7 @@ export interface UserActor {
   created_at: Timestamp | null;
   email: string | null;
   id: string | null;
+  min_depth: number | null;
   name: string | null;
   self: boolean | null;
   type: string | null;
@@ -1133,6 +1138,7 @@ export interface UserPriorityActor {
   actor_id: string | null;
   archived_at: Timestamp | null;
   created_at: Timestamp | null;
+  depth: number | null;
   priority_path: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -1165,6 +1171,7 @@ export interface UserSchedule {
   occurrence: string | null;
   on: string | null;
   order: number | null;
+  outstanding_tasks: boolean | null;
   priority_path: string | null;
   range_at: string | null;
   range_on: string | null;
@@ -1219,11 +1226,12 @@ export interface UserSync {
 
 export interface UserThread {
   activity_at: Timestamp | null;
-  agenda_at: Timestamp | null;
+  agenda_at: string | null;
   archived_at: Timestamp | null;
   bumped_at: Timestamp | null;
   created_at: Timestamp | null;
   draft: boolean | null;
+  icon: string | null;
   id: string | null;
   importance: number | null;
   last_note_created_at: Timestamp | null;

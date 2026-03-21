@@ -140,7 +140,7 @@ export function createTool(
     aiEnabled?: boolean;
     /** BYOK API keys for AI providers. When set, only these providers are available. */
     byokKeys?: ByokKeys;
-    /** The user's effective plan (e.g. "free", "pro", "business"). Undefined during deployment. */
+    /** The user's effective plan (e.g. "free", "pro", "team"). Undefined during deployment. */
     effectivePlan?: string;
   }
 ): Tool {

@@ -11,8 +11,8 @@ import { notifySync } from "./sync/notify";
 
 const upgrade = new Hono<{ Bindings: Bindings }>();
 
-function planFromLookupKey(key: string): "pro" | "business" {
-  if (key.startsWith("business")) return "business";
+function planFromLookupKey(key: string): "pro" | "team" {
+  if (key.startsWith("team")) return "team";
   return "pro";
 }
 
@@ -78,15 +78,15 @@ upgrade.post("/upgrade/checkout", async (c) => {
   const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
   const siteRoot = c.env.SITE_ROOT || "https://plot.day";
 
-  // Business plan: route through organization
-  if (plan === "business") {
+  // Team plan: route through organization
+  if (plan === "team") {
     let orgId = body.organizationId;
 
     if (!orgId) {
       // Auto-create org
       const orgName = body.organizationName?.trim();
       if (!orgName) {
-        return c.json({ error: "organizationName is required for business plan" }, 400);
+        return c.json({ error: "organizationName is required for team plan" }, 400);
       }
 
       const org = await c.var.db
@@ -131,7 +131,7 @@ upgrade.post("/upgrade/checkout", async (c) => {
       const priorityId = await createOrgPriority(c.var.db, org.id, orgName, user.id);
       notifySync(c, priorityId);
 
-      logger.info("Created organization for business checkout", {
+      logger.info("Created organization for team checkout", {
         organization_id: orgId,
         user_id: user.id,
       });
@@ -209,7 +209,7 @@ upgrade.post("/upgrade/checkout", async (c) => {
       cancel_url: `${siteRoot}/upgrade?canceled=true`,
       allow_promotion_codes: true,
       subscription_data: {
-        metadata: { plan: "business", organization_id: orgId },
+        metadata: { plan: "team", organization_id: orgId },
       },
     });
 
