@@ -675,11 +675,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         spacing: 4,
         children: [
           Icon(subType.icon, size: context.theme.iconSizes.base),
-          Icon(
-            PlotIcon.verticalExpand,
-            size: context.theme.iconSizes.xs,
-            color: context.theme.plotColors.muted,
-          ),
+          Icon(PlotIcon.verticalExpand, size: context.theme.iconSizes.xs),
         ],
       ),
     );
