@@ -1,10 +1,5 @@
--- Function to share a priority with other users/contacts
--- Handles extraction from personal tree when needed
-CREATE OR REPLACE FUNCTION public.share_priority (p_user_id uuid, p_priority_id uuid, p_add_actor_ids uuid[], p_remove_actor_ids uuid[], p_role text DEFAULT 'member')
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "share_priority" function
+CREATE OR REPLACE FUNCTION "public"."share_priority" ("p_user_id" uuid, "p_priority_id" uuid, "p_add_actor_ids" uuid[], "p_remove_actor_ids" uuid[], "p_role" text DEFAULT 'member') RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     v_priority record;
     v_root_priority_id uuid;
@@ -210,5 +205,16 @@ BEGIN
             ltree2text (v_old_path)
         END);
 END;
-$function$;
+$$;
 
+-- Fix corrupted descendant paths from the share_priority bug.
+-- Descendants of Vh96DMCttBOc have paths concatenated without dot separator
+-- (e.g. 'Vh96DMCttBOcm3uE' instead of 'Vh96DMCttBOc.m3uE').
+-- These corrupted paths are NOT descendants of 'Vh96DMCttBOc' in ltree terms
+-- because they lack the dot, so we match them by text prefix.
+UPDATE public.priority
+SET path = text2ltree(
+  'Vh96DMCttBOc.' || substring(ltree2text(path) FROM 13)
+)
+WHERE ltree2text(path) LIKE 'Vh96DMCttBOc_%'
+  AND NOT (path <@ 'Vh96DMCttBOc');

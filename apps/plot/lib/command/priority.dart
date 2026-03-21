@@ -1029,7 +1029,8 @@ class InviteContact extends Command {
       add: true,
     ).run(context);
     if (result is CommandDone) {
-      // Pull sync data so the local database has the member before refresh
+      // Pull sync data so the local database has updated paths and members
+      await SyncOrchestrator.instance.pull(SyncOrchestrator.priority);
       await SyncOrchestrator.instance.pull(SyncOrchestrator.actor);
       await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
 
@@ -1064,8 +1065,9 @@ class InviteByEmail extends Command {
           'remove': <String>[],
         },
       );
-      // Pull sync data so the local database has the new contact and member
-      // before the modal refreshes
+      // Pull sync data so the local database has updated paths, contacts,
+      // and members before the modal refreshes
+      await SyncOrchestrator.instance.pull(SyncOrchestrator.priority);
       await SyncOrchestrator.instance.pull(SyncOrchestrator.actor);
       await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
 

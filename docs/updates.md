@@ -1,3 +1,6 @@
+- Fixed sharing a priority causing its sub-priorities to appear as separate top-level items instead of staying nested underneath
+- Fixed notifications arriving for priorities where you had already read all threads
+- Desktop notifications — macOS and Windows now show native notifications for unread updates when the app window is not focused, with the same urgency levels, quiet hours, and AI summaries as mobile
 - Items assigned to you in Linear, Jira, Asana, and GitHub now automatically appear in your agenda as tasks
 - Fixed sharing links to Plot on Android — shared URLs now open in the new thread page instead of just showing the agenda
 - Cleaner priority browsing — selecting "Everything" now shows top-level priorities collapsed, tapping a priority on mobile expands it first then navigates on a second tap, and the Activity unread dot now reflects unread items in child priorities too
@@ -19,9 +22,9 @@
 - Completed items from Linear, Jira, Asana, and GitHub now show a Done tag on their threads, with a tag icon on the link status badge
 - Clicking a Plot link in a note now navigates within the app instead of opening a browser
 - Pasting a Plot URL into a note inserts the thread or priority title as linked text
-- Organizations for team billing — Business plan subscribers can create an org, invite members by email, and manage shared billing
+- Organizations for team billing — Team plan subscribers can create an org, invite members by email, and manage shared billing
 - Team members with matching email domains can auto-join your organization when they sign up
-- New pricing page with three plans (Free, Pro, Business) and monthly/annual billing toggle
+- New pricing page with three plans (Free, Pro, Team) and monthly/annual billing toggle
 - Subscribe and manage your subscription directly from plot.day
 
 ---
