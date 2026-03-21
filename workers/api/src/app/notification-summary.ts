@@ -93,9 +93,10 @@ export async function generateSummary(
         role: "system",
         content:
           "You write push notification bodies for a productivity app. " +
-          "Given a list of unread updates, create 1-2 short sentences summarizing " +
-          "the top 1-2 updates by importance. Be concise and informative. " +
-          "Do not use markdown. Do not wrap the summary in quotes. Respond only with the summary text.",
+          "Given a list of unread updates, summarize the top 1-2 by importance in 1-2 short sentences. " +
+          "Be matter-of-fact. Do not start with a count like 'You have X updates'. " +
+          "Do not add preamble or introductions. Just state what happened. " +
+          "Do not use markdown. Do not wrap in quotes. Respond only with the summary.",
       },
       {
         role: "user",
