@@ -738,6 +738,8 @@ class NoteEditorState extends State<NoteEditor> {
                       onUpdate: (note) =>
                           widget.onDraftChanged!(thread, note: note),
                     ),
+                    selected: draftNote.assignees
+                        .any((a) => a != Base.actorId),
                   ),
                 Button.icon(
                   AttachFile(
