@@ -57,7 +57,111 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          APPLE_DIST_CERT_BASE64: op://Production/Apple/Signing/distribution p12
+          APPLE_DIST_CERT_PASSWORD: op://Production/Apple/Signing/distribution password
+
           SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Fetch signing files from 1Password
+        id: profiles
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
+          # iOS App Store provisioning profile (day.plot.app)
+          op read "op://Production/Apple/Signing/ios.mobileprovision" \
+            --out-file "$RUNNER_TEMP/ios.mobileprovision" \
+            --file-mode 0600
+
+          APP_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
+          APP_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
+          cp "$RUNNER_TEMP/ios.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${APP_PROFILE_UUID}.mobileprovision"
+          echo "Installed app profile: $APP_PROFILE_NAME ($APP_PROFILE_UUID)"
+          echo "app_profile_name=$APP_PROFILE_NAME" >> "$GITHUB_OUTPUT"
+
+          # iOS App Store provisioning profile for ShareExtension (day.plot.app.ShareExtension)
+          op read "op://Production/Apple/Signing/ios-share-extension.mobileprovision" \
+            --out-file "$RUNNER_TEMP/ios-share-extension.mobileprovision" \
+            --file-mode 0600
+
+          EXT_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios-share-extension.mobileprovision")")
+          EXT_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios-share-extension.mobileprovision")")
+          cp "$RUNNER_TEMP/ios-share-extension.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/${EXT_PROFILE_UUID}.mobileprovision"
+          echo "Installed extension profile: $EXT_PROFILE_NAME ($EXT_PROFILE_UUID)"
+          echo "ext_profile_name=$EXT_PROFILE_NAME" >> "$GITHUB_OUTPUT"
+
+          # Firebase config for iOS
+          op read "op://Production/Firebase Cloud Messaging/apple/GoogleService-Info.plist" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/ios/Runner/GoogleService-Info.plist" \
+            --file-mode 0600
+
+      - name: Import code signing certificates
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import Apple Distribution certificate
+          DIST_CERT_PATH="$RUNNER_TEMP/dist_cert.p12"
+          echo "$APPLE_DIST_CERT_BASE64" | base64 --decode > "$DIST_CERT_PATH"
+          security import "$DIST_CERT_PATH" -P "$APPLE_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm "$DIST_CERT_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning
+
+      - name: Configure manual signing for CI
+        env:
+          APP_PROFILE_NAME: ${{ steps.profiles.outputs.app_profile_name }}
+          EXT_PROFILE_NAME: ${{ steps.profiles.outputs.ext_profile_name }}
+        run: |
+          cd apps/plot/ios
+
+          PBXPROJ="Runner.xcodeproj/project.pbxproj"
+
+          # Switch from automatic to manual signing for all targets
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBXPROJ"
+
+          # Set distribution signing identity for all targets
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer"/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution"/g' "$PBXPROJ"
+
+          # Add provisioning profile specifier for Runner target
+          python3 -c "
+          import re, sys
+          content = open('$PBXPROJ').read()
+          # Runner target: day.plot.app but not .ShareExtension or .RunnerTests
+          content = re.sub(
+              r'(PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app;(?!\.))',
+              r'\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$APP_PROFILE_NAME\";',
+              content
+          )
+          # ShareExtension target
+          content = content.replace(
+              'PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.ShareExtension;',
+              'PRODUCT_BUNDLE_IDENTIFIER = day.plot.app.ShareExtension;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$EXT_PROFILE_NAME\";'
+          )
+          open('$PBXPROJ', 'w').write(content)
+          "
+
+          # Create ExportOptions.plist for app-store distribution
+          /usr/libexec/PlistBuddy -c "Clear dict" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :method string app-store" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :teamID string 789MAH2W6P" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:day.plot.app string $APP_PROFILE_NAME" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:day.plot.app.ShareExtension string $EXT_PROFILE_NAME" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :uploadSymbols bool true" ExportOptions.plist
+
+          echo "Manual signing configured. ExportOptions.plist created."
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -113,7 +217,7 @@ jobs:
       - name: Patch iOS
         run: |
           cd apps/plot
-          shorebird patch ios
+          shorebird patch ios -- --export-options-plist=ios/ExportOptions.plist
 
       - name: Build summary
         run: |
@@ -122,6 +226,14 @@ jobs:
             echo ""
             echo "Shorebird OTA patch delivered."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
 
   patch-android:
     if: inputs.android
@@ -155,7 +267,25 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          ANDROID_KEYSTORE_PASSWORD: op://Production/Android Signing/keystore_password
+          ANDROID_KEY_PASSWORD: op://Production/Android Signing/key_password
+
           SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Fetch signing files from 1Password
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          # Android signing keystore
+          op read "op://Production/Android Signing/plot-release.jks" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/android/plot-release.jks" \
+            --file-mode 0600
+
+          # Firebase config for Android
+          op read "op://Production/Firebase Cloud Messaging/android/google-services.json" \
+            --out-file "$GITHUB_WORKSPACE/apps/plot/android/app/google-services.json" \
+            --file-mode 0600
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -259,7 +389,41 @@ jobs:
           export-env: true
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+          APPLE_DIST_CERT_BASE64: op://Production/Apple/Signing/distribution p12
+          APPLE_DIST_CERT_PASSWORD: op://Production/Apple/Signing/distribution password
+
           SHOREBIRD_TOKEN: op://Production/Shorebird/credential
+
+      - name: Fetch signing files from 1Password
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          # Distribution provisioning profile
+          op read "op://Production/Apple/Signing/macos.provisionprofile" \
+            --out-file "$RUNNER_TEMP/macos.provisionprofile" \
+            --file-mode 0600
+
+      - name: Import code signing certificates
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import Apple Distribution certificate
+          DIST_CERT_PATH="$RUNNER_TEMP/dist_cert.p12"
+          echo "$APPLE_DIST_CERT_BASE64" | base64 --decode > "$DIST_CERT_PATH"
+          security import "$DIST_CERT_PATH" -P "$APPLE_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm "$DIST_CERT_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -309,6 +473,40 @@ jobs:
           cd apps/plot
           flutter pub run build_runner build --delete-conflicting-outputs
 
+      - name: Configure manual signing for CI
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
+          # Install macOS provisioning profile
+          APP_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/macos.provisionprofile")")
+          APP_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/macos.provisionprofile")")
+          cp "$RUNNER_TEMP/macos.provisionprofile" "$HOME/Library/MobileDevice/Provisioning Profiles/${APP_PROFILE_UUID}.provisionprofile"
+          echo "Installed macOS profile: $APP_PROFILE_NAME ($APP_PROFILE_UUID)"
+
+          PBXPROJ="apps/plot/macos/Runner.xcodeproj/project.pbxproj"
+
+          # Switch from automatic to manual signing for all targets
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PBXPROJ"
+
+          # Set distribution signing identity (CI only has Apple Distribution, not Mac Development)
+          sed -i '' 's/CODE_SIGN_IDENTITY = "Apple Development"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=macosx\*\]" = "Apple Development"/"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution"/g' "$PBXPROJ"
+
+          # Set provisioning profile specifier for the Runner target
+          python3 -c "
+          import re
+          content = open('$PBXPROJ').read()
+          profile_name = '$APP_PROFILE_NAME'
+          content = re.sub(
+              r'(PRODUCT_BUNDLE_IDENTIFIER = day\.plot\.app;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";)',
+              f'PRODUCT_BUNDLE_IDENTIFIER = day.plot.app;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"{profile_name}\";',
+              content
+          )
+          open('$PBXPROJ', 'w').write(content)
+          "
+
+          echo "Manual signing configured for macOS."
+
       - name: Install Shorebird
         uses: shorebirdtech/setup-shorebird@v1
 
@@ -324,6 +522,14 @@ jobs:
             echo ""
             echo "Shorebird OTA patch delivered."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
 
   patch-windows:
     if: inputs.windows
