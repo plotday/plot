@@ -792,7 +792,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     final drafts = await _get(
       priorityId: priorityId,
       draft: true,
-      archived: null,
+      archived: false,
       order: ThreadOrder.sorted,
     );
     if (drafts.isEmpty) return null;
