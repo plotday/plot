@@ -830,6 +830,16 @@ cd apps/plot && flutter pub run build_runner build --delete-conflicting-outputs
 pnpm cp-env /path/to/main/repo
 ```
 
+## Change Finalization
+
+Before committing or declaring any code change complete, run `/finalize` to execute the finalization checklist. This is mandatory for all changes and covers:
+
+1. **Lint**: Run `pnpm lint` in changed packages or repo-wide. All errors must be fixed.
+2. **Backwards compatibility**: Verify old clients work with new APIs. No removed/renamed fields without migration paths.
+3. **Error capture**: All new `catch` blocks for unexpected errors must call `captureException` (PostHog).
+4. **Documentation**: Notable user-facing changes go in `docs/updates.md`. Major new functionality also updates `docs/features.md`.
+5. **Public submodule**: Changes in `public/` need a separate PR. Twister SDK changes require a changeset.
+
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
