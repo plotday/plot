@@ -1,4 +1,5 @@
 import type { Kysely } from "kysely";
+import { PostHog } from "posthog-node";
 
 import type { DB } from "../db";
 import { createDb } from "../db";
@@ -24,7 +25,7 @@ export async function analyzeNote(
     const result = await classifyNote(env, context);
 
     if (result.tags.length > 0) {
-      await applyTagChanges(db, result.tags, context.memberIds, userId);
+      await applyTagChanges(env, db, result.tags, context.memberIds, userId);
 
       // Unarchive thread if actionable tags found and channel uses 'actionable' mode
       const actionableTags = result.tags.filter(t => !t.done);
@@ -34,6 +35,7 @@ export async function analyzeNote(
     }
 
     await applyUnreadStatus(
+      env,
       db,
       threadId,
       userId,
@@ -443,6 +445,7 @@ function parseClassificationOverride(
 }
 
 async function applyUnreadStatus(
+  env: Bindings,
   db: Kysely<DB>,
   threadId: string,
   noteAuthorUserId: string,
@@ -475,6 +478,9 @@ async function applyUnreadStatus(
         `[note-analysis] Failed to apply unread status for user ${member.userId}:`,
         error
       );
+      const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+      postHog.captureException(error as Error, undefined, { context: "note-analysis:applyUnreadStatus", user_id: member.userId, thread_id: threadId });
+      await postHog.shutdown();
     }
   }
 }
@@ -511,6 +517,7 @@ async function maybeUnarchiveActionableThread(
 }
 
 async function applyTagChanges(
+  env: Bindings,
   db: Kysely<DB>,
   actions: TagAction[],
   memberIds: Set<string>,
@@ -589,6 +596,9 @@ async function applyTagChanges(
         `[note-analysis] Failed to apply ${tag} tag on note ${targetNoteId} for actor ${actorId}:`,
         error
       );
+      const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+      postHog.captureException(error as Error, undefined, { context: "note-analysis:applyTagChanges", note_id: targetNoteId, actor_id: actorId, tag });
+      await postHog.shutdown();
     }
   }
 }

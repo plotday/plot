@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { sql } from "kysely";
+import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
 
@@ -47,6 +48,20 @@ export class Usage extends DurableObject<Bindings> {
     this.sql = ctx.storage.sql;
     this.initializeTable();
     this.loadState();
+  }
+
+  private captureException(error: Error, properties?: Record<string, unknown>) {
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    postHog.captureException(error, undefined, {
+      durable_object: "Usage",
+      priority_twist_id: this.priorityTwistId,
+      ...properties,
+    });
+    this.ctx.waitUntil(postHog.shutdown());
   }
 
   public init(priorityTwistId: string) {
@@ -324,6 +339,7 @@ export class Usage extends DurableObject<Bindings> {
     } catch (error) {
       // Cost check failures should not break usage tracking
       logger.error("Failed to check cost limit", error as Error);
+      this.captureException(error as Error);
     }
   }
 
@@ -413,6 +429,7 @@ export class Usage extends DurableObject<Bindings> {
     } catch (error) {
       // Quota check failures should not block execution
       logger.error("Failed to check execution quota", error as Error);
+      this.captureException(error as Error);
       return true;
     }
   }

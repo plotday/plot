@@ -8,6 +8,7 @@ import { rpc, rpcUser } from "../../rpc";
 import { notifySync, getPriorityForThread } from "./notify";
 import { analyzeNote } from "../../queue/note-analysis";
 import { checkAiLimitForPriority, recordAiUsage, isAiEnabled } from "../../utils/ai-limits";
+import { createLogger } from "@plotday/worker-util";
 
 const notes = new Hono<{ Bindings: Bindings }>();
 
@@ -144,11 +145,15 @@ notes.post("/sync/notes", async (c) => {
                   })
                 );
               } catch (error) {
-                console.error(`Failed to notify UserSync for user ${userId}:`, error);
+                const logger = createLogger({ operation: "sync:notes:notifyUserSync" });
+                logger.error(`Failed to notify UserSync for user ${userId}`, error as Error);
+                c.var.tracker.captureException(error as Error);
               }
             }
           } catch (error) {
-            console.error("Failed to mark thread unread for others:", error);
+            const logger = createLogger({ operation: "sync:notes:markUnread" });
+            logger.error("Failed to mark thread unread for others", error as Error);
+            c.var.tracker.captureException(error as Error);
           }
 
           // 2. AI analysis (optional — upgrades urgency/importance if it runs)

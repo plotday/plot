@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { PostHog } from "posthog-node";
 
 import type { Bindings } from "../env";
 import { captureServerError } from "../utils/error-capture";
@@ -43,7 +44,7 @@ notificationSummary.post("/notification-summary", async (c) => {
     const summaries = await Promise.all(
       batches.map(async (batch) => {
         const body = aiAllowed.allowed
-          ? await generateSummary(c.env.AI, batch.threads)
+          ? await generateSummary(c.env, batch.threads)
           : fallbackSummary(batch.threads);
         return {
           first_level_priority_id: batch.first_level_priority_id,
@@ -65,9 +66,10 @@ notificationSummary.post("/notification-summary", async (c) => {
 });
 
 export async function generateSummary(
-  ai: Ai,
+  env: Bindings,
   threads: z.infer<typeof ThreadSchema>[]
 ): Promise<string> {
+  const ai = env.AI;
   // For a single thread with a title, just use it directly
   if (threads.length === 1 && threads[0].title) {
     return threads[0].title;
@@ -114,6 +116,9 @@ export async function generateSummary(
   } catch (e) {
     const logger = createLogger();
     logger.error("Error generating notification summary", e as Error);
+    const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+    postHog.captureException(e as Error, undefined, { context: "notification-summary:generateSummary" });
+    await postHog.shutdown();
     return fallbackSummary(threads);
   }
 }

@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { sql } from "kysely";
+import { PostHog } from "posthog-node";
 
 import { createLogger } from "@plotday/worker-util";
 
@@ -32,6 +33,20 @@ export class PushNotify extends DurableObject<Bindings> {
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
+  }
+
+  private captureException(error: Error, properties?: Record<string, unknown>) {
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    postHog.captureException(error, undefined, {
+      durable_object: "PushNotify",
+      user_id: this.userId,
+      ...properties,
+    });
+    this.ctx.waitUntil(postHog.shutdown());
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -125,10 +140,11 @@ export class PushNotify extends DurableObject<Bindings> {
         maxUrgency = result.urgency;
         delayMs = result.delayMs;
       }
-    } catch {
+    } catch (error) {
       // If DB query fails, default to inform-updates
       maxUrgency = "inform-updates";
       delayMs = DEFAULT_DELAY_MS["inform-updates"];
+      this.captureException(error as Error);
     }
 
     if (!maxUrgency) {
@@ -233,6 +249,7 @@ export class PushNotify extends DurableObject<Bindings> {
       logger.error("Error in PushNotify alarm", error as Error, {
         user_id: this.userId,
       });
+      this.captureException(error as Error);
     } finally {
       this.resetState();
     }

@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { PostHog } from "posthog-node";
 
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
@@ -25,6 +26,20 @@ export class Broadcast extends DurableObject<Bindings> {
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     // User ID will be set during first authentication
+  }
+
+  private captureException(error: Error, properties?: Record<string, unknown>) {
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    postHog.captureException(error, undefined, {
+      durable_object: "Broadcast",
+      user_id: this.userId,
+      ...properties,
+    });
+    this.ctx.waitUntil(postHog.shutdown());
   }
 
   private ensureDeviceActivityTable(): void {
@@ -195,6 +210,7 @@ export class Broadcast extends DurableObject<Bindings> {
         user_id: this.userId,
         client_id: clientId,
       });
+      this.captureException(error as Error, { client_id: clientId });
       // Don't fail the connection if UserSync notification fails
     }
 

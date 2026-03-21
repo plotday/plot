@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { sql } from "kysely";
+import { PostHog } from "posthog-node";
 
 import { withDb } from "../db";
 import { rpc } from "../rpc";
@@ -28,6 +29,20 @@ export class UserSync extends DurableObject<Bindings> {
       lastSyncTime: 0,
       pendingAlarm: false,
     };
+  }
+
+  private captureException(error: Error, properties?: Record<string, unknown>) {
+    const postHog = new PostHog(this.env.POSTHOG_API_KEY, {
+      host: this.env.POSTHOG_HOST,
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    postHog.captureException(error, undefined, {
+      durable_object: "UserSync",
+      user_id: this.userId,
+      ...properties,
+    });
+    this.ctx.waitUntil(postHog.shutdown());
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -157,6 +172,7 @@ export class UserSync extends DurableObject<Bindings> {
           logger.error("Error triggering PushNotify DO", error as Error, {
             user_id: this.userId,
           });
+          this.captureException(error as Error);
         }
         this.state.lastSyncTime = now;
         return;
@@ -174,6 +190,7 @@ export class UserSync extends DurableObject<Bindings> {
           logger.error("Error querying user_sync", error as Error, {
             user_id: userId,
           });
+          this.captureException(error as Error);
           return;
         }
 
@@ -266,6 +283,7 @@ export class UserSync extends DurableObject<Bindings> {
       logger.error("Error in UserSync alarm", error as Error, {
         user_id: this.userId,
       });
+      this.captureException(error as Error);
     }
   }
 
@@ -301,6 +319,7 @@ export class UserSync extends DurableObject<Bindings> {
       logger.error("Error in onClientConnected", error as Error, {
         user_id: userId,
       });
+      this.captureException(error as Error);
     }
   }
 }

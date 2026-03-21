@@ -91,6 +91,7 @@ class AssignNote extends NoteCommand {
       return const CommandDone();
     } catch (e, stackTrace) {
       log.severe('Error in AssignNote: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
       return CommandMessage('Failed to assign note', isError: true);
     }
   }

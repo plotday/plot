@@ -1,4 +1,5 @@
 import { sql, type Kysely } from "kysely";
+import { PostHog } from "posthog-node";
 
 import {
   type Thread,
@@ -542,6 +543,9 @@ export class Plot extends Tool implements IPlot {
           logger.error("Intent handling failed for note", error as Error, {
             note_id: currentNote.id,
           });
+          const postHog = new PostHog(this.env.POSTHOG_API_KEY, { host: this.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+          postHog.captureException(error as Error, undefined, { context: "plot:intentHandling", note_id: currentNote.id, priority_twist_id: this.priorityTwistId });
+          await postHog.shutdown();
           try {
             const userId = await this.getUserId();
             await rpcUser(this.db, "update_note_tags", {
