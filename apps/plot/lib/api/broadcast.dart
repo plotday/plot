@@ -91,18 +91,29 @@ class BroadcastClient with WidgetsBindingObserver {
     });
   }
 
+  /// Whether the app is currently in the foreground.
+  bool _appIsActive = true;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _appIsActive = true;
       if (_shouldReconnect && !_isConnected) {
         _resetBackoff(); // Reset backoff for immediate reconnect
         _reconnectTimer?.cancel();
         _reconnectTimer = null;
         _connect();
+      } else if (_isConnected) {
+        // Already connected — tell server we're active again
+        _sendPing(active: true);
       }
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      _appIsActive = false;
       _sendPing(active: false);
+      // Cancel pending reconnect — don't reconnect while backgrounded
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
     }
   }
 
@@ -411,7 +422,7 @@ class BroadcastClient with WidgetsBindingObserver {
 
   /// Schedule a reconnection attempt with exponential backoff (no max attempts)
   void _scheduleReconnect() {
-    if (!_shouldReconnect || _reconnectTimer != null) {
+    if (!_shouldReconnect || _reconnectTimer != null || !_appIsActive) {
       return;
     }
 
