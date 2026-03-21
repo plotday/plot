@@ -256,7 +256,7 @@ export class PushNotify extends DurableObject<Bindings> {
         return;
       }
 
-      // Query the latest unread timestamp to record what we're notifying about
+      // Re-check unread state — user may have read threads since the alarm was scheduled
       let latestUnreadAt: string | null = null;
       await withDb(this.env, async (db) => {
         const result = await sql<{ latest: string }>`
@@ -268,18 +268,26 @@ export class PushNotify extends DurableObject<Bindings> {
         `.execute(db);
         latestUnreadAt = result.rows[0]?.latest ?? null;
 
-        // Send data-only FCM wake signal
-        await sendDataNotificationToUser(this.env, db, this.userId!, {
-          type: "sync_wake",
-        });
+        if (latestUnreadAt) {
+          // Send data-only FCM wake signal
+          await sendDataNotificationToUser(this.env, db, this.userId!, {
+            type: "sync_wake",
+          });
+        }
       });
+
+      if (!latestUnreadAt) {
+        // No unread threads — user read everything since alarm was scheduled
+        logger.info("Skipping push — no unread threads remaining", {
+          user_id: this.userId,
+        });
+        return;
+      }
 
       await this.ctx.storage.put("lastNotificationSentAt", now);
 
       // Record what we notified about so we don't re-notify for the same unreads
-      if (latestUnreadAt) {
-        await this.ctx.storage.put("lastNotifiedUnreadAt", latestUnreadAt);
-      }
+      await this.ctx.storage.put("lastNotifiedUnreadAt", latestUnreadAt);
 
       logger.info("Push notification sent", {
         user_id: this.userId,
