@@ -1660,10 +1660,15 @@ class Store extends _$Store {
       if (entities.isEmpty) return;
 
       await SyncOrchestrator.instance.syncSubset(entities);
+      onSyncBatchComplete?.call(entityNames);
     } catch (e, stackTrace) {
       log.warning("Error handling batch sync for $entityNames", e, stackTrace);
     }
   }
+
+  /// Callback invoked after a WebSocket-triggered sync batch completes.
+  /// Used by desktop notifications to detect when new data arrives.
+  void Function(Set<String> syncedEntities)? onSyncBatchComplete;
 
   Future<void> _subscribeToUpdates() async {
     _unsubscribeFromUpdates();

@@ -25,6 +25,7 @@ const BatchSchema = z.object({
 
 const RequestSchema = z.object({
   batches: z.array(BatchSchema).min(1).max(20),
+  user_name: z.string().nullable().optional(),
 });
 
 // POST /notification-summary - Generate AI summaries for notification batches
@@ -36,7 +37,7 @@ notificationSummary.post("/notification-summary", async (c) => {
       return handleValidationError(parseResult.error);
     }
 
-    const { batches } = parseResult.data;
+    const { batches, user_name } = parseResult.data;
 
     // Check free-tier AI limit
     const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
@@ -44,7 +45,7 @@ notificationSummary.post("/notification-summary", async (c) => {
     const summaries = await Promise.all(
       batches.map(async (batch) => {
         const body = aiAllowed.allowed
-          ? await generateSummary(c.env, batch.threads)
+          ? await generateSummary(c.env, batch.threads, user_name)
           : fallbackSummary(batch.threads);
         return {
           first_level_priority_id: batch.first_level_priority_id,
@@ -67,7 +68,8 @@ notificationSummary.post("/notification-summary", async (c) => {
 
 export async function generateSummary(
   env: Bindings,
-  threads: z.infer<typeof ThreadSchema>[]
+  threads: z.infer<typeof ThreadSchema>[],
+  userName?: string | null
 ): Promise<string> {
   const ai = env.AI;
   // For a single thread with a title, just use it directly
@@ -88,6 +90,10 @@ export async function generateSummary(
   const threadCount = threads.length;
 
   try {
+    const recipientHint = userName
+      ? ` The notification recipient is "${userName}". If their name appears in the updates, refer to them as "you" or "your" instead of using their name.`
+      : "";
+
     const messages = [
       {
         role: "system",
@@ -96,7 +102,8 @@ export async function generateSummary(
           "Given a list of unread updates, summarize the top 1-2 by importance in 1-2 short sentences. " +
           "Be matter-of-fact. Do not start with a count like 'You have X updates'. " +
           "Do not add preamble or introductions. Just state what happened. " +
-          "Do not use markdown. Do not wrap in quotes. Respond only with the summary.",
+          "Do not use markdown. Do not wrap in quotes. Respond only with the summary." +
+          recipientHint,
       },
       {
         role: "user",

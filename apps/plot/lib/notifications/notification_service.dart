@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
@@ -13,13 +14,17 @@ import 'package:plot/api/broadcast.dart';
 import 'package:plot/app_info.dart';
 import 'package:plot/logging.dart';
 import 'package:plot/notifications/notification_display.dart';
+import 'package:plot/notifications/notification_quiet_hours.dart';
 import 'package:plot/store/attention.dart';
 import 'package:plot/store/store.dart';
 
 /// Manages push notification token registration and message handling.
 ///
+/// On mobile (iOS/Android), uses FCM for push delivery.
+/// On desktop (macOS/Windows), uses WebSocket sync completions as the trigger.
+///
 /// Call [start] after sign-in and [stop] on sign-out.
-class NotificationService with WidgetsBindingObserver {
+class NotificationService with WidgetsBindingObserver, WindowListener {
   static final NotificationService _instance = NotificationService._();
   static NotificationService get instance => _instance;
   NotificationService._();
@@ -32,6 +37,10 @@ class NotificationService with WidgetsBindingObserver {
 
   /// Whether the token has been successfully registered with the API.
   bool _tokenRegistered = false;
+
+  /// The current user's display name, sent to the notification summary API
+  /// so the LLM avoids referring to the recipient by name.
+  String? _userName;
 
   /// Whether the user denied notification permission.
   bool _permissionDenied = false;
@@ -48,34 +57,41 @@ class NotificationService with WidgetsBindingObserver {
 
   static const Duration _suppressionWindow = Duration(minutes: 5);
 
+  /// Desktop: whether the app window is currently focused.
+  bool _windowFocused = true;
+
+  /// Desktop: debounce timer to prevent rapid-fire notifications from syncs.
+  Timer? _desktopNotifyDebouncer;
+  static const Duration _desktopNotifyDebounce = Duration(seconds: 2);
+
   /// Callback for navigating to a priority when a notification is tapped.
   void Function(String priorityId)? onNavigateToPriority;
 
   /// Whether push notifications are supported on this platform.
-  static bool get isSupported => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+  static bool get isSupported =>
+      !kIsWeb && (Platform.isIOS || Platform.isAndroid || Platform.isMacOS || Platform.isWindows);
+
+  /// Whether the current platform uses FCM (mobile) vs WebSocket (desktop).
+  static bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+  static bool get _isDesktop => !kIsWeb && (Platform.isMacOS || Platform.isWindows);
 
   /// Whether the user has denied notification permission.
   /// Check this to show a "re-enable" option in settings.
   bool get isPermissionDenied => _permissionDenied;
 
-  /// Whether the device token is registered with the server.
-  bool get isTokenRegistered => _tokenRegistered;
+  /// Whether notifications are active. On mobile, this means the FCM token
+  /// is registered. On desktop, this is true once the notification display
+  /// is initialized (no token registration needed).
+  bool get isTokenRegistered => _isDesktop ? _started : _tokenRegistered;
 
-  /// Initialize Firebase Messaging, request permissions, and register the
-  /// device token with the API. Call after Firebase.initializeApp() and
-  /// after the user has signed in.
-  Future<void> start({required String userId}) async {
+  /// Initialize notifications. On mobile, sets up Firebase Messaging and
+  /// registers the device token. On desktop, listens for WebSocket sync
+  /// completions. Call after sign-in.
+  Future<void> start({required String userId, String? userName}) async {
     if (!isSupported) return;
 
     _started = true;
-
-    // Persist user ID for background isolate access
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('notification_user_id', userId);
-    } catch (e) {
-      log.warning('Failed to persist notification user ID', e);
-    }
+    _userName = userName;
 
     // Initialize local notification display
     try {
@@ -83,6 +99,23 @@ class NotificationService with WidgetsBindingObserver {
       NotificationDisplay.instance.onNotificationTap = _handlePayloadTap;
     } catch (e) {
       log.warning('Failed to initialize notification display', e);
+    }
+
+    if (_isDesktop) {
+      await _startDesktop();
+    } else {
+      await _startMobile(userId);
+    }
+  }
+
+  /// Mobile: set up FCM, register token, and listen for push messages.
+  Future<void> _startMobile(String userId) async {
+    // Persist user ID for background isolate access
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('notification_user_id', userId);
+    } catch (e) {
+      log.warning('Failed to persist notification user ID', e);
     }
 
     // Register for app lifecycle events to re-register on resume
@@ -111,6 +144,74 @@ class NotificationService with WidgetsBindingObserver {
     } catch (e) {
       log.warning('Failed to get initial notification message', e);
     }
+  }
+
+  /// Desktop: listen for WebSocket sync completions and track window focus.
+  Future<void> _startDesktop() async {
+    // Track window focus state for notification suppression
+    windowManager.addListener(this);
+    try {
+      _windowFocused = await windowManager.isFocused();
+    } catch (_) {
+      _windowFocused = true;
+    }
+
+    // Listen for sync completions from the WebSocket broadcast
+    Store.get.onSyncBatchComplete = _handleDesktopSyncComplete;
+
+    log.info('Desktop notification listener started');
+  }
+
+  /// Desktop: called when a WebSocket-triggered sync batch completes.
+  void _handleDesktopSyncComplete(Set<String> entityNames) {
+    // Only care about thread-related syncs
+    if (!entityNames.contains('thread')) return;
+
+    // Debounce to avoid rapid-fire notifications from frequent syncs
+    _desktopNotifyDebouncer?.cancel();
+    _desktopNotifyDebouncer = Timer(_desktopNotifyDebounce, () {
+      _handleDesktopNotification();
+    });
+  }
+
+  /// Desktop: check for unread threads and show notifications if unfocused.
+  Future<void> _handleDesktopNotification() async {
+    if (!_started) return;
+
+    // Don't notify when the user is looking at the app
+    if (_windowFocused) return;
+
+    try {
+      final store = Store.get;
+      final batches = await _buildNotificationBatches(store);
+
+      await _retractStaleNotifications(batches);
+
+      if (batches.isEmpty) return;
+
+      // Check quiet hours
+      final prefs = await SharedPreferences.getInstance();
+      final scheduleAt = computeNotifyTime(prefs);
+      if (scheduleAt != null) return; // In quiet hours — skip
+
+      // Check multi-device suppression, then show
+      await _checkAndShowNotifications(batches, store);
+    } catch (e) {
+      log.warning('Error handling desktop notification', e);
+    }
+  }
+
+  @override
+  void onWindowFocus() {
+    _windowFocused = true;
+    // User is back — cancel all notifications since they can see the app
+    NotificationDisplay.instance.cancelAll();
+    _shownNotifications.clear();
+  }
+
+  @override
+  void onWindowBlur() {
+    _windowFocused = false;
   }
 
   /// Request permission and register the FCM token.
@@ -227,12 +328,13 @@ class NotificationService with WidgetsBindingObserver {
     });
   }
 
-  /// Re-register on app resume. Handles cases where:
+  /// Re-register on app resume (mobile only). Handles cases where:
   /// - Initial registration failed (network was down at startup)
   /// - Token became stale while app was backgrounded
   /// - User granted permission in system settings after previously denying
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_isMobile) return;
     if (state != AppLifecycleState.resumed || !_started) return;
 
     // If permission was previously denied, re-check — user may have
@@ -268,6 +370,19 @@ class NotificationService with WidgetsBindingObserver {
   /// Call from settings UI when user wants to enable notifications.
   Future<NotificationPermissionResult> requestPermission() async {
     if (!isSupported) return NotificationPermissionResult.unsupported;
+
+    if (_isDesktop) {
+      // Desktop: re-initialize the notification display which will
+      // re-request permission on macOS. Windows doesn't need permission.
+      try {
+        await NotificationDisplay.instance.initialize();
+        _permissionDenied = false;
+        return NotificationPermissionResult.granted;
+      } catch (e) {
+        log.warning('Failed to initialize desktop notifications', e);
+        return NotificationPermissionResult.error;
+      }
+    }
 
     final messaging = FirebaseMessaging.instance;
     final settings = await messaging.getNotificationSettings();
@@ -315,8 +430,21 @@ class NotificationService with WidgetsBindingObserver {
     if (!isSupported) return;
 
     _started = false;
-    _tokenRegistered = false;
     _permissionDenied = false;
+
+    // Cancel shown notifications
+    await NotificationDisplay.instance.cancelAll();
+    _shownNotifications.clear();
+
+    if (_isDesktop) {
+      await _stopDesktop();
+    } else {
+      await _stopMobile();
+    }
+  }
+
+  Future<void> _stopMobile() async {
+    _tokenRegistered = false;
     _retryCount = 0;
     _retryTimer?.cancel();
     _retryTimer = null;
@@ -349,6 +477,20 @@ class NotificationService with WidgetsBindingObserver {
         log.warning('Failed to deregister device token', e);
       }
       _currentToken = null;
+    }
+  }
+
+  Future<void> _stopDesktop() async {
+    _desktopNotifyDebouncer?.cancel();
+    _desktopNotifyDebouncer = null;
+    windowManager.removeListener(this);
+    _windowFocused = true;
+
+    // Clear the sync callback
+    try {
+      Store.get.onSyncBatchComplete = null;
+    } catch (_) {
+      // Store may already be closed
     }
   }
 
@@ -618,6 +760,7 @@ class NotificationService with WidgetsBindingObserver {
       final response = await api.post<Map<String, dynamic>>(
         '/notification-summary',
         body: {
+          'user_name': _userName,
           'batches': batches.map((b) {
             return {
               'first_level_priority_id': b.firstLevelPriorityId,
@@ -686,6 +829,11 @@ class NotificationService with WidgetsBindingObserver {
   }
 
   void _handlePayloadTap(String? payload) {
+    if (_isDesktop) {
+      // Bring the window to front when a notification is tapped
+      windowManager.show();
+      windowManager.focus();
+    }
     if (payload != null && payload.isNotEmpty) {
       onNavigateToPriority?.call(payload);
     }

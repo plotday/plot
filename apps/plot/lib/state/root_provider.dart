@@ -140,7 +140,14 @@ class RootProviderState extends State<RootProvider> {
                 await PriorityTwist.start();
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
-                unawaited(NotificationService.instance.start(userId: state.user.id));
+                unawaited(NotificationService.instance.start(userId: state.user.id, userName: state.user.name));
+                NotificationService.instance.onNavigateToPriority = (priorityId) {
+                  if (!_routerInitialized) return;
+                  final shortId = Uuid.fromString(priorityId).toShortString();
+                  router.replaceAll([
+                    PriorityRoute(priorityIdString: shortId, tab: 'activity'),
+                  ]);
+                };
                 if (context.mounted) _setupReAuthListener(context);
 
                 // Navigate to main app after re-sign-in. On first startup

@@ -59,14 +59,17 @@ class PriorityTabProvider extends InheritedWidget {
 
 @RoutePage(name: "PriorityRoute")
 class PriorityWrapper implements AutoRouteWrapper {
-  PriorityWrapper({@PathParam("priorityId") required String priorityIdString})
-    : priorityId = PriorityId.fromShortString(priorityIdString),
-      _routerKey = GlobalKey(
-        debugLabel:
-            'PriorityWrapper_${PriorityId.fromShortString(priorityIdString).toShortString()}',
-      );
+  PriorityWrapper({
+    @PathParam("priorityId") required String priorityIdString,
+    @QueryParam('tab') this.tab,
+  }) : priorityId = PriorityId.fromShortString(priorityIdString),
+       _routerKey = GlobalKey(
+         debugLabel:
+             'PriorityWrapper_${PriorityId.fromShortString(priorityIdString).toShortString()}',
+       );
 
   final PriorityId priorityId;
+  final String? tab;
   final GlobalKey _routerKey;
 
   @override
@@ -85,7 +88,12 @@ class PriorityWrapper implements AutoRouteWrapper {
                     Expanded(
                       child: ResizablePanelLayout(
                         left: PrioritiesPage(),
-                        middle: PriorityPage(priorityId: priorityId),
+                        middle: PriorityPage(
+                          priorityId: priorityId,
+                          initialTab: tab == 'activity'
+                              ? PriorityTab.activityFeed
+                              : null,
+                        ),
                         child: BlocSelector<PriorityBloc, PriorityState, int>(
                           selector: (state) =>
                               (state.thread?.priority.displayColor ??
@@ -655,9 +663,10 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
 }
 
 class PriorityPage extends StatefulWidget {
-  const PriorityPage({required this.priorityId, super.key});
+  const PriorityPage({required this.priorityId, this.initialTab, super.key});
 
   final PriorityId priorityId;
+  final PriorityTab? initialTab;
 
   @override
   State<PriorityPage> createState() => _PriorityPageState();
@@ -666,6 +675,7 @@ class PriorityPage extends StatefulWidget {
 class _PriorityPageState extends State<PriorityPage> {
   PriorityTab _currentTab = PriorityTab.agenda;
   PriorityTabNotifier? _tabNotifier;
+  bool _appliedInitialTab = false;
   final InfiniteListController _agendaListController = InfiniteListController();
   final Map<String, GlobalKey<AnimatedRemovalState>> _removalKeys = {};
 
@@ -687,6 +697,23 @@ class _PriorityPageState extends State<PriorityPage> {
   @override
   void didUpdateWidget(PriorityPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab &&
+        widget.initialTab != null) {
+      _applyInitialTab();
+    }
+  }
+
+  void _applyInitialTab() {
+    final tab = widget.initialTab;
+    if (tab == null) return;
+    setState(() {
+      _currentTab = tab;
+    });
+    if (_tabNotifier != null && _tabNotifier!.value != tab) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _tabNotifier?.value = tab;
+      });
+    }
   }
 
   @override
@@ -698,7 +725,12 @@ class _PriorityPageState extends State<PriorityPage> {
       _tabNotifier = notifier;
       _tabNotifier?.addListener(_onTabNotifierChanged);
       if (_tabNotifier != null) {
-        _currentTab = _tabNotifier!.value;
+        if (!_appliedInitialTab && widget.initialTab != null) {
+          _appliedInitialTab = true;
+          _applyInitialTab();
+        } else {
+          _currentTab = _tabNotifier!.value;
+        }
       }
     }
   }

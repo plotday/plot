@@ -210,6 +210,7 @@ Internal catalog of product features for marketing content generation. Direct an
 - Respects per-priority "see within" schedules — low-priority updates wait until your preferred window instead of interrupting you immediately
 - Batched updates are summarized by AI, grouped by top-level priority, so you get one coherent digest instead of a flood of individual pings
 - No manual do-not-disturb rules needed — the system infers what matters based on content and your preferences
+- Desktop notifications on macOS and Windows — native OS notifications triggered by real-time sync, with automatic suppression when the app is focused and respect for OS-level Focus/DnD modes
 
 ### Smart Features
 - AI-powered title generation
@@ -283,12 +284,12 @@ Internal catalog of product features for marketing content generation. Direct an
 
 ## Subscription Management
 
-- Three plans: Free, Pro, Business
+- Three plans: Free, Pro, Team
 - Connection-based pricing (no per-seat fees)
 - Monthly and annual billing options (20% annual discount)
 - Stripe Checkout integration for secure payments
 - Stripe Customer Portal for self-service subscription management
-- Business plan scales per 50 connections
+- Team plan scales per 50 connections
 
 ## Organizations
 

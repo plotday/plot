@@ -15,8 +15,9 @@ class _Channels {
 
 /// Manages local notification display via flutter_local_notifications.
 ///
-/// The app receives silent FCM data messages, syncs data locally,
+/// On mobile, the app receives silent FCM data messages, syncs data locally,
 /// then uses this service to display local notifications.
+/// On desktop, notifications are triggered by WebSocket sync completions.
 class NotificationDisplay {
   static final NotificationDisplay _instance = NotificationDisplay._();
   static NotificationDisplay get instance => _instance;
@@ -34,7 +35,8 @@ class NotificationDisplay {
   /// Initialize the local notification plugin with platform-specific settings.
   Future<void> initialize() async {
     if (_initialized) return;
-    if (kIsWeb || !(Platform.isIOS || Platform.isAndroid)) return;
+    if (kIsWeb) return;
+    if (!(Platform.isIOS || Platform.isAndroid || Platform.isMacOS || Platform.isWindows)) return;
 
     const androidSettings = AndroidInitializationSettings('ic_stat_notification');
     const iosSettings = DarwinInitializationSettings(
@@ -42,10 +44,16 @@ class NotificationDisplay {
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
+    const macOSSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
 
     const settings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
+      macOS: macOSSettings,
     );
 
     await _plugin.initialize(
@@ -141,7 +149,7 @@ class NotificationDisplay {
       color: const Color(0xFF239870),
     );
 
-    const iosDetails = DarwinNotificationDetails(
+    const darwinDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
@@ -149,7 +157,8 @@ class NotificationDisplay {
 
     final details = NotificationDetails(
       android: androidDetails,
-      iOS: iosDetails,
+      iOS: darwinDetails,
+      macOS: darwinDetails,
     );
 
     await _plugin.show(
