@@ -344,14 +344,15 @@ class _ButtonState extends State<Button> {
       );
 
       final iconStyle = style.iconContentStyle.iconStyle;
+      final hoverColor = widget.hoverColor ?? context.colour.foreground;
       style = style.copyWith(
         // ignore: unused_result
         iconContentStyle: FButtonIconContentStyleDelta.delta(
           iconStyle: _iconVariants(
             base: iconStyle.resolve({}).copyWith(color: widget.color),
-            hovered: widget.hoverColor != null
-                ? iconStyle.resolve({FTappableVariant.hovered}).copyWith(color: widget.hoverColor)
-                : null,
+            hovered: iconStyle
+                .resolve({FTappableVariant.hovered})
+                .copyWith(color: hoverColor),
           ),
         ),
       );
