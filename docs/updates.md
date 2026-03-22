@@ -1,3 +1,8 @@
+- Fixed notifications showing stale content from threads you already read — previously, reading a thread before the server finished processing could leave it permanently marked as unread
+- Fixed update notifications on Android being silent — they now make a sound like other notifications
+- Improved notification summaries to be more accurate and factual
+- Google Tasks and Todoist connections — sync your task lists and projects into Plot with two-way completion status, subtask support, and real-time updates
+- Fixed notes added to Linear and Jira threads not syncing back as comments on the issue
 - Fixed notifications during quiet hours being silently lost on Android — they now reliably appear when quiet hours end
 - Fixed sharing a priority causing its sub-priorities to appear as separate top-level items instead of staying nested underneath
 - Fixed notifications arriving for priorities where you had already read all threads

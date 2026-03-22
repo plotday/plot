@@ -110,7 +110,7 @@ class NotificationDisplay {
             _Channels.informUpdates,
             'Updates',
             description: 'General updates worth reviewing',
-            importance: Importance.low,
+            importance: Importance.defaultImportance,
           ),
         );
       }
@@ -143,14 +143,12 @@ class NotificationDisplay {
 
     final importance = switch (urgency) {
       'interrupt' => Importance.high,
-      'inform-requests' => Importance.defaultImportance,
-      _ => Importance.low,
+      _ => Importance.defaultImportance,
     };
 
     final priority = switch (urgency) {
       'interrupt' => Priority.high,
-      'inform-requests' => Priority.defaultPriority,
-      _ => Priority.low,
+      _ => Priority.defaultPriority,
     };
 
     final androidDetails = AndroidNotificationDetails(
@@ -211,14 +209,12 @@ class NotificationDisplay {
 
     final importance = switch (urgency) {
       'interrupt' => Importance.high,
-      'inform-requests' => Importance.defaultImportance,
-      _ => Importance.low,
+      _ => Importance.defaultImportance,
     };
 
     final priority = switch (urgency) {
       'interrupt' => Priority.high,
-      'inform-requests' => Priority.defaultPriority,
-      _ => Priority.low,
+      _ => Priority.defaultPriority,
     };
 
     final androidDetails = AndroidNotificationDetails(

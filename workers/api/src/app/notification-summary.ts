@@ -96,18 +96,20 @@ export async function generateSummary(
 
     const messages = [
       {
-        role: "system",
+        role: "system" as const,
         content:
           "You write push notification bodies for a productivity app. " +
-          "Given a list of unread updates, summarize the top 1-2 by importance in 1-2 short sentences. " +
-          "Be matter-of-fact. Do not start with a count like 'You have X updates'. " +
-          "Do not add preamble or introductions. Just state what happened. " +
-          "Do not use markdown. Do not wrap in quotes. Respond only with the summary." +
+          "Given a list of unread items, write a 1-sentence summary of the most important one. " +
+          "ONLY use words and facts that appear in the input. " +
+          "Do NOT infer, invent, or add any details not explicitly stated. " +
+          "Do NOT mention emails, calls, messages, or other communication types unless the input explicitly says so. " +
+          "Just state the item title or a brief factual description. " +
+          "No markdown, no quotes, no preamble." +
           recipientHint,
       },
       {
-        role: "user",
-        content: `${threadCount} unread update${threadCount > 1 ? "s" : ""}:\n${descriptions}`,
+        role: "user" as const,
+        content: `${threadCount} unread item${threadCount > 1 ? "s" : ""}:\n${descriptions}`,
       },
     ];
 
