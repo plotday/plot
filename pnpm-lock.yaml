@@ -99,6 +99,16 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  connectors/google-tasks:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   connectors/jira:
     dependencies:
       '@plotday/twister':
@@ -136,6 +146,16 @@ importers:
         version: 5.9.3
 
   connectors/slack:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  connectors/todoist:
     dependencies:
       '@plotday/twister':
         specifier: workspace:^

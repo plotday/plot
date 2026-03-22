@@ -1,0 +1,38 @@
+{
+  "name": "@plotday/connector-google-tasks",
+  "displayName": "Google Tasks",
+  "description": "Tasks from Google Tasks",
+  "logoUrl": "https://api.iconify.design/logos/google-tasks.svg",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "connectors/google-tasks"
+  },
+  "homepage": "https://plot.day",
+  "keywords": ["plot", "connector", "google-tasks"],
+  "publishConfig": { "access": "public" }
+}

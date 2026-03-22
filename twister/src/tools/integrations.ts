@@ -248,6 +248,8 @@ export enum AuthProvider {
   Asana = "asana",
   /** HubSpot OAuth provider for HubSpot CRM */
   HubSpot = "hubspot",
+  /** Todoist OAuth provider for Todoist task management */
+  Todoist = "todoist",
 }
 
 /**
