@@ -17,7 +17,13 @@ import 'toast.dart';
 
 /// A group of items to display in a SelectModal.
 class SelectGroup<T> {
-  SelectGroup({this.title, required this.items, this.infoBuilder, this.hint, this.onActivate});
+  SelectGroup({
+    this.title,
+    required this.items,
+    this.infoBuilder,
+    this.hint,
+    this.onActivate,
+  });
 
   /// The title of the group (displayed as a header).
   final String? title;
@@ -252,6 +258,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       bool found = false;
 
       for (final group in _groups) {
+        // Account for info-only group slot
+        if (group.items.isEmpty && group.infoBuilder != null) {
+          currentIndex++;
+          continue;
+        }
         for (final item in group.items) {
           if (item == widget.selectedValue) {
             _highlightedIndex = currentIndex;
@@ -268,12 +279,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       }
     } else if (preserveOnRefresh) {
       // Clamp to valid range but don't reset to 0
-      final totalItems = _groups.fold<int>(
-        0,
-        (sum, group) => sum + group.items.length,
-      );
-      if (totalItems > 0) {
-        _highlightedIndex = _highlightedIndex.clamp(0, totalItems - 1);
+      final totalDisplay = _getTotalDisplayCount();
+      if (totalDisplay > 0) {
+        _highlightedIndex = _highlightedIndex.clamp(0, totalDisplay - 1);
       } else {
         _highlightedIndex = 0;
       }
@@ -335,8 +343,14 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       setState(() {
         _error = null;
         _isLoading = false;
-        // Filter out groups with empty items (keep groups with infoBuilder)
-        _groups = groupsList.where((group) => group.items.isNotEmpty || group.infoBuilder != null).toList();
+        // Filter out groups with no items and no visible info content
+        _groups = groupsList.where((group) {
+          if (group.items.isNotEmpty) return true;
+          if (group.infoBuilder == null) return false;
+          // Exclude info-only groups whose infoBuilder returns null
+          // (e.g. TagRow with no matching tags during search)
+          return group.infoBuilder!(context) != null;
+        }).toList();
 
         // Cache results for empty search
         if (searchText == null) {
@@ -434,8 +448,10 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       final totalDisplay = _getTotalDisplayCount();
       if (totalDisplay == 0) return;
 
-      _highlightedIndex = (_highlightedIndex + offset)
-          .clamp(0, totalDisplay - 1);
+      _highlightedIndex = (_highlightedIndex + offset).clamp(
+        0,
+        totalDisplay - 1,
+      );
     });
     _scrollToIndex(_highlightedIndex);
   }
@@ -652,11 +668,16 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                   children: [
                                     if (widget.prompt == null)
                                       Padding(
-                                        padding: const EdgeInsets.only(right: 8),
+                                        padding: const EdgeInsets.only(
+                                          right: 8,
+                                        ),
                                         child: Icon(
                                           PlotIcon.search,
                                           size: context.theme.iconSizes.sm,
-                                          color: context.theme.colors.mutedForeground,
+                                          color: context
+                                              .theme
+                                              .colors
+                                              .mutedForeground,
                                         ),
                                       ),
                                     Expanded(
@@ -665,7 +686,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                         style: TextFieldStyle.ghost,
                                         controller: _controller,
                                         autofocus: hasPhysicalKeyboard(),
-                                        label: widget.prompt != null ? "${widget.prompt}..." : "Search...",
+                                        label: widget.prompt != null
+                                            ? "${widget.prompt}..."
+                                            : "Search...",
                                         focusNode: focusNode,
                                         onChanged: (text) => _initItems(),
                                         onSubmitted: (_) => _handleEnter(),
@@ -698,7 +721,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                               context,
                             ).modalStackNotifier,
                             builder: (context, stackLength, _) {
-                              if (stackLength <= 1) return const SizedBox.shrink();
+                              if (stackLength <= 1) {
+                                return const SizedBox.shrink();
+                              }
                               return Container(
                                 padding: context.theme.spacing.paddingSm,
                                 alignment: Alignment.centerLeft,
@@ -852,8 +877,10 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
                         // Build the item widget
                         final isItemLoading = _loadingIndex == index;
-                        final itemWidget =
-                            widget.itemBuilder(item, isItemLoading);
+                        final itemWidget = widget.itemBuilder(
+                          item,
+                          isItemLoading,
+                        );
                         // Only skip GestureDetector for ListTiles that have a command,
                         // since they handle their own taps and spinner logic. ListTiles
                         // without a command (e.g. priority selection) need the wrapper.
