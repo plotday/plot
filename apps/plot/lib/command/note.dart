@@ -398,7 +398,7 @@ class SplitNoteToNewThread extends NoteCommand {
 class PickNoteAssignee extends ShowCommands {
   PickNoteAssignee(this.note)
     : super(
-        title: note.assignees.isEmpty ? 'Assign' : 'Assigned',
+        title: _computeTitle(note),
         icon: _computeIcon(note),
         commandsBuilder: (context) => _getAssigneeCommands(note),
         showFilter: true,
@@ -410,6 +410,13 @@ class PickNoteAssignee extends ShowCommands {
 
   /// Whether there are other assignees (not the current user)
   bool get hasOtherAssignees => note.assignees.any((id) => id != Base.actorId);
+
+  static String _computeTitle(Note note) {
+    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
+    if (otherAssignees.isEmpty) return 'Assign';
+    final allOthersDone = otherAssignees.every((id) => note.isCompletedBy(id));
+    return allOthersDone ? 'Done' : 'Assigned';
+  }
 
   static IconData _computeIcon(Note note) {
     final otherAssignees = note.assignees.where((id) => id != Base.actorId);
@@ -736,7 +743,7 @@ class PickDraftNoteAssignee extends ShowCommands {
     required this.onUpdate,
     required Future<Commands> Function(BuildContext) commandsBuilder,
   }) : super(
-         title: note.assignees.isEmpty ? 'Assign' : 'Assigned',
+         title: _computeTitle(note),
          icon: _computeIcon(note),
          commandsBuilder: commandsBuilder,
          showFilter: true,
@@ -747,6 +754,13 @@ class PickDraftNoteAssignee extends ShowCommands {
   final Note note;
   final Uuid priorityId;
   final Future<void> Function(Note note) onUpdate;
+
+  static String _computeTitle(Note note) {
+    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
+    if (otherAssignees.isEmpty) return 'Assign';
+    final allOthersDone = otherAssignees.every((id) => note.isCompletedBy(id));
+    return allOthersDone ? 'Done' : 'Assigned';
+  }
 
   static IconData _computeIcon(Note note) {
     final otherAssignees = note.assignees.where((id) => id != Base.actorId);
