@@ -106,6 +106,13 @@ export class PushNotify extends DurableObject<Bindings> {
           ) psi ON true
           WHERE tu.user_id = ${userId}::uuid AND tu.read_at IS NULL
             AND tu.urgency != 'passive'
+            AND t.archived_at IS NULL
+            AND (t.draft = false OR t.created_by = ${userId}::uuid)
+            AND (
+              t.private = false
+              OR t.created_by = ${userId}::uuid
+              OR "user".mentioned_in_thread(${userId}::uuid, t.id)
+            )
           GROUP BY tu.urgency, psi.see_within_requests, psi.see_within_updates
           ORDER BY CASE tu.urgency
             WHEN 'interrupt' THEN 0
@@ -260,11 +267,19 @@ export class PushNotify extends DurableObject<Bindings> {
       let latestUnreadAt: string | null = null;
       await withDb(this.env, async (db) => {
         const result = await sql<{ latest: string }>`
-          SELECT MAX(updated_at)::text AS latest
-          FROM thread_unread
-          WHERE user_id = ${this.userId!}::uuid
-            AND read_at IS NULL
-            AND urgency != 'passive'
+          SELECT MAX(tu.updated_at)::text AS latest
+          FROM thread_unread tu
+          JOIN thread t ON t.id = tu.thread_id
+          WHERE tu.user_id = ${this.userId!}::uuid
+            AND tu.read_at IS NULL
+            AND tu.urgency != 'passive'
+            AND t.archived_at IS NULL
+            AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
+            AND (
+              t.private = false
+              OR t.created_by = ${this.userId!}::uuid
+              OR "user".mentioned_in_thread(${this.userId!}::uuid, t.id)
+            )
         `.execute(db);
         latestUnreadAt = result.rows[0]?.latest ?? null;
 

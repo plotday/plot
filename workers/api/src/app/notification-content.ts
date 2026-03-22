@@ -15,7 +15,9 @@ notificationContent.get("/notification-content", async (c) => {
     const db = c.var.db;
     const userId = c.var.user.id;
 
-    // Get all unread non-passive threads with their priority paths
+    // Get all unread non-passive threads with their priority paths.
+    // Excludes archived threads, draft threads (unless created by this user),
+    // and private threads the user can't see.
     const threadsResult = await sql<{
       urgency: string;
       thread_id: string;
@@ -39,6 +41,13 @@ notificationContent.get("/notification-content", async (c) => {
       WHERE tu.user_id = ${userId}::uuid
         AND tu.read_at IS NULL
         AND tu.urgency != 'passive'
+        AND t.archived_at IS NULL
+        AND (t.draft = false OR t.created_by = ${userId}::uuid)
+        AND (
+          t.private = false
+          OR t.created_by = ${userId}::uuid
+          OR "user".mentioned_in_thread(${userId}::uuid, t.id)
+        )
       ORDER BY CASE tu.urgency
         WHEN 'interrupt' THEN 0
         WHEN 'inform-requests' THEN 1

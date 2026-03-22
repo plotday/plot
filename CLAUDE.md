@@ -840,6 +840,39 @@ Before committing or declaring any code change complete, run `/finalize` to exec
 4. **Documentation**: Notable user-facing changes go in `docs/updates.md`. Major new functionality also updates `docs/features.md`.
 5. **Public submodule**: Changes in `public/` need a separate PR. Twister SDK changes require a changeset.
 
+## Thread Visibility Rules
+
+**CRITICAL: Any query on `thread_unread` or `thread` that determines what a user can see or what triggers notifications MUST enforce thread visibility filters.**
+
+The `user.thread` view is the canonical reference for visibility logic. When querying `thread_unread` directly (outside the view), you MUST replicate these filters:
+
+```sql
+-- Required visibility filters when joining thread_unread with thread:
+AND t.archived_at IS NULL                           -- exclude archived threads
+AND (t.draft = false OR t.created_by = :userId)     -- only show own drafts
+AND (
+  t.private = false                                  -- public threads: visible to all
+  OR t.created_by = :userId                          -- private threads: visible to creator
+  OR "user".mentioned_in_thread(:userId, t.id)       -- private threads: visible to mentioned users
+)
+```
+
+### When these filters are required
+
+- **Notification queries**: Any query that decides whether to send a push notification or what content to show in a notification. Without these filters, invisible threads (private threads from other users, archived threads) will generate phantom notifications.
+- **Unread indicators**: Views/queries that compute whether a priority has unread threads (e.g. `user.priority_unread`). Without these filters, the unread dot shows on priorities where the user has no visible unread threads.
+- **Thread listing/counting**: Any query that lists or counts threads for a specific user outside of the `user.thread` view.
+
+### When these filters are NOT required
+
+- **Twist/source callbacks**: Views like `priority_twist_thread_read` are scoped to threads the twist itself created (`a.created_by = pt.id`). The twist has inherent visibility into its own threads.
+- **Admin/system queries**: Internal operations that don't surface results to users.
+- **RPC functions with access control**: Functions that call `assert_priority_access()` before querying.
+
+### Common mistake
+
+Querying `thread_unread` with only `read_at IS NULL` and `urgency != 'passive'` — this misses archived, draft, and private thread visibility, causing phantom notifications and incorrect unread counts.
+
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.

@@ -73,6 +73,21 @@
   - User schema views/functions live in `90-user-schema/` (after public views)
   - If you get "relation does not exist" errors during migration generation, move the function to a later directory
 
+## Thread Visibility in Views
+
+Any view or query that joins `thread_unread` to determine what a user can see must enforce thread visibility. The canonical reference is the `user.thread` view. Required filters when joining thread (aliased as `a`) with `thread_unread`:
+
+```sql
+AND a.archived_at IS NULL
+AND (a.draft = FALSE OR a.created_by = user_id)
+AND (a.private = FALSE OR a.created_by = user_id
+     OR "user".mentioned_in_thread(user_id, a.id))
+```
+
+Without these, views like `user.priority_unread` will show false unread indicators for threads the user can't actually see (private threads from other users, archived threads, other users' drafts).
+
+**Exception**: Twist callback views (e.g. `priority_twist_thread_read`) are scoped to threads the twist created — the twist has inherent visibility.
+
 ## Database Infrastructure
 
 The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `docker-compose.yml`. Key details:
