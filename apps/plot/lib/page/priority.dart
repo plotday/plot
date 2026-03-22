@@ -74,6 +74,16 @@ class PriorityWrapper implements AutoRouteWrapper {
 
   @override
   Widget wrappedRoute(BuildContext context) {
+    // When a tab is specified (e.g. from notification tap), update the shared
+    // notifier so all PriorityPage instances (including PriorityOnlyPage on
+    // mobile) pick up the correct tab.
+    if (tab == 'activity') {
+      final notifier = PriorityTabProvider.maybeOf(context);
+      if (notifier != null && notifier.value != PriorityTab.activityFeed) {
+        notifier.value = PriorityTab.activityFeed;
+      }
+    }
+
     return PriorityBlocProvider(
       priorityId: priorityId,
       child: _PriorityCommandScope(
