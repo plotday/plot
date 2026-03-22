@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { mapPgError, withUserDb } from "../../db";
+import { mapPgError } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { notifySync, notifyUserSync, getPriorityForThread } from "./notify";
@@ -20,23 +20,21 @@ threadUnread.post("/sync/thread-unread", async (c) => {
 
   for (const record of records) {
     try {
-      await withUserDb(c.var.db, userId, async (trx) => {
-        if (record.read_at) {
-          await rpcUser(trx, "clear_thread_unread", {
-            user_id: userId,
-            p_thread_id: record.thread_id,
-            p_read_at: record.read_at,
-            ...(record.bumped_at ? { p_bumped_at: record.bumped_at } : {}),
-          });
-        } else {
-          await rpcUser(trx, "upsert_thread_unread", {
-            user_id: userId,
-            p_thread_id: record.thread_id,
-            p_urgency: record.urgency || "inform-updates",
-            ...(record.bumped_at ? { p_bumped_at: record.bumped_at } : {}),
-          });
-        }
-      });
+      if (record.read_at) {
+        await rpcUser(c.var.db, "clear_thread_unread", {
+          user_id: userId,
+          p_thread_id: record.thread_id,
+          p_read_at: record.read_at,
+          ...(record.bumped_at ? { p_bumped_at: record.bumped_at } : {}),
+        });
+      } else {
+        await rpcUser(c.var.db, "upsert_thread_unread", {
+          user_id: userId,
+          p_thread_id: record.thread_id,
+          p_urgency: record.urgency || "inform-updates",
+          ...(record.bumped_at ? { p_bumped_at: record.bumped_at } : {}),
+        });
+      }
       succeededThreadIds.push(record.thread_id);
     } catch (err) {
       if (mapPgError(err)) {
