@@ -335,4 +335,9 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     authUrl: "https://app.hubspot.com/oauth/authorize",
     tokenUrl: "https://api.hubapi.com/oauth/v1/token",
   },
+  todoist: {
+    name: "Todoist",
+    authUrl: "https://todoist.com/oauth/authorize",
+    tokenUrl: "https://todoist.com/oauth/access_token",
+  },
 };
