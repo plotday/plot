@@ -695,15 +695,37 @@ class ShowNoteCommands extends ShowCommands {
 
 /// Assign picker for draft notes on NewThreadPage (uses callback instead of ThreadBloc).
 class PickDraftNoteAssignee extends ShowCommands {
-  PickDraftNoteAssignee({
+  factory PickDraftNoteAssignee({
+    required Note note,
+    required Uuid priorityId,
+    required Future<void> Function(Note note) onUpdate,
+  }) {
+    // Mutable reference so commandsBuilder always sees the latest note
+    final noteRef = [note];
+
+    Future<void> wrappedOnUpdate(Note updatedNote) async {
+      noteRef[0] = updatedNote;
+      await onUpdate(updatedNote);
+    }
+
+    return PickDraftNoteAssignee._(
+      note: note,
+      priorityId: priorityId,
+      onUpdate: onUpdate,
+      commandsBuilder: (context) =>
+          _getAssigneeCommands(noteRef[0], priorityId, wrappedOnUpdate),
+    );
+  }
+
+  PickDraftNoteAssignee._({
     required this.note,
     required this.priorityId,
     required this.onUpdate,
+    required Future<Commands> Function(BuildContext) commandsBuilder,
   }) : super(
          title: note.assignees.isEmpty ? 'Assign' : 'Assigned',
          icon: _computeIcon(note),
-         commandsBuilder: (context) =>
-             _getAssigneeCommands(note, priorityId, onUpdate),
+         commandsBuilder: commandsBuilder,
          showFilter: true,
          eventObject: EventObject.note,
          eventAction: EventAction.updated,
