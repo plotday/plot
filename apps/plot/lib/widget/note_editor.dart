@@ -720,16 +720,6 @@ class NoteEditorState extends State<NoteEditor> {
                     },
                   ),
                 ],
-                if (!thread.priority.personal &&
-                    !thread.private &&
-                    !thread.priority.isViewer)
-                  Button.icon(
-                    ToggleThreadPrivate(
-                      thread,
-                      onUpdate: (t) => widget.onDraftChanged!(t),
-                    ),
-                    selected: thread.private,
-                  ),
                 if (!thread.priority.personal && !thread.priority.isViewer)
                   Button.icon(
                     PickDraftNoteAssignee(
