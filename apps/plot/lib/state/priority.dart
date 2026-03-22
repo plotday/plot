@@ -85,7 +85,6 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Reset limits but preserve sync state - search filters local data only
     _agendaLimit = 50;
-    _agendaLastRawRowCount = 0;
     _loadAgenda(triggerSync: false);
 
     _activityFeedLimit = 50;
@@ -1001,7 +1000,6 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaLimit = 50;
     _agendaHorizonDays = 90;
     _agendaSyncNoMore = false;
-    _agendaLastRawRowCount = 0;
     _loadAgenda();
 
     _activityFeedLimit = 50;
@@ -1138,7 +1136,6 @@ class PriorityBloc extends Cubit<PriorityState> {
             .debounceTime(const Duration(milliseconds: 100))
             .listen((result) {
               final (:threads, :rawRowCount) = result;
-              _agendaLastRawRowCount = rawRowCount;
 
               // After a reorder or optimistic update, suppress agenda rebuilds
               // briefly so the optimistic state stays visible until all DB writes
@@ -1224,9 +1221,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               emit(
                 state.copyWith(
                   agendaItems: agendaItems,
-                  agendaDoneEnd:
-                      rawRowCount < _agendaLimit &&
-                      (state.search.isNotEmpty || _agendaSyncNoMore),
+                  agendaDoneEnd: false,
                   // Keep reorderViewItems during suppress, clear when real data arrives
                   reorderViewItems: suppressRebuild
                       ? const Value.absent()
@@ -1294,9 +1289,8 @@ class PriorityBloc extends Cubit<PriorityState> {
       if (hasEnoughItems && syncedPastLastItem) break;
     }
 
-    if (_agendaSyncNoMore && _agendaLastRawRowCount < _agendaLimit) {
-      emit(state.copyWith(agendaDoneEnd: true));
-    }
+    // Agenda is infinite — never mark it as done at the end.
+    // fetchMoreAgendaItems will extend the horizon as the user scrolls.
   }
 
   void _loadActivityFeed({bool triggerSync = true}) {
@@ -1484,7 +1478,6 @@ class PriorityBloc extends Cubit<PriorityState> {
   bool _activityFeedSyncNoMore = false;
   Future<void>? _agendaSyncFuture;
   Future<void>? _activityFeedSyncFuture;
-  int _agendaLastRawRowCount = 0;
   int _activityFeedLastRawRowCount = 0;
 }
 

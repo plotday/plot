@@ -70,7 +70,7 @@ class AgendaHeader extends StatelessWidget {
         dateCenterRight = date!.format(format: 'd');
         dateMonth = date!.year == Date.today().year
             ? ' ${date!.format(format: 'MMMM')}'
-            : ' ${date!.format(format: 'MMMM, yyyy')}';
+            : ' ${date!.format(format: 'MMMM yyyy')}';
       }
     }
 
