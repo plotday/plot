@@ -1,16 +1,36 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/util/developer_mode.dart';
 import 'command.dart';
 
-class GlobalShortcuts extends StatelessWidget {
+class GlobalShortcuts extends StatefulWidget {
   const GlobalShortcuts({required this.child, super.key});
 
   final Widget child;
+
+  @override
+  State<GlobalShortcuts> createState() => _GlobalShortcutsState();
+}
+
+class _GlobalShortcutsState extends State<GlobalShortcuts> {
+  SubscriptionInfo? _subscription;
+  bool _fetchedSubscription = false;
+
+  void _fetchSubscription() async {
+    if (_fetchedSubscription) return;
+    _fetchedSubscription = true;
+    try {
+      final subscription = await UpgradeApi.getSubscription();
+      if (mounted) setState(() => _subscription = subscription);
+    } catch (_) {
+      // Non-critical — commands still work without subscription info
+    }
+  }
 
   List<StaticCommandGroup> _getCommands({
     required bool signedIn,
@@ -38,6 +58,7 @@ class GlobalShortcuts extends StatelessWidget {
         prioritiesState,
         showAllPriorities: showAllPriorities,
         email: email,
+        subscription: _subscription,
       ),
     ];
 
@@ -57,12 +78,16 @@ class GlobalShortcuts extends StatelessWidget {
         final signedIn = userState is UserReady;
 
         if (!signedIn) {
+          _fetchedSubscription = false;
+          _subscription = null;
           return CommandScope(
             commandsBuilder: () => _getCommands(signedIn: false),
             listenable: DeveloperMode.notifier,
-            child: child,
+            child: widget.child,
           );
         }
+
+        _fetchSubscription();
 
         return BlocBuilder<PrioritiesBloc, PrioritiesState>(
           builder: (context, prioritiesState) {
@@ -76,7 +101,7 @@ class GlobalShortcuts extends StatelessWidget {
                     email: userState.user.primaryEmail,
                   ),
                   listenable: DeveloperMode.notifier,
-                  child: child,
+                  child: widget.child,
                 );
               },
             );

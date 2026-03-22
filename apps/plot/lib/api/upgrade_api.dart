@@ -142,6 +142,12 @@ class UpgradeApi {
     return SubscriptionInfo.fromJson(response);
   }
 
+  /// Create a Stripe Customer Portal session and return its URL
+  static Future<String> getPortalUrl() async {
+    final response = await api.post<Map<String, dynamic>>('/upgrade/portal');
+    return response['url'] as String;
+  }
+
   /// Fetch configured AI provider names (e.g. ['openai', 'anthropic'])
   static Future<List<String>> getAiKeys() async {
     final response = await api.get<List<dynamic>>('/ai-keys');

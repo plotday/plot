@@ -15,6 +15,7 @@ import 'package:plot/state/user.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart';
 import 'package:plot/app_info.dart';
@@ -53,6 +54,7 @@ StaticCommandGroup settingsCommandsFromState(
   bool showAllPriorities = false,
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
+  SubscriptionInfo? subscription,
 }) {
   final hasOrganizations =
       prioritiesState != null &&
@@ -81,23 +83,29 @@ StaticCommandGroup settingsCommandsFromState(
     }
   }
 
+  final rootPriority = prioritiesState?.root;
+
   return settingsCommands(
     hasOrganizations: hasOrganizations,
+    rootPriority: rootPriority,
     gettingStartedCmd: gettingStartedCmd,
     whatsNewCmd: whatsNewCmd,
     helpFeedbackCmd: helpFeedbackCmd,
     email: email,
     adminOrgs: adminOrgs,
+    subscription: subscription,
   );
 }
 
 StaticCommandGroup settingsCommands({
   bool hasOrganizations = false,
+  Priority? rootPriority,
   Command? gettingStartedCmd,
   Command? whatsNewCmd,
   Command? helpFeedbackCmd,
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
+  SubscriptionInfo? subscription,
 }) => StaticCommandGroup(
   title: 'App',
   shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
@@ -105,11 +113,16 @@ StaticCommandGroup settingsCommands({
     if (gettingStartedCmd != null) gettingStartedCmd,
     ManageConnections(),
     ManageTwists(),
+    if (subscription != null && subscription.isFree) UpgradeToPro(),
+    if (subscription != null && !subscription.isFree) ManageSubscription(),
     if (hasOrganizations) ManageOrganizations(),
     CopyPageLink(), OpenCopiedPageLink(),
     ChangeAppearance(),
     ChangeAiPreference(),
-    if (NotificationService.isSupported && !NotificationService.instance.isTokenRegistered) EnableNotifications(),
+    if (NotificationService.isSupported &&
+        !NotificationService.instance.isTokenRegistered)
+      EnableNotifications(),
+    if (rootPriority != null) ShowAttentionSettings(rootPriority),
     for (final org in adminOrgs)
       OrgAiPreferences(
         orgId: org['id'] as String,
@@ -142,16 +155,21 @@ class ShowSettings extends ShowCommands {
               ? userState.user.primaryEmail
               : null;
 
-          // Fetch orgs to find admin orgs for AI preferences
+          // Fetch orgs and subscription in parallel
           List<Map<String, dynamic>> adminOrgs = [];
+          SubscriptionInfo? subscription;
           try {
-            final orgs = await api.get<List<dynamic>>('/organization');
-            adminOrgs = orgs
+            final results = await Future.wait([
+              api.get<List<dynamic>>('/organization'),
+              UpgradeApi.getSubscription(),
+            ]);
+            adminOrgs = (results[0] as List<dynamic>)
                 .cast<Map<String, dynamic>>()
                 .where((o) => o['role'] == 'admin')
                 .toList();
+            subscription = results[1] as SubscriptionInfo;
           } catch (_) {
-            // Non-critical — settings still work without org AI preferences
+            // Non-critical — settings still work without these
           }
 
           final groups = [
@@ -159,6 +177,7 @@ class ShowSettings extends ShowCommands {
               prioritiesState,
               email: email,
               adminOrgs: adminOrgs,
+              subscription: subscription,
             ),
           ];
           final debugCmds = buildDebugCommands();
@@ -350,6 +369,50 @@ class ManageOrganizations extends Command {
   }
 }
 
+class UpgradeToPro extends Command {
+  UpgradeToPro()
+    : super(
+        title: 'Upgrade to Pro',
+        icon: FontAwesomeIcons.bolt,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await launchUrl(
+      Uri.parse('https://plot.day/upgrade'),
+      mode: LaunchMode.externalApplication,
+    );
+    return const CommandDone();
+  }
+}
+
+class ManageSubscription extends Command {
+  ManageSubscription()
+    : super(
+        title: 'Manage subscription',
+        icon: FontAwesomeIcons.creditCard,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final url = await UpgradeApi.getPortalUrl();
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      return const CommandDone();
+    } catch (e, t) {
+      log.warning('Failed to open subscription management', e, t);
+      return CommandMessage(
+        'Failed to open subscription management',
+        isError: true,
+      );
+    }
+  }
+}
+
 class ChangeTheme extends Command {
   ChangeTheme(this.themeMode)
     : super(
@@ -412,7 +475,9 @@ class CopyVersion extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     if (DeveloperMode.recordTap()) {
       return CommandRefresh(
-        message: DeveloperMode.isEnabled ? 'Developer mode enabled' : 'Developer mode disabled',
+        message: DeveloperMode.isEnabled
+            ? 'Developer mode enabled'
+            : 'Developer mode disabled',
       );
     }
     try {
@@ -528,19 +593,22 @@ class EnableNotifications extends Command {
     final result = await NotificationService.instance.requestPermission();
 
     return switch (result) {
-      NotificationPermissionResult.granted =>
-        CommandMessage('Notifications enabled'),
-      NotificationPermissionResult.denied =>
-        CommandMessage(
-          'Permission denied. You can enable notifications in your device settings.',
-          isError: true,
-        ),
-      NotificationPermissionResult.deniedPermanently =>
-        _openSystemSettings(),
-      NotificationPermissionResult.unsupported =>
-        CommandMessage('Notifications are not supported on this platform', isError: true),
-      NotificationPermissionResult.error =>
-        CommandMessage('Failed to enable notifications', isError: true),
+      NotificationPermissionResult.granted => CommandMessage(
+        'Notifications enabled',
+      ),
+      NotificationPermissionResult.denied => CommandMessage(
+        'Permission denied. You can enable notifications in your device settings.',
+        isError: true,
+      ),
+      NotificationPermissionResult.deniedPermanently => _openSystemSettings(),
+      NotificationPermissionResult.unsupported => CommandMessage(
+        'Notifications are not supported on this platform',
+        isError: true,
+      ),
+      NotificationPermissionResult.error => CommandMessage(
+        'Failed to enable notifications',
+        isError: true,
+      ),
     };
   }
 

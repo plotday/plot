@@ -156,7 +156,7 @@ class ManageConnections extends Command {
         onRefreshNeeded: (refresh) => refreshFn = refresh,
         onSelect: (ctx, item, _) async {
           if (item is _LimitBanner) {
-            launchUrl(Uri.parse('https://plot.day/subscribe'));
+            launchUrl(Uri.parse('https://plot.day/upgrade'));
             return false;
           } else if (item is _ActiveSource) {
             await EditSource(
@@ -1323,7 +1323,7 @@ class _UpgradeBannerCommand extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    launchUrl(Uri.parse('https://plot.day/subscribe'));
+    launchUrl(Uri.parse('https://plot.day/upgrade'));
     return const CommandSkipped();
   }
 
@@ -1446,8 +1446,7 @@ class EditTwist extends ShowForm {
                 ),
             ],
           ),
-          if (optionItems != null)
-            StaticFormGroup(items: optionItems.items),
+          if (optionItems != null) StaticFormGroup(items: optionItems.items),
           StaticFormGroup(
             items: [
               FormButton(

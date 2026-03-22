@@ -12,7 +12,7 @@ import 'logging.dart';
 class ShowAttentionSettings extends ShowForm {
   ShowAttentionSettings(this.priority)
     : super(
-        title: 'Notifications',
+        title: 'Adjust notifications',
         icon: PlotIcon.notification,
         form: (context) => _buildForm(context, priority),
       );
@@ -501,25 +501,30 @@ class _SaveAttentionSettings extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     // Write to local DB first (optimistic update)
-    await (Store.get.update(Store.get.priorities)
-          ..where((t) => t.id.equalsValue(priorityId)))
-        .write(PrioritiesCompanion(
-          attentionWindow: setAttentionWindow
-              ? Value(AttentionWindow.toJsonString(attentionWindow))
-              : const Value.absent(),
-          attentionWindowSet:
-              setAttentionWindow ? const Value(true) : const Value.absent(),
-          seeWithinRequests: setSeeWithinRequests
-              ? Value(SeeWithinTime.toJsonString(seeWithinRequests))
-              : const Value.absent(),
-          seeWithinRequestsSet:
-              setSeeWithinRequests ? const Value(true) : const Value.absent(),
-          seeWithinUpdates: setSeeWithinUpdates
-              ? Value(SeeWithinTime.toJsonString(seeWithinUpdates))
-              : const Value.absent(),
-          seeWithinUpdatesSet:
-              setSeeWithinUpdates ? const Value(true) : const Value.absent(),
-        ));
+    await (Store.get.update(
+      Store.get.priorities,
+    )..where((t) => t.id.equalsValue(priorityId))).write(
+      PrioritiesCompanion(
+        attentionWindow: setAttentionWindow
+            ? Value(AttentionWindow.toJsonString(attentionWindow))
+            : const Value.absent(),
+        attentionWindowSet: setAttentionWindow
+            ? const Value(true)
+            : const Value.absent(),
+        seeWithinRequests: setSeeWithinRequests
+            ? Value(SeeWithinTime.toJsonString(seeWithinRequests))
+            : const Value.absent(),
+        seeWithinRequestsSet: setSeeWithinRequests
+            ? const Value(true)
+            : const Value.absent(),
+        seeWithinUpdates: setSeeWithinUpdates
+            ? Value(SeeWithinTime.toJsonString(seeWithinUpdates))
+            : const Value.absent(),
+        seeWithinUpdatesSet: setSeeWithinUpdates
+            ? const Value(true)
+            : const Value.absent(),
+      ),
+    );
 
     // Sync to server in background
     unawaited(
@@ -528,8 +533,9 @@ class _SaveAttentionSettings extends Command {
             '/sync/priority-attention',
             body: {
               'priority_id': priorityId.toString(),
-              'attention_window':
-                  attentionWindow?.map((w) => w.toJson()).toList(),
+              'attention_window': attentionWindow
+                  ?.map((w) => w.toJson())
+                  .toList(),
               'set_attention_window': setAttentionWindow,
               'see_within_requests': seeWithinRequests?.toJson(),
               'set_see_within_requests': setSeeWithinRequests,
@@ -561,12 +567,14 @@ class SetAttentionWindow extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     // Write to local DB first (optimistic update)
-    await (Store.get.update(Store.get.priorities)
-          ..where((t) => t.id.equalsValue(priorityId)))
-        .write(PrioritiesCompanion(
-          attentionWindow: Value(AttentionWindow.toJsonString(windows)),
-          attentionWindowSet: const Value(true),
-        ));
+    await (Store.get.update(
+      Store.get.priorities,
+    )..where((t) => t.id.equalsValue(priorityId))).write(
+      PrioritiesCompanion(
+        attentionWindow: Value(AttentionWindow.toJsonString(windows)),
+        attentionWindowSet: const Value(true),
+      ),
+    );
 
     // Sync to server in background
     unawaited(
@@ -575,8 +583,7 @@ class SetAttentionWindow extends Command {
             '/sync/priority-attention',
             body: {
               'priority_id': priorityId.toString(),
-              'attention_window':
-                  windows?.map((w) => w.toJson()).toList(),
+              'attention_window': windows?.map((w) => w.toJson()).toList(),
               'set_attention_window': true,
             },
           )
@@ -603,12 +610,14 @@ class ClearAttentionWindow extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     // Write to local DB first (optimistic update)
-    await (Store.get.update(Store.get.priorities)
-          ..where((t) => t.id.equalsValue(priorityId)))
-        .write(const PrioritiesCompanion(
-          attentionWindow: Value(null),
-          attentionWindowSet: Value(true),
-        ));
+    await (Store.get.update(
+      Store.get.priorities,
+    )..where((t) => t.id.equalsValue(priorityId))).write(
+      const PrioritiesCompanion(
+        attentionWindow: Value(null),
+        attentionWindowSet: Value(true),
+      ),
+    );
 
     // Sync to server in background
     unawaited(
