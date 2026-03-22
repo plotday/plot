@@ -1061,8 +1061,10 @@ class PriorityBloc extends Cubit<PriorityState> {
         note.content!.trim().isNotEmpty) {
       var publishedNote = note.copyWith(threadId: savedThread.id, draft: false);
 
-      // If the thread is a task and note assignment is requested, assign the note to the current user
-      if (savedThread.todo && assignNote) {
+      // If the thread is a task and note assignment is requested, assign the
+      // note to the current user — but only if no one is already assigned
+      // (e.g. the user explicitly assigned someone else on the new thread page).
+      if (savedThread.todo && assignNote && !publishedNote.isAssigned()) {
         publishedNote = publishedNote.assignTo(Base.actorId);
       }
 
