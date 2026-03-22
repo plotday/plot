@@ -45,7 +45,7 @@ notificationSummary.post("/notification-summary", async (c) => {
     const summaries = await Promise.all(
       batches.map(async (batch) => {
         const body = aiAllowed.allowed
-          ? await generateSummary(c.env, batch.threads, user_name)
+          ? await generateSummary(c.env, batch.threads, user_name, batch.priority_title)
           : fallbackSummary(batch.threads);
         return {
           first_level_priority_id: batch.first_level_priority_id,
@@ -69,7 +69,8 @@ notificationSummary.post("/notification-summary", async (c) => {
 export async function generateSummary(
   env: Bindings,
   threads: z.infer<typeof ThreadSchema>[],
-  userName?: string | null
+  userName?: string | null,
+  priorityTitle?: string | null
 ): Promise<string> {
   const ai = env.AI;
   // For a single thread with a title, just use it directly
@@ -90,8 +91,12 @@ export async function generateSummary(
   const threadCount = threads.length;
 
   try {
+    const priorityHint = priorityTitle
+      ? ` These updates are from the '${priorityTitle}' area.`
+      : "";
+
     const recipientHint = userName
-      ? ` The notification recipient is "${userName}". If their name appears in the updates, refer to them as "you" or "your" instead of using their name.`
+      ? ` The recipient's name is '${userName}'. When their name appears in thread titles, refer to them as 'you' instead. For example, 'Email from ${userName}' should become 'You received an email'.`
       : "";
 
     const messages = [
@@ -105,6 +110,7 @@ export async function generateSummary(
           "Do NOT mention emails, calls, messages, or other communication types unless the input explicitly says so. " +
           "Just state the item title or a brief factual description. " +
           "No markdown, no quotes, no preamble." +
+          priorityHint +
           recipientHint,
       },
       {
@@ -114,7 +120,7 @@ export async function generateSummary(
     ];
 
     const response = await ai.run(
-      "@cf/meta/llama-3.1-8b-instruct-fp8",
+      "@cf/meta/llama-4-scout-17b-16e-instruct",
       { messages, max_tokens: 128 }
     );
 
@@ -122,7 +128,8 @@ export async function generateSummary(
       throw new Error("Response is a stream");
     }
 
-    return response.response?.replace(/^"(.*)"$/, "$1")?.trim() || fallbackSummary(threads);
+    const text = typeof response === "string" ? response : response.response;
+    return text?.replace(/^"(.*)"$/, "$1")?.trim() || fallbackSummary(threads);
   } catch (e) {
     const logger = createLogger();
     logger.error("Error generating notification summary", e as Error);

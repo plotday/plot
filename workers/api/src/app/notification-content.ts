@@ -170,7 +170,7 @@ notificationContent.get("/notification-content", async (c) => {
         const threadList = batch.threads.slice(0, 10);
 
         const body = aiAllowed.allowed
-          ? await generateSummary(c.env, threadList, c.var.user.name)
+          ? await generateSummary(c.env, threadList, c.var.user.name, batch.priorityTitle)
           : fallbackSummary(threadList);
 
         return {
@@ -179,6 +179,7 @@ notificationContent.get("/notification-content", async (c) => {
           body,
           target_priority_id: targetPriorityId,
           urgency: batch.highestUrgency,
+          thread_ids: threadList.map((t) => t.id),
         };
       })
     );

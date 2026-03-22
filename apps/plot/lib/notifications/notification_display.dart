@@ -161,6 +161,7 @@ class NotificationDisplay {
       importance: importance,
       priority: priority,
       autoCancel: true,
+      onlyAlertOnce: true,
       icon: 'ic_stat_notification',
       color: const Color(0xFF239870),
     );
@@ -227,6 +228,7 @@ class NotificationDisplay {
       importance: importance,
       priority: priority,
       autoCancel: true,
+      onlyAlertOnce: true,
       icon: 'ic_stat_notification',
       color: const Color(0xFF239870),
     );

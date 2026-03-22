@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -51,9 +52,9 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   static const int _maxRetries = 5;
   static const Duration _baseRetryDelay = Duration(seconds: 2);
 
-  /// Tracks notifications that have been shown: priorityId → notification id.
-  /// Used for retraction when threads are read on another device.
-  final Map<String, int> _shownNotifications = {};
+  /// Tracks notifications that have been shown: priorityId → (id, threadIds).
+  /// Used for retraction and dedup when threads are read on another device.
+  final Map<String, ({int id, Set<String> threadIds})> _shownNotifications = {};
 
   static const Duration _suppressionWindow = Duration(minutes: 5);
 
@@ -103,6 +104,9 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     } catch (e) {
       log.warning('Failed to initialize notification display', e);
     }
+
+    // Load persisted thread IDs from a previous session/background handler
+    await _loadPersistedThreadIds();
 
     if (_isDesktop) {
       await _startDesktop();
@@ -220,6 +224,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     // User is back — cancel all notifications since they can see the app
     NotificationDisplay.instance.cancelAll();
     _shownNotifications.clear();
+    _clearPersistedThreadIds();
     _quietHoursRetryTimer?.cancel();
     _quietHoursRetryTimer = null;
   }
@@ -450,6 +455,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     // Cancel shown notifications
     await NotificationDisplay.instance.cancelAll();
     _shownNotifications.clear();
+    _clearPersistedThreadIds();
 
     if (_isDesktop) {
       await _stopDesktop();
@@ -619,7 +625,7 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     final staleKeys = <String>[];
     for (final entry in _shownNotifications.entries) {
       if (!freshPriorityIds.contains(entry.key)) {
-        await NotificationDisplay.instance.cancel(entry.value);
+        await NotificationDisplay.instance.cancel(entry.value.id);
         staleKeys.add(entry.key);
       }
     }
@@ -804,29 +810,96 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   }
 
   /// Show notifications using AI-generated summaries.
+  /// Skips re-showing if the thread set for a priority is unchanged.
   Future<void> _showNotifications(List<Map<String, dynamic>> summaries) async {
-    final shown = await showSummaryNotifications(summaries);
+    final shown = await showSummaryNotifications(
+      summaries,
+      previousThreadIds: _shownNotifications.map(
+        (k, v) => MapEntry(k, v.threadIds),
+      ),
+    );
     _shownNotifications.addAll(shown);
+    _persistThreadIds();
   }
 
   /// Fallback: show simple notifications without AI summary.
   Future<void> _showFallbackNotifications(List<NotificationBatch> batches) async {
-    for (var i = 0; i < batches.length; i++) {
-      final batch = batches[i];
+    for (final batch in batches) {
       final title = batch.priorityTitle ?? 'Updates';
       final body = batch.threads.length == 1
           ? batch.threads.first.title ?? 'New update'
           : '${batch.threads.length} new updates';
 
       final displayId = batch.targetPriorityId ?? batch.firstLevelPriorityId;
+      final notifId = _stableNotificationId(displayId);
+      final newThreadIds = batch.threads.map((t) => t.id).toSet();
+
+      // Skip if thread set is unchanged
+      final previous = _shownNotifications[displayId];
+      if (previous != null && _setsEqual(previous.threadIds, newThreadIds)) {
+        continue;
+      }
+
       await NotificationDisplay.instance.showBatchNotification(
-        id: i,
+        id: notifId,
         title: title,
         body: body,
         targetPriorityId: displayId,
         urgency: batch.highestUrgency,
       );
-      _shownNotifications[displayId] = i;
+      _shownNotifications[displayId] = (id: notifId, threadIds: newThreadIds);
+    }
+    _persistThreadIds();
+  }
+
+  /// Derive a stable notification ID from a priority ID string.
+  static int _stableNotificationId(String priorityId) =>
+      priorityId.hashCode.abs() % 100000;
+
+  /// Compare two sets for equality.
+  static bool _setsEqual(Set<String> a, Set<String> b) =>
+      a.length == b.length && a.containsAll(b);
+
+  /// Persist the current thread ID sets to SharedPreferences so the background
+  /// isolate can also deduplicate.
+  Future<void> _persistThreadIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = _shownNotifications.map(
+        (k, v) => MapEntry(k, v.threadIds.toList()..sort()),
+      );
+      await prefs.setString('notification_thread_ids', jsonEncode(data));
+    } catch (e) {
+      log.warning('Failed to persist notification thread IDs', e);
+    }
+  }
+
+  /// Clear persisted thread IDs (on sign-out or when all notifications are dismissed).
+  Future<void> _clearPersistedThreadIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('notification_thread_ids');
+    } catch (e) {
+      log.warning('Failed to clear persisted notification thread IDs', e);
+    }
+  }
+
+  /// Load persisted thread IDs into the in-memory map on startup.
+  Future<void> _loadPersistedThreadIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('notification_thread_ids');
+      if (raw == null) return;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      for (final entry in data.entries) {
+        final threadIds = (entry.value as List).cast<String>().toSet();
+        _shownNotifications[entry.key] = (
+          id: _stableNotificationId(entry.key),
+          threadIds: threadIds,
+        );
+      }
+    } catch (e) {
+      log.warning('Failed to load persisted notification thread IDs', e);
     }
   }
 
@@ -945,31 +1018,47 @@ Future<void> syncAttentionWindowsToPrefs([SharedPreferences? prefs]) async {
 /// Show local notifications from a list of API summary objects.
 ///
 /// Each summary map must have: `title`, `body`, `target_priority_id`, and
-/// optionally `urgency`. Returns a map of targetPriorityId → notification id
-/// for all notifications shown.
+/// optionally `urgency` and `thread_ids`. Returns a map of
+/// targetPriorityId → (id, threadIds) for all notifications shown.
+///
+/// If [previousThreadIds] is provided, notifications whose thread set is
+/// unchanged are silently skipped (no vibration, no AI call wasted).
 ///
 /// This function is package-level so it can be called from both
 /// [NotificationService] (foreground) and the background handler.
-Future<Map<String, int>> showSummaryNotifications(
-  List<Map<String, dynamic>> summaries,
-) async {
-  final shown = <String, int>{};
-  for (var i = 0; i < summaries.length; i++) {
-    final summary = summaries[i];
+Future<Map<String, ({int id, Set<String> threadIds})>> showSummaryNotifications(
+  List<Map<String, dynamic>> summaries, {
+  Map<String, Set<String>>? previousThreadIds,
+}) async {
+  final shown = <String, ({int id, Set<String> threadIds})>{};
+  for (final summary in summaries) {
     final title = summary['title'] as String? ?? 'Updates';
     final body = summary['body'] as String? ?? 'You have new updates';
     final targetPriorityId = summary['target_priority_id'] as String? ?? '';
     final urgency = summary['urgency'] as String?;
+    final threadIdsList = (summary['thread_ids'] as List?)?.cast<String>();
+    final threadIds = threadIdsList?.toSet() ?? <String>{};
+    final notifId = targetPriorityId.hashCode.abs() % 100000;
+
+    // Skip if thread set is unchanged
+    if (previousThreadIds != null && threadIds.isNotEmpty) {
+      final prev = previousThreadIds[targetPriorityId];
+      if (prev != null &&
+          prev.length == threadIds.length &&
+          prev.containsAll(threadIds)) {
+        continue;
+      }
+    }
 
     await NotificationDisplay.instance.showBatchNotification(
-      id: i,
+      id: notifId,
       title: title,
       body: body,
       targetPriorityId: targetPriorityId,
       urgency: urgency ?? 'inform-updates',
     );
     if (targetPriorityId.isNotEmpty) {
-      shown[targetPriorityId] = i;
+      shown[targetPriorityId] = (id: notifId, threadIds: threadIds);
     }
   }
   return shown;

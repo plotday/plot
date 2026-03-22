@@ -12,6 +12,8 @@ import 'package:plot/notifications/notification_display.dart';
 import 'package:plot/notifications/notification_quiet_hours.dart';
 import 'package:plot/notifications/notification_service.dart';
 
+const _threadIdsPrefsKey = 'notification_thread_ids';
+
 /// Top-level background message handler registered with Firebase Messaging.
 ///
 /// Runs in a separate isolate when the app is backgrounded or terminated.
@@ -56,6 +58,9 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   // Initialize local notification display
   await NotificationDisplay.instance.initialize();
 
+  // Load previously shown thread IDs for dedup
+  final previousThreadIds = _loadPersistedThreadIds(prefs);
+
   // Check whether we're currently in quiet hours
   final scheduleAt = computeNotifyTime(prefs);
   // ignore: avoid_print
@@ -64,7 +69,12 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
     // Quiet hours: schedule persistent notifications for when they end
     await _scheduleNotifications(summaries, scheduleAt);
   } else {
-    await showSummaryNotifications(summaries);
+    final shown = await showSummaryNotifications(
+      summaries,
+      previousThreadIds: previousThreadIds,
+    );
+    // Persist updated thread IDs
+    await _persistThreadIds(prefs, shown);
   }
 }
 
@@ -146,17 +156,18 @@ Future<void> _scheduleNotifications(
   await NotificationDisplay.initializeTimezone();
 
   // Use ID offset to avoid colliding with immediate notification IDs
-  const scheduledIdOffset = 1000;
+  const scheduledIdOffset = 100000;
 
-  for (var i = 0; i < summaries.length; i++) {
-    final summary = summaries[i];
+  for (final summary in summaries) {
     final title = summary['title'] as String? ?? 'Updates';
     final body = summary['body'] as String? ?? 'You have new updates';
     final targetPriorityId = summary['target_priority_id'] as String? ?? '';
     final urgency = summary['urgency'] as String?;
+    final notifId = scheduledIdOffset +
+        (targetPriorityId.hashCode.abs() % 100000);
 
     await NotificationDisplay.instance.scheduleBatchNotification(
-      id: scheduledIdOffset + i,
+      id: notifId,
       title: title,
       body: body,
       targetPriorityId: targetPriorityId,
@@ -167,4 +178,34 @@ Future<void> _scheduleNotifications(
 
   // ignore: avoid_print
   print('[BG_HANDLER] scheduled ${summaries.length} notifications for $scheduleAt');
+}
+
+/// Load persisted thread IDs from SharedPreferences for background dedup.
+Map<String, Set<String>>? _loadPersistedThreadIds(SharedPreferences prefs) {
+  final raw = prefs.getString(_threadIdsPrefsKey);
+  if (raw == null) return null;
+  try {
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    return data.map(
+      (k, v) => MapEntry(k, (v as List).cast<String>().toSet()),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Persist thread IDs to SharedPreferences after showing notifications.
+Future<void> _persistThreadIds(
+  SharedPreferences prefs,
+  Map<String, ({int id, Set<String> threadIds})> shown,
+) async {
+  // Merge with existing data
+  final existing = _loadPersistedThreadIds(prefs) ?? {};
+  for (final entry in shown.entries) {
+    existing[entry.key] = entry.value.threadIds;
+  }
+  final data = existing.map(
+    (k, v) => MapEntry(k, v.toList()..sort()),
+  );
+  await prefs.setString(_threadIdsPrefsKey, jsonEncode(data));
 }
