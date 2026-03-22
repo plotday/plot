@@ -323,8 +323,11 @@ class _AuthButtonState extends State<AuthButton> {
         log.info('Apple sign-in cancelled by user');
         return;
       }
+      // Apple auth errors (e.g. error 1000 for missing 2FA, provisioning
+      // issues, keychain problems) are external device/account issues, not
+      // bugs in our code. Log but don't report to error tracking since the
+      // user already sees the error toast.
       log.warning('Apple sign-in failed: ${e.code} - ${e.message}');
-      Tracker.captureException(e, StackTrace.current);
       final message = 'Unable to connect with Apple. Please try again.';
       if (widget.onError != null) {
         widget.onError!(message);
