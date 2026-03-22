@@ -3,6 +3,8 @@ import { Version3Client } from "jira.js";
 import {
   type Action,
   ActionType,
+  type Note,
+  type Thread,
   type NewLinkWithNotes,
   NewContact,
 } from "@plotday/twister";
@@ -550,6 +552,13 @@ export class Jira extends Connector<Jira> {
         },
       });
     }
+  }
+
+  /**
+   * Called when a note is created on a thread owned by this connector.
+   */
+  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+    await this.addIssueComment(thread.meta ?? {}, note.content ?? "");
   }
 
   /**

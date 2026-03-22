@@ -10,6 +10,8 @@ import {
   type Action,
   ActionType,
   type Link,
+  type Note,
+  type Thread,
   ThreadMeta,
   type NewLinkWithNotes,
 } from "@plotday/twister";
@@ -612,6 +614,13 @@ export class Linear extends Connector<Linear> {
     if (Object.keys(updateFields).length > 0) {
       await client.updateIssue(issueId, updateFields);
     }
+  }
+
+  /**
+   * Called when a note is created on a thread owned by this connector.
+   */
+  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+    await this.addIssueComment(thread.meta ?? {}, note.content ?? "");
   }
 
   /**

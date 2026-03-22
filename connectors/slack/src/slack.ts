@@ -61,7 +61,6 @@ import {
  */
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
-  static readonly handleReplies = true;
   static readonly SCOPES = [
     "channels:history",
     "channels:read",
