@@ -158,22 +158,26 @@ export class UserSync extends DurableObject<Bindings> {
       const hasClients = broadcastData.hasConnectedClients;
 
       if (!hasClients) {
-        // No connected clients — trigger push notification instead
-        try {
-          const pushNotifyId = this.env.PUSH_NOTIFY.idFromName(this.userId);
-          const pushNotifyDO = this.env.PUSH_NOTIFY.get(pushNotifyId);
-          await pushNotifyDO.fetch(
-            new Request("http://do/notify", {
-              method: "POST",
-              body: JSON.stringify({ userId: this.userId }),
+        // No connected clients — trigger push notification in background.
+        // Fire-and-forget to avoid blocking the alarm handler (PushNotify
+        // runs a DB query + storage ops that can exceed DO timeout limits).
+        const pushNotifyId = this.env.PUSH_NOTIFY.idFromName(this.userId);
+        const pushNotifyDO = this.env.PUSH_NOTIFY.get(pushNotifyId);
+        this.ctx.waitUntil(
+          pushNotifyDO
+            .fetch(
+              new Request("http://do/notify", {
+                method: "POST",
+                body: JSON.stringify({ userId: this.userId }),
+              })
+            )
+            .catch((error) => {
+              logger.error("Error triggering PushNotify DO", error as Error, {
+                user_id: this.userId ?? undefined,
+              });
+              this.captureException(error as Error);
             })
-          );
-        } catch (error) {
-          logger.error("Error triggering PushNotify DO", error as Error, {
-            user_id: this.userId,
-          });
-          this.captureException(error as Error);
-        }
+        );
         this.state.lastSyncTime = now;
         return;
       }
