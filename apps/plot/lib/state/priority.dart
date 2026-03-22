@@ -18,7 +18,11 @@ import 'logging.dart';
 part 'priority_state.dart';
 
 class PriorityBloc extends Cubit<PriorityState> {
-  final Set<ThreadId> _stickyUnreadIds = {};
+  /// Tracks threads that should stay in the unread section while being viewed,
+  /// along with their original sort values to prevent position jumps when
+  /// urgency is cleared by sync after marking as read.
+  final Map<ThreadId, ({int urgencyRank, int importance, DateTime activityAt})>
+      _stickyUnreadIds = {};
   ThreadHeaderNotifier? headerNotifier;
 
   /// Persisted scroll offsets for scroll restoration across route changes.
@@ -662,13 +666,17 @@ class PriorityBloc extends Cubit<PriorityState> {
     // unread thread, add it so it stays in place while being read.
     final oldThread = state.thread;
     if (oldThread != null && thread?.id != oldThread.id) {
-      final wasSticky = _stickyUnreadIds.remove(oldThread.id);
+      final wasSticky = _stickyUnreadIds.remove(oldThread.id) != null;
       if (wasSticky) {
         oldThread.copyWith(bumpedAt: Value(DateTime.now())).save();
       }
     }
     if (thread != null && thread.unread) {
-      _stickyUnreadIds.add(thread.id);
+      _stickyUnreadIds[thread.id] = (
+        urgencyRank: thread.urgencyRank,
+        importance: thread.importance,
+        activityAt: thread.activityAt,
+      );
     }
 
     if (state.thread == thread) {
@@ -1340,7 +1348,8 @@ class PriorityBloc extends Cubit<PriorityState> {
           final unreadThreads = <Thread>[];
           final readThreads = <Thread>[];
           for (final thread in threads) {
-            if (thread.unread || _stickyUnreadIds.contains(thread.id)) {
+            if (thread.unread ||
+                _stickyUnreadIds.containsKey(thread.id)) {
               unreadThreads.add(thread);
             } else {
               readThreads.add(thread);
@@ -1348,13 +1357,23 @@ class PriorityBloc extends Cubit<PriorityState> {
           }
 
           // Sort unread by urgency rank (lower = higher priority), then importance desc,
-          // with activityAt as stable tiebreaker
+          // with activityAt as stable tiebreaker.
+          // For sticky threads (being viewed), use stored sort values so they
+          // don't jump position when urgency is cleared by sync.
           unreadThreads.sort((a, b) {
-            final urgencyCmp = a.urgencyRank.compareTo(b.urgencyRank);
+            final aSticky = _stickyUnreadIds[a.id];
+            final bSticky = _stickyUnreadIds[b.id];
+            final aRank = aSticky?.urgencyRank ?? a.urgencyRank;
+            final bRank = bSticky?.urgencyRank ?? b.urgencyRank;
+            final urgencyCmp = aRank.compareTo(bRank);
             if (urgencyCmp != 0) return urgencyCmp;
-            final importanceCmp = b.importance.compareTo(a.importance);
+            final aImp = aSticky?.importance ?? a.importance;
+            final bImp = bSticky?.importance ?? b.importance;
+            final importanceCmp = bImp.compareTo(aImp);
             if (importanceCmp != 0) return importanceCmp;
-            return b.activityAt.compareTo(a.activityAt);
+            final aAt = aSticky?.activityAt ?? a.activityAt;
+            final bAt = bSticky?.activityAt ?? b.activityAt;
+            return bAt.compareTo(aAt);
           });
 
           // Add unread threads (no section header - they're at the very top)
