@@ -1,3 +1,4 @@
+- Fixed changes from other users (like marking tasks done) sometimes taking minutes to appear when your app was idle — updates now sync immediately after reconnecting
 - Clearer task status icons — when everyone assigned is done, a double-check icon appears; when others finish but you still have work, their status shows as a "Done" badge next to your task
 - Fixed notifications showing stale content from threads you already read — previously, reading a thread before the server finished processing could leave it permanently marked as unread
 - Fixed update notifications on Android being silent — they now make a sound like other notifications

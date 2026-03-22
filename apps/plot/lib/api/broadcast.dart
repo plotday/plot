@@ -13,6 +13,7 @@ import 'package:plot/logging.dart';
 import 'package:plot/api/broadcast_channel.dart';
 
 typedef MessageHandler = Future<void> Function(Map<String, dynamic> message);
+typedef ReconnectedHandler = void Function();
 
 class BroadcastClient with WidgetsBindingObserver {
   static BroadcastClient? _instance;
@@ -26,6 +27,7 @@ class BroadcastClient with WidgetsBindingObserver {
   Timer? _reconnectTimer;
   Timer? _pingTimer;
   StreamSubscription<dynamic>? _messageSubscription;
+  ReconnectedHandler? _onReconnected;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   static const Duration _baseReconnectDelay = Duration(seconds: 1);
@@ -51,9 +53,14 @@ class BroadcastClient with WidgetsBindingObserver {
   int? get clientId => _clientId;
 
   /// Initialize the broadcast client with a message handler
-  Future<void> connect(MessageHandler messageHandler, int clientId) async {
+  Future<void> connect(
+    MessageHandler messageHandler,
+    int clientId, {
+    ReconnectedHandler? onReconnected,
+  }) async {
     _messageHandler = messageHandler;
     _clientId = clientId;
+    _onReconnected = onReconnected;
 
     // Cancel any existing connectivity subscription to prevent leaks
     await _connectivitySubscription?.cancel();
@@ -205,6 +212,7 @@ class BroadcastClient with WidgetsBindingObserver {
 
       if (_wasEverConnected) {
         log.info("WebSocket connection restored");
+        _onReconnected?.call();
       } else {
         _wasEverConnected = true;
         log.info("WebSocket connected");
@@ -289,6 +297,7 @@ class BroadcastClient with WidgetsBindingObserver {
     connectionState.value = true;
     _wasEverConnected = false;
     _messageHandler = null;
+    _onReconnected = null;
     _clientId = null;
     _instance = null;
   }

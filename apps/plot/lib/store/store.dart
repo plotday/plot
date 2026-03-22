@@ -1674,7 +1674,20 @@ class Store extends _$Store {
     _unsubscribeFromUpdates();
 
     _broadcastClient = BroadcastClient.instance;
-    await _broadcastClient!.connect(_handleBroadcastMessage, clientId);
+    await _broadcastClient!.connect(
+      _handleBroadcastMessage,
+      clientId,
+      onReconnected: _handleReconnected,
+    );
+  }
+
+  void _handleReconnected() {
+    if (_closing) return;
+    log.info('WebSocket reconnected, triggering catch-up sync');
+    _syncAll().catchError((Object error, StackTrace stackTrace) {
+      log.warning('Reconnection-triggered sync failed', error, stackTrace);
+      return null;
+    });
   }
 
   Future<void> _handleBroadcastMessage(Map<String, dynamic> message) async {
