@@ -248,13 +248,10 @@ class ThreadsBase extends BaseTable {
             activityRow.bumpedAt == local.bumpedAt) {
           // Server confirms our local state - clear the pending flag
           merged = merged.copyWith(unreadUpdated: const Value(null));
-        } else if (activityRow.unread && !local.unread) {
-          // Server has newer unread state (new activity from another user arrived
-          // after the local read). Accept server's unread=true and clear the flag.
-          merged = merged.copyWith(unreadUpdated: const Value(null));
         } else {
-          // Server says read but we locally think unread — server hasn't
-          // processed our push yet. Preserve local state until confirmed.
+          // Server disagrees — preserve local state until push confirms.
+          // If genuinely new content arrived, the server will re-mark unread
+          // after our push confirms, and the next pull will accept it.
           merged = merged.copyWith(
             unread: local.unread,
             importance: local.importance,
@@ -559,6 +556,11 @@ class Thread extends Equatable implements Comparable<Thread> {
     ]);
   }
 
+  /// Tracks consecutive push failures for thread-unread to break infinite
+  /// retry loops. Cleared on success, incremented on transient failure.
+  static int _unreadPushFailures = 0;
+  static const _maxUnreadPushFailures = 3;
+
   static Future<bool> push() async {
     final success =
         await Store.get.push(Store.get.threads, ThreadsBase()) &&
@@ -649,6 +651,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       // Clearing eagerly creates a race: a concurrent pull with stale data
       // (started before the activity_read push) can overwrite unread with
       // the stale server value because unreadUpdated was already null.
+      _unreadPushFailures = 0;
     } catch (e) {
       if (e is ApiException && Store._isPermanentError(e)) {
         // Permanent error (403, 404, 422, etc.) — these threads will never
@@ -660,9 +663,26 @@ class Thread extends Equatable implements Comparable<Thread> {
         await (Store.get.update(Store.get.threads)
               ..where((t) => t.id.isIn(allIds)))
             .write(const ThreadsCompanion(unreadUpdated: Value(null)));
+        _unreadPushFailures = 0;
       } else {
-        log.severe('Failed to push activity_read changes: $e');
-        rethrow;
+        _unreadPushFailures++;
+        if (_unreadPushFailures >= _maxUnreadPushFailures) {
+          // Too many consecutive failures — clear unreadUpdated to break
+          // the retry loop. The server fix will resolve the root cause;
+          // this is a safety net against any future similar issue.
+          log.warning(
+              'Thread-unread push failed $_unreadPushFailures times consecutively, '
+              'clearing ${unreadActivities.length} records to break retry loop: $e');
+          final allIds =
+              unreadActivities.map((a) => a.id.toBytes()).toList();
+          await (Store.get.update(Store.get.threads)
+                ..where((t) => t.id.isIn(allIds)))
+              .write(const ThreadsCompanion(unreadUpdated: Value(null)));
+          _unreadPushFailures = 0;
+        } else {
+          log.severe('Failed to push activity_read changes: $e');
+          rethrow;
+        }
       }
     }
 

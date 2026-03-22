@@ -898,6 +898,7 @@ CREATE OR REPLACE FUNCTION "user".clear_thread_unread (
     LANGUAGE plpgsql
     SET search_path TO 'public', 'user'
     AS $function$
+#variable_conflict use_column
 DECLARE
     v_priority_id uuid;
 BEGIN
