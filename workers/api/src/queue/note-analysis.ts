@@ -16,11 +16,11 @@ export async function analyzeNote(
   noteId: string,
   threadId: string,
   userId: string
-): Promise<void> {
+): Promise<boolean> {
   const db = createDb(env);
   try {
     const context = await gatherContext(db, noteId, threadId);
-    if (!context) return;
+    if (!context) return false;
 
     const result = await classifyNote(env, context);
 
@@ -42,6 +42,8 @@ export async function analyzeNote(
       context.members,
       result.unread
     );
+
+    return true;
   } finally {
     await db.destroy();
   }

@@ -5,12 +5,13 @@ import { Tag } from "@plotday/twister/tag";
 
 import { type DB, createDb } from "../db";
 import { type Bindings, type TwistBatchMessage } from "../env";
-import { rpcUser } from "../rpc";
+import { rpc, rpcUser } from "../rpc";
 import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { createLogger } from "@plotday/worker-util";
 import { analyzeNote } from "./note-analysis";
 import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
+import { markThreadUnreadForOthers } from "../app/sync/notes";
 
 /**
  * Process a batch of twist update messages from the queue.
@@ -522,6 +523,16 @@ async function processTwistBatch(
           syncDepth,
         });
 
+        // Unread marking: try AI analysis first, fall back to default marking.
+        // This ensures notifications are always delivered even if analysis fails.
+        let analysisHandledUnread = false;
+        const owner = await db
+          .selectFrom("priority_twist")
+          .select("owner_id")
+          .where("id", "=", priorityTwistId)
+          .executeTakeFirst();
+        const ownerId = owner?.owner_id;
+
         // AI note analysis for source notes (best-effort)
         // Skip notes created by the twist itself, and historical imports (> 7 days old)
         const sourceCreatedAt = note.source_created_at
@@ -533,26 +544,20 @@ async function processTwistBatch(
           note.content &&
           note.author_id &&
           note.author_id !== priorityTwistId &&
-          isRecent
+          isRecent &&
+          ownerId &&
+          note.thread_id
         ) {
           try {
-            const owner = await db
-              .selectFrom("priority_twist")
-              .select("owner_id")
-              .where("id", "=", priorityTwistId)
-              .executeTakeFirst();
-
-            if (owner?.owner_id && note.thread_id) {
-              const aiAllowed = await checkAiLimit(env, db, owner.owner_id, "note_processing");
-              if (aiAllowed.allowed) {
-                await analyzeNote(env, note.id, note.thread_id, owner.owner_id);
-                recordAiUsage(env, owner.owner_id, "note_processing");
-              } else {
-                logger.info("[note-analysis] AI limit reached, skipping", {
-                  note_id: note.id,
-                  user_id: owner.owner_id,
-                });
-              }
+            const aiAllowed = await checkAiLimit(env, db, ownerId, "note_processing");
+            if (aiAllowed.allowed) {
+              analysisHandledUnread = await analyzeNote(env, note.id, note.thread_id, ownerId);
+              recordAiUsage(env, ownerId, "note_processing");
+            } else {
+              logger.info("[note-analysis] AI limit reached, skipping", {
+                note_id: note.id,
+                user_id: ownerId,
+              });
             }
           } catch (analysisError) {
             logger.warn("[note-analysis] Failed for source note", {
@@ -562,6 +567,64 @@ async function processTwistBatch(
                   ? analysisError.message
                   : String(analysisError),
             });
+            postHog.captureException(
+              analysisError instanceof Error ? analysisError : new Error(String(analysisError)),
+              undefined,
+              { context: "note-analysis:channelNote", note_id: note.id, priority_twist_id: priorityTwistId }
+            );
+          }
+        }
+
+        // Fallback: mark unread with default urgency if analysis didn't handle it
+        if (!analysisHandledUnread && note.thread_id && ownerId) {
+          const notePriorityId = note.priority_id || priorityId;
+          if (notePriorityId) {
+            try {
+              await markThreadUnreadForOthers(env, db, notePriorityId, note.thread_id, ownerId);
+            } catch (error) {
+              logger.error("Failed to mark thread unread (fallback)", error as Error, {
+                note_id: note.id,
+                thread_id: note.thread_id,
+              });
+              postHog.captureException(error as Error, undefined, {
+                context: "markThreadUnreadForOthers:channelNote",
+                note_id: note.id,
+                thread_id: note.thread_id,
+                priority_twist_id: priorityTwistId,
+              });
+            }
+          }
+        }
+
+        // Notify UserSync DOs so the push notification pipeline fires
+        if (note.thread_id && ownerId) {
+          const notePriorityId = note.priority_id || priorityId;
+          if (notePriorityId) {
+            try {
+              const usersData = await rpc(db, "get_users_with_priority_access", {
+                target_priority_id: notePriorityId,
+              });
+              const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
+              for (const userId of userIds) {
+                if (userId === ownerId) continue;
+                try {
+                  const userSyncId = env.USER_SYNC.idFromName(userId);
+                  const userSyncDO = env.USER_SYNC.get(userSyncId);
+                  await userSyncDO.fetch(
+                    new Request("http://do/notify", {
+                      method: "POST",
+                      body: JSON.stringify({ id: userId }),
+                    })
+                  );
+                } catch (doError) {
+                  logger.error(`Failed to notify UserSync for user ${userId}`, doError as Error);
+                }
+              }
+            } catch (error) {
+              logger.error("Failed to notify UserSync DOs for channel note", error as Error, {
+                note_id: note.id,
+              });
+            }
           }
         }
       } catch (error) {
