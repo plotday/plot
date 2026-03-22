@@ -469,12 +469,6 @@
       }
     }
   },
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      "id": "831ea7d10ef54346b084baaa1a46dfa6"
-    }
-  ],
   "observability": {
     "logs": {
       "enabled": true,
