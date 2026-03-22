@@ -321,7 +321,7 @@ class PriorityState extends Equatable {
 
       // Add all todos first as a flat list sorted by user-defined order
       if (allTodos.isNotEmpty) {
-        allTodos.sort((a, b) => a.order.compareTo(b.order));
+        allTodos.sort((a, b) => a.todoCompareTo(b));
         items.addAll(allTodos.map((Thread a) => AgendaThreadItem(a)));
       }
 
@@ -587,7 +587,7 @@ class PriorityState extends Equatable {
 
             if (otherBeforeNowThreads.isNotEmpty) {
               final sortedTodos = otherBeforeNowThreads.toList()
-                ..sort((a, b) => a.order.compareTo(b.order));
+                ..sort((a, b) => a.todoCompareTo(b));
               items.addAll(sortedTodos.map((Thread a) => AgendaThreadItem(a)));
             }
 
@@ -675,7 +675,7 @@ class PriorityState extends Equatable {
                   )
                   .toList();
               if (todosForStart.isNotEmpty) {
-                todosForStart.sort((a, b) => a.order.compareTo(b.order));
+                todosForStart.sort((a, b) => a.todoCompareTo(b));
                 items.addAll(
                   todosForStart.map((Thread a) => AgendaThreadItem(a)),
                 );
@@ -715,13 +715,13 @@ class PriorityState extends Equatable {
               // gap items so they interleave correctly with existing
               // items (e.g. link schedule instances).
               if (pinnedHere.isNotEmpty) {
-                pinnedHere.sort((a, b) => a.order.compareTo(b.order));
+                pinnedHere.sort((a, b) => a.todoCompareTo(b));
                 for (final pinnedTodo in pinnedHere) {
                   var insertAt = items.length;
                   for (var j = gapItemsStart; j < items.length; j++) {
                     final item = items[j];
                     if (item is AgendaThreadItem &&
-                        pinnedTodo.order.compareTo(item.thread.order) < 0) {
+                        pinnedTodo.todoCompareTo(item.thread) < 0) {
                       insertAt = j;
                       break;
                     }

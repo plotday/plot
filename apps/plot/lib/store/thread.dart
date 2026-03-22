@@ -2215,6 +2215,24 @@ class Thread extends Equatable implements Comparable<Thread> {
         createdAt;
   }
 
+  /// Original schedule date for todo sorting. Unlike agendaAt, this preserves
+  /// past dates so that todos from different days maintain their relative order
+  /// when they all appear as "current".
+  DateTime get todoSortDate {
+    return _userSchedule?.startOn?.toDateTime() ??
+        pinnedAfterTime ??
+        at?.start ??
+        on?.start?.toDateTime() ??
+        createdAt;
+  }
+
+  /// Compare todos by original schedule date first, then by order.
+  int todoCompareTo(Thread other) {
+    final dateComp = todoSortDate.compareTo(other.todoSortDate);
+    if (dateComp != 0) return dateComp;
+    return order.compareTo(other.order);
+  }
+
   /// Timestamp for activity feed ordering and bucket headers.
   /// GREATEST(lastNoteSourceCreatedAt, linkSourceCreatedAt, bumpedAt, pastScheduleEnd),
   /// falling back to createdAt when all are null.
