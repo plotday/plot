@@ -59,9 +59,9 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   // Check whether we're currently in quiet hours
   final scheduleAt = computeNotifyTime(prefs);
   // ignore: avoid_print
-  print('[BG_HANDLER] scheduleAt=$scheduleAt — showing notification');
+  print('[BG_HANDLER] scheduleAt=$scheduleAt');
   if (scheduleAt != null) {
-    // Quiet hours: show notifications when they end
+    // Quiet hours: schedule persistent notifications for when they end
     await _scheduleNotifications(summaries, scheduleAt);
   } else {
     await showSummaryNotifications(summaries);
@@ -127,13 +127,11 @@ Future<List<Map<String, dynamic>>?> _fetchNotificationContent(
   }
 }
 
-/// Schedule notifications to appear at [scheduleAt] using delayed delivery.
+/// Schedule notifications to appear at [scheduleAt] using persistent
+/// OS-level scheduling (Android AlarmManager / iOS scheduling).
 ///
-/// Since timezone-based scheduling requires full timezone initialization
-/// (unsuitable for a background isolate), this uses a simple Future.delayed
-/// approach. Note: this won't survive process termination — for a more robust
-/// implementation, use flutter_local_notifications zonedSchedule() with the
-/// timezone package initialized.
+/// Survives process termination — the OS delivers the notification even if
+/// the app is killed.
 Future<void> _scheduleNotifications(
   List<Map<String, dynamic>> summaries,
   DateTime scheduleAt,
@@ -143,5 +141,30 @@ Future<void> _scheduleNotifications(
     await showSummaryNotifications(summaries);
     return;
   }
-  await Future.delayed(delay, () => showSummaryNotifications(summaries));
+
+  // Initialize timezone data for zonedSchedule (embedded, no I/O needed)
+  await NotificationDisplay.initializeTimezone();
+
+  // Use ID offset to avoid colliding with immediate notification IDs
+  const scheduledIdOffset = 1000;
+
+  for (var i = 0; i < summaries.length; i++) {
+    final summary = summaries[i];
+    final title = summary['title'] as String? ?? 'Updates';
+    final body = summary['body'] as String? ?? 'You have new updates';
+    final targetPriorityId = summary['target_priority_id'] as String? ?? '';
+    final urgency = summary['urgency'] as String?;
+
+    await NotificationDisplay.instance.scheduleBatchNotification(
+      id: scheduledIdOffset + i,
+      title: title,
+      body: body,
+      targetPriorityId: targetPriorityId,
+      scheduleAt: scheduleAt,
+      urgency: urgency ?? 'inform-updates',
+    );
+  }
+
+  // ignore: avoid_print
+  print('[BG_HANDLER] scheduled ${summaries.length} notifications for $scheduleAt');
 }

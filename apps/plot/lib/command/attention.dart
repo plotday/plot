@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/notifications/notification_service.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/store/attention.dart';
@@ -526,6 +527,11 @@ class _SaveAttentionSettings extends Command {
       ),
     );
 
+    // Sync attention windows to SharedPreferences for background handler
+    if (setAttentionWindow) {
+      unawaited(syncAttentionWindowsToPrefs());
+    }
+
     // Sync to server in background
     unawaited(
       api
@@ -576,6 +582,9 @@ class SetAttentionWindow extends Command {
       ),
     );
 
+    // Sync attention windows to SharedPreferences for background handler
+    unawaited(syncAttentionWindowsToPrefs());
+
     // Sync to server in background
     unawaited(
       api
@@ -618,6 +627,9 @@ class ClearAttentionWindow extends Command {
         attentionWindowSet: Value(true),
       ),
     );
+
+    // Sync attention windows to SharedPreferences for background handler
+    unawaited(syncAttentionWindowsToPrefs());
 
     // Sync to server in background
     unawaited(

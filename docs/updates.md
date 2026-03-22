@@ -1,3 +1,4 @@
+- Fixed notifications during quiet hours being silently lost on Android — they now reliably appear when quiet hours end
 - Fixed sharing a priority causing its sub-priorities to appear as separate top-level items instead of staying nested underneath
 - Fixed notifications arriving for priorities where you had already read all threads
 - Desktop notifications — macOS and Windows now show native notifications for unread updates when the app window is not focused, with the same urgency levels, quiet hours, and AI summaries as mobile

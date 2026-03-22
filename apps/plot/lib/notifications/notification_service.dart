@@ -64,6 +64,9 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   Timer? _desktopNotifyDebouncer;
   static const Duration _desktopNotifyDebounce = Duration(seconds: 2);
 
+  /// Desktop: timer to retry notification display when quiet hours end.
+  Timer? _quietHoursRetryTimer;
+
   /// Callback for navigating to a priority when a notification is tapped.
   void Function(String priorityId)? onNavigateToPriority;
 
@@ -110,12 +113,13 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
   /// Mobile: set up FCM, register token, and listen for push messages.
   Future<void> _startMobile(String userId) async {
-    // Persist user ID for background isolate access
+    // Persist user ID and attention windows for background isolate access
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('notification_user_id', userId);
+      await syncAttentionWindowsToPrefs(prefs);
     } catch (e) {
-      log.warning('Failed to persist notification user ID', e);
+      log.warning('Failed to persist notification prefs', e);
     }
 
     // Register for app lifecycle events to re-register on resume
@@ -189,10 +193,19 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
       if (batches.isEmpty) return;
 
-      // Check quiet hours
+      // Check quiet hours — if active, schedule a retry when they end
       final prefs = await SharedPreferences.getInstance();
       final scheduleAt = computeNotifyTime(prefs);
-      if (scheduleAt != null) return; // In quiet hours — skip
+      if (scheduleAt != null) {
+        final delay = scheduleAt.difference(DateTime.now());
+        if (delay > Duration.zero) {
+          _quietHoursRetryTimer?.cancel();
+          _quietHoursRetryTimer = Timer(delay, () {
+            _handleDesktopNotification();
+          });
+        }
+        return;
+      }
 
       // Check multi-device suppression, then show
       await _checkAndShowNotifications(batches, store);
@@ -207,6 +220,8 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     // User is back — cancel all notifications since they can see the app
     NotificationDisplay.instance.cancelAll();
     _shownNotifications.clear();
+    _quietHoursRetryTimer?.cancel();
+    _quietHoursRetryTimer = null;
   }
 
   @override
@@ -483,6 +498,8 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   Future<void> _stopDesktop() async {
     _desktopNotifyDebouncer?.cancel();
     _desktopNotifyDebouncer = null;
+    _quietHoursRetryTimer?.cancel();
+    _quietHoursRetryTimer = null;
     windowManager.removeListener(this);
     _windowFocused = true;
 
@@ -892,6 +909,37 @@ class NotificationThread {
     required this.urgency,
     required this.priorityId,
   });
+}
+
+/// Sync the root priority's attention windows to SharedPreferences so the
+/// background isolate can check quiet hours without Drift access.
+///
+/// Uses the root priority's attention_window if explicitly set, otherwise
+/// leaves the key absent (background handler falls back to default quiet hours).
+Future<void> syncAttentionWindowsToPrefs([SharedPreferences? prefs]) async {
+  try {
+    prefs ??= await SharedPreferences.getInstance();
+    final store = Store.get;
+
+    // Find any priority with attention_window explicitly set
+    final priorities = await (store.select(store.priorities)
+          ..where((t) => t.attentionWindowSet.equals(true)))
+        .get();
+
+    // Use the first explicitly-set attention window found
+    final window = priorities
+        .where((p) => p.attentionWindow != null)
+        .map((p) => p.attentionWindow!)
+        .firstOrNull;
+
+    if (window != null) {
+      await prefs.setString('attention_windows', window);
+    } else {
+      await prefs.remove('attention_windows');
+    }
+  } catch (e) {
+    log.warning('Failed to sync attention windows to prefs', e);
+  }
 }
 
 /// Show local notifications from a list of API summary objects.
