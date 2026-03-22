@@ -230,8 +230,32 @@ async function classifyNote(
   env: Bindings,
   context: NoteContext
 ): Promise<AnalysisResult> {
+  // Build sequential number mappings so the LLM doesn't need to reproduce UUIDs
+  const memberNumToId = new Map<number, string>();
+  const memberIdToNum = new Map<string, number>();
+  context.members.forEach((m, i) => {
+    const num = i + 1;
+    memberNumToId.set(num, m.id);
+    memberIdToNum.set(m.id, num);
+  });
+
+  // Note number 0 = the current note being analyzed
+  const noteNumToId = new Map<number, string>();
+  noteNumToId.set(0, context.noteId);
+  let nextNoteNum = 1;
+
+  // Collect all known note IDs from existing todos/replies
+  const allExistingNotes = [...context.existingTodos, ...context.existingReplies];
+  for (const t of allExistingNotes) {
+    if (!Array.from(noteNumToId.values()).includes(t.noteId)) {
+      noteNumToId.set(nextNoteNum, t.noteId);
+      nextNoteNum++;
+    }
+  }
+  const noteIdToNum = new Map(Array.from(noteNumToId.entries()).map(([k, v]) => [v, k]));
+
   const membersStr = context.members
-    .map((m) => `- ${m.id}: ${m.name ?? "Unknown"}`)
+    .map((m) => `- #${memberIdToNum.get(m.id)}: ${m.name ?? "Unknown"}`)
     .join("\n");
 
   const linksStr =
@@ -249,8 +273,8 @@ async function classifyNote(
       ? context.existingTodos
           .map((t) => {
             const name =
-              context.members.find((m) => m.id === t.actorId)?.name ?? t.actorId;
-            return `- Note ${t.noteId} assigned to ${name} (${t.actorId})`;
+              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
+            return `- Note #${noteIdToNum.get(t.noteId)} assigned to ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"})`;
           })
           .join("\n")
       : "None";
@@ -260,8 +284,8 @@ async function classifyNote(
       ? context.existingReplies
           .map((t) => {
             const name =
-              context.members.find((m) => m.id === t.actorId)?.name ?? t.actorId;
-            return `- Note ${t.noteId} flagged for ${name} (${t.actorId})`;
+              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
+            return `- Note #${noteIdToNum.get(t.noteId)} flagged for ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"})`;
           })
           .join("\n")
       : "None";
@@ -269,12 +293,17 @@ async function classifyNote(
   const recentStr =
     context.recentNotes.length > 0
       ? context.recentNotes
-          .map(
-            (n) =>
-              `- [${n.authorName ?? "Unknown"}](${n.authorId}): ${(n.content ?? "").slice(0, 300)}`
-          )
+          .map((n) => {
+            const memberNum = n.authorId ? memberIdToNum.get(n.authorId) : undefined;
+            const authorLabel = memberNum
+              ? `${n.authorName ?? "Unknown"} (member #${memberNum})`
+              : (n.authorName ?? "Unknown");
+            return `- ${authorLabel}: ${(n.content ?? "").slice(0, 300)}`;
+          })
           .join("\n")
       : "None";
+
+  const authorNum = memberIdToNum.get(context.noteAuthorId);
 
   const messages = [
     {
@@ -284,18 +313,21 @@ async function classifyNote(
 2. Does this note require a reply from someone? (tag: "reply")
 3. How urgently should each member be notified? (unread classification)
 
+All members and notes are identified by sequential numbers (e.g. member #1, note #0).
+Note #0 is always the new note being analyzed.
+
 Tag rules:
-- Only assign tags to people in the priority members list.
+- Only assign tags to members in the priority members list (use member numbers).
 - If no specific person is identifiable, do not assign a tag.
-- For completions (done=true), reference the noteId of the existing todo/reply being completed.
-- For new items (done=false), use the current note's ID.
+- For completions (done=true), reference the note number of the existing todo/reply being completed.
+- For new items (done=false), use note number 0 (the current note).
 - Todo: Only mark as todo if it clearly requires an action that ISN'T already covered by another task or link in the thread. Exception: clear sub-tasks completable before the parent.
 - Reply: Mark as reply if the note clearly requires a response based on thread context and participants. E.g., a direct question in a two-person conversation.
 - Be conservative — only tag when intent is clear.
 
 Unread classification rules:
 - For each member, classify how urgently and importantly they should be notified.
-- Return a "default" with per-user "overrides" where needed.
+- Return a "default" with per-member "overrides" where needed (use member numbers as keys).
 - The note author should NEVER be included (they are always ignored).
 - urgency levels:
   - interrupt: urgent, needs immediate attention
@@ -309,8 +341,8 @@ Respond with JSON only. No explanation.
 
 Output schema:
 {
-  "tags": [{"noteId": "string", "actorId": "string", "done": boolean, "tag": "todo"|"reply"}],
-  "unread": {"default": {"urgency": "inform-updates", "importance": 50}, "overrides": {"contactId": {"urgency": "inform-requests", "importance": 75}}}
+  "tags": [{"note": 0, "member": 1, "done": false, "tag": "todo"}],
+  "unread": {"default": {"urgency": "inform-updates", "importance": 50}, "overrides": {"1": {"urgency": "inform-requests", "importance": 75}}}
 }
 
 Empty tags array and default {"urgency": "inform-updates", "importance": 50} if no special classification needed.`,
@@ -328,7 +360,7 @@ ${repliesStr}
 Recent notes:
 ${recentStr}
 
-New note by ${context.noteAuthorName ?? "Unknown"} (${context.noteAuthorId}): ${context.noteContent.slice(0, 1000)}`,
+New note #0 by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${authorNum})` : ""}: ${context.noteContent.slice(0, 1000)}`,
     },
   ];
 
@@ -357,14 +389,7 @@ New note by ${context.noteAuthorName ?? "Unknown"} (${context.noteAuthorId}): ${
       try {
         const parsed = JSON.parse(arrayMatch[0]);
         if (Array.isArray(parsed)) {
-          const tags = parsed
-            .filter(
-              (item: any) =>
-                typeof item.noteId === "string" &&
-                typeof item.actorId === "string" &&
-                typeof item.done === "boolean"
-            )
-            .map((item: any) => ({ ...item, tag: item.tag ?? "todo" }));
+          const tags = resolveTagNumbers(parsed, noteNumToId, memberNumToId);
           return { tags, unread: { default: defaultClassification, overrides: {} } };
         }
       } catch {
@@ -377,12 +402,10 @@ New note by ${context.noteAuthorName ?? "Unknown"} (${context.noteAuthorId}): ${
   try {
     const parsed = JSON.parse(jsonMatch[0]);
 
-    const tags = (Array.isArray(parsed.tags) ? parsed.tags : []).filter(
-      (item: any) =>
-        typeof item.noteId === "string" &&
-        typeof item.actorId === "string" &&
-        typeof item.done === "boolean" &&
-        (item.tag === "todo" || item.tag === "reply")
+    const tags = resolveTagNumbers(
+      Array.isArray(parsed.tags) ? parsed.tags : [],
+      noteNumToId,
+      memberNumToId
     );
 
     const validUrgencies = new Set([
@@ -397,9 +420,12 @@ New note by ${context.noteAuthorName ?? "Unknown"} (${context.noteAuthorId}): ${
     const overrides: Record<string, Partial<UnreadClassification>> = {};
     if (parsed.unread?.overrides && typeof parsed.unread.overrides === "object") {
       for (const [key, value] of Object.entries(parsed.unread.overrides)) {
+        // Resolve member number to real ID
+        const memberId = memberNumToId.get(Number(key));
+        if (!memberId) continue;
         const override = parseClassificationOverride(value, validUrgencies);
         if (override) {
-          overrides[key] = override;
+          overrides[memberId] = override;
         }
       }
     }
@@ -409,6 +435,29 @@ New note by ${context.noteAuthorName ?? "Unknown"} (${context.noteAuthorId}): ${
     console.error("[note-analysis] Failed to parse AI response:", text);
     return { tags: [], unread: { default: defaultClassification, overrides: {} } };
   }
+}
+
+/** Map sequential numbers from AI response back to real UUIDs, dropping invalid entries. */
+function resolveTagNumbers(
+  raw: any[],
+  noteNumToId: Map<number, string>,
+  memberNumToId: Map<number, string>
+): TagAction[] {
+  return raw
+    .filter(
+      (item: any) =>
+        typeof item.note === "number" &&
+        typeof item.member === "number" &&
+        typeof item.done === "boolean" &&
+        (item.tag === "todo" || item.tag === "reply")
+    )
+    .map((item: any) => ({
+      noteId: noteNumToId.get(item.note),
+      actorId: memberNumToId.get(item.member),
+      done: item.done,
+      tag: item.tag as "todo" | "reply",
+    }))
+    .filter((t): t is TagAction => t.noteId !== undefined && t.actorId !== undefined);
 }
 
 function parseClassification(
