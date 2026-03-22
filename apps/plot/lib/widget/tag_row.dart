@@ -25,6 +25,7 @@ class TagRow extends StatefulWidget {
     required this.commandBuilder,
     required this.showAllBuilder,
     this.selectedColor,
+    this.showMore = true,
     super.key,
   });
 
@@ -45,6 +46,9 @@ class TagRow extends StatefulWidget {
 
   /// Accent color for active tag buttons.
   final Color? selectedColor;
+
+  /// Whether to show the "..." more button.
+  final bool showMore;
 
   @override
   State<TagRow> createState() => _TagRowState();
@@ -145,14 +149,20 @@ class _TagRowState extends State<TagRow> {
       ));
     }
 
-    // "..." button always at the end
-    final moreButton = _TagButton(
-      icon: PlotIcon.more,
-      color: context.theme.colors.mutedForeground,
-      onTap: _onMoreTap,
-    );
+    // "..." button at the end (hidden when filtering)
+    final moreButton = widget.showMore
+        ? _TagButton(
+            icon: PlotIcon.more,
+            color: context.theme.colors.mutedForeground,
+            onTap: _onMoreTap,
+          )
+        : null;
 
-    final allButtons = [...activeButtons, ...suggestedButtons, moreButton];
+    final allButtons = [
+      ...activeButtons,
+      ...suggestedButtons,
+      if (moreButton != null) moreButton,
+    ];
 
     final spacing = context.theme.spacing;
 
@@ -177,13 +187,17 @@ class _TagRowState extends State<TagRow> {
           List<Widget> visibleButtons;
           if (allButtons.length <= maxButtons) {
             visibleButtons = allButtons;
-          } else if (maxButtons <= 1) {
-            visibleButtons = [moreButton];
+          } else if (moreButton != null) {
+            if (maxButtons <= 1) {
+              visibleButtons = [moreButton];
+            } else {
+              visibleButtons = [
+                ...allButtons.sublist(0, maxButtons - 1),
+                moreButton,
+              ];
+            }
           } else {
-            visibleButtons = [
-              ...allButtons.sublist(0, maxButtons - 1),
-              moreButton,
-            ];
+            visibleButtons = allButtons.sublist(0, maxButtons);
           }
 
           return Row(

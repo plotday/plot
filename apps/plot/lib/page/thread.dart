@@ -361,12 +361,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                   return KeyEventResult.ignored;
                 },
                 child: CommandScope(
-                  commands: [
-                    StaticCommandGroup(
-                      title: 'Thread: ${state.thread.displayTitle}',
-                      commands: threadCommands(state.thread),
-                    ),
-                  ],
+                  commands: threadCommandGroupsSync(state.thread),
                   child: Scaffold(
                     scrollable: false,
                     translucent: true,

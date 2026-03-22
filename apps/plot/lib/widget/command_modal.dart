@@ -51,7 +51,9 @@ class CommandModal {
               (cg) => SelectGroup<Command>(
                 title: cg.title,
                 items: cg.commands,
-                infoBuilder: cg.infoBuilder,
+                infoBuilder: cg.infoBuilder != null
+                    ? (context) => cg.infoBuilder!(context, search)
+                    : null,
                 hint: formatShortcut(cg.shortcut),
                 onActivate: cg.onActivate,
               ),

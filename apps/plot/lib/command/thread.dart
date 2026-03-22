@@ -1880,13 +1880,26 @@ List<StaticCommandGroup> threadCommandGroupsSync(
     StaticCommandGroup(
       title: null,
       commands: [],
-      infoBuilder: (context) => TagRow(
-        activeTags: activeTags,
-        suggestedTags: suggestedTags,
-        activeTagCounts: activeTagCounts,
-        commandBuilder: (tag) => ToggleThreadTag(thread, tag),
-        showAllBuilder: makeShowAll,
-      ),
+      infoBuilder: (context, search) {
+        final hasSearch = search != null && search.isNotEmpty;
+        final filteredActive = hasSearch
+            ? activeTags.where((t) => t.matchesSearch(search)).toList()
+            : activeTags;
+        final filteredSuggested = hasSearch
+            ? suggestedTags.where((t) => t.matchesSearch(search)).toList()
+            : suggestedTags;
+        if (hasSearch && filteredActive.isEmpty && filteredSuggested.isEmpty) {
+          return null;
+        }
+        return TagRow(
+          activeTags: filteredActive,
+          suggestedTags: filteredSuggested,
+          activeTagCounts: activeTagCounts,
+          commandBuilder: (tag) => ToggleThreadTag(thread, tag),
+          showAllBuilder: makeShowAll,
+          showMore: !hasSearch,
+        );
+      },
       onActivate: (ctx) => makeShowAll().run(ctx),
     ),
   ];

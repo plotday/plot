@@ -218,6 +218,13 @@ enum Tag {
     );
   }
 
+  bool matchesSearch(String search) {
+    final words = search.toLowerCase().trim().split(RegExp(r'\s+'));
+    return words.every((word) =>
+        name.toLowerCase().startsWith(word) ||
+        shortcodes.any((sc) => sc.startsWith(word)));
+  }
+
   @override
   String toString() => name;
 }

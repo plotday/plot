@@ -344,7 +344,7 @@ abstract class CommandGroup {
 
   final String? title;
   final String? subtitle; // count
-  final Widget Function(BuildContext)? infoBuilder;
+  final Widget? Function(BuildContext, String? search)? infoBuilder;
   final ShortcutActivator? shortcut;
 
   /// Called when an info-only group row is activated (Enter key or tap).

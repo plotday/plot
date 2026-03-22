@@ -26,7 +26,7 @@ class SelectGroup<T> {
   final List<T> items;
 
   /// Optional widget to display below the group header.
-  final Widget Function(BuildContext)? infoBuilder;
+  final Widget? Function(BuildContext)? infoBuilder;
 
   /// Optional hint shown on the right side (usally a keyboard shortcut).
   final String? hint;
@@ -746,6 +746,10 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         // Info-only group: render infoBuilder as a
                         // keyboard-navigable, highlightable row.
                         if (isInfoOnly) {
+                          final infoWidget = group.infoBuilder!(context);
+                          if (infoWidget == null) {
+                            return const SizedBox.shrink();
+                          }
                           final isHighlighted = index == _highlightedIndex;
                           return MouseRegion(
                             onEnter: (_) {
@@ -776,7 +780,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                       ? context.theme.colors.secondary
                                       : null,
                                 ),
-                                child: group.infoBuilder!(context),
+                                child: infoWidget,
                               ),
                             ),
                           );
@@ -841,7 +845,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
                           // Show group info if it has an infoBuilder
                           if (group.infoBuilder != null) {
-                            info = group.infoBuilder!(context);
+                            final infoResult = group.infoBuilder!(context);
+                            if (infoResult != null) info = infoResult;
                           }
                         }
 
