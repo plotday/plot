@@ -373,6 +373,9 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect (TestFlight)"
+            echo ""
+            echo "### Admin"
+            echo "- [TestFlight (iOS)](https://appstoreconnect.apple.com/teams/0a55108e-af39-475a-a7f1-aada0c1decae/apps/6756905242/testflight/ios)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-android:
@@ -546,6 +549,9 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** Google Play (internal testing)"
+            echo ""
+            echo "### Admin"
+            echo "- [Google Play Console (Open Testing)](https://play.google.com/console/u/0/developers/6311596685182865378/app/4972513621080206656/tracks/open-testing)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-macos:
@@ -815,6 +821,9 @@ jobs:
             echo ""
             echo "**Version:** ${{ needs.prepare-release.outputs.release_version }}"
             echo "**Uploaded to:** App Store Connect"
+            echo ""
+            echo "### Admin"
+            echo "- [TestFlight (macOS)](https://appstoreconnect.apple.com/teams/0a55108e-af39-475a-a7f1-aada0c1decae/apps/6756905242/testflight/macos)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-windows:
@@ -1169,4 +1178,7 @@ jobs:
             echo "- MSIX: https://download.plot.day/windows"
             echo "- Portable ZIP: https://download.plot.day/windows-portable"
             echo "- Manifest: https://download.plot.day/latest-windows.json"
+            echo ""
+            echo "### Admin"
+            echo "- [Microsoft Partner Center](https://partner.microsoft.com/en-us/dashboard/products/9PKTCSN8SNZF/submissions/1152921505700730849/packages)"
           } >> "$GITHUB_STEP_SUMMARY"
