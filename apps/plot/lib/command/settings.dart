@@ -115,8 +115,8 @@ StaticCommandGroup settingsCommands({
     if (gettingStartedCmd != null) gettingStartedCmd,
     ManageConnections(),
     ManageTwists(),
-    if (subscription != null && subscription.isFree) UpgradeToPro(),
-    if (subscription != null && !subscription.isFree) ManageSubscription(),
+    if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
+    if (subscription != null && subscription.hasPaidPlan) ManageSubscription(),
     if (hasOrganizations) ManageOrganizations(),
     CopyPageLink(), OpenCopiedPageLink(),
     ChangeAppearance(),
@@ -371,10 +371,10 @@ class ManageOrganizations extends Command {
   }
 }
 
-class UpgradeToPro extends Command {
-  UpgradeToPro()
+class UpgradePlan extends Command {
+  UpgradePlan()
     : super(
-        title: 'Upgrade to Pro',
+        title: 'Upgrade your plan',
         icon: FontAwesomeIcons.bolt,
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,

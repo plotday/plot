@@ -352,8 +352,8 @@ class ManageConnections extends Command {
       filteredAvailable = [
         _LimitBanner(
           'You\'re using ${usage.personal.connections.count} of '
-          '${usage.personal.connections.limit} free connections. '
-          'Upgrade to Pro for unlimited connections.',
+          '${usage.personal.connections.limit} included connections. '
+          'Upgrade for unlimited connections.',
         ),
         ...filteredAvailable,
       ];
@@ -1152,7 +1152,7 @@ class AddSourceDetail extends ShowForm {
               ? (e.isAdmin == true
                     ? 'Your organization has reached its connection limit. Upgrade your plan to add more.'
                     : 'Your organization has reached its connection limit. Contact an admin to upgrade.')
-              : 'You\'ve reached your free connection limit. Upgrade to Pro for unlimited connections.';
+              : 'You\'ve reached your connection limit. Upgrade for unlimited connections.';
           context.showToast(message: message, isError: true);
         } else {
           context.showToast(
@@ -1287,9 +1287,9 @@ class ManageTwists extends ShowCommands {
       if (usage != null && usage.personal.twists.isAtLimit)
         _UpgradeBannerCommand(
           'You\'re using ${usage.personal.twists.count} of '
-          '${usage.personal.twists.limit} free '
+          '${usage.personal.twists.limit} included '
           '${usage.personal.twists.limit == 1 ? 'twist' : 'twists'}. '
-          'Upgrade to Pro for unlimited twists.',
+          'Upgrade for unlimited twists.',
         ),
       ...addCommands,
     ];
@@ -1967,7 +1967,7 @@ class ActivateTwist extends Command {
               ? (e.isAdmin == true
                     ? 'Your organization has reached its twist limit. Upgrade your plan.'
                     : 'Your organization has reached its twist limit. Contact an admin to upgrade.')
-              : 'You\'ve reached your free twist limit. Upgrade to Pro for unlimited twists.',
+              : 'You\'ve reached your twist limit. Upgrade for unlimited twists.',
           isError: true,
         );
       }
@@ -2091,7 +2091,7 @@ class ShowAddIntegrationAccount extends ShowForm {
                 builder: (formContext) => Padding(
                   padding: formContext.theme.spacing.padding,
                   child: Text(
-                    'You\'re using all ${usage!.personal.connections.limit} of your free connections. Upgrade to Pro for unlimited connections.',
+                    'You\'re using all ${usage!.personal.connections.limit} of your included connections. Upgrade for unlimited connections.',
                   ),
                 ),
               ),
