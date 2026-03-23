@@ -80,12 +80,17 @@
 
 .pricingCardHighlight {
   composes: pricingCard;
-  border: 2px solid var(--mantine-color-brand-4);
+  border: 2px solid
+    light-dark(var(--mantine-color-brand-4), var(--mantine-color-brand-7));
   background-color: light-dark(
     var(--mantine-color-white),
     var(--mantine-color-dark-5)
   );
   position: relative;
+
+  & .bestFor {
+    color: light-dark(var(--mantine-color-brand-6), var(--mantine-color-brand-4));
+  }
 }
 
 .popularBadge {
