@@ -21,6 +21,8 @@ import {
 
 import { IconCheck } from "@tabler/icons-react";
 
+import { PLANS, PRICES } from "~/lib/plans";
+import type { Billing } from "~/lib/plans";
 import type { Route } from "./+types/upgrade";
 import classes from "./upgrade.module.css";
 
@@ -42,8 +44,6 @@ const FREEMAIL_DOMAINS = new Set([
   "msn.com",
 ]);
 
-type Billing = "monthly" | "annual";
-
 type SubscriptionInfo = {
   plan: string;
   status: string;
@@ -52,12 +52,6 @@ type SubscriptionInfo = {
   effective_source?: string;
   organization?: { id: string; name: string } | null;
 };
-
-const PRICES = {
-  core: { monthly: 15, annual: 12 },
-  pro: { monthly: 25, annual: 20 },
-  team: { monthly: 124, annual: 99 },
-} as const;
 
 const QUANTITY_OPTIONS = Array.from({ length: 40 }, (_, i) => ({
   value: String(i + 1),
@@ -228,7 +222,20 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
           : planParam === "core"
             ? "Plot Core"
             : "Plot";
-    const returnUrl = `/upgrade${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+    const clerkRedirect =
+      searchParams.get("sign_up_force_redirect_url") ||
+      searchParams.get("sign_in_force_redirect_url") ||
+      searchParams.get("sign_up_fallback_redirect_url") ||
+      searchParams.get("sign_in_fallback_redirect_url");
+    let returnUrl = `/upgrade${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+    if (clerkRedirect) {
+      try {
+        const url = new URL(clerkRedirect);
+        returnUrl = url.pathname + url.search;
+      } catch {
+        returnUrl = clerkRedirect;
+      }
+    }
 
     return (
       <Container size="sm" mt="xl" mb="xl">
@@ -237,7 +244,10 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
           <Text c="dimmed">
             Create an account to upgrade and start using {planLabel}.
           </Text>
-          <SignUp fallbackRedirectUrl={returnUrl} />
+          <SignUp
+            forceRedirectUrl={returnUrl}
+            signInForceRedirectUrl={returnUrl}
+          />
         </Stack>
       </Container>
     );
@@ -333,6 +343,9 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
 
   // No paid plan — show plan selection
   const preselectedPlan = searchParams.get("plan");
+  const corePlan = PLANS.find((p) => p.key === "core")!;
+  const proPlan = PLANS.find((p) => p.key === "pro")!;
+  const teamPlan = PLANS.find((p) => p.key === "team")!;
 
   return (
     <Container size="lg" mt="xl" mb="xl">
@@ -377,19 +390,12 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             }
             gap="md"
           >
-            <Text className={classes.planName}>Core</Text>
+            <Text className={classes.planName}>{corePlan.name}</Text>
             <Text className={classes.bestFor}>
-              For individuals connecting a handful of tools
+              {corePlan.bestFor}
             </Text>
             <Stack gap="xs" className={classes.featureList}>
-              {[
-                "Up to 5 connections",
-                "2 custom twists",
-                "Unlimited AI (usage may apply)",
-                "All core features for team collaboration",
-                "Unlimited collaborators",
-                "Full history of all your work",
-              ].map((f) => (
+              {corePlan.features.map((f) => (
                 <Box key={f} className={classes.featureItem}>
                   <IconCheck
                     size={16}
@@ -429,19 +435,12 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             }
             gap="md"
           >
-            <Text className={classes.planName}>Pro</Text>
+            <Text className={classes.planName}>{proPlan.name}</Text>
             <Text className={classes.bestFor}>
-              For individuals working across many tools
+              {proPlan.bestFor}
             </Text>
             <Stack gap="xs" className={classes.featureList}>
-              {[
-                "Unlimited connections",
-                "Unlimited twists (AI usage may apply)",
-                "All core features for team collaboration",
-                "Unlimited collaborators",
-                "Full history of all your work",
-                "Automated organization and prioritization",
-              ].map((f) => (
+              {proPlan.features.map((f) => (
                 <Box key={f} className={classes.featureItem}>
                   <IconCheck
                     size={16}
@@ -481,20 +480,12 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             }
             gap="md"
           >
-            <Text className={classes.planName}>Team</Text>
+            <Text className={classes.planName}>{teamPlan.name}</Text>
             <Text className={classes.bestFor}>
-              For ambitious teams who move fast together
+              {teamPlan.bestFor}
             </Text>
             <Stack gap="xs" className={classes.featureList}>
-              {[
-                "50+ connections shared across your org",
-                "Unlimited twists (AI usage may apply)",
-                "All core features for team collaboration",
-                "Unlimited team members",
-                "Full history of all your work",
-                "Automated organization and prioritization",
-                "Organization-level controls",
-              ].map((f) => (
+              {teamPlan.features.map((f) => (
                 <Box key={f} className={classes.featureItem}>
                   <IconCheck
                     size={16}
