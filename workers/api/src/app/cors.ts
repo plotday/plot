@@ -17,6 +17,7 @@ export const corsMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = (
   }
   return cors({
     origin: [
+      "http://localhost:5173",
       "http://localhost:8788",
       "https://preview.plot.day",
       "https://app.plot.day",

@@ -125,6 +125,7 @@ app.onError(async (err, c) => {
   // Set CORS headers for error responses to prevent CORS errors in browser
   const origin = c.req.header("Origin");
   const allowedOrigins = [
+    "http://localhost:5173",
     "http://localhost:8788",
     "https://preview.plot.day",
     "https://app.plot.day",
