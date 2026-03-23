@@ -63,7 +63,7 @@ async function summarize(ai: Ai, body: string) {
         content: body,
       },
     ];
-    const response = await ai.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
+    const response = await ai.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
       messages,
       max_tokens: 64,
     });

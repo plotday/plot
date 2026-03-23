@@ -120,7 +120,7 @@ export async function generateSummary(
     ];
 
     const response = await ai.run(
-      "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
       { messages, max_tokens: 128 }
     );
 
