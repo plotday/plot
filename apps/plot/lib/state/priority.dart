@@ -261,7 +261,27 @@ class PriorityBloc extends Cubit<PriorityState> {
           );
         })
         .toList();
-    emit(state.copyWith(agendaItems: updatedItems));
+
+    // Also update activity feed so the icon reflects the finished state
+    // immediately (the activity feed doesn't use removal animations).
+    final updatedFeedItems = finishTodo
+        ? state.activityFeedItems.map((item) {
+            return item.when(
+              header: (_) => item,
+              activity: (a) => a.thread.id == id
+                  ? AgendaThreadItem(
+                      a.thread.copyWith(todo: false),
+                      now: a.now,
+                    )
+                  : item,
+            );
+          }).toList()
+        : null;
+
+    emit(state.copyWith(
+      agendaItems: updatedItems,
+      activityFeedItems: updatedFeedItems,
+    ));
   }
 
   /// Optimistically update a thread in the agenda for instant UI feedback.
