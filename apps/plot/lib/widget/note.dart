@@ -460,9 +460,17 @@ class NoteCommands extends StatelessWidget {
         // Build command buttons (only if showCommands is true)
         final commandButtons = showCommands
             ? [
-                if (noTodoDone) Button.icon(SelfTaskAction(note)),
+                if (!selfTodo && !selfDone) Button.icon(SelfTaskAction(note)),
                 if (othersTodo.isEmpty && (noTodoDone || selfTodo || selfDone || totalDone > 0))
-                  Button.icon(assigneeCommand),
+                  Button.icon(
+                    !selfTodo && !selfDone && !noTodoDone
+                        ? CommandWrapper(
+                            PickNoteAssignee(note),
+                            title: 'Assign',
+                            icon: const Value(PlotIcon.assignAdd),
+                          )
+                        : assigneeCommand,
+                  ),
                 // Add top tag buttons
                 ...topNoteTags(
                   note,

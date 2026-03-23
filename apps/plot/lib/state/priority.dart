@@ -735,6 +735,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     emit(state.copyWith(draft: thread));
 
+    final noteChanged = note != null && note.id == state.draftNote.id && note != state.draftNote;
     if (note != null) {
       if (note.id == state.draftNote.id) {
         emit(state.copyWith(draftNote: note));
@@ -748,7 +749,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (threadChanged) {
       await thread.save();
     }
-    if (note != null && note != state.draftNote) {
+    if (note != null && noteChanged) {
       log.info(
         '[updateDraft] Saving note: id=${note.id}, threadId=${note.threadId}, content length=${note.content?.length ?? 0}',
       );

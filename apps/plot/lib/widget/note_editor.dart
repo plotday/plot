@@ -720,7 +720,7 @@ class NoteEditorState extends State<NoteEditor> {
                     },
                   ),
                 ],
-                if (!thread.priority.personal && !thread.priority.isViewer)
+                if (thread.priority.sharing && !thread.priority.isViewer)
                   Button.icon(
                     PickDraftNoteAssignee(
                       note: draftNote,
@@ -728,8 +728,7 @@ class NoteEditorState extends State<NoteEditor> {
                       onUpdate: (note) =>
                           widget.onDraftChanged!(thread, note: note),
                     ),
-                    selected: draftNote.assignees
-                        .any((a) => a != Base.actorId),
+                    selected: draftNote.assignees.isNotEmpty,
                   ),
                 Button.icon(
                   AttachFile(

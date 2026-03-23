@@ -826,9 +826,12 @@ class Store extends _$Store {
     _pushCompleters[entity] = completer;
 
     try {
-      // First fetch rows with pending changes and mark them as sync-in-progress
+      // First fetch rows with pending changes and mark them as sync-in-progress.
+      // Exclude draft rows and rows belonging to draft threads — they shouldn't
+      // be pushed until published.
+      final draftFilter = _buildDraftFilter(table);
       final List<QueryRow> pendingRows = await customWriteReturning(
-        'UPDATE ${table.actualTableName} SET pending = pending | 1 WHERE pending IS NOT NULL RETURNING *',
+        'UPDATE ${table.actualTableName} SET pending = pending | 1 WHERE pending IS NOT NULL$draftFilter RETURNING *',
         updates: {table},
       );
 
@@ -936,6 +939,37 @@ class Store extends _$Store {
     } finally {
       _pushCompleters.remove(entity);
     }
+  }
+
+  /// Returns a SQL WHERE clause fragment to exclude draft-related rows from push.
+  ///
+  /// - Tables with a `draft` column: exclude rows where draft = true
+  /// - Tables with a `thread_id` column: exclude rows whose thread is draft
+  /// - Tag tables (note_tags, thread_tags): exclude rows whose parent is draft
+  static String _buildDraftFilter(TableInfo<Table, DataClass> table) {
+    final columns = table.$columns;
+    final name = table.actualTableName;
+
+    // Tables with their own draft column (threads, notes)
+    if (columns.any((c) => c.$name == 'draft')) {
+      return ' AND draft = 0';
+    }
+
+    // Tables with thread_id FK (schedules, links, etc.)
+    if (columns.any((c) => c.$name == 'thread_id')) {
+      return ' AND (thread_id IS NULL OR thread_id NOT IN'
+          ' (SELECT id FROM threads WHERE draft = 1))';
+    }
+
+    // Tag tables that share id with their parent
+    if (name == 'note_tags') {
+      return ' AND id NOT IN (SELECT id FROM notes WHERE draft = 1)';
+    }
+    if (name == 'thread_tags') {
+      return ' AND id NOT IN (SELECT id FROM threads WHERE draft = 1)';
+    }
+
+    return '';
   }
 
   /// Pulls data from the remote database and syncs it to the local store.

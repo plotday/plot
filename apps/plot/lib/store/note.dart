@@ -592,35 +592,39 @@ class Note extends Equatable implements Comparable<Note> {
       await Store.get.add(Store.get.noteTags, _tags.toCompanion(false));
     }
 
-    // Note todo → thread todo propagation:
-    // When Tag.todo is added to a note for the current user, ensure a per-user
-    // schedule exists on the thread (makes the thread appear on the user's todo list).
-    if (hasTag(Tag.todo, Base.actorId)) {
-      await _ensureTodoForUser(threadId, Base.userId);
-    }
-
-    // Recompute outstandingTasks on the per-user schedule when todo/done tags change
-    if (_tags?.tagsUpdated != null) {
-      final todoId = Tag.todo.id.toString();
-      final doneId = Tag.done.id.toString();
-      final hasTodoChange = _tags!.tagsUpdated!.keys.any(
-        (k) => k == todoId || k.startsWith('$todoId:') ||
-               k == doneId || k.startsWith('$doneId:'),
-      );
-      if (hasTodoChange) {
-        await _recomputeOutstandingTasks(threadId, Base.userId);
+    // Skip thread-level side effects for draft notes — these will run when
+    // the note is published (draft → non-draft).
+    if (!draft) {
+      // Note todo → thread todo propagation:
+      // When Tag.todo is added to a note for the current user, ensure a per-user
+      // schedule exists on the thread (makes the thread appear on the user's todo list).
+      if (hasTag(Tag.todo, Base.actorId)) {
+        await _ensureTodoForUser(threadId, Base.userId);
       }
-    }
 
-    // Reply tag propagation: note → thread
-    if (!skipReplyPropagation) {
-      final replyUpdated = _tags?.tagsUpdated?[Tag.reply.id.toString()];
-      if (replyUpdated == true) {
-        // Reply added to note → ensure reply exists on thread
-        await _ensureReplyOnThread(threadId);
-      } else if (replyUpdated == false) {
-        // Reply removed from note → remove from thread if no other notes have it
-        await _removeReplyFromThreadIfNoneLeft(threadId);
+      // Recompute outstandingTasks on the per-user schedule when todo/done tags change
+      if (_tags?.tagsUpdated != null) {
+        final todoId = Tag.todo.id.toString();
+        final doneId = Tag.done.id.toString();
+        final hasTodoChange = _tags!.tagsUpdated!.keys.any(
+          (k) => k == todoId || k.startsWith('$todoId:') ||
+                 k == doneId || k.startsWith('$doneId:'),
+        );
+        if (hasTodoChange) {
+          await _recomputeOutstandingTasks(threadId, Base.userId);
+        }
+      }
+
+      // Reply tag propagation: note → thread
+      if (!skipReplyPropagation) {
+        final replyUpdated = _tags?.tagsUpdated?[Tag.reply.id.toString()];
+        if (replyUpdated == true) {
+          // Reply added to note → ensure reply exists on thread
+          await _ensureReplyOnThread(threadId);
+        } else if (replyUpdated == false) {
+          // Reply removed from note → remove from thread if no other notes have it
+          await _removeReplyFromThreadIfNoneLeft(threadId);
+        }
       }
     }
 
