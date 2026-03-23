@@ -571,16 +571,32 @@ BEGIN
             _actual_path := NULL;
         ELSIF NOT _old_is_personal
                 AND _new_is_personal THEN
-                -- Type 4: Actual move from shared tree into personal tree
-                -- (was Type 2: visual alias; now corrected to a real path move)
-                PERFORM
-                    notify_displaced_priority_users (_input.id, _old_actual_path, _parent_actual_path);
-                PERFORM
-                    move_priority (_input.id, _parent_actual_path);
-                _actual_path := NULL;
-                -- Clear any existing visual alias now that priority is in the personal tree
-                DELETE FROM priority_setting
-                WHERE user_id = upsert_priority.user_id AND priority_id = _input.id AND key = 'path';
+                -- Type 4: Move from shared tree into personal tree
+                -- If shared with other users, do a visual-only move to avoid
+                -- the priority appearing as personal (path under personal root)
+                IF EXISTS (
+                    SELECT 1 FROM priority_user
+                    WHERE priority_id = _input.id
+                    AND user_id != upsert_priority.user_id
+                    AND archived_at IS NULL
+                ) THEN
+                    -- Shared priority: visual-only move (alias under personal tree)
+                    INSERT INTO priority_setting (user_id, priority_id, key, value)
+                    VALUES (upsert_priority.user_id, _input.id, 'path', to_jsonb(text(_input.path)))
+                    ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+                    _is_visual_move := TRUE;
+                    _actual_path := NULL;
+                ELSE
+                    -- Unshared priority: actual move into personal tree
+                    PERFORM
+                        notify_displaced_priority_users (_input.id, _old_actual_path, _parent_actual_path);
+                    PERFORM
+                        move_priority (_input.id, _parent_actual_path);
+                    _actual_path := NULL;
+                    -- Clear any existing visual alias now that priority is in the personal tree
+                    DELETE FROM priority_setting
+                    WHERE user_id = upsert_priority.user_id AND priority_id = _input.id AND key = 'path';
+                END IF;
         ELSIF _old_is_personal
                 AND NOT _new_is_personal THEN
                 RAISE EXCEPTION 'Cannot move personal priority into shared tree'

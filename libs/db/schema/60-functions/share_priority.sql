@@ -89,7 +89,8 @@ BEGIN
             VALUES (p_user_id, p_priority_id, FALSE)
         ON CONFLICT (user_id, priority_id)
             DO UPDATE SET
-                archived_at = NULL;
+                archived_at = NULL,
+                personal = FALSE;
         v_extracted := TRUE;
     END IF;
     -- Ensure the sharer's own contact is in priority_contact
