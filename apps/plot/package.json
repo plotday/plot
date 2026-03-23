@@ -19,6 +19,7 @@
     "build:windows": "flutter build windows --release",
     "build:android": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build appbundle --release; pnpm set-env dev",
     "build:android:apk": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build apk --release; pnpm set-env dev",
+    "build:android:apk:debug": "flutter pub run build_runner build --delete-conflicting-outputs && flutter build apk --debug",
     "build:ios": "pnpm set-env prod && flutter pub run build_runner build --delete-conflicting-outputs && flutter build ios --release; pnpm set-env dev",
     "build:web": "flutter build web --release"
   }

@@ -36,6 +36,14 @@ class NotificationDisplay {
   /// Receives the notification payload (target_priority_id).
   void Function(String? payload)? onNotificationTap;
 
+  /// Check if the app was launched by tapping a local notification (cold start).
+  /// Returns the payload (target_priority_id) or null if not launched from a notification.
+  Future<String?> getLaunchNotification() async {
+    final details = await _plugin.getNotificationAppLaunchDetails();
+    if (details == null || !details.didNotificationLaunchApp) return null;
+    return details.notificationResponse?.payload;
+  }
+
   /// Initialize timezone data for scheduling. Safe to call from background
   /// isolates — timezone data is embedded in the package, no I/O needed.
   static Future<void> initializeTimezone() async {
@@ -123,6 +131,48 @@ class NotificationDisplay {
     final payload = response.payload;
     log.info('Notification tapped with payload: $payload');
     onNotificationTap?.call(payload);
+  }
+
+  /// Request POST_NOTIFICATIONS permission on Android 13+.
+  /// Returns true if permission was granted.
+  Future<bool> requestAndroidPermission() async {
+    if (!Platform.isAndroid) return false;
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return false;
+    final granted = await android.requestNotificationsPermission();
+    return granted ?? false;
+  }
+
+  /// Request notification permission on macOS explicitly.
+  /// Returns true if permission was granted.
+  Future<bool> requestMacOSPermission() async {
+    if (!Platform.isMacOS) return false;
+    final macOS = _plugin.resolvePlatformSpecificImplementation<
+        MacOSFlutterLocalNotificationsPlugin>();
+    if (macOS == null) return false;
+    final granted = await macOS.requestPermissions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    return granted ?? false;
+  }
+
+  /// Query the current macOS notification settings from the OS.
+  Future<Map<String, String>?> getNotificationSettings() async {
+    if (!Platform.isMacOS) return null;
+    final macOS = _plugin.resolvePlatformSpecificImplementation<
+        MacOSFlutterLocalNotificationsPlugin>();
+    if (macOS == null) return null;
+    final result = await macOS.checkPermissions();
+    if (result == null) return null;
+    return {
+      'enabled': '${result.isEnabled}',
+      'alert': '${result.isAlertEnabled}',
+      'badge': '${result.isBadgeEnabled}',
+      'sound': '${result.isSoundEnabled}',
+    };
   }
 
   /// Show a notification for a batch of updates.

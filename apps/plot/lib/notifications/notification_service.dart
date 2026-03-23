@@ -69,7 +69,25 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
   Timer? _quietHoursRetryTimer;
 
   /// Callback for navigating to a priority when a notification is tapped.
-  void Function(String priorityId)? onNavigateToPriority;
+  /// Setting this replays any buffered payload from a cold-start notification.
+  void Function(String priorityId)? _onNavigateToPriority;
+
+  /// Pending payload from a notification tap that arrived before the router
+  /// was ready (cold start). Replayed when [onNavigateToPriority] is set.
+  String? _pendingNavigationPayload;
+
+  set onNavigateToPriority(void Function(String priorityId)? callback) {
+    _onNavigateToPriority = callback;
+    if (callback != null && _pendingNavigationPayload != null) {
+      final payload = _pendingNavigationPayload!;
+      _pendingNavigationPayload = null;
+      log.info('Replaying buffered notification payload: $payload');
+      callback(payload);
+    }
+  }
+
+  void Function(String priorityId)? get onNavigateToPriority =>
+      _onNavigateToPriority;
 
   /// Whether push notifications are supported on this platform.
   static bool get isSupported =>
@@ -85,8 +103,8 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
   /// Whether notifications are active. On mobile, this means the FCM token
   /// is registered. On desktop, this is true once the notification display
-  /// is initialized (no token registration needed).
-  bool get isTokenRegistered => _isDesktop ? _started : _tokenRegistered;
+  /// is initialized and permission has been granted.
+  bool get isTokenRegistered => _isDesktop ? _started && !_permissionDenied : _tokenRegistered;
 
   /// Initialize notifications. On mobile, sets up Firebase Messaging and
   /// registers the device token. On desktop, listens for WebSocket sync
@@ -97,10 +115,20 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     _started = true;
     _userName = userName;
 
-    // Initialize local notification display
+    // Initialize local notification display.
+    // Set onNotificationTap BEFORE initialize() so foreground taps work.
     try {
-      await NotificationDisplay.instance.initialize();
       NotificationDisplay.instance.onNotificationTap = _handlePayloadTap;
+      await NotificationDisplay.instance.initialize();
+
+      // Check if the app was launched by tapping a local notification (cold start).
+      // The plugin doesn't fire onNotificationTap for this case — it stores the
+      // launch details for explicit retrieval.
+      final launchDetails = await NotificationDisplay.instance.getLaunchNotification();
+      if (launchDetails != null) {
+        log.info('App launched from notification tap: $launchDetails');
+        _handlePayloadTap(launchDetails);
+      }
     } catch (e) {
       log.warning('Failed to initialize notification display', e);
     }
@@ -162,6 +190,14 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       _windowFocused = await windowManager.isFocused();
     } catch (_) {
       _windowFocused = true;
+    }
+
+    // Check macOS notification permission on startup
+    if (Platform.isMacOS) {
+      final settings = await NotificationDisplay.instance.getNotificationSettings();
+      final isEnabled = settings?['enabled'] == 'true';
+      _permissionDenied = !isEnabled;
+      log.info('macOS notification permission: enabled=$isEnabled');
     }
 
     // Listen for sync completions from the WebSocket broadcast
@@ -392,10 +428,27 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
     if (!isSupported) return NotificationPermissionResult.unsupported;
 
     if (_isDesktop) {
-      // Desktop: re-initialize the notification display which will
-      // re-request permission on macOS. Windows doesn't need permission.
       try {
         await NotificationDisplay.instance.initialize();
+        if (Platform.isMacOS) {
+          // Check current permission state
+          final settings = await NotificationDisplay.instance.getNotificationSettings();
+          final isEnabled = settings?['enabled'] == 'true';
+          if (isEnabled) {
+            _permissionDenied = false;
+            return NotificationPermissionResult.granted;
+          }
+          // Try requesting — this only works if status is notDetermined
+          final granted = await NotificationDisplay.instance.requestMacOSPermission();
+          if (granted) {
+            _permissionDenied = false;
+            return NotificationPermissionResult.granted;
+          }
+          // macOS won't re-prompt — user must go to System Settings
+          _permissionDenied = true;
+          return NotificationPermissionResult.deniedPermanently;
+        }
+        // Windows doesn't need permission
         _permissionDenied = false;
         return NotificationPermissionResult.granted;
       } catch (e) {
@@ -925,7 +978,13 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       windowManager.focus();
     }
     if (payload != null && payload.isNotEmpty) {
-      onNavigateToPriority?.call(payload);
+      if (_onNavigateToPriority != null) {
+        _onNavigateToPriority!(payload);
+      } else {
+        // Router not ready yet (cold start) — buffer for replay
+        log.info('Buffering notification payload for replay: $payload');
+        _pendingNavigationPayload = payload;
+      }
     }
   }
 }

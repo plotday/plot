@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:plot/util/developer_mode.dart';
@@ -613,6 +615,10 @@ class EnableNotifications extends Command {
   }
 
   CommandReturn _openSystemSettings() {
+    if (Platform.isMacOS) {
+      // Open macOS System Settings → Notifications for this app
+      launchUrl(Uri.parse('x-apple.systempreferences:com.apple.Notifications-Settings'));
+    }
     return CommandMessage(
       'Please enable notifications in your device settings, then return to Plot.',
     );

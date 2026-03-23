@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +14,7 @@ import 'package:plot/api/api.dart' as api;
 import 'package:plot/app_info.dart';
 import 'package:plot/notifications/notification_display.dart';
 import 'package:plot/notifications/notification_service.dart';
+import 'package:plot/state/now.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/developer_mode.dart';
@@ -31,6 +33,7 @@ StaticCommandGroup? buildDebugCommands() {
       if (Time.isFrozen()) UnfreezeTime(),
       TriggerTestPush(),
       ShowTestNotification(),
+      TestNotificationNavigation(),
       DiagnosePushNotifications(),
     ],
   );
@@ -115,6 +118,51 @@ class ShowTestNotification extends Command {
         },
       ]);
       return CommandMessage('Notification shown');
+    } catch (e) {
+      return CommandMessage('Failed: $e', isError: true);
+    }
+  }
+}
+
+/// Shows a macOS notification that, when clicked, triggers the same navigation
+/// path as a mobile push notification tap. Use to debug notification→activity
+/// navigation on desktop.
+class TestNotificationNavigation extends Command {
+  TestNotificationNavigation()
+    : super(
+        title: 'Test notification navigation',
+        subtitle: 'Show a notification that navigates to activity on click',
+        icon: FontAwesomeIcons.arrowUpRightFromSquare,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.clicked,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final nowBloc = context.read<NowBloc>();
+      if (nowBloc.loading) {
+        return CommandMessage('NowBloc not loaded yet', isError: true);
+      }
+      final priorityId = nowBloc.loadedState.defaultPriority.id.toString();
+
+      await NotificationDisplay.instance.initialize();
+
+      if (Platform.isMacOS) {
+        await NotificationDisplay.instance.requestMacOSPermission();
+      }
+      if (Platform.isAndroid) {
+        await NotificationDisplay.instance.requestAndroidPermission();
+      }
+
+      await NotificationDisplay.instance.showBatchNotification(
+        id: 99999,
+        title: 'Debug: tap to navigate',
+        body: 'Should open activity tab for current priority',
+        targetPriorityId: priorityId,
+        urgency: 'interrupt',
+      );
+      return CommandMessage('Notification shown — tap it to test navigation');
     } catch (e) {
       return CommandMessage('Failed: $e', isError: true);
     }

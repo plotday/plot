@@ -46,6 +46,7 @@ class RootProviderState extends State<RootProvider> {
   StreamSubscription<void>? _reAuthSubscription;
   bool _hasNavigatedToCliUrl = false;
   bool _routerInitialized = false;
+  String? _pendingNotificationPriorityId;
 
   @override
   void initState() {
@@ -142,11 +143,12 @@ class RootProviderState extends State<RootProvider> {
                 _setupNowBlocListener(themeBloc);
                 unawaited(NotificationService.instance.start(userId: state.user.id, userName: state.user.name));
                 NotificationService.instance.onNavigateToPriority = (priorityId) {
-                  if (!_routerInitialized) return;
-                  final shortId = Uuid.fromString(priorityId).toShortString();
-                  router.replaceAll([
-                    PriorityRoute(priorityIdString: shortId, tab: 'activity'),
-                  ]);
+                  if (!_routerInitialized) {
+                    // Buffer for replay once router is ready (cold start)
+                    _pendingNotificationPriorityId = priorityId;
+                    return;
+                  }
+                  _navigateToNotificationPriority(priorityId);
                 };
                 if (context.mounted) _setupReAuthListener(context);
 
@@ -248,7 +250,18 @@ class RootProviderState extends State<RootProvider> {
                       nowState is NowLoading) {
                     return const LoadingPage();
                   }
-                  _routerInitialized = true;
+                  if (!_routerInitialized) {
+                    _routerInitialized = true;
+                    // Replay buffered notification navigation (cold start)
+                    if (_pendingNotificationPriorityId != null) {
+                      final id = _pendingNotificationPriorityId!;
+                      _pendingNotificationPriorityId = null;
+                      // Schedule after this build frame completes
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        _navigateToNotificationPriority(id);
+                      });
+                    }
+                  }
                   return widget.builder(routerConfig);
                 },
               );
@@ -257,5 +270,12 @@ class RootProviderState extends State<RootProvider> {
         ),
       ),
     );
+  }
+
+  void _navigateToNotificationPriority(String priorityId) {
+    final shortId = Uuid.fromString(priorityId).toShortString();
+    router.replaceAll([
+      PriorityRoute(priorityIdString: shortId, tab: 'activity'),
+    ]);
   }
 }

@@ -1,3 +1,5 @@
+- Fixed tapping a notification opening the Agenda instead of the Activity tab when the app was closed (Android and iOS)
+- Desktop apps now show notifications and prompt to enable them if permission was denied
 - New Core plan — connect up to 5 tools and use 2 custom twists for $12/month (annual). A new option between Free and Pro for people who need a few more connections.
 - Free plan now includes 2 connections (previously 3)
 - No-code Twist builder is now available on Pro and Team plans
