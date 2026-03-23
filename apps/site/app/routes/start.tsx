@@ -34,9 +34,8 @@ const PLATFORMS: PlatformInfo[] = [
     key: "windows",
     label: "Windows",
     icon: IconBrandWindows,
-    available: false,
-    href: "",
-    note: "Coming soon",
+    available: true,
+    href: "https://apps.microsoft.com/detail/9PKTCSN8SNZF",
   },
   {
     key: "ios",
