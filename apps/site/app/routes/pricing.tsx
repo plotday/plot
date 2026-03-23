@@ -34,15 +34,13 @@ const PLANS = [
     price: () => "$0",
     priceNote: "Free forever",
     period: "",
-    description:
-      "Up to 2 connections. Make progress with unlimited collaborators.",
+    description: "Make progress with unlimited collaborators.",
     features: [
       "Up to 2 connections",
-      "1 Twist (automations and agents)",
-      "AI-powered search, auto-tagging, and summaries (limited)",
-      "All core features for team collaboration",
+      "1 Twist (automation or agent)",
+      "Automated organization and prioritization (limitations apply)",
       "Unlimited collaborators",
-      "Full history of all your work",
+      "Full search and history of all your work",
     ],
     cta: "Get started",
     ctaLink: () => "/start",
@@ -58,14 +56,13 @@ const PLANS = [
     price: (billing: Billing) => `$${PRICES.core[billing]}`,
     priceNote: null,
     period: "/mo",
-    description: "Up to 5 connections and 2 Twists.",
+    description: "Increase your connections and automations.",
     features: [
       "Up to 5 connections",
       "2 Twists (automations and agents)",
-      "Unlimited AI-powered search, auto-tagging, and summaries",
-      "All core features for team collaboration",
+      "Automated organization and prioritization (expanded limits)",
       "Unlimited collaborators",
-      "Full history of all your work",
+      "Full search and history of all your work",
     ],
     cta: "Get started",
     ctaLink: (billing: Billing) => `/upgrade?plan=core&billing=${billing}`,
@@ -81,16 +78,15 @@ const PLANS = [
     price: (billing: Billing) => `$${PRICES.pro[billing]}`,
     priceNote: null,
     period: "/mo",
-    description: "Unlimited connections. Bring all your tools into one place.",
+    description:
+      "Unlimited connections and automations. Bring all your tools into one place.",
     features: [
       "Unlimited connections",
       "Unlimited Twists (optional AI usage extra)",
       "No-code Twist builder",
-      "Unlimited AI-powered search, auto-tagging, and summaries",
-      "All core features for team collaboration",
+      "Automated organization and prioritization (unlimited)",
       "Unlimited collaborators",
-      "Full history of all your work",
-      "Automated organization and prioritization",
+      "Full search and history of all your work",
     ],
     cta: "Get started",
     ctaLink: (billing: Billing) => `/upgrade?plan=pro&billing=${billing}`,
@@ -107,21 +103,18 @@ const PLANS = [
     priceNote: null,
     period: "/mo",
     description:
-      "Pool connections across your organization to flex with how you work.",
+      "Provide your teams with the connections and automations to do their best work.",
     features: [
       "50+ connections shared across your org",
       "Unlimited Twists (optional AI usage extra)",
       "No-code Twist builder",
-      "Unlimited AI-powered search, auto-tagging, and summaries",
-      "All core features for team collaboration",
+      "Automated organization and prioritization (unlimited)",
       "Unlimited team members",
-      "Full history of all your work",
-      "Automated organization and prioritization",
+      "Full search and history of all your work",
       "Organization-level controls",
     ],
     cta: "Get started",
-    ctaLink: (billing: Billing) =>
-      `/upgrade?plan=team&billing=${billing}`,
+    ctaLink: (billing: Billing) => `/upgrade?plan=team&billing=${billing}`,
     ctaVariant: "filled" as const,
     highlight: false,
     badge: null,
@@ -148,7 +141,7 @@ const FAQS = [
   {
     question: "Can I try Plot before committing to a paid plan?",
     answer:
-      "Yes. Start with the Free plan — it includes unlimited collaborators and full history, so you (or your team) can experience Plot together. When you're ready for more connections or twists, upgrade anytime.",
+      "Yes. Start with the Free plan — it includes unlimited collaborators and full search and history, so you (or your team) can experience Plot together. When you're ready for more connections or twists, upgrade anytime.",
   },
   {
     question: "What's a twist?",
@@ -229,9 +222,17 @@ export default function Pricing() {
       <Box className={classes.heroSection} pb={40}>
         <Container size="lg">
           <Stack align="center" gap="xs">
-            <Box style={{ display: "inline-grid", gridTemplateColumns: "1fr 1fr" }}>
+            <Box
+              style={{ display: "inline-grid", gridTemplateColumns: "1fr 1fr" }}
+            >
               <Box />
-              <Box style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+              <Box
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  marginBottom: 6,
+                }}
+              >
                 <Badge variant="filled" color="green" size="sm">
                   Save 20%
                 </Badge>
@@ -292,9 +293,7 @@ export default function Pricing() {
                         : plan.price}
                     </Text>
                     {plan.period && (
-                      <Text className={classes.pricePeriod}>
-                        {plan.period}
-                      </Text>
+                      <Text className={classes.pricePeriod}>{plan.period}</Text>
                     )}
                   </Box>
                   {plan.unit && (
@@ -398,8 +397,8 @@ export default function Pricing() {
               </Box>
             </Box>
             <Text className={classes.sectionBody}>
-              An 80-person team uses around 500 connections — everyone
-              connects their core tools, plus specialized ones for each team.
+              An 80-person team uses around 500 connections — everyone connects
+              their core tools, plus specialized ones for each team.
             </Text>
           </Stack>
         </Container>
