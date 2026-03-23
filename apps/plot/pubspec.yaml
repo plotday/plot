@@ -225,7 +225,7 @@ flutter_launcher_icons:
     generate: true
 
 msix_config:
-  display_name: Plot: Prioritized Progress
+  display_name: "Plot: Prioritized Progress"
   publisher_display_name: Plot Technologies Inc.
   identity_name: PlotTechnologiesInc.Plot-TractiononPriorities
   msix_version: 1.1.6+324
