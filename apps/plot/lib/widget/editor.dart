@@ -255,6 +255,13 @@ class EditorState extends State<Editor> {
   final Debouncer _debouncer = Debouncer();
   bool _isEmpty = true;
 
+  // Snapshot-based undo/redo (SuperEditor's replay-based undo is broken)
+  final List<String> _undoStack = [];
+  final List<String> _redoStack = [];
+  String? _lastSnapshot;
+  bool _isRestoringSnapshot = false;
+  static const _maxUndoHistory = 100;
+
   // User mention functionality
   late EditorMentionDetector _mentionDetector;
   late final LeaderLink _mentionLeaderLink;
@@ -303,6 +310,9 @@ class EditorState extends State<Editor> {
   void clear() {
     setState(() {
       _editor.execute([ClearDocumentRequest()]);
+      _undoStack.clear();
+      _redoStack.clear();
+      _lastSnapshot = _serializeWithMentions(_document);
     });
   }
 
@@ -344,6 +354,10 @@ class EditorState extends State<Editor> {
 
       // Update isEmpty state
       _isEmpty = serializeDocumentToMarkdown(_document).isEmpty;
+
+      _undoStack.clear();
+      _redoStack.clear();
+      _lastSnapshot = _serializeWithMentions(_document);
     });
   }
 
@@ -446,12 +460,32 @@ class EditorState extends State<Editor> {
   }
 
   void _onDocumentChange(List<EditEvent> changeList) {
+    // Capture undo snapshot: push the previous state onto the undo stack
+    // when a real edit occurs (skip if we're restoring from a snapshot).
+    if (!_isRestoringSnapshot && _lastSnapshot != null) {
+      final hasContentChange = changeList.any(
+        (e) => e is DocumentEdit,
+      );
+      if (hasContentChange) {
+        _undoStack.add(_lastSnapshot!);
+        if (_undoStack.length > _maxUndoHistory) {
+          _undoStack.removeAt(0);
+        }
+        _redoStack.clear();
+      }
+    }
+
     final isEmpty = serializeDocumentToMarkdown(_document).isEmpty;
     setState(() {
       _isEmpty = isEmpty;
     });
     // Notify parent immediately for instant UI updates
     widget.onIsEmptyChanged?.call(isEmpty);
+
+    // Update snapshot to current state
+    if (!_isRestoringSnapshot) {
+      _lastSnapshot = _serializeWithMentions(_document);
+    }
   }
 
   late final _documentChangeListener = FunctionalEditListener(
@@ -476,9 +510,9 @@ class EditorState extends State<Editor> {
     _editor = createDefaultDocumentEditor(
       document: _document,
       composer: _composer,
-      isHistoryEnabled: true,
     );
     _editor.addListener(_documentChangeListener);
+    _lastSnapshot = _serializeWithMentions(_document);
     _scrollController = ScrollController();
 
     // Initialize user mention detector
@@ -664,7 +698,10 @@ class EditorState extends State<Editor> {
                   _handleBackspaceOverMention,
                   _handleCmdKForLink,
                   _handleSmartPaste,
+                  _handleUndoKeyPress,
+                  _handleRedoKeyPress,
                   // Use IME keyboard actions on mobile, regular keyboard actions on desktop
+                  // (SuperEditor's built-in undo/redo are superseded by our handlers above)
                   ...(_inputSource == TextInputSource.ime
                       ? defaultImeKeyboardActions
                       : defaultKeyboardActions),
@@ -820,6 +857,77 @@ class EditorState extends State<Editor> {
   void performSelectAll() {
     _commonOps.selectAll();
     _editorFocusNode.requestFocus();
+  }
+
+  void performUndo() {
+    if (_undoStack.isEmpty) return;
+    final currentMd = _serializeWithMentions(_document);
+    _redoStack.add(currentMd);
+    final previousMd = _undoStack.removeLast();
+    _restoreFromSnapshot(previousMd);
+    _editorFocusNode.requestFocus();
+  }
+
+  void performRedo() {
+    if (_redoStack.isEmpty) return;
+    final currentMd = _serializeWithMentions(_document);
+    _undoStack.add(currentMd);
+    final nextMd = _redoStack.removeLast();
+    _restoreFromSnapshot(nextMd);
+    _editorFocusNode.requestFocus();
+  }
+
+  /// Restore the document from a markdown snapshot.
+  void _restoreFromSnapshot(String markdown) {
+    _isRestoringSnapshot = true;
+    final newDocument = _deserializeMarkdownWithMentions(markdown);
+
+    final requests = <EditRequest>[
+      const ChangeSelectionRequest(
+        null,
+        SelectionChangeType.clearSelection,
+        SelectionReason.contentChange,
+      ),
+    ];
+
+    // Delete all existing nodes
+    for (int i = _document.nodeCount - 1; i >= 0; i--) {
+      final node = _document.getNodeAt(i);
+      if (node != null) {
+        requests.add(DeleteNodeRequest(nodeId: node.id));
+      }
+    }
+
+    // Insert all nodes from the snapshot document
+    int index = 0;
+    for (final node in newDocument.toList()) {
+      requests.add(InsertNodeAtIndexRequest(
+        nodeIndex: index++,
+        newNode: node,
+      ));
+    }
+
+    _editor.execute(requests);
+
+    // Place caret at end of document
+    final lastNode = _document.getNodeAt(_document.nodeCount - 1);
+    if (lastNode is TextNode) {
+      _editor.execute([
+        ChangeSelectionRequest(
+          DocumentSelection.collapsed(
+            position: DocumentPosition(
+              nodeId: lastNode.id,
+              nodePosition: TextNodePosition(offset: lastNode.text.length),
+            ),
+          ),
+          SelectionChangeType.placeCaret,
+          SelectionReason.contentChange,
+        ),
+      ]);
+    }
+
+    _lastSnapshot = markdown;
+    _isRestoringSnapshot = false;
   }
 
   /// Builds a leader overlay at the caret position for the mention popover to follow
@@ -1198,6 +1306,40 @@ class EditorState extends State<Editor> {
     return ExecutionInstruction.continueExecution;
   }
 
+  /// Keyboard action: Undo via Cmd+Z / Ctrl+Z using markdown snapshots.
+  ExecutionInstruction _handleUndoKeyPress({
+    required SuperEditorContext editContext,
+    required KeyEvent keyEvent,
+  }) {
+    if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+      return ExecutionInstruction.continueExecution;
+    }
+    if (keyEvent.logicalKey != LogicalKeyboardKey.keyZ ||
+        !keyEvent.isPrimaryShortcutKeyPressed ||
+        HardwareKeyboard.instance.isShiftPressed) {
+      return ExecutionInstruction.continueExecution;
+    }
+    performUndo();
+    return ExecutionInstruction.haltExecution;
+  }
+
+  /// Keyboard action: Redo via Cmd+Shift+Z / Ctrl+Shift+Z using markdown snapshots.
+  ExecutionInstruction _handleRedoKeyPress({
+    required SuperEditorContext editContext,
+    required KeyEvent keyEvent,
+  }) {
+    if (keyEvent is! KeyDownEvent && keyEvent is! KeyRepeatEvent) {
+      return ExecutionInstruction.continueExecution;
+    }
+    if (keyEvent.logicalKey != LogicalKeyboardKey.keyZ ||
+        !keyEvent.isPrimaryShortcutKeyPressed ||
+        !HardwareKeyboard.instance.isShiftPressed) {
+      return ExecutionInstruction.continueExecution;
+    }
+    performRedo();
+    return ExecutionInstruction.haltExecution;
+  }
+
   /// Keyboard action: Smart paste - Cmd+V with selected text and a URL on
   /// clipboard applies the URL as a link attribution to the selected text.
   ExecutionInstruction _handleSmartPaste({
@@ -1257,6 +1399,12 @@ class EditorState extends State<Editor> {
 
   /// Handle paste when selection is collapsed — inserts the URL immediately,
   /// then replaces it with the resolved page title once fetched.
+  ///
+  /// Both the URL insertion and the title replacement are grouped into a single
+  /// undo transaction. SuperEditor's replay-based undo resets the document and
+  /// replays all history; a separate title-replacement transaction would replay
+  /// the URL insertion on stale node state, causing crashes when node IDs don't
+  /// survive the replay (e.g. after Enter creates a new paragraph).
   ExecutionInstruction _handleCollapsedPaste() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -1310,32 +1458,32 @@ class EditorState extends State<Editor> {
         title = await fetchUrlTitle(text);
       }
 
-      if (!mounted || title == null) return;
-
-      // Replace the raw URL text with the resolved title
-      final endOffset = startOffset + text.length;
-      _editor.execute([
-        DeleteContentRequest(
-          documentRange: DocumentRange(
-            start: DocumentPosition(
+      if (mounted && title != null) {
+        // Replace the raw URL text with the resolved title
+        final endOffset = startOffset + text.length;
+        _editor.execute([
+          DeleteContentRequest(
+            documentRange: DocumentRange(
+              start: DocumentPosition(
+                nodeId: nodeId,
+                nodePosition: TextNodePosition(offset: startOffset),
+              ),
+              end: DocumentPosition(
+                nodeId: nodeId,
+                nodePosition: TextNodePosition(offset: endOffset),
+              ),
+            ),
+          ),
+          InsertTextRequest(
+            documentPosition: DocumentPosition(
               nodeId: nodeId,
               nodePosition: TextNodePosition(offset: startOffset),
             ),
-            end: DocumentPosition(
-              nodeId: nodeId,
-              nodePosition: TextNodePosition(offset: endOffset),
-            ),
+            textToInsert: title,
+            attributions: {LinkAttribution(text)},
           ),
-        ),
-        InsertTextRequest(
-          documentPosition: DocumentPosition(
-            nodeId: nodeId,
-            nodePosition: TextNodePosition(offset: startOffset),
-          ),
-          textToInsert: title,
-          attributions: {LinkAttribution(text)},
-        ),
-      ]);
+        ]);
+      }
     });
 
     return ExecutionInstruction.haltExecution;
@@ -1912,6 +2060,10 @@ ExecutionInstruction _bubbleOverrideKeys({
           HardwareKeyboard.instance.isControlPressed) &&
       HardwareKeyboard.instance.isShiftPressed;
   if (isMetaPressed) {
+    // Allow Cmd+Shift+Z (redo) to reach SuperEditor's handler
+    if (keyEvent.logicalKey == LogicalKeyboardKey.keyZ) {
+      return ExecutionInstruction.continueExecution;
+    }
     log.info(
       'Editor: Meta key combo detected - ${keyEvent.logicalKey.keyLabel} (bubbling to parent)',
     );
@@ -2093,3 +2245,4 @@ ExecutionInstruction _handleBackspaceOverMention({
 
   return ExecutionInstruction.haltExecution;
 }
+

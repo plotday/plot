@@ -109,6 +109,23 @@ class RootMenuBar extends StatelessWidget {
       PlatformMenuItemGroup(
         members: <PlatformMenuItem>[
           PlatformMenuItem(
+            onSelected: () =>
+                EditorState.activeInstance?.performUndo(),
+            shortcut: platformSingleActivator(LogicalKeyboardKey.keyZ),
+            label: 'Undo',
+          ),
+          PlatformMenuItem(
+            onSelected: () =>
+                EditorState.activeInstance?.performRedo(),
+            shortcut:
+                platformSingleActivator(LogicalKeyboardKey.keyZ, shift: true),
+            label: 'Redo',
+          ),
+        ],
+      ),
+      PlatformMenuItemGroup(
+        members: <PlatformMenuItem>[
+          PlatformMenuItem(
             onSelected: () => _editAction(
               (e) => e.performCut(),
               const CopySelectionTextIntent.cut(SelectionChangedCause.keyboard),
