@@ -132,6 +132,14 @@ export const clerkAppearance = {
   },
 } as const;
 
+export const clerkDarkAppearance = {
+  variables: {
+    colorPrimary: "#01845e",
+    colorBackground: "#030f0a",
+    fontFamily: "Inter, sans-serif",
+  },
+} as const;
+
 export const resolver: CSSVariablesResolver = (theme) => ({
   variables: {},
   light: {

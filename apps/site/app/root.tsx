@@ -31,7 +31,7 @@ import notFoundImage from "./assets/404.png";
 import type { Route } from "./+types/root";
 import stylesheet from "./app.css?url";
 import { PostHogIdentify } from "./components/posthog-identify";
-import { clerkAppearance, resolver, theme } from "./theme";
+import { clerkAppearance, clerkDarkAppearance, resolver, theme } from "./theme";
 
 export async function loader(args: Route.LoaderArgs) {
   return rootAuthLoader(args, ({ context }) => {
@@ -136,7 +136,7 @@ export default function App({ loaderData }: Route.ComponentProps) {
       loaderData={loaderData}
       appearance={{
         ...(isDark ? { baseTheme: dark } : {}),
-        ...clerkAppearance,
+        ...(isDark ? clerkDarkAppearance : clerkAppearance),
       }}
     >
       <Outlet />
