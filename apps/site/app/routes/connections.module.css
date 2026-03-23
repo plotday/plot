@@ -9,9 +9,10 @@
 
 .heroTitle {
   font-family: "Greycliff CF", var(--mantine-font-family);
-  line-height: 1.1;
+  line-height: 1.05;
   font-weight: 900;
   font-size: rem(36px);
+  letter-spacing: -1.5px;
 
   @media (min-width: $mantine-breakpoint-sm) {
     font-size: rem(48px);
@@ -64,13 +65,18 @@
     var(--mantine-color-dark-7)
   );
   text-align: center;
-  transition: border-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
 
   &:hover {
     border-color: light-dark(
       var(--mantine-color-gray-4),
       var(--mantine-color-dark-3)
     );
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
   }
 }
 
@@ -145,10 +151,21 @@
   font-family: "Greycliff CF", var(--mantine-font-family);
   font-weight: 800;
   line-height: 1.2;
+  letter-spacing: -0.5px;
 }
 
 .ctaSection {
-  background: var(--mantine-color-brand-filled);
+  background:
+    radial-gradient(
+      ellipse at center,
+      light-dark(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04)) 0%,
+      transparent 70%
+    ),
+    linear-gradient(
+      135deg,
+      var(--mantine-color-brand-6) 0%,
+      var(--mantine-color-brand-7) 100%
+    );
   color: var(--mantine-color-white);
 }
 
@@ -156,5 +173,6 @@
   font-family: "Greycliff CF", var(--mantine-font-family);
   font-weight: 800;
   line-height: 1.2;
+  letter-spacing: -0.5px;
   color: var(--mantine-color-white);
 }

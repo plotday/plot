@@ -1,11 +1,37 @@
 .header {
   border-bottom: 0px;
   overflow: hidden;
+  background-color: light-dark(
+    rgba(255, 255, 255, 0.8),
+    rgba(26, 27, 30, 0.8)
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition:
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
+
+.headerScrolled {
+  border-bottom: 1px solid
+    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4)) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.navLink {
+  font-size: rem(14px);
+  font-weight: 500;
+}
+
 .footer {
   border-top: 1px solid
-    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+    light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
 }
+
+.footerLinks {
+  font-size: rem(13px);
+}
+
 .main {
   background-color: light-dark(
     var(--mantine-color-gray-0),

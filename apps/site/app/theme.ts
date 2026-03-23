@@ -41,6 +41,7 @@ const variantColorResolver: VariantColorsResolver = (input) => {
 };
 
 export const theme: MantineThemeOverride = createTheme({
+  fontFamily: "'Instrument Sans', sans-serif",
   colors: {
     brand: [
       "#bdffe3",
@@ -128,7 +129,7 @@ export const theme: MantineThemeOverride = createTheme({
 export const clerkAppearance = {
   variables: {
     colorPrimary: "#01845e",
-    fontFamily: "Inter, sans-serif",
+    fontFamily: "'Instrument Sans', sans-serif",
   },
 } as const;
 
@@ -136,13 +137,19 @@ export const clerkDarkAppearance = {
   variables: {
     colorPrimary: "#01845e",
     colorBackground: "#030f0a",
-    fontFamily: "Inter, sans-serif",
+    fontFamily: "'Instrument Sans', sans-serif",
   },
 } as const;
 
 export const resolver: CSSVariablesResolver = (theme) => ({
   variables: {},
   light: {
+    "--shadow-sm":
+      "0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.1)",
+    "--shadow-md":
+      "0 2px 4px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.12)",
+    "--shadow-lg":
+      "0 2px 4px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.12), 0 24px 48px rgba(0, 0, 0, 0.16)",
     "--mantine-color-brand-background": theme.colors.brand[0],
     "--mantine-color-brand-hover": theme.colors.brand[1],
     "--mantine-color-brand-light-hover": rgba(theme.colors.brand[6], 0.16),
@@ -170,6 +177,12 @@ export const resolver: CSSVariablesResolver = (theme) => ({
     "--mantine-color-brand-outline": theme.colors.brand[7],
   },
   dark: {
+    "--shadow-sm":
+      "0 1px 2px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.2)",
+    "--shadow-md":
+      "0 2px 4px rgba(0, 0, 0, 0.15), 0 4px 16px rgba(0, 0, 0, 0.25)",
+    "--shadow-lg":
+      "0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 24px rgba(0, 0, 0, 0.25), 0 24px 48px rgba(0, 0, 0, 0.35)",
     "--mantine-color-brand-background": theme.colors.brand[8],
     "--mantine-color-brand-hover": theme.colors.brand[7],
     "--mantine-color-brand-filled": theme.colors.brand[5],

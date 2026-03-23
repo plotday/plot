@@ -9,9 +9,10 @@
 
 .heroTitle {
   font-family: "Greycliff CF", var(--mantine-font-family);
-  line-height: 1.1;
+  line-height: 1.05;
   font-weight: 900;
   font-size: rem(36px);
+  letter-spacing: -1.5px;
 
   @media (min-width: $mantine-breakpoint-sm) {
     font-size: rem(48px);
@@ -42,6 +43,7 @@
   font-family: "Greycliff CF", var(--mantine-font-family);
   font-weight: 800;
   line-height: 1.2;
+  letter-spacing: -0.5px;
 }
 
 .sectionBody {
@@ -76,6 +78,14 @@
   grid-row: span 7;
   grid-template-rows: subgrid;
   row-gap: var(--mantine-spacing-md);
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.pricingCard:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .pricingCardHighlight {
@@ -233,7 +243,17 @@
 
 /* CTA */
 .ctaSection {
-  background: var(--mantine-color-brand-filled);
+  background:
+    radial-gradient(
+      ellipse at center,
+      light-dark(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04)) 0%,
+      transparent 70%
+    ),
+    linear-gradient(
+      135deg,
+      var(--mantine-color-brand-6) 0%,
+      var(--mantine-color-brand-7) 100%
+    );
   color: var(--mantine-color-white);
 }
 
@@ -241,5 +261,6 @@
   font-family: "Greycliff CF", var(--mantine-font-family);
   font-weight: 800;
   line-height: 1.2;
+  letter-spacing: -0.5px;
   color: var(--mantine-color-white);
 }

@@ -9,25 +9,67 @@
   font-family: "Greycliff CF", var(--mantine-font-family);
   font-weight: 800;
   line-height: 1.2;
+  letter-spacing: -0.3px;
 }
 
 .grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--mantine-spacing-xl);
+  gap: var(--mantine-spacing-md);
 
   @media (min-width: $mantine-breakpoint-md) {
     grid-template-columns: 1fr 1fr;
   }
 
   @media (min-width: $mantine-breakpoint-lg) {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(5, 1fr);
   }
+}
+
+.card {
+  padding: var(--mantine-spacing-lg);
+  border-radius: 12px;
+  border: 1px solid
+    light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06));
+  background: light-dark(
+    rgba(255, 255, 255, 0.6),
+    rgba(255, 255, 255, 0.02)
+  );
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.card:hover {
+  border-color: light-dark(rgba(0, 0, 0, 0.12), rgba(255, 255, 255, 0.12));
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.iconWrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: light-dark(
+    rgba(1, 132, 94, 0.08),
+    rgba(1, 132, 94, 0.12)
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon {
   color: light-dark(
     var(--mantine-color-brand-6),
     var(--mantine-color-brand-4)
+  );
+}
+
+.description {
+  color: light-dark(
+    var(--mantine-color-gray-7),
+    var(--mantine-color-gray-4)
   );
 }

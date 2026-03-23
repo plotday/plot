@@ -1,11 +1,14 @@
 import { Anchor, Box, Container, Stack, Text, Title } from "@mantine/core";
 import { Link } from "react-router";
 
+import { useScrollReveal } from "~/hooks/useScrollReveal";
 import classes from "./PlatformCallout.module.css";
 
 export function PlatformCallout() {
+  const revealRef = useScrollReveal<HTMLDivElement>();
+
   return (
-    <Box className={classes.section} pt={80} pb={80}>
+    <Box className={`${classes.section} reveal`} pt={80} pb={80} ref={revealRef}>
       <Container size="lg">
         <div className={classes.card}>
           <Stack align="center" ta="center" gap="md">

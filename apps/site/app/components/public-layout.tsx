@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -18,9 +19,20 @@ import classes from "./public-layout.module.css";
 function AppHeader({ menu }: { menu?: ReactNode }) {
   const location = useLocation();
   const hideGetStartedPaths = ["/builder"];
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 10);
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   return (
-    <AppShell.Header p="xs" className={classes.header}>
+    <AppShell.Header
+      p="xs"
+      className={`${classes.header} ${scrolled ? classes.headerScrolled : ""}`}
+    >
       <Group
         mih={50}
         gap="md"
@@ -35,14 +47,22 @@ function AppHeader({ menu }: { menu?: ReactNode }) {
           </UnstyledButton>
         </Group>
         <Group>
-          <Group visibleFrom="sm">
-            <Anchor component={Link} to="/#benefits">
+          <Group visibleFrom="sm" gap="xl">
+            <Anchor
+              component={Link}
+              to="/#benefits"
+              className={classes.navLink}
+            >
               Product
             </Anchor>
-            <Anchor component={Link} to="/pricing">
+            <Anchor component={Link} to="/pricing" className={classes.navLink}>
               Pricing
             </Anchor>
-            <Anchor component={Link} to="/connections">
+            <Anchor
+              component={Link}
+              to="/connections"
+              className={classes.navLink}
+            >
               Connections
             </Anchor>
           </Group>
@@ -65,17 +85,17 @@ function AppFooter() {
       <Group justify="space-between">
         <Group gap="lg">
           <Anchor href="mailto:team@plot.day" title="Email" lh="normal">
-            <IconMail />
+            <IconMail size={20} />
           </Anchor>
           <Anchor
             href="https://linkedin.com/company/plot-tech/"
             title="LinkedIn"
             lh="normal"
           >
-            <IconBrandLinkedin />
+            <IconBrandLinkedin size={20} />
           </Anchor>
         </Group>
-        <Group gap="lg">
+        <Group gap="lg" className={classes.footerLinks}>
           <Anchor component={Link} to="/connections">
             Connections
           </Anchor>

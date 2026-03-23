@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   Box,
@@ -12,10 +12,11 @@ import {
 
 import { IconCheck } from "@tabler/icons-react";
 import { Link } from "react-router";
-
 import { BenefitSection } from "~/components/home/BenefitSection";
 import { FeaturesStrip } from "~/components/home/FeaturesStrip";
 import { PlatformCallout } from "~/components/home/PlatformCallout";
+import { useScrollReveal } from "~/hooks/useScrollReveal";
+
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
@@ -67,13 +68,37 @@ export function meta(_: Route.MetaArgs) {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState(0);
+  const [entering, setEntering] = useState(false);
+  const enteringTimeout = useRef<ReturnType<typeof setTimeout>>();
+
+  const handleTabChange = (index: number) => {
+    if (index === activeTab) return;
+    setEntering(true);
+    clearTimeout(enteringTimeout.current);
+    enteringTimeout.current = setTimeout(() => {
+      setActiveTab(index);
+      setEntering(false);
+    }, 150);
+  };
+
+  useEffect(() => {
+    return () => clearTimeout(enteringTimeout.current);
+  }, []);
+
+  const storyRevealRef = useScrollReveal<HTMLDivElement>();
+  const ctaRevealRef = useScrollReveal<HTMLDivElement>();
 
   return (
     <Stack gap={0}>
       {/* Hero */}
-      <Box className={classes.heroSection} pt={60} pb={60}>
+      <Box className={classes.heroSection} pt={80} pb={80}>
+        <div className={classes.heroGlow} />
         <Container size="md">
           <Stack align="center" gap="lg" ta="center">
+            <div className={classes.heroBadge}>
+              <span className={classes.heroBadgeDot} />
+              Now available on all platforms
+            </div>
             <Title order={1} className={classes.heroTitle}>
               <Text span inherit variant="gradient">
                 Your best work, every&nbsp;day
@@ -85,7 +110,12 @@ export default function Home() {
               Organized, prioritized, and ready for action.
             </Text>
             <Flex gap="md" wrap="wrap" justify="center">
-              <Button variant="gradient" size="lg" component={Link} to="/start">
+              <Button
+                size="lg"
+                component={Link}
+                to="/start"
+                className={classes.heroCta}
+              >
                 Get started free
               </Button>
               <Button
@@ -105,8 +135,9 @@ export default function Home() {
             </Flex>
           </Stack>
         </Container>
-        <Container size="lg" mt="xl">
+        <Container size="lg" mt={48}>
           <div className={classes.heroScreenshotWrap}>
+            <div className={classes.heroScreenshotGlow} />
             <picture>
               <source
                 srcSet="/assets/screenshot-d.png"
@@ -122,61 +153,79 @@ export default function Home() {
         </Container>
       </Box>
 
-      {/* Productivity Story Tabs */}
-      <Box id="story" className={classes.storySection} pt={80} pb={80}>
+      {/* Productivity Story */}
+      <Box
+        id="story"
+        className={classes.storySection}
+        pt={80}
+        pb={80}
+        ref={storyRevealRef}
+      >
         <Container size="lg">
-          <Title
-            order={2}
-            size="h2"
-            className={classes.sectionTitle}
-            ta="center"
-            mb="xl"
-          >
-            So what's stopping us?
-          </Title>
-          <Box className={classes.storyLayout}>
+          <Stack align="center" gap="xs" mb="xl">
+            <Title
+              order={2}
+              size="h2"
+              className={classes.sectionTitle}
+              ta="center"
+            >
+              So what's stopping us?
+            </Title>
+            <Text className={classes.storySubtitle} ta="center">
+              The tools we rely on create their own problems
+            </Text>
+          </Stack>
+
+          <Stack gap="lg">
             <div className={classes.storyTabs}>
               {STORY_TABS.map((tab, i) => (
                 <button
                   key={tab.label}
                   className={`${classes.storyTab} ${i === activeTab ? classes.storyTabActive : ""}`}
-                  onClick={() => setActiveTab(i)}
+                  onClick={() => handleTabChange(i)}
                   type="button"
                 >
                   {tab.label}
                 </button>
               ))}
             </div>
-            <div
-              className={`${classes.storyImageWrap} ${STORY_TABS[activeTab].lightVignette ? classes.storyImageLightVignette : ""}`}
-            >
-              <img
-                src={STORY_TABS[activeTab].image}
-                alt={STORY_TABS[activeTab].label}
-                className={classes.storyImage}
-              />
-            </div>
-            <div>
-              <div className={classes.storyCopyTitle}>
-                {STORY_TABS[activeTab].title}
+
+            <div className={classes.storyCard}>
+              <div className={classes.storyCardGlow} />
+              <div
+                className={`${classes.storyImageWrap} ${STORY_TABS[activeTab].lightVignette ? classes.storyImageLightVignette : ""}`}
+              >
+                <img
+                  src={STORY_TABS[activeTab].image}
+                  alt={STORY_TABS[activeTab].label}
+                  className={classes.storyImage}
+                />
               </div>
-              <Text className={classes.storyCopy}>
-                {STORY_TABS[activeTab].copy}
-              </Text>
+              <div
+                className={`${classes.storyContent} ${entering ? classes.storyContentEntering : ""}`}
+              >
+                <div className={classes.storyCopyTitle}>
+                  {STORY_TABS[activeTab].title}
+                </div>
+                <Text className={classes.storyCopy}>
+                  {STORY_TABS[activeTab].copy}
+                </Text>
+              </div>
             </div>
-          </Box>
+          </Stack>
         </Container>
         <Container size="md" mt={60}>
           <Text className={classes.hingeText}>
-            Each one solves a real problem.
+            Each keeps us busy.
             <br />
-            Unchecked, they can crowd out our best work.
+            What we need is something that keeps us moving forward.
           </Text>
         </Container>
       </Box>
 
       <Box id="benefits" />
       <BenefitSection
+        label="Unified workspace"
         title="Everything in one place"
         body="Your meeting gets a thread. Your task gets a note. Your email gets context. Plot pulls work from Google Calendar, Slack, Linear, Gmail, and more — organized by priority, not arrival time. Related items collect automatically. Smart notifications surface what actually needs your attention. Nothing falls through the cracks."
         image="/assets/activity.png"
@@ -184,8 +233,11 @@ export default function Home() {
         imageAlt="Plot activity view showing unified items from multiple sources"
       />
       <BenefitSection
+        label="Daily workflow"
         title="Ready for action"
-        body={'Your agenda is your day — and Plot makes sure it\'s ready when you are. See everything due today across every tool, in one place. Open an item and find the notes, messages, and context already there. No tab-switching, no hunting for links, no "let me find that thread."'}
+        body={
+          'Your agenda is your day — and Plot makes sure it\'s ready when you are. See everything due today across every tool, in one place. Open an item and find the notes, messages, and context already there. No tab-switching, no hunting for links, no "let me find that thread."'
+        }
         image="/assets/agenda.png"
         imageDark="/assets/agenda-d.png"
         imageAlt="Plot agenda view showing today's tasks and events"
@@ -193,6 +245,7 @@ export default function Home() {
         background="gray"
       />
       <BenefitSection
+        label="Strategic view"
         title="Momentum on what matters"
         body="Most tools break down at the boundary between planning and doing. Plot closes that gap. Zoom out to see your priorities and what's moving. Zoom in to focus on the work in front of you. Everything you need — context, collaborators, next steps — is already in the same place you do the work."
         image="/assets/priorities.png"
@@ -204,7 +257,12 @@ export default function Home() {
       <PlatformCallout />
 
       {/* Closing CTA */}
-      <Box className={classes.ctaSection} pt={80} pb={80}>
+      <Box
+        className={`${classes.ctaSection} reveal`}
+        pt={80}
+        pb={80}
+        ref={ctaRevealRef}
+      >
         <Container size="sm">
           <Stack gap="lg" align="center" ta="center">
             <Title order={2} size="h2" className={classes.ctaTitle}>

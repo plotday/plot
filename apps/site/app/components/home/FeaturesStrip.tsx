@@ -8,6 +8,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 
+import { useScrollReveal } from "~/hooks/useScrollReveal";
 import classes from "./FeaturesStrip.module.css";
 
 const FEATURES = [
@@ -44,8 +45,10 @@ const FEATURES = [
 ];
 
 export function FeaturesStrip() {
+  const revealRef = useScrollReveal<HTMLDivElement>();
+
   return (
-    <Box className={classes.strip} pt={80} pb={80}>
+    <Box className={`${classes.strip} reveal`} pt={80} pb={80} ref={revealRef}>
       <Container size="lg">
         <Title
           order={2}
@@ -57,14 +60,22 @@ export function FeaturesStrip() {
           Also true
         </Title>
         <div className={classes.grid}>
-          {FEATURES.map((feature) => (
-            <Stack key={feature.label} gap="xs">
-              <feature.icon size={24} className={classes.icon} />
-              <Text fw={600}>{feature.label}</Text>
-              <Text size="sm" c="dimmed">
-                {feature.description}
-              </Text>
-            </Stack>
+          {FEATURES.map((feature, i) => (
+            <div
+              key={feature.label}
+              className={classes.card}
+              style={{ transitionDelay: `${i * 50}ms` }}
+            >
+              <Stack gap="xs">
+                <div className={classes.iconWrap}>
+                  <feature.icon size={20} className={classes.icon} />
+                </div>
+                <Text fw={600}>{feature.label}</Text>
+                <Text size="sm" className={classes.description}>
+                  {feature.description}
+                </Text>
+              </Stack>
+            </div>
           ))}
         </div>
       </Container>
