@@ -86,4 +86,10 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+    // Bundles prebuilt libsqlite3.so for all ABIs via Gradle.
+    // Needed because Shorebird's Flutter fork doesn't support Dart's
+    // code_assets build hooks, so the sqlite3 package's hook/build.dart
+    // can't bundle the library into the AAB. This Maven dependency is
+    // the same mechanism sqlite3_flutter_libs 0.5.x used.
+    implementation 'eu.simonbinder:sqlite3-native-library:3.52.0'
 }
