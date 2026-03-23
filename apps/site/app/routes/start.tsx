@@ -50,7 +50,7 @@ const PLATFORMS: PlatformInfo[] = [
     label: "Android",
     icon: IconBrandAndroid,
     available: true,
-    href: "https://play.google.com/store/apps/details?id=day.plot.app",
+    href: "https://play.google.com/apps/testing/day.plot.app",
     note: "Open testing",
   },
   {
