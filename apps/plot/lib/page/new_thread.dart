@@ -953,6 +953,7 @@ class NewThreadPageState extends State<NewThreadPage> {
               _setHasMembers(state.draft.priority.sharing);
             },
             builder: (context, state) {
+              final priorityBloc = context.read<PriorityBloc>();
               return PopScope(
                 canPop: false,
                 onPopInvokedWithResult: (didPop, result) {
@@ -1010,9 +1011,10 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 actors: state.actors,
                                 onDraftChanged: (thread, {note}) async {
                                   if (!context.mounted) return;
-                                  await context
-                                      .read<PriorityBloc>()
-                                      .updateDraft(thread, note: note);
+                                  await priorityBloc.updateDraft(
+                                    thread,
+                                    note: note,
+                                  );
                                 },
                                 flushToBottom: true,
                                 showScheduleActions: false,
