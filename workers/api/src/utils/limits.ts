@@ -6,7 +6,8 @@ import type { Bindings } from "../env";
 import { UserAiUsage } from "../state/user-ai-usage";
 import { FREE_AI_LIMITS } from "./ai-limits";
 export const PLAN_LIMITS = {
-  free: { connections: 3, twists: 1 },
+  free: { connections: 2, twists: 1 },
+  core: { connections: 5, twists: 2 },
   pro: { connections: Infinity, twists: Infinity },
   team: { connections: Infinity, twists: Infinity }, // org pool handled separately
 };
@@ -158,7 +159,7 @@ export async function getPersonalTwistCount(
 export async function getPersonalPlan(
   db: Kysely<DB>,
   userId: string
-): Promise<"free" | "pro" | "team"> {
+): Promise<"free" | "core" | "pro" | "team"> {
   const sub = await db
     .selectFrom("user_subscription")
     .select(["plan", "status"])
@@ -166,7 +167,7 @@ export async function getPersonalPlan(
     .executeTakeFirst();
 
   return sub && sub.status === "active"
-    ? (sub.plan as "free" | "pro" | "team")
+    ? (sub.plan as "free" | "core" | "pro" | "team")
     : "free";
 }
 
@@ -221,7 +222,7 @@ export async function checkConnectionLimit(
 
     const orgPlan =
       orgSub && orgSub.status === "active"
-        ? (orgSub.plan as "free" | "pro" | "team")
+        ? (orgSub.plan as "free" | "core" | "pro" | "team")
         : "free";
 
     // Team plan has per-group limits

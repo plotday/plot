@@ -14,6 +14,7 @@ import { SSEStream, acceptsSSE } from "../utils/sse";
 import { handleValidationError } from "../utils/validation";
 import { createLogger } from "@plotday/worker-util";
 import { deploymentRateLimiter } from "../middleware/rate-limit";
+import { getEffectivePlan } from "../utils/plan";
 
 const twist = new Hono<{ Bindings: Bindings }>();
 
@@ -167,6 +168,17 @@ twist.post("/twist/generate", async (c) => {
 
   if (!userToken && !publisherToken) {
     return new Response("Unauthorized", { status: 401 });
+  }
+
+  // Plan check: twist builder requires Pro or Team
+  if (userToken && c.var.user && c.var.db) {
+    const { plan } = await getEffectivePlan(c.var.db, c.var.user.id);
+    if (plan !== "pro" && plan !== "team") {
+      return c.json(
+        { error: "Twist builder requires a Pro or Team plan" },
+        403
+      );
+    }
   }
 
   // Parse and validate request body

@@ -1,3 +1,7 @@
+- New Core plan — connect up to 5 tools and use 2 custom twists for $12/month (annual). A new option between Free and Pro for people who need a few more connections.
+- Free plan now includes 2 connections (previously 3)
+- No-code Twist builder is now available on Pro and Team plans
+- Plan changes now sync instantly across all your devices — no need to restart the app after upgrading
 - Fixed notifications on Android vibrating repeatedly for the same unread threads instead of updating silently
 - Improved notification summaries — they now reference the priority name and correctly use "you" when your name appears
 - Fixed tapping a notification on mobile opening the Agenda tab instead of the Activity tab

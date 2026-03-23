@@ -5,6 +5,7 @@ import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/user.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/util/developer_mode.dart';
 import 'command.dart';
 
@@ -20,15 +21,32 @@ class GlobalShortcuts extends StatefulWidget {
 class _GlobalShortcutsState extends State<GlobalShortcuts> {
   SubscriptionInfo? _subscription;
   bool _fetchedSubscription = false;
+  bool _registeredSyncCallback = false;
 
   void _fetchSubscription() async {
     if (_fetchedSubscription) return;
     _fetchedSubscription = true;
+    _registerSyncCallback();
     try {
       final subscription = await UpgradeApi.getSubscription();
       if (mounted) setState(() => _subscription = subscription);
     } catch (_) {
       // Non-critical — commands still work without subscription info
+    }
+  }
+
+  void _registerSyncCallback() {
+    if (_registeredSyncCallback) return;
+    _registeredSyncCallback = true;
+    Store.get.onSubscriptionChanged = _onSubscriptionChanged;
+  }
+
+  void _onSubscriptionChanged() async {
+    try {
+      final subscription = await UpgradeApi.getSubscription();
+      if (mounted) setState(() => _subscription = subscription);
+    } catch (_) {
+      // Non-critical
     }
   }
 
@@ -79,6 +97,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
 
         if (!signedIn) {
           _fetchedSubscription = false;
+          _registeredSyncCallback = false;
           _subscription = null;
           return CommandScope(
             commandsBuilder: () => _getCommands(signedIn: false),

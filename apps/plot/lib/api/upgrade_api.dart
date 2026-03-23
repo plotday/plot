@@ -123,6 +123,9 @@ class SubscriptionInfo extends Equatable {
   }
 
   bool get isFree => effectivePlan == 'free';
+  bool get isCore => effectivePlan == 'core';
+  bool get canBuildTwists => effectivePlan == 'pro' || effectivePlan == 'team';
+  bool get hasPaidPlan => effectivePlan != 'free';
 
   @override
   List<Object?> get props => [plan, effectivePlan, effectiveSource];

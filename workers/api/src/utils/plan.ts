@@ -5,7 +5,7 @@ import type { DB } from "../db-types";
 type PlanSource = "personal" | "organization";
 
 type EffectivePlan = {
-  plan: "free" | "pro" | "team";
+  plan: "free" | "core" | "pro" | "team";
   source: PlanSource;
   organizationId?: string;
   organizationName?: string;
@@ -13,8 +13,9 @@ type EffectivePlan = {
 
 const PLAN_TIER: Record<string, number> = {
   free: 0,
-  pro: 1,
-  team: 2,
+  core: 1,
+  pro: 2,
+  team: 3,
 };
 
 /**
@@ -34,7 +35,7 @@ export async function getEffectivePlan(
 
   const personalPlan =
     personalSub && personalSub.status === "active"
-      ? (personalSub.plan as "free" | "pro" | "team")
+      ? (personalSub.plan as "free" | "core" | "pro" | "team")
       : "free";
 
   let result: EffectivePlan = { plan: personalPlan, source: "personal" };
@@ -59,7 +60,7 @@ export async function getEffectivePlan(
     .execute();
 
   for (const orgSub of orgSubs) {
-    const orgPlan = orgSub.plan as "free" | "pro" | "team";
+    const orgPlan = orgSub.plan as "free" | "core" | "pro" | "team";
     if ((PLAN_TIER[orgPlan] ?? 0) > (PLAN_TIER[result.plan] ?? 0)) {
       result = {
         plan: orgPlan,

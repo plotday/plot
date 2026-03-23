@@ -13,6 +13,7 @@ import { deployTwist } from "../deployment";
 import { generateTwist } from "../generator";
 import type { TwistSource } from "../types";
 import { Tool } from "./tool";
+import { getEffectivePlan } from "../../utils/plan";
 
 export class Twists extends Tool implements ITwists {
   private env: Bindings;
@@ -126,6 +127,18 @@ export class Twists extends Tool implements ITwists {
   }
 
   async generate(spec: string): Promise<TwistSource> {
+    // Plan check: twist builder requires Pro or Team
+    const priorityTwist = await this.db
+      .selectFrom("priority_twist")
+      .select("owner_id")
+      .where("id", "=", this.priorityTwistId)
+      .executeTakeFirstOrThrow();
+    if (priorityTwist.owner_id) {
+      const { plan } = await getEffectivePlan(this.db, priorityTwist.owner_id);
+      if (plan !== "pro" && plan !== "team") {
+        throw new Error("Twist builder requires a Pro or Team plan");
+      }
+    }
     return await generateTwist({ spec, env: this.env });
   }
 

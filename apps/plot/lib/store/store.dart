@@ -1704,6 +1704,9 @@ class Store extends _$Store {
   /// Used by desktop notifications to detect when new data arrives.
   void Function(Set<String> syncedEntities)? onSyncBatchComplete;
 
+  /// Callback invoked when a subscription change broadcast is received.
+  void Function()? onSubscriptionChanged;
+
   Future<void> _subscribeToUpdates() async {
     _unsubscribeFromUpdates();
 
@@ -1730,6 +1733,13 @@ class Store extends _$Store {
 
     if (table == null) {
       log.warning("Received broadcast message without table field: $message");
+      return;
+    }
+
+    // Handle subscription changes (not a standard sync entity)
+    if (table == 'subscription') {
+      log.info("plot.store: Received subscription change broadcast");
+      onSubscriptionChanged?.call();
       return;
     }
 

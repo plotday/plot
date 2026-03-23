@@ -3563,7 +3563,7 @@ export type Database = {
       ai_provider: "openai" | "anthropic" | "google"
       enter_behavior: "enter_newline" | "enter_submits"
       organization_role: "admin" | "member"
-      subscription_plan: "free" | "pro" | "team"
+      subscription_plan: "free" | "core" | "pro" | "team"
       subscription_status:
         | "active"
         | "canceled"
@@ -4311,7 +4311,7 @@ export const Constants = {
       ai_provider: ["openai", "anthropic", "google"],
       enter_behavior: ["enter_newline", "enter_submits"],
       organization_role: ["admin", "member"],
-      subscription_plan: ["free", "pro", "team"],
+      subscription_plan: ["free", "core", "pro", "team"],
       subscription_status: [
         "active",
         "canceled",
