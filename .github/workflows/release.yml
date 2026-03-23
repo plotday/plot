@@ -94,7 +94,7 @@ jobs:
 
           git config user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
           git config user.email '${{ steps.app-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
-          git add apps/plot/pubspec.yaml
+          git add pubspec.yaml
           git commit -m "Bump version to ${NEXT_VERSION} [skip ci]"
           git push
 
