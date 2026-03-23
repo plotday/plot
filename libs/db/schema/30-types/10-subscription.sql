@@ -1,5 +1,6 @@
 CREATE TYPE subscription_plan AS ENUM (
     'free',
+    'core',
     'pro',
     'team'
 );

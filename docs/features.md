@@ -284,12 +284,17 @@ Internal catalog of product features for marketing content generation. Direct an
 
 ## Subscription Management
 
-- Three plans: Free, Pro, Team
+- Four plans: Free, Core, Pro, Team
+- Free: 2 connections, 1 twist
+- Core: 5 connections, 2 twists ($15/mo or $12/mo annual)
+- Pro: Unlimited connections and twists, no-code Twist builder ($25/mo or $20/mo annual)
+- Team: Shared org connections (50 per group), unlimited twists, no-code Twist builder ($124/mo or $99/mo annual)
 - Connection-based pricing (no per-seat fees)
 - Monthly and annual billing options (20% annual discount)
 - Stripe Checkout integration for secure payments
 - Stripe Customer Portal for self-service subscription management
 - Team plan scales per 50 connections
+- Real-time plan sync — plan changes propagate instantly to all connected devices
 
 ## Organizations
 

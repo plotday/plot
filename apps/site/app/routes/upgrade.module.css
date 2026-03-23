@@ -18,12 +18,12 @@
   gap: var(--mantine-spacing-lg);
 
   @media (min-width: $mantine-breakpoint-sm) {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 
   @media (min-width: $mantine-breakpoint-md) {
-    grid-template-columns: repeat(2, 1fr);
-    max-width: 700px;
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 1050px;
     margin: 0 auto;
   }
 }

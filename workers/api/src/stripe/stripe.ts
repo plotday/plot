@@ -11,8 +11,10 @@ import {
 } from "./utils";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
+import { sql } from "kysely";
 import { PLAN_LIMITS, TEAM_CONNECTIONS_PER_GROUP } from "../utils/limits";
 import { backfillEmbeddings } from "../queue/backfill-embeddings";
+import { notifyUserSync } from "../app/sync/notify";
 
 const stripe = new Hono<{ Bindings: Bindings }>();
 
@@ -122,9 +124,9 @@ async function handleSubscriptionUpdate(
   const status = mapStripeStatus(subscription.status);
 
   // Determine plan from subscription metadata, validated against known values
-  const validPlans = ["free", "pro", "team"];
+  const validPlans = ["free", "core", "pro", "team"];
   const plan = validPlans.includes(subscription.metadata.plan)
-    ? (subscription.metadata.plan as "free" | "pro" | "team")
+    ? (subscription.metadata.plan as "free" | "core" | "pro" | "team")
     : "free";
 
   // Try user_subscription first, then organization_subscription
@@ -197,6 +199,29 @@ async function handleSubscriptionUpdate(
     plan,
     status,
   });
+
+  // Notify user's sync DO so the Flutter app picks up the plan change
+  const syncUser = await c.var.db
+    .selectFrom("user_subscription")
+    .select("user_id")
+    .where("stripe_customer_id", "=", customerId)
+    .executeTakeFirst();
+  if (syncUser) {
+    await c.var.db
+      .insertInto("user_sync")
+      .values({
+        user_id: syncUser.user_id,
+        entity: "subscription",
+        last_update_at: sql`now()`,
+      })
+      .onConflict((oc: any) =>
+        oc.columns(["user_id", "entity"]).doUpdateSet({
+          last_update_at: sql`now()`,
+        })
+      )
+      .execute();
+    notifyUserSync(c, syncUser.user_id);
+  }
 }
 
 /**
@@ -252,6 +277,29 @@ async function handleSubscriptionDeleted(
   logger.info("Reverted customer to free tier", {
     customer_id: customerId,
   });
+
+  // Notify user's sync DO so the Flutter app picks up the plan change
+  const syncUser = await c.var.db
+    .selectFrom("user_subscription")
+    .select("user_id")
+    .where("stripe_customer_id", "=", customerId)
+    .executeTakeFirst();
+  if (syncUser) {
+    await c.var.db
+      .insertInto("user_sync")
+      .values({
+        user_id: syncUser.user_id,
+        entity: "subscription",
+        last_update_at: sql`now()`,
+      })
+      .onConflict((oc: any) =>
+        oc.columns(["user_id", "entity"]).doUpdateSet({
+          last_update_at: sql`now()`,
+        })
+      )
+      .execute();
+    notifyUserSync(c, syncUser.user_id);
+  }
 }
 
 /**

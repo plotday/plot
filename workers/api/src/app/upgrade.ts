@@ -11,8 +11,9 @@ import { notifySync } from "./sync/notify";
 
 const upgrade = new Hono<{ Bindings: Bindings }>();
 
-function planFromLookupKey(key: string): "pro" | "team" {
+function planFromLookupKey(key: string): "core" | "pro" | "team" {
   if (key.startsWith("team")) return "team";
+  if (key.startsWith("core")) return "core";
   return "pro";
 }
 

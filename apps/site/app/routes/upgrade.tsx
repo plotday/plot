@@ -54,6 +54,7 @@ type SubscriptionInfo = {
 };
 
 const PRICES = {
+  core: { monthly: 15, annual: 12 },
   pro: { monthly: 25, annual: 20 },
   team: { monthly: 124, annual: 99 },
 } as const;
@@ -128,7 +129,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     fetchSubscription();
   }, [isSignedIn, getToken, loaderData.apiUrl]);
 
-  const handleCheckout = async (plan: "pro" | "team") => {
+  const handleCheckout = async (plan: "core" | "pro" | "team") => {
     setActionLoading(true);
     setError(null);
 
@@ -224,7 +225,9 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         ? "Plot Team"
         : planParam === "pro"
           ? "Plot Pro"
-          : "Plot";
+          : planParam === "core"
+            ? "Plot Core"
+            : "Plot";
     const returnUrl = `/upgrade${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
 
     return (
@@ -290,7 +293,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
           {alerts}
           <Box className={classes.currentPlan}>
             <Text fw={600} size="lg">
-              Plot {effectivePlan === "team" ? "Team" : "Pro"}
+              Plot {effectivePlan === "team" ? "Team" : effectivePlan === "core" ? "Core" : "Pro"}
               {isOrgPlan && subscription?.organization
                 ? ` via ${subscription.organization.name}`
                 : ""}
@@ -365,6 +368,58 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         </Stack>
 
         <Box className={classes.planGrid}>
+          {/* Core */}
+          <Stack
+            className={
+              preselectedPlan === "core"
+                ? classes.planCardHighlight
+                : classes.planCard
+            }
+            gap="md"
+          >
+            <Text className={classes.planName}>Core</Text>
+            <Text className={classes.bestFor}>
+              For individuals connecting a handful of tools
+            </Text>
+            <Stack gap="xs" className={classes.featureList}>
+              {[
+                "Up to 5 connections",
+                "2 custom twists",
+                "Unlimited AI (usage may apply)",
+                "All core features for team collaboration",
+                "Unlimited collaborators",
+                "Full history of all your work",
+              ].map((f) => (
+                <Box key={f} className={classes.featureItem}>
+                  <IconCheck
+                    size={16}
+                    color="var(--mantine-color-brand-6)"
+                  />
+                  <span>{f}</span>
+                </Box>
+              ))}
+            </Stack>
+            <Box className={classes.priceDivider} />
+            <Box className={classes.priceBox}>
+              <Text className={classes.planPrice}>
+                ${PRICES.core[billing]}
+              </Text>
+              <Text className={classes.planPricePeriod}>/mo</Text>
+            </Box>
+            {billing === "annual" && (
+              <Text c="dimmed" size="xs" mt={-8}>
+                Billed annually
+              </Text>
+            )}
+            <Button
+              onClick={() => handleCheckout("core")}
+              loading={actionLoading}
+              fullWidth
+            >
+              Upgrade to Core
+            </Button>
+          </Stack>
+
           {/* Pro */}
           <Stack
             className={

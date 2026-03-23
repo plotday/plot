@@ -21,6 +21,7 @@ import classes from "./pricing.module.css";
 type Billing = "monthly" | "annual";
 
 const PRICES = {
+  core: { monthly: 15, annual: 12 },
   pro: { monthly: 25, annual: 20 },
   team: { monthly: 124, annual: 99 },
 } as const;
@@ -34,10 +35,10 @@ const PLANS = [
     priceNote: "Free forever",
     period: "",
     description:
-      "Up to 3 connections. Make progress with unlimited collaborators.",
+      "Up to 2 connections. Make progress with unlimited collaborators.",
     features: [
-      "Up to 3 connections",
-      "1 custom twist",
+      "Up to 2 connections",
+      "1 Twist (automations and agents)",
       "AI-powered search, auto-tagging, and summaries (limited)",
       "All core features for team collaboration",
       "Unlimited collaborators",
@@ -46,6 +47,29 @@ const PLANS = [
     cta: "Get started",
     ctaLink: () => "/start",
     ctaVariant: "outline" as const,
+    highlight: false,
+    badge: null,
+    unit: null,
+  },
+  {
+    key: "core",
+    name: "Core",
+    bestFor: "For individuals connecting a handful of tools",
+    price: (billing: Billing) => `$${PRICES.core[billing]}`,
+    priceNote: null,
+    period: "/mo",
+    description: "Up to 5 connections and 2 Twists.",
+    features: [
+      "Up to 5 connections",
+      "2 Twists (automations and agents)",
+      "Unlimited AI-powered search, auto-tagging, and summaries",
+      "All core features for team collaboration",
+      "Unlimited collaborators",
+      "Full history of all your work",
+    ],
+    cta: "Get started",
+    ctaLink: (billing: Billing) => `/upgrade?plan=core&billing=${billing}`,
+    ctaVariant: "filled" as const,
     highlight: false,
     badge: null,
     unit: null,
@@ -61,6 +85,7 @@ const PLANS = [
     features: [
       "Unlimited connections",
       "Unlimited Twists (optional AI usage extra)",
+      "No-code Twist builder",
       "Unlimited AI-powered search, auto-tagging, and summaries",
       "All core features for team collaboration",
       "Unlimited collaborators",
@@ -86,6 +111,7 @@ const PLANS = [
     features: [
       "50+ connections shared across your org",
       "Unlimited Twists (optional AI usage extra)",
+      "No-code Twist builder",
       "Unlimited AI-powered search, auto-tagging, and summaries",
       "All core features for team collaboration",
       "Unlimited team members",
@@ -117,7 +143,7 @@ const FAQS = [
   {
     question: "What happens if I hit my connection limit?",
     answer:
-      "On the Free plan, you'll be prompted to upgrade to Pro or remove an existing connection. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle.",
+      "On the Free plan, you'll be prompted to upgrade to Core or Pro. On Core, you can upgrade to Pro for unlimited connections. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle.",
   },
   {
     question: "Can I try Plot before committing to a paid plan?",
@@ -206,7 +232,7 @@ export default function Pricing() {
             <Box style={{ display: "inline-grid", gridTemplateColumns: "1fr 1fr" }}>
               <Box />
               <Box style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
-                <Badge variant="light" color="green" size="sm">
+                <Badge variant="filled" color="green" size="sm">
                   Save 20%
                 </Badge>
               </Box>
@@ -258,22 +284,21 @@ export default function Pricing() {
                     </Box>
                   ))}
                 </Stack>
-                <Box className={classes.priceBox}>
-                  <Text className={classes.price}>
-                    {typeof plan.price === "function"
-                      ? plan.price(billing)
-                      : plan.price}
-                  </Text>
-                  {plan.period && (
-                    <Text className={classes.pricePeriod}>
-                      {plan.period}
-                      {plan.unit && (
-                        <>
-                          <br />
-                          <span className={classes.priceUnit}>{plan.unit}</span>
-                        </>
-                      )}
+                <Box>
+                  <Box className={classes.priceBox}>
+                    <Text className={classes.price}>
+                      {typeof plan.price === "function"
+                        ? plan.price(billing)
+                        : plan.price}
                     </Text>
+                    {plan.period && (
+                      <Text className={classes.pricePeriod}>
+                        {plan.period}
+                      </Text>
+                    )}
+                  </Box>
+                  {plan.unit && (
+                    <Text className={classes.priceUnit}>{plan.unit}</Text>
                   )}
                 </Box>
                 <Box className={classes.noteSlot}>
