@@ -577,20 +577,20 @@ class NoteEditorState extends State<NoteEditor> {
                         selected: widget.draft.isAssignedTo(Base.actorId),
                       ),
                       // Assign (only for shared priorities)
-                      if (!context
+                      if (context
                           .read<ThreadBloc>()
                           .state
                           .thread
                           .priority
-                          .personal)
+                          .sharing)
                         Button.icon(PickNoteAssignee(widget.draft)),
                       // Private toggle (only for shared priorities)
-                      if (!context
+                      if (context
                               .read<ThreadBloc>()
                               .state
                               .thread
                               .priority
-                              .personal &&
+                              .sharing &&
                           (!widget.draft.private ||
                               widget.draft.authorId.isCurrentUser))
                         Button.icon(
