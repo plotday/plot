@@ -320,7 +320,6 @@ class NoteCommands extends StatelessWidget {
     final doneActors = note.tags[Tag.done] ?? [];
     final othersTodo = todoActors.where((id) => id != actorId).toList();
     final othersDone = doneActors.where((id) => id != actorId).toList();
-    final noTodoRemaining = todoActors.isEmpty;
     final totalDone = doneActors.length;
 
     // Resolve assignee names for tooltip (async)
@@ -375,14 +374,6 @@ class NoteCommands extends StatelessWidget {
     final activityBloc = context.watch<ThreadBloc>();
     final activityState = activityBloc.state;
 
-    // State-based logic for commands:
-    // - No todo/done: show SelfTaskAction + PickNoteAssignee
-    // - Self todo: show PickNoteAssignee only
-    // - Self done: show PickNoteAssignee only
-    // - Others todo only (no self todo/done): no task/assign buttons
-    // - Any done: show PickNoteAssignee only
-    final noTodoDone = todoActors.isEmpty && doneActors.isEmpty;
-
     // Build the final row with tags and commands
     return FutureBuilder<(List<Widget>, String)>(
       future: Future.wait([
@@ -401,16 +392,16 @@ class NoteCommands extends StatelessWidget {
           );
         }
 
-        // Build task tag widgets
+        // Build task tag widgets — show as many as apply
         final taskTagWidgets = <Widget>[
-          // Self task icon: self has todo, or self done with others still todo
-          if (selfTodo || (selfDone && othersTodo.isNotEmpty))
+          // Self todo: circle icon (circleCheck on hover via SelfTaskAction)
+          if (selfTodo)
             Button.icon(
               SelfTaskAction(note),
               key: ValueKey(Object.hash(note.id, Tag.todo.id, 'self')),
               selected: true,
             ),
-          // Assigned icon: others have todo
+          // Others todo: assigned icon with count
           if (othersTodo.isNotEmpty)
             CountBadge(
               count: othersTodo.length,
@@ -420,36 +411,33 @@ class NoteCommands extends StatelessWidget {
                 selected: true,
               ),
             ),
-          // Assigned-with-check: self has todo, others all done, no others todo
-          if (othersTodo.isEmpty && selfTodo && othersDone.isNotEmpty)
-            CountBadge(
-              count: othersDone.length,
-              child: Button.icon(
-                assigneeNames.isNotEmpty
-                    ? CommandWrapper(
-                        PickNoteAssignee(note),
-                        subtitle: Value(assigneeNames),
-                      )
-                    : PickNoteAssignee(note),
-                key: ValueKey(Object.hash(note.id, Tag.done.id, 'others')),
-                selected: true,
-              ),
-            ),
-          // All done, single person: show check
-          if (noTodoRemaining && totalDone == 1)
+          // Any done: check icon with count if > 1
+          if (totalDone == 1 && othersDone.isEmpty)
             Button.icon(
               ToggleNoteTag(note, Tag.done, actorId),
               key: ValueKey(Object.hash(note.id, Tag.done.id)),
               selected: true,
             ),
-          // All done, multiple people: show double check with count
-          if (noTodoRemaining && totalDone >= 2)
+          if (totalDone == 1 && othersDone.isNotEmpty)
+            Button.icon(
+              CommandWrapper(
+                assigneeNames.isNotEmpty
+                    ? CommandWrapper(PickNoteAssignee(note), subtitle: Value(assigneeNames))
+                    : PickNoteAssignee(note),
+                icon: const Value(PlotIcon.selfTaskDone),
+              ),
+              key: ValueKey(Object.hash(note.id, Tag.done.id)),
+              selected: true,
+            ),
+          if (totalDone >= 2)
             CountBadge(
               count: totalDone,
               child: Button.icon(
                 CommandWrapper(
-                  ToggleNoteTag(note, Tag.done, actorId),
-                  icon: Value(PlotIcon.doneAll),
+                  assigneeNames.isNotEmpty
+                      ? CommandWrapper(PickNoteAssignee(note), subtitle: Value(assigneeNames))
+                      : PickNoteAssignee(note),
+                  icon: const Value(PlotIcon.selfTaskDone),
                 ),
                 key: ValueKey(Object.hash(note.id, Tag.done.id)),
                 selected: true,
@@ -461,15 +449,13 @@ class NoteCommands extends StatelessWidget {
         final commandButtons = showCommands
             ? [
                 if (!selfTodo && !selfDone) Button.icon(SelfTaskAction(note)),
-                if (othersTodo.isEmpty && (noTodoDone || selfTodo || selfDone || totalDone > 0))
+                if (othersTodo.isEmpty)
                   Button.icon(
-                    !selfTodo && !selfDone && !noTodoDone
-                        ? CommandWrapper(
-                            PickNoteAssignee(note),
-                            title: 'Assign',
-                            icon: const Value(PlotIcon.assignAdd),
-                          )
-                        : assigneeCommand,
+                    CommandWrapper(
+                      PickNoteAssignee(note),
+                      title: 'Assign',
+                      icon: const Value(PlotIcon.assignAdd),
+                    ),
                   ),
                 // Add top tag buttons
                 ...topNoteTags(

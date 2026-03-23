@@ -414,15 +414,13 @@ class PickNoteAssignee extends ShowCommands {
   static String _computeTitle(Note note) {
     final otherAssignees = note.assignees.where((id) => id != Base.actorId);
     if (otherAssignees.isEmpty) return 'Assign';
-    final allOthersDone = otherAssignees.every((id) => note.isCompletedBy(id));
-    return allOthersDone ? 'Done' : 'Assigned';
+    return 'Assigned';
   }
 
   static IconData _computeIcon(Note note) {
     final otherAssignees = note.assignees.where((id) => id != Base.actorId);
     if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
-    final allOthersDone = otherAssignees.every((id) => note.isCompletedBy(id));
-    return allOthersDone ? PlotIcon.othersTaskDone : PlotIcon.othersTask;
+    return PlotIcon.othersTask;
   }
 
   static Future<Commands> _getAssigneeCommands(Note note) async {
@@ -758,15 +756,13 @@ class PickDraftNoteAssignee extends ShowCommands {
   static String _computeTitle(Note note) {
     final otherAssignees = note.assignees.where((id) => id != Base.actorId);
     if (otherAssignees.isEmpty) return 'Assign';
-    final allOthersDone = otherAssignees.every((id) => note.isCompletedBy(id));
-    return allOthersDone ? 'Done' : 'Assigned';
+    return 'Assigned';
   }
 
   static IconData _computeIcon(Note note) {
     final otherAssignees = note.assignees.where((id) => id != Base.actorId);
     if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
-    final allOthersDone = otherAssignees.every((id) => note.isCompletedBy(id));
-    return allOthersDone ? PlotIcon.othersTaskDone : PlotIcon.othersTask;
+    return PlotIcon.othersTask;
   }
 
   static Future<Commands> _getAssigneeCommands(
