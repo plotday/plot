@@ -22,6 +22,7 @@ export type TextDef = {
   description?: string;
   default: string;
   placeholder?: string;
+  secure?: boolean; // Encrypted at rest, masked in UI, never returned to clients
 };
 
 /**

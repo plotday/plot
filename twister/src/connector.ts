@@ -64,10 +64,10 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   // ---- Identity (abstract — every connector must declare) ----
 
   /** The OAuth provider this connector authenticates with. */
-  abstract readonly provider: AuthProvider;
+  readonly provider?: AuthProvider;
 
   /** OAuth scopes to request for this connector. */
-  abstract readonly scopes: string[];
+  readonly scopes?: string[];
 
   // ---- Optional metadata ----
 
@@ -97,8 +97,8 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * @returns Promise resolving to available channels for the user to select
    */
   abstract getChannels(
-    auth: Authorization,
-    token: AuthToken
+    auth: Authorization | null,
+    token: AuthToken | null
   ): Promise<Channel[]>;
 
   /**
@@ -205,7 +205,7 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * @param context.actor - The actor who activated the connector
    */
   // @ts-ignore - Connector.activate() intentionally has a different signature than Twist.activate()
-  activate(context: { auth: Authorization; actor: Actor }): Promise<void> {
+  activate(context: { auth?: Authorization; actor?: Actor }): Promise<void> {
     return Promise.resolve();
   }
 }
