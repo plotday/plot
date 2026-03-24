@@ -4,7 +4,7 @@ export default function Terms() {
   return (
     <Container mt="lg">
       <Title order={1}>Terms of Use</Title>
-      <p><em>Last updated: March 8, 2026</em></p>
+      <p><em>Last updated: March 24, 2026</em></p>
       <TypographyStylesProvider p={0}>
         <h2 id="agreement-to-terms">AGREEMENT TO TERMS</h2>
         <p>
@@ -413,6 +413,15 @@ export default function Terms() {
             <p>
               Attempt to bypass any measures of the Service designed to prevent
               or restrict access to the Service, or any portion of the Service.
+            </p>
+          </li>
+          <li>
+            <p>
+              Use Twists, Connections, or any other feature of the Service
+              primarily as a data processing pipeline, middleware, or automated
+              data routing infrastructure, including but not limited to routing
+              high-volume data through the Service that is not intended for
+              direct human interaction within the Service.
             </p>
           </li>
         </ol>
