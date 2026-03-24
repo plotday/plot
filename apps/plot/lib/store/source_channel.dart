@@ -30,6 +30,10 @@ class SourceChannelsBase extends BaseTable {
   @override
   Insertable<SourceChannelRow> fromBase(Map<String, dynamic> json) {
     json.remove('user_id');
+    // Drift's default serializer can't cast int to BigInt; convert explicitly
+    if (json['id'] is int) {
+      json['id'] = BigInt.from(json['id'] as int);
+    }
     return SourceChannelRow.fromJson(json);
   }
 }

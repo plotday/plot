@@ -2016,7 +2016,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 285;
+  int get schemaVersion => 286;
 
   @override
   MigrationStrategy get migration {
@@ -2590,6 +2590,18 @@ class Store extends _$Store {
     if (from < 285) {
       await _safeAddColumn(m, priorityActors, priorityActors.depth);
       await _safeAddColumn(m, actors, actors.minDepth);
+    }
+    if (from < 286) {
+      // Reset priority_twists sync cursor so rows re-pull with the
+      // int→BigInt fix in PriorityTwistsBase.fromBase (twist_id was
+      // silently failing to deserialize from server JSON).
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priority_twists'",
+      );
+      // Also reset source_channels which has the same int→BigInt issue
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'source_channels'",
+      );
     }
   }
 

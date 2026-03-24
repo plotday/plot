@@ -40,6 +40,10 @@ class PriorityTwistsBase extends BaseTable {
     if (json['link_types'] != null && json['link_types'] is! String) {
       json['link_types'] = jsonEncode(json['link_types']);
     }
+    // Drift's default serializer can't cast int to BigInt; convert explicitly
+    if (json['twist_id'] is int) {
+      json['twist_id'] = BigInt.from(json['twist_id'] as int);
+    }
     return PriorityTwistRow.fromJson(json);
   }
 
