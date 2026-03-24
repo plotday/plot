@@ -1393,6 +1393,55 @@ export type Database = {
           },
         ]
       }
+      secure_option: {
+        Row: {
+          created_at: string
+          encrypted_value: string
+          id: number
+          iv: string
+          key: string
+          priority_twist_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          encrypted_value: string
+          id?: never
+          iv: string
+          key: string
+          priority_twist_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          encrypted_value?: string
+          id?: never
+          iv?: string
+          key?: string
+          priority_twist_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "secure_option_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "secure_option_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            referencedRelation: "priority_twist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "secure_option_priority_twist_id_fkey"
+            columns: ["priority_twist_id"]
+            referencedRelation: "priority_twist_note_create"
+            referencedColumns: ["priority_twist_id"]
+          },
+        ]
+      }
       series: {
         Row: {
           created_at: string

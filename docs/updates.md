@@ -1,3 +1,5 @@
+- PostHog connection — sync your PostHog events into Plot, organized by person with event details as notes
+- Connections can now use API keys instead of OAuth — enter your key and connect directly
 - AI chat responses now show syntax-highlighted code blocks with a copy button, and render markdown tables
 - Fixed tapping a notification opening the Agenda instead of the Activity tab when the app was closed (Android and iOS)
 - Fixed sharing a link to Plot from another app opening the Agenda instead of creating a new thread

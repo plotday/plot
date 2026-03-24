@@ -393,6 +393,26 @@ class TwistApi {
     return response['votes'] as int;
   }
 
+  /// Connect a no-provider connector. Saves options and returns channels.
+  static Future<TwistConnectResult> connectNoProvider({
+    required String priorityTwistId,
+    required Map<String, dynamic> options,
+  }) async {
+    final response = await api.post<Map<String, dynamic>>(
+      '/twist/$priorityTwistId/integrations/connect',
+      body: {'options': options},
+    );
+
+    if (response.containsKey('error')) {
+      return TwistConnectResult(error: response['error'] as String);
+    }
+
+    final syncables = (response['syncables'] as List<dynamic>)
+        .map((s) => TwistChannel.fromJson(s as Map<String, dynamic>))
+        .toList();
+    return TwistConnectResult(syncables: syncables);
+  }
+
   /// Re-fetch the channel list from the external service for a provider.
   static Future<void> refreshChannels({
     required String priorityTwistId,
@@ -525,6 +545,16 @@ class TwistAuthUrl {
       callback: json['callback'] as String,
     );
   }
+}
+
+/// Result from connecting a no-provider connector
+class TwistConnectResult {
+  final List<TwistChannel>? syncables;
+  final String? error;
+
+  const TwistConnectResult({this.syncables, this.error});
+
+  bool get isError => error != null;
 }
 
 /// Integration data for a twist

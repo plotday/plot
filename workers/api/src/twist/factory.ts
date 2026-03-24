@@ -24,6 +24,8 @@ import {
   mergeProviderDeclarations,
 } from "./tools/factory";
 import { type Tool } from "./tools/tool";
+import { resolveSecureOptions } from "../utils/secure-options";
+import type { OptionsSchema } from "@plotday/twister/options";
 
 export function twistFactory({
   env,
@@ -84,7 +86,7 @@ export function twistFactory({
     let optionsSchema: Record<string, unknown> | undefined;
 
     // Source metadata (provider, scopes, linkTypes) — set during deployment, loaded at runtime
-    let sourceProvider: { provider: string; scopes: string[]; linkTypes?: any[]; handleReplies?: boolean } | null = null;
+    let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean } | null = null;
 
     // Load priority_twist config for Options resolution at runtime
     let priorityTwistConfig: Record<string, unknown> | undefined;
@@ -191,6 +193,34 @@ export function twistFactory({
       }
     }
 
+    // Resolve secure options at runtime (decrypt secure values from secure_option table)
+    let resolvedSecureOptions: Record<string, string> | undefined;
+    if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
+      // Get the options schema from the stored config to check for secure fields
+      const storedConfig = await env.TWIST_CONFIG.get(`${id}:${version}`);
+      if (storedConfig) {
+        const parsedStored = JSON.parse(storedConfig);
+        const optSchema = parsedStored.optionsSchema as OptionsSchema | undefined;
+        if (optSchema) {
+          const hasSecure = Object.values(optSchema).some(
+            (def) => def.type === "text" && "secure" in def && (def as any).secure
+          );
+          if (hasSecure) {
+            const resolved = await resolveSecureOptions(
+              db,
+              env.AI_KEY_ENCRYPTION_KEY,
+              priorityTwistId,
+              optSchema,
+              {}
+            );
+            if (Object.keys(resolved).length > 0) {
+              resolvedSecureOptions = resolved as Record<string, string>;
+            }
+          }
+        }
+      }
+    }
+
     // Create factory function for constructing built-in tools at runtime
     const builtInToolFactory = (
       path: string[],
@@ -218,6 +248,7 @@ export function twistFactory({
           aiEnabled,
           byokKeys,
           effectivePlan,
+          secureOptions: resolvedSecureOptions,
         });
       }
 
@@ -306,10 +337,11 @@ export function twistFactory({
         allProviders.push(...collectToolProviders(toolId, options));
       }
       // For sources using the new API, add provider declaration from source metadata
-      if (sourceProvider) {
+      // Skip for no-provider connectors (provider is undefined)
+      if (sourceProvider?.provider) {
         allProviders.push({
           provider: sourceProvider.provider,
-          scopes: sourceProvider.scopes,
+          scopes: sourceProvider.scopes ?? [],
         });
       }
       providers = mergeProviderDeclarations(allProviders);
@@ -331,12 +363,17 @@ export function twistFactory({
           }
         }
         // For sources: map the source's provider to the Integrations tool path
-        if (toolId === "Integrations" && sourceProvider) {
+        if (toolId === "Integrations" && sourceProvider?.provider) {
           const pathString = path.join(":");
           const existing = integrationsMap[sourceProvider.provider];
           if (!existing || path.length < existing.split(":").length) {
             integrationsMap[sourceProvider.provider] = pathString;
           }
+        }
+        // For no-provider connectors: map synthetic "_options" provider to the Integrations path
+        if (toolId === "Integrations" && sourceProvider && !sourceProvider.provider) {
+          const pathString = path.join(":");
+          integrationsMap["_options"] = pathString;
         }
       }
 

@@ -11,6 +11,8 @@ import { createLogger } from "@plotday/worker-util";
 import type { ProviderDeclaration } from "../twist/tools/factory";
 import { disposeRpc } from "../utils/rpc";
 import { handleValidationError } from "../utils/validation";
+import type { OptionsSchema } from "@plotday/twister/options";
+import { saveSecureOptions } from "../utils/secure-options";
 
 const twistIntegrations = new Hono<{ Bindings: Bindings }>();
 
@@ -144,6 +146,8 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
   }
 
   if (config.providers.length === 0) {
+    // Check if this is a no-provider connector (has isConnector but no OAuth providers)
+    // For these, channels can only be fetched via the /connect endpoint after options are saved
     return c.json({ providers: [], accounts: [], syncables: [] });
   }
 
@@ -274,6 +278,110 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
   }
 
   return c.json({ ...result, callback: String(callback) });
+});
+
+// POST /twist/:id/integrations/connect
+// For no-provider connectors: saves options, calls getChannels, returns channel list.
+const ConnectRequestSchema = z.object({
+  options: z.record(z.string(), z.any()),
+});
+
+twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
+  const priorityTwistId = c.req.param("id");
+
+  const rawBody = await c.req.json();
+  const parseResult = ConnectRequestSchema.safeParse(rawBody);
+  if (!parseResult.success) {
+    return handleValidationError(parseResult.error);
+  }
+  const { options } = parseResult.data;
+
+  const logger = createLogger({ priority_twist_id: priorityTwistId });
+
+  const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+  if (!twistInfo) {
+    return c.json({ message: "Twist not found" }, 404);
+  }
+
+  const kvConfig = await loadTwistConfig(
+    c.env,
+    twistInfo.twistPackageId,
+    twistInfo.version
+  );
+  if (!kvConfig) {
+    return c.json({ message: "Twist config not found" }, 404);
+  }
+
+  try {
+    // Load options schema from KV config to process secure options
+    const fullKv = await c.env.TWIST_CONFIG.get(
+      `${twistInfo.twistPackageId}:${twistInfo.version}`
+    );
+    let optSchema: OptionsSchema | undefined;
+    if (fullKv) {
+      const parsed = JSON.parse(fullKv);
+      optSchema = parsed.optionsSchema as OptionsSchema | undefined;
+    }
+
+    // Process secure options and save config
+    let cleanedConfig = options;
+    if (optSchema) {
+      cleanedConfig = await saveSecureOptions(
+        c.var.db,
+        c.env.AI_KEY_ENCRYPTION_KEY,
+        priorityTwistId,
+        optSchema,
+        options
+      );
+    }
+
+    // Save config to priority_twist
+    await c.var.db
+      .updateTable("priority_twist")
+      .set({ config: JSON.stringify(cleanedConfig) })
+      .where("id", "=", priorityTwistId)
+      .execute();
+
+    // Instantiate the twist and call getChannels(null, null) on the connector
+    const factory = twistFactory({
+      env: c.env,
+      ctx: c.executionCtx as ExecutionContext,
+      db: c.var.db,
+    });
+
+    const twistWrapper = await factory({
+      priorityId: twistInfo.priorityId!,
+      priorityTwistId,
+    });
+
+    // Call getChannels(null, null) directly on the connector (path=[])
+    const result = await twistWrapper.callCallback(
+      [], // twist-level callback
+      "getChannels",
+      null, // auth
+      null  // token
+    );
+    disposeRpc(result);
+
+    // Result should be the channel list
+    const syncables = Array.isArray(result) ? result : [];
+
+    logger.info("No-provider connect successful", {
+      channel_count: syncables.length,
+    });
+
+    return c.json({ syncables });
+  } catch (error) {
+    logger.error("Error connecting no-provider connector", error as Error);
+    return c.json(
+      {
+        error: `Connection failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      },
+      400
+    );
+  }
 });
 
 // POST /twist/:id/syncables/:provider/:syncableId/enable

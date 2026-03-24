@@ -98,7 +98,9 @@ Internal catalog of product features for marketing content generation. Direct an
 - Slack integration
 - Linear integration
 - Notion: Page and comment sync
+- PostHog: Event sync grouped by person, with event details as notes
 - OAuth ready: Atlassian, Monday.com, GitHub, Asana, HubSpot
+- API key connections: Connectors that use API keys instead of OAuth (e.g., PostHog)
 
 ### Upcoming Connections
 - 65+ upcoming connectors browsable in-app

@@ -125,6 +125,7 @@ export function createTool(
     aiEnabled,
     byokKeys,
     effectivePlan,
+    secureOptions,
   }: {
     twistId: string;
     environment: TwistEnvironment;
@@ -135,13 +136,15 @@ export function createTool(
     ctx: { exports: ExecutionContext["exports"] };
     config?: Record<string, unknown>;
     /** Source metadata (provider, scopes, linkTypes) for Sources using the new API. */
-    sourceProvider?: { provider: string; scopes: string[]; linkTypes?: any[]; handleReplies?: boolean } | null;
+    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean } | null;
     /** Whether AI features are enabled for the user. Undefined during deployment. */
     aiEnabled?: boolean;
     /** BYOK API keys for AI providers. When set, only these providers are available. */
     byokKeys?: ByokKeys;
     /** The user's effective plan (e.g. "free", "pro", "team"). Undefined during deployment. */
     effectivePlan?: string;
+    /** Pre-resolved decrypted secure option values. */
+    secureOptions?: Record<string, string>;
   }
 ): Tool {
   switch (id) {
@@ -229,7 +232,14 @@ export function createTool(
       // Options is not a real tool — return a plain object with resolved values.
       // The schema is passed as `options`, config comes from priority_twist.config
       // which is injected by the factory caller.
-      return resolveOptions(options as OptionsSchema, config) as unknown as Tool;
+      // Secure options are resolved separately via secureOptions param.
+      {
+        const resolved = resolveOptions(options as OptionsSchema, config);
+        if (secureOptions) {
+          Object.assign(resolved, secureOptions);
+        }
+        return resolved as unknown as Tool;
+      }
     default:
       throw new Error(`Unknown tool: ${id}`);
   }

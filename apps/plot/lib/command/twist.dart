@@ -1840,6 +1840,19 @@ class SetupTwist extends ShowForm {
                 ),
               ),
             if (optionItems != null) ...optionItems.items,
+            if (integrations.providers.isEmpty &&
+                twist.isSource &&
+                optionItems != null)
+              FormButton(
+                key: 'connect',
+                buildCommand: (_) => ConnectNoProviderCommand(
+                  priorityTwistId: draftId,
+                  optionItems: optionItems,
+                  onConnected: (syncables) {
+                    refreshNotifier.value++;
+                  },
+                ),
+              ),
             if (hasLinkPermission)
               FormChannelList(
                 key: 'link_channels',
@@ -2048,6 +2061,59 @@ class ConnectConnectorAccount extends ShowForm {
         ),
       ],
     );
+  }
+}
+
+// ============================================================================
+// Connect No-Provider Connector
+// ============================================================================
+
+/// Connects a no-provider source by sending option values to the API.
+class ConnectNoProviderCommand extends Command {
+  ConnectNoProviderCommand({
+    required this.priorityTwistId,
+    required this.optionItems,
+    required this.onConnected,
+  }) : super(
+         title: 'Connect',
+         icon: PlotIcon.link,
+         eventObject: EventObject.twist,
+         eventAction: EventAction.updated,
+       );
+
+  final String priorityTwistId;
+  final TwistOptionItems optionItems;
+  final void Function(List<TwistChannel> syncables) onConnected;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final result = await TwistApi.connectNoProvider(
+        priorityTwistId: priorityTwistId,
+        options: optionItems.values,
+      );
+
+      if (result.isError) {
+        return CommandMessage(result.error!, isError: true);
+      }
+
+      if (result.syncables != null) {
+        onConnected(result.syncables!);
+      }
+
+      return const CommandDone(message: 'Connected');
+    } on ApiException catch (e) {
+      return CommandMessage(e.description, title: e.title, isError: true);
+    } on NetworkException catch (e) {
+      return CommandMessage(e.message, isError: true);
+    } catch (e, t) {
+      log.warning('Failed to connect', e, t);
+      Tracker.captureException(e, t);
+      return const CommandMessage(
+        'Failed to connect. Please try again.',
+        isError: true,
+      );
+    }
   }
 }
 

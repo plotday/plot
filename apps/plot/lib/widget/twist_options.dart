@@ -210,8 +210,12 @@ class _TwistTextItem extends FormItem {
     required this.optionKey,
     required this.def,
     required this.owner,
-  }) : _controller = TextEditingController(
-         text: (owner._values[optionKey] ?? '').toString(),
+  }) : _secure = def['secure'] == true,
+       _changed = false,
+       _controller = TextEditingController(
+         text: def['secure'] == true && owner._values[optionKey] == true
+             ? ''
+             : (owner._values[optionKey] ?? '').toString(),
        ),
        super(key: 'option_$optionKey', label: def['label'] as String);
 
@@ -219,14 +223,23 @@ class _TwistTextItem extends FormItem {
   final Map<String, dynamic> def;
   final TwistOptionItems owner;
   final TextEditingController _controller;
+  final bool _secure;
+  bool _changed;
 
   @override
-  dynamic getValue() => _controller.text;
+  dynamic getValue() {
+    if (_secure && !_changed) {
+      // Return the sentinel value (true) meaning "value unchanged"
+      return true;
+    }
+    return _controller.text;
+  }
 
   @override
   void setValue(dynamic value) {
     if (value is String) {
       _controller.text = value;
+      _changed = true;
       owner._updateValue(optionKey, value);
     }
   }
@@ -245,10 +258,16 @@ class _TwistTextItem extends FormItem {
     return InputTile(
       label: label ?? optionKey,
       controller: _controller,
-      placeholder: def['placeholder'] as String?,
+      placeholder: _secure && !_changed
+          ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'
+          : def['placeholder'] as String?,
       highlighted: highlightedSubIndex >= 0,
       focusNode: focusNodes.firstOrNull,
-      onChanged: (value) => owner._updateValue(optionKey, value),
+      obscureText: _secure,
+      onChanged: (value) {
+        _changed = true;
+        owner._updateValue(optionKey, value);
+      },
     );
   }
 }

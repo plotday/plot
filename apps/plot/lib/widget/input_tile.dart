@@ -16,6 +16,7 @@ class InputTile extends StatefulWidget {
     this.autofocus = false,
     this.focusNode,
     this.highlighted = false,
+    this.obscureText = false,
     super.key,
   });
 
@@ -42,6 +43,9 @@ class InputTile extends StatefulWidget {
 
   /// Whether this tile should show a highlight (for keyboard selection).
   final bool highlighted;
+
+  /// Whether to obscure the text (for password/secret fields).
+  final bool obscureText;
 
   @override
   State<InputTile> createState() => _InputTileState();
@@ -109,6 +113,7 @@ class _InputTileState extends State<InputTile> {
             onSubmitted: widget.onSubmitted,
             autofocus: widget.autofocus,
             focusNode: _focusNode,
+            obscureText: widget.obscureText,
           ),
         ),
       ),

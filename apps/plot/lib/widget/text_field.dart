@@ -25,6 +25,7 @@ class TextField extends StatefulWidget {
     this.focusNode,
     this.inputFormatters,
     this.autofocus = false,
+    this.obscureText = false,
     super.key,
   });
 
@@ -40,6 +41,7 @@ class TextField extends StatefulWidget {
   final FocusNode? focusNode;
   final List<TextInputFormatter>? inputFormatters;
   final bool autofocus;
+  final bool obscureText;
 
   @override
   TextFieldState createState() => TextFieldState();
@@ -126,6 +128,7 @@ class TextFieldState extends State<TextField> {
         focusNode: widget.focusNode,
         inputFormatters: widget.inputFormatters,
         autofocus: widget.autofocus,
+        obscureText: widget.obscureText,
         onSubmit: widget.onSubmitted != null
             ? (_) => widget.onSubmitted!(_controller.text)
             : null,

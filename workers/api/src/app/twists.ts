@@ -18,6 +18,7 @@ import {
 } from "../twist/management";
 import { resolveOptions } from "../twist/tools/factory";
 import type { OptionsSchema } from "@plotday/twister/options";
+import { saveSecureOptions } from "../utils/secure-options";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
@@ -312,7 +313,35 @@ twists.patch("/twist/:id", async (c) => {
       }
     }
 
-    const dbTwist = await updateTwist(c.var.db, twistId, body);
+    // Process secure options before saving config
+    let cleanedConfig = body.config;
+    if (body.config && oldConfig) {
+      const twistRecord0 = await c.var.db
+        .selectFrom("priority_twist")
+        .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+        .select(["twist.options"])
+        .where("priority_twist.id", "=", twistId)
+        .executeTakeFirst();
+
+      if (twistRecord0?.options) {
+        const optSchema = (typeof twistRecord0.options === "string"
+          ? JSON.parse(twistRecord0.options)
+          : twistRecord0.options) as OptionsSchema;
+
+        cleanedConfig = await saveSecureOptions(
+          c.var.db,
+          c.env.AI_KEY_ENCRYPTION_KEY,
+          twistId,
+          optSchema,
+          body.config
+        );
+      }
+    }
+
+    const dbTwist = await updateTwist(c.var.db, twistId, {
+      ...body,
+      config: cleanedConfig,
+    });
 
     // Dispatch onOptionsChanged if config changed
     if (body.config && oldConfig) {

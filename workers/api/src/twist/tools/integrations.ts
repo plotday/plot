@@ -101,7 +101,7 @@ export class Integrations extends Tool implements IAuth {
   private path: string[];
   private providerConfigs: IntegrationProviderConfig[];
   /** Source metadata passed from factory when the twist is a Source. */
-  private sourceProvider: { provider: string; scopes: string[]; linkTypes?: any[] } | null = null;
+  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[] } | null = null;
   /**
    * Extract provider metadata from integration options during deployment.
    * Returns provider/scopes pairs without lifecycle callbacks.
@@ -136,7 +136,7 @@ export class Integrations extends Tool implements IAuth {
     path: string[];
     integrationOptions?: IntegrationOptions;
     /** Source metadata (provider, scopes, linkTypes) from the Source class. Set by factory for sources. */
-    sourceProvider?: { provider: string; scopes: string[]; linkTypes?: any[] } | null;
+    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[] } | null;
   }) {
     super();
     this.store = options.store;
@@ -160,10 +160,11 @@ export class Integrations extends Tool implements IAuth {
 
     // For sources using the new API (sourceProvider set), synthesize a provider config
     // so existing methods that read providerConfigs still work.
-    if (this.sourceProvider && this.providerConfigs.length === 0) {
+    // Skip for no-provider connectors (provider is undefined).
+    if (this.sourceProvider?.provider && this.providerConfigs.length === 0) {
       this.providerConfigs = [{
         provider: this.sourceProvider.provider as AuthProvider,
-        scopes: this.sourceProvider.scopes,
+        scopes: this.sourceProvider.scopes ?? [],
         linkTypes: this.sourceProvider.linkTypes,
         // Placeholder callbacks — never called directly, dispatch uses sourceMethod instead
         getChannels: async () => [],

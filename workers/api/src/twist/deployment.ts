@@ -122,6 +122,7 @@ export async function deployTwist({
   let permissions: TwistPermissions;
   let providers: Array<{ provider: string; scopes: string[] }> = [];
   let optionsSchema: Record<string, unknown> | undefined;
+  let isNoProviderConnector = false;
   try {
     if (dryRun) {
       onProgress?.("Analyzing permissions");
@@ -166,11 +167,14 @@ export async function deployTwist({
 
     // Enrich providers with linkTypes from sourceProvider
     const { sourceProvider } = storeResult;
-    providers = sourceProvider
+    providers = sourceProvider?.provider
       ? storeResult.providers.map(p => p.provider === sourceProvider.provider
           ? { ...p, linkTypes: sourceProvider.linkTypes }
           : p)
       : storeResult.providers;
+    // For no-provider connectors (has sourceProvider but no OAuth provider),
+    // mark as source even though providers array is empty
+    isNoProviderConnector = !!sourceProvider && !sourceProvider.provider;
   } catch (error) {
     logger.error("Error storing twist module", error as Error);
     // Provide user-friendly error message
@@ -222,7 +226,7 @@ export async function deployTwist({
         version,
         permissions: JSON.stringify(twistPermissions),
         options: optionsSchema ? JSON.stringify(optionsSchema) : null,
-        is_source: providers.length > 0,
+        is_source: providers.length > 0 || isNoProviderConnector,
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
       })
@@ -246,7 +250,7 @@ export async function deployTwist({
         version,
         permissions: JSON.stringify(newTwistPermissions),
         options: optionsSchema ? JSON.stringify(optionsSchema) : null,
-        is_source: providers.length > 0,
+        is_source: providers.length > 0 || isNoProviderConnector,
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
       })
@@ -352,7 +356,7 @@ export async function deployTwist({
             version,
             permissions: JSON.stringify(publicPermissions),
             options: optionsSchema ? JSON.stringify(optionsSchema) : null,
-            is_source: providers.length > 0,
+            is_source: providers.length > 0 || isNoProviderConnector,
             logo_url: logoUrl ?? null,
             logo_url_dark: logoUrlDark ?? null,
           })
@@ -363,7 +367,7 @@ export async function deployTwist({
               version,
               permissions: JSON.stringify(publicPermissions),
               options: optionsSchema ? JSON.stringify(optionsSchema) : null,
-              is_source: providers.length > 0,
+              is_source: providers.length > 0 || isNoProviderConnector,
               logo_url: logoUrl ?? null,
               logo_url_dark: logoUrlDark ?? null,
             })

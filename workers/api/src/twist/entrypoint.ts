@@ -736,7 +736,7 @@ export abstract class TwistEntrypoint extends WorkerEntrypoint {
 
   abstract getSourceMetadata(
     _twistInit: TwistInit
-  ): Promise<{ provider: string; scopes: string[]; linkTypes: any[] } | null>;
+  ): Promise<{ provider?: string; scopes?: string[]; linkTypes: any[] } | null>;
 
   abstract activate(
     _twistInit: TwistInit,
