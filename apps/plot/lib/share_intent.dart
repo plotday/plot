@@ -8,8 +8,34 @@ import 'package:logging/logging.dart';
 final _log = Logger('plot.share_intent');
 
 /// Holds a pending shared URL until the app is ready to handle it.
+///
+/// On cold start, [onReady] is set by the router once it can handle navigation.
+/// If a URL arrives before [onReady] is set, it's buffered and replayed.
 class PendingShare {
-  static String? url;
+  static String? _url;
+  static void Function(String url)? _onReady;
+
+  static String? get url => _url;
+
+  static set url(String? value) {
+    if (value != null && _onReady != null) {
+      _onReady!(value);
+      _onReady = null;
+    } else {
+      _url = value;
+    }
+  }
+
+  /// Register a callback for when a pending share URL is ready.
+  /// If one is already buffered, it replays immediately.
+  static set onReady(void Function(String url)? callback) {
+    _onReady = callback;
+    if (callback != null && _url != null) {
+      final buffered = _url!;
+      _url = null;
+      callback(buffered);
+    }
+  }
 }
 
 /// Initializes share intent handling for iOS and Android.

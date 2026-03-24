@@ -21,7 +21,7 @@ import 'package:plot/router.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/root_menu_bar.dart';
 import 'package:plot/widget/toast.dart';
-import 'package:plot/main.dart' show setNavigatorKey;
+import 'package:plot/main.dart' show navigatorKey, setNavigatorKey;
 import 'package:plot/util/splash.dart';
 import 'logging.dart';
 
@@ -71,6 +71,7 @@ class RootProviderState extends State<RootProvider> {
     _nowBlocListener?.call();
     _contextPriorityListener?.cancel();
     _reAuthSubscription?.cancel();
+    PendingShare.onReady = null;
     super.dispose();
   }
 
@@ -181,16 +182,6 @@ class RootProviderState extends State<RootProvider> {
                     PendingInvite.clear();
                   }
                 }
-                // Open pending shared link (from cold start share intent)
-                else if (context.mounted && PendingShare.url != null) {
-                  final sharedUrl = PendingShare.url!;
-                  PendingShare.url = null;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (context.mounted) {
-                      context.run(OpenSharedLink(sharedUrl));
-                    }
-                  });
-                }
                 // Navigate to CLI URL if provided (only once)
                 else if (context.mounted &&
                     !_hasNavigatedToCliUrl &&
@@ -252,15 +243,24 @@ class RootProviderState extends State<RootProvider> {
                   }
                   if (!_routerInitialized) {
                     _routerInitialized = true;
-                    // Replay buffered notification navigation (cold start)
-                    if (_pendingNotificationPriorityId != null) {
-                      final id = _pendingNotificationPriorityId!;
-                      _pendingNotificationPriorityId = null;
-                      // Schedule after this build frame completes
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                    // Replay buffered cold-start actions after this build frame
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_pendingNotificationPriorityId != null) {
+                        final id = _pendingNotificationPriorityId!;
+                        _pendingNotificationPriorityId = null;
                         _navigateToNotificationPriority(id);
-                      });
-                    }
+                      }
+
+                      // Handle pending share intent (may arrive before or after
+                      // router is ready — onReady replays if already buffered,
+                      // or fires when the URL arrives later).
+                      PendingShare.onReady = (url) {
+                        final ctx = navigatorKey?.currentContext;
+                        if (ctx?.mounted == true) {
+                          ctx!.run(OpenSharedLink(url));
+                        }
+                      };
+                    });
                   }
                   return widget.builder(routerConfig);
                 },
