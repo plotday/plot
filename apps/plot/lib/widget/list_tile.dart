@@ -405,7 +405,15 @@ class _ListTileState extends State<ListTile> {
 
                     ...[
                       if (widget.leadingBuilder != null)
-                        widget.leadingBuilder!(_isHovered, _focusNode.hasFocus),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: widget.onTap ??
+                              (widget.command != null ? () => run() : null),
+                          child: widget.leadingBuilder!(
+                            _isHovered,
+                            _focusNode.hasFocus,
+                          ),
+                        ),
                     ].whereType<Widget>(),
                     Expanded(
                       child: hasPhysicalKeyboard()

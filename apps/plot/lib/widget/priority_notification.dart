@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:forui/forui.dart';
 
 import 'package:plot/state/theme.dart';
 import 'package:plot/style/colors.dart';
@@ -19,10 +20,29 @@ class PriorityNotification extends StatelessWidget {
   final bool active;
   final ThemeColor color;
 
+  String? get _tooltip {
+    if (active && unread) return 'Active and unread threads';
+    if (active) return 'Active threads';
+    if (unread) return 'Unread threads';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final accent = context.colour.colours.fromTheme(color);
     final iconSize = isMobilePlatform() ? 13.0 : 12.0;
+    final icon = _buildIcon(context, accent, iconSize);
+    final tooltip = _tooltip;
+    if (tooltip != null && hasPhysicalKeyboard()) {
+      return FTooltip(
+        tipBuilder: (context, controller) => Text(tooltip),
+        child: icon,
+      );
+    }
+    return icon;
+  }
+
+  Widget _buildIcon(BuildContext context, Color accent, double iconSize) {
     if (active) {
       if (unread) {
         final isDark = context.read<ThemeBloc>().isDarkMode(context);
