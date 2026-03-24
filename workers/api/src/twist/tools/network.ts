@@ -84,8 +84,7 @@ const SLACK_EVENT_SCOPES: Record<string, string[]> = {
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.modify",
-  "https://www.googleapis.com/auth/gmail.compose",
-  "https://mail.google.com/", // Full Gmail access
+  "https://www.googleapis.com/auth/gmail.send",
 ];
 
 /**
