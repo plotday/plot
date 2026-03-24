@@ -1,3 +1,4 @@
+- AI chat responses now show syntax-highlighted code blocks with a copy button, and render markdown tables
 - Fixed tapping a notification opening the Agenda instead of the Activity tab when the app was closed (Android and iOS)
 - Fixed sharing a link to Plot from another app opening the Agenda instead of creating a new thread
 - Desktop apps now show notifications and prompt to enable them if permission was denied

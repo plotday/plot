@@ -110,6 +110,7 @@ dependencies:
   timezone: ^0.10.0
   flutter_timezone: ^3.0.0
   sqlite3: ^3.2.0
+  re_highlight: ^0.0.3
 
 dependency_overrides:
   # ⚠️  PATCHED LOCAL FORK — see third_party/sqlite3/hook/build.dart

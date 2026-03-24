@@ -10,6 +10,8 @@ import 'package:follow_the_leader/follow_the_leader.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
+import 'code_block_component.dart';
+
 import 'package:plot/store/store.dart' hide Priority;
 import 'package:plot/store/store.dart' as store show Priority;
 
@@ -160,6 +162,29 @@ void _trimCodeBlockTrailingNewlines(MutableDocument document) {
   }
 }
 
+/// Extract language hints from fenced code blocks and attach to document nodes
+void _attachCodeBlockLanguages(String markdown, MutableDocument document) {
+  final langRegex = RegExp(r'^```(\w+)', multiLine: true);
+  final languages =
+      langRegex.allMatches(markdown).map((m) => m.group(1)!).toList();
+
+  int langIndex = 0;
+  for (int i = 0; i < document.nodeCount; i++) {
+    final node = document.getNodeAt(i);
+    if (node is! TextNode) continue;
+    if (node.metadata['blockType'] != codeAttribution) continue;
+    if (langIndex < languages.length) {
+      final newMetadata = Map<String, dynamic>.from(node.metadata);
+      newMetadata['language'] = languages[langIndex];
+      document.replaceNodeById(
+        node.id,
+        ParagraphNode(id: node.id, text: node.text, metadata: newMetadata),
+      );
+    }
+    langIndex++;
+  }
+}
+
 /// Deserialize markdown with mentions into a MutableDocument
 MutableDocument _deserializeMarkdownWithMentions(String markdown) {
   // Extract mentions before preprocessing
@@ -174,6 +199,9 @@ MutableDocument _deserializeMarkdownWithMentions(String markdown) {
 
   // Trim trailing newlines from code blocks
   _trimCodeBlockTrailingNewlines(document);
+
+  // Attach language metadata to code blocks
+  _attachCodeBlockLanguages(markdown, document);
 
   // Add mention attributions
   for (final mention in mentions) {
@@ -1814,6 +1842,8 @@ class ViewerState extends State<Viewer> {
         ),
         componentBuilders: <ComponentBuilder>[
           const BlockquoteComponentBuilder(),
+          const PlotCodeBlockComponentBuilder(),
+          const MarkdownTableComponentBuilder(),
           const ParagraphComponentBuilder(),
           const ListItemComponentBuilder(),
           const ImageComponentBuilder(),
@@ -1951,10 +1981,26 @@ Stylesheet _buildStylesheet(BuildContext context, bool isDark) {
           ),
         };
       }),
-      // Add spacing after the last item in a list (creates spacing after entire list)
-      // StyleRule(const BlockSelector("paragraph"), (doc, docNode) {
-      //   return {Styles.padding: const CascadingPadding.only(bottom: 14)};
-      // }),
+      // Table styling
+      StyleRule(BlockSelector(tableBlockAttribution.name), (doc, docNode) {
+        return {
+          Styles.padding: CascadingPadding.only(top: spacing.md),
+          TableStyles.headerTextStyle: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: isDark ? context.theme.colors.foreground : null,
+          ),
+          TableStyles.cellPadding: CascadingPadding.symmetric(
+            horizontal: spacing.md,
+            vertical: spacing.sm,
+          ),
+          TableStyles.border: TableBorder.all(
+            color: isDark
+                ? context.theme.colors.border
+                : const Color(0xFFDDDDDD),
+            width: 1,
+          ),
+        };
+      }),
     ],
     inlineTextStyler: (attributions, existingStyle) =>
         _inlineTextStyler(attributions, existingStyle, context, isDark),
