@@ -57,11 +57,11 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Everything in one place. Organized, prioritized, and ready for action.",
+        "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace.",
     },
     { "og:image": "https://plot.day/assets/p.png" },
     { "twitter:title": "Plot" },
-    { "twitter:description": "Your best work, every day" },
+    { "twitter:description": "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace." },
     { "twitter:image": "https://plot.day/assets/p.png" },
   ];
 }
