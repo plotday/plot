@@ -8,6 +8,7 @@
 /// - [Error]: Errors and failures
 /// - [Performance]: Performance monitoring events
 /// - [Session]: Authentication and session events
+/// - [User]: User lifecycle events (signup, subscription, payments)
 ///
 /// Objects (Title Case):
 /// - Activity, Priority, Twist, Tag, Filter, etc.
@@ -70,6 +71,9 @@
 /// - [Error] Activity Failed
 /// - [Performance] Action Timed Out
 /// - [Session] User Signed In
+/// - [User] User Signed Up
+/// - [User] Subscription Created
+/// - [User] Payment Succeeded
 
 library;
 
@@ -79,7 +83,8 @@ enum EventCategory {
   navigation('navigation'),
   error('error'),
   performance('performance'),
-  session('session');
+  session('session'),
+  user('user');
 
   const EventCategory(this.value);
   final String value;
@@ -100,7 +105,11 @@ enum EventObject {
   commandBar('command_bar'),
   modal('modal'),
   settings('settings'),
-  sync('sync');
+  sync('sync'),
+  subscription('subscription'),
+  payment('payment'),
+  checkout('checkout'),
+  invitation('invitation');
 
   const EventObject(this.value);
   final String value;
@@ -141,9 +150,13 @@ enum EventAction {
   sorted('sorted'),
   selected('selected'),
 
+  // Collaboration
+  shared('shared'),
+
   // Session
   signedIn('signed_in'),
   signedOut('signed_out'),
+  signedUp('signed_up'),
   identified('identified'),
 
   // Error/Performance

@@ -362,8 +362,11 @@ class Base {
     _signInTime = DateTime.now();
     _freshSignIn = true;
 
-    // Persist identity for offline restoration
+    // Detect new user before persisting identity
     final prefs = ProfilePreferences.instance;
+    final isNewUser = prefs.getString('clerk_user_id') == null;
+
+    // Persist identity for offline restoration
     await prefs.setString('clerk_user_id', userId);
     if (email != null) await prefs.setString('clerk_user_email', email);
     if (name != null) await prefs.setString('clerk_user_name', name);
@@ -378,7 +381,7 @@ class Base {
       contactId: contactId,
     );
 
-    // Track sign-in
+    // Identify user in PostHog
     await Tracker.identify(
       userId,
       properties: {
@@ -389,6 +392,15 @@ class Base {
         "signed_up_time": DateTime.now().toUtc().toIso8601String(),
       },
     );
+
+    // Track signup vs sign-in
+    if (isNewUser) {
+      await Tracker.trackEvent(
+        category: EventCategory.user,
+        object: EventObject.user,
+        action: EventAction.signedUp,
+      );
+    }
     await Tracker.trackSession(EventAction.signedIn);
 
     _currentUserController.add(user);

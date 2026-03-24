@@ -221,6 +221,12 @@ upgrade.post("/upgrade/checkout", async (c) => {
       return c.json({ error: "Failed to create checkout session" }, 500);
     }
 
+    c.var.tracker.capture("[User] Checkout Started", {
+      plan: "team",
+      price_lookup_key: body.priceLookupKey,
+      organization_id: orgId,
+    });
+
     return c.json({ url: session.url, organizationId: orgId });
   }
 
@@ -271,6 +277,11 @@ upgrade.post("/upgrade/checkout", async (c) => {
     });
     return c.json({ error: "Failed to create checkout session" }, 500);
   }
+
+  c.var.tracker.capture("[User] Checkout Started", {
+    plan,
+    price_lookup_key: body.priceLookupKey,
+  });
 
   return c.json({ url: session.url });
 });

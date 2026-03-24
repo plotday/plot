@@ -309,6 +309,12 @@ invitation.post("/invitation/redeem", async (c) => {
 
   const result = await redeemInvitation(c.var.db, user.id, token);
 
+  if (result.success) {
+    c.var.tracker.capture("[Action] Invitation Accepted", {
+      priorities_joined: (result as any).priorities?.length ?? 0,
+    });
+  }
+
   if (!result.success) {
     // Return appropriate status based on error
     if (result.error === "invalid_token") {

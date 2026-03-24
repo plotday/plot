@@ -50,16 +50,38 @@ stripe.post("/webhook", async (c) => {
 
     // Handle different event types
     switch (event.type) {
-      case "customer.subscription.created":
+      case "customer.subscription.created": {
+        const subscription = event.data.object as Stripe.Subscription;
+        await handleSubscriptionUpdate(c, subscription);
+        await identifyStripeUser(c, subscription.customer as string);
+        c.var.tracker.capture("[User] Subscription Created", {
+          plan: subscription.metadata.plan ?? "free",
+          status: subscription.status,
+          stripe_customer_id: subscription.customer as string,
+        });
+        break;
+      }
+
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
         await handleSubscriptionUpdate(c, subscription);
+        await identifyStripeUser(c, subscription.customer as string);
+        c.var.tracker.capture("[User] Subscription Updated", {
+          plan: subscription.metadata.plan ?? "free",
+          status: subscription.status,
+          stripe_customer_id: subscription.customer as string,
+        });
         break;
       }
 
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
         await handleSubscriptionDeleted(c, subscription);
+        await identifyStripeUser(c, subscription.customer as string);
+        c.var.tracker.capture("[User] Subscription Canceled", {
+          plan: subscription.metadata.plan ?? "free",
+          stripe_customer_id: subscription.customer as string,
+        });
         break;
       }
 
@@ -72,6 +94,12 @@ stripe.post("/webhook", async (c) => {
           );
           await handleSubscriptionUpdate(c, subscription);
         }
+        await identifyStripeUser(c, invoice.customer as string);
+        c.var.tracker.capture("[User] Payment Succeeded", {
+          amount_cents: invoice.amount_paid,
+          currency: invoice.currency,
+          stripe_customer_id: invoice.customer as string,
+        });
         break;
       }
 
@@ -80,6 +108,12 @@ stripe.post("/webhook", async (c) => {
         logger.warn("Payment failed", {
           customer_id: invoice.customer as string,
           subscription_id: invoice.subscription as string,
+        });
+        await identifyStripeUser(c, invoice.customer as string);
+        c.var.tracker.capture("[User] Payment Failed", {
+          amount_cents: invoice.amount_due,
+          currency: invoice.currency,
+          stripe_customer_id: invoice.customer as string,
         });
         // Subscription status will be updated via subscription.updated event
         break;
@@ -108,6 +142,21 @@ stripe.post("/webhook", async (c) => {
     return new Response("Internal server error", { status: 500 });
   }
 });
+
+/**
+ * Look up user ID from Stripe customer ID and set as tracker distinctId.
+ */
+async function identifyStripeUser(c: any, stripeCustomerId: string) {
+  const userSub = await c.var.db
+    .selectFrom("user_subscription")
+    .select("user_id")
+    .where("stripe_customer_id", "=", stripeCustomerId)
+    .executeTakeFirst();
+
+  if (userSub) {
+    c.var.tracker.setDistinctId(userSub.user_id);
+  }
+}
 
 /**
  * Handle subscription created/updated events

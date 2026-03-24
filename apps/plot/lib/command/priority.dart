@@ -566,7 +566,7 @@ class SharePriority extends PriorityCommand {
   SharePriority(Priority super.priority, this.contactId, {required this.add})
     : super(
         eventObject: EventObject.priority,
-        eventAction: EventAction.updated,
+        eventAction: add ? EventAction.shared : EventAction.updated,
       );
 
   final Uuid contactId;
