@@ -485,19 +485,31 @@ class _AuthButtonState extends State<AuthButton> {
   void _startGoogleAuthDesktop() async {
     setState(() => _isLoading = true);
     try {
-      final clientId = Env.googleDesktopClientId ?? Env.googleClientId;
-
-      final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
-        'client_id': clientId,
-        'redirect_uri': _desktopCallbackUrl,
-        'response_type': 'code',
-        'scope': 'openid profile email',
-        'access_type': 'offline',
-        'prompt': 'select_account',
-      });
+      // Use the server to generate the auth URL with state + PKCE.
+      // This is an unauthenticated call (user hasn't signed in yet),
+      // so use http.get directly instead of api.get which attaches a Bearer token.
+      final authUrlRequest = Uri.parse('${Env.apiRoot}/auth').replace(
+        queryParameters: {
+          'provider': 'google',
+          'scopes': ['openid', 'profile', 'email'],
+          'redirectUri': _desktopCallbackUrl,
+          'platform': 'desktop',
+        },
+      );
+      final authUrlResponse = await http.get(authUrlRequest);
+      if (authUrlResponse.statusCode != 200) {
+        throw Exception(
+          'Failed to generate auth URL (${authUrlResponse.statusCode}): ${authUrlResponse.body}',
+        );
+      }
+      final authData =
+          jsonDecode(authUrlResponse.body) as Map<String, dynamic>;
+      final authUrl = authData['url'] as String;
+      final clientId = authData['clientId'] as String;
+      final state = authData['state'] as String;
 
       final result = await FlutterWebAuth2.authenticate(
-        url: authUrl.toString(),
+        url: authUrl,
         callbackUrlScheme: _desktopCallbackUrl,
         options: const FlutterWebAuth2Options(useWebview: false),
       );
@@ -508,13 +520,13 @@ class _AuthButtonState extends State<AuthButton> {
         throw Exception('No authorization code received from Google');
       }
 
-      // POST code to API for server-side token exchange
+      // POST code + state to API for server-side token exchange with PKCE
       final uri = Uri.parse('${Env.apiRoot}/auth').replace(
         queryParameters: {
           'code': code,
           'clientId': clientId,
           'redirectUri': _desktopCallbackUrl,
-          'provider': 'google',
+          'state': state,
         },
       );
       final tokenResponse = await http.post(uri);

@@ -36,6 +36,11 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     return next();
   }
 
+  // Allow OAuth URL generation (no sensitive data, just generates redirect URLs with state + PKCE)
+  if (c.req.path === "/app/auth" && c.req.method === "GET") {
+    return next();
+  }
+
   // Allow invitation lookup without auth (no user identity needed)
   if (c.req.path.startsWith("/app/invitation/") && c.req.method === "GET") {
     return next();
