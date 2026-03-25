@@ -227,6 +227,7 @@ jobs:
           cd apps/plot
           shorebird patch ios \
             --release-version="${{ steps.version.outputs.version }}" \
+            --allow-asset-diffs \
             -- --export-options-plist=ios/ExportOptions.plist
 
       - name: Tag successful patch
@@ -373,7 +374,8 @@ jobs:
         run: |
           cd apps/plot
           shorebird patch android \
-            --release-version="${{ steps.version.outputs.version }}"
+            --release-version="${{ steps.version.outputs.version }}" \
+            --allow-asset-diffs
 
       - name: Tag successful patch
         run: |
@@ -555,7 +557,8 @@ jobs:
         run: |
           cd apps/plot
           shorebird patch macos \
-            --release-version="${{ steps.version.outputs.version }}"
+            --release-version="${{ steps.version.outputs.version }}" \
+            --allow-asset-diffs
 
       - name: Tag successful patch
         run: |
@@ -684,7 +687,8 @@ jobs:
         run: |
           cd apps/plot
           shorebird patch windows \
-            --release-version="${{ steps.version.outputs.version }}"
+            --release-version="${{ steps.version.outputs.version }}" \
+            --allow-asset-diffs
 
       - name: Tag successful patch
         shell: bash
