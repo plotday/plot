@@ -87,10 +87,36 @@ Diff between the original release commit and the merge result to detect unpatcha
 
 - **High risk — new native plugin**: A dependency in pubspec.yaml that doesn't exist at the release commit (e.g., `flutter_local_notifications` added). Must revert all Dart code that depends on it.
 - **Medium risk — platform config**: New entries in Info.plist, entitlements, build.gradle that aren't in the release binary. Flag but don't revert — affected features won't work but won't crash.
-- **Low risk — native SDK bump**: Pod or native dependency version change (e.g., PostHog 3.43→3.48). Dart API usually backwards-compatible. Flag but proceed.
+- **Medium risk — native SDK bump**: Pod or native dependency version change (e.g., PostHog 3.43→3.48). Shorebird rejects Podfile.lock diffs, so these must be reverted. Pin the pubspec.yaml version and restore Podfile.locks. Dart API is usually backwards-compatible.
 - **Safe — pure Dart**: New Dart-only packages (e.g., `re_highlight`), Dart dependency upgrades. No action needed.
 
-### 2c. Auto-Revert High-Risk Native Changes
+### 2c. Restore Native Lock Files
+
+Shorebird compares Podfile.lock against the release and rejects patches if they differ. **Always restore lock files to the release state:**
+
+```bash
+# Restore Podfile.locks to match the release
+git checkout {release-commit} -- apps/plot/macos/Podfile.lock apps/plot/ios/Podfile.lock
+
+# If a native SDK version was bumped in pubspec.yaml (e.g., posthog_flutter ^5.17.0 → ^5.21.0),
+# revert the version constraint so flutter pub get resolves the same version as the release.
+# Then restore the pubspec.lock to the release version:
+git checkout {release-commit} -- apps/plot/pubspec.lock
+
+# Re-run pub get — it will use the lock file versions but add any new pure-Dart deps
+cd apps/plot && flutter pub get
+```
+
+After `flutter pub get`, verify the Podfile.locks still match:
+
+```bash
+diff <(git show {release-commit}:apps/plot/macos/Podfile.lock) apps/plot/macos/Podfile.lock
+diff <(git show {release-commit}:apps/plot/ios/Podfile.lock) apps/plot/ios/Podfile.lock
+```
+
+If they differ, a new dependency is pulling in a native pod. Track down which dependency changed and pin it to the release version in pubspec.yaml.
+
+### 2d. Auto-Revert High-Risk Native Changes
 
 When a new native plugin is detected:
 
@@ -124,16 +150,16 @@ Then STOP and present the situation to the user with the list of affected files 
 - Remove associated entries from `dependency_overrides:`
 - Keep pure Dart additions
 
-### 2d. Apply User-Requested Exclusions
+### 2e. Apply User-Requested Exclusions
 
 If the user specified exclusions:
 
 - **Commit exclusions** (`exclude commit abc1234`): `git revert --no-commit {hash}` after the merge
 - **File/directory exclusions** (`exclude lib/notifications/`): `git checkout {release-commit} -- {paths}`, then fix broken imports
 
-After exclusions, run the same cascade repair as 2c.
+After exclusions, run the same cascade repair as 2d.
 
-### 2e. Pin Version
+### 2f. Pin Version
 
 ```bash
 # Find the release version
@@ -145,7 +171,7 @@ RELEASE_VERSION=$(git show {release-commit}:apps/plot/pubspec.yaml | grep '^vers
 
 Replace all occurrences of the current version with the release version in `apps/plot/pubspec.yaml`.
 
-### 2f. Verify Asset Compatibility
+### 2g. Verify Asset Compatibility
 
 Shorebird patches only the Dart AOT snapshot. Assets bundled in the original release (`.env`, images, fonts, `NOTICES.Z`) **stay unchanged on device** — the patch cannot update them. The CI workflow uses `--allow-asset-diffs` because `.env` (generated from 1Password in CI) and `NOTICES.Z` (changes with any dependency) always differ. This means any **new** asset referenced by patched Dart code will be missing at runtime.
 
@@ -177,7 +203,7 @@ Font files in packages (e.g., `font_awesome_flutter`) are assets. New icon codep
 - `NOTICES.Z` — compressed license text, purely informational
 - Font files — only cosmetic if new glyphs are referenced
 
-### 2g. Validate
+### 2h. Validate
 
 ```bash
 cd apps/plot
@@ -190,7 +216,7 @@ Both must succeed. If `flutter analyze` reports errors:
 - If they're type errors or missing references → the cascade repair missed something, fix it
 - If errors persist after two fix attempts → stop and present to user
 
-### 2h. Commit and Push
+### 2i. Commit and Push
 
 ```bash
 git add -A apps/plot/
