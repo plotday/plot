@@ -17,6 +17,7 @@ import 'package:plot/state/user.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart';
@@ -33,6 +34,8 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/main.dart' show navigatorKey;
+import 'package:plot/widget/otp_input.dart';
+import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
 import 'command.dart';
 import 'page_link.dart';
@@ -114,6 +117,7 @@ StaticCommandGroup settingsCommands({
   commands: [
     if (gettingStartedCmd != null) gettingStartedCmd,
     ManageConnections(),
+    LinkEmail(),
     ManageTwists(),
     if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
     if (subscription != null && subscription.hasPaidPlan) ManageSubscription(),
@@ -886,6 +890,279 @@ class ShowOfflineInfo extends ShowPage {
         icon: PlotIcon.offline,
         builder: (context) => _OfflineInfoContent(),
       );
+}
+
+class LinkEmail extends ShowPage {
+  LinkEmail()
+    : super(
+        title: 'Link email address',
+        icon: FontAwesomeIcons.envelope,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+        builder: (context) => _LinkEmailContent(),
+      );
+}
+
+enum _LinkEmailMode { enterEmail, otpSent, success }
+
+class _LinkEmailContent extends StatefulWidget {
+  @override
+  State<_LinkEmailContent> createState() => _LinkEmailContentState();
+}
+
+class _LinkEmailContentState extends State<_LinkEmailContent> {
+  final _emailController = TextEditingController();
+  final _otpController = TextEditingController();
+  _LinkEmailMode _mode = _LinkEmailMode.enterEmail;
+  bool _isLoading = false;
+  int _otpResetCounter = 0;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _otpController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleSendCode() async {
+    final email = _emailController.text.trim().toLowerCase();
+    if (email.isEmpty) {
+      context.showToast(message: 'Please enter an email address', isError: true);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final result = await api.post<Map<String, dynamic>>(
+        '/link-email/send',
+        body: {'email': email},
+      );
+
+      if (!mounted) return;
+
+      if (result['message'] == 'already_linked') {
+        context.showToast(message: 'This email is already linked to your account');
+        Modal.pop<CommandReturn>(context, Value(const CommandDone()));
+        return;
+      }
+
+      setState(() {
+        _mode = _LinkEmailMode.otpSent;
+        _isLoading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      context.showToast(message: e.description, isError: true);
+      setState(() => _isLoading = false);
+    } catch (e, t) {
+      log.warning('Failed to send link-email code', e, t);
+      Tracker.captureException(e, t);
+      if (!mounted) return;
+      context.showToast(
+        message: 'Something went wrong. Please try again.',
+        isError: true,
+      );
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleVerifyCode() async {
+    if (_isLoading) return;
+
+    final email = _emailController.text.trim().toLowerCase();
+    final code = _otpController.text.trim();
+
+    if (code.isEmpty) {
+      context.showToast(
+        message: 'Please enter the verification code',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await api.post<Map<String, dynamic>>(
+        '/link-email/verify',
+        body: {'email': email, 'code': code},
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _mode = _LinkEmailMode.success;
+        _isLoading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      context.showToast(message: e.description, isError: true);
+      setState(() => _isLoading = false);
+    } catch (e, t) {
+      log.warning('Failed to verify link-email code', e, t);
+      Tracker.captureException(e, t);
+      if (!mounted) return;
+      context.showToast(
+        message: 'Something went wrong. Please try again.',
+        isError: true,
+      );
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleResendCode() async {
+    setState(() {
+      _otpResetCounter++;
+      _otpController.clear();
+    });
+    await _handleSendCode();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: context.theme.spacing.padding,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Link email address',
+            style: context.theme.typography.lg.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          if (_mode == _LinkEmailMode.success) ...[
+            Text(
+              'Email linked successfully! You can now sign in with this email address.',
+              style: context.theme.typography.md.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                FButton(
+                  onPress: () => Modal.pop<CommandReturn>(
+                    context,
+                    Value(const CommandDone()),
+                  ),
+                  variant: FButtonVariant.primary,
+                  child: const Text('Done'),
+                ),
+              ],
+            ),
+          ] else if (_mode == _LinkEmailMode.otpSent) ...[
+            FAlert(
+              title: const Text(
+                'Check your email!\nWe sent a verification code to',
+              ),
+              subtitle: Text(
+                _emailController.text.trim(),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Opacity(
+                  opacity: _isLoading ? 0.3 : 1.0,
+                  child: Column(
+                    spacing: 8,
+                    children: [
+                      Text(
+                        'Enter the 6-digit code from your email:',
+                        style: context.theme.typography.md,
+                        textAlign: TextAlign.center,
+                      ),
+                      OtpInput(
+                        key: ValueKey(_otpResetCounter),
+                        controller: _otpController,
+                        onComplete: _handleVerifyCode,
+                      ),
+                    ],
+                  ),
+                ),
+                if (_isLoading) const Spinner.message('Verifying...'),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FButton(
+                  onPress: _isLoading ? null : _handleResendCode,
+                  variant: FButtonVariant.ghost,
+                  child: const Text('Resend code'),
+                ),
+                const SizedBox(width: 8),
+                const Text('·'),
+                const SizedBox(width: 8),
+                FButton(
+                  onPress: () {
+                    setState(() {
+                      _mode = _LinkEmailMode.enterEmail;
+                      _otpController.clear();
+                    });
+                  },
+                  variant: FButtonVariant.ghost,
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ] else ...[
+            Text(
+              'Link an additional email address to your account. '
+              'You will be able to sign in with it.',
+              style: context.theme.typography.md.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+            const SizedBox(height: 16),
+            FTextField(
+              control: .managed(controller: _emailController),
+              hint: 'your@email.com',
+              label: const Text('Email'),
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              autofocus: true,
+              autocorrect: false,
+              onSubmit: (_) => _handleSendCode(),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                FButton(
+                  onPress: () => Modal.pop<CommandReturn>(
+                    context,
+                    Value(const CommandDone()),
+                  ),
+                  variant: FButtonVariant.secondary,
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 120,
+                  child: FButton(
+                    onPress: _isLoading ? null : _handleSendCode,
+                    variant: FButtonVariant.primary,
+                    child: _isLoading
+                        ? const Spinner()
+                        : const Text('Send code'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _OfflineInfoContent extends StatelessWidget {

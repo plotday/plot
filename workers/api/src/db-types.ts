@@ -42,7 +42,7 @@ export type Numeric = ColumnType<string, number | string, number | string>;
 
 export type OrganizationRole = "admin" | "member";
 
-export type SubscriptionPlan = "free" | "pro" | "team";
+export type SubscriptionPlan = "core" | "free" | "pro" | "team";
 
 export type SubscriptionStatus = "active" | "canceled" | "incomplete" | "incomplete_expired" | "past_due" | "trialing" | "unpaid";
 
@@ -145,6 +145,16 @@ export interface Domain {
   id: Generated<Int8>;
   name: string;
   organization_id: Int8 | null;
+}
+
+export interface EmailClaim {
+  attempts: Generated<number>;
+  code: string;
+  created_at: Generated<Timestamp>;
+  email: string;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  user_id: string;
 }
 
 export interface ExtensionsPgAllForeignKeys {
@@ -837,6 +847,16 @@ export interface ScheduleContact {
   updated_at: Generated<Timestamp>;
 }
 
+export interface SecureOption {
+  created_at: Generated<Timestamp>;
+  encrypted_value: string;
+  id: Generated<Int8>;
+  iv: string;
+  key: string;
+  priority_twist_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Series {
   created_at: Generated<Timestamp>;
   embedding: string | null;
@@ -1291,6 +1311,7 @@ export interface DB {
   cost: Cost;
   device: Device;
   domain: Domain;
+  email_claim: EmailClaim;
   "extensions.pg_all_foreign_keys": ExtensionsPgAllForeignKeys;
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
@@ -1332,6 +1353,7 @@ export interface DB {
   publisher: Publisher;
   schedule: Schedule;
   schedule_contact: ScheduleContact;
+  secure_option: SecureOption;
   series: Series;
   session: Session;
   source_channel: SourceChannel;

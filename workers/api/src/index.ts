@@ -14,6 +14,7 @@ import { authMiddleware as appAuthMiddleware } from "./app/auth";
 import authRoutes from "./app/authRoutes";
 import callbacks from "./app/callbacks";
 import connections from "./app/connections";
+import linkEmail from "./app/link-email";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import files from "./app/files";
 import upgrade from "./app/upgrade";
@@ -168,6 +169,7 @@ appSection.route("/", upgrade);
 appSection.route("/", connections);
 appSection.route("/", organizationRoutes);
 appSection.route("/", aiKeyRoutes);
+appSection.route("/", linkEmail);
 // Note: /app/sync routes are mounted separately with appSyncRateLimiter.
 
 // App sync section - public sync endpoints (user-authenticated)
