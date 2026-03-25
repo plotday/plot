@@ -145,7 +145,39 @@ RELEASE_VERSION=$(git show {release-commit}:apps/plot/pubspec.yaml | grep '^vers
 
 Replace all occurrences of the current version with the release version in `apps/plot/pubspec.yaml`.
 
-### 2f. Validate
+### 2f. Verify Asset Compatibility
+
+Shorebird patches only the Dart AOT snapshot. Assets bundled in the original release (`.env`, images, fonts, `NOTICES.Z`) **stay unchanged on device** — the patch cannot update them. The CI workflow uses `--allow-asset-diffs` because `.env` (generated from 1Password in CI) and `NOTICES.Z` (changes with any dependency) always differ. This means any **new** asset referenced by patched Dart code will be missing at runtime.
+
+**Check for new `.env` keys:**
+
+```bash
+git diff {release-commit}..HEAD -- apps/plot/lib/env.dart
+```
+
+If new env keys were added and the Dart code calls them without a fallback, the patched app will get `null` and may crash. For each new key, either:
+- Add a fallback/default in the Dart code so the feature degrades gracefully, OR
+- Revert the Dart code that depends on the new key
+
+**Check for new asset files:**
+
+```bash
+git diff {release-commit}..HEAD --stat -- apps/plot/assets/
+git diff {release-commit}..HEAD -- apps/plot/pubspec.yaml | grep -A5 'assets:'
+```
+
+If Dart code loads a new asset path (e.g., `Image.asset('assets/new_icon.png')`), the patched app will throw a `FlutterError` at runtime. Revert or guard the Dart code that references missing assets.
+
+**Check for new font glyphs:**
+
+Font files in packages (e.g., `font_awesome_flutter`) are assets. New icon codepoints render as □ (missing glyph) but don't crash — low risk, flag but proceed.
+
+**Expected (harmless) diffs that always occur:**
+- `.env` — CI generates prod env; on-device copy from original release still works unless new keys are required
+- `NOTICES.Z` — compressed license text, purely informational
+- Font files — only cosmetic if new glyphs are referenced
+
+### 2g. Validate
 
 ```bash
 cd apps/plot
@@ -158,7 +190,7 @@ Both must succeed. If `flutter analyze` reports errors:
 - If they're type errors or missing references → the cascade repair missed something, fix it
 - If errors persist after two fix attempts → stop and present to user
 
-### 2g. Commit and Push
+### 2h. Commit and Push
 
 ```bash
 git add -A apps/plot/
