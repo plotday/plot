@@ -359,31 +359,34 @@ class NewThreadPageState extends State<NewThreadPage> {
         ),
         SizedBox(height: 8),
         Center(
-          child: FButton(
-            onPress: () => _selectPriority(context, state),
-            variant: FButtonVariant.secondary,
-            style: FButtonStyleDelta.delta(
-              decoration: FVariantsDelta.delta([
-                FVariantOperation.all(
-                  DecorationDelta.boxDelta(
-                    borderRadius: const BorderRadius.all(Radius.circular(24)),
-                    border: Border.all(color: context.theme.colors.border),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 300),
+            child: FButton(
+              onPress: () => _selectPriority(context, state),
+              variant: FButtonVariant.secondary,
+              style: FButtonStyleDelta.delta(
+                decoration: FVariantsDelta.delta([
+                  FVariantOperation.all(
+                    DecorationDelta.boxDelta(
+                      borderRadius: const BorderRadius.all(Radius.circular(24)),
+                      border: Border.all(color: context.theme.colors.border),
+                    ),
+                  ),
+                ]),
+                contentStyle: FButtonContentStyleDelta.delta(
+                  padding: EdgeInsetsGeometryDelta.value(
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   ),
                 ),
-              ]),
-              contentStyle: FButtonContentStyleDelta.delta(
-                padding: EdgeInsetsGeometryDelta.value(
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                ),
               ),
+              mainAxisSize: MainAxisSize.min,
+              suffix: Icon(
+                PlotIcon.verticalExpand,
+                size: 10,
+                color: context.theme.colors.mutedForeground,
+              ),
+              child: PriorityLabel(priority: state.draft.priority, muted: true),
             ),
-            mainAxisSize: MainAxisSize.min,
-            suffix: Icon(
-              PlotIcon.verticalExpand,
-              size: 10,
-              color: context.theme.colors.mutedForeground,
-            ),
-            child: PriorityLabel(priority: state.draft.priority, muted: true),
           ),
         ),
         SizedBox(height: 24),
