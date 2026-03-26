@@ -40,22 +40,38 @@ export function createDb(env: Bindings) {
   });
 }
 
-/** Run `fn` with a short-lived Kysely instance that is always destroyed. */
+/** Run `fn` with a short-lived Kysely instance that is always destroyed.
+ *  Retries once on transient connection errors (e.g. Hyperdrive recycling). */
 export async function withDb<T>(
   env: Bindings,
   fn: (db: Kysely<DB>) => Promise<T>
 ): Promise<T> {
-  const db = createDb(env);
-  try {
-    // Also set statement_timeout via explicit SET as a fallback.
-    // The connection-level `options` parameter in createDb should handle this,
-    // but if Hyperdrive reuses a pooled connection that already completed
-    // its startup phase, this SET ensures the timeout is applied.
-    await sql`SET statement_timeout = 30000`.execute(db);
-    return await fn(db);
-  } finally {
-    await db.destroy();
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const db = createDb(env);
+    try {
+      // Also set statement_timeout via explicit SET as a fallback.
+      // The connection-level `options` parameter in createDb should handle this,
+      // but if Hyperdrive reuses a pooled connection that already completed
+      // its startup phase, this SET ensures the timeout is applied.
+      await sql`SET statement_timeout = 30000`.execute(db);
+      return await fn(db);
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0 && isTransientDbError(error)) {
+        continue;
+      }
+      throw error;
+    } finally {
+      await db.destroy();
+    }
   }
+  throw lastError;
+}
+
+function isTransientDbError(error: unknown): boolean {
+  const msg = (error as Error)?.message ?? "";
+  return msg.includes("shutting down") || msg.includes("connection terminated");
 }
 
 /**
