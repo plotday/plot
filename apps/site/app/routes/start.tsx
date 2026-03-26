@@ -7,6 +7,7 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 
+import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/start";
 import classes from "./start.module.css";
 
@@ -79,7 +80,7 @@ export function loader({ request }: Route.LoaderArgs) {
 }
 
 export function meta(_: Route.MetaArgs) {
-  return [
+  return mergeMeta([
     { title: "Get Plot" },
     {
       name: "description",
@@ -90,8 +91,7 @@ export function meta(_: Route.MetaArgs) {
     {
       "og:description": "Download Plot for your platform.",
     },
-    { "og:image": "https://plot.day/assets/p.png" },
-  ];
+  ]);
 }
 
 function PlatformCard({

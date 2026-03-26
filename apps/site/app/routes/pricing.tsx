@@ -17,6 +17,7 @@ import { Link } from "react-router";
 
 import { PLANS } from "~/lib/plans";
 import type { Billing } from "~/lib/plans";
+import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/pricing";
 import classes from "./pricing.module.css";
 
@@ -69,7 +70,7 @@ const FAQS = [
 ];
 
 export function meta(_: Route.MetaArgs) {
-  return [
+  return mergeMeta([
     { title: "Pricing | Plot" },
     {
       name: "description",
@@ -81,14 +82,12 @@ export function meta(_: Route.MetaArgs) {
       "og:description":
         "Simple pricing. No per-seat fees. Unlimited collaboration.",
     },
-    { "og:image": "https://plot.day/assets/p.png" },
     { "twitter:title": "Plot Pricing" },
     {
       "twitter:description":
         "Simple pricing. No per-seat fees. Unlimited collaboration.",
     },
-    { "twitter:image": "https://plot.day/assets/p.png" },
-  ];
+  ]);
 }
 
 export default function Pricing() {

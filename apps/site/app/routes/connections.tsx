@@ -17,6 +17,7 @@ import { IconArrowRight, IconSearch, IconThumbUp } from "@tabler/icons-react";
 import { Link, useFetcher } from "react-router";
 
 import { CATEGORIES, CONNECTIONS, type Connection } from "../data/connections";
+import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/connections";
 import classes from "./connections.module.css";
 
@@ -85,7 +86,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 }
 
 export function meta(_: Route.MetaArgs) {
-  return [
+  return mergeMeta([
     { title: "Connections | Plot" },
     {
       name: "description",
@@ -97,8 +98,7 @@ export function meta(_: Route.MetaArgs) {
       "og:description":
         "Browse and vote for the integrations you want in Plot.",
     },
-    { "og:image": "https://plot.day/assets/p.png" },
-  ];
+  ]);
 }
 
 function ConnectionCard({

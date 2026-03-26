@@ -18,11 +18,12 @@ import {
 } from "@tabler/icons-react";
 import { Link } from "react-router";
 
+import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/twists";
 import classes from "./twists.module.css";
 
 export function meta(_: Route.MetaArgs) {
-  return [
+  return mergeMeta([
     { title: "Twists | Plot" },
     {
       name: "description",
@@ -34,14 +35,12 @@ export function meta(_: Route.MetaArgs) {
       "og:description":
         "Automations and AI agents that work with you, your team, and your connections.",
     },
-    { "og:image": "https://plot.day/assets/p.png" },
     { "twitter:title": "Plot Twists" },
     {
       "twitter:description":
         "Automations and AI agents that work with you, your team, and your connections.",
     },
-    { "twitter:image": "https://plot.day/assets/p.png" },
-  ];
+  ]);
 }
 
 export default function Twists() {

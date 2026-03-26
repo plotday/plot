@@ -17,6 +17,7 @@ import { FeaturesStrip } from "~/components/home/FeaturesStrip";
 import { PlatformCallout } from "~/components/home/PlatformCallout";
 import { useScrollReveal } from "~/hooks/useScrollReveal";
 
+import { mergeMeta } from "~/lib/meta";
 import type { Route } from "./+types/home";
 import classes from "./home.module.css";
 
@@ -52,18 +53,16 @@ const STORY_TABS = [
 ];
 
 export function meta(_: Route.MetaArgs) {
-  return [
+  return mergeMeta([
     { title: "Plot | Your best work, every day" },
     {
       name: "description",
       content:
         "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace.",
     },
-    { "og:image": "https://plot.day/assets/p.png" },
     { "twitter:title": "Plot" },
     { "twitter:description": "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace." },
-    { "twitter:image": "https://plot.day/assets/p.png" },
-  ];
+  ]);
 }
 
 export default function Home() {

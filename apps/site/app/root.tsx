@@ -29,6 +29,7 @@ import {
 import notFoundImage from "./assets/404.png";
 
 import type { Route } from "./+types/root";
+import { mergeMeta } from "./lib/meta";
 import stylesheet from "./app.css?url";
 import { PostHogIdentify } from "./components/posthog-identify";
 import { clerkAppearance, clerkDarkAppearance, resolver, theme } from "./theme";
@@ -57,11 +58,11 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export function meta(_: Route.MetaArgs) {
-  return [
+  return mergeMeta([
     {
       title: "Plot",
     },
-  ];
+  ]);
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
