@@ -1,8 +1,6 @@
 name: Deploy Twists & Connectors
 
 env:
-  TWISTS: "plot,claude,chatgpt,gemini"
-  CONNECTORS: "github,gmail,google-calendar,google-contacts,google-drive,linear"
   NX_NO_CLOUD: true
 
 on:
@@ -147,11 +145,42 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Discover all twists and connectors
+        id: discover
+        run: |
+          # Discover twists: directories in twists/ or public/twists/ with a plotTwistId in package.json
+          ALL_TWISTS=()
+          for dir in twists/*/package.json public/twists/*/package.json; do
+            [ -f "$dir" ] || continue
+            if jq -e '.plotTwistId' "$dir" > /dev/null 2>&1; then
+              ALL_TWISTS+=("$(basename "$(dirname "$dir")")")
+            fi
+          done
+
+          # Discover connectors: directories in public/connectors/ with a plotTwistId in package.json
+          ALL_CONNECTORS=()
+          for dir in public/connectors/*/package.json; do
+            [ -f "$dir" ] || continue
+            if jq -e '.plotTwistId' "$dir" > /dev/null 2>&1; then
+              ALL_CONNECTORS+=("$(basename "$(dirname "$dir")")")
+            fi
+          done
+
+          echo "Discovered twists: ${ALL_TWISTS[*]}"
+          echo "Discovered connectors: ${ALL_CONNECTORS[*]}"
+
+          # Save as comma-separated for later steps
+          ALL_TWISTS_CSV=$(IFS=,; echo "${ALL_TWISTS[*]}")
+          ALL_CONNECTORS_CSV=$(IFS=,; echo "${ALL_CONNECTORS[*]}")
+          echo "all_twists=$ALL_TWISTS_CSV" >> $GITHUB_OUTPUT
+          echo "all_connectors=$ALL_CONNECTORS_CSV" >> $GITHUB_OUTPUT
+
       - name: Check for affected twists and connectors
         id: filter
         run: |
-          TWIST_LIST=(${TWISTS//,/ })
-          CONNECTOR_LIST=(${CONNECTORS//,/ })
+          # Parse discovered lists
+          IFS=',' read -ra TWIST_LIST <<< "${{ steps.discover.outputs.all_twists }}"
+          IFS=',' read -ra CONNECTOR_LIST <<< "${{ steps.discover.outputs.all_connectors }}"
           TWISTS_TO_DEPLOY=()
           CONNECTORS_TO_DEPLOY=()
 
