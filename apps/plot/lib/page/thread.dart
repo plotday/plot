@@ -832,6 +832,11 @@ class _LinkAssigneeBadge extends StatelessWidget {
           types: [ActorType.user, ActorType.contact],
           limit: 50,
         );
+        // Sort self actors to the top, preserving existing depth-based order
+        actors.sort((a, b) {
+          if (a.self != b.self) return a.self ? -1 : 1;
+          return 0;
+        });
         return [
           SelectGroup(
             items: [
