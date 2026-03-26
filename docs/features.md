@@ -93,7 +93,7 @@ Internal catalog of product features for marketing content generation. Direct an
   - Contacts
 
 ### Available Tools for Twist Developers
-- Google: Calendar, Gmail, Contacts
+- Google: Calendar, Gmail, Chat, Contacts
 - Microsoft: Outlook Calendar
 - Slack integration
 - Linear integration
