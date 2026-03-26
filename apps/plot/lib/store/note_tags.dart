@@ -124,16 +124,25 @@ class NoteTagsBase extends BaseTable {
         rethrow;
       }
 
-      // After successfully updating the server, clear tagsUpdated in the local database
-      await Store.get
-          .update(Store.get.noteTags)
-          .replace(
-            NoteTagsCompanion(
-              id: Value(Uuid.fromString(id)),
-              tagsUpdated: const Value(null),
+      // After successfully updating the server, remove only the pushed keys from
+      // tagsUpdated. New keys may have been written while the push was in flight
+      // (e.g. user completes for self, then unassigns another user). Clearing
+      // unconditionally would wipe out those pending changes.
+      final noteId = Uuid.fromString(id);
+      final current = await (Store.get.select(Store.get.noteTags)
+            ..where((t) => t.id.equalsValue(noteId)))
+          .getSingleOrNull();
+      final currentUpdates = current?.tagsUpdated;
+      if (currentUpdates != null) {
+        final remaining = Map<String, bool>.from(currentUpdates)
+          ..removeWhere((key, _) => tagsUpdated.containsKey(key));
+        await (Store.get.update(Store.get.noteTags)
+              ..where((t) => t.id.equalsValue(noteId)))
+            .write(NoteTagsCompanion(
+              tagsUpdated: Value(remaining.isEmpty ? null : remaining),
               updatedAt: Value(DateTime.now()),
-            ),
-          );
+            ));
+      }
     }
   }
 

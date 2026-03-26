@@ -1,3 +1,4 @@
+- Fixed unassigning a task from another user reverting after a moment — the change now persists correctly
 - Google Chat connection — sync messages from Google Chat spaces and DMs into Plot, with reply support (requires Google Workspace)
 - PostHog connection — sync your PostHog events into Plot, organized by person with event details as notes
 - Connections can now use API keys instead of OAuth — enter your key and connect directly
