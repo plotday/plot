@@ -124,7 +124,7 @@ class _LimitBanner extends _ConnectionItem {
 class ManageConnections extends Command {
   ManageConnections()
     : super(
-        title: 'Manage connections',
+        title: 'Connections',
         description: 'Sync your accounts and data into Plot.',
         icon: PlotIcon.connection,
         eventObject: EventObject.twist,
@@ -1180,7 +1180,7 @@ class AddSourceDetail extends ShowForm {
 class ManageTwists extends ShowCommands {
   ManageTwists([Priority? priority])
     : super(
-        title: 'Manage twists',
+        title: 'Twists',
         description: 'Add workflows and automations to your priorities.',
         icon: PlotIcon.twist,
         commandsBuilder: (context) => _getTwistCommands(priority),

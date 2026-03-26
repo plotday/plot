@@ -58,7 +58,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
   }) {
     // When signed out, only show settings commands (and debug commands in debug mode)
     if (!signedIn) {
-      final commands = [signedOutSettingsCommands];
+      final commands = [...signedOutSettingsCommands];
       final debugCmds = buildDebugCommands();
       if (debugCmds != null) {
         commands.add(debugCmds);
@@ -72,7 +72,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
         title: 'Priorities',
         commands: [PickCurrentPriority(), NewPriority()],
       ),
-      settingsCommandsFromState(
+      ...settingsCommandsFromState(
         prioritiesState,
         showAllPriorities: showAllPriorities,
         email: email,

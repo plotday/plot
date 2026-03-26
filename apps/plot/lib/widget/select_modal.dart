@@ -390,6 +390,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     if (_isLoading) return false;
     // Always show filter when nested so back button shares the row
     if (ModalProvider.of(context).modalStackNotifier.value > 1) return true;
+    // Keep filter visible while user is actively searching
+    if (_controller.text.isNotEmpty) return true;
     final totalItems = _groups.fold<int>(0, (sum, g) => sum + g.items.length);
     return totalItems >= 20;
   }

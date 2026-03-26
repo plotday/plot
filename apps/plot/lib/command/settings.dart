@@ -30,6 +30,7 @@ import 'package:plot/state/theme.dart';
 import 'package:plot/state/settings.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
@@ -54,7 +55,7 @@ final appearanceCommands = StaticCommandGroup(
 ///
 /// Accepts optional [adminOrgs] list (fetched from the API) to include
 /// per-org AI preference commands for organizations the user administers.
-StaticCommandGroup settingsCommandsFromState(
+List<StaticCommandGroup> settingsCommandsFromState(
   PrioritiesState? prioritiesState, {
   bool showAllPriorities = false,
   String? email,
@@ -102,7 +103,7 @@ StaticCommandGroup settingsCommandsFromState(
   );
 }
 
-StaticCommandGroup settingsCommands({
+List<StaticCommandGroup> settingsCommands({
   bool hasOrganizations = false,
   Priority? rootPriority,
   Command? gettingStartedCmd,
@@ -111,43 +112,52 @@ StaticCommandGroup settingsCommands({
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
-}) => StaticCommandGroup(
-  title: 'App',
-  shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
-  commands: [
-    if (gettingStartedCmd != null) gettingStartedCmd,
-    ManageConnections(),
-    ManageLinkedEmails(),
-    ManageTwists(),
-    if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
-    if (subscription != null && subscription.hasPaidPlan) ManageSubscription(),
-    if (hasOrganizations) ManageOrganizations(),
-    CopyPageLink(), OpenCopiedPageLink(),
-    ChangeAppearance(),
-    ChangeAiPreference(),
-    if (NotificationService.isSupported &&
-        !NotificationService.instance.isTokenRegistered)
-      EnableNotifications(),
-    if (rootPriority != null) ShowAttentionSettings(rootPriority),
-    for (final org in adminOrgs)
-      OrgAiPreferences(
-        orgId: org['id'] as String,
-        orgName: org['name'] as String,
-      ),
-    // Only show Enter Behavior setting on devices with physical keyboards
-    if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
-    if (whatsNewCmd != null) whatsNewCmd,
-    if (helpFeedbackCmd != null) helpFeedbackCmd,
-    FullResync(),
-    CopyVersion(),
-    SignOut(email: email),
-  ],
-);
+}) => [
+  StaticCommandGroup(
+    title: 'Settings',
+    shortcut: platformSingleActivator(LogicalKeyboardKey.comma),
+    commands: [
+      ManageConnections(),
+      ManageTwists(),
+      ManageLinkedEmails(),
+      ChangeAppearance(),
+      ChangeAiPreference(),
+      if (NotificationService.isSupported &&
+          !NotificationService.instance.isTokenRegistered)
+        EnableNotifications(),
+      if (rootPriority != null) ShowAttentionSettings(rootPriority),
+      for (final org in adminOrgs)
+        OrgAiPreferences(
+          orgId: org['id'] as String,
+          orgName: org['name'] as String,
+        ),
+      // Only show Enter Behavior setting on devices with physical keyboards
+      if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
+      if (subscription != null && subscription.hasPaidPlan)
+        ManageSubscription(),
+      if (hasOrganizations) ManageOrganizations(),
+    ],
+  ),
+  StaticCommandGroup(
+    title: 'App',
+    commands: [
+      if (gettingStartedCmd != null) gettingStartedCmd,
+      if (whatsNewCmd != null) whatsNewCmd,
+      if (helpFeedbackCmd != null) helpFeedbackCmd,
+      if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
+      CopyPageLink(),
+      OpenCopiedPageLink(),
+      FullResync(),
+      CopyVersion(),
+      SignOut(email: email),
+    ],
+  ),
+];
 
-final signedOutSettingsCommands = StaticCommandGroup(
-  title: 'App',
-  commands: [ChangeAppearance(), CopyVersion()],
-);
+final signedOutSettingsCommands = [
+  StaticCommandGroup(title: 'Settings', commands: [ChangeAppearance()]),
+  StaticCommandGroup(title: 'App', commands: [CopyVersion()]),
+];
 
 class ShowSettings extends ShowCommands {
   ShowSettings()
@@ -179,7 +189,7 @@ class ShowSettings extends ShowCommands {
           }
 
           final groups = [
-            settingsCommandsFromState(
+            ...settingsCommandsFromState(
               prioritiesState,
               email: email,
               adminOrgs: adminOrgs,
@@ -199,7 +209,7 @@ class ShowSettings extends ShowCommands {
 class ChangeAppearance extends ShowCommands {
   ChangeAppearance()
     : super(
-        title: 'Change light/dark mode',
+        title: 'Light/dark mode',
         icon: FontAwesomeIcons.sun,
         commands: Commands(groups: [appearanceCommands]),
       );
@@ -208,7 +218,7 @@ class ChangeAppearance extends ShowCommands {
 class ChangeEnterBehavior extends Command {
   ChangeEnterBehavior()
     : super(
-        title: 'Change enter key behavior',
+        title: 'Enter key behavior',
         icon: FontAwesomeIcons.keyboard,
         eventObject: EventObject.settings,
         eventAction: EventAction.clicked,
@@ -301,9 +311,8 @@ class SignOut extends Command {
 class ManageOrganizations extends Command {
   ManageOrganizations()
     : super(
-        title: 'Manage organizations',
-        description:
-            'Manage members, domains, and billing for your organizations.',
+        title: 'Organizations',
+        description: 'Members, domains, and billing for your organizations.',
         icon: FontAwesomeIcons.building,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
@@ -397,7 +406,7 @@ class UpgradePlan extends Command {
 class ManageSubscription extends Command {
   ManageSubscription()
     : super(
-        title: 'Manage subscription',
+        title: 'Subscription',
         icon: FontAwesomeIcons.creditCard,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
@@ -585,7 +594,7 @@ class ChangeAiPreference extends ShowForm {
 class EnableNotifications extends Command {
   EnableNotifications()
     : super(
-        title: 'Enable notifications',
+        title: 'Notifications',
         subtitle: NotificationService.instance.isPermissionDenied
             ? 'Permission denied — tap to fix'
             : 'Not yet registered',
@@ -621,7 +630,9 @@ class EnableNotifications extends Command {
   CommandReturn _openSystemSettings() {
     if (Platform.isMacOS) {
       // Open macOS System Settings → Notifications for this app
-      launchUrl(Uri.parse('x-apple.systempreferences:com.apple.Notifications-Settings'));
+      launchUrl(
+        Uri.parse('x-apple.systempreferences:com.apple.Notifications-Settings'),
+      );
     }
     return CommandMessage(
       'Please enable notifications in your device settings, then return to Plot.',
@@ -856,7 +867,7 @@ class _SaveAiPreference extends Command {
 class FullResync extends Command {
   FullResync()
     : super(
-        title: 'Full re-sync',
+        title: 'Re-sync all data',
         icon: PlotIcon.sync,
         eventObject: EventObject.sync,
         eventAction: EventAction.started,
@@ -896,7 +907,7 @@ class ShowOfflineInfo extends ShowPage {
 class ManageLinkedEmails extends ShowCommands {
   ManageLinkedEmails()
     : super(
-        title: 'Manage linked emails',
+        title: 'Linked emails',
         icon: FontAwesomeIcons.envelope,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
@@ -912,54 +923,93 @@ class ManageLinkedEmails extends ShowCommands {
       log.warning('Failed to fetch linked emails', e, t);
     }
 
-    return Commands(groups: [
-      StaticCommandGroup(
-        title: 'Linked emails',
-        commands: [
-          for (final email in emails)
-            _EmailActions(
-              contactId: email['id'] as String,
-              email: email['email'] as String,
-              isPrimary: email['primary'] as bool,
-              totalCount: emails.length,
-            ),
-          _AddEmail(),
-        ],
-      ),
-    ]);
+    final primaryEmail = emails
+        .where((e) => e['primary'] as bool)
+        .map((e) => e['email'] as String)
+        .firstOrNull;
+
+    final otherEmails = emails.where((e) => !(e['primary'] as bool)).toList();
+
+    return Commands(
+      groups: [
+        StaticCommandGroup(
+          title: 'Linked emails',
+          infoBuilder: primaryEmail != null
+              ? (context, _) {
+                  final iconSize = context.theme.iconSizes.base;
+                  return Padding(
+                    // Match ListTile layout: 20px left, vertical from paddingSm
+                    padding: EdgeInsets.only(
+                      left: 20,
+                      right: 20,
+                      top: context.theme.spacing.sm,
+                      bottom: context.theme.spacing.sm,
+                    ),
+                    child: Row(
+                      spacing: 12,
+                      children: [
+                        SizedBox(
+                          height: iconSize,
+                          child: Center(
+                            child: Icon(
+                              FontAwesomeIcons.solidEnvelope,
+                              size: iconSize,
+                              color: context.theme.plotColors.muted,
+                            ),
+                          ),
+                        ),
+                        Text(primaryEmail, style: context.theme.typography.md),
+                        Text(
+                          'Primary',
+                          style: context.theme.typography.md.copyWith(
+                            color: context.theme.plotColors.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              : null,
+          commands: [
+            for (final email in otherEmails)
+              _EmailActions(
+                contactId: email['id'] as String,
+                email: email['email'] as String,
+                totalCount: emails.length,
+              ),
+            _AddEmail(),
+          ],
+        ),
+      ],
+    );
   }
 }
 
-/// Sub-menu for a single linked email: make primary / remove.
+/// Sub-menu for a non-primary linked email: make primary / remove.
 class _EmailActions extends ShowCommands {
   _EmailActions({
     required this.contactId,
     required this.email,
-    required this.isPrimary,
     required this.totalCount,
   }) : super(
          title: email,
-         description: isPrimary ? 'Primary' : null,
-         icon: isPrimary
-             ? FontAwesomeIcons.solidEnvelope
-             : FontAwesomeIcons.envelope,
-         commands: Commands(groups: [
-           StaticCommandGroup(
-             title: email,
-             commands: [
-               if (!isPrimary)
+         icon: FontAwesomeIcons.envelope,
+         commands: Commands(
+           groups: [
+             StaticCommandGroup(
+               title: email,
+               commands: [
                  _MakePrimary(contactId: contactId, email: email),
-               // Can only remove if not primary (must switch primary first)
-               if (!isPrimary && totalCount > 1)
-                 _RemoveEmail(contactId: contactId, email: email),
-             ],
-           ),
-         ]),
+                 if (totalCount > 1)
+                   _RemoveEmail(contactId: contactId, email: email),
+               ],
+             ),
+           ],
+         ),
        );
 
   final String contactId;
   final String email;
-  final bool isPrimary;
   final int totalCount;
 }
 
@@ -1056,7 +1106,10 @@ class _AddEmailContentState extends State<_AddEmailContent> {
   Future<void> _handleSendCode() async {
     final email = _emailController.text.trim().toLowerCase();
     if (email.isEmpty) {
-      context.showToast(message: 'Please enter an email address', isError: true);
+      context.showToast(
+        message: 'Please enter an email address',
+        isError: true,
+      );
       return;
     }
 
@@ -1071,7 +1124,9 @@ class _AddEmailContentState extends State<_AddEmailContent> {
       if (!mounted) return;
 
       if (result['message'] == 'already_linked') {
-        context.showToast(message: 'This email is already linked to your account');
+        context.showToast(
+          message: 'This email is already linked to your account',
+        );
         Modal.pop<CommandReturn>(context, Value(const CommandDone()));
         return;
       }

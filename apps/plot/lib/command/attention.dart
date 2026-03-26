@@ -13,7 +13,7 @@ import 'logging.dart';
 class ShowAttentionSettings extends ShowForm {
   ShowAttentionSettings(this.priority)
     : super(
-        title: 'Adjust notifications',
+        title: 'Notifications',
         icon: PlotIcon.notification,
         form: (context) => _buildForm(context, priority),
       );
