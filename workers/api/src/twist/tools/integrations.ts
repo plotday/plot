@@ -1819,6 +1819,9 @@ export class Integrations extends Tool implements IAuth {
         const logger = createLogger({ priority_twist_id: this.priorityTwistId });
         logger.info("Created new contact from OAuth", { email, user_id: userId });
 
+        // Sync to Clerk so user can sign in with this email
+        await this.syncEmailToClerk(userId, email);
+
         // If the new contact is linked to the owner, it's a User actor
         return {
           id: (newContact?.id ?? crypto.randomUUID()) as ActorId,
@@ -1841,6 +1844,9 @@ export class Integrations extends Tool implements IAuth {
           email,
           user_id: userId,
         });
+
+        // Sync to Clerk so user can sign in with this email
+        await this.syncEmailToClerk(userId, email);
       } else if (existingContact.user_id !== userId) {
         const error = new Error("auth_email_conflict");
         error.name = AUTH_EMAIL_CONFLICT_ERROR;
@@ -1868,6 +1874,33 @@ export class Integrations extends Tool implements IAuth {
         type: ActorType.Contact,
         email,
       };
+    }
+  }
+
+  /**
+   * Sync a newly-linked email to Clerk so the user can sign in with it.
+   * Non-blocking — logs errors but never throws.
+   */
+  private async syncEmailToClerk(userId: string, email: string): Promise<void> {
+    try {
+      const user = await this.db
+        .selectFrom("user")
+        .select("clerk_id")
+        .where("id", "=", userId)
+        .executeTakeFirst();
+      if (!user?.clerk_id || !this.env.CLERK_SECRET_KEY) return;
+
+      const { syncContactToClerk } = await import("../../app/link-email");
+      await syncContactToClerk(this.env.CLERK_SECRET_KEY, user.clerk_id, email, {
+        priority_twist_id: this.priorityTwistId,
+        user_id: userId,
+      });
+    } catch (error) {
+      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      logger.error("Failed to sync OAuth email to Clerk (non-blocking)", error as Error, {
+        user_id: userId,
+        email,
+      });
     }
   }
 

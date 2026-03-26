@@ -16,6 +16,230 @@ function generateOtp(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+/**
+ * Sync a verified email to Clerk so the user can sign in with it.
+ * Non-blocking — logs errors but never throws.
+ */
+export async function syncContactToClerk(
+  clerkSecretKey: string,
+  clerkId: string,
+  email: string,
+  logContext?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const clerk = createClerkClient({ secretKey: clerkSecretKey });
+    await clerk.emailAddresses.createEmailAddress({
+      userId: clerkId,
+      emailAddress: email,
+      verified: true,
+    });
+    const logger = createLogger(logContext);
+    logger.info("Synced verified email to Clerk", { clerk_id: clerkId, email });
+  } catch (error) {
+    // Common case: email already exists on this Clerk user — not an error.
+    const logger = createLogger(logContext);
+    logger.error("Failed to sync email to Clerk (non-blocking)", error as Error, {
+      clerk_id: clerkId,
+      email,
+    });
+  }
+}
+
+// GET /link-email — List all emails linked to the current user
+linkEmail.get("/link-email", async (c) => {
+  const user = c.var.user;
+  if (!user) return c.json({ message: "Unauthorized" }, 401);
+
+  try {
+    const contacts = await c.var.db
+      .selectFrom("contact")
+      .select(["id", "email", "primary"])
+      .where("user_id", "=", user.id)
+      .where("email", "is not", null)
+      .orderBy("primary", "desc")
+      .orderBy("created_at", "asc")
+      .execute();
+
+    return c.json({
+      emails: contacts.map((row) => ({
+        id: row.id,
+        email: row.email,
+        primary: row.primary,
+      })),
+    });
+  } catch (error) {
+    return captureServerError(c, error, "Failed to list linked emails", {
+      user_id: user.id,
+    });
+  }
+});
+
+// POST /link-email/primary — Make an email the primary email
+linkEmail.post("/link-email/primary", async (c) => {
+  const user = c.var.user;
+  if (!user) return c.json({ message: "Unauthorized" }, 401);
+
+  const body = await c.req.json<{ contactId?: string }>();
+  const contactId = body.contactId;
+
+  if (!contactId) {
+    return c.json({ error: "contactId is required" }, 400);
+  }
+
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
+  try {
+    // Verify the contact belongs to the current user
+    const contact = await c.var.db
+      .selectFrom("contact")
+      .select(["id", "email", "primary"])
+      .where("id", "=", contactId)
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
+
+    if (!contact) {
+      return c.json({ error: "Email not found" }, 404);
+    }
+
+    if (contact.primary) {
+      return c.json({ success: true }); // Already primary — no-op
+    }
+
+    // Swap primary: unset old, set new
+    await c.var.db
+      .updateTable("contact")
+      .set({ primary: false })
+      .where("user_id", "=", user.id)
+      .where("primary", "=", true)
+      .execute();
+
+    await c.var.db
+      .updateTable("contact")
+      .set({ primary: true })
+      .where("id", "=", contactId)
+      .execute();
+
+    // Update user.email to match the new primary
+    if (contact.email) {
+      await c.var.db
+        .updateTable("user")
+        .set({ email: contact.email })
+        .where("id", "=", user.id)
+        .execute();
+    }
+
+    logger.info("Changed primary email", {
+      user_id: user.id,
+      contact_id: contactId,
+      email: contact.email,
+    });
+
+    // Sync to Clerk: make this email primary there too
+    try {
+      const clerk = createClerkClient({ secretKey: c.env.CLERK_SECRET_KEY });
+      const clerkUser = await clerk.users.getUser(user.clerkId);
+      const clerkEmail = clerkUser.emailAddresses.find(
+        (e) => e.emailAddress === contact.email,
+      );
+      if (clerkEmail) {
+        await clerk.emailAddresses.updateEmailAddress(clerkEmail.id, {
+          primary: true,
+        });
+      }
+    } catch (clerkError) {
+      logger.error("Failed to sync primary email to Clerk (non-blocking)", clerkError as Error, {
+        user_id: user.id,
+        email: contact.email,
+      });
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    return captureServerError(c, error, "Failed to change primary email", {
+      user_id: user.id,
+      contact_id: contactId,
+    });
+  }
+});
+
+// DELETE /link-email/:contactId — Remove/unlink an email
+linkEmail.delete("/link-email/:contactId", async (c) => {
+  const user = c.var.user;
+  if (!user) return c.json({ message: "Unauthorized" }, 401);
+
+  const contactId = c.req.param("contactId");
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
+  try {
+    // Verify the contact belongs to the current user
+    const contact = await c.var.db
+      .selectFrom("contact")
+      .select(["id", "email", "primary"])
+      .where("id", "=", contactId)
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
+
+    if (!contact) {
+      return c.json({ error: "Email not found" }, 404);
+    }
+
+    // Count how many linked emails the user has
+    const countResult = await c.var.db
+      .selectFrom("contact")
+      .select(c.var.db.fn.countAll<number>().as("count"))
+      .where("user_id", "=", user.id)
+      .where("email", "is not", null)
+      .executeTakeFirstOrThrow();
+
+    if (countResult.count <= 1) {
+      return c.json({ error: "Cannot remove your only email address" }, 400);
+    }
+
+    if (contact.primary) {
+      return c.json({ error: "Cannot remove your primary email address. Make another email primary first." }, 400);
+    }
+
+    // Unlink the contact (don't delete it — other data may reference it)
+    await c.var.db
+      .updateTable("contact")
+      .set({ user_id: null, primary: false })
+      .where("id", "=", contactId)
+      .execute();
+
+    logger.info("Unlinked email from user", {
+      user_id: user.id,
+      contact_id: contactId,
+      email: contact.email,
+    });
+
+    // Sync to Clerk: remove this email
+    try {
+      const clerk = createClerkClient({ secretKey: c.env.CLERK_SECRET_KEY });
+      const clerkUser = await clerk.users.getUser(user.clerkId);
+      const clerkEmail = clerkUser.emailAddresses.find(
+        (e) => e.emailAddress === contact.email,
+      );
+      if (clerkEmail) {
+        await clerk.emailAddresses.deleteEmailAddress(clerkEmail.id);
+      }
+    } catch (clerkError) {
+      logger.error("Failed to remove email from Clerk (non-blocking)", clerkError as Error, {
+        user_id: user.id,
+        email: contact.email,
+      });
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    return captureServerError(c, error, "Failed to remove linked email", {
+      user_id: user.id,
+      contact_id: contactId,
+    });
+  }
+});
+
 // POST /link-email/send — Send OTP to the email address the user wants to link
 linkEmail.post("/link-email/send", async (c) => {
   const user = c.var.user;
@@ -140,7 +364,6 @@ linkEmail.post("/link-email/verify", async (c) => {
     }
 
     if (new Date(claim.expires_at) < new Date()) {
-      // Clean up expired claim
       await c.var.db
         .deleteFrom("email_claim")
         .where("id", "=", claim.id)
@@ -153,7 +376,6 @@ linkEmail.post("/link-email/verify", async (c) => {
     }
 
     if (claim.code !== code) {
-      // Increment attempts
       await c.var.db
         .updateTable("email_claim")
         .set({ attempts: claim.attempts + 1 })
@@ -171,14 +393,12 @@ linkEmail.post("/link-email/verify", async (c) => {
 
     if (existingContact) {
       if (existingContact.user_id && existingContact.user_id !== user.id) {
-        // Race condition: another user claimed this email between send and verify
         return c.json(
           { error: "This email is already linked to another account" },
           409,
         );
       }
       if (!existingContact.user_id) {
-        // Unclaimed contact — link it
         await c.var.db
           .updateTable("contact")
           .set({ user_id: user.id })
@@ -190,9 +410,7 @@ linkEmail.post("/link-email/verify", async (c) => {
           email,
         });
       }
-      // else: already linked to this user — no-op
     } else {
-      // No contact exists — create one
       await c.var.db
         .insertInto("contact")
         .values({
@@ -208,28 +426,10 @@ linkEmail.post("/link-email/verify", async (c) => {
       });
     }
 
-    // Add verified email to Clerk user so they can sign in with it
-    try {
-      const clerk = createClerkClient({ secretKey: c.env.CLERK_SECRET_KEY });
-      await clerk.emailAddresses.createEmailAddress({
-        userId: user.clerkId,
-        emailAddress: email,
-        verified: true,
-      });
-      logger.info("Added verified email to Clerk user", {
-        user_id: user.id,
-        clerk_id: user.clerkId,
-        email,
-      });
-    } catch (clerkError) {
-      // Log but don't fail — the contact is already linked in our DB.
-      // Common case: email already exists on this Clerk user.
-      logger.error(
-        "Failed to add email to Clerk (non-blocking)",
-        clerkError as Error,
-        { user_id: user.id, clerk_id: user.clerkId, email },
-      );
-    }
+    // Sync to Clerk
+    await syncContactToClerk(c.env.CLERK_SECRET_KEY, user.clerkId, email, {
+      user_id: user.id,
+    });
 
     // Clean up the claim
     await c.var.db

@@ -117,7 +117,7 @@ StaticCommandGroup settingsCommands({
   commands: [
     if (gettingStartedCmd != null) gettingStartedCmd,
     ManageConnections(),
-    LinkEmail(),
+    ManageLinkedEmails(),
     ManageTwists(),
     if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
     if (subscription != null && subscription.hasPaidPlan) ManageSubscription(),
@@ -892,28 +892,157 @@ class ShowOfflineInfo extends ShowPage {
       );
 }
 
-class LinkEmail extends ShowPage {
-  LinkEmail()
+/// Top-level command: lists linked emails and offers add/remove/make-primary.
+class ManageLinkedEmails extends ShowCommands {
+  ManageLinkedEmails()
     : super(
-        title: 'Link email address',
+        title: 'Manage linked emails',
         icon: FontAwesomeIcons.envelope,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
-        builder: (context) => _LinkEmailContent(),
+        commandsBuilder: _buildCommands,
+      );
+
+  static Future<Commands> _buildCommands(BuildContext context) async {
+    List<Map<String, dynamic>> emails = [];
+    try {
+      final result = await api.get<Map<String, dynamic>>('/link-email');
+      emails = (result['emails'] as List<dynamic>).cast<Map<String, dynamic>>();
+    } catch (e, t) {
+      log.warning('Failed to fetch linked emails', e, t);
+    }
+
+    return Commands(groups: [
+      StaticCommandGroup(
+        title: 'Linked emails',
+        commands: [
+          for (final email in emails)
+            _EmailActions(
+              contactId: email['id'] as String,
+              email: email['email'] as String,
+              isPrimary: email['primary'] as bool,
+              totalCount: emails.length,
+            ),
+          _AddEmail(),
+        ],
+      ),
+    ]);
+  }
+}
+
+/// Sub-menu for a single linked email: make primary / remove.
+class _EmailActions extends ShowCommands {
+  _EmailActions({
+    required this.contactId,
+    required this.email,
+    required this.isPrimary,
+    required this.totalCount,
+  }) : super(
+         title: email,
+         description: isPrimary ? 'Primary' : null,
+         icon: isPrimary
+             ? FontAwesomeIcons.solidEnvelope
+             : FontAwesomeIcons.envelope,
+         commands: Commands(groups: [
+           StaticCommandGroup(
+             title: email,
+             commands: [
+               if (!isPrimary)
+                 _MakePrimary(contactId: contactId, email: email),
+               // Can only remove if not primary (must switch primary first)
+               if (!isPrimary && totalCount > 1)
+                 _RemoveEmail(contactId: contactId, email: email),
+             ],
+           ),
+         ]),
+       );
+
+  final String contactId;
+  final String email;
+  final bool isPrimary;
+  final int totalCount;
+}
+
+class _MakePrimary extends Command {
+  _MakePrimary({required this.contactId, required this.email})
+    : super(
+        title: 'Make primary',
+        icon: FontAwesomeIcons.star,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.updated,
+      );
+
+  final String contactId;
+  final String email;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await api.post<Map<String, dynamic>>(
+        '/link-email/primary',
+        body: {'contactId': contactId},
+      );
+      return CommandMessage('$email is now your primary email');
+    } on ApiException catch (e) {
+      return CommandMessage(e.description, isError: true);
+    } catch (e, t) {
+      log.warning('Failed to make email primary', e, t);
+      Tracker.captureException(e, t);
+      return CommandMessage('Failed to update primary email', isError: true);
+    }
+  }
+}
+
+class _RemoveEmail extends Command {
+  _RemoveEmail({required this.contactId, required this.email})
+    : super(
+        title: 'Remove email',
+        icon: FontAwesomeIcons.trash,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.deleted,
+      );
+
+  final String contactId;
+  final String email;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await api.delete<Map<String, dynamic>>('/link-email/$contactId');
+      return CommandMessage('$email has been removed');
+    } on ApiException catch (e) {
+      return CommandMessage(e.description, isError: true);
+    } catch (e, t) {
+      log.warning('Failed to remove email', e, t);
+      Tracker.captureException(e, t);
+      return CommandMessage('Failed to remove email', isError: true);
+    }
+  }
+}
+
+/// Add a new email address via OTP verification.
+class _AddEmail extends ShowPage {
+  _AddEmail()
+    : super(
+        title: 'Add email address',
+        icon: FontAwesomeIcons.plus,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+        builder: (context) => _AddEmailContent(),
       );
 }
 
-enum _LinkEmailMode { enterEmail, otpSent, success }
+enum _AddEmailMode { enterEmail, otpSent, success }
 
-class _LinkEmailContent extends StatefulWidget {
+class _AddEmailContent extends StatefulWidget {
   @override
-  State<_LinkEmailContent> createState() => _LinkEmailContentState();
+  State<_AddEmailContent> createState() => _AddEmailContentState();
 }
 
-class _LinkEmailContentState extends State<_LinkEmailContent> {
+class _AddEmailContentState extends State<_AddEmailContent> {
   final _emailController = TextEditingController();
   final _otpController = TextEditingController();
-  _LinkEmailMode _mode = _LinkEmailMode.enterEmail;
+  _AddEmailMode _mode = _AddEmailMode.enterEmail;
   bool _isLoading = false;
   int _otpResetCounter = 0;
 
@@ -948,7 +1077,7 @@ class _LinkEmailContentState extends State<_LinkEmailContent> {
       }
 
       setState(() {
-        _mode = _LinkEmailMode.otpSent;
+        _mode = _AddEmailMode.otpSent;
         _isLoading = false;
       });
     } on ApiException catch (e) {
@@ -991,7 +1120,7 @@ class _LinkEmailContentState extends State<_LinkEmailContent> {
 
       if (!mounted) return;
       setState(() {
-        _mode = _LinkEmailMode.success;
+        _mode = _AddEmailMode.success;
         _isLoading = false;
       });
     } on ApiException catch (e) {
@@ -1027,14 +1156,14 @@ class _LinkEmailContentState extends State<_LinkEmailContent> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Link email address',
+            'Add email address',
             style: context.theme.typography.lg.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
 
-          if (_mode == _LinkEmailMode.success) ...[
+          if (_mode == _AddEmailMode.success) ...[
             Text(
               'Email linked successfully! You can now sign in with this email address.',
               style: context.theme.typography.md.copyWith(
@@ -1055,7 +1184,7 @@ class _LinkEmailContentState extends State<_LinkEmailContent> {
                 ),
               ],
             ),
-          ] else if (_mode == _LinkEmailMode.otpSent) ...[
+          ] else if (_mode == _AddEmailMode.otpSent) ...[
             FAlert(
               title: const Text(
                 'Check your email!\nWe sent a verification code to',
@@ -1105,7 +1234,7 @@ class _LinkEmailContentState extends State<_LinkEmailContent> {
                 FButton(
                   onPress: () {
                     setState(() {
-                      _mode = _LinkEmailMode.enterEmail;
+                      _mode = _AddEmailMode.enterEmail;
                       _otpController.clear();
                     });
                   },
