@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { sql, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
 import { propagateLinkStatusTagsFromDb } from "./link-tags";
 import { createSchedule } from "./smart-schedule";
+import { twistFactory } from "../../twist/factory";
 
 const links = new Hono<{ Bindings: Bindings }>();
 
@@ -99,47 +100,53 @@ links.post("/sync/links", async (c) => {
   }
 
   // Create task schedule when link is assigned to a user
+  // Uses its own DB connection since the request-scoped one is destroyed after the response
   const assigneeId = result.assignee_id;
   const linkThreadId = result.thread_id;
   if (assigneeId && linkThreadId) {
     c.executionCtx.waitUntil(
       (async () => {
+        const db = createDb(c.env);
         try {
-          const contact = await c.var.db
+          const contact = await db
             .selectFrom("contact")
             .select("user_id")
             .where("id", "=", assigneeId)
             .executeTakeFirst();
           if (!contact?.user_id) return;
 
-          await createSchedule(c.var.db, contact.user_id, linkThreadId, 'task');
+          await createSchedule(db, contact.user_id, linkThreadId, 'task');
           // Recompute outstanding_tasks for the assignee
-          await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(c.var.db);
+          await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(db);
         } catch (error) {
           console.error("[schedule] Failed to create task schedule from link assignment:", error);
+        } finally {
+          await db.destroy();
         }
       })()
     );
   }
 
   // Recompute outstanding_tasks when link status changes (may mark done/undone)
+  // Uses its own DB connection since the request-scoped one is destroyed after the response
   if (linkThreadId && linkData.status !== undefined) {
     c.executionCtx.waitUntil(
       (async () => {
+        const db = createDb(c.env);
         try {
           if (assigneeId) {
             // Recompute for the assigned user
-            const contact = await c.var.db
+            const contact = await db
               .selectFrom("contact")
               .select("user_id")
               .where("id", "=", assigneeId)
               .executeTakeFirst();
             if (contact?.user_id) {
-              await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(c.var.db);
+              await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(db);
             }
           } else {
             // Unassigned link: recompute for all users with a schedule on this thread
-            const schedules = await c.var.db
+            const schedules = await db
               .selectFrom("schedule")
               .select("user_id")
               .where("thread_id", "=", linkThreadId)
@@ -148,12 +155,14 @@ links.post("/sync/links", async (c) => {
               .execute();
             for (const sched of schedules) {
               if (sched.user_id) {
-                await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${sched.user_id}::uuid)`.execute(c.var.db);
+                await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${sched.user_id}::uuid)`.execute(db);
               }
             }
           }
         } catch (error) {
           console.error("[schedule] Failed to recompute outstanding_tasks from link status:", error);
+        } finally {
+          await db.destroy();
         }
       })()
     );
@@ -170,6 +179,59 @@ links.post("/sync/links", async (c) => {
   } else if (linkData.priority_id) {
     // Threadless links have priority_id directly
     notifySync(c, linkData.priority_id);
+  }
+
+  // Direct dispatch to connector's onLinkUpdated when user changes a connector-owned link.
+  // The view-based TwistSync path doesn't cover connectors observing their own links,
+  // so we dispatch directly here for immediate feedback.
+  // POST /sync/links is only called by the Flutter app, so this is always a user action.
+  // Connectors use integrations.saveLink() which goes through a different path.
+  if (result.created_by) {
+    c.executionCtx.waitUntil(
+      (async () => {
+        const db = createDb(c.env);
+        try {
+          // Check if created_by is a connector (has source_channel rows)
+          const isConnector = await db
+            .selectFrom("source_channel")
+            .select("priority_twist_id")
+            .where("priority_twist_id", "=", result.created_by)
+            .limit(1)
+            .executeTakeFirst();
+
+          if (!isConnector) return;
+
+          // Get priority_id from the thread (connectors don't have a priority_id on priority_twist)
+          const thread = result.thread_id ? await db
+            .selectFrom("thread")
+            .select("priority_id")
+            .where("id", "=", result.thread_id)
+            .executeTakeFirst() : null;
+          if (!thread?.priority_id) return;
+
+          const factory = twistFactory({
+            env: c.env,
+            ctx: c.executionCtx as any,
+            db,
+          });
+
+          const twistWrapper = await factory({
+            priorityId: thread.priority_id,
+            priorityTwistId: result.created_by!,
+          });
+
+          await twistWrapper.dispatch("Integrations", {
+            itemType: "link" as const,
+            item: result,
+            isCreate: false,
+          });
+        } catch (error) {
+          console.error("[sync/links] Direct connector dispatch failed:", error);
+        } finally {
+          await db.destroy();
+        }
+      })()
+    );
   }
 
   return c.json(result as any);

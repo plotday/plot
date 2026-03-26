@@ -191,7 +191,6 @@ export class TwistSync extends DurableObject<Bindings> {
         this.captureException(error);
         return;
       }
-
       // Get sync timestamps as text to preserve full μs precision
       const syncInfos = await db
         .selectFrom("priority_twist_sync")
@@ -373,6 +372,7 @@ export class TwistSync extends DurableObject<Bindings> {
         channelNewLinks.length > 0 ? (channelNewLinks[0] as any)._max_ts : null;
       const channelLinkUpdateMaxTs: string | null =
         channelUpdatedLinks.length > 0 ? (channelUpdatedLinks[0] as any)._max_ts : null;
+
       const channelNoteCreateMaxTs: string | null =
         channelNewNotes.length > 0 ? (channelNewNotes[0] as any)._max_ts : null;
       const threadReadUpdateMaxTs: string | null =

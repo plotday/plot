@@ -792,7 +792,10 @@ export class Integrations extends Tool implements IAuth {
       return [{ sourceMethod: "onNoteCreated", args: [note, thread] }];
     }
 
-    if (dispatchItem?.itemType !== "link") return [];
+    if (dispatchItem?.itemType !== "link" && dispatchItem?.itemType !== "channel_link") return [];
+
+    // For channel_link creates, the connector itself created the link — no callback needed
+    if (dispatchItem.itemType === "channel_link" && dispatchItem.isCreate) return [];
 
     const dbLink = dispatchItem.item;
     if (!dbLink) return [];

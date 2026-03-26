@@ -442,12 +442,14 @@ async function processTwistBatch(
           continue;
         }
 
-        await twistWrapper.dispatch("Plot", {
+        const dispatchArgs = {
           itemType: "channel_link" as const,
           item: link,
           isCreate: true,
           syncDepth,
-        });
+        };
+        await twistWrapper.dispatch("Plot", dispatchArgs);
+        await twistWrapper.dispatch("Integrations", dispatchArgs);
       } catch (error) {
         logger.error("Error processing channel link create", error as Error, {
           link_id: link.id,
@@ -475,12 +477,14 @@ async function processTwistBatch(
           continue;
         }
 
-        await twistWrapper.dispatch("Plot", {
+        const dispatchArgs = {
           itemType: "channel_link" as const,
           item: link,
           isCreate: false,
           syncDepth,
-        });
+        };
+        await twistWrapper.dispatch("Plot", dispatchArgs);
+        await twistWrapper.dispatch("Integrations", dispatchArgs);
       } catch (error) {
         logger.error("Error processing channel link update", error as Error, {
           link_id: link.id,

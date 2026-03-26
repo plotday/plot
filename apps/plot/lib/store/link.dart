@@ -241,7 +241,7 @@ class Link extends Equatable {
       status: Value(newStatus),
       updatedAt: DateTime.now(),
     );
-    await Store.get.save(Store.get.links, updated, LinksBase());
+    await Store.get.save(Store.get.links, updated.toCompanion(false), LinksBase());
   }
 
   /// Optimistically update the link's assignee and push to the server.
@@ -250,7 +250,7 @@ class Link extends Equatable {
       assigneeId: Value(newAssigneeId),
       updatedAt: DateTime.now(),
     );
-    await Store.get.save(Store.get.links, updated, LinksBase());
+    await Store.get.save(Store.get.links, updated.toCompanion(false), LinksBase());
   }
 
   /// Find links by exact source URL match
