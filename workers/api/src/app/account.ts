@@ -270,65 +270,79 @@ account.post("/activate", async (c) => {
   let billingStart: Date;
   let billingEnd: Date;
 
-  // Try to create Stripe customer
-  try {
-    const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
+  // Check if user already has a Stripe customer (idempotency — avoid creating duplicates)
+  const existingSub = await c.var.db
+    .selectFrom("user_subscription")
+    .select(["stripe_customer_id", "stripe_subscription_id", "billing_cycle_start", "billing_cycle_end"])
+    .where("user_id", "=", user.id)
+    .executeTakeFirst();
 
-    const customer = await createStripeCustomer(stripe, {
-      userId: user.id,
-      email: user.email,
-      name: user.name ?? undefined,
-    });
-    stripeCustomerId = customer.id;
-    const context1 = extractRequestContext(c);
-    const logger1 = createLogger(context1);
-    logger1.info("Created Stripe customer", {
-      customer_id: customer.id,
-      user_id: user.id,
-    });
-
-    // Try to create free subscription (only if customer created)
+  if (existingSub?.stripe_customer_id) {
+    stripeCustomerId = existingSub.stripe_customer_id;
+    stripeSubscriptionId = existingSub.stripe_subscription_id;
+    billingStart = new Date(existingSub.billing_cycle_start);
+    billingEnd = new Date(existingSub.billing_cycle_end);
+  } else {
+    // Try to create Stripe customer
     try {
-      const subscription = await createFreeSubscription(stripe, {
-        customerId: customer.id,
+      const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
+
+      const customer = await createStripeCustomer(stripe, {
         userId: user.id,
+        email: user.email,
+        name: user.name ?? undefined,
       });
-      stripeSubscriptionId = subscription.id;
-      const dates = getBillingCycleDates(subscription);
-      billingStart = dates.start;
-      billingEnd = dates.end;
-      const context2 = extractRequestContext(c);
-      const logger2 = createLogger(context2);
-      logger2.info("Created Stripe subscription", {
-        subscription_id: subscription.id,
+      stripeCustomerId = customer.id;
+      const context1 = extractRequestContext(c);
+      const logger1 = createLogger(context1);
+      logger1.info("Created Stripe customer", {
         customer_id: customer.id,
         user_id: user.id,
       });
-    } catch (subscriptionError) {
-      const context3 = extractRequestContext(c);
-      const logger3 = createLogger(context3);
-      logger3.error("Failed to create Stripe subscription, using local billing cycle", subscriptionError as Error, {
-        customer_id: customer.id,
+
+      // Try to create free subscription (only if customer created)
+      try {
+        const subscription = await createFreeSubscription(stripe, {
+          customerId: customer.id,
+          userId: user.id,
+        });
+        stripeSubscriptionId = subscription.id;
+        const dates = getBillingCycleDates(subscription);
+        billingStart = dates.start;
+        billingEnd = dates.end;
+        const context2 = extractRequestContext(c);
+        const logger2 = createLogger(context2);
+        logger2.info("Created Stripe subscription", {
+          subscription_id: subscription.id,
+          customer_id: customer.id,
+          user_id: user.id,
+        });
+      } catch (subscriptionError) {
+        const context3 = extractRequestContext(c);
+        const logger3 = createLogger(context3);
+        logger3.error("Failed to create Stripe subscription, using local billing cycle", subscriptionError as Error, {
+          customer_id: customer.id,
+          user_id: user.id,
+        });
+        // Partial success: customer created but subscription failed
+        // Use local billing cycle
+        const localDates = createFreeTierBillingCycle();
+        billingStart = localDates.start;
+        billingEnd = localDates.end;
+      }
+    } catch (customerError) {
+      const context4 = extractRequestContext(c);
+      const logger4 = createLogger(context4);
+      logger4.error("Failed to create Stripe customer, proceeding without Stripe", customerError as Error, {
         user_id: user.id,
       });
-      // Partial success: customer created but subscription failed
+
+      // Complete failure: no Stripe integration
       // Use local billing cycle
       const localDates = createFreeTierBillingCycle();
       billingStart = localDates.start;
       billingEnd = localDates.end;
     }
-  } catch (customerError) {
-    const context4 = extractRequestContext(c);
-    const logger4 = createLogger(context4);
-    logger4.error("Failed to create Stripe customer, proceeding without Stripe", customerError as Error, {
-      user_id: user.id,
-    });
-
-    // Complete failure: no Stripe integration
-    // Use local billing cycle
-    const localDates = createFreeTierBillingCycle();
-    billingStart = localDates.start;
-    billingEnd = localDates.end;
   }
 
   // Step 6: Upsert user_subscription record with whatever Stripe data we have
