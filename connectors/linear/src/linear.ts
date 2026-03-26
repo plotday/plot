@@ -55,13 +55,6 @@ type SyncState = {
   initialSync: boolean;
 };
 
-type ViewerInfo = {
-  linearId: string;
-  email: string;
-  name: string;
-  avatar?: string;
-};
-
 /**
  * Linear project management source
  *
@@ -83,8 +76,11 @@ export class Linear extends Connector<Linear> {
       logoDark: "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
       statuses: [
-        { status: "open", label: "Open" },
-        { status: "done", label: "Done", tag: Tag.Done, done: true },
+        { status: "backlog", label: "Backlog" },
+        { status: "unstarted", label: "To Do" },
+        { status: "started", label: "In Progress" },
+        { status: "completed", label: "Done", tag: Tag.Done, done: true },
+        { status: "cancelled", label: "Cancelled", done: true },
       ],
       supportsAssignee: true,
     },
@@ -141,7 +137,8 @@ export class Linear extends Connector<Linear> {
   }
 
   /**
-   * Returns available Linear teams as channel resources.
+   * Returns available Linear teams as channel resources,
+   * with per-team workflow states as dynamic linkTypes.
    */
   async getChannels(
     _auth: Authorization,
@@ -149,10 +146,38 @@ export class Linear extends Connector<Linear> {
   ): Promise<Channel[]> {
     const client = new LinearClient({ accessToken: token.token });
     const teams = await client.teams();
-    return teams.nodes.map((team) => ({
-      id: team.id,
-      title: team.name,
-    }));
+    return Promise.all(
+      teams.nodes.map(async (team) => {
+        const states = await team.states();
+        const statuses = states.nodes
+          .sort((a, b) => a.position - b.position)
+          .map((s) => ({
+            status: s.id,
+            label: s.name,
+            ...(s.type === "completed"
+              ? { tag: Tag.Done, done: true as const }
+              : {}),
+            ...(s.type === "cancelled" ? { done: true as const } : {}),
+          }));
+        return {
+          id: team.id,
+          title: team.name,
+          linkTypes: [
+            {
+              type: "issue",
+              label: "Issue",
+              logo: "https://api.iconify.design/logos/linear-icon.svg",
+              logoDark:
+                "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
+              logoMono:
+                "https://api.iconify.design/simple-icons/linear.svg",
+              statuses,
+              supportsAssignee: true,
+            },
+          ],
+        };
+      })
+    );
   }
 
   /**
@@ -178,41 +203,44 @@ export class Linear extends Connector<Linear> {
 
   /**
    * Called when a link's status is changed from the Flutter app.
-   * Maps the link status back to a Linear workflow state.
+   * Status values are either Linear state IDs (UUIDs from dynamic linkTypes)
+   * or state type categories (from static fallback linkTypes).
    */
   async onLinkUpdated(link: Link): Promise<void> {
     const issueId = link.meta?.linearId as string | undefined;
-    if (!issueId) return;
+    if (!issueId || !link.status) return;
 
     const projectId = link.meta?.projectId as string | undefined;
     if (!projectId) return;
 
     const client = await this.getClient(projectId);
+    const stateId = await this.resolveStateId(client, issueId, link.status);
+    if (stateId) {
+      await client.updateIssue(issueId, { stateId });
+    }
+  }
+
+  /**
+   * Resolve a status value to a Linear state ID.
+   * If the status is already a UUID (from dynamic channel linkTypes), returns it directly.
+   * If it's a state type category (from static fallback), looks up the matching state.
+   */
+  private async resolveStateId(
+    client: LinearClient,
+    issueId: string,
+    status: string
+  ): Promise<string | null> {
+    // UUIDs are 36 chars with dashes — state type categories are short strings
+    if (status.length > 20) return status;
+
+    // Fallback: resolve category to actual state ID
     const issue = await client.issue(issueId);
     const team = await issue.team;
-    if (!team) return;
+    if (!team) return null;
 
     const states = await team.states();
-    let targetState;
-
-    if (link.status === "done") {
-      targetState = states.nodes.find(
-        (s) =>
-          s.name === "Done" ||
-          s.name === "Completed" ||
-          s.type === "completed"
-      );
-    } else {
-      // "open" or any non-done status -> reopen
-      targetState = states.nodes.find(
-        (s) =>
-          s.name === "Todo" || s.name === "Backlog" || s.type === "unstarted"
-      );
-    }
-
-    if (targetState) {
-      await client.updateIssue(issueId, { stateId: targetState.id });
-    }
+    const match = states.nodes.find((s) => s.type === status);
+    return match?.id ?? null;
   }
 
   /**
@@ -411,7 +439,7 @@ export class Linear extends Connector<Linear> {
     projectId: string,
     initialSync: boolean
   ): Promise<NewLinkWithNotes | null> {
-    let creator, assignee, comments;
+    let creator, assignee, state, comments;
 
     try {
       creator = await issue.creator;
@@ -431,6 +459,16 @@ export class Linear extends Connector<Linear> {
         error instanceof Error ? error.message : String(error)
       );
       assignee = null;
+    }
+
+    try {
+      state = await issue.state;
+    } catch (error) {
+      console.error(
+        "Error fetching state:",
+        error instanceof Error ? error.message : String(error)
+      );
+      state = null;
     }
 
     try {
@@ -455,6 +493,10 @@ export class Linear extends Connector<Linear> {
         ...(assignee.id ? { source: { provider: AuthProvider.Linear, accountId: assignee.id } } : {}),
       };
     }
+
+    // Use state ID as status — matches dynamic linkTypes from getChannels().
+    // Falls back to state type category for the static linkTypes fallback.
+    const status = state?.id ?? (state?.type === "triage" ? "backlog" : state?.type ?? "unstarted");
 
     // Prepare description content
     const description = issue.description || "";
@@ -509,7 +551,7 @@ export class Linear extends Connector<Linear> {
       created: issue.createdAt,
       author: authorContact,
       assignee: assigneeContact ?? null,
-      status: issue.completedAt || issue.canceledAt ? "done" : "open",
+      status,
       meta: {
         linearId: issue.id,
         projectId,
@@ -542,7 +584,6 @@ export class Linear extends Connector<Linear> {
     }
 
     const client = await this.getClient(projectId);
-    const issue = await client.issue(issueId);
     const updateFields: any = {};
 
     // Handle title
@@ -581,33 +622,11 @@ export class Linear extends Connector<Linear> {
       }
     }
 
-    // Handle state based on link status and assignee
-    const team = await issue.team;
-    if (team) {
-      const states = await team.states();
-      let targetState;
-
-      const isDone = link.status === "done" || link.status === "closed" || link.status === "completed" || link.status === "resolved";
-      if (isDone) {
-        targetState = states.nodes.find(
-          (s) =>
-            s.name === "Done" ||
-            s.name === "Completed" ||
-            s.type === "completed"
-        );
-      } else if (link.assignee) {
-        targetState = states.nodes.find(
-          (s) => s.name === "In Progress" || s.type === "started"
-        );
-      } else {
-        targetState = states.nodes.find(
-          (s) =>
-            s.name === "Todo" || s.name === "Backlog" || s.type === "unstarted"
-        );
-      }
-
-      if (targetState) {
-        updateFields.stateId = targetState.id;
+    // Resolve status to Linear state ID (handles both UUIDs and category fallbacks)
+    if (link.status) {
+      const stateId = await this.resolveStateId(client, issueId, link.status);
+      if (stateId) {
+        updateFields.stateId = stateId;
       }
     }
 
@@ -777,7 +796,7 @@ export class Linear extends Connector<Linear> {
       created: new Date(issue.createdAt),
       author: authorContact,
       assignee: assigneeContact ?? null,
-      status: issue.completedAt || issue.canceledAt ? "done" : "open",
+      status: (issue as any).state?.id ?? "unstarted",
       channelId: projectId,
       meta: {
         linearId: issue.id,

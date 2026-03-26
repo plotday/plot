@@ -23,6 +23,8 @@ export type Channel = {
   children?: Channel[];
   /** Priority ID this channel is routed to (set when channel is enabled) */
   priorityId?: string;
+  /** Per-channel link type configs. Overrides twist-level linkTypes when present. */
+  linkTypes?: LinkTypeConfig[];
 };
 
 /**
