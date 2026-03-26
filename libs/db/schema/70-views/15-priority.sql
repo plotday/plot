@@ -97,6 +97,8 @@ CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid, p_u
             twist.environment = 'public'
             OR (twist.environment = 'personal'
                 AND twist_admin.user_id = p_user_id)
+            OR (twist.environment = 'review'
+                AND EXISTS (SELECT 1 FROM twist_reviewer WHERE user_id = p_user_id))
             OR user_has_priority_access (p_user_id, twist_admin.priority_id)
         )
 $function$;
@@ -119,5 +121,7 @@ CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_prio
                 AND (twist.environment = 'public'
                     OR (twist.environment = 'personal'
                         AND twist_admin.user_id = p_user_id)
+                    OR (twist.environment = 'review'
+                        AND EXISTS (SELECT 1 FROM twist_reviewer WHERE user_id = p_user_id))
                     OR user_has_priority_access (p_user_id, twist_admin.priority_id)))
 $function$;

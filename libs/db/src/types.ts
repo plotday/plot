@@ -1614,6 +1614,7 @@ export type Database = {
           created_at: string
           enabled: boolean
           id: number
+          link_types: Json | null
           priority_id: string | null
           priority_twist_id: string
           title: string
@@ -1625,6 +1626,7 @@ export type Database = {
           created_at?: string
           enabled?: boolean
           id?: never
+          link_types?: Json | null
           priority_id?: string | null
           priority_twist_id: string
           title: string
@@ -1636,6 +1638,7 @@ export type Database = {
           created_at?: string
           enabled?: boolean
           id?: never
+          link_types?: Json | null
           priority_id?: string | null
           priority_twist_id?: string
           title?: string
@@ -2083,6 +2086,28 @@ export type Database = {
           },
           {
             foreignKeyName: "twist_admin_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      twist_reviewer: {
+        Row: {
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "twist_reviewer_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
@@ -3857,6 +3882,7 @@ export type Database = {
           created_at: string | null
           enabled: boolean | null
           id: number | null
+          link_types: Json | null
           priority_id: string | null
           priority_twist_id: string | null
           title: string | null
