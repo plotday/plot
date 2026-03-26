@@ -420,6 +420,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           const link: NewLinkWithNotes = {
             type: "event",
             title: "Cancelled Event",
+            private: true,
             created: outlookEvent.createdDateTime
               ? new Date(outlookEvent.createdDateTime)
               : new Date(),
@@ -542,11 +543,36 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
             : "text") as ContentType,
         } : null;
 
+        // Build mentions from organizer + attendees for thread visibility
+        const attendeeMentions: NewContact[] = [];
+        if (authorContact) attendeeMentions.push(authorContact);
+        for (const att of validAttendees) {
+          if (att.emailAddress?.address) {
+            attendeeMentions.push({
+              email: att.emailAddress.address,
+              name: att.emailAddress.name,
+            });
+          }
+        }
+
+        // Add mentions to description note for private thread visibility
+        if (descriptionNote && attendeeMentions.length > 0) {
+          (descriptionNote as any).mentions = attendeeMentions;
+        }
+
+        // Build notes array: description note, or a participants-only note for mentions
+        const notes = descriptionNote
+          ? [descriptionNote]
+          : attendeeMentions.length > 0
+            ? [{ key: "participants", content: null, mentions: attendeeMentions }]
+            : [];
+
         // Build NewLinkWithNotes from the transformed thread data
         const linkWithNotes: NewLinkWithNotes = {
           source: `outlook-calendar:${outlookEvent.id}`,
           type: "event",
           title: threadData.title || "",
+          private: true,
           created: threadData.created,
           author: authorContact,
           channelId: calendarId,
@@ -557,7 +583,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           },
           sourceUrl: outlookEvent.webLink ?? null,
           actions: hasActions ? actions : undefined,
-          notes: descriptionNote ? [descriptionNote] : [],
+          notes,
           preview: hasDescription ? outlookEvent.body!.content! : null,
           schedules: threadData.schedules,
           scheduleOccurrences: threadData.scheduleOccurrences,

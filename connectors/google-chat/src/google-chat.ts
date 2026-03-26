@@ -3,7 +3,7 @@ import {
   Connector,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { Actor, Note, Thread } from "@plotday/twister/plot";
+import type { Actor, NewActor, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -348,13 +348,18 @@ export class GoogleChat extends Connector<GoogleChat> {
       const result = await syncChatSpace(api, state, 100);
 
       if (result.threads.length > 0) {
-        // Resolve member emails for contact matching
+        // Resolve member emails for contact matching and private thread mentions
         const memberEmails = await this.getMemberEmails(api, channelId);
+        const members: NewActor[] = [];
+        for (const [, email] of memberEmails) {
+          members.push({ email });
+        }
         await this.processMessageThreads(
           result.threads,
           channelId,
           isInitial,
-          memberEmails
+          memberEmails,
+          members
         );
       }
 
@@ -387,7 +392,8 @@ export class GoogleChat extends Connector<GoogleChat> {
     threads: Message[][],
     channelId: string,
     initialSync: boolean,
-    memberEmails?: Map<string, string>
+    memberEmails?: Map<string, string>,
+    members?: NewActor[]
   ): Promise<void> {
     const spaceId = extractSpaceId(channelId);
 
@@ -411,7 +417,8 @@ export class GoogleChat extends Connector<GoogleChat> {
           filtered,
           spaceId,
           initialSync,
-          memberEmails
+          memberEmails,
+          members
         );
 
         // Inject channel routing and sync metadata
@@ -524,13 +531,20 @@ export class GoogleChat extends Connector<GoogleChat> {
         const memberEmails = await this.getMemberEmails(api, spaceName);
         const spaceId = extractSpaceId(spaceName);
 
+        // Build members list for private thread mentions
+        const members: NewActor[] = [];
+        for (const [, email] of memberEmails) {
+          members.push({ email });
+        }
+
         for (const threadMessages of result.threads) {
           try {
             const plotThread = transformChatThread(
               threadMessages,
               spaceId,
               isInitial,
-              memberEmails
+              memberEmails,
+              members
             );
 
             // Route DMs to the DM channel

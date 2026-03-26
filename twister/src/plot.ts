@@ -906,6 +906,12 @@ export type NewLink = (
     /** The person assigned to the item. */
     assignee?: NewActor | null;
     /**
+     * Whether the thread is private (only visible to creator and mentioned users).
+     * When true, thread visibility is restricted to the twist that created it
+     * and any users mentioned in the thread's notes.
+     */
+    private?: boolean;
+    /**
      * Whether the thread should be marked as unread for users.
      * - undefined/omitted (default): Thread is unread for users, except auto-marked
      *   as read for the author if they are the twist owner (user)

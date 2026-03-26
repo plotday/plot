@@ -406,6 +406,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     type: "email",
     title: subject || "Email",
     created: new Date(parseInt(parentMessage.internalDate)),
+    private: true,
     meta: {
       threadId: thread.id,
       historyId: thread.historyId,
@@ -426,8 +427,13 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
 
     const { content: body, contentType } = extractBody(message.payload);
 
-    // Combine to and cc for mentions - convert to NewActor[]
+    // Combine sender, to, and cc for mentions - convert to NewActor[]
+    const senderActor: NewActor = {
+      email: sender.email,
+      name: sender.name || undefined,
+    };
     const mentions: NewActor[] = [
+      senderActor,
       ...parseEmailAddressesToNewActors(to),
       ...parseEmailAddressesToNewActors(cc),
     ];
@@ -435,12 +441,10 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     // Create NewNote with idempotent key
     const note = {
       key: message.id,
-      author: {
-        email: sender.email,
-        name: sender.name || undefined,
-      } as NewActor,
+      author: senderActor,
       content: body || message.snippet,
       contentType,
+      private: true,
       mentions: mentions.length > 0 ? mentions : undefined,
       created: new Date(parseInt(message.internalDate)),
     };

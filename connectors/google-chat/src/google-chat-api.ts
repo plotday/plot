@@ -319,7 +319,8 @@ export function transformChatThread(
   messages: Message[],
   spaceId: string,
   initialSync: boolean,
-  memberEmails?: Map<string, string>
+  memberEmails?: Map<string, string>,
+  members?: NewActor[]
 ): NewLinkWithNotes {
   const firstMessage = messages[0];
   const threadKey = extractThreadKey(firstMessage.thread.name);
@@ -334,6 +335,7 @@ export function transformChatThread(
     source: `google-chat:${spaceId}:thread:${threadKey}`,
     type: "message",
     title,
+    private: true,
     created: new Date(firstMessage.createTime),
     author: senderToNewActor(firstMessage.sender, memberEmails),
     sourceUrl: null,
@@ -349,6 +351,7 @@ export function transformChatThread(
       contentType: msg.formattedText ? ("html" as const) : ("text" as const),
       created: new Date(msg.createTime),
       author: senderToNewActor(msg.sender, memberEmails),
+      ...(members && members.length > 0 ? { mentions: members } : {}),
     })),
     preview,
     ...(initialSync ? { unread: false, archived: false } : {}),

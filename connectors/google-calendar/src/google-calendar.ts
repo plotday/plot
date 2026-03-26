@@ -694,6 +694,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               created: event.created ? new Date(event.created) : undefined,
               type: "event",
               title: activityData.title || "Cancelled event",
+              private: true,
               preview: "Cancelled",
               meta: activityData.meta ?? null,
               notes: [cancelNote],
@@ -791,16 +792,38 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             ...(authorContact ? { author: authorContact } : {}),
           } : null;
 
+          // Build mentions from organizer + attendees for thread visibility
+          const attendeeMentions: NewContact[] = [];
+          if (authorContact) attendeeMentions.push(authorContact);
+          for (const att of validAttendees) {
+            if (att.email) {
+              attendeeMentions.push({ email: att.email, name: att.displayName });
+            }
+          }
+
+          // Add mentions to description note for private thread visibility
+          if (descriptionNote && attendeeMentions.length > 0) {
+            (descriptionNote as any).mentions = attendeeMentions;
+          }
+
+          // Build notes array: description note, or a participants-only note for mentions
+          const notes = descriptionNote
+            ? [descriptionNote]
+            : attendeeMentions.length > 0
+              ? [{ key: "participants", content: null, mentions: attendeeMentions }]
+              : [];
+
           const link: NewLinkWithNotes = {
             source: canonicalUrl,
             created: event.created ? new Date(event.created) : undefined,
             type: "event",
             title: activityData.title || "",
+            private: true,
             author: authorContact,
             meta: activityData.meta ?? null,
             actions: hasActions ? actions : undefined,
             sourceUrl: event.htmlLink ?? null,
-            notes: descriptionNote ? [descriptionNote] : [],
+            notes,
             preview: hasDescription ? description : null,
             schedules: activityData.schedules,
             scheduleOccurrences: activityData.scheduleOccurrences,
