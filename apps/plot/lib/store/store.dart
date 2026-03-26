@@ -2729,7 +2729,15 @@ class _StoreLifecycleObserver extends WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && !store._isSyncing) {
-      _log.info('App resumed, triggering incremental sync');
+      // If the WebSocket stayed connected while backgrounded, BroadcastClient
+      // already handles the resume (sends a ping). Only do a full sync when
+      // the connection was lost — BroadcastClient.onReconnected covers that too,
+      // but _startSync is still needed when no broadcast client exists yet.
+      if (store._broadcastClient?.isConnected == true) {
+        _log.info('App resumed, WebSocket still connected — skipping full sync');
+        return;
+      }
+      _log.info('App resumed, WebSocket disconnected — triggering full sync');
       store._startSync().catchError((Object error, StackTrace stackTrace) {
         _log.warning('Resume-triggered sync failed', error, stackTrace);
         return null;
