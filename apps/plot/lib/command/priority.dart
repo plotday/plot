@@ -612,27 +612,36 @@ class ManagePrioritySharing extends ShowCommands {
   final Priority priority;
 
   static Future<Commands> _getSharingCommands(Priority priority) async {
+    // Read current inheritMembers from DB (priority arg may be stale after toggle)
+    final db = Store.get;
+    final row = await (db.select(db.priorities)
+          ..where((p) => p.id.equalsValue(priority.id)))
+        .getSingleOrNull();
+    final currentInheritMembers = row?.inheritMembers ?? priority.inheritMembers;
+    // Build a priority with the refreshed inheritMembers value
+    final current = currentInheritMembers != priority.inheritMembers
+        ? priority.copyWith(inheritMembers: currentInheritMembers)
+        : priority;
+
     // Fetch all actors for initial ContactGroup cache, ordered by proximity
     final allActors = await Actor.get(
       types: [ActorType.user, ActorType.contact],
-      priorityId: priority.id,
+      priorityId: current.id,
       limit: 100,
     );
 
     // Only redirect to ancestor if this priority inherits members
     final sourcePriority =
-        (priority.inheritMembers && priority.sharingAncestorId != null)
-            ? await Priority.getOne(priority.sharingAncestorId!)
-            : priority;
+        (current.inheritMembers && current.sharingAncestorId != null)
+        ? await Priority.getOne(current.sharingAncestorId!)
+        : current;
 
     final groups = <CommandGroup>[
       // Show inherit toggle for non-root shared descendants
-      if (!priority.root && priority.sharing)
+      if (!current.root && current.sharing)
         StaticCommandGroup(
           title: 'Settings',
-          commands: [
-            ToggleInheritMembers(priority),
-          ],
+          commands: [ToggleInheritMembers(current)],
         ),
       AcceptedMembersGroup(title: 'Members', priority: sourcePriority),
       InvitedMembersGroup(title: 'Invited', priority: sourcePriority),
@@ -1099,7 +1108,7 @@ class ToggleInheritMembers extends Command {
         title: 'Include members of the parent priority',
         eventObject: EventObject.priority,
         eventAction: EventAction.updated,
-        icon: PlotIcon.shared,
+        icon: priority.inheritMembers ? PlotIcon.on : PlotIcon.off,
         on: priority.inheritMembers,
       );
 
@@ -1107,9 +1116,7 @@ class ToggleInheritMembers extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await priority
-        .copyWith(inheritMembers: !priority.inheritMembers)
-        .save();
+    await priority.copyWith(inheritMembers: !priority.inheritMembers).save();
     // Pull updated data so sharing UI reflects the change
     await SyncOrchestrator.instance.pull(SyncOrchestrator.priority);
     await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);

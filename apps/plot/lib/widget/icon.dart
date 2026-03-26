@@ -53,6 +53,8 @@ class PlotIcon {
   static const agenda = FontAwesomeIcons.calendarStar;
   static const message = FontAwesomeIcons.message;
   static const messages = FontAwesomeIcons.messages;
+  static const on = FontAwesomeIcons.solidToggleOn;
+  static const off = FontAwesomeIcons.solidToggleOff;
 
   // Task icons
   static const selfTask = FontAwesomeIcons.circlePlus;
