@@ -20,6 +20,9 @@ type LinkTypeConfig = {
  *
  * Uses union semantics: a tag is present if ANY link on the thread (from the same twist)
  * has a status that maps to that tag.
+ *
+ * Checks channel-level linkTypes first (from source_channel.link_types),
+ * falling back to twist-level linkTypes (from twist.permissions._providers[].linkTypes).
  */
 export async function propagateLinkStatusTagsFromDb(
   db: Kysely<DB>,
@@ -27,24 +30,28 @@ export async function propagateLinkStatusTagsFromDb(
 ): Promise<void> {
   if (!link.thread_id || !link.created_by) return;
 
-  // Look up linkTypes from the twist's permissions via priority_twist → twist
-  const twistRow = await db
-    .selectFrom("priority_twist")
-    .innerJoin("twist", "twist.id", "priority_twist.twist_id")
-    .select("twist.permissions")
-    .where("priority_twist.id", "=", link.created_by)
-    .executeTakeFirst();
+  // Try channel-level linkTypes first
+  let allLinkTypes: LinkTypeConfig[] = await getChannelLinkTypes(db, link.id, link.created_by);
 
-  if (!twistRow?.permissions) return;
+  // Fall back to twist-level linkTypes
+  if (allLinkTypes.length === 0) {
+    const twistRow = await db
+      .selectFrom("priority_twist")
+      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      .select("twist.permissions")
+      .where("priority_twist.id", "=", link.created_by)
+      .executeTakeFirst();
 
-  // Extract linkTypes from permissions._providers[].linkTypes
-  const permissions = twistRow.permissions as any;
-  const providers = permissions._providers;
-  if (!Array.isArray(providers)) return;
+    if (!twistRow?.permissions) return;
 
-  const allLinkTypes: LinkTypeConfig[] = providers.flatMap(
-    (p: any) => (p.linkTypes ?? []) as LinkTypeConfig[]
-  );
+    const permissions = twistRow.permissions as any;
+    const providers = permissions._providers;
+    if (!Array.isArray(providers)) return;
+
+    allLinkTypes = providers.flatMap(
+      (p: any) => (p.linkTypes ?? []) as LinkTypeConfig[]
+    );
+  }
   if (allLinkTypes.length === 0) return;
 
   // Collect all possible tags from status definitions
@@ -111,5 +118,39 @@ export async function propagateLinkStatusTagsFromDb(
         .where("archived_at", "is", null)
         .execute();
     }
+  }
+}
+
+/**
+ * Look up channel-level linkTypes for a link.
+ * Queries the link's channel_id, then looks up link_types from source_channel.
+ */
+async function getChannelLinkTypes(
+  db: Kysely<DB>,
+  linkId: string,
+  createdBy: string
+): Promise<LinkTypeConfig[]> {
+  const linkRow = await db
+    .selectFrom("link")
+    .select("channel_id")
+    .where("id", "=", linkId)
+    .executeTakeFirst();
+  if (!linkRow?.channel_id) return [];
+
+  const channel = await db
+    .selectFrom("source_channel")
+    .select("link_types")
+    .where("priority_twist_id", "=", createdBy)
+    .where("channel_id", "=", linkRow.channel_id)
+    .executeTakeFirst();
+  if (!channel?.link_types) return [];
+
+  try {
+    const parsed = typeof channel.link_types === "string"
+      ? JSON.parse(channel.link_types)
+      : channel.link_types;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 }

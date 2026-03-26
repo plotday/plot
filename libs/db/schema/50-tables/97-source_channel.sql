@@ -6,6 +6,7 @@ CREATE TABLE "public"."source_channel" (
     "priority_id" uuid REFERENCES priority (id) ON DELETE SET NULL,
     "enabled" boolean NOT NULL DEFAULT false,
     "create_threads" text NOT NULL DEFAULT 'all',
+    "link_types" jsonb,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     UNIQUE (priority_twist_id, channel_id)

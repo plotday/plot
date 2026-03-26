@@ -306,6 +306,7 @@ export class Integrations extends Tool implements IAuth {
 
   /**
    * Declare what channels an actor has access to.
+   * Also updates link_types on any already-enabled source_channels.
    */
   async setChannels(
     provider: AuthProvider,
@@ -313,7 +314,28 @@ export class Integrations extends Tool implements IAuth {
     channels: Channel[]
   ): Promise<void> {
     await this.store.set(`channel_access:${provider}:${actorId}`, channels);
+
+    // Update link_types on existing enabled source_channels.
+    // Offset updated_at by 1ms to ensure the change is picked up by the
+    // next sync pull (the cursor uses millisecond-truncated timestamps).
+    const flat = this.flattenChannels(channels);
+    const futureDate = new Date(Date.now() + 1);
+    for (const channel of flat) {
+      if (channel.linkTypes) {
+        await this.db
+          .updateTable("source_channel")
+          .set({
+            link_types: JSON.stringify(channel.linkTypes) as any,
+            updated_at: futureDate,
+          })
+          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("channel_id", "=", channel.id)
+          .where("enabled", "=", true)
+          .execute();
+      }
+    }
   }
+
 
   // ============================================================================
   // Source save operations (delegates to internal Plot instance)
@@ -506,15 +528,19 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Check if a link type+status represents completion based on provider configs.
+   * Check if a link type+status represents completion.
+   * Checks channel-level linkTypes first, falling back to twist-level.
    */
   private isStatusDone(
     type: string | null | undefined,
-    status: string | null | undefined
+    status: string | null | undefined,
+    channelLinkTypes?: LinkTypeConfig[]
   ): boolean {
     if (!type || !status) return false;
-    const allLinkTypes = this.providerConfigs.flatMap((p) => p.linkTypes ?? []);
-    const typeConfig = allLinkTypes.find((lt) => lt.type === type);
+
+    // Check channel-level linkTypes first
+    const sources = channelLinkTypes ?? this.providerConfigs.flatMap((p) => p.linkTypes ?? []);
+    const typeConfig = sources.find((lt) => lt.type === type);
     if (!typeConfig?.statuses) return false;
     const statusDef = typeConfig.statuses.find((s) => s.status === status);
     return statusDef?.done === true;
@@ -550,7 +576,8 @@ export class Integrations extends Tool implements IAuth {
       if (!contact?.user_id) return;
 
       // Create schedule only if status is not done
-      if (!this.isStatusDone(dbLink.type, dbLink.status)) {
+      const channelLinkTypes = await this.getChannelLinkTypesForThread(threadId);
+      if (!this.isStatusDone(dbLink.type, dbLink.status, channelLinkTypes.length > 0 ? channelLinkTypes : undefined)) {
         await createSchedule(this.db, contact.user_id, threadId as string, "task");
       }
 
@@ -565,15 +592,19 @@ export class Integrations extends Tool implements IAuth {
    * Propagate status tags from link statuses to the parent thread.
    * Uses union semantics: a tag is present if ANY link on the thread (from this twist)
    * has a status that maps to that tag. Removes the tag only when no links contribute it.
+   * Checks channel-level linkTypes first, falling back to twist-level.
    */
   private async propagateLinkStatusTags(
     plot: Plot,
     threadId: Uuid
   ): Promise<void> {
-    // Collect all linkTypes from provider configs
-    const allLinkTypes: LinkTypeConfig[] = this.providerConfigs.flatMap(
-      (p) => p.linkTypes ?? []
-    );
+    // Collect all linkTypes — check channel-level first, then twist-level
+    let allLinkTypes: LinkTypeConfig[] = await this.getChannelLinkTypesForThread(threadId);
+    if (allLinkTypes.length === 0) {
+      allLinkTypes = this.providerConfigs.flatMap(
+        (p) => p.linkTypes ?? []
+      );
+    }
     if (allLinkTypes.length === 0) return;
 
     // Collect all possible tags from all status definitions
@@ -654,6 +685,40 @@ export class Integrations extends Tool implements IAuth {
     if (!typeConfig?.statuses) return undefined;
     const statusDef = typeConfig.statuses.find((s) => s.status === status);
     return statusDef?.tag;
+  }
+
+  /**
+   * Look up channel-level linkTypes for a thread's links.
+   * Queries the first link on this thread from this twist, resolves its channel_id,
+   * then looks up link_types from source_channel.
+   */
+  private async getChannelLinkTypesForThread(threadId: Uuid): Promise<LinkTypeConfig[]> {
+    const link = await this.db
+      .selectFrom("link")
+      .select("channel_id")
+      .where("thread_id", "=", threadId as string)
+      .where("created_by", "=", this.priorityTwistId)
+      .where("channel_id", "is not", null)
+      .limit(1)
+      .executeTakeFirst();
+    if (!link?.channel_id) return [];
+
+    const channel = await this.db
+      .selectFrom("source_channel")
+      .select("link_types")
+      .where("priority_twist_id", "=", this.priorityTwistId)
+      .where("channel_id", "=", link.channel_id)
+      .executeTakeFirst();
+    if (!channel?.link_types) return [];
+
+    try {
+      const parsed = typeof channel.link_types === "string"
+        ? JSON.parse(channel.link_types)
+        : channel.link_types;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -1170,12 +1235,15 @@ export class Integrations extends Tool implements IAuth {
     priorityId?: string,
     createThreads?: string
   ): Promise<void> {
-    // Find the title from the actor's channel access list if not provided
+    // Find the channel from the actor's channel access list
+    const channels = await this.getChannelAccess(provider, actorId);
+    const channelObj = this.findChannelInTree(channels, channelId);
     if (!title) {
-      const channels = await this.getChannelAccess(provider, actorId);
-      const channel = this.findChannelInTree(channels, channelId);
-      title = channel?.title;
+      title = channelObj?.title;
     }
+
+    // Extract per-channel linkTypes if available
+    const linkTypes = channelObj?.linkTypes ?? null;
 
     await this.store.set(`channel_config:${provider}:${channelId}`, {
       enabled: true,
@@ -1195,6 +1263,7 @@ export class Integrations extends Tool implements IAuth {
         priority_id: priorityId ?? null,
         enabled: true,
         create_threads: createThreads ?? "all",
+        link_types: linkTypes ? JSON.stringify(linkTypes) : null,
       })
       .onConflict((oc) =>
         oc.columns(["priority_twist_id", "channel_id"]).doUpdateSet({
@@ -1202,6 +1271,7 @@ export class Integrations extends Tool implements IAuth {
           title: title ?? channelId,
           priority_id: priorityId ?? null,
           create_threads: createThreads ?? "all",
+          link_types: linkTypes ? JSON.stringify(linkTypes) : null,
           updated_at: new Date(),
         })
       )

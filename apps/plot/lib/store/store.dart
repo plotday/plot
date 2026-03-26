@@ -2016,7 +2016,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 287;
+  int get schemaVersion => 288;
 
   @override
   MigrationStrategy get migration {
@@ -2605,6 +2605,9 @@ class Store extends _$Store {
     }
     if (from < 287) {
       await m.addColumn(priorities, priorities.inheritMembers);
+    }
+    if (from < 288) {
+      await _safeAddColumn(m, sourceChannels, sourceChannels.linkTypes);
     }
   }
 

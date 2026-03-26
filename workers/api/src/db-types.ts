@@ -437,6 +437,7 @@ export interface Priority {
   created_at: Generated<Timestamp>;
   created_by: string;
   id: Generated<string>;
+  inherit_members: Generated<boolean>;
   key: string | null;
   organization_id: Int8 | null;
   path: string;
@@ -891,6 +892,7 @@ export interface SourceChannel {
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
   id: Generated<Int8>;
+  link_types: Json | null;
   /**
    * The priority this channel syncs data to. NULL means the channel is known but not routed to any priority.
    */
@@ -1134,6 +1136,7 @@ export interface UserPriority {
   created_by: string | null;
   global_path: string | null;
   id: string | null;
+  inherit_members: boolean | null;
   key: string | null;
   order: number | null;
   organization_id: Int8 | null;
@@ -1217,6 +1220,7 @@ export interface UserSourceChannel {
   created_at: Timestamp | null;
   enabled: boolean | null;
   id: Int8 | null;
+  link_types: Json | null;
   priority_id: string | null;
   priority_twist_id: string | null;
   title: string | null;

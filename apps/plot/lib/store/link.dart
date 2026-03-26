@@ -181,14 +181,30 @@ class Link extends Equatable {
   DateTime get createdAt => _link.createdAt;
   DateTime get updatedAt => _link.updatedAt;
 
-  /// Get the LinkTypeConfig for this link from the creating PriorityTwist.
+  /// Get the LinkTypeConfig for this link.
+  /// Checks channel-level linkTypes first (from source_channel),
+  /// falling back to twist-level linkTypes (from priority_twist).
   LinkTypeConfig? getTypeConfig() {
     final ptId = createdBy;
-    if (ptId == null) return null;
+    if (ptId == null || type == null) return null;
+
+    // Check channel-level linkTypes first
+    // Try exact channel match, then any channel for this source
+    final sc = channelId != null
+        ? SourceChannel.findByChannel(ptId, channelId!)
+        : null;
+    final channelConfigs = (sc ?? SourceChannel.findBySource(ptId))
+        ?.parsedLinkTypes;
+    if (channelConfigs != null) {
+      final match = channelConfigs.where((c) => c.type == type).firstOrNull;
+      if (match != null) return match;
+    }
+
+    // Fall back to twist-level linkTypes
     final pt = PriorityTwist._cache[ptId];
     if (pt == null) return null;
     final configs = pt.parsedLinkTypes;
-    if (configs == null || type == null) return null;
+    if (configs == null) return null;
     return configs.where((c) => c.type == type).firstOrNull;
   }
 
