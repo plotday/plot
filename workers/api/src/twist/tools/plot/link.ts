@@ -42,6 +42,7 @@ export async function createLink(
       ...(link.meta !== undefined ? { meta: link.meta } : {}),
       ...(link.actions !== undefined ? { actions: link.actions } : {}),
       ...(link.created ? { created: link.created } : {}),
+      ...(link.private !== undefined ? { private: link.private } : {}),
       ...(link.unread !== undefined ? { unread: link.unread } : {}),
       ...(link.archived !== undefined ? { archived: link.archived } : {}),
       ...(link.preview !== undefined ? { preview: link.preview } : {}),
