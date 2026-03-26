@@ -619,12 +619,21 @@ class ManagePrioritySharing extends ShowCommands {
       limit: 100,
     );
 
-    // For descendants, use the shared ancestor as the source for members
-    final sourcePriority = priority.sharingAncestorId != null
-        ? await Priority.getOne(priority.sharingAncestorId!)
-        : priority;
+    // Only redirect to ancestor if this priority inherits members
+    final sourcePriority =
+        (priority.inheritMembers && priority.sharingAncestorId != null)
+            ? await Priority.getOne(priority.sharingAncestorId!)
+            : priority;
 
     final groups = <CommandGroup>[
+      // Show inherit toggle for non-root shared descendants
+      if (!priority.root && priority.sharing)
+        StaticCommandGroup(
+          title: 'Settings',
+          commands: [
+            ToggleInheritMembers(priority),
+          ],
+        ),
       AcceptedMembersGroup(title: 'Members', priority: sourcePriority),
       InvitedMembersGroup(title: 'Invited', priority: sourcePriority),
       ContactGroup(
@@ -1080,5 +1089,34 @@ class InviteByEmail extends Command {
         isError: true,
       );
     }
+  }
+}
+
+/// Toggle whether a priority inherits members from its parent.
+class ToggleInheritMembers extends Command {
+  ToggleInheritMembers(this.priority)
+    : super(
+        title: 'Include members of the parent priority',
+        eventObject: EventObject.priority,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.shared,
+        on: priority.inheritMembers,
+      );
+
+  final Priority priority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await priority
+        .copyWith(inheritMembers: !priority.inheritMembers)
+        .save();
+    // Pull updated data so sharing UI reflects the change
+    await SyncOrchestrator.instance.pull(SyncOrchestrator.priority);
+    await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
+    return CommandRefresh(
+      message: priority.inheritMembers
+          ? 'Parent members excluded'
+          : 'Parent members included',
+    );
   }
 }

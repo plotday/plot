@@ -2016,7 +2016,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 286;
+  int get schemaVersion => 287;
 
   @override
   MigrationStrategy get migration {
@@ -2602,6 +2602,9 @@ class Store extends _$Store {
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'source_channels'",
       );
+    }
+    if (from < 287) {
+      await m.addColumn(priorities, priorities.inheritMembers);
     }
   }
 

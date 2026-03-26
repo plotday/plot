@@ -43,7 +43,8 @@ SELECT
     inherited.see_within_updates,
     COALESCE(settings.attention_window_set, FALSE) AS attention_window_set,
     COALESCE(settings.see_within_requests_set, FALSE) AS see_within_requests_set,
-    COALESCE(settings.see_within_updates_set, FALSE) AS see_within_updates_set
+    COALESCE(settings.see_within_updates_set, FALSE) AS see_within_updates_set,
+    p.inherit_members
 FROM
     priority_user pu
     JOIN priority root ON pu.priority_id = root.id
@@ -51,6 +52,17 @@ FROM
         AND pu_root.personal = TRUE
     JOIN priority user_root ON pu_root.priority_id = user_root.id
     JOIN priority p ON root.path @> p.path
+        AND (p.id = root.id
+            OR NOT EXISTS (
+                SELECT
+                    1
+                FROM
+                    priority blocker
+                WHERE
+                    blocker.path <@ root.path
+                    AND p.path <@ blocker.path
+                    AND blocker.path != root.path
+                    AND blocker.inherit_members = FALSE))
     -- Direct settings (not inherited)
     LEFT JOIN (
         SELECT user_id, priority_id,

@@ -43,6 +43,7 @@ SELECT
     json_group_array (a.title) AS titles,
     json_group_array (lower(substr(hex (a.id), 1, 8) || '-' || substr(hex (a.id), 9, 4) || '-' || substr(hex (a.id), 13, 4) || '-' || substr(hex (a.id), 17, 4) || '-' || substr(hex (a.id), 21, 12))) AS ancestors,
     json_group_array (a.color) AS colors,
+    json_group_array (CASE WHEN a.inherit_members = 0 THEN 0 ELSE 1 END) AS inherit_members_list,
     MIN(a.top_order) AS min_ancestor_top_order,
     MAX(CASE WHEN a.archived_at IS NOT NULL THEN 1 ELSE 0 END) AS has_archived_ancestor
 FROM

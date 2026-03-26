@@ -30,6 +30,7 @@ class Priorities extends Table
   BoolColumn get attentionWindowSet => boolean().withDefault(const Constant(false))();
   BoolColumn get seeWithinRequestsSet => boolean().withDefault(const Constant(false))();
   BoolColumn get seeWithinUpdatesSet => boolean().withDefault(const Constant(false))();
+  BoolColumn get inheritMembers => boolean().withDefault(const Constant(true))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -76,6 +77,7 @@ class PrioritiesBase extends BaseTable {
     json['order'] ??= DateTime.parse(json['created_at'] as String)
         .millisecondsSinceEpoch
         .toDouble();
+    json['inherit_members'] ??= true;
 
     return PriorityRow.fromJson(json);
   }
@@ -103,17 +105,20 @@ class PriorityAncestor {
     final rawTitles = jsonDecode(row.titles) as List;
     final rawIds = jsonDecode(row.ancestors) as List;
     final rawColors = jsonDecode(row.colors) as List;
+    final rawInheritMembers = jsonDecode(row.inheritMembersList) as List;
 
     // Filter out NULL entries (from LEFT JOIN when ancestor doesn't exist)
     final ids = <Uuid>[];
     final titles = <String>[];
     final colors = <int?>[];
+    final inheritMembersList = <bool>[];
 
     for (int i = 0; i < rawTitles.length; i++) {
       if (rawTitles[i] != null) {
         titles.add(rawTitles[i] as String);
         ids.add(Uuid.fromString(rawIds[i] as String));
         colors.add(rawColors[i] as int?);
+        inheritMembersList.add(rawInheritMembers[i] == 1);
       }
     }
 
@@ -133,6 +138,7 @@ class PriorityAncestor {
         id: ids[index],
         title: titles[index],
         color: displayColors[index],
+        inheritMembers: inheritMembersList[index],
       ),
     );
   }
@@ -141,6 +147,7 @@ class PriorityAncestor {
     required this.id,
     required this.title,
     required this.color,
+    this.inheritMembers = true,
   });
 
   final PriorityId id;
@@ -149,6 +156,9 @@ class PriorityAncestor {
   /// The computed display color index (with inheritance applied).
   /// Root priorities default to 7 (Resolution) when no color is explicitly set.
   final int color;
+
+  /// Whether this ancestor inherits members from its parent.
+  final bool inheritMembers;
 }
 
 class Priority extends PriorityRow implements Comparable<Priority> {
@@ -248,7 +258,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
           // Map priorities with computed status
           return priorities.map((p) {
-            // Find nearest shared ancestor (walk from parent to root)
+            // Find nearest shared ancestor (walk from parent to root),
+            // stopping if an ancestor has opted out of inheriting members.
             PriorityId? ancestorId;
             if (!sharingIds.contains(p.id)) {
               for (final ancestor in p._ancestors.reversed) {
@@ -256,6 +267,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                   ancestorId = ancestor.id;
                   break;
                 }
+                // Stop walking if this ancestor opted out of parent membership
+                if (!ancestor.inheritMembers) break;
               }
             }
 
@@ -375,7 +388,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     // Create new Priority objects with computed status
     return priorities.map((p) {
-      // Find nearest shared ancestor (walk from parent to root)
+      // Find nearest shared ancestor (walk from parent to root),
+      // stopping if an ancestor has opted out of inheriting members.
       PriorityId? ancestorId;
       if (!sharedIds.contains(p.id)) {
         for (final ancestor in p._ancestors.reversed) {
@@ -383,6 +397,8 @@ class Priority extends PriorityRow implements Comparable<Priority> {
             ancestorId = ancestor.id;
             break;
           }
+          // Stop walking if this ancestor opted out of parent membership
+          if (!ancestor.inheritMembers) break;
         }
       }
 
@@ -863,6 +879,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                id: parent.id,
                title: parent.title,
                color: parent.displayColor.index,
+               inheritMembers: parent.inheritMembers,
              ),
            ],
        minAncestorTopOrder = null,
@@ -886,6 +903,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          attentionWindowSet: false,
          seeWithinRequestsSet: false,
          seeWithinUpdatesSet: false,
+         inheritMembers: true,
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -918,6 +936,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                                id: parent.id,
                                title: parent.title,
                                color: parent.displayColor.index,
+                               inheritMembers: parent.inheritMembers,
                              ),
                            ]
                : PriorityAncestor.fromStore(ancestry)),
@@ -959,6 +978,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          attentionWindowSet: row.attentionWindowSet,
          seeWithinRequestsSet: row.seeWithinRequestsSet,
          seeWithinUpdatesSet: row.seeWithinUpdatesSet,
+         inheritMembers: row.inheritMembers,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -1168,6 +1188,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? attentionWindowSet,
     bool? seeWithinRequestsSet,
     bool? seeWithinUpdatesSet,
+    bool? inheritMembers,
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1208,6 +1229,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         attentionWindowSet: attentionWindowSet,
         seeWithinRequestsSet: seeWithinRequestsSet,
         seeWithinUpdatesSet: seeWithinUpdatesSet,
+        inheritMembers: inheritMembers,
       ),
       parent: currentParent,
       children: children,

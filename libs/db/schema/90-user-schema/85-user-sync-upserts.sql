@@ -18,7 +18,18 @@ BEGIN
         WHERE
             pu.user_id = assert_priority_access.user_id
             AND pu.archived_at IS NULL
-            AND p.id = assert_priority_access.priority_id) THEN
+            AND p.id = assert_priority_access.priority_id
+            AND (p.id = pp.id
+                OR NOT EXISTS (
+                    SELECT
+                        1
+                    FROM
+                        priority blocker
+                    WHERE
+                        blocker.path <@ pp.path
+                        AND p.path <@ blocker.path
+                        AND blocker.path != pp.path
+                        AND blocker.inherit_members = FALSE))) THEN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
 END;
@@ -632,12 +643,12 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF _actual_path IS NOT NULL THEN
-        INSERT INTO priority (id, archived_at, title, color, path, created_by, updated_by)
+        INSERT INTO priority (id, archived_at, title, color, path, created_by, updated_by, inherit_members)
             VALUES (_input.id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _actual_path, _input.created_by, _input.updated_by)
+                END, _actual_path, _input.created_by, _input.updated_by, COALESCE(_input.inherit_members, TRUE))
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -647,7 +658,8 @@ BEGIN
                 ELSE
                     priority.color
                 END,
-                updated_by = _input.updated_by
+                updated_by = _input.updated_by,
+                inherit_members = COALESCE(_input.inherit_members, priority.inherit_members)
             RETURNING
                 id INTO _priority_id;
     ELSE
@@ -662,7 +674,8 @@ BEGIN
             ELSE
                 priority.color
             END,
-            updated_by = _input.updated_by
+            updated_by = _input.updated_by,
+            inherit_members = COALESCE(_input.inherit_members, priority.inherit_members)
         WHERE
             id = _input.id
         RETURNING

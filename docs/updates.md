@@ -1,3 +1,4 @@
+- Sub-priorities can now opt out of inheriting parent sharing — toggle "Include members of the parent priority" off to keep a sub-priority private from the parent's members
 - Email, calendar, and chat DM connections now create private threads — only the people involved (recipients, attendees, or chat members) can see them
 - Fixed unassigning a task from another user reverting after a moment — the change now persists correctly
 - Google Chat connection — sync messages from Google Chat spaces and DMs into Plot, with reply support (requires Google Workspace)

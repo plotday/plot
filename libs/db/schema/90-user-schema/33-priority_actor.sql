@@ -30,6 +30,17 @@ FROM (
             "user".priority_expanded upe
             JOIN priority p ON p.id = upe.priority_id
             JOIN priority ancestor ON p.path <@ ancestor.path
+                AND (p.id = ancestor.id
+                    OR NOT EXISTS (
+                        SELECT
+                            1
+                        FROM
+                            priority blocker
+                        WHERE
+                            blocker.path <@ ancestor.path
+                            AND p.path <@ blocker.path
+                            AND blocker.path != ancestor.path
+                            AND blocker.inherit_members = FALSE))
             JOIN "user".priority_expanded upe_ancestor
                 ON upe_ancestor.user_id = upe.user_id
                 AND upe_ancestor.priority_id = ancestor.id

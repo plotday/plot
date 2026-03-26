@@ -11,12 +11,18 @@ CREATE TABLE "public"."priority" (
     "updated_by" integer NOT NULL DEFAULT 0,
     "sync_depth" integer,
     "key" text,
-    "organization_id" bigint REFERENCES public."organization" ON DELETE SET NULL
+    "organization_id" bigint REFERENCES public."organization" ON DELETE SET NULL,
+    "inherit_members" boolean NOT NULL DEFAULT TRUE
 );
 
 -- Index for priority path ltree queries (supports <@ operator)
 -- Used heavily in user_activity view filtering
 CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
+
+-- Partial index for efficient inherit_members boundary checks
+CREATE INDEX idx_priority_inherit_members_false ON "public"."priority" ("id")
+WHERE
+    "inherit_members" = FALSE;
 
 -- Ensure keys are unique within each priority root tree
 CREATE UNIQUE INDEX idx_priority_key_per_root ON "public"."priority" ((subltree ("path", 0, 1)), "key")

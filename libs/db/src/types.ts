@@ -788,6 +788,7 @@ export type Database = {
           created_at: string
           created_by: string
           id: string
+          inherit_members: boolean
           key: string | null
           organization_id: number | null
           path: unknown
@@ -802,6 +803,7 @@ export type Database = {
           created_at?: string
           created_by: string
           id?: string
+          inherit_members?: boolean
           key?: string | null
           organization_id?: number | null
           path: unknown
@@ -816,6 +818,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           id?: string
+          inherit_members?: boolean
           key?: string | null
           organization_id?: number | null
           path?: unknown
@@ -3760,6 +3763,7 @@ export type Database = {
           created_by: string | null
           global_path: unknown
           id: string | null
+          inherit_members: boolean | null
           key: string | null
           order: number | null
           organization_id: number | null
@@ -4066,6 +4070,7 @@ export type Database = {
           created_by: string | null
           global_path: unknown
           id: string | null
+          inherit_members: boolean | null
           key: string | null
           order: number | null
           organization_id: number | null

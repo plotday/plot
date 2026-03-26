@@ -23,7 +23,19 @@ SELECT
     c.archived_at AS archived_at
 FROM
     "public"."priority" p
-    JOIN "public"."priority" c ON c.path <@ p.path;
+    JOIN "public"."priority" c ON c.path <@ p.path
+WHERE
+    c.id = p.id
+    OR NOT EXISTS (
+        SELECT
+            1
+        FROM
+            "public"."priority" blocker
+        WHERE
+            blocker.path <@ p.path
+            AND c.path <@ blocker.path
+            AND blocker.path != p.path
+            AND blocker.inherit_members = FALSE);
 
 CREATE OR REPLACE VIEW "public"."priority_setting_inherited"
 AS
