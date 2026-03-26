@@ -64,6 +64,7 @@ interface NoteContext {
   members: Array<{ id: string; name: string | null; userId: string | null }>;
   memberIds: Set<string>;
   existingTodos: Array<{ noteId: string; actorId: string }>;
+  clearedTodos: Array<{ noteId: string; actorId: string }>;
   existingReplies: Array<{ noteId: string; actorId: string }>;
   recentNotes: Array<{
     id: string;
@@ -119,7 +120,7 @@ async function gatherContext(
   if (!thread?.priority_id) return null;
 
   // Fetch remaining context in parallel (all depend on note/thread results)
-  const [links, members, author, existingTodos, existingReplies, recentNotes] =
+  const [links, members, author, existingTodos, clearedTodos, existingReplies, recentNotes] =
     await Promise.all([
       // Links on this thread
       db
@@ -153,6 +154,16 @@ async function gatherContext(
         .where("n.thread_id", "=", threadId)
         .where("nt.tag_id", "=", 1) // Tag.Todo
         .where("nt.archived_at", "is", null)
+        .execute(),
+      // Todos on this thread that were cleared by a human (not by AI client_id=0)
+      db
+        .selectFrom("note_tag as nt")
+        .innerJoin("note as n", "n.id", "nt.note_id")
+        .select(["nt.note_id as noteId", "nt.actor_id as actorId"])
+        .where("n.thread_id", "=", threadId)
+        .where("nt.tag_id", "=", 1) // Tag.Todo
+        .where("nt.archived_at", "is not", null)
+        .where("nt.updated_by", "!=", 0) // cleared by human, not AI
         .execute(),
       // Existing active reply tags on this thread's notes
       db
@@ -223,6 +234,7 @@ async function gatherContext(
     })),
     memberIds,
     existingTodos,
+    clearedTodos,
     existingReplies,
     recentNotes: formattedRecentNotes,
   };
@@ -246,8 +258,8 @@ async function classifyNote(
   noteNumToId.set(0, context.noteId);
   let nextNoteNum = 1;
 
-  // Collect all known note IDs from existing todos/replies
-  const allExistingNotes = [...context.existingTodos, ...context.existingReplies];
+  // Collect all known note IDs from existing todos/replies/cleared
+  const allExistingNotes = [...context.existingTodos, ...context.clearedTodos, ...context.existingReplies];
   for (const t of allExistingNotes) {
     if (!Array.from(noteNumToId.values()).includes(t.noteId)) {
       noteNumToId.set(nextNoteNum, t.noteId);
@@ -277,6 +289,17 @@ async function classifyNote(
             const name =
               context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
             return `- Note #${noteIdToNum.get(t.noteId)} assigned to ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"})`;
+          })
+          .join("\n")
+      : "None";
+
+  const clearedTodosStr =
+    context.clearedTodos.length > 0
+      ? context.clearedTodos
+          .map((t) => {
+            const name =
+              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
+            return `- Note #${noteIdToNum.get(t.noteId)} was assigned to ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"})`;
           })
           .join("\n")
       : "None";
@@ -324,6 +347,7 @@ Tag rules:
 - For completions (done=true), reference the note number of the existing todo/reply being completed.
 - For new items (done=false), use note number 0 (the current note).
 - Todo: Only mark as todo if it clearly requires an action that ISN'T already covered by another task or link in the thread. Exception: clear sub-tasks completable before the parent.
+- NEVER re-assign a todo that was manually cleared by a user. "Cleared tasks" lists assignments that a user intentionally removed — do not recreate them.
 - Reply: Mark as reply if the note clearly requires a response based on thread context and participants. E.g., a direct question in a two-person conversation.
 - Be conservative — only tag when intent is clear.
 
@@ -357,6 +381,8 @@ Priority members:
 ${membersStr}
 Existing tasks:
 ${todosStr}
+Cleared tasks (manually removed by user — do NOT re-assign):
+${clearedTodosStr}
 Existing reply flags:
 ${repliesStr}
 Recent notes:

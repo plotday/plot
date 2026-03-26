@@ -96,6 +96,17 @@ notes.get("/sync/notes", async (c) => {
 notes.post("/sync/notes", async (c) => {
   const body = await c.req.json();
 
+  // Check if this is an update (note already exists) before upserting.
+  // We only run AI analysis on new notes — re-analyzing on edits causes
+  // the AI to re-apply tags that users intentionally removed.
+  const isUpdate = body.id
+    ? !!(await c.var.db
+        .selectFrom("note")
+        .select("id")
+        .where("id", "=", body.id)
+        .executeTakeFirst())
+    : false;
+
   const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
     await assertThreadAccess(trx, c.var.user.id, body.thread_id);
     return rpcUser(trx, "upsert_note", {
@@ -123,9 +134,10 @@ notes.post("/sync/notes", async (c) => {
 
   // Background processing: AI analysis + unread marking (best-effort, don't block the response)
   // Uses its own DB connection since the request-scoped one is destroyed after the response
+  // Only run for new notes — re-analyzing on edits causes the AI to re-apply removed tags
   const noteId = (result as any)?.id ?? body.id;
   const content = body.content as string | null;
-  if (noteId && !body.draft && !body.archived_at) {
+  if (noteId && !body.draft && !body.archived_at && !isUpdate) {
     c.executionCtx.waitUntil(
       (async () => {
         const db = createDb(c.env);
