@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-import { SignUp, useAuth, useUser } from "@clerk/react-router";
+import { SignIn, useAuth, useUser } from "@clerk/react-router";
 import { Link, useSearchParams } from "react-router";
 
 import {
@@ -240,13 +240,13 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     return (
       <Container size="sm" mt="xl" mb="xl">
         <Stack gap="md" align="center" ta="center">
-          <Title order={2}>Get started with {planLabel}</Title>
+          <Title order={2}>Amplify your progress</Title>
           <Text c="dimmed">
-            Create an account to upgrade and start using {planLabel}.
+            Sign in to upgrade to {planLabel}.
           </Text>
-          <SignUp
+          <SignIn
             forceRedirectUrl={returnUrl}
-            signInForceRedirectUrl={returnUrl}
+            signUpForceRedirectUrl={returnUrl}
           />
         </Stack>
       </Container>
