@@ -394,6 +394,14 @@ export const CONNECTIONS: Connection[] = [
     available: false,
   },
   {
+    name: "Attio",
+    logo: "/assets/logo-attio.svg",
+    logoDark: "/assets/logo-attio-dark.svg",
+    category: "CRM",
+    entities: ["Contacts", "Deals", "Tasks"],
+    available: false,
+  },
+  {
     name: "Pipedrive",
     logo: "https://api.iconify.design/logos/pipedrive.svg",
     category: "CRM",
@@ -575,6 +583,13 @@ export const CONNECTIONS: Connection[] = [
     ...si("microsoftexcel", "217346", "33AB67"),
     category: "Productivity",
     entities: ["Spreadsheets", "Comments"],
+    available: false,
+  },
+  {
+    name: "Fellow",
+    logo: "/assets/logo-fellow.svg",
+    category: "Productivity",
+    entities: ["Meeting Notes", "Action Items"],
     available: false,
   },
   {
