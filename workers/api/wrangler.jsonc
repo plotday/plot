@@ -74,6 +74,10 @@
     {
       "tag": "v17",
       "new_sqlite_classes": ["UserAiUsage"]
+    },
+    {
+      "tag": "v18",
+      "new_sqlite_classes": ["EmailNotify"]
     }
   ],
   "env": {
@@ -254,6 +258,10 @@
           {
             "name": "USER_AI_USAGE",
             "class_name": "UserAiUsage"
+          },
+          {
+            "name": "EMAIL_NOTIFY",
+            "class_name": "EmailNotify"
           }
         ]
       },
@@ -451,6 +459,10 @@
           {
             "name": "USER_AI_USAGE",
             "class_name": "UserAiUsage"
+          },
+          {
+            "name": "EMAIL_NOTIFY",
+            "class_name": "EmailNotify"
           }
         ]
       },

@@ -7,6 +7,7 @@ import { type LogSubscriptions } from "./state/log-subscriptions";
 import { type SdkTokenStore } from "./state/sdk-token-store";
 import { type Storage } from "./state/storage";
 import { type TwistSync } from "./state/twist-sync";
+import { type EmailNotify } from "./state/email-notify";
 import { type PushNotify } from "./state/push-notify";
 import { type SyncNotify } from "./state/sync-notify";
 import { type SyncRecovery } from "./state/sync-recovery";
@@ -194,6 +195,7 @@ export type Bindings = {
   readonly USER_SYNC: DurableObjectNamespace<UserSync>;
   readonly TWIST_SYNC: DurableObjectNamespace<TwistSync>;
   readonly PUSH_NOTIFY: DurableObjectNamespace<PushNotify>;
+  readonly EMAIL_NOTIFY: DurableObjectNamespace<EmailNotify>;
   readonly SYNC_NOTIFY: DurableObjectNamespace<SyncNotify>;
   readonly SYNC_RECOVERY: DurableObjectNamespace<SyncRecovery>;
   readonly PRIVACY_REPORTING: DurableObjectNamespace<PrivacyReporting>;

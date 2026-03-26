@@ -304,6 +304,25 @@ export class PushNotify extends DurableObject<Bindings> {
       // Record what we notified about so we don't re-notify for the same unreads
       await this.ctx.storage.put("lastNotifiedUnreadAt", latestUnreadAt);
 
+      // Trigger email digest check — if user doesn't open the app within 18h,
+      // they'll receive an email with all unread notifications
+      const emailNotifyId = this.env.EMAIL_NOTIFY.idFromName(this.userId!);
+      const emailNotifyDO = this.env.EMAIL_NOTIFY.get(emailNotifyId);
+      this.ctx.waitUntil(
+        emailNotifyDO
+          .fetch(
+            new Request("http://do/notify", {
+              method: "POST",
+              body: JSON.stringify({ userId: this.userId }),
+            })
+          )
+          .catch((error) => {
+            this.captureException(error as Error, {
+              context: "email-notify-trigger",
+            });
+          })
+      );
+
       logger.info("Push notification sent", {
         user_id: this.userId,
         urgency: this.highestUrgency,

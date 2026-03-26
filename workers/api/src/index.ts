@@ -64,6 +64,7 @@ export { SyncNotify } from "./state/sync-notify";
 export { SyncRecovery } from "./state/sync-recovery";
 export { PrivacyReporting } from "./state/privacy-reporting";
 export { PushNotify } from "./state/push-notify";
+export { EmailNotify } from "./state/email-notify";
 
 export class TwistBuilder extends Container {
   defaultPort = 3000;

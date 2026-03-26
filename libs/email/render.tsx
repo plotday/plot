@@ -9,6 +9,7 @@ import PasswordRemoved from "./emails/password-removed";
 import PasswordReset from "./emails/password-reset";
 import PriorityInvitation from "./emails/priority-invitation";
 import LinkEmail from "./emails/link-email";
+import NotificationDigest from "./emails/notification-digest";
 import SignInVerification from "./emails/sign-in-verification";
 
 export type EmailType =
@@ -21,7 +22,8 @@ export type EmailType =
   | "password-removed"
   | "new-device-sign-in"
   | "sign-in-verification"
-  | "link-email";
+  | "link-email"
+  | "notification-digest";
 
 interface PriorityInvitationProps {
   inviterName: string;
@@ -45,7 +47,18 @@ type EmailProps = {
   "new-device-sign-in": undefined;
   "sign-in-verification": AuthCodeProps;
   "link-email": AuthCodeProps;
+  "notification-digest": NotificationDigestProps;
 };
+
+interface NotificationDigestProps {
+  recipientName: string | null;
+  priorities: Array<{
+    title: string;
+    summary: string;
+    url: string;
+  }>;
+  appUrl: string;
+}
 
 export const render = async <T extends EmailType>(
   type: T,
@@ -83,6 +96,9 @@ export const render = async <T extends EmailType>(
       break;
     case "link-email":
       Component = LinkEmail;
+      break;
+    case "notification-digest":
+      Component = NotificationDigest;
       break;
     default:
       throw new Error(`Unknown email type: ${type}`);

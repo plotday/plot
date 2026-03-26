@@ -73,6 +73,18 @@ export class Broadcast extends DurableObject<Bindings> {
       return Response.json({ hasConnectedClients: this.hasConnectedClients() });
     }
 
+    if (url.pathname === "/last-active" && request.method === "GET") {
+      this.ensureDeviceActivityTable();
+      const cursor = this.ctx.storage.sql.exec(
+        "SELECT MAX(last_active_at) AS max_active FROM device_activity"
+      );
+      const rows = [...cursor];
+      const maxActive = rows[0]?.max_active as number | null | undefined;
+      return Response.json({
+        lastActiveAt: maxActive != null ? new Date(maxActive).toISOString() : null,
+      });
+    }
+
     if (url.pathname === "/others-active" && request.method === "GET") {
       const excludeClient = url.searchParams.get("excludeClient") ?? "";
       this.ensureDeviceActivityTable();
