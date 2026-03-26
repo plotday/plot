@@ -76,6 +76,19 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  connectors/google-chat:
+    dependencies:
+      '@plotday/connector-google-contacts':
+        specifier: workspace:^
+        version: link:../google-contacts
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   connectors/google-contacts:
     dependencies:
       '@plotday/twister':

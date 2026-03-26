@@ -1,0 +1,49 @@
+{
+  "name": "@plotday/connector-google-chat",
+  "displayName": "Google Chat",
+  "description": "Messages from Google Chat spaces",
+  "logoUrl": "https://api.iconify.design/logos/google-chat.svg",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint"
+  },
+  "dependencies": {
+    "@plotday/connector-google-contacts": "workspace:^",
+    "@plotday/twister": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "connectors/google-chat"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "connector",
+    "google-chat",
+    "messaging"
+  ],
+  "publishConfig": { "access": "public" }
+}
