@@ -44,17 +44,26 @@ const FREEMAIL_DOMAINS = new Set([
   "msn.com",
 ]);
 
+type OrgInfo = {
+  id: string;
+  name: string;
+  role: string;
+  plan: string;
+  status: string;
+  memberCount: number;
+};
+
 type SubscriptionInfo = {
   plan: string;
   status: string;
   billing_cycle_end: string | null;
   effective_plan?: string;
   effective_source?: string;
-  organization?: { id: string; name: string } | null;
+  organizations: OrgInfo[];
 };
 
 const QUANTITY_OPTIONS = Array.from({ length: 40 }, (_, i) => ({
-  value: String(i + 1),
+  value: String((i + 1) * 50),
   label: `${(i + 1) * 50} connections`,
 }));
 
@@ -87,7 +96,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const [billing, setBilling] = useState<Billing>(
     (searchParams.get("billing") as Billing) || "annual"
   );
-  const [teamQuantity, setTeamQuantity] = useState("1");
+  const [teamQuantity, setTeamQuantity] = useState("50");
   const [orgName, setOrgName] = useState("");
   const [domainAutoJoin, setDomainAutoJoin] = useState(true);
 
@@ -144,18 +153,13 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
       };
       if (plan === "team") {
         body.quantity = parseInt(teamQuantity);
-        if (!subscription?.organization) {
-          // Creating a new org
-          if (!orgName.trim()) {
-            setError("Organization name is required for Team plan");
-            setLoadingPlan(null);
-            return;
-          }
-          body.organizationName = orgName.trim();
-          body.domainAutoJoin = isFreemailDomain ? false : domainAutoJoin;
-        } else {
-          body.organizationId = subscription.organization.id;
+        if (!orgName.trim()) {
+          setError("Organization name is required for Team plan");
+          setLoadingPlan(null);
+          return;
         }
+        body.organizationName = orgName.trim();
+        body.domainAutoJoin = isFreemailDomain ? false : domainAutoJoin;
       }
 
       const res = await fetch(
@@ -274,99 +278,128 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     );
   }
 
-  // Success / Canceled alerts
-  const alerts = (
-    <>
-      {isSuccess && (
-        <Alert color="green" title="Plan active" mb="md">
-          Your plan is now active.
-          {successOrgId
-            ? " Your organization has been set up."
-            : ` Welcome to Plot ${subscription?.effective_plan === "team" ? "Team" : "Pro"}!`}
-        </Alert>
-      )}
-      {isCanceled && (
-        <Alert color="yellow" title="Checkout canceled" mb="md">
-          Your checkout was canceled. No charges were made.
-        </Alert>
-      )}
-      {error && (
-        <Alert color="red" title="Error" mb="md">
-          {error}
-        </Alert>
-      )}
-    </>
+
+  const personalPlan = subscription?.plan ?? "free";
+  const hasPersonalPaid = personalPlan !== "free" && subscription?.status === "active";
+  const activeOrgs = (subscription?.organizations ?? []).filter(
+    (o) => o.plan !== "free" && o.status === "active"
   );
+  const hasAnySubscription = hasPersonalPaid || activeOrgs.length > 0;
 
-  const effectivePlan = subscription?.effective_plan ?? subscription?.plan ?? "free";
-  const isOrgPlan = subscription?.effective_source === "organization";
+  const PLAN_TIER: Record<string, number> = { free: 0, core: 1, pro: 2, team: 3 };
+  const personalTier = PLAN_TIER[personalPlan] ?? 0;
 
-  // Has paid plan (either personal or via org)
-  const hasPaidPlan = effectivePlan !== "free" && subscription?.status === "active";
+  // Success alert org name lookup
+  const successOrg = successOrgId
+    ? subscription?.organizations?.find((o) => o.id === successOrgId)
+    : null;
 
-  if (hasPaidPlan) {
-    return (
-      <Container size="sm" mt="xl" mb="xl">
-        <Stack gap="md">
-          <Title order={2}>Your plan</Title>
-          {alerts}
-          <Box className={classes.currentPlan}>
-            <Text fw={600} size="lg">
-              Plot {effectivePlan === "team" ? "Team" : effectivePlan === "core" ? "Core" : "Pro"}
-              {isOrgPlan && subscription?.organization
-                ? ` via ${subscription.organization.name}`
-                : ""}
-            </Text>
-            <Badge color="green" variant="light">
-              Active
-            </Badge>
-          </Box>
-          {subscription?.billing_cycle_end && !isOrgPlan && (
-            <Text c="dimmed" size="sm">
-              Current billing period ends{" "}
-              {new Date(subscription.billing_cycle_end).toLocaleDateString()}
-            </Text>
-          )}
-          {isOrgPlan && subscription?.organization && (
-            <Button
-              component={Link}
-              to={`/organization/${subscription.organization.id}`}
-              variant="outline"
-            >
-              Manage organization
-            </Button>
-          )}
-          {!isOrgPlan && (
-            <Button
-              onClick={() => handlePortal()}
-              loading={loadingPlan === "portal"}
-              variant="outline"
-            >
-              Manage plan
-            </Button>
-          )}
-        </Stack>
-      </Container>
-    );
-  }
-
-  // No paid plan — show plan selection
   const preselectedPlan = searchParams.get("plan");
   const corePlan = PLANS.find((p) => p.key === "core")!;
   const proPlan = PLANS.find((p) => p.key === "pro")!;
   const teamPlan = PLANS.find((p) => p.key === "team")!;
 
+  const personalPlanButton = (planKey: "core" | "pro") => {
+    const tier = PLAN_TIER[planKey];
+    if (hasPersonalPaid && personalTier >= tier) {
+      return { label: personalPlan === planKey ? "Current plan" : "Included in your plan", disabled: true };
+    }
+    return { label: `Upgrade to ${planKey === "core" ? "Core" : "Pro"}`, disabled: false };
+  };
+
   return (
     <Container size="lg" mt="xl" mb="xl">
       <Stack gap="lg">
         <Stack align="center" ta="center" gap="xs">
-          <Title order={2}>Choose your plan</Title>
+          <Title order={2}>{hasAnySubscription ? "Your plans" : "Choose your plan"}</Title>
           <Text c="dimmed">
-            Upgrade for unlimited connections and premium features.
+            {hasAnySubscription
+              ? "Manage your subscriptions or add a new plan."
+              : "Upgrade for unlimited connections and premium features."}
           </Text>
         </Stack>
 
-        {alerts}
+        {isSuccess && (
+          <Alert color="green" title="Plan active" mb="md">
+            {successOrg
+              ? `Your Team plan for ${successOrg.name} is now active.`
+              : `Your plan is now active. Welcome to Plot ${personalPlan === "core" ? "Core" : "Pro"}!`}
+          </Alert>
+        )}
+        {isCanceled && (
+          <Alert color="yellow" title="Checkout canceled" mb="md">
+            Your checkout was canceled. No charges were made.
+          </Alert>
+        )}
+        {error && (
+          <Alert color="red" title="Error" mb="md">
+            {error}
+          </Alert>
+        )}
+
+        {/* Active subscriptions */}
+        {hasAnySubscription && (
+          <Stack gap="md">
+            <Title order={4}>Active subscriptions</Title>
+            <Box className={classes.subscriptionsList}>
+              {hasPersonalPaid && (
+                <Box className={classes.currentPlan}>
+                  <Text fw={600} size="lg" style={{ flex: 1 }}>
+                    Plot {personalPlan === "core" ? "Core" : "Pro"}
+                  </Text>
+                  <Badge color="green" variant="light">
+                    Active
+                  </Badge>
+                  <Button
+                    onClick={() => handlePortal()}
+                    loading={loadingPlan === "portal"}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Manage plan
+                  </Button>
+                </Box>
+              )}
+              {activeOrgs.map((org) => (
+                <Box key={org.id} className={classes.currentPlan}>
+                  <Stack gap={2} style={{ flex: 1 }}>
+                    <Text fw={600} size="lg">
+                      Plot Team — {org.name}
+                    </Text>
+                    <Text c="dimmed" size="sm">
+                      {org.memberCount} {org.memberCount === 1 ? "member" : "members"}
+                    </Text>
+                  </Stack>
+                  <Badge color="green" variant="light">
+                    Active
+                  </Badge>
+                  {org.role === "admin" ? (
+                    <Button
+                      onClick={() => handlePortal(org.id)}
+                      loading={loadingPlan === "portal"}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Manage plan
+                    </Button>
+                  ) : (
+                    <Button
+                      component={Link}
+                      to={`/organization/${org.id}`}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Manage organization
+                    </Button>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          </Stack>
+        )}
+
+        {/* Plan picker */}
+        {hasAnySubscription && <Title order={4}>Add a plan</Title>}
 
         <Stack align="center">
           <Box style={{ display: "inline-grid", gridTemplateColumns: "1fr 1fr" }}>
@@ -429,9 +462,10 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             <Button
               onClick={() => handleCheckout("core")}
               loading={loadingPlan === "core"}
+              disabled={personalPlanButton("core").disabled}
               fullWidth
             >
-              Upgrade to Core
+              {personalPlanButton("core").label}
             </Button>
           </Stack>
 
@@ -474,9 +508,10 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             <Button
               onClick={() => handleCheckout("pro")}
               loading={loadingPlan === "pro"}
+              disabled={personalPlanButton("pro").disabled}
               fullWidth
             >
-              Upgrade to Pro
+              {personalPlanButton("pro").label}
             </Button>
           </Stack>
 
@@ -535,7 +570,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             <Box className={classes.priceDivider} />
             <Box className={classes.priceBox}>
               <Text className={classes.planPrice}>
-                ${PRICES.team[billing] * parseInt(teamQuantity)}
+                ${PRICES.team[billing] * (parseInt(teamQuantity) / 50)}
               </Text>
               <Text className={classes.planPricePeriod}>/mo</Text>
             </Box>
@@ -549,7 +584,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
               loading={loadingPlan === "team"}
               fullWidth
             >
-              Upgrade to Team
+              Create Team
             </Button>
           </Stack>
         </Box>

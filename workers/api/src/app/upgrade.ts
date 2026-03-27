@@ -37,16 +37,53 @@ upgrade.get("/upgrade", async (c) => {
       }
     : { plan: "free", status: "active", billing_cycle_end: null };
 
+  // Fetch all orgs the user belongs to with subscription info
+  const orgs = await c.var.db
+    .selectFrom("organization_member as om")
+    .innerJoin("organization as o", "o.id", "om.organization_id")
+    .leftJoin(
+      "organization_subscription as os",
+      "os.organization_id",
+      "om.organization_id"
+    )
+    .select([
+      "o.id",
+      "o.name",
+      "om.role",
+      "os.plan",
+      "os.status",
+    ])
+    .where("om.user_id", "=", user.id)
+    .execute();
+
+  const orgIds = orgs.map((o) => o.id);
+  let memberCounts: Record<string, number> = {};
+  if (orgIds.length > 0) {
+    const counts = await c.var.db
+      .selectFrom("organization_member")
+      .select(["organization_id"])
+      .select((eb: any) => eb.fn.count("id").as("count"))
+      .where("organization_id", "in", orgIds)
+      .groupBy("organization_id")
+      .execute();
+
+    for (const row of counts as any[]) {
+      memberCounts[String(row.organization_id)] = Number(row.count);
+    }
+  }
+
   return c.json({
     ...base,
     effective_plan: effective.plan,
     effective_source: effective.source,
-    organization: effective.source === "organization"
-      ? {
-          id: effective.organizationId,
-          name: effective.organizationName,
-        }
-      : null,
+    organizations: orgs.map((o) => ({
+      id: String(o.id),
+      name: o.name,
+      role: o.role,
+      plan: o.plan ?? "free",
+      status: o.status ?? "active",
+      memberCount: memberCounts[String(o.id)] ?? 0,
+    })),
   });
 });
 

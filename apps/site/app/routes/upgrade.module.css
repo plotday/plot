@@ -12,6 +12,12 @@
   );
 }
 
+.subscriptionsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-md);
+}
+
 .planGrid {
   display: grid;
   grid-template-columns: 1fr;
@@ -106,4 +112,9 @@
   font-size: rem(14px);
   color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-3));
   line-height: 1.5;
+
+  & svg {
+    flex-shrink: 0;
+    margin-top: rem(3px);
+  }
 }
