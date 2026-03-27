@@ -77,16 +77,10 @@ export function meta(_: Route.MetaArgs) {
       content:
         "Simple pricing with no per-seat fees. Free for individuals, Pro for power users, Team for organizations.",
     },
-    { "og:title": "Plot Pricing" },
-    {
-      "og:description":
-        "Simple pricing. No per-seat fees. Unlimited collaboration.",
-    },
-    { "twitter:title": "Plot Pricing" },
-    {
-      "twitter:description":
-        "Simple pricing. No per-seat fees. Unlimited collaboration.",
-    },
+    { property: "og:title", content: "Plot Pricing" },
+    { property: "og:description", content: "Simple pricing. No per-seat fees. Unlimited collaboration." },
+    { name: "twitter:title", content: "Plot Pricing" },
+    { name: "twitter:description", content: "Simple pricing. No per-seat fees. Unlimited collaboration." },
   ]);
 }
 

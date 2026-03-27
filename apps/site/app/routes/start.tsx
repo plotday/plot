@@ -87,10 +87,8 @@ export function meta(_: Route.MetaArgs) {
       content:
         "Download Plot for your platform. Available for Mac and Windows, with iOS and Android coming soon.",
     },
-    { "og:title": "Get Plot" },
-    {
-      "og:description": "Download Plot for your platform.",
-    },
+    { property: "og:title", content: "Get Plot" },
+    { property: "og:description", content: "Download Plot for your platform." },
   ]);
 }
 

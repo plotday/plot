@@ -60,8 +60,8 @@ export function meta(_: Route.MetaArgs) {
       content:
         "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace.",
     },
-    { "twitter:title": "Plot" },
-    { "twitter:description": "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace." },
+    { name: "twitter:title", content: "Plot" },
+    { name: "twitter:description", content: "Your work from every tool, organized by what matters. Plot brings together tasks, messages, events, and more into one prioritized workspace." },
   ]);
 }
 

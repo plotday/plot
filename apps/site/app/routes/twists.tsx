@@ -30,16 +30,10 @@ export function meta(_: Route.MetaArgs) {
       content:
         "Plot Twists are automations and AI agents that work with you, your team, and your connections. Workflows, organization, and AI — built into your work.",
     },
-    { "og:title": "Plot Twists" },
-    {
-      "og:description":
-        "Automations and AI agents that work with you, your team, and your connections.",
-    },
-    { "twitter:title": "Plot Twists" },
-    {
-      "twitter:description":
-        "Automations and AI agents that work with you, your team, and your connections.",
-    },
+    { property: "og:title", content: "Plot Twists" },
+    { property: "og:description", content: "Automations and AI agents that work with you, your team, and your connections." },
+    { name: "twitter:title", content: "Plot Twists" },
+    { name: "twitter:description", content: "Automations and AI agents that work with you, your team, and your connections." },
   ]);
 }
 

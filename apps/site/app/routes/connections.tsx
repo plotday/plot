@@ -93,11 +93,8 @@ export function meta(_: Route.MetaArgs) {
       content:
         "Browse all Plot connections. Integrate your calendar, email, project tools, and more. Vote for the integrations you want next.",
     },
-    { "og:title": "Plot Connections" },
-    {
-      "og:description":
-        "Browse and vote for the integrations you want in Plot.",
-    },
+    { property: "og:title", content: "Plot Connections" },
+    { property: "og:description", content: "Browse and vote for the integrations you want in Plot." },
   ]);
 }
 

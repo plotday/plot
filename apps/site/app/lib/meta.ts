@@ -2,8 +2,8 @@ import type { MetaDescriptor } from "react-router";
 
 /** Default meta tags inherited by all routes via mergeMeta. */
 export const DEFAULT_META: MetaDescriptor[] = [
-  { "og:image": "https://plot.day/assets/og-image.png" },
-  { "twitter:image": "https://plot.day/assets/og-image.png" },
+  { property: "og:image", content: "https://plot.day/assets/og-image.png" },
+  { name: "twitter:image", content: "https://plot.day/assets/og-image.png" },
 ];
 
 /**
@@ -12,10 +12,11 @@ export const DEFAULT_META: MetaDescriptor[] = [
  */
 function metaKey(entry: MetaDescriptor): string | null {
   if ("title" in entry) return "title";
-  if ("name" in entry) return `name:${entry.name}`;
+  if ("name" in entry) return `name:${(entry as any).name}`;
+  if ("property" in entry) return (entry as any).property;
   if ("tagName" in entry) return null; // no dedup for raw tags
 
-  // Property-based entries like { "og:image": "..." }
+  // Shorthand property-based entries like { "og:image": "..." }
   for (const key of Object.keys(entry)) {
     if (key.startsWith("og:") || key.startsWith("twitter:")) return key;
   }
