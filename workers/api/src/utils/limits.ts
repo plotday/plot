@@ -5,6 +5,7 @@ import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import { UserAiUsage } from "../state/user-ai-usage";
 import { FREE_AI_LIMITS } from "./ai-limits";
+import { getEffectivePlan } from "./plan";
 export const PLAN_LIMITS = {
   free: { connections: 2, twists: 1 },
   core: { connections: 5, twists: 2 },
@@ -353,7 +354,8 @@ export async function getUsage(
   userId: string,
   env?: Bindings
 ) {
-  const plan = await getPersonalPlan(db, userId);
+  const effective = await getEffectivePlan(db, userId);
+  const plan = effective.plan;
   const limits = PLAN_LIMITS[plan];
 
   const connectionCount = await getPersonalConnectionCount(db, userId);

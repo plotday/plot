@@ -135,13 +135,9 @@ class ManageConnections extends Command {
   static ({List<UpcomingConnection> connections, Set<String> votedByUser})?
   _upcomingCache;
 
-  /// Cached usage data, refreshed each fetch.
-  static UsageData? _usageCache;
-
   @override
   Future<CommandReturn> run(BuildContext context) async {
     _upcomingCache = null; // Reset cache for each new session
-    _usageCache = null;
     try {
       // Track newly activated source so we can open EditSource after
       // SelectModal closes (avoids a flash of the list between modals).
@@ -164,11 +160,6 @@ class ManageConnections extends Command {
               name: item.name,
             ).run(ctx);
           } else if (item is _AvailableSource) {
-            if (_usageCache != null &&
-                _usageCache!.personal.connections.isAtLimit) {
-              ctx.showToast(message: 'Upgrade to add more connections.');
-              return false;
-            }
             await AddSourceDetail(item.twist).run(ctx);
             final activatedId = AddSourceDetail.lastActivatedSourceId;
             AddSourceDetail.lastActivatedSourceId = null;
@@ -237,7 +228,6 @@ class ManageConnections extends Command {
     final sourcesData = results[0] as List<Map<String, dynamic>>;
     final allTwists = results[1] as List<Twist>;
     final usage = results[2] as UsageData?;
-    _usageCache = usage;
     if (results.length > 3) {
       _upcomingCache =
           results[3]
@@ -349,12 +339,15 @@ class ManageConnections extends Command {
 
     // Add limit banner at top of available connections if at limit
     if (usage != null && usage.personal.connections.isAtLimit) {
+      final message = usage.organizations.isNotEmpty
+          ? 'You\'re using ${usage.personal.connections.count} of '
+            '${usage.personal.connections.limit} personal connections. '
+            'Add connections to your organization for more.'
+          : 'You\'re using ${usage.personal.connections.count} of '
+            '${usage.personal.connections.limit} included connections. '
+            'Upgrade for unlimited connections.';
       filteredAvailable = [
-        _LimitBanner(
-          'You\'re using ${usage.personal.connections.count} of '
-          '${usage.personal.connections.limit} included connections. '
-          'Upgrade for unlimited connections.',
-        ),
+        _LimitBanner(message),
         ...filteredAvailable,
       ];
     }
@@ -2138,34 +2131,6 @@ class ShowAddIntegrationAccount extends ShowForm {
     VoidCallback onAccountAdded,
   ) async {
     final integrations = await TwistApi.getIntegrations(priorityTwistId);
-
-    // Check connection limits
-    UsageData? usage;
-    try {
-      usage = await UpgradeApi.getUsage();
-    } catch (_) {}
-
-    if (usage != null && usage.personal.connections.isAtLimit) {
-      return FormData(
-        title: 'Add account',
-        groups: [
-          StaticFormGroup(
-            items: [
-              FormInfo(
-                key: 'limit_message',
-                divider: false,
-                builder: (formContext) => Padding(
-                  padding: formContext.theme.spacing.padding,
-                  child: Text(
-                    'You\'re using all ${usage!.personal.connections.limit} of your included connections. Upgrade for unlimited connections.',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-    }
 
     return FormData(
       title: 'Add account',
