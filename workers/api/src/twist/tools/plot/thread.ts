@@ -15,7 +15,7 @@ import {
   type Tag,
   type Uuid,
 } from "@plotday/twister/plot";
-import { ContactAccess } from "@plotday/twister/tools/plot";
+import { ContactAccess, ThreadAccess } from "@plotday/twister/tools/plot";
 
 import { createLogger } from "@plotday/worker-util";
 import { sql } from "kysely";
@@ -409,6 +409,25 @@ export async function updateThread(
       (dbUpdate as any).icon = (activity as any).type;
     }
 
+    // Handle priority move (thread reparenting)
+    let oldPriorityId: string | undefined;
+    if ("priority" in activity && (activity as any).priority?.id) {
+      plot.requireThreadAccess(ThreadAccess.Full);
+
+      const targetPriorityId = (activity as any).priority.id as string;
+      await plot.validatePriorityAccess(targetPriorityId);
+
+      // Get current priority for sync notification
+      const current = await plot.db
+        .selectFrom("thread")
+        .select("priority_id")
+        .where("id", "=", activityId)
+        .executeTakeFirstOrThrow();
+      oldPriorityId = current.priority_id;
+
+      (dbUpdate as any).priority_id = targetPriorityId;
+    }
+
     // Check if there are meaningful updates (beyond updated_by, sync_depth, occurrence)
     const meaningfulKeys = Object.keys(dbUpdate).filter(
       (key) => !["updated_by", "sync_depth", "occurrence"].includes(key)
@@ -521,7 +540,12 @@ export async function updateThread(
     // Only notify sync DOs if we actually wrote something
     const hasTagUpdates = activity.tags !== undefined || activity.twistTags !== undefined;
     if (hasMeaningfulUpdates || hasTagUpdates) {
-      await plot.notifySyncDOs(new Set([plot.priorityId]));
+      const prioritiesToNotify = new Set([plot.priorityId]);
+      // If thread was moved, also notify the old priority
+      if (oldPriorityId && oldPriorityId !== plot.priorityId) {
+        prioritiesToNotify.add(oldPriorityId);
+      }
+      await plot.notifySyncDOs(prioritiesToNotify);
     }
   } catch (error) {
     handleDbOperationError(error, "updateThread", plot.priorityTwistId, {
@@ -1085,6 +1109,137 @@ export async function createThreads(
       has_any_source: activities.some((a) => "source" in a && !!a.source),
     });
   }
+}
+
+/**
+ * Lists threads in a priority and optionally its descendants.
+ * Requires ThreadAccess.Full.
+ */
+export async function getThreads(
+  plot: Plot,
+  options?: {
+    priorityId?: Uuid;
+    includeDescendants?: boolean;
+    includeArchived?: boolean;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<Thread[]> {
+  const {
+    priorityId,
+    includeDescendants = true,
+    includeArchived = false,
+    limit = 50,
+    offset = 0,
+  } = options ?? {};
+
+  const effectivePriorityId = priorityId ?? plot.priorityId;
+  await plot.validatePriorityAccess(effectivePriorityId as string);
+
+  const clampedLimit = Math.min(Math.max(1, limit), 200);
+
+  const userId = await plot.getUserId();
+
+  let query = plot.db
+    .selectFrom("user.thread")
+    .selectAll("user.thread")
+    .where("user_id", "=", userId);
+
+  if (includeDescendants) {
+    // Use subquery to get threads in this priority and all descendants
+    query = query.where(
+      "priority_id",
+      "in",
+      plot.db
+        .selectFrom("priority_child")
+        .select("child_id")
+        .where("priority_id", "=", effectivePriorityId as string)
+    );
+  } else {
+    query = query.where("priority_id", "=", effectivePriorityId as string);
+  }
+
+  if (!includeArchived) {
+    query = query.where("archived_at", "is", null);
+  }
+
+  query = query
+    .orderBy("created_at", "desc")
+    .limit(clampedLimit)
+    .offset(offset);
+
+  const rows = await query.execute();
+
+  // Batch fetch tags for all threads
+  const threadIds = rows.map((r) => r.id).filter(Boolean) as string[];
+  const tagsMap = new Map<string, any>();
+  if (threadIds.length > 0) {
+    const tagsRows = await plot.db
+      .selectFrom("thread_tags")
+      .select(["thread_id", "tags"])
+      .where("thread_id", "in", threadIds)
+      .execute();
+    for (const row of tagsRows) {
+      if (row.thread_id) tagsMap.set(row.thread_id, row.tags);
+    }
+  }
+
+  // Batch fetch priority info
+  const priorityIds = [...new Set(rows.map((r) => r.priority_id).filter(Boolean))] as string[];
+  const priorityMap = new Map<string, { id: string; title: string; archived_at: string | Date | null; key: string | null; color: number | null }>();
+  if (priorityIds.length > 0) {
+    const priorityRows = await plot.db
+      .selectFrom("priority")
+      .select(["id", "title", "archived_at", "key", "color"])
+      .where("id", "in", priorityIds)
+      .execute();
+    for (const row of priorityRows) {
+      priorityMap.set(row.id, row);
+    }
+  }
+
+  return rows.map((data) => {
+    const createdAtStr =
+      data.created_at instanceof Date
+        ? data.created_at.toISOString()
+        : (data.created_at ?? new Date().toISOString());
+    const updatedAtStr =
+      data.updated_at instanceof Date
+        ? data.updated_at.toISOString()
+        : (data.updated_at ?? new Date().toISOString());
+
+    const priorityInfo = priorityMap.get(data.priority_id as string);
+    const thread = fromDbThread(
+      // @ts-ignore - Kysely types vs fromDbThread expectations
+      {
+        ...data,
+        id: data.id ?? "",
+        created_at: createdAtStr,
+        updated_at: updatedAtStr,
+        created_by: (data as any).created_by ?? "",
+        draft: data.draft ?? false,
+        priority_id: data.priority_id ?? "",
+        private: data.private ?? false,
+        updated_by: data.updated_by ?? 0,
+        sync_depth: null,
+        tags: tagsMap.get(data.id as string) || null,
+        mentions: (data as any).mentions || [],
+      }
+    );
+
+    // Enrich priority info from the batch fetch
+    if (priorityInfo) {
+      thread.priority = {
+        id: priorityInfo.id as Uuid,
+        title: priorityInfo.title ?? "Untitled",
+        archived: priorityInfo.archived_at !== null,
+        key: priorityInfo.key,
+        color: priorityInfo.color,
+      };
+    }
+
+    return thread;
+  });
 }
 
 /** @deprecated Use createThread */

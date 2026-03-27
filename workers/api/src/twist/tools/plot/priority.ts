@@ -12,6 +12,71 @@ import { rpc } from "../../../rpc";
 import { fromDbPriority } from "./converters";
 import type { Plot } from "./index";
 
+/**
+ * Lists priorities within the twist's scope.
+ * Requires PriorityAccess.Full.
+ */
+export async function getPriorities(
+  plot: Plot,
+  options?: {
+    parentId?: Uuid;
+    includeDescendants?: boolean;
+    includeArchived?: boolean;
+  }
+): Promise<Priority[]> {
+  plot.requirePriorityAccess(PriorityAccess.Full);
+
+  const {
+    parentId,
+    includeDescendants = false,
+    includeArchived = false,
+  } = options ?? {};
+
+  const effectiveParentId = parentId ?? plot.priorityId;
+  await plot.validatePriorityAccess(effectiveParentId as string);
+
+  if (includeDescendants) {
+    // Get all descendants via priority_child
+    let query = plot.db
+      .selectFrom("priority_child")
+      .innerJoin("priority", "priority.id", "priority_child.child_id")
+      .select(["priority.id", "priority.title", "priority.archived_at", "priority.key", "priority.color"])
+      .where("priority_child.priority_id", "=", effectiveParentId as string)
+      // Exclude the parent itself
+      .where("priority.id", "!=", effectiveParentId as string);
+
+    if (!includeArchived) {
+      query = query.where("priority_child.archived_at", "is", null);
+    }
+
+    const rows = await query.orderBy("priority.title", "asc").execute();
+    return rows.map(fromDbPriority);
+  } else {
+    // Direct children only: priorities whose path is parent_path + one level
+    const parentRow = await plot.db
+      .selectFrom("priority")
+      .select("path")
+      .where("id", "=", effectiveParentId as string)
+      .executeTakeFirst();
+
+    if (!parentRow?.path) {
+      return [];
+    }
+
+    let query = plot.db
+      .selectFrom("priority")
+      .select(["id", "title", "archived_at", "key", "color"])
+      .where(sql<boolean>`path ~ ${parentRow.path + ".*{1}"}::lquery`);
+
+    if (!includeArchived) {
+      query = query.where("archived_at", "is", null);
+    }
+
+    const rows = await query.orderBy("title", "asc").execute();
+    return rows.map(fromDbPriority);
+  }
+}
+
 export async function createPriority(
   plot: Plot,
   priority: NewPriority
@@ -197,9 +262,57 @@ export async function updatePriority(
     dbUpdate.archived_at = update.archived ? new Date().toISOString() : null;
   }
 
-  await plot.db
-    .updateTable("priority")
-    .set(dbUpdate as any)
-    .where("id", "=", priorityId)
-    .execute();
+  // Apply scalar updates first
+  const hasScalarUpdates = Object.keys(dbUpdate).length > 1; // more than just updated_by
+  if (hasScalarUpdates) {
+    await plot.db
+      .updateTable("priority")
+      .set(dbUpdate as any)
+      .where("id", "=", priorityId)
+      .execute();
+  }
+
+  // Handle parent move if requested
+  if (update.parent !== undefined) {
+    plot.requirePriorityAccess(PriorityAccess.Full);
+
+    // Resolve parent ID and path
+    let newParentId: string;
+    let newParentPath: string;
+
+    if ("key" in update.parent) {
+      const priorityRoot = await plot.getPriorityRoot();
+      const parentResult = await plot.db
+        .selectFrom("priority")
+        .select(["id", "path"])
+        .where("key", "=", update.parent.key)
+        .where(sql<boolean>`path <@ ${priorityRoot}::ltree`)
+        .executeTakeFirst();
+
+      if (!parentResult) {
+        throw new Error(
+          `Parent priority with key "${update.parent.key}" not found in priority tree`
+        );
+      }
+      newParentId = parentResult.id;
+      newParentPath = parentResult.path as string;
+    } else {
+      const parentResult = await plot.db
+        .selectFrom("priority")
+        .select("path")
+        .where("id", "=", update.parent.id)
+        .executeTakeFirstOrThrow();
+      newParentId = update.parent.id;
+      newParentPath = parentResult.path as string;
+    }
+
+    // Validate access to the new parent
+    await plot.validatePriorityAccess(newParentId);
+
+    // Use the existing move_priority DB function
+    await rpc(plot.db, "move_priority", {
+      p_priority_id: priorityId,
+      p_new_parent_path: newParentPath,
+    });
+  }
 }

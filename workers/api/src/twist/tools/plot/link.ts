@@ -1,7 +1,8 @@
 import type { Json } from "@plotday/db";
-import type { Link, Note, NewLinkWithNotes, Uuid, ActorId } from "@plotday/twister/plot";
+import type { Link, LinkUpdate, Note, NewLinkWithNotes, Uuid, ActorId } from "@plotday/twister/plot";
 import { ActorType } from "@plotday/twister/plot";
 import type { LinkFilter } from "@plotday/twister/tools/plot";
+import { LinkAccess } from "@plotday/twister/tools/plot";
 
 import { sql } from "kysely";
 import { rpcUser } from "../../../rpc";
@@ -599,4 +600,63 @@ export async function getLinks(
   }
 
   return results;
+}
+
+/**
+ * Updates a link. Currently supports moving a link to a different thread
+ * by changing its thread_id.
+ *
+ * Requires LinkAccess.Full.
+ */
+export async function updateLink(
+  plot: Plot,
+  link: LinkUpdate
+): Promise<void> {
+  plot.requireLinkAccess(LinkAccess.Full);
+
+  // Verify the link exists and is within scope
+  const existingLink = await plot.db
+    .selectFrom("link")
+    .select(["id", "thread_id"])
+    .where("id", "=", link.id)
+    .executeTakeFirst();
+
+  if (!existingLink) {
+    throw new Error(`Link not found: ${link.id}`);
+  }
+
+  // Verify the link's current thread is within the twist's priority scope
+  if (existingLink.thread_id) {
+    const currentThread = await plot.db
+      .selectFrom("thread")
+      .select("priority_id")
+      .where("id", "=", existingLink.thread_id)
+      .executeTakeFirst();
+    if (currentThread) {
+      await plot.validatePriorityAccess(currentThread.priority_id);
+    }
+  }
+
+  if (link.threadId !== undefined) {
+    // Verify target thread exists and is within scope
+    const targetThread = await plot.db
+      .selectFrom("thread")
+      .select("priority_id")
+      .where("id", "=", link.threadId)
+      .executeTakeFirst();
+
+    if (!targetThread) {
+      throw new Error(`Target thread not found: ${link.threadId}`);
+    }
+    await plot.validatePriorityAccess(targetThread.priority_id);
+
+    await plot.db
+      .updateTable("link")
+      .set({
+        thread_id: link.threadId,
+        updated_by: plot.getUpdatedBy() as any,
+      })
+      .where("id", "=", link.id)
+      .execute();
+  }
 }

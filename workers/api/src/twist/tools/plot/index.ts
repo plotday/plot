@@ -2,12 +2,14 @@ import { sql, type Kysely } from "kysely";
 import { PostHog } from "posthog-node";
 
 import {
+  type Action,
   type Thread,
   type ThreadUpdate,
   type Actor,
   type ActorId,
   ActorType,
   type Link,
+  type LinkUpdate,
   type NewThread,
   type NewThreadWithNotes,
   type NewLinkWithNotes,
@@ -16,18 +18,22 @@ import {
   type NewPriority,
   type Note,
   type NoteUpdate,
+  type PlanOperation,
   type Priority,
   type PriorityUpdate,
   type Uuid,
+  ActionType,
 } from "@plotday/twister/plot";
 import type {
   Schedule,
   NewSchedule,
 } from "@plotday/twister/schedule";
 import { Tag } from "@plotday/twister/tag";
+import type { Callback } from "@plotday/twister/tools/callbacks";
 import {
   ThreadAccess,
   ContactAccess,
+  LinkAccess,
   type Plot as IPlot,
   type LinkFilter,
   type SearchResult,
@@ -167,8 +173,14 @@ export class Plot extends Tool implements IPlot {
     const perms: ToolPermission[] = [];
 
     if (options?.thread) {
-      // Can create new activities
-      if (options.thread.access === ThreadAccess.Create) {
+      if (options.thread.access === ThreadAccess.Full) {
+        // Full: read, write, update any activity in scope
+        perms.push({
+          domain: "plot",
+          entity: "activity:any",
+          flags: ["read", "write", "update"],
+        });
+      } else if (options.thread.access === ThreadAccess.Create) {
         perms.push({
           domain: "plot",
           entity: "activity:new",
@@ -201,10 +213,32 @@ export class Plot extends Tool implements IPlot {
     }
 
     if (options?.link) {
+      const linkOption = options.link;
+      if (typeof linkOption === "object" && linkOption.access !== undefined) {
+        let flags: PermissionFlag[] = ["read"];
+        if (linkOption.access === LinkAccess.Full) {
+          flags = ["read", "write", "update"];
+        }
+        perms.push({
+          domain: "plot",
+          entity: "link",
+          flags,
+        });
+      } else {
+        // link: true — source channel processing only
+        perms.push({
+          domain: "plot",
+          entity: "link",
+          flags: ["read"],
+        });
+      }
+    }
+
+    if (options?.requireApproval) {
       perms.push({
         domain: "plot",
-        entity: "link",
-        flags: ["read"],
+        entity: "plan",
+        flags: ["write"],
       });
     }
 
@@ -1076,18 +1110,8 @@ export class Plot extends Tool implements IPlot {
       );
     }
 
-    // Check if granted permission is sufficient
-    // Create includes Respond permissions
-    if (
-      required === ThreadAccess.Respond &&
-      granted >= ThreadAccess.Respond
-    ) {
-      return;
-    }
-    if (
-      required === ThreadAccess.Create &&
-      granted >= ThreadAccess.Create
-    ) {
+    // Higher levels include all lower permissions: Full > Create > Respond
+    if (granted >= required) {
       return;
     }
 
@@ -1147,6 +1171,53 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
+   * Checks if the twist has the required link access permission.
+   * @throws Error if permission is not granted
+   */
+  requireLinkAccess(required: LinkAccess): void {
+    const linkOption = this.plotOptions?.link;
+    // link: true only enables source channel processing, not LinkAccess levels
+    const granted = typeof linkOption === "object" ? linkOption?.access : undefined;
+
+    if (granted === undefined) {
+      throw new Error(
+        `Link access not requested. Required: ${LinkAccess[required]}`
+      );
+    }
+
+    // Higher levels include all lower permissions: Full > Read
+    if (granted >= required) {
+      return;
+    }
+
+    throw new Error(
+      `Insufficient link access. Required: ${LinkAccess[required]}, Granted: ${LinkAccess[granted]}`
+    );
+  }
+
+  /**
+   * Checks if requireApproval mode is active.
+   * When true, admin operations on content not created by this twist
+   * must go through createPlan() instead of being called directly.
+   */
+  get isApprovalRequired(): boolean {
+    return this.plotOptions?.requireApproval === true;
+  }
+
+  /**
+   * Throws if requireApproval is active and the operation targets content
+   * not created by this twist. Call this before admin write operations.
+   * @param createdBy - The creator of the target entity (null if unknown)
+   */
+  enforceApprovalGate(createdBy: string | null): void {
+    if (!this.isApprovalRequired) return;
+    if (createdBy === this.priorityTwistId) return;
+    throw new Error(
+      "This twist requires user approval for admin operations. Use createPlan() to submit a plan for approval."
+    );
+  }
+
+  /**
    * Validates that the twist has permission to create an activity.
    * - Top-level activities require Create permission
    * - Activities in a thread where the twist was mentioned require Respond permission
@@ -1199,6 +1270,15 @@ export class Plot extends Tool implements IPlot {
     if (Array.isArray(mentions) && mentions.includes(this.priorityTwistId)) {
       // Twist was mentioned in the activity - requires Respond
       this.requireThreadAccess(ThreadAccess.Respond);
+      return;
+    }
+
+    // Full access allows creating notes on any thread in scope
+    if (
+      this.plotOptions?.thread?.access !== undefined &&
+      this.plotOptions.thread.access >= ThreadAccess.Full
+    ) {
+      this.enforceApprovalGate(created_by);
       return;
     }
 
@@ -1284,6 +1364,15 @@ export class Plot extends Tool implements IPlot {
     if (created_by && (await this.isSameTwistDefinition(created_by))) {
       this.requireThreadAccess(ThreadAccess.Create);
       // Skip priority validation - twist can access activities it created regardless of priority
+      return;
+    }
+
+    // Full access allows updating any thread in scope
+    if (
+      this.plotOptions?.thread?.access !== undefined &&
+      this.plotOptions.thread.access >= ThreadAccess.Full
+    ) {
+      this.enforceApprovalGate(created_by);
       return;
     }
 
@@ -1458,5 +1547,49 @@ export class Plot extends Tool implements IPlot {
 
   async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
     return searchOps.search(this, query, options);
+  }
+
+  // Admin read operations
+  async getThreads(options?: {
+    priorityId?: Uuid;
+    includeDescendants?: boolean;
+    includeArchived?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<Thread[]> {
+    this.requireThreadAccess(ThreadAccess.Full);
+    return threadOps.getThreads(this, options);
+  }
+
+  async getPriorities(options?: {
+    parentId?: Uuid;
+    includeDescendants?: boolean;
+    includeArchived?: boolean;
+  }): Promise<Priority[]> {
+    return priorityOps.getPriorities(this, options);
+  }
+
+  // Link update operation
+  async updateLink(link: LinkUpdate): Promise<void> {
+    return linkOps.updateLink(this, link);
+  }
+
+  // Plan operations
+  createPlan(options: {
+    title: string;
+    operations: PlanOperation[];
+    callback: Callback;
+  }): Action {
+    if (!this.plotOptions?.requireApproval) {
+      throw new Error(
+        "createPlan() requires requireApproval: true in Plot options"
+      );
+    }
+    return {
+      type: ActionType.plan,
+      title: options.title,
+      operations: options.operations,
+      callback: options.callback,
+    };
   }
 }
