@@ -82,7 +82,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     null
   );
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [billing, setBilling] = useState<Billing>(
     (searchParams.get("billing") as Billing) || "annual"
@@ -93,6 +93,15 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
 
   const emailDomain = user?.primaryEmailAddress?.emailAddress?.split("@")[1]?.toLowerCase();
   const isFreemailDomain = !emailDomain || FREEMAIL_DOMAINS.has(emailDomain);
+
+  // Reset loading state when page is restored from bfcache (browser back from Stripe)
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setLoadingPlan(null);
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
 
   const isSuccess = searchParams.get("success") === "true";
   const isCanceled = searchParams.get("canceled") === "true";
@@ -124,7 +133,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
   }, [isSignedIn, getToken, loaderData.apiUrl]);
 
   const handleCheckout = async (plan: "core" | "pro" | "team") => {
-    setActionLoading(true);
+    setLoadingPlan(plan);
     setError(null);
 
     try {
@@ -139,7 +148,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
           // Creating a new org
           if (!orgName.trim()) {
             setError("Organization name is required for Team plan");
-            setActionLoading(false);
+            setLoadingPlan(null);
             return;
           }
           body.organizationName = orgName.trim();
@@ -172,12 +181,12 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
       setError(
         err instanceof Error ? err.message : "Something went wrong"
       );
-      setActionLoading(false);
+      setLoadingPlan(null);
     }
   };
 
   const handlePortal = async (orgId?: string) => {
-    setActionLoading(true);
+    setLoadingPlan("portal");
     setError(null);
 
     try {
@@ -205,7 +214,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
       setError(
         err instanceof Error ? err.message : "Something went wrong"
       );
-      setActionLoading(false);
+      setLoadingPlan(null);
     }
   };
 
@@ -330,7 +339,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
           {!isOrgPlan && (
             <Button
               onClick={() => handlePortal()}
-              loading={actionLoading}
+              loading={loadingPlan === "portal"}
               variant="outline"
             >
               Manage plan
@@ -419,7 +428,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             )}
             <Button
               onClick={() => handleCheckout("core")}
-              loading={actionLoading}
+              loading={loadingPlan === "core"}
               fullWidth
             >
               Upgrade to Core
@@ -464,7 +473,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             )}
             <Button
               onClick={() => handleCheckout("pro")}
-              loading={actionLoading}
+              loading={loadingPlan === "pro"}
               fullWidth
             >
               Upgrade to Pro
@@ -537,7 +546,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
             )}
             <Button
               onClick={() => handleCheckout("team")}
-              loading={actionLoading}
+              loading={loadingPlan === "team"}
               fullWidth
             >
               Upgrade to Team
