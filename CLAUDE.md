@@ -95,16 +95,6 @@ The Twist Creator repository (`public/twist/`) contains all type definitions and
 3. **Test locally**: Changes are immediately available via workspace link
 4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, twists/\*)
 
-### Where Twister Types Are Used
-
-- **API Worker** (`workers/api/src/`): Built-in tools import Twister types
-  - Example: `import type { Activity } from "@plotday/twister/plot"`
-  - Built-in tools (`workers/api/src/twist/tools/*`) implement Twister interfaces
-- **Twists** (`twists/*/src/`): Import Twister types directly
-  - Example: `import { Twist, type Priority } from "@plotday/twister"`
-- **Sources** (`public/sources/*/src/`): Import Twister types for external integrations
-  - Example: `import { Source, type Channel } from "@plotday/twister"`
-
 ### Adding New Twister Exports
 
 When adding new top-level type files to Twister, update `public/twist/package.json` exports:
@@ -161,7 +151,6 @@ Only publish after testing locally:
 
 ### Important Notes
 
-- **Never create or modify types in `workers/api/src/twist/types/`** - this directory no longer exists
 - **TypeScript Configuration**: Uses `moduleResolution: "bundler"` in `libs/tsconfig/base.json` to support Twister package exports
 - **Workspace Dependencies**: API and twists use `"@plotday/twister": "workspace:*"` for local development
 
@@ -266,27 +255,9 @@ await this.callback.delete(token);
 await this.callback.deleteAll();
 ```
 
-#### Callback Tool API
-
-- **`create(functionName, context?)`**: Creates a callback to the source's parent
-
-  - `functionName`: Name of the function to call on the parent source/twist
-  - `context`: Optional data to pass as context to the callback
-  - Returns: Promise resolving to a callback token
-
-- **`call(token, args?)`**: Executes a callback by token
-
-  - `token`: The callback token returned by create()
-  - `args`: Optional arguments to pass to the callback function
-  - Returns: Promise resolving to the callback result
-
-- **`delete(token)`**: Removes a specific callback
-- **`deleteAll()`**: Removes all callbacks for the source's parent
-
 #### Important Notes
 
 - Callbacks are **hardcoded to target the source's parent** for security
-- Only `functionName` and `context` parameters are supported for simplicity
 - Callbacks persist across worker restarts and timeouts
 - Use callbacks instead of direct function references in webhook, auth, and tasks sources
 
@@ -296,40 +267,15 @@ When syncing activities from external systems, follow these patterns to ensure c
 
 #### The `initialSync` Flag Pattern
 
-All sync-based sources should track whether they're performing an initial sync (first import) or an incremental sync (ongoing updates):
+All sync-based sources should track whether they're performing an initial sync (first import) or an incremental sync (ongoing updates). Key pattern for activity creation:
 
 ```typescript
-async startSync(authToken: string, resourceId: string): Promise<void> {
-  // Store initial sync state
-  await this.set(`sync_state_${resourceId}`, {
-    resourceId,
-    sequence: 1,
-  });
-
-  // Start first batch with initialSync = true
-  const callback = await this.callback(
-    this.syncBatch,
-    authToken,
-    resourceId,
-    true  // initialSync flag
-  );
-  await this.runTask(callback);
-}
-
-async syncBatch(
-  authToken: string,
-  resourceId: string,
-  initialSync: boolean
-): Promise<void> {
-  // Create activities with proper flags
-  const activity: NewActivity = {
-    type: ActivityType.Event,
-    title: event.title,
-    ...(initialSync ? { unread: false } : {}),   // false for initial, omit for incremental
-    ...(initialSync ? { archived: false } : {}),  // unarchive on initial only
-    // ... other fields
-  };
-}
+const activity: NewActivity = {
+  type: ActivityType.Event,
+  title: event.title,
+  ...(initialSync ? { unread: false } : {}),   // false for initial, omit for incremental
+  ...(initialSync ? { archived: false } : {}),  // unarchive on initial only
+};
 ```
 
 #### Field Behavior by Sync Type
@@ -397,192 +343,15 @@ For `onActivityUpdated` where the acting user is not available in the callback s
 
 ### Google Source Integration Pattern
 
-When building Google-based sources (calendar, contacts, gmail, etc.), use this pattern to enable cross-source integration with a single OAuth flow and automatic data syncing.
+When building Google-based sources, use cross-source integration with a single OAuth flow. The pattern:
 
-#### Pattern Overview
+1. Each source exports its required scopes as `static readonly SCOPES`
+2. A coordinator source (e.g. google-calendar) combines scopes from multiple sources in `requestAuth()`
+3. On auth success, the coordinator calls `syncWithAuth(authorization)` on consumer sources
+4. Consumer sources validate they have required scopes before syncing
+5. Always wrap consumer sync calls in try-catch so coordinator auth doesn't fail if consumer sync fails
 
-This pattern allows one Google source to:
-
-1. Request combined OAuth scopes for multiple sources in a single authorization flow
-2. Automatically trigger syncing in related sources after successful authorization
-3. Share authorization tokens explicitly across source boundaries
-
-#### Implementation Steps
-
-**1. Export Scopes as Static Constants**
-
-Each source should export its required scopes for reuse:
-
-```typescript
-export default class GoogleCalendar extends Source<GoogleCalendar> {
-  static readonly SCOPES = [
-    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-    "https://www.googleapis.com/auth/calendar.events",
-  ];
-
-  async requestAuth(...) {
-    return await this.tools.integrations.request({
-      provider: AuthProvider.Google,
-      scopes: GoogleCalendar.SCOPES, // Use static constant
-    }, ...);
-  }
-}
-```
-
-**2. Add `syncWithAuth()` Method to Consumer Sources**
-
-Sources that can be triggered by other sources should implement a `syncWithAuth()` method:
-
-```typescript
-export default class GoogleContacts extends Source<GoogleContacts> {
-  static readonly SCOPES = [
-    "https://www.googleapis.com/auth/contacts.readonly",
-    "https://www.googleapis.com/auth/contacts.other.readonly",
-  ];
-
-  /**
-   * Start contact sync using an existing Authorization from another source.
-   */
-  async syncWithAuth(
-    authorization: Authorization,
-    callback?: Function,
-    ...extraArgs: any[]
-  ): Promise<void> {
-    // Validate authorization has required scopes
-    const hasRequiredScopes = GoogleContacts.SCOPES.every((scope) =>
-      authorization.scopes.includes(scope)
-    );
-
-    if (!hasRequiredScopes) {
-      throw new Error(`Authorization missing required scopes`);
-    }
-
-    // Generate opaque token for storage
-    const authToken = crypto.randomUUID();
-
-    // Get actual auth token via integrations
-    const token = await this.tools.integrations.get(authorization);
-
-    // Store and start sync
-    await this.set(`auth_token:${authToken}`, token);
-    // ... initialize and start sync
-  }
-}
-```
-
-**3. Add Dependency and Combine Scopes in Coordinator Source**
-
-The coordinating source (e.g., google-calendar) should:
-
-- Declare the consumer source as a dependency
-- Combine scopes in `requestAuth()`
-- Trigger `syncWithAuth()` in `onAuthSuccess()`
-
-```typescript
-import GoogleContacts from "@plotday/source-google-contacts";
-
-export class GoogleCalendar extends Source<GoogleCalendar> {
-  static readonly SCOPES = [
-    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-    "https://www.googleapis.com/auth/calendar.events",
-  ];
-
-  build(build: SourceBuilder) {
-    return {
-      integrations: build(Integrations),
-      googleContacts: build(GoogleContacts), // Add dependency
-    };
-  }
-
-  async requestAuth(...): Promise<ActivityLink> {
-    // Combine scopes for single OAuth flow
-    const combinedScopes = [
-      ...GoogleCalendar.SCOPES,
-      ...GoogleContacts.SCOPES,
-    ];
-
-    return await this.tools.integrations.request({
-      provider: AuthProvider.Google,
-      scopes: combinedScopes, // Request combined scopes
-    }, this.onAuthSuccess, ...);
-  }
-
-  async onAuthSuccess(authorization: Authorization, ...): Promise<void> {
-    // Store authorization
-    await this.set(`authorization:${authToken}`, authorization);
-
-    // Trigger contacts sync with same authorization
-    try {
-      await this.tools.googleContacts.syncWithAuth(authorization);
-    } catch (error) {
-      // Log but don't fail calendar auth
-      console.error("Failed to start contacts sync:", error);
-    }
-
-    // Continue with calendar setup...
-  }
-}
-```
-
-**4. Update package.json Dependencies**
-
-Add the consumer source as a workspace dependency:
-
-```json
-{
-  "dependencies": {
-    "@plotday/source-google-contacts": "workspace:^",
-    "@plotday/twister": "workspace:^"
-  }
-}
-```
-
-#### Key Benefits
-
-- **Single OAuth Flow**: Users authorize once for all related Google sources
-- **Automatic Integration**: Contacts sync automatically when calendar is authorized
-- **Explicit Token Passing**: Authorization is passed as a parameter, avoiding path-dependent storage issues
-- **Independent Storage**: Each source maintains its own storage namespace
-- **Scope Validation**: Consumer sources validate they have required scopes before syncing
-- **Graceful Degradation**: If consumer sync fails, coordinator auth still succeeds
-
-#### Extending the Pattern
-
-This pattern can be extended to other Google sources:
-
-```typescript
-// Gmail source following the same pattern
-export class GoogleGmail extends Source<GoogleGmail> {
-  static readonly SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.send",
-  ];
-
-  build(build: SourceBuilder) {
-    return {
-      integrations: build(Integrations),
-      googleContacts: build(GoogleContacts), // Reuse contacts integration
-    };
-  }
-
-  async requestAuth(...): Promise<ActivityLink> {
-    const combinedScopes = [
-      ...GoogleGmail.SCOPES,
-      ...GoogleContacts.SCOPES, // Add contacts scopes
-    ];
-    // ... same pattern as calendar
-  }
-}
-```
-
-#### Important Notes
-
-- **Source Dependency**: The coordinator source directly depends on consumer sources
-- **Workspace Packages**: Use `workspace:^` for local development
-- **Build Order**: Rebuild Twister, then rebuild all modified sources
-- **Scope Overlap**: Duplicate scopes in combined arrays are automatically deduplicated by OAuth provider
-- **Error Handling**: Always wrap consumer sync calls in try-catch to prevent coordinator failure
-- **Package Names**: Use full package names like `@plotday/source-google-contacts` in imports and dependencies
+See `public/sources/google-calendar/` and `public/sources/google-contacts/` for the reference implementation. Consumer sources are added as `workspace:^` dependencies.
 
 ## Database Schema Changes
 
@@ -689,34 +458,6 @@ pnpm reset
 - **ALWAYS generate types** after schema changes: `pnpm types`
 - **ALWAYS verify** you're targeting local database (localhost:54322) before running SQL
 
-### Why This Process Matters
-
-- **Migrations are version-controlled** and provide a complete history of schema evolution
-- **Transactions ensure consistency** - either the entire migration succeeds or nothing changes
-- **Reproducibility** - the same migrations apply cleanly across all environments
-- **Collaboration** - other developers see exactly what changed and when
-- **Rollback safety** - failed migrations don't leave the database in a broken state
-
-### Common Mistakes to Avoid
-
-❌ **Wrong**: Modifying the remote/production database directly
-✅ **Correct**: Only work with local database at localhost:54322
-
-❌ **Wrong**: Creating migration files manually
-✅ **Correct**: Modify schema files, then run `pnpm gen-migration -- <name>`
-
-❌ **Wrong**: Editing an already-applied migration
-✅ **Correct**: Generate a new migration to make additional changes
-
-❌ **Wrong**: Using `pnpm reset` to fix migration issues
-✅ **Correct**: Fix the migration file and re-apply
-
-### Database Infrastructure
-
-The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `libs/db/docker-compose.yml`. Schema files fully define database state (schemas, extensions, roles, functions).
-
-Atlas handles schema diffing and migration management. Type generation uses `@supabase/postgres-meta` as a library (via `pnpm types`).
-
 ## Development Webhooks with Cloudflare Tunnel
 
 For testing webhooks from external services (Slack, Gmail, etc.) during local development, you can expose your local API worker via a Cloudflare Tunnel.
@@ -766,38 +507,11 @@ When the tunnel is active, use these public URLs:
 - `pnpm tunnel:status` - Check if tunnel is running
 - `pnpm tunnel` - Start tunnel in foreground (blocks terminal)
 
-### How It Works
-
-The tunnel configuration (`.cloudflared/config.yml`) preserves the public hostname in request headers, ensuring webhook signature verification (Slack HMAC-SHA256, Gmail JWT) works correctly. The tunnel is authenticated with your Cloudflare account and only exposes the specified hostname.
-
 ### Troubleshooting
 
-**Tunnel not connecting:**
-
-```bash
-pnpm tunnel:status
-tail -f .tunnel.log
-```
-
-**Webhooks timing out:**
-
+- Check tunnel status: `pnpm tunnel:status` and `tail -f .tunnel.log`
 - Ensure API worker is running: `pnpm --filter @plotday/api dev`
-- Check that localhost:8787 is accessible
-- Verify no firewall is blocking the connection
-
-**Signature verification failing:**
-
-- Verify `.dev.vars` has correct webhook secrets
-- Check that the API worker is receiving requests (check logs)
-- Ensure the tunnel config preserves the Host header (should be automatic)
-
-### Security Considerations
-
-- **Personal dev environment**: `api-kris.plot.day` is for your personal development only
-- **Use test accounts**: Configure test Slack workspaces and Gmail accounts, not production data
-- **Tunnel exposure**: Only run the tunnel when actively testing webhooks
-- **Rate limiting**: All rate limiting middleware still applies to tunnel requests
-- **Callback URLs**: Be aware that webhook URLs may be stored in the database during testing. Use separate test priorities for webhook development to avoid affecting production data.
+- For signature verification issues, check `.dev.vars` has correct webhook secrets
 
 ## Worktree Development
 
@@ -876,8 +590,6 @@ Querying `thread_unread` with only `read_at IS NULL` and `urgency != 'passive'` 
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
-- **After modifying Twister types** in `public/twist/src/`, always rebuild Twister with `cd public/twist && pnpm build && cd ../..` before running or testing code in this repo.
-- If you see import errors for `@plotday/twister/*` after making Twister changes, ensure Twister has been rebuilt and the package exports are configured correctly in `public/twist/package.json`.
 - Only work locally. Never deploy. This includes workers, which only run locally.
 - When creating Cloudflare Durable Objects via idFromName(), ctx.id.name IS NOT SET inside the DO. If the DO needs the name (often the priorityTwistId), you MUST add a separate init() method to the DO and ensure it's called after creation to set the name.
 - In TypeScript, use static imports at the top of the file wherever possible. DO NOT insert dynamic import('filename') unless absolutely necessary to resolve a circular dependency.

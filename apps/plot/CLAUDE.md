@@ -1,9 +1,5 @@
 # Plot App
 
-# After Completing User-Facing Changes
-
-When you finish a new feature, UX improvement, or notable bug fix, add a brief bullet point to the top of `docs/updates.md`. Write in plain language users would understand — no technical jargon. Skip internal refactors, infra changes, and minor fixes users wouldn't notice.
-
 # Build, Run, Test Commands
 
 - **Lint**: `cd apps/plot && flutter analyze`
