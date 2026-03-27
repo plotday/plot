@@ -874,6 +874,13 @@ export type Link = {
   sourceUrl: string | null;
   /** Channel ID that produced this link (matches source_channel.channel_id) */
   channelId: string | null;
+  /**
+   * Cross-connector thread bundling key.
+   * When set, this link shares a thread with any link whose `source` matches
+   * this value (or whose `relatedSource` matches this link's `source`).
+   * Works regardless of creation order.
+   */
+  relatedSource: string | null;
 };
 
 /**
