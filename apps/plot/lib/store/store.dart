@@ -1725,6 +1725,9 @@ class Store extends _$Store {
       log.warning('Reconnection-triggered sync failed', error, stackTrace);
       return null;
     });
+    // Re-fetch subscription on reconnect since sync_user_on_connect clears
+    // the pending user_sync row before the client can receive the broadcast.
+    onSubscriptionChanged?.call();
   }
 
   Future<void> _handleBroadcastMessage(Map<String, dynamic> message) async {

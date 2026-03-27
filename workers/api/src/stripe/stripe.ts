@@ -249,27 +249,22 @@ async function handleSubscriptionUpdate(
     status,
   });
 
-  // Notify user's sync DO so the Flutter app picks up the plan change
+  // Notify affected users so the Flutter app picks up the plan change.
+  // For personal subscriptions, notify the single user.
+  // For org subscriptions, notify all org members.
   const syncUser = await c.var.db
     .selectFrom("user_subscription")
     .select("user_id")
     .where("stripe_customer_id", "=", customerId)
     .executeTakeFirst();
+
   if (syncUser) {
-    await c.var.db
-      .insertInto("user_sync")
-      .values({
-        user_id: syncUser.user_id,
-        entity: "subscription",
-        last_update_at: sql`now()`,
-      })
-      .onConflict((oc: any) =>
-        oc.columns(["user_id", "entity"]).doUpdateSet({
-          last_update_at: sql`now()`,
-        })
-      )
-      .execute();
-    notifyUserSync(c, syncUser.user_id);
+    await notifySubscriptionChange(c, [syncUser.user_id]);
+  }
+
+  const orgMemberIds = await getOrgMemberUserIds(c.var.db, customerId);
+  if (orgMemberIds.length > 0) {
+    await notifySubscriptionChange(c, orgMemberIds);
   }
 }
 
@@ -327,17 +322,36 @@ async function handleSubscriptionDeleted(
     customer_id: customerId,
   });
 
-  // Notify user's sync DO so the Flutter app picks up the plan change
+  // Notify affected users so the Flutter app picks up the plan change.
   const syncUser = await c.var.db
     .selectFrom("user_subscription")
     .select("user_id")
     .where("stripe_customer_id", "=", customerId)
     .executeTakeFirst();
+
   if (syncUser) {
+    await notifySubscriptionChange(c, [syncUser.user_id]);
+  }
+
+  const orgMemberIds = await getOrgMemberUserIds(c.var.db, customerId);
+  if (orgMemberIds.length > 0) {
+    await notifySubscriptionChange(c, orgMemberIds);
+  }
+}
+
+/**
+ * Notify one or more users that their subscription has changed by writing to
+ * user_sync and poking their UserSync DO.
+ */
+async function notifySubscriptionChange(
+  c: any,
+  userIds: string[]
+) {
+  for (const userId of userIds) {
     await c.var.db
       .insertInto("user_sync")
       .values({
-        user_id: syncUser.user_id,
+        user_id: userId,
         entity: "subscription",
         last_update_at: sql`now()`,
       })
@@ -347,8 +361,32 @@ async function handleSubscriptionDeleted(
         })
       )
       .execute();
-    notifyUserSync(c, syncUser.user_id);
+    notifyUserSync(c, userId);
   }
+}
+
+/**
+ * Get all user IDs that belong to an organization (by stripe customer ID).
+ */
+async function getOrgMemberUserIds(
+  db: any,
+  stripeCustomerId: string
+): Promise<string[]> {
+  const orgSub = await db
+    .selectFrom("organization_subscription")
+    .select("organization_id")
+    .where("stripe_customer_id", "=", stripeCustomerId)
+    .executeTakeFirst();
+
+  if (!orgSub) return [];
+
+  const members = await db
+    .selectFrom("organization_member")
+    .select("user_id")
+    .where("organization_id", "=", orgSub.organization_id)
+    .execute();
+
+  return members.map((m: any) => m.user_id as string);
 }
 
 /**
