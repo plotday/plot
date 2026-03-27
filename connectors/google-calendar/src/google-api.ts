@@ -372,7 +372,7 @@ export function transformGoogleEvent(
   const isCancelled = event.status === "cancelled";
 
   const result: TransformedEvent = {
-    title: event.summary || (isCancelled ? "Cancelled event" : ""),
+    title: event.summary || "",
     meta: {
       id: event.id,
       calendarId: calendarId,

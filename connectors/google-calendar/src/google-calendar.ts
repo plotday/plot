@@ -1,13 +1,13 @@
 import GoogleContacts from "@plotday/connector-google-contacts";
 import {
-  ActionType,
   type Action,
-  type ActorId,
+  ActionType,
   type Actor,
+  type ActorId,
   ConferencingProvider,
-  type NewLinkWithNotes,
-  type NewContact,
   Connector,
+  type NewContact,
+  type NewLinkWithNotes,
   type Thread,
   type ToolBuilder,
 } from "@plotday/twister";
@@ -20,10 +20,20 @@ import {
   AuthProvider,
   type AuthToken,
   type Authorization,
-  Integrations,
   type Channel,
+  Integrations,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+
+import {
+  GoogleApi,
+  type GoogleEvent,
+  type SyncState,
+  containsHtml,
+  extractConferencingLinks,
+  syncGoogleCalendar,
+  transformGoogleEvent,
+} from "./google-api";
 
 type Calendar = {
   id: string;
@@ -41,17 +51,6 @@ type PendingOccurrence = {
   occurrence: NewScheduleOccurrence;
   cancelled: boolean;
 };
-
-import {
-  GoogleApi,
-  type GoogleEvent,
-  type SyncState,
-  containsHtml,
-  extractConferencingLinks,
-  syncGoogleCalendar,
-  transformGoogleEvent,
-} from "./google-api";
-
 
 /**
  * Google Calendar integration tool.
@@ -126,8 +125,23 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   ];
 
   readonly provider = AuthProvider.Google;
-  readonly scopes = Integrations.MergeScopes(GoogleCalendar.SCOPES, GoogleContacts.SCOPES);
-  readonly linkTypes = [{ type: "event", label: "Event", logo: "https://api.iconify.design/logos/google-calendar.svg", logoMono: "https://api.iconify.design/simple-icons/googlecalendar.svg" }];
+  readonly scopes = Integrations.MergeScopes(
+    GoogleCalendar.SCOPES,
+    GoogleContacts.SCOPES
+  );
+  readonly linkTypes = [
+    {
+      type: "event",
+      label: "Event",
+      logo: "https://api.iconify.design/logos/google-calendar.svg",
+      logoMono: "https://api.iconify.design/simple-icons/googlecalendar.svg",
+      statuses: [
+        { status: "Confirmed", label: "Confirmed" },
+        { status: "Tentative", label: "Tentative" },
+        { status: "Cancelled", label: "Cancelled" },
+      ],
+    },
+  ];
 
   build(build: ToolBuilder) {
     return {
@@ -149,7 +163,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   /**
    * Returns available calendars as channel resources after authorization.
    */
-  async getChannels(_auth: Authorization, token: AuthToken): Promise<Channel[]> {
+  async getChannels(
+    _auth: Authorization,
+    token: AuthToken
+  ): Promise<Channel[]> {
     const api = new GoogleApi(token.token);
     const calendars = await this.listCalendarsWithApi(api);
     return calendars.map((c) => ({ id: c.id, title: c.name }));
@@ -312,7 +329,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   async startSync(
     options: {
       calendarId: string;
-    } & SyncOptions,
+    } & SyncOptions
   ): Promise<void> {
     const { calendarId, timeMin, timeMax } = options;
 
@@ -662,11 +679,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
         // Check if this is a recurring event instance (exception)
         if (event.recurringEventId && event.originalStartTime) {
-          await this.processEventInstance(
-            event,
-            calendarId,
-            initialSync
-          );
+          await this.processEventInstance(event, calendarId, initialSync);
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
@@ -681,9 +694,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             const canonicalUrl = `google-calendar:${event.id}`;
 
             // Create cancellation note
+            const cancelledBy =
+              event.organizer?.displayName || event.organizer?.email;
             const cancelNote = {
               key: "cancellation" as const,
-              content: "This event was cancelled.",
+              content: cancelledBy
+                ? `${cancelledBy} cancelled this event.`
+                : "This event was cancelled.",
               contentType: "text" as const,
               created: event.updated ? new Date(event.updated) : new Date(),
             };
@@ -693,18 +710,33 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               source: canonicalUrl,
               created: event.created ? new Date(event.created) : undefined,
               type: "event",
-              title: activityData.title || "Cancelled event",
+              title: activityData.title || undefined,
+              status: "Cancelled",
               private: true,
               preview: "Cancelled",
               meta: activityData.meta ?? null,
               notes: [cancelNote],
+              schedules: [
+                {
+                  start: event.start?.dateTime
+                    ? new Date(event.start.dateTime)
+                    : event.start?.date
+                    ? event.start.date
+                    : new Date(),
+                  archived: true,
+                },
+              ],
               ...(initialSync ? { unread: false } : {}), // false for initial sync, omit for incremental updates
               ...(initialSync ? { archived: false } : {}), // unarchive on initial sync only
             };
 
             // Inject sync metadata for the parent to identify the source
             link.channelId = calendarId;
-            link.meta = { ...link.meta, syncProvider: "google", syncableId: calendarId };
+            link.meta = {
+              ...link.meta,
+              syncProvider: "google",
+              syncableId: calendarId,
+            };
 
             // Send link - database handles upsert automatically
             await this.tools.integrations.saveLink(link);
@@ -715,19 +747,30 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           // Contacts (RSVPs) should be per-occurrence via the scheduleOccurrences array
           // For non-recurring events, add contacts to the schedule
           const isRecurring = !!activityData.schedules?.[0]?.recurrenceRule;
-          if (validAttendees.length > 0 && !isRecurring && activityData.schedules?.[0]) {
-            const contacts: NewScheduleContact[] = validAttendees.map((attendee) => ({
-              contact: {
-                email: attendee.email!,
-                name: attendee.displayName,
-              },
-              status: attendee.responseStatus === "accepted" ? "attend" as const
-                : attendee.responseStatus === "declined" ? "skip" as const
-                : null,
-              role: attendee.organizer ? "organizer" as const
-                : attendee.optional ? "optional" as const
-                : "required" as const,
-            }));
+          if (
+            validAttendees.length > 0 &&
+            !isRecurring &&
+            activityData.schedules?.[0]
+          ) {
+            const contacts: NewScheduleContact[] = validAttendees.map(
+              (attendee) => ({
+                contact: {
+                  email: attendee.email!,
+                  name: attendee.displayName,
+                },
+                status:
+                  attendee.responseStatus === "accepted"
+                    ? ("attend" as const)
+                    : attendee.responseStatus === "declined"
+                    ? ("skip" as const)
+                    : null,
+                role: attendee.organizer
+                  ? ("organizer" as const)
+                  : attendee.optional
+                  ? ("optional" as const)
+                  : ("required" as const),
+              })
+            );
             activityData.schedules[0].contacts = contacts;
           }
 
@@ -783,21 +826,28 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           const canonicalUrl = `google-calendar:${event.id}`;
 
           // Build description note if available
-          const descriptionNote = hasDescription ? {
-            key: "description",
-            content: description,
-            contentType:
-              description && containsHtml(description) ? "html" as const : "text" as const,
-            created: event.created ? new Date(event.created) : new Date(),
-            ...(authorContact ? { author: authorContact } : {}),
-          } : null;
+          const descriptionNote = hasDescription
+            ? {
+                key: "description",
+                content: description,
+                contentType:
+                  description && containsHtml(description)
+                    ? ("html" as const)
+                    : ("text" as const),
+                created: event.created ? new Date(event.created) : new Date(),
+                ...(authorContact ? { author: authorContact } : {}),
+              }
+            : null;
 
           // Build mentions from organizer + attendees for thread visibility
           const attendeeMentions: NewContact[] = [];
           if (authorContact) attendeeMentions.push(authorContact);
           for (const att of validAttendees) {
             if (att.email) {
-              attendeeMentions.push({ email: att.email, name: att.displayName });
+              attendeeMentions.push({
+                email: att.email,
+                name: att.displayName,
+              });
             }
           }
 
@@ -810,13 +860,25 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           const notes = descriptionNote
             ? [descriptionNote]
             : attendeeMentions.length > 0
-              ? [{ key: "participants", content: null, mentions: attendeeMentions }]
-              : [];
+            ? [
+                {
+                  key: "participants",
+                  content: null,
+                  mentions: attendeeMentions,
+                },
+              ]
+            : [];
 
           const link: NewLinkWithNotes = {
             source: canonicalUrl,
             created: event.created ? new Date(event.created) : undefined,
             type: "event",
+            status:
+              event.status === "confirmed"
+                ? "Confirmed"
+                : event.status === "tentative"
+                ? "Tentative"
+                : undefined,
             title: activityData.title || "",
             private: true,
             author: authorContact,
@@ -833,15 +895,21 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
           // Inject sync metadata for the parent to identify the source
           link.channelId = calendarId;
-          link.meta = { ...link.meta, syncProvider: "google", syncableId: calendarId };
+          link.meta = {
+            ...link.meta,
+            syncProvider: "google",
+            syncableId: calendarId,
+          };
 
           // Merge any buffered occurrences that arrived before this master event
           const pendingKey = `pending_occ:google-calendar:${event.id}`;
-          const pendingOccurrences = await this.get<PendingOccurrence[]>(pendingKey);
+          const pendingOccurrences = await this.get<PendingOccurrence[]>(
+            pendingKey
+          );
           if (pendingOccurrences) {
             link.scheduleOccurrences = [
               ...(link.scheduleOccurrences || []),
-              ...pendingOccurrences.map(p => p.occurrence),
+              ...pendingOccurrences.map((p) => p.occurrence),
             ];
             await this.clear(pendingKey);
           }
@@ -909,20 +977,32 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       // During initial sync, buffer the occurrence for later merging with its master
       if (initialSync) {
         const pendingKey = `pending_occ:${masterCanonicalUrl}`;
-        const existing = await this.get<PendingOccurrence[]>(pendingKey) || [];
+        const existing =
+          (await this.get<PendingOccurrence[]>(pendingKey)) || [];
         existing.push({ occurrence: cancelledOccurrence, cancelled: true });
         await this.set(pendingKey, existing);
         return;
       }
 
+      const cancelledBy =
+        event.organizer?.displayName || event.organizer?.email;
+      const cancelNote = {
+        key: "cancellation" as const,
+        content: cancelledBy
+          ? `${cancelledBy} cancelled this event.`
+          : "This event was cancelled.",
+        contentType: "text" as const,
+        created: event.updated ? new Date(event.updated) : new Date(),
+      };
+
       const occurrenceUpdate: NewLinkWithNotes = {
         type: "event",
-        title: "",
+        title: undefined,
         source: masterCanonicalUrl,
         channelId: calendarId,
         meta: { syncProvider: "google", syncableId: calendarId },
         scheduleOccurrences: [cancelledOccurrence],
-        notes: [],
+        notes: [cancelNote],
       };
 
       await this.tools.integrations.saveLink(occurrenceUpdate);
@@ -940,12 +1020,17 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               email: attendee.email!,
               name: attendee.displayName,
             },
-            status: attendee.responseStatus === "accepted" ? "attend" as const
-              : attendee.responseStatus === "declined" ? "skip" as const
-              : null,
-            role: attendee.organizer ? "organizer" as const
-              : attendee.optional ? "optional" as const
-              : "required" as const,
+            status:
+              attendee.responseStatus === "accepted"
+                ? ("attend" as const)
+                : attendee.responseStatus === "declined"
+                ? ("skip" as const)
+                : null,
+            role: attendee.organizer
+              ? ("organizer" as const)
+              : attendee.optional
+              ? ("optional" as const)
+              : ("required" as const),
           }))
         : undefined;
 
@@ -954,7 +1039,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     // creating a new master thread. Use instanceData schedule start if available
     // (for rescheduled instances), otherwise fall back to originalStartTime.
     const instanceSchedule = instanceData.schedules?.[0];
-    const occurrenceStart = instanceSchedule?.start ?? new Date(originalStartTime);
+    const occurrenceStart =
+      instanceSchedule?.start ?? new Date(originalStartTime);
 
     const occurrence: NewScheduleOccurrence = {
       occurrence: new Date(originalStartTime),
@@ -971,7 +1057,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     // During initial sync, buffer the occurrence for later merging with its master
     if (initialSync) {
       const pendingKey = `pending_occ:${masterCanonicalUrl}`;
-      const existing = await this.get<PendingOccurrence[]>(pendingKey) || [];
+      const existing = (await this.get<PendingOccurrence[]>(pendingKey)) || [];
       existing.push({ occurrence, cancelled: false });
       await this.set(pendingKey, existing);
       return;
@@ -980,7 +1066,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     // For incremental sync, save immediately (master should exist)
     const occurrenceUpdate: NewLinkWithNotes = {
       type: "event",
-      title: "",
+      title: undefined,
       source: masterCanonicalUrl,
       channelId: calendarId,
       meta: { syncProvider: "google", syncableId: calendarId },
@@ -1144,9 +1230,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     if (!eventId || eventId === linkSource) return;
 
     // Map Plot status to Google Calendar status
-    const googleStatus = status === "attend" ? "accepted" as const
-      : status === "skip" ? "declined" as const
-      : "needsAction" as const;
+    const googleStatus =
+      status === "attend"
+        ? ("accepted" as const)
+        : status === "skip"
+        ? ("declined" as const)
+        : ("needsAction" as const);
 
     await this.tools.integrations.actAs(
       AuthProvider.Google,
