@@ -18,7 +18,8 @@ class ContextMenu extends StatefulWidget {
   });
 
   /// Builder that returns the menu items. Called when the menu is shown.
-  final List<FItem> Function() items;
+  /// Receives a [close] callback that dismisses the menu.
+  final List<FItem> Function(VoidCallback close) items;
 
   /// The child widget that responds to right-click.
   final Widget child;
@@ -96,7 +97,7 @@ class _ContextMenuState extends State<ContextMenu> {
                       style: style.itemGroupStyle,
                       divider: FItemDivider.full,
                       children: [
-                        FItemGroup(children: widget.items()),
+                        FItemGroup(children: widget.items(_hide)),
                       ],
                     ),
                   ),

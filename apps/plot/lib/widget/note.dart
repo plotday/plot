@@ -269,12 +269,15 @@ class _NoteWidgetState extends State<NoteWidget> {
     Widget result;
     if (hasPhysicalKeyboard()) {
       result = ContextMenu(
-        items: () => noteCommands(widget.note, activityBloc: activityBloc)
+        items: (close) => noteCommands(widget.note, activityBloc: activityBloc)
             .map(
               (cmd) => FItem(
                 title: Text(cmd.title),
                 prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
-                onPress: () => context.run(cmd),
+                onPress: () {
+                  close();
+                  context.run(cmd);
+                },
               ),
             )
             .toList(),

@@ -219,13 +219,17 @@ class NoteEditorState extends State<NoteEditor> {
 
     // Note mode: wrap with BlocListener (editing) and BlocBuilder (twists/actors)
     return BlocListener<ThreadBloc, ThreadState>(
-      listenWhen: (prev, curr) => prev.editingNote != curr.editingNote,
+      listenWhen: (prev, curr) =>
+          prev.editingNote != curr.editingNote ||
+          prev.replyTo != curr.replyTo,
       listener: (context, activityState) {
         if (activityState.editingNote != null) {
           // Load editing note content into editor
           _editorKey.currentState?.reset(
             activityState.editingNote!.content ?? '',
           );
+          focus();
+        } else if (activityState.replyTo != null) {
           focus();
         } else {
           // Restore draft content

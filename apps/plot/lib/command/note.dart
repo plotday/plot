@@ -286,7 +286,7 @@ class EditNote extends NoteCommand {
 }
 
 class ReplyToNote extends NoteCommand {
-  ReplyToNote(super.note)
+  ReplyToNote(super.note, {required this.activityBloc})
     : super(
         title: 'Reply',
         eventObject: EventObject.note,
@@ -294,10 +294,11 @@ class ReplyToNote extends NoteCommand {
         icon: FontAwesomeIcons.reply,
       );
 
+  final ThreadBloc activityBloc;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final activityBloc = context.read<ThreadBloc>();
       activityBloc.setReplyTo(note);
       return const CommandDone();
     } catch (e, stackTrace) {
@@ -616,7 +617,8 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
   // Viewers can only reply (forced private by DB), edit own notes, and copy
   if (isViewer) {
     return [
-      if (!note.draft) ReplyToNote(note),
+      if (!note.draft && activityBloc != null)
+        ReplyToNote(note, activityBloc: activityBloc),
       if (!note.draft &&
           note.authorId.isCurrentUser &&
           note.content != null &&
@@ -629,7 +631,8 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
 
   return [
     SelfTaskAction(note),
-    if (!note.draft) ReplyToNote(note),
+    if (!note.draft && activityBloc != null)
+      ReplyToNote(note, activityBloc: activityBloc),
     if (!note.draft &&
         note.authorId.isCurrentUser &&
         note.content != null &&

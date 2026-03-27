@@ -157,12 +157,15 @@ class PriorityWidget extends StatelessWidget {
 
     if (hasPhysicalKeyboard()) {
       return ContextMenu(
-        items: () => priorityCommands(priority)
+        items: (close) => priorityCommands(priority)
             .map(
               (cmd) => FItem(
                 title: Text(cmd.title),
                 prefix: cmd.icon != null ? Icon(cmd.icon, size: 16) : null,
-                onPress: () => buildContext.run(cmd),
+                onPress: () {
+                  close();
+                  buildContext.run(cmd);
+                },
               ),
             )
             .toList(),
