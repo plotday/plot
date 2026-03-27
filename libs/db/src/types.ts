@@ -639,18 +639,21 @@ export type Database = {
       }
       organization: {
         Row: {
+          billing_email: string | null
           created_at: string
           id: number
           name: string
           updated_at: string
         }
         Insert: {
+          billing_email?: string | null
           created_at?: string
           id?: never
           name: string
           updated_at?: string
         }
         Update: {
+          billing_email?: string | null
           created_at?: string
           id?: never
           name?: string

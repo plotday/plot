@@ -1,3 +1,4 @@
+- Team plan checkout now collects billing address and tax ID, and organizations can set a separate billing email
 - Fixed clicking on links from connected services (Linear, Jira, etc.) not opening in the browser
 - If you haven't opened Plot in 18 hours after a notification, you'll now get an email digest with all your unread updates grouped by priority
 - Sub-priorities can now opt out of inheriting parent sharing — toggle "Include members of the parent priority" off to keep a sub-priority private from the parent's members

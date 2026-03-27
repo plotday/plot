@@ -398,6 +398,7 @@ export interface NoteTags {
 }
 
 export interface Organization {
+  billing_email: string | null;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   name: string;

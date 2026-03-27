@@ -196,13 +196,13 @@ upgrade.post("/upgrade/checkout", async (c) => {
     if (!stripeCustomerId) {
       const orgRow = await c.var.db
         .selectFrom("organization")
-        .select("name")
+        .select(["name", "billing_email"])
         .where("id", "=", orgId)
         .executeTakeFirstOrThrow();
 
       const customer = await stripe.customers.create({
         name: orgRow.name,
-        email: user.email,
+        email: orgRow.billing_email || user.email,
         metadata: { organization_id: orgId },
       });
       stripeCustomerId = customer.id;
@@ -243,6 +243,9 @@ upgrade.post("/upgrade/checkout", async (c) => {
       success_url: `${siteRoot}/upgrade?success=true&org=${orgId}`,
       cancel_url: `${siteRoot}/upgrade?canceled=true`,
       allow_promotion_codes: true,
+      billing_address_collection: "required",
+      tax_id_collection: { enabled: true },
+      customer_update: { address: "auto", name: "auto" },
       subscription_data: {
         metadata: { plan: "team", organization_id: orgId },
       },

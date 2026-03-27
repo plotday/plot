@@ -182,7 +182,7 @@ organization.get("/organization/:id", async (c) => {
 
   const org = await c.var.db
     .selectFrom("organization")
-    .select(["id", "name", "created_at"])
+    .select(["id", "name", "billing_email", "created_at"])
     .where("id", "=", orgId)
     .executeTakeFirst();
 
@@ -223,6 +223,7 @@ organization.get("/organization/:id", async (c) => {
   return c.json({
     id: String(org.id),
     name: org.name,
+    billingEmail: org.billing_email,
     created_at: org.created_at,
     members: members.map((m) => ({
       userId: m.user_id,
@@ -288,42 +289,70 @@ organization.post("/organization", async (c) => {
   }
 });
 
-// PATCH /organization/:id - Update org name
+// PATCH /organization/:id - Update org name and/or billing email
 organization.patch("/organization/:id", async (c) => {
   const orgId = c.req.param("id");
+  const user = c.var.user;
 
   if (!(await requireAdmin(c, orgId))) {
     return c.json({ error: "Forbidden" }, 403);
   }
 
-  const body = await c.req.json<{ name: string }>();
+  const body = await c.req.json<{ name?: string; billingEmail?: string | null }>();
 
-  if (!body.name?.trim()) {
-    return c.json({ error: "Name is required" }, 400);
+  if (!body.name?.trim() && body.billingEmail === undefined) {
+    return c.json({ error: "Name or billingEmail is required" }, 400);
   }
 
   try {
-    const trimmedName = body.name.trim();
+    const updates: Record<string, any> = {};
+
+    if (body.name?.trim()) {
+      updates.name = body.name.trim();
+    }
+
+    if (body.billingEmail !== undefined) {
+      updates.billing_email = body.billingEmail?.trim() || null;
+    }
+
     await c.var.db
       .updateTable("organization")
-      .set({ name: trimmedName })
+      .set(updates)
       .where("id", "=", orgId)
       .execute();
 
-    // Update linked priority title
-    const orgPriority = await c.var.db
-      .selectFrom("priority")
-      .select("id")
-      .where("organization_id", "=", orgId as any)
-      .executeTakeFirst();
+    // Update linked priority title if name changed
+    if (updates.name) {
+      const orgPriority = await c.var.db
+        .selectFrom("priority")
+        .select("id")
+        .where("organization_id", "=", orgId as any)
+        .executeTakeFirst();
 
-    if (orgPriority) {
-      await c.var.db
-        .updateTable("priority")
-        .set({ title: trimmedName })
-        .where("id", "=", orgPriority.id)
-        .execute();
-      notifySync(c, orgPriority.id);
+      if (orgPriority) {
+        await c.var.db
+          .updateTable("priority")
+          .set({ title: updates.name })
+          .where("id", "=", orgPriority.id)
+          .execute();
+        notifySync(c, orgPriority.id);
+      }
+    }
+
+    // Sync billing email to Stripe Customer if it changed
+    if (body.billingEmail !== undefined) {
+      const orgSub = await c.var.db
+        .selectFrom("organization_subscription")
+        .select("stripe_customer_id")
+        .where("organization_id", "=", orgId as any)
+        .executeTakeFirst();
+
+      if (orgSub?.stripe_customer_id) {
+        const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
+        await stripe.customers.update(orgSub.stripe_customer_id, {
+          email: updates.billing_email || user.email,
+        });
+      }
     }
 
     return c.json({ success: true });
@@ -649,13 +678,13 @@ organization.post("/organization/:id/upgrade/checkout", async (c) => {
     // Get org details for Stripe customer
     const org = await c.var.db
       .selectFrom("organization")
-      .select("name")
+      .select(["name", "billing_email"])
       .where("id", "=", orgId)
       .executeTakeFirstOrThrow();
 
     const customer = await stripe.customers.create({
       name: org.name,
-      email: user.email,
+      email: org.billing_email || user.email,
       metadata: { organization_id: orgId },
     });
     stripeCustomerId = customer.id;
@@ -701,6 +730,9 @@ organization.post("/organization/:id/upgrade/checkout", async (c) => {
     mode: "subscription",
     success_url: `${siteRoot}/organization/${orgId}?success=true`,
     cancel_url: `${siteRoot}/organization/${orgId}?canceled=true`,
+    billing_address_collection: "required",
+    tax_id_collection: { enabled: true },
+    customer_update: { address: "auto", name: "auto" },
     subscription_data: {
       metadata: {
         plan: "team",
