@@ -63,7 +63,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Asana",
-    logo: "https://api.iconify.design/logos/asana-icon.svg",
+    ...si("asana", "F06A6A", "F06A6A"),
     category: "Project Management",
     entities: ["Tasks", "Projects"],
     available: false,

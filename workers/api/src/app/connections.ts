@@ -28,7 +28,7 @@ const UPCOMING_CONNECTIONS: UpcomingConnection[] = [
   },
   {
     name: "Asana",
-    logo: "https://api.iconify.design/logos/asana-icon.svg",
+    ...si("asana", "F06A6A", "F06A6A"),
     category: "Project Management",
     entities: ["Tasks", "Projects"],
     description: "Manage tasks and projects from Asana",
