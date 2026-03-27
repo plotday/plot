@@ -78,6 +78,10 @@ class PrioritiesBase extends BaseTable {
         .millisecondsSinceEpoch
         .toDouble();
     json['inherit_members'] ??= true;
+    // organization_id comes as a string from the API (PostgreSQL bigint → JSON string)
+    if (json['organization_id'] is String) {
+      json['organization_id'] = int.tryParse(json['organization_id'] as String);
+    }
 
     return PriorityRow.fromJson(json);
   }

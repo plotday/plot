@@ -10,12 +10,19 @@ export type { DB };
 export { sql };
 export type { Kysely };
 
+// PostgreSQL bigint (OID 20) → JS number.
+// Our bigint columns are auto-increment IDs that will never exceed
+// Number.MAX_SAFE_INTEGER (9 quadrillion). Without this, the pg driver
+// returns them as strings, which breaks Dart's Drift ORM deserialization.
+pg.types.setTypeParser(20, (val: string) => parseInt(val, 10));
+
 /** Create a Kysely instance from Hyperdrive or direct connection. Call once per request. */
 export function createDb(env: Bindings) {
   const connectionString = env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("No database connection: set HYPERDRIVE or DATABASE_URL");
   }
+
   const pool = new pg.Pool({
     connectionString,
     max: 1,
