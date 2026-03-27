@@ -361,7 +361,19 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                   return KeyEventResult.ignored;
                 },
                 child: CommandScope(
-                  commands: threadCommandGroupsSync(state.thread),
+                  commandsBuilder: () {
+                    final focusedIndex = listController.focusedIndex;
+                    final note = focusedIndex != null
+                        ? _getNoteAtIndex(state, focusedIndex)
+                        : null;
+                    final threadBloc = context.read<ThreadBloc>();
+                    return [
+                      if (note != null)
+                        ...noteCommandGroups(note, activityBloc: threadBloc),
+                      ...threadCommandGroupsSync(state.thread),
+                    ];
+                  },
+                  listenable: listController,
                   child: Scaffold(
                     scrollable: false,
                     translucent: true,

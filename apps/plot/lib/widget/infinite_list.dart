@@ -57,8 +57,8 @@ class InfiniteListController extends ChangeNotifier {
           // Clear hover when an item gains focus via keyboard
           if (_hoveredIndex != null) {
             _hoveredIndex = null;
-            notifyListeners();
           }
+          notifyListeners();
         }
       });
       _focusNodes[index] = node;
