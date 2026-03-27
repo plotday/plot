@@ -8,10 +8,22 @@ import {
   createStripeClient,
   createFreeTierBillingCycle,
 } from "../stripe/utils";
-import { rpc } from "../rpc";
 import { notifySync } from "./sync/notify";
 
 const organization = new Hono<{ Bindings: Bindings }>();
+
+/** Generate a random 12-char ltree-safe root path in TypeScript.
+ *  Avoids Hyperdrive query caching that affects the DB generate_path() function. */
+function generateRootPath(): string {
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  let result = "";
+  for (let i = 0; i < 12; i++) {
+    result += chars[bytes[i] % chars.length];
+  }
+  return result;
+}
 
 /**
  * Create the org-linked priority and give the user access.
@@ -23,33 +35,39 @@ export async function createOrgPriority(
   orgName: string,
   userId: string
 ): Promise<string> {
-  const path = await rpc(db, "generate_path", { parent: null }) as string;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const path = generateRootPath();
 
-  const priority = await db
-    .insertInto("priority")
-    .values({
-      created_by: userId,
-      title: orgName,
-      path,
-      color: 0,
-      updated_by: 0,
-      key: `@org-${orgId}`,
-      organization_id: orgId as any,
-    })
-    .returning("id")
-    .executeTakeFirstOrThrow();
+    const priority = await db
+      .insertInto("priority")
+      .values({
+        created_by: userId,
+        title: orgName,
+        path,
+        color: 0,
+        updated_by: 0,
+        key: `@org-${orgId}`,
+        organization_id: orgId as any,
+      })
+      .onConflict((oc: any) => oc.column("path").doNothing())
+      .returning("id")
+      .executeTakeFirst();
 
-  // The insert trigger skips @org-* keys, so manually create priority_user
-  await db
-    .insertInto("priority_user")
-    .values({
-      user_id: userId,
-      priority_id: priority.id,
-      personal: false,
-    })
-    .execute();
+    if (priority) {
+      // The insert trigger skips @org-* keys, so manually create priority_user
+      await db
+        .insertInto("priority_user")
+        .values({
+          user_id: userId,
+          priority_id: priority.id,
+          personal: false,
+        })
+        .execute();
 
-  return priority.id;
+      return priority.id;
+    }
+  }
+  throw new Error("Failed to generate unique priority path after 3 attempts");
 }
 
 /**

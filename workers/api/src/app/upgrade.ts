@@ -84,58 +84,92 @@ upgrade.post("/upgrade/checkout", async (c) => {
     let orgId = body.organizationId;
 
     if (!orgId) {
-      // Auto-create org
       const orgName = body.organizationName?.trim();
       if (!orgName) {
         return c.json({ error: "organizationName is required for team plan" }, 400);
       }
 
-      const org = await c.var.db
-        .insertInto("organization")
-        .values({ name: orgName })
-        .returning(["id"])
-        .executeTakeFirstOrThrow();
+      // Reuse org from a previous incomplete checkout attempt (has subscription record with free plan)
+      const pendingOrg = await c.var.db
+        .selectFrom("organization_member as om")
+        .innerJoin("organization_subscription as os", "os.organization_id", "om.organization_id")
+        .innerJoin("organization as o", "o.id", "om.organization_id")
+        .select(["o.id", "o.name"])
+        .where("om.user_id", "=", user.id)
+        .where("om.role", "=", "admin")
+        .where("os.plan", "=", "free")
+        .executeTakeFirst();
 
-      orgId = String(org.id);
+      if (pendingOrg) {
+        orgId = String(pendingOrg.id);
 
-      // Add user as admin
-      await c.var.db
-        .insertInto("organization_member")
-        .values({
-          organization_id: org.id,
+        // Update org name and priority title if the user changed it
+        if (pendingOrg.name !== orgName) {
+          await c.var.db
+            .updateTable("organization")
+            .set({ name: orgName })
+            .where("id", "=", pendingOrg.id)
+            .execute();
+          await c.var.db
+            .updateTable("priority")
+            .set({ title: orgName })
+            .where("organization_id", "=", pendingOrg.id as any)
+            .execute();
+        }
+
+        logger.info("Reusing pending organization for team checkout", {
+          organization_id: orgId,
           user_id: user.id,
-          role: "admin",
-        })
-        .execute();
+        });
+      } else {
+        // Create new org
+        const org = await c.var.db
+          .insertInto("organization")
+          .values({ name: orgName })
+          .returning(["id"])
+          .executeTakeFirstOrThrow();
 
-      // Link user's email domain with auto_join if requested
-      const domainAutoJoin = body.domainAutoJoin !== false; // default true
-      const emailDomain = user.email.split("@")[1]?.toLowerCase();
-      if (emailDomain) {
+        orgId = String(org.id);
+
+        // Add user as admin
         await c.var.db
-          .insertInto("domain")
+          .insertInto("organization_member")
           .values({
-            name: emailDomain,
             organization_id: org.id,
-            auto_join: domainAutoJoin,
+            user_id: user.id,
+            role: "admin",
           })
-          .onConflict((oc) =>
-            oc.column("name").doUpdateSet({
+          .execute();
+
+        // Link user's email domain with auto_join if requested
+        const domainAutoJoin = body.domainAutoJoin !== false; // default true
+        const emailDomain = user.email.split("@")[1]?.toLowerCase();
+        if (emailDomain) {
+          await c.var.db
+            .insertInto("domain")
+            .values({
+              name: emailDomain,
               organization_id: org.id,
               auto_join: domainAutoJoin,
             })
-          )
-          .execute();
+            .onConflict((oc) =>
+              oc.column("name").doUpdateSet({
+                organization_id: org.id,
+                auto_join: domainAutoJoin,
+              })
+            )
+            .execute();
+        }
+
+        // Create org-linked priority
+        const priorityId = await createOrgPriority(c.var.db, org.id, orgName, user.id);
+        notifySync(c, priorityId);
+
+        logger.info("Created organization for team checkout", {
+          organization_id: orgId,
+          user_id: user.id,
+        });
       }
-
-      // Create org-linked priority
-      const priorityId = await createOrgPriority(c.var.db, org.id, orgName, user.id);
-      notifySync(c, priorityId);
-
-      logger.info("Created organization for team checkout", {
-        organization_id: orgId,
-        user_id: user.id,
-      });
     } else {
       // Verify user is admin of existing org
       const member = await c.var.db
