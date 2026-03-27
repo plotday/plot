@@ -385,7 +385,9 @@ class NewThreadPageState extends State<NewThreadPage> {
                 size: 10,
                 color: context.theme.colors.mutedForeground,
               ),
-              child: PriorityLabel(priority: state.draft.priority, muted: true),
+              child: Flexible(
+                child: PriorityLabel(priority: state.draft.priority, muted: true),
+              ),
             ),
           ),
         ),
