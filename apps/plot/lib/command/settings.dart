@@ -127,10 +127,11 @@ List<StaticCommandGroup> settingsCommands({
         EnableNotifications(),
       if (rootPriority != null) ShowAttentionSettings(rootPriority),
       for (final org in adminOrgs)
-        OrgAiPreferences(
-          orgId: org['id'] as String,
-          orgName: org['name'] as String,
-        ),
+        if (org['plan'] != 'free')
+          OrgAiPreferences(
+            orgId: org['id'] as String,
+            orgName: org['name'] as String,
+          ),
       // Only show Enter Behavior setting on devices with physical keyboards
       if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
       if (subscription != null && subscription.hasPaidPlan)
