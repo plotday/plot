@@ -627,21 +627,24 @@ class Thread extends Equatable implements Comparable<Thread> {
       ];
 
       if (records.isNotEmpty) {
-        final response =
-            await api.post<dynamic>('/sync/thread-unread', body: records);
+        final response = await api.post<dynamic>(
+          '/sync/thread-unread',
+          body: records,
+        );
 
         // Server returns { failed: [...threadIds] } for threads we can't access
         if (response is Map && response['failed'] is List) {
           final failedIds = (response['failed'] as List).cast<String>();
           if (failedIds.isNotEmpty) {
             log.warning(
-                'Server rejected ${failedIds.length} thread-unread records: $failedIds');
-            final failedUuids =
-                failedIds.map((id) => Uuid.fromString(id).toBytes()).toList();
+              'Server rejected ${failedIds.length} thread-unread records: $failedIds',
+            );
+            final failedUuids = failedIds
+                .map((id) => Uuid.fromString(id).toBytes())
+                .toList();
             await (Store.get.update(Store.get.threads)
                   ..where((t) => t.id.isIn(failedUuids)))
-                .write(
-                    const ThreadsCompanion(unreadUpdated: Value(null)));
+                .write(const ThreadsCompanion(unreadUpdated: Value(null)));
           }
         }
       }
@@ -657,9 +660,9 @@ class Thread extends Equatable implements Comparable<Thread> {
         // Permanent error (403, 404, 422, etc.) — these threads will never
         // sync successfully. Clear unreadUpdated to stop retrying.
         log.warning(
-            'Permanent error pushing thread-unread, clearing ${unreadActivities.length} records: $e');
-        final allIds =
-            unreadActivities.map((a) => a.id.toBytes()).toList();
+          'Permanent error pushing thread-unread, clearing ${unreadActivities.length} records: $e',
+        );
+        final allIds = unreadActivities.map((a) => a.id.toBytes()).toList();
         await (Store.get.update(Store.get.threads)
               ..where((t) => t.id.isIn(allIds)))
             .write(const ThreadsCompanion(unreadUpdated: Value(null)));
@@ -671,10 +674,10 @@ class Thread extends Equatable implements Comparable<Thread> {
           // the retry loop. The server fix will resolve the root cause;
           // this is a safety net against any future similar issue.
           log.warning(
-              'Thread-unread push failed $_unreadPushFailures times consecutively, '
-              'clearing ${unreadActivities.length} records to break retry loop: $e');
-          final allIds =
-              unreadActivities.map((a) => a.id.toBytes()).toList();
+            'Thread-unread push failed $_unreadPushFailures times consecutively, '
+            'clearing ${unreadActivities.length} records to break retry loop: $e',
+          );
+          final allIds = unreadActivities.map((a) => a.id.toBytes()).toList();
           await (Store.get.update(Store.get.threads)
                 ..where((t) => t.id.isIn(allIds)))
               .write(const ThreadsCompanion(unreadUpdated: Value(null)));
@@ -766,7 +769,12 @@ class Thread extends Equatable implements Comparable<Thread> {
       );
       // Re-sort activity feed for precise recurring event ordering
       if (order == ThreadOrder.reverse) {
-        threads.sort((a, b) => b.activityAt.compareTo(a.activityAt));
+        threads.sort((a, b) {
+          if (a.unread != b.unread) {
+            return a.unread ? -1 : 1;
+          }
+          return b.activityAt.compareTo(a.activityAt);
+        });
       }
       return (threads: threads, rawRowCount: results.length);
     });
@@ -1463,7 +1471,15 @@ class Thread extends Equatable implements Comparable<Thread> {
           coalesce([a.bumpedAt, epoch]),
           schedEnd,
         ]);
-        query.orderBy([OrderingTerm.desc(feedSort)]);
+
+        final unreadSort =
+            a.unread.equals(true) &
+            (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false));
+
+        query.orderBy([
+          OrderingTerm.desc(unreadSort),
+          OrderingTerm.desc(feedSort),
+        ]);
         break;
     }
 
@@ -1725,7 +1741,7 @@ class Thread extends Equatable implements Comparable<Thread> {
               final scheduleRow = result.readTableOrNull(sched);
               if (scheduleRow == null || scheduleRow.occurrence == null) {
                 continue;
-            }
+              }
               // Remove archived occurrences (e.g. cancelled recurring event instances)
               if (scheduleRow.archivedAt != null) {
                 occurrences.remove(scheduleRow.occurrence!);
