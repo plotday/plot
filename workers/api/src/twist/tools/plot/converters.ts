@@ -124,7 +124,6 @@ export function fromDbLink(
   }
 
   return {
-    id: dbLink.id as Uuid,
     threadId: dbLink.thread_id as Uuid,
     source: dbLink.source,
     created: dbLink.source_created_at

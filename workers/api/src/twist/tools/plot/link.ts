@@ -36,7 +36,6 @@ export async function createLink(
     const threadData: any = {
       title: link.title,
       ...(hasSource ? { source: (link as any).source } : {}),
-      ...("id" in link && link.id ? { id: link.id } : {}),
       ...(link.author ? { author: link.author } : {}),
       ...(link.assignee !== undefined ? { assignee: link.assignee } : {}),
       ...(link.meta !== undefined ? { meta: link.meta } : {}),
@@ -404,7 +403,6 @@ export async function getLinks(
 
   for (const row of links) {
     const link: Link = {
-      id: row.id as Uuid,
       threadId: row.thread_id as Uuid,
       source: row.source,
       created: row.source_created_at

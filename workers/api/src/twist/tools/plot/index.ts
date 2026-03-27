@@ -857,7 +857,6 @@ export class Plot extends Tool implements IPlot {
    */
   private buildLinkFromChannelNoteView(item: ChannelNoteCreate): Link {
     return {
-      id: item.link_id as Uuid,
       threadId: item.thread_id as Uuid,
       source: item.link_source,
       created: new Date(),
