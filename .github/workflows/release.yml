@@ -262,7 +262,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: apps/plot/pubspec.yaml
+          flutter-version-file: .flutter-version
           channel: "stable"
           cache: true
 
@@ -447,7 +447,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: apps/plot/pubspec.yaml
+          flutter-version-file: .flutter-version
           channel: "stable"
           cache: true
 
@@ -644,7 +644,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: apps/plot/pubspec.yaml
+          flutter-version-file: .flutter-version
           channel: "stable"
           cache: true
 
@@ -916,7 +916,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: apps/plot/pubspec.yaml
+          flutter-version-file: .flutter-version
           channel: "stable"
           cache: true
 

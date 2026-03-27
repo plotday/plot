@@ -79,7 +79,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
-          flutter-version-file: apps/plot/pubspec.yaml
+          flutter-version-file: .flutter-version
           cache: true
 
       - name: Get dependencies
