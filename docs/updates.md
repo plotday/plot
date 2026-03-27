@@ -1,3 +1,4 @@
+- Fixed clicking on links from connected services (Linear, Jira, etc.) not opening in the browser
 - If you haven't opened Plot in 18 hours after a notification, you'll now get an email digest with all your unread updates grouped by priority
 - Sub-priorities can now opt out of inheriting parent sharing — toggle "Include members of the parent priority" off to keep a sub-priority private from the parent's members
 - Email, calendar, and chat DM connections now create private threads — only the people involved (recipients, attendees, or chat members) can see them

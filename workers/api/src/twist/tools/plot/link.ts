@@ -77,11 +77,16 @@ export async function createLink(
           ])
         )
         .orderBy(
-          sql`CASE
-            WHEN link.source = ${sourceValue} THEN 0
-            WHEN ${relatedSourceValue} IS NOT NULL AND link.source = ${relatedSourceValue} THEN 1
-            ELSE 2
-          END`
+          relatedSourceValue
+            ? sql`CASE
+                WHEN link.source = ${sourceValue} THEN 0
+                WHEN link.source = ${relatedSourceValue} THEN 1
+                ELSE 2
+              END`
+            : sql`CASE
+                WHEN link.source = ${sourceValue} THEN 0
+                ELSE 2
+              END`
         )
         .limit(1)
         .executeTakeFirst();

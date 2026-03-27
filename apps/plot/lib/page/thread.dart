@@ -646,13 +646,13 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
           return GestureDetector(
             onTap: connected
                 ? (sourceUrl != null
-                      ? () {
-                          try {
-                            launchUrl(
-                              Uri.parse(sourceUrl),
-                              mode: LaunchMode.externalApplication,
-                            );
-                          } catch (_) {}
+                      ? () async {
+                          final uri = Uri.tryParse(sourceUrl);
+                          if (uri == null) return;
+                          await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          );
                         }
                       : null)
                 : () {
@@ -1013,13 +1013,10 @@ class _ConferencingButton extends StatelessWidget {
     return FTooltip(
       tipBuilder: (context, controller) => Text(tooltip),
       child: GestureDetector(
-        onTap: () {
-          try {
-            launchUrl(
-              Uri.parse(action.url),
-              mode: LaunchMode.externalApplication,
-            );
-          } catch (_) {}
+        onTap: () async {
+          final uri = Uri.tryParse(action.url);
+          if (uri == null) return;
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
         },
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
@@ -1133,14 +1130,11 @@ class _ThreadLinkMenuState extends State<_ThreadLinkMenu> {
             final ext = action as ExternalUserAction;
             return FItem(
               title: Text(ext.title),
-              onPress: () {
+              onPress: () async {
                 _controller.hide();
-                try {
-                  launchUrl(
-                    Uri.parse(ext.url),
-                    mode: LaunchMode.externalApplication,
-                  );
-                } catch (_) {}
+                final uri = Uri.tryParse(ext.url);
+                if (uri == null) return;
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
               },
             );
           case UserActionType.conferencing:
@@ -1154,14 +1148,11 @@ class _ThreadLinkMenuState extends State<_ThreadLinkMenu> {
             };
             return FItem(
               title: Text(confTitle),
-              onPress: () {
+              onPress: () async {
                 _controller.hide();
-                try {
-                  launchUrl(
-                    Uri.parse(conf.url),
-                    mode: LaunchMode.externalApplication,
-                  );
-                } catch (_) {}
+                final uri = Uri.tryParse(conf.url);
+                if (uri == null) return;
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
               },
             );
           default:
