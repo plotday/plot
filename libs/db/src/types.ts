@@ -323,6 +323,7 @@ export type Database = {
           meta: Json | null
           preview: string | null
           priority_id: string | null
+          related_source: string | null
           source: string | null
           source_created_at: string
           source_priority_root: unknown
@@ -351,6 +352,7 @@ export type Database = {
           meta?: Json | null
           preview?: string | null
           priority_id?: string | null
+          related_source?: string | null
           source?: string | null
           source_created_at?: string
           source_priority_root?: unknown
@@ -379,6 +381,7 @@ export type Database = {
           meta?: Json | null
           preview?: string | null
           priority_id?: string | null
+          related_source?: string | null
           source?: string | null
           source_created_at?: string
           source_priority_root?: unknown

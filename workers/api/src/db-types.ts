@@ -277,6 +277,10 @@ export interface Link {
   preview: string | null;
   priority_id: string | null;
   /**
+   * Cross-connector thread bundling key. Links whose source matches another link's related_source share a thread, regardless of creation order.
+   */
+  related_source: string | null;
+  /**
    * External source identifier for deduplication and sync. Used with source_priority_root for upsert behavior.
    */
   source: string | null;
@@ -1036,6 +1040,11 @@ export interface TwistAdmin {
   user_id: string | null;
 }
 
+export interface TwistReviewer {
+  created_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface Usage {
   amount: number;
   cost_id: Int8;
@@ -1370,6 +1379,7 @@ export interface DB {
   token: Token;
   twist: Twist;
   twist_admin: TwistAdmin;
+  twist_reviewer: TwistReviewer;
   usage: Usage;
   user: User;
   user_settings: UserSettings;

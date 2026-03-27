@@ -10,6 +10,9 @@ CREATE TABLE "public"."link" (
     "source_created_at" timestamp with time zone NOT NULL DEFAULT now(),
     -- Root of the priority path, set by trigger when source is non-null
     "source_priority_root" ltree,
+    -- Cross-connector thread bundling: links with source matching another link's
+    -- related_source (or vice versa) share the same thread
+    "related_source" text,
     -- Actor ID to credit with creating this link
     "author_id" uuid,
     -- Twist definition ID (twist_admin.id) that created this link
@@ -52,6 +55,8 @@ COMMENT ON COLUMN "public"."link"."source_created_at" IS 'When this link was ori
 
 COMMENT ON COLUMN "public"."link"."source_priority_root" IS 'Root element of the priority path. Set by trigger when source is non-null. Used with source to ensure uniqueness per top-level priority.';
 
+COMMENT ON COLUMN "public"."link"."related_source" IS 'Cross-connector thread bundling key. Links whose source matches another link''s related_source share a thread, regardless of creation order.';
+
 COMMENT ON COLUMN "public"."link"."author_id" IS 'The actor to credit with creating this link. For links created by twists on behalf of contacts or users, this is the contact/user.';
 
 COMMENT ON COLUMN "public"."link"."twist_id" IS 'The twist definition ID (twist_admin.id) that created this link. Null for user-created links.';
@@ -80,6 +85,11 @@ CREATE INDEX idx_link_thread_id ON "public"."link" ("thread_id");
 CREATE INDEX idx_link_priority_id ON "public"."link" ("priority_id")
 WHERE
     priority_id IS NOT NULL;
+
+-- Index for cross-connector thread bundling via related_source
+CREATE INDEX idx_link_related_source ON "public"."link" ("related_source")
+WHERE
+    related_source IS NOT NULL;
 
 -- Support incremental sync queries filtering on updated_at
 CREATE INDEX idx_link_updated_at ON "public"."link" ("updated_at");
