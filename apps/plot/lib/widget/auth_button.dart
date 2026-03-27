@@ -156,6 +156,10 @@ class AuthButton extends StatefulWidget {
 class _AuthButtonState extends State<AuthButton> {
   bool _isLoading = false;
 
+  /// Pre-computed nonce so GoogleSignIn is ready when the user taps.
+  /// Re-generated after each sign-in attempt.
+  String? _pendingNonce;
+
   @override
   void initState() {
     super.initState();
@@ -171,8 +175,38 @@ class _AuthButtonState extends State<AuthButton> {
             }
           }());
         }
+
+        // Pre-initialize GoogleSignIn with a nonce so the sign-in prompt
+        // appears faster when the user taps the button.
+        if (widget._onOIDCAuth != null) {
+          _preInitGoogleSignIn();
+        }
       }
     }
+  }
+
+  /// Pre-initialize GoogleSignIn with a fresh nonce in the background.
+  void _preInitGoogleSignIn() {
+    _pendingNonce = _generateNonce();
+    unawaited(() async {
+      late final String clientId;
+      String? serverClientId;
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        clientId = Env.googleAndroidClientId;
+        serverClientId = Env.googleClientId;
+      } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS) {
+        clientId = Env.googleIosClientId;
+        serverClientId = Env.googleClientId;
+      } else {
+        clientId = Env.googleClientId;
+      }
+      await GoogleSignIn.instance.initialize(
+        clientId: clientId,
+        serverClientId: serverClientId,
+        nonce: _pendingNonce,
+      );
+    }());
   }
 
   Future<void> _onGoogleSignIn(GoogleSignInAccount account) async {
@@ -217,7 +251,8 @@ class _AuthButtonState extends State<AuthButton> {
       // The nonce is embedded in the ID token; without it Clerk can reject
       // the token as "not authorized" (confirmed on Android, preventive on
       // iOS/macOS).
-      if (!kIsWeb) {
+      // If we pre-initialized in initState, skip the re-init to reduce delay.
+      if (!kIsWeb && _pendingNonce == null) {
         late final String clientId;
         String? serverClientId;
         if (defaultTargetPlatform == TargetPlatform.android) {
@@ -236,6 +271,8 @@ class _AuthButtonState extends State<AuthButton> {
           nonce: _generateNonce(),
         );
       }
+      // Consume the pre-warmed nonce so the next attempt re-initializes fresh.
+      _pendingNonce = null;
 
       // Always sign out first to force account selection
       await GoogleSignIn.instance.signOut();
@@ -283,6 +320,10 @@ class _AuthButtonState extends State<AuthButton> {
       }
       return;
     } finally {
+      // Pre-initialize for the next attempt so it's fast if they retry.
+      if (mounted && widget._onOIDCAuth != null) {
+        _preInitGoogleSignIn();
+      }
       if (mounted) {
         setState(() => _isLoading = false);
       }
