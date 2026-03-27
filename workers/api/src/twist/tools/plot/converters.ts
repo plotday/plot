@@ -139,6 +139,7 @@ export function fromDbLink(
     meta: dbLink.meta as ThreadMeta | null,
     sourceUrl: dbLink.source_url,
     channelId: dbLink.channel_id ?? null,
+    relatedSource: (dbLink as any).related_source ?? null,
   };
 }
 

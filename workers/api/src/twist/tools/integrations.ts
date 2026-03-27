@@ -376,6 +376,7 @@ export class Integrations extends Tool implements IAuth {
    * Delegates to an internal Plot instance.
    */
   async saveLink(link: NewLinkWithNotes): Promise<Uuid> {
+    console.log('[saveLink] sourceUrl:', link.sourceUrl, 'keys:', Object.keys(link).join(','));
     let targetPriorityId = this.priorityId;
     let createThreads: string = "all";
 
@@ -633,18 +634,20 @@ export class Integrations extends Tool implements IAuth {
     const updatedBy = plot.getUpdatedBy();
     const syncDepth = plot.syncDepth + 1;
 
-    // Insert tags that should be present
-    for (const tagId of contributedTags) {
+    // Batch insert tags that should be present
+    if (contributedTags.size > 0) {
+      const tagValues = [...contributedTags].map((tagId) => ({
+        thread_id: threadId as string,
+        occurrence: null,
+        tag_id: tagId,
+        actor_id: this.priorityTwistId,
+        updated_by: updatedBy,
+        sync_depth: syncDepth,
+      }));
+
       await this.db
         .insertInto("thread_tag")
-        .values({
-          thread_id: threadId as string,
-          occurrence: null,
-          tag_id: tagId,
-          actor_id: this.priorityTwistId,
-          updated_by: updatedBy,
-          sync_depth: syncDepth,
-        })
+        .values(tagValues)
         .onConflict((oc) =>
           oc
             .columns(["actor_id", "thread_id", "occurrence", "tag_id"])
@@ -657,18 +660,17 @@ export class Integrations extends Tool implements IAuth {
         .execute();
     }
 
-    // Remove tags that are no longer contributed (archive them)
-    for (const tagId of allPossibleTags) {
-      if (!contributedTags.has(tagId)) {
-        await this.db
-          .updateTable("thread_tag")
-          .set({ archived_at: new Date(), updated_by: updatedBy, sync_depth: syncDepth })
-          .where("thread_id", "=", threadId as string)
-          .where("actor_id", "=", this.priorityTwistId)
-          .where("tag_id", "=", tagId)
-          .where("archived_at", "is", null)
-          .execute();
-      }
+    // Batch archive tags that are no longer contributed
+    const tagsToArchive = [...allPossibleTags].filter((t) => !contributedTags.has(t));
+    if (tagsToArchive.length > 0) {
+      await this.db
+        .updateTable("thread_tag")
+        .set({ archived_at: new Date(), updated_by: updatedBy, sync_depth: syncDepth })
+        .where("thread_id", "=", threadId as string)
+        .where("actor_id", "=", this.priorityTwistId)
+        .where("tag_id", "in", tagsToArchive)
+        .where("archived_at", "is", null)
+        .execute();
     }
   }
 

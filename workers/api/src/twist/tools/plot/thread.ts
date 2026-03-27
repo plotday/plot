@@ -89,7 +89,7 @@ export type { PreparedThread as PreparedActivity } from "./thread-helpers";
 export async function createThread(
   plot: Plot,
   activity: NewThread | NewThreadWithNotes
-): Promise<Uuid> {
+): Promise<{ id: Uuid; priorityId: string }> {
   try {
     // Use shared helper for all preparation logic
     const { priorityId, authorId, ...prep } =
@@ -202,7 +202,7 @@ export async function createThread(
           // The cast is safe because database IDs are valid UUIDs.
           thread: { id: dbResult.id as Uuid },
         })),
-        { priority_id: priorityId }
+        { priority_id: priorityId, created_by: plot.priorityTwistId }
       );
     }
 
@@ -287,8 +287,7 @@ export async function createThread(
     // Notify sync DOs since triggers skip HTTP calls for twist writes
     await plot.notifySyncDOs(new Set([priorityId]));
 
-    // Return just the ID for efficiency
-    return dbResult.id as Uuid;
+    return { id: dbResult.id as Uuid, priorityId };
   } catch (error) {
     handleDbOperationError(error, "createThread", plot.priorityTwistId, {
       has_notes: "notes" in activity && !!activity.notes?.length,
@@ -913,7 +912,7 @@ export async function createThreads(
     // Create notes for each priority group, passing context to skip
     // redundant activity fetches inside createNote.
     for (const [priorityId, notes] of notesByPriority) {
-      await createNotes(plot, notes, { priority_id: priorityId });
+      await createNotes(plot, notes, { priority_id: priorityId, created_by: plot.priorityTwistId });
     }
 
     // Mark activities as read based on unread flag:

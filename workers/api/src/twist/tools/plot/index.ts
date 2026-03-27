@@ -870,6 +870,7 @@ export class Plot extends Tool implements IPlot {
       meta: item.link_meta as any,
       sourceUrl: item.link_source_url,
       channelId: item.link_channel_id ?? null,
+      relatedSource: null,
     };
   }
 
@@ -1295,7 +1296,8 @@ export class Plot extends Tool implements IPlot {
   async createThread(
     thread: NewThread | NewThreadWithNotes
   ): Promise<Uuid> {
-    return threadOps.createThread(this, thread);
+    const { id } = await threadOps.createThread(this, thread);
+    return id;
   }
 
   // Link operations

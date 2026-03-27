@@ -59,6 +59,7 @@ export function ensureIncreasingCreatedTimestamps(notes: NewNote[]): NewNote[] {
  */
 export type ActivityContext = {
   priority_id: string;
+  created_by?: string;
 };
 
 export async function createNote(
@@ -117,13 +118,17 @@ export async function createNote(
     let threadCreatedBy: string | null = null;
     if (activityContext) {
       priorityId = activityContext.priority_id;
-      // Still need created_by for auto-mention logic
-      const threadRow = await plot.db
-        .selectFrom("thread")
-        .select("created_by")
-        .where("id", "=", activityId)
-        .executeTakeFirst();
-      threadCreatedBy = threadRow?.created_by ?? null;
+      if (activityContext.created_by) {
+        threadCreatedBy = activityContext.created_by;
+      } else {
+        // Fallback: fetch created_by for auto-mention logic
+        const threadRow = await plot.db
+          .selectFrom("thread")
+          .select("created_by")
+          .where("id", "=", activityId)
+          .executeTakeFirst();
+        threadCreatedBy = threadRow?.created_by ?? null;
+      }
     } else {
       const activityData = await plot.db
         .selectFrom("thread")

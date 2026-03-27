@@ -25,6 +25,7 @@ DECLARE
     v_author_id uuid;
     v_assignee_id uuid;
     v_priority_id uuid;
+    v_role text;
 BEGIN
     -- Extract required fields from JSONB, with fallback to p_defaults for INSERT
     v_id := COALESCE((p_link ->> 'id')::uuid, (p_defaults ->> 'id')::uuid);
@@ -33,17 +34,9 @@ BEGIN
     v_created_by := COALESCE((p_link ->> 'created_by')::uuid, (p_defaults ->> 'created_by')::uuid, user_id);
     v_author_id := COALESCE((p_link ->> 'author_id')::uuid, (p_defaults ->> 'author_id')::uuid, v_created_by);
 
-    -- DERIVE source_priority_root from thread's priority when source exists
+    -- DERIVE source_priority_root if explicitly provided
     IF p_link ? 'source_priority_root' AND (p_link ->> 'source_priority_root') IS NOT NULL THEN
         v_source_priority_root := (p_link ->> 'source_priority_root')::ltree;
-    ELSIF v_source IS NOT NULL AND v_thread_id IS NOT NULL THEN
-        SELECT
-            subpath (p.path, 0, 1) INTO v_source_priority_root
-        FROM
-            thread t
-            JOIN priority p ON p.id = t.priority_id
-        WHERE
-            t.id = v_thread_id;
     END IF;
 
     -- Generate id if not provided
@@ -65,56 +58,61 @@ BEGIN
         RAISE EXCEPTION 'thread_id must be provided';
     END IF;
 
-    -- Get priority_id from thread for access check
+    -- Single query: get priority_id, derive source_priority_root, check access + role
     SELECT
-        t.priority_id INTO v_priority_id
+        t.priority_id,
+        CASE WHEN v_source_priority_root IS NULL AND v_source IS NOT NULL
+            THEN subpath(p.path, 0, 1)
+            ELSE v_source_priority_root
+        END,
+        CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE COALESCE(MAX(pu.role), NULL) END
+    INTO v_priority_id, v_source_priority_root, v_role
     FROM
         thread t
+        JOIN priority p ON p.id = t.priority_id
+        LEFT JOIN priority pp ON p.path <@ pp.path
+        LEFT JOIN priority_user pu ON pu.priority_id = pp.id
+            AND pu.user_id = upsert_link.user_id
+            AND pu.archived_at IS NULL
     WHERE
-        t.id = v_thread_id;
+        t.id = v_thread_id
+    GROUP BY t.priority_id, p.path;
 
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
-
-    -- Validate access to the priority
-    IF NOT EXISTS (
-        SELECT
-            1
-        FROM
-            priority_user pu
-            JOIN priority pp ON pu.priority_id = pp.id
-            JOIN priority p ON p.path <@ pp.path
-        WHERE
-            pu.user_id = upsert_link.user_id
-            AND pu.archived_at IS NULL
-            AND p.id = v_priority_id) THEN
+    IF v_role IS NULL THEN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
-    -- Enforce viewer restriction: viewers cannot create or modify links
-    IF "user".get_effective_role(upsert_link.user_id, v_priority_id) = 'viewer' THEN
+    IF v_role = 'viewer' THEN
         RAISE EXCEPTION 'Viewer members cannot create or modify links';
     END IF;
 
     -- For existing links, preserve the original created_by (any priority member
     -- can update link fields like assignee_id without owning the creator entity).
     -- For new links, validate that created_by is the user or their owned twist.
-    IF EXISTS (SELECT 1 FROM link WHERE id = v_id) THEN
-        SELECT l.created_by INTO v_created_by FROM link l WHERE l.id = v_id;
-    ELSE
-        IF v_created_by IS DISTINCT FROM user_id THEN
-            IF NOT EXISTS (
-                SELECT
-                    1
-                FROM
-                    priority_twist pt
-                WHERE
-                    pt.id = v_created_by
-                    AND pt.owner_id = upsert_link.user_id) THEN
-                RAISE EXCEPTION 'created_by must be user or owned priority_twist';
+    -- Single query instead of EXISTS + separate SELECT
+    DECLARE
+        v_existing_created_by uuid;
+    BEGIN
+        SELECT l.created_by INTO v_existing_created_by FROM link l WHERE l.id = v_id;
+        IF v_existing_created_by IS NOT NULL THEN
+            v_created_by := v_existing_created_by;
+        ELSE
+            IF v_created_by IS DISTINCT FROM user_id THEN
+                IF NOT EXISTS (
+                    SELECT
+                        1
+                    FROM
+                        priority_twist pt
+                    WHERE
+                        pt.id = v_created_by
+                        AND pt.owner_id = upsert_link.user_id) THEN
+                    RAISE EXCEPTION 'created_by must be user or owned priority_twist';
+                END IF;
             END IF;
         END IF;
-    END IF;
+    END;
 
     -- DERIVE twist_id from created_by (priority_twist_id)
     IF p_link ? 'twist_id' AND (p_link ->> 'twist_id') IS NOT NULL THEN
@@ -140,7 +138,7 @@ BEGIN
     -- Perform the upsert and return the full row
     INSERT INTO link (id, thread_id, source, source_created_at, author_id, twist_id,
         created_by, updated_by, sync_depth, title, preview, assignee_id, type, status,
-        actions, meta, source_url, embedding, match, merged_from_thread_id)
+        actions, meta, source_url, embedding, match, merged_from_thread_id, related_source)
         VALUES (v_id, v_thread_id, v_source,
             COALESCE((p_link ->> 'source_created_at')::timestamptz, (p_defaults ->> 'source_created_at')::timestamptz, now()),
             v_author_id, v_twist_id, v_created_by,
@@ -156,7 +154,8 @@ BEGIN
             COALESCE(p_link ->> 'source_url', p_defaults ->> 'source_url'),
             COALESCE((p_link ->> 'embedding')::halfvec, (p_defaults ->> 'embedding')::halfvec),
             COALESCE(p_link -> 'match', p_defaults -> 'match'),
-            COALESCE((p_link ->> 'merged_from_thread_id')::uuid, (p_defaults ->> 'merged_from_thread_id')::uuid))
+            COALESCE((p_link ->> 'merged_from_thread_id')::uuid, (p_defaults ->> 'merged_from_thread_id')::uuid),
+            COALESCE(p_link ->> 'related_source', p_defaults ->> 'related_source'))
     ON CONFLICT (source, source_priority_root)
         DO UPDATE SET
             title = CASE WHEN p_link ? 'title' THEN
@@ -220,6 +219,11 @@ BEGIN
                 (p_link ->> 'merged_from_thread_id')::uuid
             ELSE
                 link.merged_from_thread_id
+            END,
+            related_source = CASE WHEN p_link ? 'related_source' THEN
+                p_link ->> 'related_source'
+            ELSE
+                link.related_source
             END
         RETURNING
             * INTO v_result;

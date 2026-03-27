@@ -16,6 +16,7 @@ DECLARE
     v_thread_id uuid;
     v_link_id uuid;
     v_priority_id uuid;
+    v_role text;
     v_schedule_user_id uuid;
     v_recurrence_exdates timestamptz[];
     v_recurrence_exdates_add timestamptz[];
@@ -43,33 +44,50 @@ BEGIN
         RAISE EXCEPTION 'thread_id or link_id must be provided';
     END IF;
 
-    -- Look up priority for access check
+    -- Look up priority and check access + role in a single query
     IF v_thread_id IS NOT NULL THEN
         SELECT
-            a.priority_id INTO v_priority_id
+            a.priority_id,
+            CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE COALESCE(MAX(pu.role), NULL) END
+        INTO v_priority_id, v_role
         FROM
             thread a
+            JOIN priority p ON p.id = a.priority_id
+            LEFT JOIN priority pp ON p.path <@ pp.path
+            LEFT JOIN priority_user pu ON pu.priority_id = pp.id
+                AND pu.user_id = upsert_schedule.user_id
+                AND pu.archived_at IS NULL
         WHERE
-            a.id = v_thread_id;
+            a.id = v_thread_id
+        GROUP BY a.priority_id;
         IF v_priority_id IS NULL THEN
             RAISE EXCEPTION 'Thread not found';
         END IF;
     ELSIF v_link_id IS NOT NULL THEN
         SELECT
-            t.priority_id INTO v_priority_id
+            t.priority_id,
+            CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE COALESCE(MAX(pu.role), NULL) END
+        INTO v_priority_id, v_role
         FROM
             link l
             JOIN thread t ON t.id = l.thread_id
+            JOIN priority p ON p.id = t.priority_id
+            LEFT JOIN priority pp ON p.path <@ pp.path
+            LEFT JOIN priority_user pu ON pu.priority_id = pp.id
+                AND pu.user_id = upsert_schedule.user_id
+                AND pu.archived_at IS NULL
         WHERE
-            l.id = v_link_id;
+            l.id = v_link_id
+        GROUP BY t.priority_id;
         IF v_priority_id IS NULL THEN
             RAISE EXCEPTION 'Link not found';
         END IF;
     END IF;
 
-    PERFORM "user".assert_priority_access(upsert_schedule.user_id, v_priority_id);
-    -- Enforce viewer restriction: viewers cannot create or modify schedules
-    IF "user".get_effective_role(upsert_schedule.user_id, v_priority_id) = 'viewer' THEN
+    IF v_role IS NULL THEN
+        RAISE EXCEPTION 'User does not have access to this priority';
+    END IF;
+    IF v_role = 'viewer' THEN
         RAISE EXCEPTION 'Viewer members cannot create or modify schedules';
     END IF;
 

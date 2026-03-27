@@ -55,14 +55,35 @@ export async function createLink(
     // For source-based links, look up existing link to reuse its thread.
     // This handles reconnection: when a source is archived (threads archived)
     // and reinstalled, the existing thread is found and unarchived by upsert_thread.
+    // Single query combines exact source match, relatedSource match, and reverse match
+    // with priority ordering via CASE expression.
+    const priorityRootFilter = sql<boolean>`link.source_priority_root = (SELECT subpath(path, 0, 1) FROM priority WHERE id = ${plot.priorityId})`;
+
     if (hasSource && !threadData.id) {
+      const sourceValue = (link as any).source as string;
+      const relatedSourceValue = link.relatedSource ?? null;
+
       const existingLink = await plot.db
         .selectFrom("link")
         .select("link.thread_id")
-        .where("link.source", "=", (link as any).source as string)
-        .where(
-          sql<boolean>`link.source_priority_root = (SELECT subpath(path, 0, 1) FROM priority WHERE id = ${plot.priorityId})`
+        .where(priorityRootFilter)
+        .where((eb) =>
+          eb.or([
+            eb("link.source", "=", sourceValue),
+            ...(relatedSourceValue
+              ? [eb("link.source", "=", relatedSourceValue)]
+              : []),
+            eb("link.related_source", "=", sourceValue),
+          ])
         )
+        .orderBy(
+          sql`CASE
+            WHEN link.source = ${sourceValue} THEN 0
+            WHEN ${relatedSourceValue} IS NOT NULL AND link.source = ${relatedSourceValue} THEN 1
+            ELSE 2
+          END`
+        )
+        .limit(1)
         .executeTakeFirst();
 
       if (existingLink) {
@@ -70,7 +91,7 @@ export async function createLink(
       }
     }
 
-    // Look up twist_id for icon
+    // Look up twist_id for icon — passed to threadData so createThread skips its own lookup
     const ptRow = await plot.db
       .selectFrom("priority_twist")
       .select("twist_id")
@@ -82,15 +103,9 @@ export async function createLink(
         : `connector:${ptRow.twist_id}`;
     }
 
-    let threadId = await createThread(plot, threadData);
+    let { id: threadId, priorityId: threadPriorityId } = await createThread(plot, threadData);
 
-    // Step 2: Create the link row
-    // Read back the thread to get priority_id
-    const thread = await plot.db
-      .selectFrom("thread")
-      .select(["priority_id"])
-      .where("id", "=", threadId)
-      .executeTakeFirstOrThrow();
+    // Step 2: Create the link row (priority_id returned from createThread)
 
     // Generate preview for link
     let previewText: string | null = null;
@@ -115,7 +130,7 @@ export async function createLink(
       assigneeId = await processNewActor(
         plot,
         link.assignee,
-        thread.priority_id
+        threadPriorityId
       );
     }
 
@@ -144,6 +159,9 @@ export async function createLink(
         ? { match: link.pickPriority as Json | null }
         : {}),
       ...(link.channelId !== undefined ? { channel_id: link.channelId } : {}),
+      ...(link.relatedSource !== undefined
+        ? { related_source: link.relatedSource }
+        : {}),
     };
 
     let linkId: string;
@@ -168,6 +186,8 @@ export async function createLink(
       if (assigneeId !== undefined) linkUpsert.assignee_id = assigneeId;
       if (link.sourceUrl !== undefined) linkUpsert.source_url = link.sourceUrl;
       if (link.channelId !== undefined) linkUpsert.channel_id = link.channelId;
+      if (link.relatedSource !== undefined)
+        linkUpsert.related_source = link.relatedSource;
 
       const userId = await plot.getUserId();
       const linkResult = await rpcUser(plot.db, "upsert_link", {
@@ -186,6 +206,74 @@ export async function createLink(
           .where("id", "=", threadId)
           .execute();
         threadId = linkResult.thread_id as Uuid;
+      }
+
+      // Post-insert reconciliation for relatedSource race conditions.
+      // If this link has relatedSource and the related link is on a different thread,
+      // move this link to the related link's thread.
+      if (link.relatedSource) {
+        const relatedLink = await plot.db
+          .selectFrom("link")
+          .select(["link.thread_id"])
+          .where("link.source", "=", link.relatedSource)
+          .where("link.thread_id", "!=", threadId)
+          .where(priorityRootFilter)
+          .executeTakeFirst();
+
+        if (relatedLink?.thread_id) {
+          const oldThreadId = threadId;
+          threadId = relatedLink.thread_id as Uuid;
+          await plot.db
+            .updateTable("link")
+            .set({ thread_id: threadId })
+            .where("id", "=", linkId)
+            .execute();
+          // Delete orphaned thread if no other links reference it
+          const remaining = await plot.db
+            .selectFrom("link")
+            .select("link.id")
+            .where("link.thread_id", "=", oldThreadId)
+            .executeTakeFirst();
+          if (!remaining) {
+            await plot.db
+              .deleteFrom("thread")
+              .where("id", "=", oldThreadId)
+              .execute();
+          }
+        }
+      }
+
+      // Reverse reconciliation: move links whose related_source matches this
+      // link's source to this thread.
+      {
+        const reverseLinks = await plot.db
+          .selectFrom("link")
+          .select(["link.id", "link.thread_id"])
+          .where("link.related_source", "=", (link as any).source as string)
+          .where("link.thread_id", "!=", threadId)
+          .where(priorityRootFilter)
+          .execute();
+
+        for (const rl of reverseLinks) {
+          const oldThreadId = rl.thread_id;
+          await plot.db
+            .updateTable("link")
+            .set({ thread_id: threadId })
+            .where("id", "=", rl.id)
+            .execute();
+          // Delete orphaned thread if no other links reference it
+          const remaining = await plot.db
+            .selectFrom("link")
+            .select("link.id")
+            .where("link.thread_id", "=", oldThreadId!)
+            .executeTakeFirst();
+          if (!remaining) {
+            await plot.db
+              .deleteFrom("thread")
+              .where("id", "=", oldThreadId!)
+              .execute();
+          }
+        }
       }
     } else {
       // Plain insert for links without source
@@ -220,7 +308,7 @@ export async function createLink(
       await createLinkSchedules(
         plot,
         linkId,
-        thread.priority_id,
+        threadPriorityId,
         link.schedules,
         link.scheduleOccurrences
       );
@@ -297,6 +385,9 @@ export async function createLinkOnly(
       source_url: link.sourceUrl ?? null,
       channel_id: link.channelId ?? null,
       match: link.pickPriority ?? null,
+      ...(link.relatedSource !== undefined
+        ? { related_source: link.relatedSource }
+        : {}),
     };
 
     if (hasSource) {
@@ -318,6 +409,8 @@ export async function createLinkOnly(
       if (assigneeId !== undefined) linkUpsert.assignee_id = assigneeId;
       if (link.sourceUrl !== undefined) linkUpsert.source_url = link.sourceUrl;
       if (link.channelId !== undefined) linkUpsert.channel_id = link.channelId;
+      if (link.relatedSource !== undefined)
+        linkUpsert.related_source = link.relatedSource;
 
       const userId = await plot.getUserId();
       const linkResult = await rpcUser(plot.db, "upsert_link", {
@@ -440,6 +533,7 @@ export async function getLinks(
       meta: row.meta as any,
       sourceUrl: row.source_url,
       channelId: row.channel_id ?? null,
+      relatedSource: null,
     };
 
     // Fetch notes for this link's thread

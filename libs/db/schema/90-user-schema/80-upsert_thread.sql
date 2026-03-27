@@ -23,6 +23,7 @@ DECLARE
     -- Variables for derived values
     v_priority_id uuid;
     v_created_by uuid;
+    v_role text;
     -- Archived status check
     v_is_archived boolean;
 BEGIN
@@ -55,22 +56,22 @@ BEGIN
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'priority_id must be provided';
     END IF;
-    -- Validate access to the priority
-    IF NOT EXISTS (
-        SELECT
-            1
-        FROM
-            priority_user pu
-            JOIN priority pp ON pu.priority_id = pp.id
-            JOIN priority p ON p.path <@ pp.path
-        WHERE
-            pu.user_id = upsert_thread.user_id
-            AND pu.archived_at IS NULL
-            AND p.id = v_priority_id) THEN
+    -- Validate access and role in a single query
+    SELECT
+        CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE COALESCE(MAX(pu.role), NULL) END
+    INTO v_role
+    FROM
+        priority_user pu
+        JOIN priority pp ON pu.priority_id = pp.id
+        JOIN priority p ON p.path <@ pp.path
+    WHERE
+        pu.user_id = upsert_thread.user_id
+        AND pu.archived_at IS NULL
+        AND p.id = v_priority_id;
+    IF v_role IS NULL THEN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
-    -- Enforce viewer restriction: viewers cannot create or modify threads
-    IF "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
+    IF v_role = 'viewer' THEN
         RAISE EXCEPTION 'Viewer members cannot create or modify threads';
     END IF;
     -- Validate created_by when it differs from user_id
