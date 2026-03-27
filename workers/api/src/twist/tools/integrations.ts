@@ -376,7 +376,6 @@ export class Integrations extends Tool implements IAuth {
    * Delegates to an internal Plot instance.
    */
   async saveLink(link: NewLinkWithNotes): Promise<Uuid> {
-    console.log('[saveLink] sourceUrl:', link.sourceUrl, 'keys:', Object.keys(link).join(','));
     let targetPriorityId = this.priorityId;
     let createThreads: string = "all";
 
