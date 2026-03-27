@@ -16,6 +16,7 @@ abstract class Env {
 
     clerkPublishableKey = getEnvOrThrow('CLERK_PUBLISHABLE_KEY');
 
+    siteRoot = _translateUrl(getEnvOrThrow('SITE_ROOT'));
     apiRoot = _translateUrl('${getEnvOrThrow('API_ROOT')}/app');
     authServerCallbackUrl = getEnvOrThrow('AUTH_GOOGLE_URI');
     authCallbackUrl = getEnvOrThrow('AUTH_CALLBACK_URL');
@@ -54,6 +55,7 @@ abstract class Env {
 
   static late final String clerkPublishableKey;
 
+  static late final String siteRoot;
   static late final String apiRoot;
   static late final String authCallbackUrl;
   static late final String authServerCallbackUrl;

@@ -397,7 +397,7 @@ class UpgradePlan extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     await launchUrl(
-      Uri.parse('https://plot.day/upgrade'),
+      Uri.parse('${Env.siteRoot}/upgrade'),
       mode: LaunchMode.externalApplication,
     );
     return const CommandDone();

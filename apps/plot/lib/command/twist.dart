@@ -156,7 +156,7 @@ class ManageConnections extends Command {
         onRefreshNeeded: (refresh) => refreshFn = refresh,
         onSelect: (ctx, item, _) async {
           if (item is _LimitBanner) {
-            launchUrl(Uri.parse('https://plot.day/upgrade'));
+            launchUrl(Uri.parse('${Env.siteRoot}/upgrade'));
             return false;
           } else if (item is _ActiveSource) {
             await EditSource(
@@ -1323,7 +1323,7 @@ class _UpgradeBannerCommand extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    launchUrl(Uri.parse('https://plot.day/upgrade'));
+    launchUrl(Uri.parse('${Env.siteRoot}/upgrade'));
     return const CommandSkipped();
   }
 
