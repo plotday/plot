@@ -39,4 +39,25 @@ SELECT
     ) AS self
 FROM
     upa_agg ua
-    JOIN actor a ON a.id = ua.actor_id;
+    JOIN actor a ON a.id = ua.actor_id
+UNION ALL
+-- User's own non-primary contacts (ensures notes authored by
+-- alternate contacts resolve to a name instead of "Unknown")
+SELECT
+    c.user_id,
+    a.id,
+    a.created_at,
+    a.updated_at,
+    a.archived_at,
+    NULL::integer AS min_depth,
+    a.type,
+    a.name,
+    a.email,
+    a.avatar_url,
+    true AS self
+FROM
+    contact c
+    JOIN actor a ON a.id = c.id
+WHERE
+    c.user_id IS NOT NULL
+    AND c."primary" = false;
