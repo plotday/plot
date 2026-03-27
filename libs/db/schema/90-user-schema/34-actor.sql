@@ -41,10 +41,11 @@ FROM
     upa_agg ua
     JOIN actor a ON a.id = ua.actor_id
 UNION ALL
--- User's own non-primary contacts (ensures notes authored by
--- alternate contacts resolve to a name instead of "Unknown")
+-- Non-primary contacts: include for any user who can already see
+-- the primary contact, so notes authored by alternate contact IDs
+-- resolve to a name instead of "Unknown" for all viewers
 SELECT
-    c.user_id,
+    ua_primary.user_id,
     a.id,
     a.created_at,
     a.updated_at,
@@ -54,10 +55,11 @@ SELECT
     a.name,
     a.email,
     a.avatar_url,
-    true AS self
+    (c.user_id = ua_primary.user_id) AS self
 FROM
     contact c
     JOIN actor a ON a.id = c.id
+    JOIN contact c_primary ON c_primary.user_id = c.user_id AND c_primary."primary" = true
+    JOIN upa_agg ua_primary ON ua_primary.actor_id = c_primary.id
 WHERE
-    c.user_id IS NOT NULL
-    AND c."primary" = false;
+    c."primary" = false;

@@ -39,7 +39,7 @@ CREATE OR REPLACE VIEW "user"."actor" (
    FROM upa_agg ua
      JOIN public.actor a ON a.id = ua.actor_id
 UNION ALL
- SELECT c.user_id,
+ SELECT ua_primary.user_id,
     a.id,
     a.created_at,
     a.updated_at,
@@ -49,7 +49,9 @@ UNION ALL
     a.name,
     a.email,
     a.avatar_url,
-    true AS self
+    c.user_id = ua_primary.user_id AS self
    FROM public.contact c
      JOIN public.actor a ON a.id = c.id
-  WHERE c.user_id IS NOT NULL AND c."primary" = false;
+     JOIN public.contact c_primary ON c_primary.user_id = c.user_id AND c_primary."primary" = true
+     JOIN upa_agg ua_primary ON ua_primary.actor_id = c_primary.id
+  WHERE c."primary" = false;
