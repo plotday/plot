@@ -159,9 +159,13 @@ export type NewPriority = Pick<Priority, "title"> &
 /**
  * Type for updating existing priorities.
  * Must provide either id or key to identify the priority to update.
+ * Set `parent` to move the priority under a new parent (requires PriorityAccess.Full).
  */
 export type PriorityUpdate = ({ id: Uuid } | { key: string }) &
-  Partial<Pick<Priority, "title" | "archived">>;
+  Partial<Pick<Priority, "title" | "archived">> & {
+    /** Move the priority under a new parent. Requires PriorityAccess.Full. */
+    parent?: { id: Uuid } | { key: string };
+  };
 
 /**
  * Enumeration of supported action types.
@@ -182,6 +186,8 @@ export enum ActionType {
   file = "file",
   /** Thread reference links for navigating to related threads */
   thread = "thread",
+  /** Structured plan of operations for user approval */
+  plan = "plan",
 }
 
 /**
@@ -300,6 +306,16 @@ export type Action =
       type: ActionType.thread;
       /** UUID of the referenced thread */
       threadId: Uuid;
+    }
+  | {
+      /** Structured plan of operations for user approval */
+      type: ActionType.plan;
+      /** Human-readable summary of the plan */
+      title: string;
+      /** Operations to execute on approval */
+      operations: PlanOperation[];
+      /** Callback invoked with (action, approved: boolean) */
+      callback: Callback;
     };
 
 /**
@@ -576,6 +592,12 @@ type ThreadSingleUpdateFields = ThreadBulkUpdateFields & {
    * This field is write-only and won't be returned when reading threads.
    */
   preview?: string | null;
+
+  /**
+   * Move the thread to a different priority. Requires ThreadAccess.Full.
+   * The target priority must be within the twist's scope.
+   */
+  priority?: Pick<Priority, "id">;
 };
 
 export type ThreadUpdate =
@@ -957,3 +979,67 @@ export type NewLinkWithNotes = NewLink & {
   /** Schedule occurrence overrides */
   scheduleOccurrences?: NewScheduleOccurrence[];
 };
+
+/**
+ * Type for updating existing links.
+ *
+ * Set `threadId` to move the link to a different thread.
+ * Requires LinkAccess.Full.
+ */
+export type LinkUpdate = { id: Uuid } & {
+  /** Move the link to a different thread within the twist's scope. */
+  threadId?: Uuid;
+};
+
+/**
+ * A single operation within a plan submitted for user approval.
+ *
+ * Operations include display metadata (titles) so the app can render
+ * a human-readable summary without additional lookups.
+ */
+export type PlanOperation =
+  | {
+      type: "updateThread";
+      threadId: Uuid;
+      /** Current thread title for display */
+      threadTitle: string;
+      changes: Partial<Pick<ThreadFields, "archived" | "title" | "type">> & {
+        /** Move to this priority */
+        priority?: { id: Uuid; title: string };
+      };
+    }
+  | {
+      type: "updateLink";
+      linkId: Uuid;
+      /** Current link title for display */
+      linkTitle: string;
+      changes: {
+        /** Move to this thread */
+        threadId?: Uuid;
+        threadTitle?: string;
+      };
+    }
+  | {
+      type: "createThread";
+      title: string;
+      priorityId: Uuid;
+      /** Priority title for display */
+      priorityTitle: string;
+    }
+  | {
+      type: "createNote";
+      threadId: Uuid;
+      /** Thread title for display */
+      threadTitle: string;
+      content: string;
+    }
+  | {
+      type: "updatePriority";
+      priorityId: Uuid;
+      /** Current priority title for display */
+      priorityTitle: string;
+      changes: Partial<Pick<Priority, "title" | "archived">> & {
+        /** Move under this parent */
+        parent?: { id: Uuid; title: string };
+      };
+    };

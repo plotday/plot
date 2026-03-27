@@ -1,16 +1,19 @@
 import {
+  type Action,
   type Thread,
   type ThreadUpdate,
   type Actor,
   type ActorId,
   ITool,
   type Link,
+  type LinkUpdate,
   type NewThread,
   type NewThreadWithNotes,
   type NewNote,
   type NewPriority,
   type Note,
   type NoteUpdate,
+  type PlanOperation,
   type Priority,
   type PriorityUpdate,
   Uuid,
@@ -19,6 +22,7 @@ import {
   type Schedule,
   type NewSchedule,
 } from "../schedule";
+import type { Callback } from "./callbacks";
 
 export enum ThreadAccess {
   /**
@@ -32,6 +36,13 @@ export enum ThreadAccess {
    * All Respond permissions.
    */
   Create,
+  /**
+   * List/query all Threads in the twist's priority scope.
+   * Update any Thread (title, tags, archived, type, priority) regardless of creator.
+   * Create Notes on any Thread (not just own or mentioned).
+   * All Create permissions.
+   */
+  Full,
 }
 
 export enum PriorityAccess {
@@ -51,6 +62,13 @@ export enum PriorityAccess {
 export enum ContactAccess {
   /** Read existing contact details. Without this, only the ID will be provided. */
   Read,
+}
+
+export enum LinkAccess {
+  /** Read links on any thread in the twist's priority scope. */
+  Read,
+  /** Read + update links, including moving links between threads within scope. */
+  Full,
 }
 
 /**
@@ -227,7 +245,10 @@ export abstract class Plot extends ITool {
       intents?: NoteIntentHandler[];
     };
     /** Enable link processing from connected source channels. */
-    link?: true;
+    link?: true | {
+      /** Access level for links. When omitted with `link: true`, only source channel links are accessible. */
+      access?: LinkAccess;
+    };
     priority?: {
       access?: PriorityAccess;
     };
@@ -236,6 +257,12 @@ export abstract class Plot extends ITool {
     };
     /** Enable semantic search across notes and links in the twist's priority scope. */
     search?: true;
+    /**
+     * When true, admin write operations (on threads/notes/links/priorities not created by this twist)
+     * require user approval via plan actions instead of executing immediately.
+     * Read operations and operations on the twist's own content still work directly.
+     */
+    requireApproval?: boolean;
   };
 
   /**
@@ -562,4 +589,76 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract search(query: string, options?: SearchOptions): Promise<SearchResult[]>;
+
+  /**
+   * Lists threads in a priority and optionally its descendants.
+   *
+   * Requires `ThreadAccess.Full`.
+   *
+   * @param options - Query options for filtering threads
+   * @returns Promise resolving to array of threads
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getThreads(options?: {
+    /** Priority to list threads from. Defaults to the twist's installed priority. */
+    priorityId?: Uuid;
+    /** Include threads from descendant priorities. Default: true. */
+    includeDescendants?: boolean;
+    /** Include archived threads. Default: false. */
+    includeArchived?: boolean;
+    /** Maximum number of threads to return. Default: 50, max: 200. */
+    limit?: number;
+    /** Number of threads to skip for pagination. Default: 0. */
+    offset?: number;
+  }): Promise<Thread[]>;
+
+  /**
+   * Lists priorities within the twist's scope.
+   *
+   * Requires `PriorityAccess.Full`.
+   *
+   * @param options - Query options for filtering priorities
+   * @returns Promise resolving to array of priorities
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getPriorities(options?: {
+    /** Parent priority to list children of. Defaults to the twist's installed priority. */
+    parentId?: Uuid;
+    /** Include all descendants, not just direct children. Default: false. */
+    includeDescendants?: boolean;
+    /** Include archived priorities. Default: false. */
+    includeArchived?: boolean;
+  }): Promise<Priority[]>;
+
+  /**
+   * Updates a link.
+   *
+   * Requires `LinkAccess.Full`. Set `threadId` to move the link to a different thread.
+   *
+   * @param link - The link update containing the ID and fields to change
+   * @returns Promise that resolves when the update is complete
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract updateLink(link: LinkUpdate): Promise<void>;
+
+  /**
+   * Creates a plan of operations for user approval.
+   *
+   * Returns an Action that can be attached to a note. The user can approve,
+   * deny, or request changes. On approval, operations are executed by the API.
+   *
+   * Requires `requireApproval: true` in Plot options.
+   *
+   * @param options - Plan configuration
+   * @returns An Action of type `plan` to attach to a note
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract createPlan(options: {
+    /** Human-readable title summarizing the plan */
+    title: string;
+    /** Array of operations to execute on approval */
+    operations: PlanOperation[];
+    /** Callback invoked with (action, approved: boolean) when the user responds */
+    callback: Callback;
+  }): Action;
 }
