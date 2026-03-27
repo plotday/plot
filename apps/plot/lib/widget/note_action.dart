@@ -602,6 +602,10 @@ class _FileImageWidgetState extends State<FileImageWidget> {
         child = Image.memory(
           _bytes!,
           fit: BoxFit.cover,
+          frameBuilder: (_, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded || frame != null) return child;
+            return const _SkeletonBox();
+          },
           errorBuilder: (_, error, _) {
             log.warning(
               '[FileImage] decode failed for ${widget.link.fileName}: $error',
@@ -626,37 +630,35 @@ class _FileImageWidgetState extends State<FileImageWidget> {
       return Tapable(onTap: _openViewer, child: container);
     }
 
-    // No dimensions (legacy images) — separate loading / loaded trees.
-    if (_loading) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(borderRadiusMd),
-        child: const SizedBox(
-          height: 200,
-          width: 300,
-          child: _SkeletonBox(),
-        ),
-      );
-    }
-
-    return Tapable(
-      onTap: _openViewer,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(borderRadiusMd),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 200),
-          child: Image.memory(
+    // No dimensions (legacy images) — stable-size container for both states.
+    final noDimChild = _loading
+        ? const _SkeletonBox()
+        : Image.memory(
             _bytes!,
             fit: BoxFit.contain,
+            frameBuilder: (_, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded || frame != null) return child;
+              return const _SkeletonBox();
+            },
             errorBuilder: (_, error, _) {
               log.warning(
                 '[FileImage] decode failed for ${widget.link.fileName}: $error',
               );
               return FileLinkButton(link: widget.link);
             },
-          ),
-        ),
+          );
+
+    final noDimContainer = ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadiusMd),
+      child: SizedBox(
+        height: 200,
+        width: 300,
+        child: noDimChild,
       ),
     );
+
+    if (_loading) return noDimContainer;
+    return Tapable(onTap: _openViewer, child: noDimContainer);
   }
 }
 
