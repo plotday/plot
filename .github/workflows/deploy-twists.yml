@@ -300,6 +300,8 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.check-changes.outputs.twists != '[]'
     strategy:
+      fail-fast: false
+      max-parallel: 3
       matrix:
         twist: ${{ fromJson(needs.check-changes.outputs.twists) }}
 
@@ -356,6 +358,7 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.check-changes.outputs.connectors != '[]'
     strategy:
+      fail-fast: false
       max-parallel: 5
       matrix:
         connector: ${{ fromJson(needs.check-changes.outputs.connectors) }}

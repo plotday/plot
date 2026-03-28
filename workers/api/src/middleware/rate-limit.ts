@@ -20,9 +20,9 @@ import { createLogger } from "@plotday/worker-util";
  */
 
 /**
- * Helper to extract rate limit key based on authentication context
- * For authenticated endpoints, use user/publisher ID
- * For unauthenticated endpoints, use CF-Connecting-IP
+ * Helper to extract rate limit key based on authentication context.
+ * For authenticated endpoints, use user/publisher ID from context.
+ * For unauthenticated endpoints, use CF-Connecting-IP.
  */
 const getAuthKey = (c: any): string => {
   // Try to get user ID from context (set by auth middleware)
@@ -38,6 +38,22 @@ const getAuthKey = (c: any): string => {
   }
 
   // Fallback to IP address
+  return (
+    c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown"
+  );
+};
+
+/**
+ * Helper to extract rate limit key from the bearer token directly.
+ * Use this when the rate limiter runs BEFORE auth middleware (e.g. SDK section),
+ * since c.var.user/publisher won't be set yet. The token value itself is unique
+ * per user/publisher, so it works as an identity key.
+ */
+const getBearerTokenKey = (c: any): string => {
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    return `token:${authHeader.slice(7)}`;
+  }
   return (
     c.req.header("CF-Connecting-IP") || c.req.header("x-real-ip") || "unknown"
   );
@@ -215,16 +231,34 @@ export const syncRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
  *
  * Replaces the IP-based generalRateLimiter on the SDK section because
  * GitHub Actions runners share IP ranges, causing CI/CD deployments of
- * many twists to hit the shared IP bucket. Since all SDK endpoints
- * require authentication, keying on identity is both safer and more
- * accurate.
+ * many twists to hit the shared IP bucket. Uses the bearer token as key
+ * since this middleware runs BEFORE sdkAuthMiddleware.
+ *
+ * Wrapped with error handling: if the rate limit binding errors, the
+ * request proceeds without rate limiting rather than returning 500.
  */
+const _sdkRateLimiter = cloudflareRateLimiter<{ Bindings: Bindings }>({
+  rateLimitBinding: (c) => c.env.SDK_RATE_LIMITER,
+  keyGenerator: getBearerTokenKey,
+  handler: createRateLimitHandler("sdk", 500, 60),
+});
+
 export const sdkRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
-  cloudflareRateLimiter<{ Bindings: Bindings }>({
-    rateLimitBinding: (c) => c.env.SDK_RATE_LIMITER,
-    keyGenerator: getAuthKey,
-    handler: createRateLimitHandler("sdk", 500, 60),
-  });
+  async (c, next) => {
+    try {
+      return await _sdkRateLimiter(c, next);
+    } catch (error) {
+      const logger = createLogger();
+      logger.error("SDK rate limiter error, allowing request", error as Error);
+      c.var.tracker?.captureException(
+        error instanceof Error
+          ? error
+          : new Error(`SDK rate limiter error: ${error}`),
+        { path: c.req.path }
+      );
+      return next();
+    }
+  };
 
 /**
  * Moderate rate limiter for deployment endpoints
@@ -235,36 +269,60 @@ export const sdkRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
  * Uses composite key of user/publisher ID + package ID to allow:
  * - CI/CD to deploy multiple different twists without hitting global limit
  * - Each user-twist pair to have independent quota
+ *
+ * This runs as route-level middleware AFTER sdkAuthMiddleware,
+ * so c.var.user/publisher are available.
+ *
+ * Wrapped with error handling to prevent binding errors from causing 500s.
  */
+const _deploymentRateLimiter = cloudflareRateLimiter<{ Bindings: Bindings }>({
+  rateLimitBinding: (c) => c.env.DEPLOYMENT_RATE_LIMITER,
+  keyGenerator: (c) => {
+    // Get user or publisher ID (authenticated endpoint)
+    const userId = c.var.user?.id;
+    const publisherId = c.var.publisher?.id;
+    const authId =
+      userId || (publisherId ? `publisher:${publisherId}` : null);
+
+    // Get package ID from URL parameter
+    const packageId = c.req.param("id");
+
+    // Create composite key for per-user-per-twist limiting
+    if (authId && packageId) {
+      return `${authId}:${packageId}`;
+    }
+
+    // Fallback to just auth ID if no package ID
+    if (authId) {
+      return authId;
+    }
+
+    // Final fallback to IP (should not happen for authenticated endpoints)
+    return (
+      c.req.header("CF-Connecting-IP") ||
+      c.req.header("x-real-ip") ||
+      "unknown"
+    );
+  },
+  handler: createRateLimitHandler("deployment", 10, 60),
+});
+
 export const deploymentRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
-  cloudflareRateLimiter<{ Bindings: Bindings }>({
-    rateLimitBinding: (c) => c.env.DEPLOYMENT_RATE_LIMITER,
-    keyGenerator: (c) => {
-      // Get user or publisher ID (authenticated endpoint)
-      const userId = c.var.user?.id;
-      const publisherId = c.var.publisher?.id;
-      const authId =
-        userId || (publisherId ? `publisher:${publisherId}` : null);
-
-      // Get package ID from URL parameter
-      const packageId = c.req.param("id");
-
-      // Create composite key for per-user-per-twist limiting
-      if (authId && packageId) {
-        return `${authId}:${packageId}`;
-      }
-
-      // Fallback to just auth ID if no package ID
-      if (authId) {
-        return authId;
-      }
-
-      // Final fallback to IP (should not happen for authenticated endpoints)
-      return (
-        c.req.header("CF-Connecting-IP") ||
-        c.req.header("x-real-ip") ||
-        "unknown"
+  async (c, next) => {
+    try {
+      return await _deploymentRateLimiter(c, next);
+    } catch (error) {
+      const logger = createLogger();
+      logger.error(
+        "Deployment rate limiter error, allowing request",
+        error as Error
       );
-    },
-    handler: createRateLimitHandler("deployment", 10, 60),
-  });
+      c.var.tracker?.captureException(
+        error instanceof Error
+          ? error
+          : new Error(`Deployment rate limiter error: ${error}`),
+        { path: c.req.path }
+      );
+      return next();
+    }
+  };
