@@ -438,17 +438,24 @@ class _PrioritiesListState extends State<PrioritiesList>
                     muted: !widget.root.active && !widget.root.unread,
                   ),
                 ),
-                trailingBuilder: (isHovered, hasFocus) =>
-                    (isHovered || hasFocus)
-                    ? Padding(
-                        padding: EdgeInsets.only(
-                          right: isMultiPanel
-                              ? context.theme.spacing.lg
-                              : context.theme.spacing.sm,
-                        ),
-                        child: Button.icon(ShowPriorityCommands(widget.root)),
-                      )
-                    : null,
+                trailingBuilder: (isHovered, hasFocus) {
+                  final button = Padding(
+                    padding: EdgeInsets.only(
+                      right: isMultiPanel
+                          ? context.theme.spacing.lg
+                          : context.theme.spacing.sm,
+                    ),
+                    child: Button.icon(ShowPriorityCommands(widget.root)),
+                  );
+                  if (isHovered || hasFocus) return button;
+                  return Visibility(
+                    visible: false,
+                    maintainSize: true,
+                    maintainAnimation: true,
+                    maintainState: true,
+                    child: button,
+                  );
+                },
               ),
 
               // Second group: Top Priorities
@@ -740,7 +747,8 @@ class _ShowMoreItemState extends State<_ShowMoreItem> {
             children: [
               // Match PriorityWidget leading: leadingH + 16px notification + spacing.sm
               SizedBox(
-                width: (context.isMultiPanel
+                width:
+                    (context.isMultiPanel
                         ? context.theme.spacing.lg
                         : context.theme.spacing.sm) +
                     16 +
