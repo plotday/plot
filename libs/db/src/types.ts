@@ -1765,6 +1765,73 @@ export type Database = {
           },
         ]
       }
+      thread_association: {
+        Row: {
+          archived_at: string | null
+          child_thread_id: string
+          created_at: string
+          id: string
+          order: number
+          parent_thread_id: string
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          child_thread_id: string
+          created_at?: string
+          id?: string
+          order: number
+          parent_thread_id: string
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          child_thread_id?: string
+          created_at?: string
+          id?: string
+          order?: number
+          parent_thread_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "thread_association_child_thread_id_fkey"
+            columns: ["child_thread_id"]
+            referencedRelation: "priority_twist_thread_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_association_child_thread_id_fkey"
+            columns: ["child_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_association_child_thread_id_fkey"
+            columns: ["child_thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_association_parent_thread_id_fkey"
+            columns: ["parent_thread_id"]
+            referencedRelation: "priority_twist_thread_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_association_parent_thread_id_fkey"
+            columns: ["parent_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_association_parent_thread_id_fkey"
+            columns: ["parent_thread_id"]
+            referencedRelation: "thread_x"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       thread_read: {
         Row: {
           bumped_at: string | null
@@ -3943,6 +4010,19 @@ export type Database = {
         }
         Relationships: []
       }
+      thread_association: {
+        Row: {
+          archived_at: string | null
+          child_thread_id: string | null
+          created_at: string | null
+          id: string | null
+          order: number | null
+          parent_thread_id: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       thread_tags: {
         Row: {
           archived_at: string | null
@@ -4232,6 +4312,16 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "thread"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      upsert_thread_association: {
+        Args: { p_association: Json; user_id: string }
+        Returns: Database["public"]["Tables"]["thread_association"]["Row"]
+        SetofOptions: {
+          from: "*"
+          to: "thread_association"
           isOneToOne: true
           isSetofReturn: false
         }

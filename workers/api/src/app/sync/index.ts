@@ -19,6 +19,7 @@ import sessions from "./sessions";
 import sourceChannels from "./source-channels";
 import userSettings from "./user-settings";
 import priorityAttention from "./priority-attention";
+import threadAssociations from "./thread-associations";
 import threadUnread from "./thread-unread";
 
 const sync = new Hono<{ Bindings: Bindings }>();
@@ -41,6 +42,7 @@ sync.route("/", userSettings);
 sync.route("/", threadRead);
 sync.route("/", threadUnread);
 sync.route("/", priorityAttention);
+sync.route("/", threadAssociations);
 
 sync.onError((err, c) => {
   // Handle authorization errors from assertPriorityAccess/assertThreadAccess
