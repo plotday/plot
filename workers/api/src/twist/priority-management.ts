@@ -1,8 +1,27 @@
 import { type Kysely, sql } from "kysely";
 
 import type { DB } from "../db-types";
+import type { Bindings } from "../env";
+import { createNoCacheDb } from "../db";
 import { rpc } from "../rpc";
 
+/**
+ * Generate a unique child path under a parent priority.
+ * Uses a no-cache DB connection to bypass Hyperdrive's query cache,
+ * which otherwise returns the same cached random path to concurrent
+ * requests (generate_path uses random() internally).
+ */
+async function generatePath(
+  parent: string,
+  env: Bindings
+): Promise<string> {
+  const noCacheDb = createNoCacheDb(env);
+  try {
+    return await rpc(noCacheDb, "generate_path", { parent }) as string;
+  } finally {
+    await noCacheDb.destroy();
+  }
+}
 
 /**
  * Gets or creates the "Plot" priority for a user.
@@ -11,7 +30,8 @@ import { rpc } from "../rpc";
  */
 export async function getOrCreatePlotPriority(
   userId: string,
-  db: Kysely<DB>
+  db: Kysely<DB>,
+  env: Bindings
 ): Promise<string> {
   // First get the user's root priority to scope the key lookup
   const rootResult = await db
@@ -38,11 +58,9 @@ export async function getOrCreatePlotPriority(
   }
 
   // Not found, need to create it
-  // Generate child path
-  // rpc() unwraps scalar results, so we get the path string directly
-  const path = await rpc(db, "generate_path", {
-    parent: rootPath,
-  });
+  // Generate child path using no-cache DB to avoid Hyperdrive returning
+  // the same cached random path to concurrent requests
+  const path = await generatePath(rootPath, env);
 
   // Create the Plot priority — handle race condition where a concurrent
   // request creates it between our SELECT and INSERT
@@ -83,10 +101,11 @@ export async function getOrCreatePlotPriority(
  */
 export async function getOrCreateTwistDevelopmentPriority(
   userId: string,
-  db: Kysely<DB>
+  db: Kysely<DB>,
+  env: Bindings
 ): Promise<string> {
   // First ensure the Plot priority exists and get its path
-  const plotPriorityId = await getOrCreatePlotPriority(userId, db);
+  const plotPriorityId = await getOrCreatePlotPriority(userId, db, env);
 
   // Get the Plot priority path to scope the key lookup
   const plotResult = await db
@@ -112,11 +131,8 @@ export async function getOrCreateTwistDevelopmentPriority(
 
   // Not found, need to create it
 
-  // Generate child path
-  // rpc() unwraps scalar results, so we get the path string directly
-  const path = await rpc(db, "generate_path", {
-    parent: plotResult.path,
-  });
+  // Generate child path using no-cache DB
+  const path = await generatePath(plotResult.path as string, env);
 
   // Create the Twist Development priority — handle race condition
   try {
@@ -159,6 +175,7 @@ export async function getOrCreateTwistPriority(
   twistName: string,
   isPersonal: boolean,
   db: Kysely<DB>,
+  env: Bindings,
   publisherId?: number | null
 ): Promise<{ priorityId: string; twistAdminId: number; isNew: boolean }> {
   // Retry once on duplicate key — a concurrent deploy may have created the
@@ -190,7 +207,8 @@ export async function getOrCreateTwistPriority(
     // First ensure Twist Development priority exists
     const twistDevPriorityId = await getOrCreateTwistDevelopmentPriority(
       userId,
-      db
+      db,
+      env
     );
 
     // Get the Twist Development priority path
@@ -200,11 +218,8 @@ export async function getOrCreateTwistPriority(
       .where("id", "=", twistDevPriorityId)
       .executeTakeFirstOrThrow();
 
-    // Generate child path
-    // rpc() unwraps scalar results, so we get the path string directly
-    const path = await rpc(db, "generate_path", {
-      parent: twistDevResult.path,
-    });
+    // Generate child path using no-cache DB
+    const path = await generatePath(twistDevResult.path as string, env);
 
     // Create the twist-specific priority — handle race condition
     const priorityTitle = isPersonal ? `${twistName} (Personal)` : twistName;

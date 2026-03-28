@@ -376,7 +376,8 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         packageId,
         name,
         true, // isPersonal
-        db
+        db,
+        c.env
       );
       twistAdminId = result.twistAdminId;
     } catch (error) {
@@ -455,6 +456,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
             name,
             false, // isPersonal
             db,
+            c.env,
             publisherId
           );
           twistAdminId = result.twistAdminId;
@@ -516,6 +518,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           name,
           false, // isPersonal
           db,
+          c.env,
           publisherId
         );
         twistAdminId = result.twistAdminId;

@@ -47,6 +47,42 @@ export function createDb(env: Bindings) {
   });
 }
 
+/**
+ * Create a Kysely instance that bypasses Hyperdrive's query cache.
+ * Still uses Hyperdrive's connection pooling for latency benefits.
+ *
+ * Use this for queries that MUST return fresh results, e.g. database
+ * functions that use random() or clock_timestamp(). Hyperdrive caches
+ * SELECT results, so `SELECT generate_path(...)` can return the same
+ * cached random path to concurrent requests.
+ */
+export function createNoCacheDb(env: Bindings) {
+  // noCache bypasses Hyperdrive's query cache but keeps connection pooling.
+  // Type assertion needed: noCache is a runtime property not yet in @cloudflare/workers-types.
+  const connectionString =
+    (env.HYPERDRIVE as any)?.noCache ?? env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("No database connection: set HYPERDRIVE or DATABASE_URL");
+  }
+
+  const pool = new pg.Pool({
+    connectionString,
+    max: 1,
+    options: "-c statement_timeout=30000",
+  });
+
+  pool.on("error", (err) => {
+    const logger = createLogger({ source: "pg_pool_nocache" });
+    logger.error("DB pool error (noCache)", err, {
+      pg_code: (err as any)?.code,
+    });
+  });
+
+  return new Kysely<DB>({
+    dialect: new PostgresDialect({ pool }),
+  });
+}
+
 /** Run `fn` with a short-lived Kysely instance that is always destroyed.
  *  Retries once on transient connection errors (e.g. Hyperdrive recycling). */
 export async function withDb<T>(
