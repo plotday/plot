@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { type Kysely, sql } from "kysely";
 
 import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
@@ -7,6 +7,7 @@ import { buildTwist } from "./builder";
 import { addReleaseNote } from "./dev-activities";
 import { type TwistPermissions, storeTwistModule } from "./index";
 import type { TwistSource } from "./types";
+import { getPersonalPlan } from "../utils/limits";
 
 export type DeploymentInput =
   | { module: string; sourcemap?: string; source?: never }
@@ -202,6 +203,24 @@ export async function deployTwist({
     .where("twist_admin_id", "=", String(twistAdminId))
     .where("environment", "=", environment)
     .executeTakeFirst();
+
+  // Free tier: limit to 10 unique deployed twists
+  if (!existingTwist && !dryRun && userId) {
+    const plan = await getPersonalPlan(db, userId);
+    if (plan === "free") {
+      const { count } = await db
+        .selectFrom("twist")
+        .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+        .select(sql<string>`count(distinct twist.id)`.as("count"))
+        .where("twist_admin.user_id", "=", userId)
+        .executeTakeFirstOrThrow();
+      if (Number(count) >= 10) {
+        throw new Error(
+          "Free plan is limited to 10 deployed twists. Upgrade your plan to deploy more."
+        );
+      }
+    }
+  }
 
   logger.info("Deploying twist", {
     name,

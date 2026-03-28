@@ -1,3 +1,4 @@
+- Free plan now limits deploying to 10 twists — upgrade to a paid plan for unlimited deployments
 - You can now add a personal plan and Team plans for multiple organizations from the same upgrade page — no more being locked into managing just one plan at a time
 - Plan upgrades and downgrades now take effect immediately across all your devices — no need to restart or wait for a refresh
 - Team plan checkout now collects billing address and tax ID, and organizations can set a separate billing email
