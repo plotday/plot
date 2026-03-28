@@ -178,136 +178,112 @@ export async function getOrCreateTwistPriority(
   env: Bindings,
   publisherId?: number | null
 ): Promise<{ priorityId: string; twistAdminId: number; isNew: boolean }> {
-  // Retry once on duplicate key — a concurrent deploy may have created the
-  // priority between our SELECT and INSERT. On retry the SELECT will find it.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    // Query twist_admin to see if this twist already has a priority
-    let query = db
-      .selectFrom("twist_admin")
-      .select(["id", "priority_id"])
-      .where("twist_package_id", "=", twistPackageId);
+  // Query twist_admin to see if this twist already has a priority
+  let query = db
+    .selectFrom("twist_admin")
+    .select(["id", "priority_id"])
+    .where("twist_package_id", "=", twistPackageId);
 
-    if (isPersonal) {
-      query = query.where("user_id", "=", userId);
-    } else {
-      query = query.where("user_id", "is", null);
-    }
-
-    const existingResult = await query.executeTakeFirst();
-
-    if (existingResult?.priority_id) {
-      return {
-        priorityId: existingResult.priority_id,
-        twistAdminId: Number(existingResult.id),
-        isNew: false,
-      };
-    }
-
-    // Not found, need to create new priority and twist_admin entry
-    // First ensure Twist Development priority exists
-    const twistDevPriorityId = await getOrCreateTwistDevelopmentPriority(
-      userId,
-      db,
-      env
-    );
-
-    // Get the Twist Development priority path
-    const twistDevResult = await db
-      .selectFrom("priority")
-      .select(["path", "created_by"])
-      .where("id", "=", twistDevPriorityId)
-      .executeTakeFirstOrThrow();
-
-    // Generate child path using no-cache DB
-    const path = await generatePath(twistDevResult.path as string, env);
-
-    // Create the twist-specific priority — handle race condition
-    const priorityTitle = isPersonal ? `${twistName} (Personal)` : twistName;
-    let priorityId: string;
-    try {
-      const createPriorityResult = await db
-        .insertInto("priority")
-        .values({
-          created_by: twistDevResult.created_by,
-          title: priorityTitle,
-          path: path as string,
-          updated_by: 0,
-        })
-        .returning(["id"])
-        .executeTakeFirstOrThrow();
-      priorityId = createPriorityResult.id;
-    } catch {
-      if (attempt === 0) {
-        // Concurrent request likely created a priority — retry from the top
-        // so the SELECT finds the twist_admin entry
-        continue;
-      }
-      throw new Error("Failed to create twist priority after retry");
-    }
-
-    // Create or update twist_admin entry
-    if (existingResult) {
-      // twist_admin exists but priority_id was null - update it
-      const updateResult = await db
-        .updateTable("twist_admin")
-        .set({ priority_id: priorityId })
-        .where("id", "=", existingResult.id)
-        .returning(["id"])
-        .executeTakeFirstOrThrow();
-
-      return {
-        priorityId,
-        twistAdminId: Number(updateResult.id),
-        isNew: true,
-      };
-    } else {
-      // Create new twist_admin entry
-      const twistAdminData: {
-        twist_package_id: string;
-        priority_id: string;
-        user_id?: string;
-        publisher_id?: number | bigint | string;
-      } = {
-        twist_package_id: twistPackageId,
-        priority_id: priorityId,
-      };
-
-      if (isPersonal) {
-        twistAdminData.user_id = userId;
-      } else {
-        // For non-personal, we need a publisher_id to satisfy the ownership check constraint
-        if (publisherId === undefined || publisherId === null) {
-          throw new Error(
-            "Publisher ID is required for non-personal twist deployments"
-          );
-        }
-        twistAdminData.publisher_id = publisherId;
-      }
-
-      try {
-        const createAdminResult = await db
-          .insertInto("twist_admin")
-          .values(twistAdminData)
-          .returning(["id"])
-          .executeTakeFirstOrThrow();
-
-        return {
-          priorityId,
-          twistAdminId: Number(createAdminResult.id),
-          isNew: true,
-        };
-      } catch {
-        if (attempt === 0) {
-          // Concurrent request likely created the twist_admin — retry
-          continue;
-        }
-        throw new Error("Failed to create twist admin after retry");
-      }
-    }
+  if (isPersonal) {
+    query = query.where("user_id", "=", userId);
+  } else {
+    query = query.where("user_id", "is", null);
   }
 
-  // Should not be reached — retry loop always returns or throws
-  throw new Error("Failed to get or create twist priority after retry");
+  const existingResult = await query.executeTakeFirst();
+
+  if (existingResult?.priority_id) {
+    return {
+      priorityId: existingResult.priority_id,
+      twistAdminId: Number(existingResult.id),
+      isNew: false,
+    };
+  }
+
+  // Not found, need to create new priority and twist_admin entry
+  // First ensure Twist Development priority exists
+  const twistDevPriorityId = await getOrCreateTwistDevelopmentPriority(
+    userId,
+    db,
+    env
+  );
+
+  // Get the Twist Development priority path
+  const twistDevResult = await db
+    .selectFrom("priority")
+    .select(["path", "created_by"])
+    .where("id", "=", twistDevPriorityId)
+    .executeTakeFirstOrThrow();
+
+  // Generate child path using no-cache DB
+  const path = await generatePath(twistDevResult.path as string, env);
+
+  // Create the twist-specific priority
+  const priorityTitle = isPersonal ? `${twistName} (Personal)` : twistName;
+  const createPriorityResult = await db
+    .insertInto("priority")
+    .values({
+      created_by: twistDevResult.created_by,
+      title: priorityTitle,
+      path: path as string,
+      updated_by: 0,
+    })
+    .returning(["id"])
+    .executeTakeFirstOrThrow();
+
+  const priorityId = createPriorityResult.id;
+
+  // Create or update twist_admin entry
+  if (existingResult) {
+    // twist_admin exists but priority_id was null - update it
+    const updateResult = await db
+      .updateTable("twist_admin")
+      .set({ priority_id: priorityId })
+      .where("id", "=", existingResult.id)
+      .returning(["id"])
+      .executeTakeFirstOrThrow();
+
+    return {
+      priorityId,
+      twistAdminId: Number(updateResult.id),
+      isNew: true,
+    };
+  } else {
+    // Create new twist_admin entry
+    const twistAdminData: {
+      twist_package_id: string;
+      priority_id: string;
+      user_id?: string;
+      publisher_id?: number | bigint | string;
+    } = {
+      twist_package_id: twistPackageId,
+      priority_id: priorityId,
+    };
+
+    if (isPersonal) {
+      twistAdminData.user_id = userId;
+    } else {
+      // For non-personal, we need a publisher_id to satisfy the ownership check constraint
+      if (publisherId === undefined || publisherId === null) {
+        throw new Error(
+          "Publisher ID is required for non-personal twist deployments"
+        );
+      }
+      twistAdminData.publisher_id = publisherId;
+    }
+
+    const createAdminResult = await db
+      .insertInto("twist_admin")
+      .values(twistAdminData)
+      .returning(["id"])
+      .executeTakeFirstOrThrow();
+
+    return {
+      priorityId,
+      twistAdminId: Number(createAdminResult.id),
+      isNew: true,
+    };
+  }
 }
 
 /**
