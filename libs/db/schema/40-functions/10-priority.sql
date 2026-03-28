@@ -34,7 +34,8 @@ BEGIN
     RETURN text2ltree (prefix || random_path);
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+VOLATILE;
 
 CREATE OR REPLACE FUNCTION order_first ()
     RETURNS double precision
