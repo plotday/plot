@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 import 'package:platform_builder/platform_builder.dart';
 
@@ -154,6 +155,13 @@ class _ButtonState extends State<Button> {
             icon = widget.command.hoverIcon;
           }
 
+          // FButton.icon default padding is EdgeInsets.all(10).
+          // Absorb horizontal padding into the icon SizedBox so
+          // variable-width FontAwesome icons stay centred without
+          // changing the overall button size.
+          const iconPadH = 10.0;
+          final iconSize = context.theme.iconSizes.base;
+
           return widget.iconOnly
               ? FButton.icon(
                   variant: variant,
@@ -161,7 +169,16 @@ class _ButtonState extends State<Button> {
                   onPress: onPress,
                   child: customIcon ??
                       (icon != null
-                          ? Icon(icon, size: context.theme.iconSizes.base)
+                          ? SizedBox(
+                              width: iconSize + iconPadH * 2,
+                              height: iconSize,
+                              child: Center(
+                                child: FaIcon(
+                                  icon,
+                                  size: iconSize,
+                                ),
+                              ),
+                            )
                           : (widget.command.buildBody(context) ??
                                 Text(
                                   widget.command.title,
@@ -226,6 +243,10 @@ class _ButtonState extends State<Button> {
             DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
           ),
         ]),
+        // ignore: unused_result
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          padding: const EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: 10)),
+        ),
       );
     }
 
@@ -348,6 +369,7 @@ class _ButtonState extends State<Button> {
       style = style.copyWith(
         // ignore: unused_result
         iconContentStyle: FButtonIconContentStyleDelta.delta(
+          padding: const EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: 10)),
           iconStyle: _iconVariants(
             base: iconStyle.resolve({}).copyWith(color: widget.color),
             hovered: iconStyle
@@ -360,13 +382,17 @@ class _ButtonState extends State<Button> {
       return style;
     }
 
-    // Simple icon-only: just change border radius
+    // Simple icon-only: just change border radius and absorb horizontal
+    // padding into the icon SizedBox (see build method).
     return FButtonStyleDelta.delta(
       decoration: FVariantsDelta.delta([
         FVariantOperation.all(
           DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
         ),
       ]),
+      iconContentStyle: FButtonIconContentStyleDelta.delta(
+        padding: const EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: 10)),
+      ),
     );
   }
 
