@@ -17,12 +17,22 @@ When search is active on desktop, the layout collapses to show only the Activity
 
 A thread appears if any of these are true:
 
-- It is a **todo** — the user has marked it as a personal to-do.
-- It is a **scheduled event** — it has a date/time range (including events imported from external calendars via link schedules).
-- It is an **all-day entry** — it has a date range without a specific time.
-- It is an **associated thread** of a calendar event that is in the agenda (even if the child itself has no schedule).
+- It is a **todo** in the current priority or a descendant — the user has marked it as a personal to-do.
+- It is a **scheduled event** in the current priority or a descendant — it has a date/time range (including events imported from external calendars via link schedules).
+- It is an **all-day entry** in the current priority or a descendant — it has a date range without a specific time.
+- It is an **associated thread** of a calendar event that is in the agenda (even if the child itself has no schedule or is from a different priority).
+- It is a **link-scheduled event from another priority** — shown dimmed to provide full calendar context without detail.
 
 Archived threads are excluded unless the user enables "Show archived" or the `#archived` tag filter is active. Draft threads are never shown.
+
+## Priority Filtering
+
+The agenda is filtered by the current priority. The rules are:
+
+- **User-scheduled threads** (todos): Only threads in the current priority or a descendant are shown.
+- **Link-scheduled events in the current priority**: Shown normally with all associated threads, even if the associated threads are from other priorities.
+- **Link-scheduled events from other priorities**: Shown at their scheduled times but **dimmed**. Associated threads are not shown unless they individually belong to the current priority or a descendant. This allows the user to see their full schedule without details of other priorities.
+- **Cross-priority events are hidden during search/filtering**: When search text, tag filters, or icon filters are active, only threads matching the current priority are shown.
 
 ## Chronological Structure
 

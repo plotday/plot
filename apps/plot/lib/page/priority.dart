@@ -1341,6 +1341,7 @@ class _PriorityPageState extends State<PriorityPage> {
                       now: agendaActivity.now,
                       isNext: agendaActivity.isNext,
                       isAssociated: agendaActivity.isAssociated,
+                      isOutsidePriority: agendaActivity.isOutsidePriority,
                       focusNode: focusNode,
                       context: state.context,
                       showSubPriority: true,

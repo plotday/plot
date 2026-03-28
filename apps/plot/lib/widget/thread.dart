@@ -27,6 +27,7 @@ class ThreadWidget extends StatefulWidget {
     this.now = false,
     this.isNext = false,
     this.isAssociated = false,
+    this.isOutsidePriority = false,
     this.showSubPriority = false,
     this.showEventTiming = false,
     this.bump = true,
@@ -46,6 +47,10 @@ class ThreadWidget extends StatefulWidget {
   final bool now;
   final bool isNext;
   final bool isAssociated;
+
+  /// Whether this thread is from a priority outside the current context.
+  /// Outside-priority link-scheduled events are dimmed in the UI.
+  final bool isOutsidePriority;
   final bool showSubPriority;
   final bool showEventTiming;
   final bool bump;
@@ -69,6 +74,7 @@ class ThreadWidget extends StatefulWidget {
 class _ThreadWidgetState extends State<ThreadWidget> {
   Timer? _timer;
   bool _leadingHovered = false;
+  bool _rowHovered = false;
 
   @override
   void initState() {
@@ -123,6 +129,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
   // Short right: Start (only if not already started/user-scheduled)
   Command? _getSwipeRightShortCommand() {
+    if (widget.isOutsidePriority) return null;
     if (activity.priority.isViewer) return null;
     if (activity.todo) return null;
     return StartThread(activity);
@@ -130,18 +137,21 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
   // Long right: Schedule (any thread)
   Command? _getSwipeRightLongCommand() {
+    if (widget.isOutsidePriority) return null;
     if (activity.priority.isViewer) return null;
     return PickScheduleThread(activity);
   }
 
   // Short left: Mark read (only if unread)
   Command? _getSwipeLeftShortCommand() {
+    if (widget.isOutsidePriority) return null;
     if (!activity.unread) return null;
     return MarkReadThread(activity);
   }
 
   // Long left: Finish (only if started/user-scheduled)
   Command? _getSwipeLeftLongCommand() {
+    if (widget.isOutsidePriority) return null;
     if (activity.priority.isViewer) return null;
     if (!activity.todo) return null;
     return FinishThread(
@@ -813,7 +823,20 @@ class _ThreadWidgetState extends State<ThreadWidget> {
   @override
   Widget build(BuildContext buildContext) {
     final isTouchDevice = !hasPhysicalKeyboard();
-    final listTile = _buildListTile(buildContext, isTouchDevice);
+    final rawListTile = _buildListTile(buildContext, isTouchDevice);
+
+    // Dim outside-priority threads (cross-priority calendar events).
+    // Remove dimming on hover so the user can read the full content.
+    final listTile = widget.isOutsidePriority
+        ? MouseRegion(
+            onEnter: (_) => setState(() => _rowHovered = true),
+            onExit: (_) => setState(() => _rowHovered = false),
+            child: Opacity(
+              opacity: _rowHovered ? 1.0 : 0.4,
+              child: rawListTile,
+            ),
+          )
+        : rawListTile;
 
     // Desktop: right-click context menu, no drag handle
     if (!isTouchDevice) {

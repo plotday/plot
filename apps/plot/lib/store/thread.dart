@@ -781,6 +781,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     List<String>? iconFilter,
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
+    bool linkScheduledOnly = false,
     int? limit,
     int? offset,
   }) {
@@ -797,7 +798,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       filter: filter,
       iconFilter: iconFilter,
       includeAllFutureEvents: includeAllFutureEvents,
-      includeUnscheduled: includeUnscheduled,
+      includeUnscheduled: linkScheduledOnly ? false : includeUnscheduled,
+      linkScheduledOnly: linkScheduledOnly,
       limit: limit,
       offset: offset,
     ).watch().asyncMap((results) async {
@@ -1171,6 +1173,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool? draft = false,
     bool includeAllFutureEvents = false,
     bool includeUnscheduled = true,
+    bool linkScheduledOnly = false,
     String? search,
     List<Tag>? filter,
     List<String>? iconFilter,
@@ -1234,7 +1237,21 @@ class Thread extends Equatable implements Comparable<Thread> {
     // 1. Filter by priorityPath if provided
     // 2. Exclude activities with archived priorities when archived == false
     final p = Store.get.alias(Store.get.priorities, 'p');
-    if (priorityPath != null) {
+    if (linkScheduledOnly) {
+      // linkScheduledOnly: fetch link-scheduled threads from all priorities.
+      // Use LEFT JOIN for priority data hydration (needed by _mapResultsToThreads)
+      // but do not filter by path.
+      Expression<bool> joinCondition = p.id.equalsExp(a.priorityId);
+      if (archived == false) {
+        joinCondition = joinCondition & p.archivedAt.isNull();
+      }
+      query = query.join([leftOuterJoin(p, joinCondition)]);
+
+      // Require a link schedule to exist
+      query.where(
+        linkSched.startAt.isNotNull() | linkSched.startOn.isNotNull(),
+      );
+    } else if (priorityPath != null) {
       // Join conditions for priority path matching
       Expression<bool> pathCondition =
           p.path.equalsValue(priorityPath) |
@@ -1361,12 +1378,16 @@ class Thread extends Equatable implements Comparable<Thread> {
         condition = condition | unscheduled;
       }
 
-      // Active todo: always include threads with an active user schedule (has dates)
-      Expression<bool> activeTodo =
-          userSched.id.isNotNull() &
-          userSched.archivedAt.isNull() &
-          (userSched.startOn.isNotNull() | userSched.startAt.isNotNull());
-      condition = condition | activeTodo;
+      // Active todo: always include threads with an active user schedule (has dates).
+      // Skip for linkScheduledOnly — we only want threads by their link schedule,
+      // not by their user schedule (those belong to the priority-filtered query).
+      if (!linkScheduledOnly) {
+        Expression<bool> activeTodo =
+            userSched.id.isNotNull() &
+            userSched.archivedAt.isNull() &
+            (userSched.startOn.isNotNull() | userSched.startAt.isNotNull());
+        condition = condition | activeTodo;
+      }
 
       // Activity is scheduled within the range (Date-based)
       if (range.start != null || range.end != null) {

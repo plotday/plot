@@ -179,7 +179,11 @@ class PriorityState extends Equatable {
           !item.now &&
           item.thread.at?.start != null &&
           item.thread.at!.start!.isAfter(now)) {
-        result[i] = AgendaThreadItem(item.thread, isNext: true);
+        result[i] = AgendaThreadItem(
+          item.thread,
+          isNext: true,
+          isOutsidePriority: item.isOutsidePriority,
+        );
         break;
       }
     }
@@ -274,6 +278,7 @@ class PriorityState extends Equatable {
     required Priority context,
     required int horizonDays,
     Map<Uuid, List<ThreadAssociationRow>>? associationsByParentId,
+    Set<Uuid>? outsidePriorityIds,
   }) {
     log.fine('[_makeAgenda] rebuilding agenda (${threads.length} threads)');
     final items = <AgendaItem>[];
@@ -399,12 +404,19 @@ class PriorityState extends Equatable {
       bool current = false,
       DateTime? scheduleAt,
     }) {
+      final isOutside =
+          outsidePriorityIds?.contains(event.id) == true;
+
       final startOfDay =
           event.draft && event.at?.start == event.at?.start?.startOfDay;
       if (startOfDay) {
         // Add date header
         items.add(
-          AgendaHeaderItem(date: event.at?.start?.toDate(), now: current),
+          AgendaHeaderItem(
+            date: event.at?.start?.toDate(),
+            now: current,
+            isOutsidePriority: isOutside,
+          ),
         );
       } else {
         // Add header for the event (with time and duration)
@@ -413,17 +425,25 @@ class PriorityState extends Equatable {
             dateTimeRange: event.at,
             now: current,
             thread: event,
+            isOutsidePriority: isOutside,
           ),
         );
         // Add the event as a thread widget below the header
-        items.add(AgendaThreadItem(event, now: current));
+        items.add(AgendaThreadItem(
+          event,
+          now: current,
+          isOutsidePriority: isOutside,
+        ));
       }
 
       // Insert associated threads below the event.
+      // For outside-priority events, skip associations (they are from
+      // another priority context). For in-priority events, show all
+      // associations even if the child is from another priority.
       // Track which (child, parentKey) pairs have been added to avoid
       // duplicates when the same event appears multiple times (e.g.
       // multiple link schedule instances for the same recurring event).
-      if (associationsByParentId != null) {
+      if (!isOutside && associationsByParentId != null) {
         final associations = associationsByParentId[event.id];
         if (associations != null) {
           final parentKey =
@@ -443,6 +463,10 @@ class PriorityState extends Equatable {
           }
         }
       }
+
+      // Outside-priority events only show the event itself — no todos or
+      // notes are grouped under them.
+      if (isOutside) return threads;
 
       // Pinned-to-event-start todos are handled by the time-match
       // condition in the priority filter below, so they sort by order
@@ -1132,6 +1156,7 @@ class AgendaHeaderItem extends AgendaItem {
     this.thread,
     this.text,
     this.scheduleAt,
+    this.isOutsidePriority = false,
   });
 
   final DateTimeRange? dateTimeRange;
@@ -1141,6 +1166,10 @@ class AgendaHeaderItem extends AgendaItem {
   final String? text;
   final DateTime? scheduleAt;
 
+  /// Whether this header is for an event outside the current priority context.
+  /// Outside-priority event headers are dimmed in the UI.
+  final bool isOutsidePriority;
+
   @override
   List<Object?> get props => [
     dateTimeRange,
@@ -1149,6 +1178,7 @@ class AgendaHeaderItem extends AgendaItem {
     thread,
     text,
     scheduleAt,
+    isOutsidePriority,
   ];
 
   @override
@@ -1162,6 +1192,7 @@ class AgendaThreadItem extends AgendaItem {
     this.now = false,
     this.isNext = false,
     this.isAssociated = false,
+    this.isOutsidePriority = false,
     this.associationParentId,
     this.associationOrder,
   });
@@ -1170,6 +1201,10 @@ class AgendaThreadItem extends AgendaItem {
   final bool now;
   final bool isNext;
   final bool isAssociated;
+
+  /// Whether this thread is outside the current priority context.
+  /// Outside-priority link-scheduled events are dimmed in the UI.
+  final bool isOutsidePriority;
 
   /// Disambiguator for the same child thread appearing under multiple
   /// parent events (e.g. recurring event instances). Used in widget keys
@@ -1182,9 +1217,9 @@ class AgendaThreadItem extends AgendaItem {
 
   @override
   List<Object?> get props =>
-      [thread, now, isNext, isAssociated, associationParentId];
+      [thread, now, isNext, isAssociated, isOutsidePriority, associationParentId];
 
   @override
   String toString() =>
-      'AgendaThreadItem(thread: ${thread.title}, now: $now, isAssociated: $isAssociated)';
+      'AgendaThreadItem(thread: ${thread.title}, now: $now, isAssociated: $isAssociated, isOutsidePriority: $isOutsidePriority)';
 }

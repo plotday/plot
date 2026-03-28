@@ -1,3 +1,5 @@
+- Your agenda now shows calendar events from all priorities (dimmed) so you can see your full schedule while focused on one priority — events in the current priority show full detail and associated threads
+- Fixed threads from other priorities appearing in the agenda when they shouldn't — only todos and events from the current priority (and its sub-priorities) are shown at full prominence
 - Fixed dragging threads to associate or disassociate with calendar events causing a brief visual snap-back before settling into the correct position
 - You can now drag threads under calendar events to associate them — associated threads move with the event when rescheduled and are shared with all priority members
 - Free plan now limits deploying to 10 twists — upgrade to a paid plan for unlimited deployments

@@ -1205,8 +1205,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
     _pendingRemovedIds.clear();
 
-    // Combine the main agenda thread stream with associated child threads
-    // so that associated threads appear even when they have no active schedule.
+    // Three streams are combined:
+    // 1. Main agenda: threads in the current priority (filtered by path)
+    // 2. Associated threads: children of active thread associations
+    // 3. Cross-priority link events: link-scheduled threads from all priorities
+    //    (shown dimmed when outside the current priority)
+    final dateRange = CustomBoundedDateRange(
+      Date.today(),
+      Date.today().addDays(_agendaHorizonDays),
+    );
     final agendaStream = Thread.watch(
       priorityPath: priorityToLoad.path,
       archived: state.showArchived,
@@ -1216,28 +1223,86 @@ class PriorityBloc extends Cubit<PriorityState> {
       order: ThreadOrder.sorted,
       limit: _agendaLimit,
       includeUnscheduled: false,
-      range: CustomBoundedDateRange(
-        Date.today(),
-        Date.today().addDays(_agendaHorizonDays),
-      ),
+      range: dateRange,
     );
     final associatedStream = Thread.watchAssociatedThreads();
 
-    _agendaSubscription =
-        Rx.combineLatest2<ThreadWatchResult, List<Thread>, ThreadWatchResult>(
+    // Only fetch cross-priority link events when no active filters/search
+    // (filters are priority-scoped, cross-priority events don't match).
+    final hasActiveFilters = state.filter.isNotEmpty ||
+        state.iconFilter.isNotEmpty ||
+        state.search.isNotEmpty;
+    final crossPriorityStream = hasActiveFilters
+        ? Stream.value(<Thread>[])
+        : Thread.watch(
+            linkScheduledOnly: true,
+            archived: false,
+            order: ThreadOrder.sorted,
+            includeUnscheduled: false,
+            range: dateRange,
+          ).map((result) => result.threads);
+
+    _agendaSubscription = Rx.combineLatest3<ThreadWatchResult, List<Thread>,
+                List<Thread>, (ThreadWatchResult, Set<Uuid>)>(
               agendaStream,
               associatedStream,
-              (agendaResult, associatedThreads) {
-                // Merge associated threads that aren't already in the agenda
+              crossPriorityStream,
+              (agendaResult, associatedThreads, crossPriorityThreads) {
                 final agendaIds =
                     agendaResult.threads.map((t) => t.id).toSet();
-                final extra = associatedThreads
-                    .where((t) => !agendaIds.contains(t.id))
-                    .toList();
-                if (extra.isEmpty) return agendaResult;
+
+                // Merge associated threads that aren't already in the agenda.
+                // Only include associated threads whose parent event is in the
+                // current priority — prevents threads from other priorities
+                // leaking into the agenda.
+                final currentPriorityEventIds = agendaResult.threads
+                    .where(
+                      (t) => t.isLinkScheduleInstance || t.hasLinkSchedule,
+                    )
+                    .map((t) => t.id)
+                    .toSet();
+                final extra = associatedThreads.where((t) {
+                  if (agendaIds.contains(t.id)) return false;
+                  // Check if this thread is associated with an event in the
+                  // current priority (via _associations map)
+                  if (_associations != null) {
+                    for (final entry in _associations!.entries) {
+                      if (currentPriorityEventIds.contains(entry.key) &&
+                          entry.value.any((a) => a.childThreadId == t.id)) {
+                        return true;
+                      }
+                    }
+                  }
+                  return false;
+                }).toList();
+
+                // Merge cross-priority link events not already in agenda.
+                // Track which thread IDs are outside the current priority.
+                // Only include actual link schedule instances from the
+                // cross-priority stream — base threads (e.g. todos that
+                // happen to have a link) should not leak through.
+                final outsidePriorityIds = <Uuid>{};
+                final crossExtra = <Thread>[];
+                for (final t in crossPriorityThreads) {
+                  if (!agendaIds.contains(t.id) &&
+                      t.isLinkScheduleInstance) {
+                    crossExtra.add(t);
+                    outsidePriorityIds.add(t.id);
+                  }
+                }
+
+                final allThreads = [
+                  ...agendaResult.threads,
+                  ...extra,
+                  ...crossExtra,
+                ];
+
                 return (
-                  threads: [...agendaResult.threads, ...extra],
-                  rawRowCount: agendaResult.rawRowCount,
+                  (
+                    threads: allThreads,
+                    rawRowCount: agendaResult.rawRowCount,
+                  ),
+                  outsidePriorityIds,
                 );
               },
             )
@@ -1255,7 +1320,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               }),
             )
             .debounceTime(const Duration(milliseconds: 100))
-            .listen((result) {
+            .listen((combined) {
+              final (result, outsidePriorityIds) = combined;
               final (:threads, :rawRowCount) = result;
 
               // After a reorder or optimistic update, suppress agenda rebuilds
@@ -1403,6 +1469,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                       context: priorityToLoad,
                       horizonDays: _agendaHorizonDays,
                       associationsByParentId: _associations,
+                      outsidePriorityIds: outsidePriorityIds,
                     );
 
               emit(
