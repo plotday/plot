@@ -45,7 +45,11 @@ import { dbMiddleware } from "./middleware/db";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
-import { generalRateLimiter, appSyncRateLimiter } from "./middleware/rate-limit";
+import {
+  generalRateLimiter,
+  appSyncRateLimiter,
+  sdkRateLimiter,
+} from "./middleware/rate-limit";
 
 // Export Durable Objects
 export { Storage } from "./state/storage";
@@ -183,7 +187,7 @@ appSyncSection.route("/", appSync);
 
 // SDK section - endpoints called by plot CLI
 const sdkSection = new Hono<{ Bindings: Bindings }>();
-sdkSection.use("*", generalRateLimiter);
+sdkSection.use("*", sdkRateLimiter);
 sdkSection.use("*", sdkAuthMiddleware);
 sdkSection.use("*", trackerIdentifyMiddleware);
 sdkSection.route("/", twist);

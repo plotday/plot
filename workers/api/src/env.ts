@@ -171,6 +171,7 @@ export type Bindings = {
   readonly SYNC_RATE_LIMITER: RateLimit;
   readonly APP_SYNC_RATE_LIMITER: RateLimit;
   readonly DEPLOYMENT_RATE_LIMITER: RateLimit;
+  readonly SDK_RATE_LIMITER: RateLimit;
 
   readonly TWIST_BUILDER: DurableObjectNamespace<TwistBuilder>;
   readonly LOADER: WorkerLoader;

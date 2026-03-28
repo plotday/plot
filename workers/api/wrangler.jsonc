@@ -135,6 +135,11 @@
           "name": "APP_SYNC_RATE_LIMITER",
           "namespace_id": "1007",
           "simple": { "limit": 300, "period": 60 }
+        },
+        {
+          "name": "SDK_RATE_LIMITER",
+          "namespace_id": "1008",
+          "simple": { "limit": 500, "period": 60 }
         }
       ],
       "worker_loaders": [
@@ -343,6 +348,11 @@
           "name": "APP_SYNC_RATE_LIMITER",
           "namespace_id": "1007",
           "simple": { "limit": 300, "period": 60 }
+        },
+        {
+          "name": "SDK_RATE_LIMITER",
+          "namespace_id": "1008",
+          "simple": { "limit": 500, "period": 60 }
         }
       ],
       "worker_loaders": [

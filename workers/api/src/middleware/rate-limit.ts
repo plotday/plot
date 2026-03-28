@@ -97,6 +97,8 @@ const getErrorMessage = (type: string): string => {
       return "Too many sync requests. Please try again shortly.";
     case "deployment":
       return "Too many deployment requests. Please try again later.";
+    case "sdk":
+      return "Too many SDK requests. Please try again later.";
     default:
       return "Rate limit exceeded.";
   }
@@ -205,6 +207,23 @@ export const syncRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
     rateLimitBinding: (c) => c.env.SYNC_RATE_LIMITER,
     keyGenerator: () => "database-sync", // Fixed key for global limit
     handler: createRateLimitHandler("sync", 200, 60),
+  });
+
+/**
+ * Per-identity rate limiter for SDK endpoints (CLI calls)
+ * 500 requests per minute per authenticated user/publisher
+ *
+ * Replaces the IP-based generalRateLimiter on the SDK section because
+ * GitHub Actions runners share IP ranges, causing CI/CD deployments of
+ * many twists to hit the shared IP bucket. Since all SDK endpoints
+ * require authentication, keying on identity is both safer and more
+ * accurate.
+ */
+export const sdkRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
+  cloudflareRateLimiter<{ Bindings: Bindings }>({
+    rateLimitBinding: (c) => c.env.SDK_RATE_LIMITER,
+    keyGenerator: getAuthKey,
+    handler: createRateLimitHandler("sdk", 500, 60),
   });
 
 /**
