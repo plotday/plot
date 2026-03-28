@@ -18,6 +18,16 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(url, options);
+      // Retry on 429 (rate limited) with Retry-After header support
+      if (response.status === 429 && attempt < maxRetries) {
+        const retryAfter = parseInt(
+          response.headers.get("Retry-After") || "",
+          10
+        );
+        const delay = (retryAfter || Math.pow(2, attempt)) * 1000;
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
       if (response.status < 500 || attempt === maxRetries) {
         return response;
       }
