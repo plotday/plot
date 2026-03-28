@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { rpc, rpcUser } from "../rpc";
+import { rpcUser } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
+import { generatePath } from "../utils/path";
 import { handleValidationError } from "../utils/validation";
 import { notifySync } from "../app/sync/notify";
 
@@ -158,25 +159,8 @@ priority.post("/priority", async (c) => {
     }
   }
 
-  // Generate child path using database function
-  // rpc() unwraps scalar results, so we get the path string directly
-  let childPath: string;
-  try {
-    childPath = await rpc(db, "generate_path", {
-      parent: parentPath,
-    }) as string;
-  } catch (error) {
-    const logger = createLogger();
-    logger.error(
-      "Error generating path",
-      error instanceof Error ? error : new Error(String(error)),
-      { parent_path: parentPath, user_id: user.id }
-    );
-    return new Response(
-      `Error: Path generation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      { status: 500 }
-    );
-  }
+  // Generate child path in TypeScript (not via DB function — see utils/path.ts)
+  const childPath = generatePath(parentPath);
 
   // Create the priority
   try {

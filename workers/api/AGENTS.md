@@ -13,9 +13,11 @@ Any database function that must return unique/fresh results per call:
 
 ### How to fix
 
-**Preferred: Generate non-deterministic values in TypeScript** instead of database functions. This completely eliminates caching concerns. See `generatePath()` in `src/twist/priority-management.ts` for an example.
+**Preferred: Generate non-deterministic values in TypeScript** instead of database functions. This completely eliminates caching concerns.
 
-If you must use a database function, you can bypass Hyperdrive's cache using the `noCache` connection string on the Hyperdrive binding (`env.HYPERDRIVE.noCache`). This skips the query cache while keeping connection pooling benefits.
+For priority paths specifically, use `generatePath()` from `src/utils/path.ts`. **Do NOT call `rpc(db, "generate_path", ...)` from TypeScript** — the database function exists for use in SQL migrations and PL/pgSQL only.
+
+If you must use a non-deterministic database function via SELECT, you can bypass Hyperdrive's cache using the `noCache` connection string on the Hyperdrive binding (`env.HYPERDRIVE.noCache`). This skips the query cache while keeping connection pooling benefits.
 
 ### When you DON'T need noCache
 

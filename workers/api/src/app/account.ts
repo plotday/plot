@@ -6,6 +6,7 @@ import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
 import type { AuthUser } from "../utils/auth";
 import { rpc } from "../rpc";
+import { generatePath } from "../utils/path";
 import {
   createFreeSubscription,
   createFreeTierBillingCycle,
@@ -191,18 +192,8 @@ account.post("/activate", async (c) => {
     });
     priority = { id: existingPriorityUser.priority_id };
   } else {
-    // Step 2: Generate path for root priority
-    // rpc() unwraps scalar results, so we get the path string directly
-    let rootPath: string;
-    try {
-      rootPath = await rpc(c.var.db, "generate_path", { parent: null }) as string;
-    } catch (err) {
-      return captureServerError(c, err as Error, `Failed to generate path: ${(err as Error).message}`);
-    }
-
-    if (!rootPath) {
-      return captureServerError(c, new Error("Unknown error"), "Failed to generate path: Unknown error");
-    }
+    // Step 2: Generate path for root priority (TypeScript, not DB — see utils/path.ts)
+    const rootPath = generatePath(null);
 
     // Step 3: Create root priority
     let newPriority: { id: string };
@@ -431,18 +422,8 @@ account.post("/activate", async (c) => {
     _plotPriorityId = existingPlotPriority.id;
   } else {
     // Create Plot priority
-    // Generate path for Plot priority as child of root
-    // rpc() unwraps scalar results, so we get the path string directly
-    let plotPath: string;
-    try {
-      plotPath = await rpc(c.var.db, "generate_path", { parent: rootPath }) as string;
-    } catch (err) {
-      return captureServerError(c, err as Error, `Failed to generate path for Plot priority: ${(err as Error).message}`);
-    }
-
-    if (!plotPath) {
-      return captureServerError(c, new Error("Unknown error"), "Failed to generate path for Plot priority: Unknown error");
-    }
+    // Generate path for Plot priority as child of root (TypeScript, not DB — see utils/path.ts)
+    const plotPath = generatePath(rootPath);
 
     // Create Plot priority
     let newPlotPriority: { id: string };

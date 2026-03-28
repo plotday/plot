@@ -9,6 +9,7 @@ import { PriorityAccess } from "@plotday/twister/tools/plot";
 import { sql } from "kysely";
 
 import { rpc } from "../../../rpc";
+import { generatePath } from "../../../utils/path";
 import { fromDbPriority } from "./converters";
 import type { Plot } from "./index";
 
@@ -130,11 +131,8 @@ export async function createPriority(
     .where("id", "=", parentId)
     .executeTakeFirstOrThrow();
 
-  // Generate child path using database function
-  // rpc() unwraps scalar results, so we get the path string directly
-  const path = await rpc(plot.db, "generate_path", {
-    parent: parentResult.path,
-  });
+  // Generate child path in TypeScript (not via DB function — see utils/path.ts)
+  const path = generatePath(parentResult.path as string);
 
   // Build the priority insert object
   const dbPriority: Database["public"]["Tables"]["priority"]["Insert"] = {

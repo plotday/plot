@@ -1,27 +1,7 @@
 import { type Kysely, sql } from "kysely";
 
 import type { DB } from "../db-types";
-
-const PATH_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-/**
- * Generate a unique child path under a parent priority.
- *
- * Generated in TypeScript instead of calling the database generate_path()
- * function because Hyperdrive caches SELECT results — concurrent requests
- * calling SELECT generate_path(parent => $1) with the same parent receive
- * the same cached random path, causing unique constraint violations.
- *
- * Matches the format of the database generate_path(): 4 random alphanumeric
- * characters appended to the parent path.
- */
-function generatePath(parent: string): string {
-  let random = "";
-  for (let i = 0; i < 4; i++) {
-    random += PATH_CHARS[Math.floor(Math.random() * PATH_CHARS.length)];
-  }
-  return `${parent}.${random}`;
-}
+import { generatePath } from "../utils/path";
 
 /**
  * Gets or creates the "Plot" priority for a user.
