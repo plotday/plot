@@ -11,7 +11,7 @@ import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { getEffectivePlan } from "../utils/plan";
 import { getUsage } from "../utils/limits";
-import { createOrgPriority } from "./organization";
+import { createTeamSetupTask } from "./organization";
 import { notifySync } from "./sync/notify";
 
 const upgrade = new Hono<{ Bindings: Bindings }>();
@@ -145,17 +145,12 @@ upgrade.post("/upgrade/checkout", async (c) => {
       if (pendingOrg) {
         orgId = String(pendingOrg.id);
 
-        // Update org name and priority title if the user changed it
+        // Update org name if the user changed it
         if (pendingOrg.name !== orgName) {
           await c.var.db
             .updateTable("organization")
             .set({ name: orgName })
             .where("id", "=", pendingOrg.id)
-            .execute();
-          await c.var.db
-            .updateTable("priority")
-            .set({ title: orgName })
-            .where("organization_id", "=", pendingOrg.id as any)
             .execute();
         }
 
@@ -203,9 +198,9 @@ upgrade.post("/upgrade/checkout", async (c) => {
             .execute();
         }
 
-        // Create org-linked priority
-        const priorityId = await createOrgPriority(c.var.db, org.id, orgName, user.id);
-        notifySync(c, priorityId);
+        // Create a task thread guiding the user to set up team priorities
+        const priorityId = await createTeamSetupTask(c.var.db, orgName, user.id);
+        if (priorityId) notifySync(c, priorityId);
 
         logger.info("Created organization for team checkout", {
           organization_id: orgId,

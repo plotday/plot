@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -280,6 +281,13 @@ class NewPriority extends ShowForm {
               prioritiesBloc.state.root ??
               await Priority.getDefault();
 
+          // Fetch user's organizations for team selector
+          List<Map<String, dynamic>> orgs = [];
+          try {
+            final orgList = await api.get<List<dynamic>>('/organization');
+            orgs = orgList.cast<Map<String, dynamic>>();
+          } catch (_) {}
+
           return FormData(
             title: parent == null ? 'Add a priority' : 'Add a sub-priority',
             groups: [
@@ -305,6 +313,27 @@ class NewPriority extends ShowForm {
                         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
                         : p.title,
                   ),
+                  if (orgs.isNotEmpty)
+                    FormSelect<Map<String, dynamic>?>(
+                      key: 'team',
+                      label: 'Team',
+                      initialValue: null,
+                      hasInitialValue: true,
+                      items: (search) async => <Map<String, dynamic>?>[
+                        null,
+                        ...orgs,
+                      ]
+                          .where(
+                            (o) =>
+                                search == null ||
+                                (o?['name']?.toString().toLowerCase() ??
+                                        'personal')
+                                    .contains(search.toLowerCase()),
+                          )
+                          .toList(),
+                      titleBuilder: (o) =>
+                          o?['name'] as String? ?? 'Personal',
+                    ),
                   FormSelect<ThemeColor?>(
                     key: 'color',
                     label: 'Color',
@@ -329,14 +358,22 @@ class NewPriority extends ShowForm {
                       final title = values['title'] as String;
                       final selectedParent = values['parent'] as Priority;
                       final color = values['color'] as ThemeColor?;
+                      final team = values['team'] as Map<String, dynamic>?;
+                      final priority = Priority(
+                        title: title,
+                        parent: selectedParent,
+                        color: color,
+                        draft: true,
+                      );
                       return AddPriority(
                         Future.value(
-                          Priority(
-                            title: title,
-                            parent: selectedParent,
-                            color: color,
-                            draft: true,
-                          ),
+                          team != null
+                              ? priority.copyWith(
+                                  organizationId: Value(
+                                    int.parse(team['id'] as String),
+                                  ),
+                                )
+                              : priority,
                         ),
                       );
                     },
@@ -361,6 +398,22 @@ class EditPriorityCommand extends ShowForm {
           if (parent == null && priority.parentId != null) {
             parent = await Priority.getOne(priority.parentId!);
           }
+
+          // Fetch user's organizations for team selector
+          List<Map<String, dynamic>> orgs = [];
+          try {
+            final orgList = await api.get<List<dynamic>>('/organization');
+            orgs = orgList.cast<Map<String, dynamic>>();
+          } catch (_) {}
+
+          // Determine team state
+          final isTeamDescendant =
+              priority.organizationId != null && !priority.root;
+          final currentOrg = orgs.firstWhereOrNull(
+            (o) =>
+                int.tryParse(o['id'] as String) == priority.organizationId,
+          );
+          final isTeamAdmin = currentOrg?['role'] == 'admin';
 
           return FormData(
             title: 'Edit priority',
@@ -398,6 +451,35 @@ class EditPriorityCommand extends ShowForm {
                         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
                         : p.title,
                   ),
+                  // Team selector: readonly for descendants, editable for roots
+                  if (isTeamDescendant && currentOrg != null)
+                    FormInfo(
+                      key: 'team_info',
+                      text: 'Team: ${currentOrg['name']}',
+                    ),
+                  if (!isTeamDescendant && orgs.isNotEmpty)
+                    FormSelect<Map<String, dynamic>?>(
+                      key: 'team',
+                      label: 'Team',
+                      initialValue: currentOrg,
+                      hasInitialValue: true,
+                      enabled:
+                          priority.organizationId == null || isTeamAdmin,
+                      items: (search) async => <Map<String, dynamic>?>[
+                        null,
+                        ...orgs,
+                      ]
+                          .where(
+                            (o) =>
+                                search == null ||
+                                (o?['name']?.toString().toLowerCase() ??
+                                        'personal')
+                                    .contains(search.toLowerCase()),
+                          )
+                          .toList(),
+                      titleBuilder: (o) =>
+                          o?['name'] as String? ?? 'Personal',
+                    ),
                   FormSelect<ThemeColor?>(
                     key: 'color',
                     label: 'Color',
@@ -430,12 +512,23 @@ class EditPriorityCommand extends ShowForm {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
+                      final team = values['team'] as Map<String, dynamic>?;
+                      // Only set organizationId if the team selector was shown
+                      final hasTeamSelector =
+                          !isTeamDescendant && orgs.isNotEmpty;
                       return EditPriority(
                         Future.value(
                           priority.copyWith(
                             title: title,
                             parent: newParent,
                             color: Value(color),
+                            organizationId: hasTeamSelector
+                                ? (team != null
+                                    ? Value(
+                                        int.parse(team['id'] as String),
+                                      )
+                                    : const Value(null))
+                                : const Value.absent(),
                           ),
                         ),
                       );
