@@ -359,6 +359,9 @@ importers:
       '@plotday/twister':
         specifier: workspace:*
         version: link:../../public/twister
+      typebox:
+        specifier: ^1.0.35
+        version: 1.0.35
 
   twists/twist-creator:
     dependencies:

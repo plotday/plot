@@ -18,6 +18,7 @@ import 'package:plot/style/layout.dart';
 import 'package:plot/widget/tapable.dart';
 import 'package:plot/widget/toast.dart';
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
 import 'logging.dart';
 
@@ -101,6 +102,11 @@ class NoteActionWidget extends StatelessWidget {
           variant: variant,
           style: style,
           textStyle: textStyle,
+        );
+      case UserActionType.plan:
+        return PlanActionWidget(
+          plan: link as PlanUserAction,
+          note: note,
         );
     }
   }
@@ -256,6 +262,151 @@ class _CallbackActionWithoutNoteState extends State<_CallbackActionWithoutNote> 
         );
       }
     } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+}
+
+/// Widget that displays a plan of operations for user approval.
+class PlanActionWidget extends StatefulWidget {
+  const PlanActionWidget({
+    required this.plan,
+    this.note,
+    super.key,
+  });
+
+  final PlanUserAction plan;
+  final Note? note;
+
+  @override
+  State<PlanActionWidget> createState() => _PlanActionWidgetState();
+}
+
+class _PlanActionWidgetState extends State<PlanActionWidget> {
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.plan.title,
+              style: theme.typography.sm
+                  .copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            ...widget.plan.operations.map(
+              (op) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '\u2022 ',
+                      style: theme.typography.sm.copyWith(
+                        color: theme.colors.mutedForeground,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        op.description,
+                        style: theme.typography.sm.copyWith(
+                          color: theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FButton(
+                  variant: FButtonVariant.primary,
+                  mainAxisSize: MainAxisSize.min,
+                  onPress: _isLoading ? null : () => _handleResponse(true),
+                  child: Text(
+                    'Approve',
+                    style: theme.typography.sm,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FButton(
+                  variant: FButtonVariant.outline,
+                  mainAxisSize: MainAxisSize.min,
+                  onPress: _isLoading ? null : () => _handleResponse(false),
+                  child: Text(
+                    'Reject',
+                    style: theme.typography.sm,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleResponse(bool approved) async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    final callbackToken = widget.plan.callback;
+    final note = widget.note;
+    final twistActorId = Base.actorId;
+
+    if (note != null) {
+      final updated = note.setTag(Tag.twist, twistActorId);
+      await updated.save();
+    }
+
+    try {
+      final body = widget.plan.toJson();
+      body['approved'] = approved;
+      await api.post<Map<String, dynamic>>(
+        '/callback/$callbackToken',
+        body: body,
+      );
+
+      log.info(
+        'Plan ${approved ? 'approved' : 'rejected'}: ${widget.plan.title}',
+      );
+    } on NetworkException {
+      if (mounted) {
+        context.showToast(
+          message: "You're offline. Please try again when connected.",
+          isError: true,
+        );
+      }
+    } catch (e, t) {
+      log.warning('Failed to ${approved ? 'approve' : 'reject'} plan: $e');
+      Tracker.captureException(e, t);
+      if (mounted) {
+        context.showToast(
+          message: 'Unable to complete action. Please try again.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (note != null) {
+        await (await note.refresh())
+            .setTag(Tag.twist, twistActorId, false)
+            .save();
+      }
       if (mounted) setState(() => _isLoading = false);
     }
   }

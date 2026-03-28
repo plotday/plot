@@ -155,8 +155,8 @@ export class Callbacks extends Tool implements ICallbackTool {
   ): Promise<any> {
     try {
       // Extract callback token from the action
-      if (action.type !== ActionType.callback) {
-        throw new Error("Action is not a callback type");
+      if (action.type !== ActionType.callback && action.type !== ActionType.plan) {
+        throw new Error("Action is not a callback or plan type");
       }
 
       const callbackToken = action.callback;

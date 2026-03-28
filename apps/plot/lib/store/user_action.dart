@@ -1,6 +1,6 @@
 part of 'store.dart';
 
-enum UserActionType { external, auth, callback, conferencing, file, thread }
+enum UserActionType { external, auth, callback, conferencing, file, thread, plan }
 
 enum ConferencingProvider { googleMeet, zoom, microsoftTeams, webex, other }
 
@@ -28,6 +28,8 @@ abstract class UserAction extends Equatable {
         return FileUserAction.fromJson(json);
       case UserActionType.thread:
         return ThreadUserAction.fromJson(json);
+      case UserActionType.plan:
+        return PlanUserAction.fromJson(json);
     }
   }
 
@@ -225,6 +227,108 @@ class ThreadUserAction extends UserAction {
 
   @override
   List<Object?> get props => [type, threadId, title, priorityId];
+}
+
+/// A single operation within a plan submitted for user approval.
+class PlanOperation extends Equatable {
+  const PlanOperation({required this.type, required this.data});
+
+  final String type;
+  final Map<String, dynamic> data;
+
+  factory PlanOperation.fromJson(Map<String, dynamic> json) {
+    final type = json['type'] as String;
+    return PlanOperation(type: type, data: json);
+  }
+
+  Map<String, dynamic> toJson() => data;
+
+  /// Human-readable description of this operation.
+  String get description {
+    switch (type) {
+      case 'createThread':
+        final title = data['title'] as String? ?? 'Untitled';
+        final priorityTitle = data['priorityTitle'] as String?;
+        if (priorityTitle != null) return 'Create "$title" in $priorityTitle';
+        return 'Create "$title"';
+      case 'createNote':
+        final threadTitle = data['threadTitle'] as String? ?? 'thread';
+        return 'Add note to "$threadTitle"';
+      case 'updateThread':
+        final threadTitle = data['threadTitle'] as String? ?? 'thread';
+        final changes = data['changes'] as Map<String, dynamic>? ?? {};
+        final parts = <String>[];
+        if (changes['title'] != null) parts.add('rename');
+        if (changes['archived'] == true) parts.add('archive');
+        if (changes['archived'] == false) parts.add('unarchive');
+        if (changes['type'] != null) parts.add('change type');
+        if (changes['priority'] != null) {
+          final p = changes['priority'] as Map<String, dynamic>;
+          parts.add('move to ${p['title'] ?? 'priority'}');
+        }
+        if (parts.isEmpty) return 'Update "$threadTitle"';
+        return 'Update "$threadTitle": ${parts.join(', ')}';
+      case 'updateLink':
+        final linkTitle = data['linkTitle'] as String? ?? 'link';
+        final changes = data['changes'] as Map<String, dynamic>? ?? {};
+        final threadTitle = changes['threadTitle'] as String?;
+        if (threadTitle != null) return 'Move "$linkTitle" to "$threadTitle"';
+        return 'Update "$linkTitle"';
+      case 'updatePriority':
+        final priorityTitle = data['priorityTitle'] as String? ?? 'priority';
+        final changes = data['changes'] as Map<String, dynamic>? ?? {};
+        final parts = <String>[];
+        if (changes['title'] != null) parts.add('rename');
+        if (changes['archived'] == true) parts.add('archive');
+        if (changes['archived'] == false) parts.add('unarchive');
+        if (changes['parent'] != null) {
+          final p = changes['parent'] as Map<String, dynamic>;
+          parts.add('move to ${p['title'] ?? 'parent'}');
+        }
+        if (parts.isEmpty) return 'Update "$priorityTitle"';
+        return 'Update "$priorityTitle": ${parts.join(', ')}';
+      default:
+        return type;
+    }
+  }
+
+  @override
+  List<Object?> get props => [type, data];
+}
+
+class PlanUserAction extends UserAction {
+  const PlanUserAction({
+    required this.title,
+    required this.operations,
+    required this.callback,
+  }) : super(type: UserActionType.plan);
+
+  final String title;
+  final List<PlanOperation> operations;
+  final String callback;
+
+  factory PlanUserAction.fromJson(Map<String, dynamic> json) {
+    return PlanUserAction(
+      title: json['title'] as String,
+      operations: (json['operations'] as List)
+          .map((op) => PlanOperation.fromJson(op as Map<String, dynamic>))
+          .toList(),
+      callback: json['callback'] as String,
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name,
+      'title': title,
+      'operations': operations.map((op) => op.toJson()).toList(),
+      'callback': callback,
+    };
+  }
+
+  @override
+  List<Object?> get props => [type, title, operations, callback];
 }
 
 class UserActionsConverter extends TypeConverter<List<UserAction>?, String?>
