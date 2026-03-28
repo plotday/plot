@@ -29,6 +29,14 @@ export class UserSync extends DurableObject<Bindings> {
       lastSyncTime: 0,
       pendingAlarm: false,
     };
+    // Load userId from storage on DO initialization to avoid storage reads
+    // in the alarm handler, reducing the chance of hitting DO storage timeouts.
+    ctx.blockConcurrencyWhile(async () => {
+      const storedUserId = await ctx.storage.get<string>("userId");
+      if (storedUserId) {
+        this.userId = storedUserId;
+      }
+    });
   }
 
   private captureException(error: Error, properties?: Record<string, unknown>) {
@@ -117,15 +125,9 @@ export class UserSync extends DurableObject<Bindings> {
 
     this.state.pendingAlarm = false;
 
-    // Get userId from storage
     if (!this.userId) {
-      const storedUserId = await this.ctx.storage.get<string>("userId");
-      if (storedUserId) {
-        this.userId = storedUserId;
-      } else {
-        logger.error("UserSync DO has no stored userId - notify() was never called");
-        return;
-      }
+      logger.error("UserSync DO has no stored userId - notify() was never called");
+      return;
     }
 
     const timingEnabled = this.env.SYNC_TIMING_ENABLED === "true";
@@ -284,6 +286,18 @@ export class UserSync extends DurableObject<Bindings> {
         });
       });
     } catch (error) {
+      // "storage operation exceeded timeout" is a transient Cloudflare platform
+      // error when the storage backend is slow. The DO resets and will retry on
+      // the next notification — not actionable, so log as warning only.
+      if (
+        error instanceof Error &&
+        error.message.includes("storage operation exceeded timeout")
+      ) {
+        logger.warn("UserSync alarm interrupted by DO storage timeout", {
+          user_id: this.userId,
+        });
+        return;
+      }
       logger.error("Error in UserSync alarm", error as Error, {
         user_id: this.userId,
       });
