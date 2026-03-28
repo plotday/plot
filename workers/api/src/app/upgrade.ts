@@ -1,7 +1,12 @@
 import { Hono } from "hono";
 
 import type { Bindings } from "../env";
-import { createStripeClient, createFreeTierBillingCycle } from "../stripe/utils";
+import {
+  createStripeClient,
+  createStripeCustomer,
+  createFreeTierBillingCycle,
+  isCustomerDeletedError,
+} from "../stripe/utils";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { getEffectivePlan } from "../utils/plan";
@@ -273,20 +278,52 @@ upgrade.post("/upgrade/checkout", async (c) => {
       return c.json({ error: "Price not found" }, 400);
     }
 
-    const session = await stripe.checkout.sessions.create({
-      customer: stripeCustomerId,
-      line_items: [{ price: prices.data[0].id, quantity: body.quantity || 1 }],
-      mode: "subscription",
-      success_url: `${siteRoot}/upgrade?success=true&org=${orgId}`,
-      cancel_url: `${siteRoot}/upgrade?canceled=true`,
-      allow_promotion_codes: true,
-      billing_address_collection: "required",
-      tax_id_collection: { enabled: true },
-      customer_update: { address: "auto", name: "auto" },
-      subscription_data: {
-        metadata: { plan: "team", organization_id: orgId },
-      },
-    });
+    const createTeamCheckoutSession = () =>
+      stripe.checkout.sessions.create({
+        customer: stripeCustomerId!,
+        line_items: [{ price: prices.data[0].id, quantity: body.quantity || 1 }],
+        mode: "subscription",
+        success_url: `${siteRoot}/upgrade?success=true&org=${orgId}`,
+        cancel_url: `${siteRoot}/upgrade?canceled=true`,
+        allow_promotion_codes: true,
+        billing_address_collection: "required",
+        tax_id_collection: { enabled: true },
+        customer_update: { address: "auto", name: "auto" },
+        subscription_data: {
+          metadata: { plan: "team", organization_id: orgId },
+        },
+      });
+
+    let session;
+    try {
+      session = await createTeamCheckoutSession();
+    } catch (error) {
+      if (!isCustomerDeletedError(error)) throw error;
+
+      logger.info("Stripe org customer deleted, recreating", {
+        organization_id: orgId,
+      });
+      const orgRow = await c.var.db
+        .selectFrom("organization")
+        .select(["name", "billing_email"])
+        .where("id", "=", orgId)
+        .executeTakeFirstOrThrow();
+
+      const newCustomer = await stripe.customers.create({
+        name: orgRow.name,
+        email: orgRow.billing_email || user.email,
+        metadata: { organization_id: orgId },
+      });
+      stripeCustomerId = newCustomer.id;
+
+      await c.var.db
+        .updateTable("organization_subscription")
+        .set({ stripe_customer_id: stripeCustomerId! })
+        .where("organization_id", "=", orgId)
+        .execute();
+
+      session = await createTeamCheckoutSession();
+    }
 
     if (!session.url) {
       logger.error("Stripe checkout session created without URL", undefined, {
@@ -328,22 +365,47 @@ upgrade.post("/upgrade/checkout", async (c) => {
     return c.json({ error: "Price not found" }, 400);
   }
 
-  const session = await stripe.checkout.sessions.create({
-    customer: subscription.stripe_customer_id,
-    line_items: [
-      {
-        price: prices.data[0].id,
-        quantity: body.quantity || 1,
+  let customerId = subscription.stripe_customer_id;
+
+  const createCheckoutSession = () =>
+    stripe.checkout.sessions.create({
+      customer: customerId,
+      line_items: [
+        {
+          price: prices.data[0].id,
+          quantity: body.quantity || 1,
+        },
+      ],
+      mode: "subscription",
+      allow_promotion_codes: true,
+      success_url: `${siteRoot}/upgrade?success=true`,
+      cancel_url: `${siteRoot}/upgrade?canceled=true`,
+      subscription_data: {
+        metadata: { plan },
       },
-    ],
-    mode: "subscription",
-    allow_promotion_codes: true,
-    success_url: `${siteRoot}/upgrade?success=true`,
-    cancel_url: `${siteRoot}/upgrade?canceled=true`,
-    subscription_data: {
-      metadata: { plan },
-    },
-  });
+    });
+
+  let session;
+  try {
+    session = await createCheckoutSession();
+  } catch (error) {
+    if (!isCustomerDeletedError(error)) throw error;
+
+    logger.info("Stripe customer deleted, recreating", { user_id: user.id });
+    const newCustomer = await createStripeCustomer(stripe, {
+      userId: user.id,
+      email: user.email,
+    });
+    customerId = newCustomer.id;
+
+    await c.var.db
+      .updateTable("user_subscription")
+      .set({ stripe_customer_id: customerId })
+      .where("user_id", "=", user.id)
+      .execute();
+
+    session = await createCheckoutSession();
+  }
 
   if (!session.url) {
     logger.error("Stripe checkout session created without URL", undefined, {
@@ -377,12 +439,35 @@ upgrade.post("/upgrade/portal", async (c) => {
   const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
   const siteRoot = c.env.SITE_ROOT || "https://plot.day";
 
-  const session = await stripe.billingPortal.sessions.create({
-    customer: subscription.stripe_customer_id,
-    return_url: `${siteRoot}/upgrade`,
-  });
+  let customerId = subscription.stripe_customer_id;
 
-  return c.json({ url: session.url });
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${siteRoot}/upgrade`,
+    });
+    return c.json({ url: session.url });
+  } catch (error) {
+    if (!isCustomerDeletedError(error)) throw error;
+
+    const newCustomer = await createStripeCustomer(stripe, {
+      userId: user.id,
+      email: user.email,
+    });
+    customerId = newCustomer.id;
+
+    await c.var.db
+      .updateTable("user_subscription")
+      .set({ stripe_customer_id: customerId })
+      .where("user_id", "=", user.id)
+      .execute();
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${siteRoot}/upgrade`,
+    });
+    return c.json({ url: session.url });
+  }
 });
 
 export default upgrade;

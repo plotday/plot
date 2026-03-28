@@ -111,6 +111,18 @@ export function getBillingCycleDates(subscription: Stripe.Subscription): {
 }
 
 /**
+ * Check if an error is a Stripe "No such customer" error
+ */
+export function isCustomerDeletedError(error: unknown): boolean {
+  return (
+    error instanceof Stripe.errors.StripeInvalidRequestError &&
+    error.code === "resource_missing" &&
+    typeof error.message === "string" &&
+    error.message.includes("No such customer")
+  );
+}
+
+/**
  * Create a free tier subscription in Stripe using price lookup key
  * Uses "free_monthly" lookup key which must be configured in Stripe
  */
