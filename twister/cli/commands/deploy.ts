@@ -121,9 +121,10 @@ async function createNewPublisher(
       );
       process.exit(1);
     } else if (userResponse.status >= 500) {
+      const errorBody = await userResponse.text().catch(() => "");
       out.error(
-        "Server error",
-        "The Plot API is temporarily unavailable. Please try again."
+        `Server error (${userResponse.status})`,
+        errorBody || "The Plot API is temporarily unavailable. Please try again."
       );
       process.exit(1);
     }
@@ -206,9 +207,10 @@ async function createNewPublisher(
         process.exit(1);
       }
       if (createResponse.status >= 500) {
+        const errorBody = await createResponse.text().catch(() => "");
         out.error(
-          "Server error",
-          "The Plot API is temporarily unavailable. Please try again."
+          `Server error (${createResponse.status})`,
+          errorBody || "The Plot API is temporarily unavailable. Please try again."
         );
         process.exit(1);
       }
@@ -412,9 +414,10 @@ export async function deployCommand(options: DeployOptions) {
         );
         process.exit(1);
       } else if (twistInfoResponse.status >= 500) {
+        const errorBody = await twistInfoResponse.text().catch(() => "");
         out.error(
-          "Server error",
-          "The Plot API is temporarily unavailable. Please try again."
+          `Server error (${twistInfoResponse.status})`,
+          errorBody || "The Plot API is temporarily unavailable. Please try again."
         );
         process.exit(1);
       } else if (twistInfoResponse.status !== 404) {
@@ -460,9 +463,10 @@ export async function deployCommand(options: DeployOptions) {
             process.exit(1);
           }
           if (publishersResponse.status >= 500) {
+            const errorBody = await publishersResponse.text().catch(() => "");
             out.error(
-              "Server error",
-              "The Plot API is temporarily unavailable. Please try again."
+              `Server error (${publishersResponse.status})`,
+              errorBody || "The Plot API is temporarily unavailable. Please try again."
             );
             process.exit(1);
           }
@@ -704,9 +708,10 @@ export async function deployCommand(options: DeployOptions) {
           process.exit(1);
         }
         if (response.status >= 500) {
+          const errorBody = await response.text().catch(() => "");
           out.error(
-            "Server error",
-            "The Plot API is temporarily unavailable. Please try again."
+            `Server error (${response.status})`,
+            errorBody || "The Plot API is temporarily unavailable. Please try again."
           );
           process.exit(1);
         }
