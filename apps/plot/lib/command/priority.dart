@@ -392,11 +392,13 @@ class EditPriorityCommand extends ShowForm {
         title: 'Edit priority',
         icon: PlotIcon.settings,
         form: (context) async {
-          final isRoot = priority.root;
+          // Re-fetch priority to get latest data (e.g. after a previous save)
+          final p = await Priority.getOne(priority.id);
+          final isRoot = p.root;
           // Load parent if not already loaded (parent might be null even when priority has ancestors)
-          Priority? parent = priority.parent;
-          if (parent == null && priority.parentId != null) {
-            parent = await Priority.getOne(priority.parentId!);
+          Priority? parent = p.parent;
+          if (parent == null && p.parentId != null) {
+            parent = await Priority.getOne(p.parentId!);
           }
 
           // Fetch user's organizations for team selector
@@ -408,10 +410,10 @@ class EditPriorityCommand extends ShowForm {
 
           // Determine team state
           final isTeamDescendant =
-              priority.organizationId != null && !priority.root;
+              p.organizationId != null && !p.root;
           final currentOrg = orgs.firstWhereOrNull(
             (o) =>
-                int.tryParse(o['id'] as String) == priority.organizationId,
+                int.tryParse(o['id'] as String) == p.organizationId,
           );
           final isTeamAdmin = currentOrg?['role'] == 'admin';
 
@@ -423,14 +425,14 @@ class EditPriorityCommand extends ShowForm {
                   FormTextInput(
                     key: 'title',
                     label: 'Priority Name',
-                    initialValue: priority.title,
+                    initialValue: p.title,
                     required: true,
                   ),
                   FormSelect<Priority>(
                     key: 'parent',
                     label: 'Parent',
                     initialValue: parent,
-                    enabled: !isRoot || priority.organizationId != null,
+                    enabled: !isRoot || p.organizationId != null,
                     placeholder: 'None',
                     items: (search) async {
                       final priorities = Priority.excludePlot(
@@ -439,25 +441,31 @@ class EditPriorityCommand extends ShowForm {
                           search: search,
                         ),
                       );
-                      return priorities.where((p) {
-                        if (p.id == priority.id) return false;
-                        if (priority.path.isParent(p.path)) return false;
-                        if (priority.personal && !p.personal) return false;
+                      return priorities.where((candidate) {
+                        if (candidate.id == p.id) return false;
+                        if (p.path.isParent(candidate.path)) return false;
+                        if (p.personal && !candidate.personal) return false;
                         // Team roots can only be placed under personal priorities
-                        if (isRoot && priority.organizationId != null && !p.personal) return false;
+                        if (isRoot && p.organizationId != null && !candidate.personal) return false;
                         return true;
                       }).toList();
                     },
-                    labelBuilder: (p) => PriorityLabel(priority: p),
-                    titleBuilder: (p) => p.ancestorsLabel() != null
-                        ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
-                        : p.title,
+                    labelBuilder: (item) => PriorityLabel(priority: item),
+                    titleBuilder: (item) => item.ancestorsLabel() != null
+                        ? '${item.ancestorsLabel()}${Priority.separator}${item.title}'
+                        : item.title,
                   ),
                   // Team selector: readonly for descendants, editable for roots
                   if (isTeamDescendant && currentOrg != null)
-                    FormInfo(
-                      key: 'team_info',
-                      text: 'Team: ${currentOrg['name']}',
+                    FormSelect<Map<String, dynamic>?>(
+                      key: 'team',
+                      label: 'Team',
+                      initialValue: currentOrg,
+                      hasInitialValue: true,
+                      readonlyMessage: 'Team is inherited from parent priority',
+                      items: (search) async => [],
+                      titleBuilder: (o) =>
+                          o?['name'] as String? ?? 'Personal',
                     ),
                   if (!isTeamDescendant && orgs.isNotEmpty)
                     FormSelect<Map<String, dynamic>?>(
@@ -466,7 +474,7 @@ class EditPriorityCommand extends ShowForm {
                       initialValue: currentOrg,
                       hasInitialValue: true,
                       enabled:
-                          priority.organizationId == null || isTeamAdmin,
+                          p.organizationId == null || isTeamAdmin,
                       items: (search) async => <Map<String, dynamic>?>[
                         null,
                         ...orgs,
@@ -486,8 +494,8 @@ class EditPriorityCommand extends ShowForm {
                     key: 'color',
                     label: 'Color',
                     initialValue: isRoot
-                        ? (priority.color ?? const ThemeColor.defaultColor())
-                        : priority.color,
+                        ? (p.color ?? const ThemeColor.defaultColor())
+                        : p.color,
                     hasInitialValue: true,
                     items: (search) async =>
                         (isRoot
@@ -520,7 +528,7 @@ class EditPriorityCommand extends ShowForm {
                           !isTeamDescendant && orgs.isNotEmpty;
                       return EditPriority(
                         Future.value(
-                          priority.copyWith(
+                          p.copyWith(
                             title: title,
                             parent: newParent,
                             color: Value(color),

@@ -6,6 +6,7 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'icon.dart';
 import 'form_tile_layout.dart';
+import 'toast.dart';
 
 class SelectTile extends StatefulWidget {
   const SelectTile({
@@ -18,6 +19,7 @@ class SelectTile extends StatefulWidget {
     this.focusNode,
     this.highlighted = false,
     this.enabled = true,
+    this.readonlyMessage,
     super.key,
   });
 
@@ -47,6 +49,10 @@ class SelectTile extends StatefulWidget {
 
   /// Whether the field is enabled and can receive focus/interaction.
   final bool enabled;
+
+  /// When set, the tile looks enabled but shows this message as a toast
+  /// instead of calling [onSelect] when activated.
+  final String? readonlyMessage;
 
   @override
   State<SelectTile> createState() => _SelectTileState();
@@ -89,6 +95,10 @@ class _SelectTileState extends State<SelectTile> {
   }
 
   void _handleActivate() {
+    if (widget.readonlyMessage != null) {
+      context.showToast(message: widget.readonlyMessage!);
+      return;
+    }
     if (widget.enabled) {
       widget.onSelect();
     }
@@ -98,13 +108,14 @@ class _SelectTileState extends State<SelectTile> {
   Widget build(BuildContext context) {
     final hasValue = widget.value != null && widget.value!.isNotEmpty;
     final displayText = hasValue ? widget.value! : (widget.placeholder ?? '');
+    final isInteractive = widget.enabled || widget.readonlyMessage != null;
     final isHighlighted =
-        widget.enabled &&
+        isInteractive &&
         (_focusNode.hasFocus || _isHovered || widget.highlighted);
 
     return FocusableActionDetector(
       focusNode: _focusNode,
-      enabled: widget.enabled,
+      enabled: isInteractive,
       child: FormTileLayout(
         label: widget.label,
         rightBackgroundColor: isHighlighted
@@ -112,17 +123,17 @@ class _SelectTileState extends State<SelectTile> {
             : null,
         isActive: isHighlighted,
         content: GestureDetector(
-          onTap: widget.enabled ? _handleActivate : null,
+          onTap: isInteractive ? _handleActivate : null,
           child: MouseRegion(
             cursor: SystemMouseCursors.basic,
-            onEnter: widget.enabled
+            onEnter: isInteractive
                 ? (_) {
                     setState(() {
                       _isHovered = true;
                     });
                   }
                 : null,
-            onExit: widget.enabled
+            onExit: isInteractive
                 ? (_) {
                     setState(() {
                       _isHovered = false;
@@ -139,7 +150,7 @@ class _SelectTileState extends State<SelectTile> {
                   child: Text(
                     displayText,
                     style: context.theme.typography.md.copyWith(
-                      color: widget.enabled
+                      color: isInteractive
                           ? (hasValue
                                 ? context.theme.colors.foreground
                                 : context.theme.plotColors.muted)

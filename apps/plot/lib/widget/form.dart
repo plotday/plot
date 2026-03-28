@@ -225,6 +225,7 @@ class FormSelect<T> extends FormItem {
     this.leadingBuilder,
     this.placeholder,
     this.enabled = true,
+    this.readonlyMessage,
     T? initialValue,
     this.onChanged,
     bool hasInitialValue = false,
@@ -259,6 +260,10 @@ class FormSelect<T> extends FormItem {
 
   /// Whether the field is enabled and can receive focus/interaction.
   final bool enabled;
+
+  /// When set, the field looks enabled but shows this message as a toast
+  /// instead of opening the selection modal.
+  final String? readonlyMessage;
 
   /// Callback when value changes.
   final VoidCallback? onChanged;
@@ -311,6 +316,10 @@ class FormSelect<T> extends FormItem {
   /// Activate the select field (open the selection modal)
   @override
   Future<void> activate(BuildContext context, {int subIndex = 0}) async {
+    if (readonlyMessage != null) {
+      context.showToast(message: readonlyMessage!);
+      return;
+    }
     if (!enabled) return;
     final result = await SelectModal.open<T>(
       context,
@@ -420,6 +429,7 @@ class FormSelect<T> extends FormItem {
       placeholder: placeholder,
       highlighted: highlightedSubIndex >= 0,
       enabled: isEnabled,
+      readonlyMessage: readonlyMessage,
       onSelect: () => activate(context),
       focusNode: focusNodes.firstOrNull,
     );
