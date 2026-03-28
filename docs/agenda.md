@@ -28,7 +28,7 @@ Archived threads are excluded unless the user enables "Show archived" or the `#a
 
 ### Day Sections
 
-The agenda is divided into day sections. Every day from today through the visible horizon has a date header, even if that day has no threads. The date format is: day-of-week, day number (bold), and month. The year is appended when it differs from the current year.
+The agenda is divided into day sections. Every day from today through the visible horizon has a date header, except for today — today has no date header; the list starts directly with the current event or the first todo/event. The date format is: day-of-week, day number (bold), and month. The year is appended when it differs from the current year.
 
 ### Within Each Day
 
@@ -53,7 +53,7 @@ Todos without a specific event appear at the start of the day (before the first 
 
 The agenda updates every minute.
 
-- **No event in progress**: The agenda starts at today's date header. The first future timed event is marked as "next" and shows a countdown (e.g. "In 15m").
+- **No event in progress**: The agenda starts directly with today's first todo or event (no date header for today). The first future timed event is marked as "next" and shows a countdown (e.g. "In 15m").
 - **Event in progress**: That event becomes the list's starting point. It displays elapsed time (e.g. "45m up-arrow") and remaining time (e.g. "15m down-arrow") using the priority's accent color.
 
 ## Gap Headers
