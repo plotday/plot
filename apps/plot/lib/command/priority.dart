@@ -408,12 +408,13 @@ class EditPriorityCommand extends ShowForm {
             orgs = orgList.cast<Map<String, dynamic>>();
           } catch (_) {}
 
-          // Determine team state
-          final isTeamDescendant =
-              p.organizationId != null && !p.root;
+          // Determine team state — use parent's org as fallback for descendants
+          // that haven't synced organization_id yet
+          final effectiveOrgId = p.organizationId ?? parent?.organizationId;
+          final isTeamDescendant = effectiveOrgId != null && !p.root;
           final currentOrg = orgs.firstWhereOrNull(
             (o) =>
-                int.tryParse(o['id'] as String) == p.organizationId,
+                int.tryParse(o['id'] as String) == effectiveOrgId,
           );
           final isTeamAdmin = currentOrg?['role'] == 'admin';
 
@@ -707,10 +708,20 @@ class ManagePrioritySharing extends ShowCommands {
   ManagePrioritySharing(this.priority)
     : super(
         title: priority.sharing ? 'Manage sharing' : 'Share priority',
-        icon: priority.sharing ? PlotIcon.shared : PlotIcon.share,
+        icon: _sharingIcon(priority),
         commandsBuilder: (context) => _getSharingCommands(priority),
         showFilter: true,
       );
+
+  static IconData _sharingIcon(Priority priority) {
+    final isTeam = priority.organizationId != null;
+    if (isTeam) {
+      return priority.sharing
+          ? PlotIcon.buildingUser
+          : PlotIcon.buildingLock;
+    }
+    return priority.sharing ? PlotIcon.users : PlotIcon.private;
+  }
 
   final Priority priority;
 

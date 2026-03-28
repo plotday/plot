@@ -48,6 +48,8 @@ class PlotIcon {
   static const user = FontAwesomeIcons.user;
   static const users = FontAwesomeIcons.users;
   static const private = FontAwesomeIcons.lock;
+  static const buildingLock = FontAwesomeIcons.buildingLock;
+  static const buildingUser = FontAwesomeIcons.buildingUser;
   static const offline = FontAwesomeIcons.wifiSlash;
   static const notification = FontAwesomeIcons.bellRing;
   static const agenda = FontAwesomeIcons.calendarStar;

@@ -76,10 +76,7 @@ class PriorityWidget extends StatelessWidget {
           : null,
       trailingBuilder: (isHovered, hasFocus) {
         final hovered = isHovered || hasFocus;
-        final sharing = priority.sharing;
-        final canShare = !priority.root;
-
-        if (!hovered && !sharing) return null;
+        final canShare = !(priority.root && priority.personal);
 
         return Padding(
           padding: EdgeInsets.only(right: leadingH),
@@ -87,15 +84,13 @@ class PriorityWidget extends StatelessWidget {
             children: [
               // Hover commands appear to the left
               if (hovered) ...[
-                if (canShare && !sharing)
-                  Button.icon(ManagePrioritySharing(priority)),
                 Button.icon(
                   SetTopPriority(priority, priority.topOrder == null),
                 ),
                 Button.icon(ShowPriorityCommands(priority)),
               ],
-              // Persistent sharing icon (rightmost)
-              if (canShare && sharing)
+              // Persistent sharing/privacy icon (rightmost)
+              if (canShare)
                 Button.icon(
                   ManagePrioritySharing(priority),
                   color: hovered
