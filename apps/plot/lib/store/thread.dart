@@ -723,7 +723,7 @@ class Thread extends Equatable implements Comparable<Thread> {
               .write(const ThreadsCompanion(unreadUpdated: Value(null)));
           _unreadPushFailures = 0;
         } else {
-          log.severe('Failed to push activity_read changes: $e');
+          log.warning('Failed to push activity_read changes: $e');
           rethrow;
         }
       }

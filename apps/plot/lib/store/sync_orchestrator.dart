@@ -394,16 +394,14 @@ class SyncOrchestrator {
       completer.complete(success);
       return success;
     } catch (e, stackTrace) {
-      _syncOrchestratorLog.severe(
-        'Error pushing ${entity.debugName}',
-        e,
-        stackTrace,
-      );
-
       _trackRateLimitIfNeeded(e);
 
-      // Report unexpected errors to PostHog
       if (!_isExpectedError(e)) {
+        _syncOrchestratorLog.severe(
+          'Error pushing ${entity.debugName}',
+          e,
+          stackTrace,
+        );
         Tracker.trackError(
           entity.debugName,
           errorType: e.runtimeType.toString(),
@@ -413,8 +411,10 @@ class SyncOrchestrator {
         );
         completer.completeError(e, stackTrace);
       } else {
-        // Expected errors (network, auth, rate limit): complete normally
-        // to avoid orphaned error futures triggering PlatformDispatcher.onError
+        // Expected errors (network, auth, rate limit): warn without stack trace
+        _syncOrchestratorLog.warning(
+          'Error pushing ${entity.debugName}: $e',
+        );
         completer.complete(false);
       }
       return false;
@@ -447,16 +447,14 @@ class SyncOrchestrator {
       _syncOrchestratorLog.fine('Pulled ${entity.debugName}');
       completer.complete();
     } catch (e, stackTrace) {
-      _syncOrchestratorLog.severe(
-        'Error pulling ${entity.debugName}',
-        e,
-        stackTrace,
-      );
-
       _trackRateLimitIfNeeded(e);
 
-      // Report unexpected errors to PostHog
       if (!_isExpectedError(e)) {
+        _syncOrchestratorLog.severe(
+          'Error pulling ${entity.debugName}',
+          e,
+          stackTrace,
+        );
         Tracker.trackError(
           entity.debugName,
           errorType: e.runtimeType.toString(),
@@ -466,8 +464,10 @@ class SyncOrchestrator {
         );
         completer.completeError(e, stackTrace);
       } else {
-        // Expected errors (network, auth, rate limit): complete normally
-        // to avoid orphaned error futures triggering PlatformDispatcher.onError
+        // Expected errors (network, auth, rate limit): warn without stack trace
+        _syncOrchestratorLog.warning(
+          'Error pulling ${entity.debugName}: $e',
+        );
         completer.complete();
       }
     } finally {
