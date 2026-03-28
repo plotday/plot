@@ -2683,7 +2683,40 @@ class Thread extends Equatable implements Comparable<Thread> {
       '[associateWith] "$title" -> parent=$parentThreadId order=${order.value}',
     );
 
-    // Create or update the association
+    // Archive any existing active association for this child thread
+    // (a child can only be associated with one parent at a time).
+    final existing = await (Store.get.select(Store.get.threadAssociations)
+          ..where((t) => t.childThreadId.equals(id.toBytes()))
+          ..where((t) => t.archivedAt.isNull()))
+        .get();
+
+    for (final assoc in existing) {
+      if (assoc.parentThreadId == parentThreadId) {
+        // Same parent — just update the order
+        await Store.get.save(
+          Store.get.threadAssociations,
+          assoc.copyWith(order: order, updatedAt: DateTime.now())
+              .toCompanion(false),
+          ThreadAssociationsBase(),
+        );
+        // Skip creating a new row since we updated in place
+        Thread.push();
+        return;
+      }
+      // Different parent — archive the old association
+      await Store.get.save(
+        Store.get.threadAssociations,
+        assoc
+            .copyWith(
+              archivedAt: Value(DateTime.now()),
+              updatedAt: DateTime.now(),
+            )
+            .toCompanion(false),
+        ThreadAssociationsBase(),
+      );
+    }
+
+    // Create the new association
     final association = ThreadAssociationRow(
       id: Uuid.generate(),
       parentThreadId: parentThreadId,

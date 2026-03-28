@@ -277,6 +277,7 @@ class PriorityState extends Equatable {
   }) {
     log.fine('[_makeAgenda] rebuilding agenda (${threads.length} threads)');
     final items = <AgendaItem>[];
+    final addedAssociations = <String>{};
     final now = Time.now();
     final today = Date.today();
 
@@ -422,20 +423,25 @@ class PriorityState extends Equatable {
         items.add(AgendaThreadItem(event, now: current));
       }
 
-      // Insert associated threads below the event
+      // Insert associated threads below the event.
+      // Track which (child, parentKey) pairs have been added to avoid
+      // duplicates when the same event appears multiple times (e.g.
+      // multiple link schedule instances for the same recurring event).
       if (associationsByParentId != null) {
         final associations = associationsByParentId[event.id];
         if (associations != null) {
-          // Use event occurrence (or 'base') as disambiguator so the same
-          // child thread under different recurring instances gets unique keys.
-          final parentKey = event.occurrence ?? 'base';
+          final parentKey =
+              '${event.id}${event.occurrence != null ? '_${event.occurrence}' : ''}';
           for (final assoc in associations) {
+            final dedupeKey = '${assoc.childThreadId}_$parentKey';
+            if (!addedAssociations.add(dedupeKey)) continue;
             final child = threadById[assoc.childThreadId];
             if (child != null) {
               items.add(AgendaThreadItem(
                 child,
                 isAssociated: true,
                 associationParentId: parentKey,
+                associationOrder: assoc.order,
               ));
             }
           }
@@ -466,21 +472,30 @@ class PriorityState extends Equatable {
       // Exclude threads that have their own link schedule — they appear
       // as their own event elsewhere and shouldn't be pulled under
       // a different event by priority matching alone.
-      final (matchingTodos, remainingTodos) = todos.partition(
-        (Thread a) =>
-            !a.hasLinkSchedule &&
-            (// Priority match: same or descendant priority
-            ((event.priority.id == a.priority.id ||
-                    event.priority.isParent(a.priority)) &&
-                !(a.at?.start != null &&
-                    event.at?.start != null &&
-                    event.at?.end != null &&
-                    a.at!.start!.isSameOrAfter(event.at!.end!))) ||
-            // Time match: todo explicitly pinned to this event's start
-            (event.at?.start != null &&
-                (a.pinnedAfterTime ?? a.at?.start) != null &&
-                (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(event.at!.start!))),
-      );
+      // For link-scheduled events, skip priority matching — the
+      // association mechanism replaces implicit priority grouping.
+      // For link-scheduled events, only associations control which threads
+      // appear under them — skip both priority and time-based matching.
+      // For non-link events, use priority match and time match as before.
+      final isLinkEvent =
+          event.isLinkScheduleInstance || event.hasLinkSchedule;
+      final (matchingTodos, remainingTodos) = isLinkEvent
+          ? (<Thread>[], todos) // All todos remain for the gap
+          : todos.partition(
+              (Thread a) =>
+                  !a.hasLinkSchedule &&
+                  (// Priority match: same or descendant priority
+                  ((event.priority.id == a.priority.id ||
+                          event.priority.isParent(a.priority)) &&
+                      !(a.at?.start != null &&
+                          event.at?.start != null &&
+                          event.at?.end != null &&
+                          a.at!.start!.isSameOrAfter(event.at!.end!))) ||
+                  // Time match: todo explicitly pinned to this event's start
+                  (event.at?.start != null &&
+                      (a.pinnedAfterTime ?? a.at?.start) != null &&
+                      (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(event.at!.start!))),
+            );
 
       // Filter notes/done by time (agendaAt within event's time range)
       final (matchingNotesAndDone, remainingNotesAndDone) = notesAndDone
@@ -1152,6 +1167,7 @@ class AgendaThreadItem extends AgendaItem {
     this.isNext = false,
     this.isAssociated = false,
     this.associationParentId,
+    this.associationOrder,
   });
 
   final Thread thread;
@@ -1163,6 +1179,10 @@ class AgendaThreadItem extends AgendaItem {
   /// parent events (e.g. recurring event instances). Used in widget keys
   /// to prevent GlobalKey collisions.
   final String? associationParentId;
+
+  /// The shared association order, used for reordering among associated
+  /// threads. Null for non-associated items.
+  final Order? associationOrder;
 
   @override
   List<Object?> get props =>

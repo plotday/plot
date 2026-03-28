@@ -1418,8 +1418,18 @@ class _PriorityPageState extends State<PriorityPage> {
                     header: (_) => null,
                     activity: (a) => a.thread,
                   );
-                  if (t != null && t.todo) {
-                    todoItems.add((i, t));
+                  final liAssocOrder = li.when<Order?>(
+                    header: (_) => null,
+                    activity: (a) => a.associationOrder,
+                  );
+                  if (t != null && (t.todo || liAssocOrder != null)) {
+                    // For associated items, create a proxy with the
+                    // association order so Order.between sees correct
+                    // neighbors.
+                    final effective = liAssocOrder != null
+                        ? t.copyWith(order: liAssocOrder)
+                        : t;
+                    todoItems.add((i, effective));
                   }
                 }
 
@@ -1538,8 +1548,10 @@ class _PriorityPageState extends State<PriorityPage> {
                 }
                 final pinningToEvent = pinTime != null;
 
-                // Skip if nothing changed
-                if (newOrder.value == activity.order.value &&
+                // Skip if nothing changed (but never skip for associated
+                // threads — they always need to disassociate when dragged).
+                if (!isAssociated &&
+                    newOrder.value == activity.order.value &&
                     !dateChanged &&
                     !pinningToEvent &&
                     !wasPinned) {
@@ -1557,7 +1569,9 @@ class _PriorityPageState extends State<PriorityPage> {
                   'nextTodo="${nextTodo?.title}" (${nextTodo?.order.value}) '
                   '-> newOrder=${newOrder.value} '
                   'todo=${activity.todo} '
-                  'hasUserSched=${activity.hasUserSchedule}'
+                  'isAssociated=$isAssociated '
+                  'hasUserSched=${activity.hasUserSchedule} '
+                  'outstandingTasks=${activity.outstandingTasks}'
                   '${dateChanged ? ' dateChange=$currentDate->$targetDate' : ''}'
                   '${pinningToEvent ? ' pinTime=$pinTime gap=$passedGap nearestGap=$nearestGapStart event="${targetEvent?.title}"' : ''}'
                   '${wasPinned && !pinningToEvent ? ' unpinning' : ''}',
@@ -1577,9 +1591,25 @@ class _PriorityPageState extends State<PriorityPage> {
                   updatedActivity = activity;
                   useAssociation = true;
                 } else if (isAssociated) {
-                  // REMOVE ASSOCIATION: associated thread dragged away
-                  updatedActivity = activity;
-                  // Will call disassociate below
+                  // REMOVE ASSOCIATION: associated thread dragged away.
+                  // Apply schedule changes so the optimistic UI shows the
+                  // thread at its new position as a regular todo.
+                  if (activity.todo) {
+                    // Thread has active user schedule — update it
+                    if (dateChanged || activity.isPinnedTodo) {
+                      updatedActivity = activity.reorderTo(
+                        newOrder,
+                        date: targetDate,
+                      );
+                    } else {
+                      updatedActivity = activity.reorder(newOrder);
+                    }
+                  } else {
+                    // No active user schedule — disassociate will create one.
+                    // Use copyWith(todo: true) for the optimistic update so
+                    // the thread renders as a todo at the target position.
+                    updatedActivity = activity.copyWith(todo: true);
+                  }
                 } else if (pinningToEvent) {
                   if (!passedGap && targetEvent != null) {
                     // Dropped right after a non-link scheduled event —
@@ -1651,6 +1681,11 @@ class _PriorityPageState extends State<PriorityPage> {
                     order: newOrder,
                   );
                 } else if (isAssociated && !droppingOnLinkEvent) {
+                  // Optimistically clear association so _makeAgenda doesn't
+                  // re-add the thread under the event on next rebuild.
+                  context
+                      .read<PriorityBloc>()
+                      .optimisticallyDisassociate(activity.id);
                   // Remove association and restore user schedule
                   activity.disassociate(
                     order: newOrder,
