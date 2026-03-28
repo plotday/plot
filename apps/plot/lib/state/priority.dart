@@ -144,12 +144,22 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<Map<Uuid, List<ThreadAssociationRow>>>?
       _associationsSubscription;
 
+  /// Data-driven suppression for association changes: keeps reorderViewItems
+  /// until _associations confirms the child is under the expected parent.
+  (ThreadId childId, Uuid parentId)? _pendingAssociation;
+
+  /// Data-driven suppression for disassociation: keeps reorderViewItems
+  /// until _associations no longer contains the child.
+  ThreadId? _pendingDisassociation;
+
   /// Optimistic reorder: caches the moved agendaViewItems so the UI
   /// doesn't re-derive them (which can produce different item counts).
   void moveAgendaItem(
     int viewOldIndex,
     int viewNewIndex, {
     AgendaItem? updatedItem,
+    Uuid? associatingWithParent,
+    bool disassociating = false,
   }) {
     if (viewOldIndex == viewNewIndex) return;
 
@@ -171,15 +181,28 @@ class PriorityBloc extends Cubit<PriorityState> {
     final item = viewItems.removeAt(adjOld);
     viewItems.insert(adjNew, updatedItem ?? item);
 
-    // Record the expected order so the stream listener can detect when
+    // Record the expected state so the stream listener can detect when
     // the DB data has settled and safely transition from the optimistic
     // reorderViewItems to the derived _makeAgenda result.
     final movedItem = viewItems[adjNew];
     if (movedItem is AgendaThreadItem) {
-      _pendingReorderOrder = (
-        movedItem.thread.id,
-        movedItem.thread.order.value,
-      );
+      if (associatingWithParent != null) {
+        // Association: suppress until _associations confirms child→parent.
+        _pendingAssociation = (movedItem.thread.id, associatingWithParent);
+        _pendingReorderOrder = null;
+      } else if (disassociating) {
+        // Disassociation: suppress until _associations no longer has child.
+        _pendingDisassociation = movedItem.thread.id;
+        _pendingReorderOrder = (
+          movedItem.thread.id,
+          movedItem.thread.order.value,
+        );
+      } else {
+        _pendingReorderOrder = (
+          movedItem.thread.id,
+          movedItem.thread.order.value,
+        );
+      }
     }
 
     log.info(
@@ -1292,17 +1315,82 @@ class PriorityBloc extends Cubit<PriorityState> {
                 suppressReorder = !settled;
                 if (settled) {
                   _pendingReorderOrder = null;
-                  _reorderTimestamp = null;
                 }
               } else {
                 suppressReorder = false;
               }
 
-              final suppressRebuild = suppressReorder || suppressOptimistic;
+              // Data-driven suppression for association: keep reorderViewItems
+              // until _associations confirms the child→parent mapping AND the
+              // thread is no longer a standalone todo (schedule archival done).
+              final bool suppressAssociation;
+              if (_pendingAssociation != null) {
+                final (childId, parentId) = _pendingAssociation!;
+                final children = _associations?[parentId];
+                final assocExists = children != null &&
+                    children.any((a) => a.childThreadId == childId);
+                final stillTodo = threads.any(
+                  (t) => t.id == childId && t.todo,
+                );
+                final settled = assocExists && !stillTodo;
+                suppressAssociation = !settled;
+                if (settled) {
+                  _pendingAssociation = null;
+                }
+              } else {
+                suppressAssociation = false;
+              }
+
+              // Data-driven suppression for disassociation: keep reorderViewItems
+              // until _associations no longer contains the child AND the thread
+              // has the expected order (schedule restore done).
+              final bool suppressDisassociation;
+              if (_pendingDisassociation != null) {
+                final childId = _pendingDisassociation!;
+                final stillAssociated = _associations?.values.any(
+                      (children) =>
+                          children.any((a) => a.childThreadId == childId),
+                    ) ??
+                    false;
+                // Also check that the thread has settled with its new order
+                final orderSettled = _pendingReorderOrder == null;
+                final settled = !stillAssociated && orderSettled;
+                suppressDisassociation = !settled;
+                if (settled) {
+                  _pendingDisassociation = null;
+                }
+              } else {
+                suppressDisassociation = false;
+              }
+
+              // Time-based minimum suppression for reorders: association and
+              // disassociation involve multiple DB writes (association +
+              // schedule). Keep reorderViewItems for at least 500ms so all
+              // writes settle before _makeAgenda takes over.
+              final suppressReorderTime = _reorderTimestamp != null &&
+                  now.difference(_reorderTimestamp!) <
+                      const Duration(milliseconds: 500);
+
+              // Clear reorder timestamp once all data-driven checks pass
+              // AND the time window has elapsed.
+              if (!suppressReorder &&
+                  !suppressAssociation &&
+                  !suppressDisassociation &&
+                  !suppressReorderTime) {
+                _reorderTimestamp = null;
+              }
+
+              final suppressRebuild = suppressReorder ||
+                  suppressAssociation ||
+                  suppressDisassociation ||
+                  suppressReorderTime ||
+                  suppressOptimistic;
 
               log.fine(
                 '[_loadAgenda] stream fired: suppress=$suppressRebuild '
-                '(reorder=$suppressReorder optimistic=$suppressOptimistic) '
+                '(reorder=$suppressReorder assoc=$suppressAssociation '
+                'disassoc=$suppressDisassociation time=$suppressReorderTime '
+                'optimistic=$suppressOptimistic) '
                 'reorderAge=${_reorderTimestamp != null ? now.difference(_reorderTimestamp!).inMilliseconds : "null"}ms '
                 'hasReorderViewItems=${state.reorderViewItems != null} '
                 'pendingOrder=${_pendingReorderOrder?.$2}',

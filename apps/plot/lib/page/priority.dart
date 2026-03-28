@@ -1606,9 +1606,11 @@ class _PriorityPageState extends State<PriorityPage> {
                     }
                   } else {
                     // No active user schedule — disassociate will create one.
-                    // Use copyWith(todo: true) for the optimistic update so
-                    // the thread renders as a todo at the target position.
-                    updatedActivity = activity.copyWith(todo: true);
+                    // Use reorderTo so the optimistic copy has the new order,
+                    // ensuring _pendingReorderOrder doesn't match immediately.
+                    updatedActivity = activity
+                        .copyWith(todo: true)
+                        .reorderTo(newOrder, date: targetDate);
                   }
                 } else if (pinningToEvent) {
                   if (!passedGap && targetEvent != null) {
@@ -1649,7 +1651,18 @@ class _PriorityPageState extends State<PriorityPage> {
                     date: targetDate,
                   );
                 } else {
-                  updatedActivity = activity.reorder(newOrder);
+                  // Use reorderTo to normalize the schedule date to the
+                  // target section so todoCompareTo (which sorts by date
+                  // first, then order) doesn't override the user's chosen
+                  // position with a stale date.
+                  if (targetDate != null ||
+                      activity.on?.start != null ||
+                      activity.at?.start != null) {
+                    updatedActivity =
+                        activity.reorderTo(newOrder, date: targetDate);
+                  } else {
+                    updatedActivity = activity.reorder(newOrder);
+                  }
                 }
 
                 // Optimistic update: cache moved agendaViewItems so the
@@ -1671,6 +1684,9 @@ class _PriorityPageState extends State<PriorityPage> {
                               targetEvent?.occurrence ?? 'base',
                         )
                       : AgendaThreadItem(updatedActivity, now: nowFlag),
+                  associatingWithParent:
+                      useAssociation ? targetEvent!.id : null,
+                  disassociating: isAssociated && !droppingOnLinkEvent,
                 );
 
                 // Persist changes
