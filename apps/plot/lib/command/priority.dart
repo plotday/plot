@@ -430,7 +430,7 @@ class EditPriorityCommand extends ShowForm {
                     key: 'parent',
                     label: 'Parent',
                     initialValue: parent,
-                    enabled: !isRoot,
+                    enabled: !isRoot || priority.organizationId != null,
                     placeholder: 'None',
                     items: (search) async {
                       final priorities = Priority.excludePlot(
@@ -443,6 +443,8 @@ class EditPriorityCommand extends ShowForm {
                         if (p.id == priority.id) return false;
                         if (priority.path.isParent(p.path)) return false;
                         if (priority.personal && !p.personal) return false;
+                        // Team roots can only be placed under personal priorities
+                        if (isRoot && priority.organizationId != null && !p.personal) return false;
                         return true;
                       }).toList();
                     },

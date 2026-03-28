@@ -1,4 +1,4 @@
-h1:MF9ie8olJjJFqRpMTcCn4xhg6Clef50b1warIK3W9eE=
+h1:NimKusvvXNkSVGdlT1fVIaGcC3Q2WpQp43HnFC5KMaU=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -146,3 +146,5 @@ h1:MF9ie8olJjJFqRpMTcCn4xhg6Clef50b1warIK3W9eE=
 20260327135441_add_organization_billing_email.sql h1:tovfTTPr30kVWaDzUfikh/jT2Pcw2sdMqIg/+CsmotU=
 20260327214615_share_priority_renest_extracted_children.sql h1:92wagFLuFgqv22JzaQL9euz+LGkASOGENiz4SMi2KQI=
 20260328021246_team_priority_selector.sql h1:U53dDJDvo16VvCTO4WyvaQ2irFgDdcSku/JBBco4I0Q=
+20260328040342_add_thread_association.sql h1:wG25M3pkGlpJFvH1VXCaRBSb9zXozW7kdKlzff7YXeM=
+20260328140307_allow_visual_parent_for_team_roots.sql h1:38ONc5amhN5jekMdgfeDNdtg6nkWokLRGZfGMijdCbQ=

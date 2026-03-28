@@ -512,11 +512,41 @@ BEGIN
         _actual_path := _old_actual_path;
     END IF;
     IF _is_move THEN
-        -- Block moving root priorities
+        -- Root priorities: visual-only move (per-user alias, no actual path change)
         IF _input.root THEN
-            RAISE EXCEPTION 'Cannot move root priority'
-                USING HINT = 'Root priorities define access boundaries and cannot be moved';
-        END IF;
+            -- Get user's personal root path
+            SELECT
+                p.path INTO _user_personal_root_path
+            FROM
+                priority_user pu
+                JOIN priority p ON pu.priority_id = p.id
+            WHERE
+                pu.user_id = upsert_priority.user_id
+                AND pu.personal = TRUE
+                AND pu.archived_at IS NULL
+            LIMIT 1;
+            -- Compute default visual path (team root as direct child of personal root)
+            DECLARE
+                _default_visual_path ltree;
+            BEGIN
+                _default_visual_path := _user_personal_root_path || subpath(_old_actual_path, 0, 1);
+                IF _input.path = _default_visual_path THEN
+                    -- Reset to default: remove any existing alias
+                    DELETE FROM priority_setting
+                    WHERE user_id = upsert_priority.user_id
+                        AND priority_id = _input.id
+                        AND key = 'path';
+                ELSE
+                    -- Create/update visual alias
+                    INSERT INTO priority_setting (user_id, priority_id, key, value)
+                    VALUES (upsert_priority.user_id, _input.id, 'path', to_jsonb(text(_input.path)))
+                    ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
+                END IF;
+            END;
+            -- Not an actual move — clear move flags so title/color/order updates still apply
+            _is_move := FALSE;
+            _actual_path := NULL;
+        ELSE
         -- Get user's personal root path (actual path)
         SELECT
             p.path INTO _user_personal_root_path
@@ -615,6 +645,7 @@ BEGIN
                 RAISE EXCEPTION 'Cannot move personal priority into shared tree'
                 USING HINT = 'Use Share dialog to share a personal priority';
         END IF;
+        END IF; -- END root vs non-root branch
     END IF;
     -- Translate visual path to actual path for new sub-priorities
     IF _is_move IS NOT TRUE AND NOT _priority_exists AND nlevel (_input.path) > 1 THEN
