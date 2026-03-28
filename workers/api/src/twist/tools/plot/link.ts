@@ -497,7 +497,51 @@ export async function getLinks(
   const limit = filter?.limit ?? 50;
   const links = await query.limit(limit).execute();
 
-  // Fetch notes for each link's thread in parallel
+  // Batch-fetch all notes for the links' threads in a single query
+  const threadIds = links
+    .map((r) => r.thread_id)
+    .filter((id): id is string => id != null);
+
+  const allNoteRows =
+    threadIds.length > 0
+      ? await plot.db
+          .selectFrom("note")
+          .leftJoin("actor", "actor.id", "note.author_id")
+          .select([
+            "note.id",
+            "note.created_at",
+            "note.thread_id",
+            "note.author_id",
+            "note.created_by",
+            "note.content",
+            "note.key",
+            "note.re_note_id",
+            "note.mentions",
+            "note.private",
+            "note.archived_at",
+            "note.actions",
+            "actor.name as author_name",
+            "actor.type as author_type",
+          ])
+          .where("note.thread_id", "in", threadIds)
+          .where("note.draft", "=", false)
+          .where("note.archived_at", "is", null)
+          .orderBy("note.created_at", "asc")
+          .execute()
+      : [];
+
+  // Group notes by thread_id
+  const notesByThread = new Map<string, typeof allNoteRows>();
+  for (const n of allNoteRows) {
+    const tid = n.thread_id!;
+    let arr = notesByThread.get(tid);
+    if (!arr) {
+      arr = [];
+      notesByThread.set(tid, arr);
+    }
+    arr.push(n);
+  }
+
   const results: Array<{ link: Link; notes: Note[] }> = [];
 
   for (const row of links) {
@@ -542,59 +586,31 @@ export async function getLinks(
       relatedSource: null,
     };
 
-    // Fetch notes for this link's thread
-    let notes: Note[] = [];
-    if (row.thread_id) {
-      const noteRows = await plot.db
-        .selectFrom("note")
-        .leftJoin("actor", "actor.id", "note.author_id")
-        .select([
-          "note.id",
-          "note.created_at",
-          "note.thread_id",
-          "note.author_id",
-          "note.created_by",
-          "note.content",
-          "note.key",
-          "note.re_note_id",
-          "note.mentions",
-          "note.private",
-          "note.archived_at",
-          "note.actions",
-          "actor.name as author_name",
-          "actor.type as author_type",
-        ])
-        .where("note.thread_id", "=", row.thread_id)
-        .where("note.draft", "=", false)
-        .where("note.archived_at", "is", null)
-        .orderBy("note.created_at", "asc")
-        .execute();
-
-      notes = noteRows.map((n) => ({
-        id: n.id as Uuid,
-        created: n.created_at ? new Date(n.created_at) : new Date(),
-        // @ts-ignore - Partial Thread data
-        thread: { id: n.thread_id } as any,
-        author: {
-          id: (n.author_id ?? n.created_by) as ActorId,
-          name: n.author_name ?? null,
-          type:
-            n.author_type === "user"
-              ? ActorType.User
-              : n.author_type === "priority_twist"
-              ? ActorType.Twist
-              : ActorType.Contact,
-        },
-        content: n.content,
-        key: n.key || null,
-        reNote: n.re_note_id ? { id: n.re_note_id as Uuid } : null,
-        mentions: (n.mentions as ActorId[]) || [],
-        tags: {},
-        private: n.private ?? false,
-        archived: n.archived_at !== null,
-        actions: n.actions as any,
-      }));
-    }
+    const noteRows = (row.thread_id ? notesByThread.get(row.thread_id) : null) ?? [];
+    const notes: Note[] = noteRows.map((n) => ({
+      id: n.id as Uuid,
+      created: n.created_at ? new Date(n.created_at) : new Date(),
+      // @ts-ignore - Partial Thread data
+      thread: { id: n.thread_id } as any,
+      author: {
+        id: (n.author_id ?? n.created_by) as ActorId,
+        name: n.author_name ?? null,
+        type:
+          n.author_type === "user"
+            ? ActorType.User
+            : n.author_type === "priority_twist"
+            ? ActorType.Twist
+            : ActorType.Contact,
+      },
+      content: n.content,
+      key: n.key || null,
+      reNote: n.re_note_id ? { id: n.re_note_id as Uuid } : null,
+      mentions: (n.mentions as ActorId[]) || [],
+      tags: {},
+      private: n.private ?? false,
+      archived: n.archived_at !== null,
+      actions: n.actions as any,
+    }));
 
     results.push({ link, notes });
   }
