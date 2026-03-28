@@ -24,12 +24,14 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
     if (state.archivedFilter != newFilter) {
       log.info('Setting archivedFilter to $newFilter (showAll: $showAll)');
       // Use constructor instead of copyWith to properly set null value
-      emit(PrioritiesState(
-        priorities: state.priorities,
-        root: state.root,
-        archivedFilter: newFilter,
-        search: state.search,
-      ));
+      emit(
+        PrioritiesState(
+          priorities: state.priorities,
+          root: state.root,
+          archivedFilter: newFilter,
+          search: state.search,
+        ),
+      );
       start();
     }
   }
@@ -45,34 +47,29 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
   Future<void> start() {
     final completer = Completer<void>();
     stop();
-    _subscription = Priority.watch(
-      archived: state.archivedFilter,
-      search: state.search.isNotEmpty ? state.search : null,
-    ).listen(
-      (priorities) {
-        final orgPriorities = priorities.where((p) => p.organizationId != null).toList();
-        if (orgPriorities.isNotEmpty) {
-          log.info('PrioritiesBloc: ${orgPriorities.length} org priorities: ${orgPriorities.map((p) => '${p.title}(orgId=${p.organizationId}, root=${p.root}, personal=${p.personal})').toList()}');
-        } else {
-          log.info('PrioritiesBloc: 0 org priorities out of ${priorities.length} total');
-        }
-        emit(
-          state.copyWith(
-            priorities: priorities,
-            root: Priority.asNested(priorities).firstOrNull ?? state.root,
-          ),
+    _subscription =
+        Priority.watch(
+          archived: state.archivedFilter,
+          search: state.search.isNotEmpty ? state.search : null,
+        ).listen(
+          (priorities) {
+            emit(
+              state.copyWith(
+                priorities: priorities,
+                root: Priority.asNested(priorities).firstOrNull ?? state.root,
+              ),
+            );
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
+          },
+          onError: (Object error, StackTrace? stackTrace) {
+            log.severe('Error watching priorities', error, stackTrace);
+            if (!completer.isCompleted) {
+              completer.completeError(error, stackTrace);
+            }
+          },
         );
-        if (!completer.isCompleted) {
-          completer.complete();
-        }
-      },
-      onError: (Object error, StackTrace? stackTrace) {
-        log.severe('Error watching priorities', error, stackTrace);
-        if (!completer.isCompleted) {
-          completer.completeError(error, stackTrace);
-        }
-      },
-    );
     return completer.future;
   }
 

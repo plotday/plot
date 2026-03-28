@@ -1320,9 +1320,8 @@ class _PriorityPageState extends State<PriorityPage> {
               },
               activity: (agendaActivity) {
                 final isBeingDragged = controller.draggingIndex == index;
-                final removalKey = _getRemovalKey(
-                  '${agendaActivity.thread.id}${agendaActivity.thread.occurrence != null ? '_${agendaActivity.thread.occurrence}' : ''}${agendaActivity.thread.isLinkScheduleInstance ? '_link' : ''}',
-                );
+                final itemKey = agendaActivity.stableKey;
+                final removalKey = _getRemovalKey(itemKey);
                 return [
                   AnimatedRemoval(
                     key: removalKey,
@@ -1333,9 +1332,7 @@ class _PriorityPageState extends State<PriorityPage> {
                       );
                     },
                     child: ThreadWidget(
-                      key: ValueKey(
-                        'activitywidget_${agendaActivity.thread.id}${agendaActivity.thread.occurrence != null ? '_${agendaActivity.thread.occurrence}' : ''}${agendaActivity.thread.isLinkScheduleInstance ? '_link' : ''}',
-                      ),
+                      key: ValueKey('widget_$itemKey'),
                       activity: agendaActivity.thread,
                       selected:
                           !isBeingDragged &&
@@ -1343,6 +1340,7 @@ class _PriorityPageState extends State<PriorityPage> {
                           agendaActivity.thread.id == state.thread!.id,
                       now: agendaActivity.now,
                       isNext: agendaActivity.isNext,
+                      isAssociated: agendaActivity.isAssociated,
                       focusNode: focusNode,
                       context: state.context,
                       showSubPriority: true,
@@ -1384,9 +1382,15 @@ class _PriorityPageState extends State<PriorityPage> {
                 header: (header) => null,
                 activity: (agendaActivity) => agendaActivity.thread,
               );
-              if (activity?.todo != true ||
-                  activity == null ||
-                  activity.isLinkScheduleInstance) {
+              final isAssociated = item.when(
+                header: (_) => false,
+                activity: (a) => a.isAssociated,
+              );
+              if (activity == null || activity.isLinkScheduleInstance) {
+                return null;
+              }
+              // Allow dragging todos and associated threads
+              if (activity.todo != true && !isAssociated) {
                 return null;
               }
               return (int newIndex) {
@@ -1561,10 +1565,24 @@ class _PriorityPageState extends State<PriorityPage> {
 
                 final Thread updatedActivity;
                 bool needsFullSave = false;
+                bool useAssociation = false;
 
-                if (pinningToEvent) {
+                // Check if dropping immediately after a link-scheduled event
+                final droppingOnLinkEvent = !passedGap &&
+                    targetEvent != null &&
+                    targetEvent.isLinkScheduleInstance;
+
+                if (droppingOnLinkEvent) {
+                  // CREATE/MOVE ASSOCIATION: dropped right after a link event
+                  updatedActivity = activity;
+                  useAssociation = true;
+                } else if (isAssociated) {
+                  // REMOVE ASSOCIATION: associated thread dragged away
+                  updatedActivity = activity;
+                  // Will call disassociate below
+                } else if (pinningToEvent) {
                   if (!passedGap && targetEvent != null) {
-                    // Dropped right after a scheduled event —
+                    // Dropped right after a non-link scheduled event —
                     // check priority relationship
                     final eventPriority = targetEvent.priority;
                     if (activity.priority.isParent(eventPriority)) {
@@ -1614,11 +1632,31 @@ class _PriorityPageState extends State<PriorityPage> {
                 context.read<PriorityBloc>().moveAgendaItem(
                   oldListIndex,
                   newListIndex,
-                  updatedItem: AgendaThreadItem(updatedActivity, now: nowFlag),
+                  updatedItem: useAssociation
+                      ? AgendaThreadItem(
+                          updatedActivity,
+                          now: nowFlag,
+                          isAssociated: true,
+                          associationParentId:
+                              targetEvent?.occurrence ?? 'base',
+                        )
+                      : AgendaThreadItem(updatedActivity, now: nowFlag),
                 );
 
-                // Persist the reordered schedule (and priority change) to database
-                if (needsFullSave) {
+                // Persist changes
+                if (useAssociation) {
+                  // Create association and archive user schedule
+                  activity.associateWith(
+                    parentThreadId: targetEvent!.id,
+                    order: newOrder,
+                  );
+                } else if (isAssociated && !droppingOnLinkEvent) {
+                  // Remove association and restore user schedule
+                  activity.disassociate(
+                    order: newOrder,
+                    date: targetDate,
+                  );
+                } else if (needsFullSave) {
                   updatedActivity.save();
                 } else {
                   updatedActivity.saveOrder();

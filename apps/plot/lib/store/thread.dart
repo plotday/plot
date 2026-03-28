@@ -69,6 +69,15 @@ class Schedules extends Table with SyncableTable, UuidTable {
       boolean().withDefault(const Constant(false))();
 }
 
+@DataClassName('ThreadAssociationRow')
+class ThreadAssociations extends Table with SyncableTable, UuidTable {
+  BlobColumn get parentThreadId => blob().map(const UuidConverter())();
+  BlobColumn get childThreadId => blob().map(const UuidConverter())();
+  RealColumn get order => real().map(const OrderConverter())();
+  DateTimeColumn get archivedAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
+}
+
 class ScheduleContact {
   final String contactId;
   final String? contactEmail;
@@ -422,6 +431,24 @@ class SchedulesBase extends BaseTable {
   }
 }
 
+class ThreadAssociationsBase extends BaseTable {
+  ThreadAssociationsBase()
+    : super(
+        table: 'user_thread_association',
+        syncEndpoint: 'thread-associations',
+        name: "thread_associations",
+        order: 'updated_at',
+        ascending: false,
+      );
+
+  @override
+  Insertable<ThreadAssociationRow> fromBase(Map<String, dynamic> json) {
+    // Remove view-only fields
+    json.remove('user_id');
+    return ThreadAssociationRow.fromJson(json);
+  }
+}
+
 enum ThreadOrder { sorted, reverse }
 
 class Thread extends Equatable implements Comparable<Thread> {
@@ -443,6 +470,11 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // Pull schedules so they survive fullResync orphan cleanup
     await Store.get.pull(Store.get.schedules, SchedulesBase(), initial: true);
+    await Store.get.pull(
+      Store.get.threadAssociations,
+      ThreadAssociationsBase(),
+      initial: true,
+    );
 
     // Fetch current agenda and recent feed so views have data immediately
     await Thread.pullAgenda(null, null);
@@ -455,6 +487,10 @@ class Thread extends Equatable implements Comparable<Thread> {
     await Store.get.pull(Store.get.threads, ThreadsBase());
     await Store.get.pull(Store.get.schedules, SchedulesBase());
     await Store.get.pull(Store.get.threadTags, ThreadTagsBase());
+    await Store.get.pull(
+      Store.get.threadAssociations,
+      ThreadAssociationsBase(),
+    );
   }
 
   /// Pull one page of activity feed (backward from now).
@@ -566,6 +602,10 @@ class Thread extends Equatable implements Comparable<Thread> {
         await Store.get.push(Store.get.threads, ThreadsBase()) &&
         await Store.get.push(Store.get.links, LinksBase()) &&
         await Store.get.push(Store.get.schedules, SchedulesBase()) &&
+        await Store.get.push(
+          Store.get.threadAssociations,
+          ThreadAssociationsBase(),
+        ) &&
         await Store.get.push(Store.get.threadTags, ThreadTagsBase());
 
     // Batch push unread changes
@@ -777,6 +817,58 @@ class Thread extends Equatable implements Comparable<Thread> {
         });
       }
       return (threads: threads, rawRowCount: results.length);
+    });
+  }
+
+  /// Watch threads that are children of active thread associations.
+  /// Uses the same table aliases as [_getQuery] so results can be processed
+  /// by [_mapResultsToThreads].
+  static Stream<List<Thread>> watchAssociatedThreads() {
+    final a = Store.get.alias(Store.get.threads, 'a');
+    final sched = Store.get.alias(Store.get.schedules, 'sched');
+    final userSched = Store.get.alias(Store.get.schedules, 'user_sched');
+    final linkTable = Store.get.alias(Store.get.links, 'l');
+    final linkSched = Store.get.alias(Store.get.schedules, 'link_sched');
+    final tags = Store.get.alias(Store.get.threadTags, 'tags');
+    final ta = Store.get.threadAssociations;
+
+    final query = Store.get.select(a).join([
+      // INNER JOIN thread_associations to select only associated children
+      innerJoin(
+        ta,
+        ta.childThreadId.equalsExp(a.id) & ta.archivedAt.isNull(),
+      ),
+      // Same joins as _getQuery so _mapResultsToThreads works
+      leftOuterJoin(
+        sched,
+        sched.threadId.equalsExp(a.id) & sched.userId.isNull(),
+      ),
+      leftOuterJoin(
+        userSched,
+        userSched.threadId.equalsExp(a.id) &
+            userSched.userId.equalsValue(Base.userId) &
+            userSched.occurrence.isNull(),
+      ),
+      leftOuterJoin(linkTable, linkTable.threadId.equalsExp(a.id)),
+      leftOuterJoin(
+        linkSched,
+        linkSched.linkId.equalsExp(linkTable.id) & linkSched.userId.isNull(),
+      ),
+      leftOuterJoin(
+        tags,
+        (tags.id.equalsExp(a.id) | (tags.id.isNull() & a.id.isNull())) &
+            (tags.occurrence.equalsExp(sched.occurrence) |
+                (tags.occurrence.equals('') & sched.occurrence.isNull())),
+      ),
+    ]);
+
+    // Only non-archived, non-draft threads
+    query.where(a.archivedAt.isNull());
+    query.where(a.draft.equals(false));
+
+    return query.watch().asyncMap((results) async {
+      if (!Store.isAvailable) return <Thread>[];
+      return _mapResultsToThreads(results, range: null);
     });
   }
 
@@ -2579,6 +2671,152 @@ class Thread extends Equatable implements Comparable<Thread> {
       '[reorderToAfterEvent] "$title" has no userSchedule — cannot reorder',
     );
     return this;
+  }
+
+  /// Associate this thread with a parent event thread.
+  /// Archives the user schedule and creates a shared association.
+  Future<void> associateWith({
+    required Uuid parentThreadId,
+    required Order order,
+  }) async {
+    log.info(
+      '[associateWith] "$title" -> parent=$parentThreadId order=${order.value}',
+    );
+
+    // Create or update the association
+    final association = ThreadAssociationRow(
+      id: Uuid.generate(),
+      parentThreadId: parentThreadId,
+      childThreadId: id,
+      order: order,
+      updatedAt: DateTime.now(),
+    );
+    await Store.get.save(
+      Store.get.threadAssociations,
+      association.toCompanion(false),
+      ThreadAssociationsBase(),
+    );
+
+    // Archive the user schedule (remove from personal agenda)
+    if (_userSchedule != null) {
+      final archivedSchedule = _userSchedule.copyWith(
+        archivedAt: Value(DateTime.now()),
+        updatedAt: DateTime.now(),
+      );
+      await Store.get.save(
+        Store.get.schedules,
+        archivedSchedule.toCompanion(false),
+        SchedulesBase(),
+      );
+    }
+
+    Thread.push();
+  }
+
+  /// Remove association and restore the user schedule.
+  Future<void> disassociate({
+    required Order order,
+    Date? date,
+  }) async {
+    log.info('[disassociate] "$title" order=${order.value} date=$date');
+
+    // Archive the active association for this child thread
+    final associations = await (Store.get.select(Store.get.threadAssociations)
+          ..where((t) => t.childThreadId.equals(id.toBytes()))
+          ..where((t) => t.archivedAt.isNull()))
+        .get();
+
+    for (final assoc in associations) {
+      await Store.get.save(
+        Store.get.threadAssociations,
+        assoc
+            .copyWith(
+              archivedAt: Value(DateTime.now()),
+              updatedAt: DateTime.now(),
+            )
+            .toCompanion(false),
+        ThreadAssociationsBase(),
+      );
+    }
+
+    // Restore or create a user schedule
+    if (_userSchedule != null) {
+      final restoredSchedule = _userSchedule.copyWith(
+        archivedAt: const Value(null),
+        order: Value(order),
+        startOn: Value(date ?? Thread.todoNowDate),
+        startAt: const Value(null),
+        endAt: const Value(null),
+        endOn: const Value(null),
+        updatedAt: DateTime.now(),
+        reason: Value(date != null ? 'schedule' : 'add'),
+      );
+      await Store.get.save(
+        Store.get.schedules,
+        restoredSchedule.toCompanion(false),
+        SchedulesBase(),
+      );
+    } else {
+      final newSchedule = ScheduleRow(
+        id: Uuid.generate(),
+        updatedAt: DateTime.now(),
+        threadId: id,
+        userId: Base.userId,
+        startOn: date ?? Thread.todoNowDate,
+        order: order,
+        outstandingTasks: false,
+        reason: date != null ? 'schedule' : 'add',
+      );
+      await Store.get.save(
+        Store.get.schedules,
+        newSchedule.toCompanion(false),
+        SchedulesBase(),
+      );
+    }
+
+    Thread.push();
+  }
+
+  /// Reorder within an association group (shared order).
+  Future<void> reorderAssociation(Order order) async {
+    log.info('[reorderAssociation] "$title" order=${order.value}');
+
+    final associations = await (Store.get.select(Store.get.threadAssociations)
+          ..where((t) => t.childThreadId.equals(id.toBytes()))
+          ..where((t) => t.archivedAt.isNull()))
+        .get();
+
+    if (associations.isNotEmpty) {
+      final assoc = associations.first;
+      await Store.get.save(
+        Store.get.threadAssociations,
+        assoc
+            .copyWith(order: order, updatedAt: DateTime.now())
+            .toCompanion(false),
+        ThreadAssociationsBase(),
+      );
+      Thread.push();
+    } else {
+      log.warning(
+        '[reorderAssociation] "$title" has no active association',
+      );
+    }
+  }
+
+  /// Watch all active associations, keyed by parent thread ID.
+  static Stream<Map<Uuid, List<ThreadAssociationRow>>>
+      watchAssociationsByParent() {
+    return (Store.get.select(Store.get.threadAssociations)
+          ..where((t) => t.archivedAt.isNull())
+          ..orderBy([(t) => OrderingTerm.asc(t.order)]))
+        .watch()
+        .map((rows) {
+          final map = <Uuid, List<ThreadAssociationRow>>{};
+          for (final row in rows) {
+            map.putIfAbsent(row.parentThreadId, () => []).add(row);
+          }
+          return map;
+        });
   }
 
   Thread copyWith({

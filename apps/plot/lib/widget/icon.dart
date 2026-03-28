@@ -129,6 +129,9 @@ class PlotIcon {
   // Thread sub-types
   static const bullhorn = FontAwesomeIcons.bullhorn;
 
+  // Associations
+  static const associated = FontAwesomeIcons.arrowTurnDownRight;
+
   // Conferencing
   static const video = FontAwesomeIcons.video;
 }

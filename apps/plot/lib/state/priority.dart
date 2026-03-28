@@ -138,6 +138,12 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// preventing sync events from briefly restoring removed threads.
   final Set<ThreadId> _pendingRemovedIds = {};
 
+  /// Current thread associations, keyed by parent thread ID.
+  /// Updated via a separate stream subscription.
+  Map<Uuid, List<ThreadAssociationRow>>? _associations;
+  StreamSubscription<Map<Uuid, List<ThreadAssociationRow>>>?
+      _associationsSubscription;
+
   /// Optimistic reorder: caches the moved agendaViewItems so the UI
   /// doesn't re-derive them (which can produce different item counts).
   void moveAgendaItem(
@@ -224,6 +230,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _threadSubscription?.cancel();
     _agendaSubscription?.cancel();
     _activityFeedSubscription?.cancel();
+    _associationsSubscription?.cancel();
     _tagsSubscription?.cancel();
     _iconCountsSubscription?.cancel();
     return super.close();
@@ -282,6 +289,36 @@ class PriorityBloc extends Cubit<PriorityState> {
       agendaItems: updatedItems,
       activityFeedItems: updatedFeedItems,
     ));
+  }
+
+  /// Optimistically remove associated copies of a thread from the agenda.
+  /// Non-associated copies (user-scheduled) are preserved.
+  void optimisticallyDisassociate(ThreadId id) {
+    _optimisticTimestamp = DateTime.now();
+
+    // Also update the associations map so _makeAgenda doesn't re-add them
+    if (_associations != null) {
+      final updated = <Uuid, List<ThreadAssociationRow>>{};
+      for (final entry in _associations!.entries) {
+        final filtered =
+            entry.value.where((a) => a.childThreadId != id).toList();
+        if (filtered.isNotEmpty) {
+          updated[entry.key] = filtered;
+        }
+      }
+      _associations = updated;
+    }
+
+    final updatedItems = state.agendaItems
+        .where(
+          (item) => item.when(
+            header: (_) => true,
+            activity: (a) => !a.isAssociated || a.thread.id != id,
+          ),
+        )
+        .toList();
+
+    emit(state.copyWith(agendaItems: updatedItems));
   }
 
   /// Optimistically update a thread in the agenda for instant UI feedback.
@@ -969,6 +1006,17 @@ class PriorityBloc extends Cubit<PriorityState> {
       _loadThread(state.thread!);
     }
 
+    // Watch thread associations for agenda display.
+    // The associations map is used by _makeAgenda to inject associated threads
+    // under their parent events. The associated threads themselves are loaded
+    // via watchAssociatedThreads() combined into the agenda stream.
+    _associationsSubscription?.cancel();
+    _associationsSubscription = Thread.watchAssociationsByParent().listen((
+      associations,
+    ) {
+      _associations = associations;
+    });
+
     // Watch tags for the priority
     _tagsSubscription?.cancel();
     _tagsSubscription = Thread.watchTagsForPriority(priorityToLoad.path).listen(
@@ -1134,20 +1182,41 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
     _pendingRemovedIds.clear();
 
+    // Combine the main agenda thread stream with associated child threads
+    // so that associated threads appear even when they have no active schedule.
+    final agendaStream = Thread.watch(
+      priorityPath: priorityToLoad.path,
+      archived: state.showArchived,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
+      search: state.search.isNotEmpty ? state.search : null,
+      order: ThreadOrder.sorted,
+      limit: _agendaLimit,
+      includeUnscheduled: false,
+      range: CustomBoundedDateRange(
+        Date.today(),
+        Date.today().addDays(_agendaHorizonDays),
+      ),
+    );
+    final associatedStream = Thread.watchAssociatedThreads();
+
     _agendaSubscription =
-        Thread.watch(
-              priorityPath: priorityToLoad.path,
-              archived: state.showArchived,
-              filter: state.filter.isNotEmpty ? state.filter : null,
-              iconFilter: state.iconFilter.isNotEmpty ? state.iconFilter : null,
-              search: state.search.isNotEmpty ? state.search : null,
-              order: ThreadOrder.sorted,
-              limit: _agendaLimit,
-              includeUnscheduled: false,
-              range: CustomBoundedDateRange(
-                Date.today(),
-                Date.today().addDays(_agendaHorizonDays),
-              ),
+        Rx.combineLatest2<ThreadWatchResult, List<Thread>, ThreadWatchResult>(
+              agendaStream,
+              associatedStream,
+              (agendaResult, associatedThreads) {
+                // Merge associated threads that aren't already in the agenda
+                final agendaIds =
+                    agendaResult.threads.map((t) => t.id).toSet();
+                final extra = associatedThreads
+                    .where((t) => !agendaIds.contains(t.id))
+                    .toList();
+                if (extra.isEmpty) return agendaResult;
+                return (
+                  threads: [...agendaResult.threads, ...extra],
+                  rawRowCount: agendaResult.rawRowCount,
+                );
+              },
             )
             .transform(
               ExpiringStreamTransformer((result) {
@@ -1245,6 +1314,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                       threads,
                       context: priorityToLoad,
                       horizonDays: _agendaHorizonDays,
+                      associationsByParentId: _associations,
                     );
 
               emit(

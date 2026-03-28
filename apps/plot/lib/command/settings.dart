@@ -65,12 +65,6 @@ List<StaticCommandGroup> settingsCommandsFromState(
   final hasOrganizations =
       prioritiesState != null &&
       prioritiesState.priorities.any((p) => p.organizationId != null);
-  log.info(
-    'settingsCommandsFromState: hasOrganizations=$hasOrganizations, '
-    'priorityCount=${prioritiesState?.priorities.length ?? 0}, '
-    'orgPriorities=${prioritiesState?.priorities.where((p) => p.organizationId != null).map((p) => '${p.title}(orgId=${p.organizationId})').toList()}, '
-    'adminOrgs=$adminOrgs',
-  );
 
   Command? gettingStartedCmd;
   Command? helpFeedbackCmd;

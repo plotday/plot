@@ -273,15 +273,54 @@ class PriorityState extends Equatable {
     List<Thread> threads, {
     required Priority context,
     required int horizonDays,
+    Map<Uuid, List<ThreadAssociationRow>>? associationsByParentId,
   }) {
     log.fine('[_makeAgenda] rebuilding agenda (${threads.length} threads)');
     final items = <AgendaItem>[];
     final now = Time.now();
     final today = Date.today();
 
+    // Build a set of child thread IDs that are associated with events.
+    // These will be shown under their parent events instead of in the normal
+    // unscheduled pool. Threads that also have an active user schedule still
+    // appear in both places.
+    final associatedChildIds = <Uuid>{};
+    if (associationsByParentId != null) {
+      for (final children in associationsByParentId.values) {
+        for (final assoc in children) {
+          associatedChildIds.add(assoc.childThreadId);
+        }
+      }
+    }
+
+    // Build a lookup from child thread ID to Thread for association rendering.
+    final threadById = <Uuid, Thread>{};
+    for (final thread in threads) {
+      threadById[thread.id] = thread;
+    }
+
+    // Deduplicate threads by (id, isLinkScheduleInstance) before grouping.
+    // The combineLatest merge may produce duplicates when a thread appears
+    // in both the main agenda query and the associated-threads query.
+    final seen = <String>{};
+    final deduped = <Thread>[];
+    for (final thread in threads) {
+      final key =
+          '${thread.id}${thread.isLinkScheduleInstance ? '_link' : ''}${thread.occurrence ?? ''}';
+      if (seen.add(key)) {
+        deduped.add(thread);
+      }
+    }
+
     // Group threads by date
     final threadsByDate = <Date, List<Thread>>{};
-    for (final thread in threads) {
+    for (final thread in deduped) {
+      // Skip threads that are associated (will be shown under their event)
+      // UNLESS they also have an active (non-archived) user schedule
+      // (dual appearance).
+      if (associatedChildIds.contains(thread.id) && !thread.todo) {
+        continue;
+      }
       final date = thread.agendaAt.toDate();
       threadsByDate.putIfAbsent(date, () => []).add(thread);
     }
@@ -383,20 +422,54 @@ class PriorityState extends Equatable {
         items.add(AgendaThreadItem(event, now: current));
       }
 
+      // Insert associated threads below the event
+      if (associationsByParentId != null) {
+        final associations = associationsByParentId[event.id];
+        if (associations != null) {
+          // Use event occurrence (or 'base') as disambiguator so the same
+          // child thread under different recurring instances gets unique keys.
+          final parentKey = event.occurrence ?? 'base';
+          for (final assoc in associations) {
+            final child = threadById[assoc.childThreadId];
+            if (child != null) {
+              items.add(AgendaThreadItem(
+                child,
+                isAssociated: true,
+                associationParentId: parentKey,
+              ));
+            }
+          }
+        }
+      }
+
       // Pinned-to-event-start todos are handled by the time-match
       // condition in the priority filter below, so they sort by order
       // alongside other todos under the event.
       // (Pinned to event end time = gap start → handled in gap section.)
 
-      // Split threads into todos vs notes/done
-      final todos = threads.where((a) => a.todo).toList();
-      final notesAndDone = threads.where((a) => !a.todo).toList();
+      // Split threads into todos vs notes/done.
+      // Exclude threads that are associated with this event — they are
+      // already shown via the association injection above.
+      final eventAssocChildIds = associationsByParentId?[event.id]
+              ?.map((a) => a.childThreadId)
+              .toSet() ??
+          const <Uuid>{};
+      final todos = threads
+          .where((a) => a.todo && !eventAssocChildIds.contains(a.id))
+          .toList();
+      final notesAndDone = threads
+          .where((a) => !a.todo && !eventAssocChildIds.contains(a.id))
+          .toList();
 
       // Filter todos by priority or explicit time match (user pinned
       // a todo from an unrelated priority to this event's time).
+      // Exclude threads that have their own link schedule — they appear
+      // as their own event elsewhere and shouldn't be pulled under
+      // a different event by priority matching alone.
       final (matchingTodos, remainingTodos) = todos.partition(
         (Thread a) =>
-            // Priority match: same or descendant priority
+            !a.hasLinkSchedule &&
+            (// Priority match: same or descendant priority
             ((event.priority.id == a.priority.id ||
                     event.priority.isParent(a.priority)) &&
                 !(a.at?.start != null &&
@@ -406,7 +479,7 @@ class PriorityState extends Equatable {
             // Time match: todo explicitly pinned to this event's start
             (event.at?.start != null &&
                 (a.pinnedAfterTime ?? a.at?.start) != null &&
-                (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(event.at!.start!)),
+                (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(event.at!.start!))),
       );
 
       // Filter notes/done by time (agendaAt within event's time range)
@@ -1036,7 +1109,7 @@ sealed class AgendaItem extends Equatable {
         ? 'header_event_${h.dateTimeRange}'
         : 'header_other',
     activity: (a) =>
-        'activity_${a.thread.id}${a.thread.occurrence != null ? '_${a.thread.occurrence}' : ''}${a.thread.isLinkScheduleInstance ? '_link' : ''}',
+        'activity_${a.thread.id}${a.thread.occurrence != null ? '_${a.thread.occurrence}' : ''}${a.thread.isLinkScheduleInstance ? '_link' : ''}${a.isAssociated ? '_assoc${a.associationParentId != null ? '_${a.associationParentId}' : ''}' : ''}',
   );
 }
 
@@ -1073,15 +1146,29 @@ class AgendaHeaderItem extends AgendaItem {
 }
 
 class AgendaThreadItem extends AgendaItem {
-  const AgendaThreadItem(this.thread, {this.now = false, this.isNext = false});
+  const AgendaThreadItem(
+    this.thread, {
+    this.now = false,
+    this.isNext = false,
+    this.isAssociated = false,
+    this.associationParentId,
+  });
 
   final Thread thread;
   final bool now;
   final bool isNext;
+  final bool isAssociated;
+
+  /// Disambiguator for the same child thread appearing under multiple
+  /// parent events (e.g. recurring event instances). Used in widget keys
+  /// to prevent GlobalKey collisions.
+  final String? associationParentId;
 
   @override
-  List<Object?> get props => [thread, now, isNext];
+  List<Object?> get props =>
+      [thread, now, isNext, isAssociated, associationParentId];
 
   @override
-  String toString() => 'AgendaThreadItem(thread: ${thread.title}, now: $now)';
+  String toString() =>
+      'AgendaThreadItem(thread: ${thread.title}, now: $now, isAssociated: $isAssociated)';
 }

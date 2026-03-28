@@ -26,6 +26,7 @@ class ThreadWidget extends StatefulWidget {
     this.highlighted = false,
     this.now = false,
     this.isNext = false,
+    this.isAssociated = false,
     this.showSubPriority = false,
     this.showEventTiming = false,
     this.bump = true,
@@ -44,6 +45,7 @@ class ThreadWidget extends StatefulWidget {
   final bool selected;
   final bool now;
   final bool isNext;
+  final bool isAssociated;
   final bool showSubPriority;
   final bool showEventTiming;
   final bool bump;
@@ -248,7 +250,19 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
         // The command that the leading tap target triggers
         final Command leadingCommand;
-        if (!isTodo) {
+        if (widget.isAssociated && !activity.outstandingTasks) {
+          leadingCommand = DisassociateThread(activity);
+        } else if (widget.isAssociated && activity.outstandingTasks) {
+          leadingCommand = DisassociateThread(
+            activity,
+            finish: true,
+            onBeforeRun: widget.onMobileFinish != null
+                ? (_) => widget.onMobileFinish!()
+                : widget.onDesktopFinish != null
+                ? (_) => widget.onDesktopFinish!()
+                : null,
+          );
+        } else if (!isTodo) {
           leadingCommand = StartThread(activity);
         } else if (isScheduled) {
           leadingCommand = PickScheduleThread(activity);
@@ -272,7 +286,28 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final spacing = buildContext.theme.spacing;
 
         final Widget todoIcon;
-        if (!isTodo) {
+        final hasPending = activity.outstandingTasks;
+        final isAssoc = widget.isAssociated;
+        if (isAssoc && !hasPending) {
+          // Associated thread without outstanding tasks: show association icon
+          todoIcon = Button.icon(
+            _ThreadLeadingCommand(
+              leadingCommand,
+              outlineIcon: PlotIcon.associated,
+              filledIcon: PlotIcon.associated,
+              showFill: activity.unread,
+              iconHoverColor: _leadingHovered
+                  ? buildContext.colour.foreground
+                  : null,
+              hoverIcon: Value(FontAwesomeIcons.xmark),
+              title: 'Remove from event',
+            ),
+            selected: true,
+            selectedColor: threadColor,
+            forceHover: isHovered,
+            onLongPress: longPress,
+          );
+        } else if (!isTodo && !isAssoc) {
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
@@ -292,7 +327,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             onLongPress: longPress,
           );
         } else {
-          final hasPending = activity.outstandingTasks;
           final outlineIcon = isScheduled
               ? PlotIcon.schedule
               : hasPending

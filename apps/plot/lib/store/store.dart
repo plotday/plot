@@ -371,6 +371,7 @@ abstract class BaseTable {
     Sessions,
     UserSettings,
     SourceChannels,
+    ThreadAssociations,
   ],
   include: {'priority.drift'},
 )
@@ -2019,7 +2020,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 288;
+  int get schemaVersion => 289;
 
   @override
   MigrationStrategy get migration {
@@ -2611,6 +2612,9 @@ class Store extends _$Store {
     }
     if (from < 288) {
       await _safeAddColumn(m, sourceChannels, sourceChannels.linkTypes);
+    }
+    if (from < 289) {
+      await _safeCreateTable(m, threadAssociations);
     }
   }
 

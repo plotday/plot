@@ -714,6 +714,41 @@ class StartThread extends _UpdateThreadCommand {
   }
 }
 
+class DisassociateThread extends Command {
+  DisassociateThread(this.thread, {this.finish = false, this.onBeforeRun})
+    : super(
+        title: finish ? 'Finish' : 'Remove from event',
+        eventObject: EventObject.activity,
+        eventAction: finish ? EventAction.finished : EventAction.updated,
+        icon: finish ? FontAwesomeIcons.circleCheck : FontAwesomeIcons.xmark,
+      );
+
+  final Thread thread;
+  final bool finish;
+  final Future<void> Function(BuildContext context)? onBeforeRun;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (onBeforeRun != null) {
+      await onBeforeRun!(context);
+      if (!context.mounted) return const CommandDone();
+    }
+    final priorityBloc = context.read<PriorityBloc?>();
+    if (finish) {
+      // Finish + disassociate: remove all copies (associated and todo)
+      priorityBloc?.optimisticallyRemoveThread(thread.id, finishTodo: true);
+      await thread.copyWith(todo: false).save();
+    } else {
+      // Just disassociate: remove only the associated copies
+      priorityBloc?.optimisticallyDisassociate(thread.id);
+    }
+    await thread.disassociate(
+      order: Order.first(),
+    );
+    return const CommandDone();
+  }
+}
+
 class MarkReadThread extends _UpdateThreadCommand {
   MarkReadThread(super.thread, {super.onUpdate})
     : super(
