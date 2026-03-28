@@ -50,6 +50,12 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
       search: state.search.isNotEmpty ? state.search : null,
     ).listen(
       (priorities) {
+        final orgPriorities = priorities.where((p) => p.organizationId != null).toList();
+        if (orgPriorities.isNotEmpty) {
+          log.info('PrioritiesBloc: ${orgPriorities.length} org priorities: ${orgPriorities.map((p) => '${p.title}(orgId=${p.organizationId}, root=${p.root}, personal=${p.personal})').toList()}');
+        } else {
+          log.info('PrioritiesBloc: 0 org priorities out of ${priorities.length} total');
+        }
         emit(
           state.copyWith(
             priorities: priorities,

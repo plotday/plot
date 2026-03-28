@@ -970,6 +970,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          pomodoro: row.pomodoro,
          color: row.color,
          key: row.key,
+         organizationId: row.organizationId,
          root: row.root,
          personal: row.personal,
          path: row.path,

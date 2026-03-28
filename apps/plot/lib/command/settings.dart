@@ -65,6 +65,12 @@ List<StaticCommandGroup> settingsCommandsFromState(
   final hasOrganizations =
       prioritiesState != null &&
       prioritiesState.priorities.any((p) => p.organizationId != null);
+  log.info(
+    'settingsCommandsFromState: hasOrganizations=$hasOrganizations, '
+    'priorityCount=${prioritiesState?.priorities.length ?? 0}, '
+    'orgPriorities=${prioritiesState?.priorities.where((p) => p.organizationId != null).map((p) => '${p.title}(orgId=${p.organizationId})').toList()}, '
+    'adminOrgs=$adminOrgs',
+  );
 
   Command? gettingStartedCmd;
   Command? helpFeedbackCmd;
@@ -121,11 +127,11 @@ List<StaticCommandGroup> settingsCommands({
       ManageTwists(),
       ManageLinkedEmails(),
       ChangeAppearance(),
-      ChangeAiPreference(),
       if (NotificationService.isSupported &&
           !NotificationService.instance.isTokenRegistered)
         EnableNotifications(),
       if (rootPriority != null) ShowAttentionSettings(rootPriority),
+      ChangeAiPreference(),
       for (final org in adminOrgs)
         if (org['plan'] != 'free')
           OrgAiPreferences(
@@ -180,13 +186,17 @@ class ShowSettings extends ShowCommands {
               api.get<List<dynamic>>('/organization'),
               UpgradeApi.getSubscription(),
             ]);
-            adminOrgs = (results[0] as List<dynamic>)
-                .cast<Map<String, dynamic>>()
-                .where((o) => o['role'] == 'admin')
-                .toList();
+            final allOrgs = (results[0] as List<dynamic>)
+                .cast<Map<String, dynamic>>();
+            log.info(
+              'ShowSettings: /organization returned ${allOrgs.length} orgs: $allOrgs',
+            );
+            adminOrgs = allOrgs.where((o) => o['role'] == 'admin').toList();
+            log.info('ShowSettings: adminOrgs after role filter: $adminOrgs');
             subscription = results[1] as SubscriptionInfo;
-          } catch (_) {
+          } catch (e, t) {
             // Non-critical — settings still work without these
+            log.warning('Failed to fetch orgs/subscription for settings', e, t);
           }
 
           final groups = [
@@ -329,9 +339,7 @@ class ManageOrganizations extends Command {
       }
 
       if (orgs.length == 1) {
-        final url = Uri.parse(
-          '${Env.appBaseUrl}/organization/${orgs[0]['id']}',
-        );
+        final url = Uri.parse('${Env.siteRoot}/organization/${orgs[0]['id']}');
         await launchUrl(url, mode: LaunchMode.externalApplication);
         return const CommandDone();
       }
@@ -370,7 +378,7 @@ class ManageOrganizations extends Command {
 
       if (context.mounted && selected.present) {
         final url = Uri.parse(
-          '${Env.appBaseUrl}/organization/${selected.value['id']}',
+          '${Env.siteRoot}/organization/${selected.value['id']}',
         );
         await launchUrl(url, mode: LaunchMode.externalApplication);
       }

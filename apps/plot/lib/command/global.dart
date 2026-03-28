@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
@@ -20,6 +21,7 @@ class GlobalShortcuts extends StatefulWidget {
 
 class _GlobalShortcutsState extends State<GlobalShortcuts> {
   SubscriptionInfo? _subscription;
+  List<Map<String, dynamic>> _adminOrgs = const [];
   bool _fetchedSubscription = false;
   bool _registeredSyncCallback = false;
 
@@ -28,8 +30,19 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
     _fetchedSubscription = true;
     _registerSyncCallback();
     try {
-      final subscription = await UpgradeApi.getSubscription();
-      if (mounted) setState(() => _subscription = subscription);
+      final results = await Future.wait([
+        UpgradeApi.getSubscription(),
+        api.get<List<dynamic>>('/organization'),
+      ]);
+      if (mounted) {
+        setState(() {
+          _subscription = results[0] as SubscriptionInfo;
+          _adminOrgs = (results[1] as List<dynamic>)
+              .cast<Map<String, dynamic>>()
+              .where((o) => o['role'] == 'admin')
+              .toList();
+        });
+      }
     } catch (_) {
       // Non-critical — commands still work without subscription info
     }
@@ -43,8 +56,19 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
 
   void _onSubscriptionChanged() async {
     try {
-      final subscription = await UpgradeApi.getSubscription();
-      if (mounted) setState(() => _subscription = subscription);
+      final results = await Future.wait([
+        UpgradeApi.getSubscription(),
+        api.get<List<dynamic>>('/organization'),
+      ]);
+      if (mounted) {
+        setState(() {
+          _subscription = results[0] as SubscriptionInfo;
+          _adminOrgs = (results[1] as List<dynamic>)
+              .cast<Map<String, dynamic>>()
+              .where((o) => o['role'] == 'admin')
+              .toList();
+        });
+      }
     } catch (_) {
       // Non-critical
     }
@@ -76,6 +100,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
         prioritiesState,
         showAllPriorities: showAllPriorities,
         email: email,
+        adminOrgs: _adminOrgs,
         subscription: _subscription,
       ),
     ];
@@ -99,6 +124,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
           _fetchedSubscription = false;
           _registeredSyncCallback = false;
           _subscription = null;
+          _adminOrgs = const [];
           return CommandScope(
             commandsBuilder: () => _getCommands(signedIn: false),
             listenable: DeveloperMode.notifier,
