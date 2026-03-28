@@ -356,6 +356,7 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.check-changes.outputs.connectors != '[]'
     strategy:
+      max-parallel: 5
       matrix:
         connector: ${{ fromJson(needs.check-changes.outputs.connectors) }}
 
