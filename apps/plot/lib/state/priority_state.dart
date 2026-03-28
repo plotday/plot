@@ -387,10 +387,6 @@ class PriorityState extends Equatable {
               return a.compareTo(b);
             });
 
-          if (entry.key.id != skipHeaderFor?.id ||
-              prioritizedThreads.length > 1) {
-            items.add(AgendaHeaderItem(scheduleAt: scheduleAt));
-          }
           items.addAll(sortedThreads.map((Thread a) => AgendaThreadItem(a)));
         }
       }

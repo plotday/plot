@@ -102,9 +102,11 @@ class AgendaHeader extends StatelessWidget {
 
     final textColor = now ? nowColor : context.theme.colors.mutedForeground;
 
-    // Detect gap headers (time gaps between scheduled events)
+    // Detect gap headers (time gaps between scheduled events).
+    // The now flag indicates the current time position but doesn't change
+    // that this is a gap header — it only affects styling (accent color).
     final isGapHeader =
-        thread == null && dateTimeRange != null && date == null && !now;
+        thread == null && dateTimeRange != null && date == null;
 
     // Use xs font size for event headers and gap headers to match thread timing labels
     final fontSize = (thread != null && !now) || isGapHeader
