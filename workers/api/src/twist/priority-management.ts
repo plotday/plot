@@ -3,10 +3,6 @@ import { type Kysely, sql } from "kysely";
 import type { DB } from "../db-types";
 import { rpc } from "../rpc";
 
-/** Check if an error is a PostgreSQL unique constraint violation (code 23505) */
-function isDuplicateKeyError(error: unknown): boolean {
-  return (error as any)?.code === "23505";
-}
 
 /**
  * Gets or creates the "Plot" priority for a user.
@@ -65,18 +61,18 @@ export async function getOrCreatePlotPriority(
       .executeTakeFirstOrThrow();
 
     return createResult.id;
-  } catch (error) {
-    if (isDuplicateKeyError(error)) {
-      // Another concurrent request created it — re-SELECT
-      const retryResult = await db
-        .selectFrom("priority")
-        .select(["id"])
-        .where("key", "=", "@plot")
-        .where(sql<boolean>`path <@ ${rootPathPart}::ltree`)
-        .executeTakeFirstOrThrow();
+  } catch (insertError) {
+    // Race condition: another request may have created it — re-SELECT
+    const retryResult = await db
+      .selectFrom("priority")
+      .select(["id"])
+      .where("key", "=", "@plot")
+      .where(sql<boolean>`path <@ ${rootPathPart}::ltree`)
+      .executeTakeFirst();
+    if (retryResult) {
       return retryResult.id;
     }
-    throw error;
+    throw insertError;
   }
 }
 
@@ -137,17 +133,17 @@ export async function getOrCreateTwistDevelopmentPriority(
       .executeTakeFirstOrThrow();
 
     return createResult.id;
-  } catch (error) {
-    if (isDuplicateKeyError(error)) {
-      const retryResult = await db
-        .selectFrom("priority")
-        .select(["id"])
-        .where("key", "=", "@plot.twist-dev")
-        .where(sql<boolean>`path <@ ${rootPathPart}::ltree`)
-        .executeTakeFirstOrThrow();
+  } catch (insertError) {
+    const retryResult = await db
+      .selectFrom("priority")
+      .select(["id"])
+      .where("key", "=", "@plot.twist-dev")
+      .where(sql<boolean>`path <@ ${rootPathPart}::ltree`)
+      .executeTakeFirst();
+    if (retryResult) {
       return retryResult.id;
     }
-    throw error;
+    throw insertError;
   }
 }
 
@@ -225,13 +221,13 @@ export async function getOrCreateTwistPriority(
         .returning(["id"])
         .executeTakeFirstOrThrow();
       priorityId = createPriorityResult.id;
-    } catch (error) {
-      if (isDuplicateKeyError(error) && attempt === 0) {
-        // Concurrent request created a priority — retry from the top
+    } catch {
+      if (attempt === 0) {
+        // Concurrent request likely created a priority — retry from the top
         // so the SELECT finds the twist_admin entry
         continue;
       }
-      throw error;
+      throw new Error("Failed to create twist priority after retry");
     }
 
     // Create or update twist_admin entry
@@ -285,12 +281,12 @@ export async function getOrCreateTwistPriority(
           twistAdminId: Number(createAdminResult.id),
           isNew: true,
         };
-      } catch (error) {
-        if (isDuplicateKeyError(error) && attempt === 0) {
-          // Concurrent request created the twist_admin — retry from the top
+      } catch {
+        if (attempt === 0) {
+          // Concurrent request likely created the twist_admin — retry
           continue;
         }
-        throw error;
+        throw new Error("Failed to create twist admin after retry");
       }
     }
   }
