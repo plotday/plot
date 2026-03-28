@@ -422,6 +422,8 @@ DECLARE
     _within_aliased_tree boolean;
     _priority_exists boolean;
     _old_actual_path ltree;
+    _old_org_id bigint;
+    _new_org_id bigint;
 BEGIN
     -- Extract input fields from JSONB into the view's row type
     _input := jsonb_populate_record(NULL::"user"."priority", p_priority || jsonb_build_object('user_id', upsert_priority.user_id));
@@ -643,12 +645,13 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF _actual_path IS NOT NULL THEN
-        INSERT INTO priority (id, archived_at, title, color, path, created_by, updated_by, inherit_members)
+        INSERT INTO priority (id, archived_at, title, color, path, created_by, updated_by, inherit_members, organization_id)
             VALUES (_input.id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _actual_path, _input.created_by, _input.updated_by, COALESCE(_input.inherit_members, TRUE))
+                END, _actual_path, _input.created_by, _input.updated_by, COALESCE(_input.inherit_members, TRUE),
+                CASE WHEN _is_creator THEN _input.organization_id ELSE NULL END)
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -659,7 +662,8 @@ BEGIN
                     priority.color
                 END,
                 updated_by = _input.updated_by,
-                inherit_members = COALESCE(_input.inherit_members, priority.inherit_members)
+                inherit_members = COALESCE(_input.inherit_members, priority.inherit_members),
+                organization_id = CASE WHEN _is_creator THEN _input.organization_id ELSE priority.organization_id END
             RETURNING
                 id INTO _priority_id;
     ELSE
@@ -675,11 +679,73 @@ BEGIN
                 priority.color
             END,
             updated_by = _input.updated_by,
-            inherit_members = COALESCE(_input.inherit_members, priority.inherit_members)
+            inherit_members = COALESCE(_input.inherit_members, priority.inherit_members),
+            organization_id = CASE WHEN _is_creator THEN _input.organization_id ELSE priority.organization_id END
         WHERE
             id = _input.id
         RETURNING
             id INTO _priority_id;
+    END IF;
+    -- Handle organization_id changes: authorization, promote-to-root, and descendant propagation
+    IF _is_creator THEN
+        SELECT organization_id INTO _old_org_id FROM priority WHERE id = _priority_id;
+        _new_org_id := _input.organization_id;
+        -- Only act when organization_id actually changed
+        IF _old_org_id IS DISTINCT FROM _new_org_id THEN
+            -- Removing from org: require admin role
+            IF _old_org_id IS NOT NULL AND (_new_org_id IS NULL OR _new_org_id != _old_org_id) THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM organization_member
+                    WHERE organization_id = _old_org_id
+                    AND user_id = upsert_priority.user_id
+                    AND role = 'admin'
+                ) THEN
+                    RAISE EXCEPTION 'Only team admins can remove a priority from the team';
+                END IF;
+            END IF;
+            -- Setting org: require membership
+            IF _new_org_id IS NOT NULL THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM organization_member
+                    WHERE organization_id = _new_org_id
+                    AND user_id = upsert_priority.user_id
+                ) THEN
+                    RAISE EXCEPTION 'Must be a member of the organization';
+                END IF;
+            END IF;
+            -- Auto-promote to root: if setting org_id on a non-root priority, move it to root level
+            IF _new_org_id IS NOT NULL THEN
+                DECLARE
+                    _current_path ltree;
+                    _new_root_path ltree;
+                    _priority_label text;
+                BEGIN
+                    SELECT path INTO _current_path FROM priority WHERE id = _priority_id;
+                    IF nlevel(_current_path) > 1 THEN
+                        -- Generate a random root-level path (12 chars, ltree-safe)
+                        _new_root_path := text2ltree(
+                            substring(md5(random()::text || clock_timestamp()::text) from 1 for 12)
+                        );
+                        -- Move the priority and all descendants to the new root path
+                        UPDATE priority
+                        SET path = CASE
+                            WHEN id = _priority_id THEN _new_root_path
+                            ELSE _new_root_path || subpath(path, nlevel(_current_path))
+                        END
+                        WHERE path <@ _current_path;
+                        -- Create priority_user entry to make this a root for the user
+                        INSERT INTO priority_user (user_id, priority_id, personal)
+                        VALUES (upsert_priority.user_id, _priority_id, FALSE)
+                        ON CONFLICT (user_id, priority_id) DO NOTHING;
+                    END IF;
+                END;
+            END IF;
+            -- Propagate organization_id to all descendants
+            UPDATE priority
+            SET organization_id = _new_org_id
+            WHERE path <@ (SELECT path FROM priority WHERE id = _priority_id)
+            AND id != _priority_id;
+        END IF;
     END IF;
     -- Update priority_setting for user-specific fields
     IF _is_visual_move THEN

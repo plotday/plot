@@ -12,94 +12,96 @@ import { notifySync } from "./sync/notify";
 
 const organization = new Hono<{ Bindings: Bindings }>();
 
-/** Generate a random 12-char ltree-safe root path in TypeScript.
- *  Avoids Hyperdrive query caching that affects the DB generate_path() function. */
-function generateRootPath(): string {
-  const chars =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  let result = "";
-  for (let i = 0; i < 12; i++) {
-    result += chars[bytes[i] % chars.length];
-  }
-  return result;
-}
-
 /**
- * Create the org-linked priority and give the user access.
- * Returns the priority ID.
+ * Create a task thread in the user's personal root priority guiding them
+ * to designate priorities for their new team.
+ * Returns the priority ID the thread was created in, or null.
  */
-export async function createOrgPriority(
+export async function createTeamSetupTask(
   db: any,
-  orgId: string | number,
   orgName: string,
   userId: string
-): Promise<string> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const path = generateRootPath();
+): Promise<string | null> {
+  // Find user's personal root priority
+  const rootPu = await db
+    .selectFrom("priority_user")
+    .innerJoin("priority", "priority.id", "priority_user.priority_id")
+    .select(["priority.id"])
+    .where("priority_user.user_id", "=", userId)
+    .where("priority_user.personal", "=", true)
+    .where("priority_user.archived_at", "is", null)
+    .executeTakeFirst();
 
-    const priority = await db
-      .insertInto("priority")
-      .values({
-        created_by: userId,
-        title: orgName,
-        path,
-        color: 0,
-        updated_by: 0,
-        key: `@org-${orgId}`,
-        organization_id: orgId as any,
-      })
-      .onConflict((oc: any) => oc.column("path").doNothing())
-      .returning("id")
-      .executeTakeFirst();
+  if (!rootPu) return null;
 
-    if (priority) {
-      // The insert trigger skips @org-* keys, so manually create priority_user
-      await db
-        .insertInto("priority_user")
-        .values({
-          user_id: userId,
-          priority_id: priority.id,
-          personal: false,
-        })
-        .execute();
+  // Create a thread (task)
+  const thread = await db
+    .insertInto("thread")
+    .values({
+      priority_id: rootPu.id,
+      title: `Set up your ${orgName} team`,
+      created_by: userId,
+    })
+    .returning("id")
+    .executeTakeFirstOrThrow();
 
-      return priority.id;
-    }
-  }
-  throw new Error("Failed to generate unique priority path after 3 attempts");
+  // Add instructional note
+  await db
+    .insertInto("note")
+    .values({
+      thread_id: thread.id,
+      content: `Your new Team plan applies to any priorities set to the **${orgName}** team. Edit existing priorities or add a new one to designate priorities for the team.`,
+      created_by: userId,
+      author_id: userId,
+    })
+    .execute();
+
+  // Schedule as current to-do (undated per-user schedule with reason='task')
+  await db
+    .insertInto("schedule")
+    .values({
+      thread_id: thread.id,
+      user_id: userId,
+      order: Date.now(),
+      reason: "task",
+    })
+    .execute();
+
+  return rootPu.id;
 }
 
 /**
- * Give a user access to an org's priority (for member add / invitation accept / auto-join).
+ * Give a user access to all priorities belonging to an organization
+ * (for member add / invitation accept / auto-join).
+ * Returns the list of priority IDs the user was given access to.
  */
-export async function addUserToOrgPriority(
+export async function addUserToOrgPriorities(
   db: any,
   orgId: string | number,
   userId: string
-): Promise<string | null> {
-  const orgPriority = await db
+): Promise<string[]> {
+  const orgPriorities = await db
     .selectFrom("priority")
     .select("id")
     .where("organization_id", "=", orgId as any)
-    .executeTakeFirst();
-
-  if (!orgPriority) return null;
-
-  await db
-    .insertInto("priority_user")
-    .values({
-      user_id: userId,
-      priority_id: orgPriority.id,
-      personal: false,
-      archived_at: null,
-    })
-    .onConflict((oc: any) =>
-      oc.columns(["user_id", "priority_id"]).doUpdateSet({ archived_at: null })
-    )
     .execute();
 
-  return orgPriority.id;
+  for (const p of orgPriorities) {
+    await db
+      .insertInto("priority_user")
+      .values({
+        user_id: userId,
+        priority_id: p.id,
+        personal: false,
+        archived_at: null,
+      })
+      .onConflict((oc: any) =>
+        oc.columns(["user_id", "priority_id"]).doUpdateSet({ archived_at: null })
+      )
+      .execute();
+  }
+
+  return orgPriorities.map((p: any) => p.id as string);
 }
 
 /**
@@ -279,9 +281,9 @@ organization.post("/organization", async (c) => {
       })
       .execute();
 
-    // Create org-linked priority
-    const priorityId = await createOrgPriority(c.var.db, org.id, org.name, user.id);
-    notifySync(c, priorityId);
+    // Create a task thread guiding the user to set up team priorities
+    const priorityId = await createTeamSetupTask(c.var.db, org.name, user.id);
+    if (priorityId) notifySync(c, priorityId);
 
     return c.json({ id: String(org.id), name: org.name }, 201);
   } catch (err) {
@@ -320,24 +322,6 @@ organization.patch("/organization/:id", async (c) => {
       .set(updates)
       .where("id", "=", orgId)
       .execute();
-
-    // Update linked priority title if name changed
-    if (updates.name) {
-      const orgPriority = await c.var.db
-        .selectFrom("priority")
-        .select("id")
-        .where("organization_id", "=", orgId as any)
-        .executeTakeFirst();
-
-      if (orgPriority) {
-        await c.var.db
-          .updateTable("priority")
-          .set({ title: updates.name })
-          .where("id", "=", orgPriority.id)
-          .execute();
-        notifySync(c, orgPriority.id);
-      }
-    }
 
     // Sync billing email to Stripe Customer if it changed
     if (body.billingEmail !== undefined) {
@@ -403,9 +387,9 @@ organization.post("/organization/:id/members", async (c) => {
         )
         .execute();
 
-      // Give member access to org priority
-      const priorityId = await addUserToOrgPriority(c.var.db, orgId, existingUser.id);
-      if (priorityId) notifySync(c, priorityId);
+      // Give member access to all org priorities
+      const priorityIds = await addUserToOrgPriorities(c.var.db, orgId, existingUser.id);
+      for (const pid of priorityIds) notifySync(c, pid);
 
       return c.json({ status: "added", userId: existingUser.id });
     } catch (err) {
@@ -470,12 +454,12 @@ organization.delete("/organization/:id/members/:userId", async (c) => {
     }
   }
 
-  // Archive user's access to org priority before removing membership
-  const orgPriority = await c.var.db
+  // Archive user's access to all org priorities before removing membership
+  const orgPriorities = await c.var.db
     .selectFrom("priority")
     .select("id")
     .where("organization_id", "=", orgId as any)
-    .executeTakeFirst();
+    .execute();
 
   await c.var.db
     .deleteFrom("organization_member")
@@ -483,14 +467,14 @@ organization.delete("/organization/:id/members/:userId", async (c) => {
     .where("user_id", "=", targetUserId)
     .execute();
 
-  if (orgPriority) {
+  for (const p of orgPriorities) {
     await c.var.db
       .updateTable("priority_user")
       .set({ archived_at: new Date().toISOString() })
       .where("user_id", "=", targetUserId)
-      .where("priority_id", "=", orgPriority.id)
+      .where("priority_id", "=", p.id)
       .execute();
-    notifySync(c, orgPriority.id);
+    notifySync(c, p.id);
   }
 
   return c.json({ success: true });

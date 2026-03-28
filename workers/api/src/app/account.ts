@@ -19,7 +19,7 @@ import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync } from "./sync/notify";
-import { addUserToOrgPriority } from "./organization";
+import { addUserToOrgPriorities } from "./organization";
 
 const account = new Hono<{ Bindings: Bindings }>();
 
@@ -600,9 +600,9 @@ account.post("/activate", async (c) => {
         .where("id", "=", inv.id)
         .execute();
 
-      // Give user access to org priority
-      const _orgPriorityId = await addUserToOrgPriority(c.var.db, inv.organization_id, user.id);
-      if (_orgPriorityId) notifySync(c, _orgPriorityId);
+      // Give user access to all org priorities
+      const orgPriorityIds = await addUserToOrgPriorities(c.var.db, inv.organization_id, user.id);
+      for (const pid of orgPriorityIds) notifySync(c, pid);
     }
 
     if (invitations.length > 0) {
@@ -646,9 +646,9 @@ account.post("/activate", async (c) => {
           )
           .execute();
 
-        // Give user access to org priority
-        const _domainOrgPriorityId = await addUserToOrgPriority(c.var.db, domain.organization_id, user.id);
-        if (_domainOrgPriorityId) notifySync(c, _domainOrgPriorityId);
+        // Give user access to all org priorities
+        const domainOrgPriorityIds = await addUserToOrgPriorities(c.var.db, domain.organization_id, user.id);
+        for (const pid of domainOrgPriorityIds) notifySync(c, pid);
 
         const context = extractRequestContext(c);
         const logger = createLogger(context);
