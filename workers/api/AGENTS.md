@@ -13,22 +13,9 @@ Any database function that must return unique/fresh results per call:
 
 ### How to fix
 
-Use `createNoCacheDb(env)` from `../db` instead of the request-scoped `db` for these calls. This uses Hyperdrive's `noCache` connection string, which bypasses the query cache while still using connection pooling.
+**Preferred: Generate non-deterministic values in TypeScript** instead of database functions. This completely eliminates caching concerns. See `generatePath()` in `src/twist/priority-management.ts` for an example.
 
-```typescript
-import { createNoCacheDb } from "../db";
-
-// BAD: Hyperdrive may return the same cached random path to concurrent requests
-const path = await rpc(db, "generate_path", { parent: parentPath });
-
-// GOOD: Each call gets a fresh result
-const noCacheDb = createNoCacheDb(env);
-try {
-  const path = await rpc(noCacheDb, "generate_path", { parent: parentPath });
-} finally {
-  await noCacheDb.destroy();
-}
-```
+If you must use a database function, you can bypass Hyperdrive's cache using the `noCache` connection string on the Hyperdrive binding (`env.HYPERDRIVE.noCache`). This skips the query cache while keeping connection pooling benefits.
 
 ### When you DON'T need noCache
 

@@ -1,26 +1,26 @@
 import { type Kysely, sql } from "kysely";
 
 import type { DB } from "../db-types";
-import type { Bindings } from "../env";
-import { createNoCacheDb } from "../db";
-import { rpc } from "../rpc";
+
+const PATH_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 /**
  * Generate a unique child path under a parent priority.
- * Uses a no-cache DB connection to bypass Hyperdrive's query cache,
- * which otherwise returns the same cached random path to concurrent
- * requests (generate_path uses random() internally).
+ *
+ * Generated in TypeScript instead of calling the database generate_path()
+ * function because Hyperdrive caches SELECT results — concurrent requests
+ * calling SELECT generate_path(parent => $1) with the same parent receive
+ * the same cached random path, causing unique constraint violations.
+ *
+ * Matches the format of the database generate_path(): 4 random alphanumeric
+ * characters appended to the parent path.
  */
-async function generatePath(
-  parent: string,
-  env: Bindings
-): Promise<string> {
-  const noCacheDb = createNoCacheDb(env);
-  try {
-    return await rpc(noCacheDb, "generate_path", { parent }) as string;
-  } finally {
-    await noCacheDb.destroy();
+function generatePath(parent: string): string {
+  let random = "";
+  for (let i = 0; i < 4; i++) {
+    random += PATH_CHARS[Math.floor(Math.random() * PATH_CHARS.length)];
   }
+  return `${parent}.${random}`;
 }
 
 /**
@@ -30,8 +30,7 @@ async function generatePath(
  */
 export async function getOrCreatePlotPriority(
   userId: string,
-  db: Kysely<DB>,
-  env: Bindings
+  db: Kysely<DB>
 ): Promise<string> {
   // First get the user's root priority to scope the key lookup
   const rootResult = await db
@@ -60,7 +59,7 @@ export async function getOrCreatePlotPriority(
   // Not found, need to create it
   // Generate child path using no-cache DB to avoid Hyperdrive returning
   // the same cached random path to concurrent requests
-  const path = await generatePath(rootPath, env);
+  const path = generatePath(rootPath);
 
   // Create the Plot priority — handle race condition where a concurrent
   // request creates it between our SELECT and INSERT
@@ -101,11 +100,10 @@ export async function getOrCreatePlotPriority(
  */
 export async function getOrCreateTwistDevelopmentPriority(
   userId: string,
-  db: Kysely<DB>,
-  env: Bindings
+  db: Kysely<DB>
 ): Promise<string> {
   // First ensure the Plot priority exists and get its path
-  const plotPriorityId = await getOrCreatePlotPriority(userId, db, env);
+  const plotPriorityId = await getOrCreatePlotPriority(userId, db);
 
   // Get the Plot priority path to scope the key lookup
   const plotResult = await db
@@ -132,7 +130,7 @@ export async function getOrCreateTwistDevelopmentPriority(
   // Not found, need to create it
 
   // Generate child path using no-cache DB
-  const path = await generatePath(plotResult.path as string, env);
+  const path = generatePath(plotResult.path as string);
 
   // Create the Twist Development priority — handle race condition
   try {
@@ -175,7 +173,6 @@ export async function getOrCreateTwistPriority(
   twistName: string,
   isPersonal: boolean,
   db: Kysely<DB>,
-  env: Bindings,
   publisherId?: number | null
 ): Promise<{ priorityId: string; twistAdminId: number; isNew: boolean }> {
   // Query twist_admin to see if this twist already has a priority
@@ -204,8 +201,7 @@ export async function getOrCreateTwistPriority(
   // First ensure Twist Development priority exists
   const twistDevPriorityId = await getOrCreateTwistDevelopmentPriority(
     userId,
-    db,
-    env
+    db
   );
 
   // Get the Twist Development priority path
@@ -216,7 +212,7 @@ export async function getOrCreateTwistPriority(
     .executeTakeFirstOrThrow();
 
   // Generate child path using no-cache DB
-  const path = await generatePath(twistDevResult.path as string, env);
+  const path = generatePath(twistDevResult.path as string);
 
   // Create the twist-specific priority
   const priorityTitle = isPersonal ? `${twistName} (Personal)` : twistName;
