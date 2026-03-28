@@ -3,6 +3,8 @@
   "displayName": "Google Tasks",
   "description": "Tasks from Google Tasks",
   "logoUrl": "https://api.iconify.design/logos/google-tasks.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.1.0",

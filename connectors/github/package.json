@@ -5,6 +5,8 @@
   "description": "Pull requests, issues, and code reviews",
   "logoUrl": "https://api.iconify.design/logos/github-icon.svg",
   "logoUrlDark": "https://api.iconify.design/simple-icons/github.svg?color=%23ffffff",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.1.0",

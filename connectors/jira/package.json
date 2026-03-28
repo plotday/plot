@@ -4,6 +4,8 @@
   "displayName": "Jira",
   "description": "Issues from Jira",
   "logoUrl": "https://api.iconify.design/logos/jira.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.8.1",

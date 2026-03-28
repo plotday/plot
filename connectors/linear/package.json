@@ -5,6 +5,8 @@
   "description": "Issues from Linear",
   "logoUrl": "https://api.iconify.design/logos/linear-icon.svg",
   "logoUrlDark": "https://api.iconify.design/simple-icons/linear.svg?color=%235E6AD2",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.7.1",

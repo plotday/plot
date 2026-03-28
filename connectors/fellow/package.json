@@ -2,6 +2,8 @@
   "name": "@plotday/connector-fellow",
   "displayName": "Fellow",
   "description": "Sync Fellow meeting notes and action items",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.1.0",

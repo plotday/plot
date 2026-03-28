@@ -4,6 +4,8 @@
   "displayName": "Gmail",
   "description": "Email threads from Gmail",
   "logoUrl": "https://api.iconify.design/logos/google-gmail.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.9.1",

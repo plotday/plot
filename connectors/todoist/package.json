@@ -3,6 +3,8 @@
   "displayName": "Todoist",
   "description": "Tasks from Todoist",
   "logoUrl": "https://api.iconify.design/logos/todoist-icon.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.1.0",

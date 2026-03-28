@@ -75,6 +75,8 @@ interface PackageJson {
   license?: string;
   logoUrl?: string;
   logoUrlDark?: string;
+  publisher?: string;
+  publisherUrl?: string;
   plotTwistId?: string;
   plotTwist?: {
     id?: string;
@@ -117,6 +119,15 @@ async function createNewPublisher(
     }
   } catch (error) {
     // Ignore error, just won't have default
+  }
+
+  // Fail in non-interactive environments
+  if (!process.stdout.isTTY) {
+    out.error(
+      "Cannot create publisher in non-interactive mode",
+      'Add "publisher" to package.json to specify the publisher name.'
+    );
+    process.exit(1);
   }
 
   // Prompt for publisher details
@@ -265,6 +276,8 @@ export async function deployCommand(options: DeployOptions) {
   const twistDescription = packageJson?.description;
   const twistLogoUrl = packageJson?.logoUrl;
   const twistLogoUrlDark = packageJson?.logoUrlDark;
+  const twistPublisher = packageJson?.publisher;
+  const twistPublisherUrl = packageJson?.publisherUrl;
 
   const environment = options.environment || "personal";
 
@@ -309,8 +322,17 @@ export async function deployCommand(options: DeployOptions) {
     dotEnvToken: dotEnvToken,
   });
 
-  // If still no token, prompt for it
+  // If still no token, prompt for it (or fail in CI)
   if (!deployToken) {
+      // Fail in non-interactive environments
+      if (!process.stdout.isTTY) {
+        out.error(
+          "No deploy token found",
+          "Set PLOT_DEPLOY_TOKEN env var or add DEPLOY_TOKEN to .env file."
+        );
+        process.exit(1);
+      }
+
       out.info("Authentication required", [
         "Run 'plot login' for easiest setup",
         "Or provide token via --deploy-token, PLOT_DEPLOY_TOKEN env var, or DEPLOY_TOKEN in .env",
@@ -450,9 +472,70 @@ export async function deployCommand(options: DeployOptions) {
         process.exit(1);
       }
 
-      // At this point, fetch succeeded or failed with non-network error
-      // Network errors would have caused exit above
-      if (fetchSucceeded && publishers.length > 0) {
+      // Auto-resolve publisher from package.json if specified
+      if (twistPublisher) {
+        // Try to find existing publisher by name
+        if (fetchSucceeded) {
+          const match = publishers.find(
+            (p) => p.name.toLowerCase() === twistPublisher.toLowerCase()
+          );
+          if (match) {
+            publisherId = match.id;
+            out.progress(`Using publisher "${match.name}"`);
+          }
+        }
+
+        // If not found, create the publisher automatically
+        if (!publisherId) {
+          try {
+            out.progress(`Creating publisher "${twistPublisher}"...`);
+            const createResponse = await fetchWithRetry(
+              `${options.apiUrl}/v1/twist/publishers`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${deployToken}`,
+                },
+                body: JSON.stringify({
+                  name: twistPublisher,
+                  url: twistPublisherUrl || null,
+                } as NewPublisher),
+              }
+            );
+
+            if (!createResponse.ok) {
+              if (createResponse.status === 401) {
+                out.error(
+                  "Authentication failed",
+                  "Your login token is invalid or has expired. Please run 'plot login' to authenticate."
+                );
+                process.exit(1);
+              }
+              const errorText = await createResponse.text();
+              out.error("Failed to create publisher", errorText);
+              process.exit(1);
+            }
+
+            const publisher = (await createResponse.json()) as Publisher;
+            out.success(`Publisher "${publisher.name}" created`);
+            publisherId = publisher.id;
+          } catch (error) {
+            const errorInfo = handleNetworkError(error);
+            out.error("Failed to create publisher", errorInfo.message);
+            process.exit(1);
+          }
+        }
+      } else if (fetchSucceeded && publishers.length > 0) {
+        // No publisher in package.json — fall back to interactive prompt
+        if (!process.stdout.isTTY) {
+          out.error(
+            "No publisher specified",
+            'Add "publisher" to package.json to specify the publisher name.'
+          );
+          process.exit(1);
+        }
+
         // Show selection UI with existing publishers + "New publisher" option
         const choices = [
           ...publishers.map((p) => ({
@@ -486,7 +569,16 @@ export async function deployCommand(options: DeployOptions) {
           publisherId = response.publisherId;
         }
       } else {
-        // No existing publishers - create new one
+        // No publishers exist and none in package.json
+        if (!process.stdout.isTTY) {
+          out.error(
+            "No publisher specified",
+            'Add "publisher" to package.json to specify the publisher name.'
+          );
+          process.exit(1);
+        }
+
+        // Interactive — create new one
         publisherId = await createNewPublisher(options.apiUrl, deployToken!);
       }
     }

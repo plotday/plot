@@ -4,6 +4,8 @@
   "displayName": "Outlook Calendar",
   "description": "Events from Outlook Calendar",
   "logoUrl": "https://api.iconify.design/simple-icons/microsoftoutlook.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.14.1",

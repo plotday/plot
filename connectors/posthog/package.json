@@ -2,6 +2,8 @@
   "name": "@plotday/connector-posthog",
   "displayName": "PostHog",
   "description": "Sync PostHog events as person threads",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.1.0",

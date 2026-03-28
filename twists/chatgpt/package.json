@@ -5,6 +5,8 @@
   "description": "Chat with OpenAI's GPT-5",
   "logoUrl": "https://api.iconify.design/simple-icons/openai.svg",
   "logoUrlDark": "https://api.iconify.design/simple-icons/openai.svg?color=%23ffffff",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "sideEffects": false,

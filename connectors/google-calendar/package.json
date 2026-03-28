@@ -4,6 +4,8 @@
   "displayName": "Google Calendar",
   "description": "Events from Google Calendar",
   "logoUrl": "https://api.iconify.design/logos/google-calendar.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.14.1",

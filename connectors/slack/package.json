@@ -4,6 +4,8 @@
   "displayName": "Slack",
   "description": "Messages from your Slack channels",
   "logoUrl": "https://api.iconify.design/logos/slack-icon.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.9.1",
