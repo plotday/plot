@@ -3,6 +3,8 @@
   "plotTwistId": "0199b6f4-fb70-74f7-a794-4090f5290f5f",
   "displayName": "Twist Creator",
   "description": "Build and deploy custom twists",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -4,6 +4,8 @@
   "displayName": "Plot",
   "description": "Support setting up, using, and automating Plot",
   "logoUrl": "https://plot.day/assets/plot-icon.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "sideEffects": false,
