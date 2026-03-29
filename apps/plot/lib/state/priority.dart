@@ -99,6 +99,7 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     _activityFeedLimit = 50;
     _activityFeedLastRawRowCount = 0;
+    _activityFeedLimitIncreased = false;
     _loadActivityFeed(triggerSync: false);
   }
 
@@ -1129,6 +1130,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activityFeedLimit = 50;
     _activityFeedSyncNoMore = false;
     _activityFeedLastRawRowCount = 0;
+    _activityFeedLimitIncreased = false;
     _loadActivityFeed();
   }
 
@@ -1600,6 +1602,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           // - raw rows are below limit (no more data), OR
           // - thread count hasn't grown despite limit increase (JOIN multiplication)
           final threadCountStalled =
+              _activityFeedLimitIncreased &&
               _activityFeedSyncNoMore &&
               rawRowCount >= _activityFeedLimit &&
               threads.length ==
@@ -1612,6 +1615,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               (rawRowCount < _activityFeedLimit &&
                   (isSearching || _activityFeedSyncNoMore)) ||
               threadCountStalled;
+          _activityFeedLimitIncreased = false;
           // Inject sticky threads that fell outside the SQL LIMIT
           // after being marked as read (unreadSort dropped 1→0,
           // pushing them past the LIMIT boundary).
@@ -1755,12 +1759,14 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void> fetchMoreActivityFeedItems(int first, int count) async {
     final needed = first + count;
     if (needed > _activityFeedLimit) {
+      _activityFeedLimitIncreased = true;
       _activityFeedLimit = needed;
       _loadActivityFeed(
         triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty,
       );
     } else if (!state.activityFeedDoneEnd) {
       // JOIN multiplication: need more raw rows to get enough unique threads
+      _activityFeedLimitIncreased = true;
       _activityFeedLimit += 50;
       _loadActivityFeed(
         triggerSync: !_activityFeedSyncNoMore && state.search.isEmpty,
@@ -1790,6 +1796,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<void>? _agendaSyncFuture;
   Future<void>? _activityFeedSyncFuture;
   int _activityFeedLastRawRowCount = 0;
+  bool _activityFeedLimitIncreased = false;
 }
 
 /// Provides the [ThreadListSource] to descendant widgets so that
