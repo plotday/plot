@@ -124,7 +124,7 @@ export async function getOrgConnectionLimit(
     .executeTakeFirst();
 
   if (!sub) return TEAM_CONNECTIONS_PER_GROUP; // default 1 group
-  return sub.connection_group_quantity * TEAM_CONNECTIONS_PER_GROUP;
+  return sub.connection_group_quantity;
 }
 
 /**
@@ -384,8 +384,7 @@ export async function getUsage(
     orgMemberships.map(async (org) => {
       const orgId = String(org.organization_id);
       const orgConnectionCount = await getOrgConnectionCount(db, orgId);
-      const groupQty = org.connection_group_quantity ?? 1;
-      const orgConnectionLimit = groupQty * TEAM_CONNECTIONS_PER_GROUP;
+      const orgConnectionLimit = org.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP;
 
       return {
         id: orgId,

@@ -491,7 +491,7 @@ async function enforceDowngradeLimits(
 
   if (orgSub) {
     const orgId = String(orgSub.organization_id);
-    const orgLimit = (orgSub.connection_group_quantity ?? 1) * TEAM_CONNECTIONS_PER_GROUP;
+    const orgLimit = orgSub.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP;
 
     // For free orgs, limit is 0; for team, use group-based limit
     const effectiveLimit = newPlan === "free" ? 0 : orgLimit;
