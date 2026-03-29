@@ -10,6 +10,7 @@ import { Store } from "../twist/tools/store";
 import { createLogger } from "@plotday/worker-util";
 import type { ProviderDeclaration } from "../twist/tools/factory";
 import { disposeRpc } from "../utils/rpc";
+import { checkChannelConnectionLimit, PlanLimitError } from "../utils/limits";
 import { handleValidationError } from "../utils/validation";
 import type { OptionsSchema } from "@plotday/twister/options";
 import { saveSecureOptions } from "../utils/secure-options";
@@ -437,6 +438,17 @@ twistIntegrations.post(
       return c.json({ message: "No actor found for current user" }, 400);
     }
 
+    // Check connection limit before enabling channel
+    const limitCheck = await checkChannelConnectionLimit(
+      c.var.db,
+      c.var.user.id,
+      priorityTwistId,
+      priorityId ?? null
+    );
+    if (!limitCheck.allowed) {
+      return c.json(limitCheck.error.toJSON(), 403);
+    }
+
     try {
       // Create twist wrapper and call enableSync via callCallback
       const factory = twistFactory({
@@ -471,6 +483,9 @@ twistIntegrations.post(
 
       return c.json({ success: true });
     } catch (error) {
+      if (error instanceof PlanLimitError) {
+        return c.json(error.toJSON(), 403);
+      }
       logger.error("Error enabling channel", error as Error, {
         provider,
         channel_id: channelId,

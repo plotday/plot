@@ -40,7 +40,6 @@ import type { Storage } from "../../state/storage";
 import { createLogger } from "@plotday/worker-util";
 import { rpc, rpcUser } from "../../rpc";
 import { getRpcFunctionName } from "../../utils/rpc";
-import { checkConnectionLimit } from "../../utils/limits";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
 import type { Store } from "./store";
@@ -1006,22 +1005,6 @@ export class Integrations extends Tool implements IAuth {
       .where("id", "=", actor.id)
       .executeTakeFirst();
     if (contact?.user_id) {
-      // Check connection limit before recording
-      const limitPriorityTwist = await this.db
-        .selectFrom("priority_twist")
-        .select("priority_id")
-        .where("id", "=", this.priorityTwistId)
-        .executeTakeFirst();
-      const limitCheck = await checkConnectionLimit(
-        this.db,
-        contact.user_id,
-        limitPriorityTwist?.priority_id ?? null,
-        this.priorityTwistId
-      );
-      if (!limitCheck.allowed) {
-        throw limitCheck.error;
-      }
-
       try {
         await this.db
           .insertInto("priority_twist_connection")

@@ -6,7 +6,7 @@ import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { rpc } from "../rpc";
 import { createLogger } from "@plotday/worker-util";
-import { checkConnectionLimit, checkTwistLimit } from "../utils/limits";
+import { checkTwistLimit } from "../utils/limits";
 import { getEffectivePlan } from "../utils/plan";
 
 /**
@@ -168,13 +168,8 @@ export async function add(
       }
     }
 
-    // Check plan limits before inserting
-    if (twistRecord?.is_source === true) {
-      const limitCheck = await checkConnectionLimit(db, userId, priority_id);
-      if (!limitCheck.allowed) {
-        throw limitCheck.error;
-      }
-    } else {
+    // Check plan limits before inserting (sources check limits at channel-enable time)
+    if (twistRecord?.is_source !== true) {
       const limitCheck = await checkTwistLimit(db, userId, priority_id);
       if (!limitCheck.allowed) {
         throw limitCheck.error;
@@ -680,13 +675,8 @@ export async function activateDraft(
     }
   }
 
-  // Check plan limits before activating
-  if (twistRecord?.is_source === true) {
-    const limitCheck = await checkConnectionLimit(db, draft.owner_id, priorityId ?? null, draft.id);
-    if (!limitCheck.allowed) {
-      throw limitCheck.error;
-    }
-  } else {
+  // Check plan limits before activating (sources check limits at channel-enable time)
+  if (twistRecord?.is_source !== true) {
     const limitCheck = await checkTwistLimit(db, draft.owner_id, priorityId ?? null);
     if (!limitCheck.allowed) {
       throw limitCheck.error;

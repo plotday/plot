@@ -5,7 +5,6 @@ import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import { UserAiUsage } from "../state/user-ai-usage";
 import { FREE_AI_LIMITS } from "./ai-limits";
-import { getEffectivePlan } from "./plan";
 export const PLAN_LIMITS = {
   free: { connections: 2, twists: 1 },
   core: { connections: 5, twists: 2 },
@@ -61,38 +60,40 @@ export class PlanLimitError extends Error {
 }
 
 /**
- * Count personal connections: priority_twist_connection rows where the
- * priority_twist's priority has organization_id IS NULL or priority_id IS NULL.
+ * Count personal connections: DISTINCT (provider, actor_id) pairs where the
+ * connection has at least one enabled channel on a personal priority.
  */
 export async function getPersonalConnectionCount(
   db: Kysely<DB>,
-  userId: string,
-  excludePriorityTwistId?: string
+  userId: string
 ): Promise<number> {
-  let query = db
+  const result = await db
     .selectFrom("priority_twist_connection as ptc")
-    .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
-    .leftJoin("priority as p", "p.id", "pt.priority_id")
     .select(sql<string>`count(DISTINCT (ptc.provider, ptc.actor_id))`.as("count"))
     .where("ptc.user_id", "=", userId)
-    .where("pt.archived_at", "is", null)
-    .where((eb) =>
-      eb.or([
-        eb("pt.priority_id", "is", null),
-        eb("p.organization_id", "is", null),
-      ])
-    );
-  if (excludePriorityTwistId) {
-    query = query.where("ptc.priority_twist_id", "!=", excludePriorityTwistId);
-  }
-  const result = await query.executeTakeFirstOrThrow();
+    .where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom("source_channel as sc")
+          .leftJoin("priority as p", "p.id", "sc.priority_id")
+          .whereRef("sc.priority_twist_id", "=", "ptc.priority_twist_id")
+          .where("sc.enabled", "=", true)
+          .where((eb) =>
+            eb.or([
+              eb("sc.priority_id", "is", null),
+              eb("p.organization_id", "is", null),
+            ])
+          )
+          .select(sql`1`.as("x"))
+      )
+    )
+    .executeTakeFirstOrThrow();
 
   return Number(result.count);
 }
 
 /**
- * Count org connections: all priority_twist_connection rows where the
- * priority_twist's priority has organization_id = given org.
+ * Count org connections: DISTINCT (provider, actor_id) pairs where the
+ * connection has at least one enabled channel on a priority in this org.
  */
 export async function getOrgConnectionCount(
   db: Kysely<DB>,
@@ -100,11 +101,17 @@ export async function getOrgConnectionCount(
 ): Promise<number> {
   const result = await db
     .selectFrom("priority_twist_connection as ptc")
-    .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
-    .innerJoin("priority as p", "p.id", "pt.priority_id")
     .select(sql<string>`count(DISTINCT (ptc.provider, ptc.actor_id))`.as("count"))
-    .where("p.organization_id", "=", organizationId)
-    .where("pt.archived_at", "is", null)
+    .where(({ exists, selectFrom }) =>
+      exists(
+        selectFrom("source_channel as sc")
+          .innerJoin("priority as p", "p.id", "sc.priority_id")
+          .whereRef("sc.priority_twist_id", "=", "ptc.priority_twist_id")
+          .where("sc.enabled", "=", true)
+          .where("p.organization_id", "=", organizationId)
+          .select(sql`1`.as("x"))
+      )
+    )
     .executeTakeFirstOrThrow();
 
   return Number(result.count);
@@ -191,30 +198,62 @@ async function isOrgAdmin(
 }
 
 /**
- * Check if adding a connection is allowed.
- * Determines personal vs org based on priority's organization_id.
+ * Check if enabling a channel would exceed connection limits.
+ * A connection slot is consumed the first time a (provider, actor_id) pair
+ * has an enabled channel of a given type (personal or org).
  */
-export async function checkConnectionLimit(
+export async function checkChannelConnectionLimit(
   db: Kysely<DB>,
   userId: string,
-  targetPriorityId: string | null,
-  excludePriorityTwistId?: string
+  priorityTwistId: string,
+  channelPriorityId: string | null
 ): Promise<{ allowed: true } | { allowed: false; error: PlanLimitError }> {
-  // Determine if this is an org priority
+  // Determine if the channel's target priority is personal or org
   let organizationId: string | null = null;
-  if (targetPriorityId) {
+  if (channelPriorityId) {
     const priority = await db
       .selectFrom("priority")
       .select("organization_id")
-      .where("id", "=", targetPriorityId)
+      .where("id", "=", channelPriorityId)
       .executeTakeFirst();
     organizationId = priority?.organization_id
       ? String(priority.organization_id)
       : null;
   }
 
+  // Look up the connection's (provider, actor_id) for this user on this twist
+  const connection = await db
+    .selectFrom("priority_twist_connection")
+    .select(["provider", "actor_id"])
+    .where("priority_twist_id", "=", priorityTwistId)
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+
+  // No connection record — source doesn't require auth, no limit applies
+  if (!connection) {
+    return { allowed: true };
+  }
+
+  // Check if this (provider, actor_id) already has an enabled channel of the same type
+  // across any of the user's priority_twists. If so, no new slot is consumed.
   if (organizationId) {
-    // Org connection check
+    const existingOrgChannel = await db
+      .selectFrom("priority_twist_connection as ptc")
+      .innerJoin("source_channel as sc", "sc.priority_twist_id", "ptc.priority_twist_id")
+      .innerJoin("priority as p", "p.id", "sc.priority_id")
+      .where("ptc.user_id", "=", userId)
+      .where("ptc.provider", "=", connection.provider)
+      .where("ptc.actor_id", "=", connection.actor_id)
+      .where("sc.enabled", "=", true)
+      .where("p.organization_id", "=", organizationId)
+      .select(sql`1`.as("x"))
+      .executeTakeFirst();
+
+    if (existingOrgChannel) {
+      return { allowed: true };
+    }
+
+    // First channel of this type for this connection — check org limit
     const orgSub = await db
       .selectFrom("organization_subscription")
       .select(["plan", "status"])
@@ -226,7 +265,6 @@ export async function checkConnectionLimit(
         ? (orgSub.plan as "free" | "core" | "pro" | "team")
         : "free";
 
-    // Team plan has per-group limits
     if (orgPlan === "team") {
       const count = await getOrgConnectionCount(db, organizationId);
       const limit = await getOrgConnectionLimit(db, organizationId);
@@ -246,31 +284,51 @@ export async function checkConnectionLimit(
         };
       }
     }
-    // Free org — no connections allowed (they need a paid plan)
+
     if (orgPlan === "free") {
       const count = await getOrgConnectionCount(db, organizationId);
-      const limit = 0;
-      if (count >= limit) {
-        const admin = await isOrgAdmin(db, userId, organizationId);
-        return {
-          allowed: false,
-          error: new PlanLimitError({
-            limitType: "connection",
-            plan: orgPlan,
-            currentCount: count,
-            limit,
-            isOrg: true,
-            isAdmin: admin,
-            organizationId,
-          }),
-        };
-      }
+      const admin = await isOrgAdmin(db, userId, organizationId);
+      return {
+        allowed: false,
+        error: new PlanLimitError({
+          limitType: "connection",
+          plan: orgPlan,
+          currentCount: count,
+          limit: 0,
+          isOrg: true,
+          isAdmin: admin,
+          organizationId,
+        }),
+      };
     }
+
     // Pro orgs: unlimited
     return { allowed: true };
   }
 
-  // Personal connection check
+  // Personal channel — check if this connection already has a personal channel
+  const existingPersonalChannel = await db
+    .selectFrom("priority_twist_connection as ptc")
+    .innerJoin("source_channel as sc", "sc.priority_twist_id", "ptc.priority_twist_id")
+    .leftJoin("priority as p", "p.id", "sc.priority_id")
+    .where("ptc.user_id", "=", userId)
+    .where("ptc.provider", "=", connection.provider)
+    .where("ptc.actor_id", "=", connection.actor_id)
+    .where("sc.enabled", "=", true)
+    .where((eb) =>
+      eb.or([
+        eb("sc.priority_id", "is", null),
+        eb("p.organization_id", "is", null),
+      ])
+    )
+    .select(sql`1`.as("x"))
+    .executeTakeFirst();
+
+  if (existingPersonalChannel) {
+    return { allowed: true };
+  }
+
+  // First personal channel for this connection — check personal limit
   const plan = await getPersonalPlan(db, userId);
   const limits = PLAN_LIMITS[plan];
 
@@ -278,7 +336,7 @@ export async function checkConnectionLimit(
     return { allowed: true };
   }
 
-  const count = await getPersonalConnectionCount(db, userId, excludePriorityTwistId);
+  const count = await getPersonalConnectionCount(db, userId);
   if (count >= limits.connections) {
     return {
       allowed: false,
@@ -354,8 +412,7 @@ export async function getUsage(
   userId: string,
   env?: Bindings
 ) {
-  const effective = await getEffectivePlan(db, userId);
-  const plan = effective.plan;
+  const plan = await getPersonalPlan(db, userId);
   const limits = PLAN_LIMITS[plan];
 
   const connectionCount = await getPersonalConnectionCount(db, userId);
