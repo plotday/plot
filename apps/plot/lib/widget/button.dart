@@ -155,12 +155,15 @@ class _ButtonState extends State<Button> {
             icon = widget.command.hoverIcon;
           }
 
-          // FButton.icon default padding is EdgeInsets.all(10).
           // Absorb horizontal padding into the icon SizedBox so
           // variable-width FontAwesome icons stay centred without
           // changing the overall button size.
-          const iconPadH = 10.0;
           final iconSize = context.theme.iconSizes.base;
+          final iconPadH = (switch (widget.style) {
+            ButtonStyle.primary => context.theme.buttonStyles.primary,
+            ButtonStyle.secondary => context.theme.buttonStyles.secondary,
+            ButtonStyle.ghost => context.theme.buttonStyles.ghost,
+          }).md.iconContentStyle.padding.resolve(TextDirection.ltr).left;
 
           return widget.iconOnly
               ? FButton.icon(
@@ -237,6 +240,7 @@ class _ButtonState extends State<Button> {
     var style = sizeStyles.md;
 
     if (widget.iconOnly) {
+      final iconPadV = style.iconContentStyle.padding.resolve(TextDirection.ltr).top;
       style = style.copyWith(
         decoration: FVariantsDelta.delta([
           FVariantOperation.all(
@@ -245,7 +249,7 @@ class _ButtonState extends State<Button> {
         ]),
         // ignore: unused_result
         iconContentStyle: FButtonIconContentStyleDelta.delta(
-          padding: const EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: 10)),
+          padding: EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: iconPadV)),
         ),
       );
     }
@@ -347,13 +351,15 @@ class _ButtonState extends State<Button> {
 
   /// Build style delta for non-selected icon-only buttons.
   FButtonStyleDelta _buildIconOnlyStyle(BuildContext context) {
+    final sizeStyles = switch (widget.style) {
+      ButtonStyle.primary => context.theme.buttonStyles.primary,
+      ButtonStyle.secondary => context.theme.buttonStyles.secondary,
+      ButtonStyle.ghost => context.theme.buttonStyles.ghost,
+    };
+    final iconPadV = sizeStyles.md.iconContentStyle.padding.resolve(TextDirection.ltr).top;
+
     if (widget.color != null) {
       // Need to resolve the full style to modify icon color
-      final sizeStyles = switch (widget.style) {
-        ButtonStyle.primary => context.theme.buttonStyles.primary,
-        ButtonStyle.secondary => context.theme.buttonStyles.secondary,
-        ButtonStyle.ghost => context.theme.buttonStyles.ghost,
-      };
       var style = sizeStyles.md;
 
       style = style.copyWith(
@@ -369,7 +375,7 @@ class _ButtonState extends State<Button> {
       style = style.copyWith(
         // ignore: unused_result
         iconContentStyle: FButtonIconContentStyleDelta.delta(
-          padding: const EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: 10)),
+          padding: EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: iconPadV)),
           iconStyle: _iconVariants(
             base: iconStyle.resolve({}).copyWith(color: widget.color),
             hovered: iconStyle
@@ -391,7 +397,7 @@ class _ButtonState extends State<Button> {
         ),
       ]),
       iconContentStyle: FButtonIconContentStyleDelta.delta(
-        padding: const EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: 10)),
+        padding: EdgeInsetsGeometryDelta.value(EdgeInsets.symmetric(vertical: iconPadV)),
       ),
     );
   }
