@@ -139,6 +139,7 @@ async function gatherContext(
           "c.user_id as userId",
         ])
         .where("pc.priority_id", "=", thread.priority_id)
+        .where("c.user_id", "is not", null)
         .execute(),
       // Note author name
       db
@@ -345,11 +346,11 @@ Tag rules:
 - Only assign tags to members in the priority members list (use member numbers).
 - If no specific person is identifiable, do not assign a tag.
 - For completions (done=true), reference the note number of the existing todo/reply being completed.
-- For new items (done=false), use note number 0 (the current note).
-- Todo: Only mark as todo if it clearly requires an action that ISN'T already covered by another task or link in the thread. Exception: clear sub-tasks completable before the parent.
+- For new items (done=false), ONLY use note number 0 (the current note). Never retroactively add tags to previous notes.
+- Todo: Only mark as todo when the note contains an unambiguously concrete, completable task (not vague intentions, observations, or questions). The note must make it obvious what needs to be done. Only assign to a specific member when the note explicitly names or clearly implies that person (e.g. @mention, "can you…", direct assignment). If the assignee is ambiguous, do not assign. Do not duplicate tasks already covered by existing todos or links in the thread.
 - NEVER re-assign a todo that was manually cleared by a user. "Cleared tasks" lists assignments that a user intentionally removed — do not recreate them.
-- Reply: Mark as reply if the note clearly requires a response based on thread context and participants. E.g., a direct question in a two-person conversation.
-- Be conservative — only tag when intent is clear.
+- Reply: Only mark as reply when the note directly and clearly asks a specific person for a response (e.g. a direct question with @mention, or an obvious question in a two-person thread). Do not flag vague or rhetorical questions. Only add new reply tags on note #0.
+- When in doubt, do not tag. False negatives (missing a tag) are far less disruptive than false positives (incorrect tags).
 
 Unread classification rules:
 - For each member, classify how urgently and importantly they should be notified.
