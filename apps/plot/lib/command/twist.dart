@@ -113,14 +113,6 @@ class _UpcomingConnection extends _ConnectionItem {
   String get filterText => '${connection.name} ${connection.category}';
 }
 
-class _LimitBanner extends _ConnectionItem {
-  final String message;
-  _LimitBanner(this.message);
-
-  @override
-  String get filterText => '';
-}
-
 class ManageConnections extends Command {
   ManageConnections()
     : super(
@@ -151,10 +143,7 @@ class ManageConnections extends Command {
         itemBuilder: (item, isLoading) => _buildItem(item, isLoading),
         onRefreshNeeded: (refresh) => refreshFn = refresh,
         onSelect: (ctx, item, _) async {
-          if (item is _LimitBanner) {
-            launchUrl(Uri.parse('${Env.siteRoot}/upgrade'));
-            return false;
-          } else if (item is _ActiveSource) {
+          if (item is _ActiveSource) {
             await EditSource(
               priorityTwistId: item.id,
               name: item.name,
@@ -337,24 +326,13 @@ class ManageConnections extends Command {
       filteredUpcoming = upcomingItems.where(matches).toList();
     }
 
-    // Add limit banner at top of available connections if at limit
-    if (usage != null && usage.personal.connections.isAtLimit) {
-      final message = usage.organizations.isNotEmpty
-          ? 'You\'re using ${usage.personal.connections.count} of '
-            '${usage.personal.connections.limit} personal connections. '
-            'Add connections to your organization for more.'
-          : 'You\'re using ${usage.personal.connections.count} of '
-            '${usage.personal.connections.limit} included connections. '
-            'Upgrade for unlimited connections.';
-      filteredAvailable = [
-        _LimitBanner(message),
-        ...filteredAvailable,
-      ];
-    }
+    final activeTitle = usage != null
+        ? 'Active connections ${_usageSuffix(usage, _ResourceType.connections)}'
+        : 'Active connections';
 
     return [
-      if (filteredActive.isNotEmpty)
-        SelectGroup(title: 'Active connections', items: filteredActive),
+      if (filteredActive.isNotEmpty || usage != null)
+        SelectGroup(title: activeTitle, items: filteredActive),
       if (filteredAvailable.isNotEmpty)
         SelectGroup(title: 'Available connections', items: filteredAvailable),
       if (filteredUpcoming.isNotEmpty)
@@ -373,8 +351,6 @@ class ManageConnections extends Command {
 
   static Widget _buildItem(_ConnectionItem item, bool isLoading) {
     switch (item) {
-      case _LimitBanner():
-        return _LimitBannerRow(message: item.message);
       case _ActiveSource():
         return _ActiveSourceRow(item: item, isLoading: isLoading);
       case _AvailableSource():
@@ -591,26 +567,6 @@ class _UpcomingConnectionRow extends StatelessWidget {
   }
 }
 
-class _LimitBannerRow extends StatelessWidget {
-  const _LimitBannerRow({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.theme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Text(
-        message,
-        style: TextStyle(
-          fontSize: theme.typography.sm.fontSize,
-          color: theme.colors.primary,
-        ),
-      ),
-    );
-  }
-}
-
 class _NotifyUpcomingConnection extends ShowForm {
   _NotifyUpcomingConnection(this.item)
     : super(
@@ -784,6 +740,53 @@ class _SourceLogo extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// Shared limit/upgrade helpers
+// ============================================================================
+
+enum _ResourceType { connections, twists }
+
+/// A command that opens the upgrade page.
+class _UpgradeCommand extends Command {
+  _UpgradeCommand(String title)
+    : super(
+        title: title,
+        icon: PlotIcon.sparkles,
+        eventObject: EventObject.twist,
+        eventAction: EventAction.opened,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    launchUrl(Uri.parse('${Env.siteRoot}/upgrade'));
+    return const CommandSkipped();
+  }
+}
+
+/// Builds a usage suffix for group titles, e.g. "(1 of 2 personal, 40 Acme Co)".
+String _usageSuffix(UsageData usage, _ResourceType resourceType) {
+  final parts = <String>[];
+
+  if (resourceType == _ResourceType.connections) {
+    final personal = usage.personal.connections;
+    parts.add(personal.isUnlimited
+        ? '${personal.count} personal'
+        : '${personal.count} of ${personal.limit} personal');
+    for (final org in usage.organizations) {
+      parts.add(org.connections.isUnlimited
+          ? '${org.connections.count} ${org.name}'
+          : '${org.connections.count} of ${org.connections.limit} ${org.name}');
+    }
+  } else {
+    final personal = usage.personal.twists;
+    parts.add(personal.isUnlimited
+        ? '${personal.count} personal'
+        : '${personal.count} of ${personal.limit} personal');
+  }
+
+  return '(${parts.join(', ')})';
+}
+
 /// Edit an existing source — shows integrations, channels, and management options.
 class EditSource extends ShowForm {
   EditSource({
@@ -816,7 +819,12 @@ class EditSource extends ShowForm {
     bool isAccountBased,
     bool isNewlyActivated,
   ) async {
-    final integrations = await TwistApi.getIntegrations(priorityTwistId);
+    final results = await Future.wait([
+      TwistApi.getIntegrations(priorityTwistId),
+      UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
+    ]);
+    final integrations = results[0] as TwistIntegrations;
+    final usage = results[1] as UsageData?;
     final refreshNotifier = ValueNotifier<int>(0);
     final sourceChannelListController = FormChannelListController();
 
@@ -855,6 +863,7 @@ class EditSource extends ShowForm {
             FormChannelList(
               key: 'integrations',
               controller: sourceChannelListController,
+              validator: () => integrationChanges.selectedChannels.isNotEmpty,
               builder: (context) => SetupSourceWidget(
                 priorityTwistId: priorityTwistId,
                 isAccountBased: isAccountBased,
@@ -862,6 +871,7 @@ class EditSource extends ShowForm {
                 initialData: integrations,
                 refreshNotifier: refreshNotifier,
                 channelListController: sourceChannelListController,
+                usage: usage,
                 onChanged: (changes) {
                   integrationChanges = changes;
                 },
@@ -887,6 +897,7 @@ class EditSource extends ShowForm {
               FormDivider(key: 'divider'),
               FormButton(
                 key: 'archive',
+                skipValidation: true,
                 buildCommand: (_) => PromptToArchiveSource(
                   priorityTwistId: priorityTwistId,
                   name: name,
@@ -1179,9 +1190,6 @@ class ManageTwists extends ShowCommands {
         commandsBuilder: (context) => _getTwistCommands(priority),
       );
 
-  /// Cached usage data for twist limit checks.
-  static UsageData? _usageCache;
-
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
@@ -1217,8 +1225,6 @@ class ManageTwists extends ShowCommands {
     try {
       usage = await UpgradeApi.getUsage();
     } catch (_) {}
-    _usageCache = usage;
-
     // Filter to non-sources only
     final twistOnlyPriorityTwists = priorityTwists
         .where((pt) => !pt.isSource)
@@ -1275,63 +1281,21 @@ class ManageTwists extends ShowCommands {
       return _compareEnvironment(a.twist.environment, b.twist.environment);
     });
 
-    // Add limit banner at top of available twists if at limit
-    final List<Command> availableCommands = [
-      if (usage != null && usage.personal.twists.isAtLimit)
-        _UpgradeBannerCommand(
-          'You\'re using ${usage.personal.twists.count} of '
-          '${usage.personal.twists.limit} included '
-          '${usage.personal.twists.limit == 1 ? 'twist' : 'twists'}. '
-          'Upgrade for unlimited twists.',
-        ),
-      ...addCommands,
-    ];
+    final activeTitle = usage != null
+        ? 'Active twists ${_usageSuffix(usage, _ResourceType.twists)}'
+        : 'Active twists';
 
     return Commands(
       groups: [
         StaticCommandGroup(
-          title: 'Active twists',
+          title: activeTitle,
           commands: editCommands.toList(),
         ),
         StaticCommandGroup(
           title: 'Available twists',
-          commands: availableCommands,
+          commands: addCommands,
         ),
       ],
-    );
-  }
-}
-
-/// A command that displays a limit banner and opens the upgrade URL when tapped.
-class _UpgradeBannerCommand extends Command {
-  final String message;
-
-  _UpgradeBannerCommand(this.message)
-    : super(
-        title: message,
-        icon: PlotIcon.sparkles,
-        eventObject: EventObject.twist,
-        eventAction: EventAction.opened,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    launchUrl(Uri.parse('${Env.siteRoot}/upgrade'));
-    return const CommandSkipped();
-  }
-
-  @override
-  Widget? buildBody(BuildContext context) {
-    final theme = context.theme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Text(
-        message,
-        style: TextStyle(
-          fontSize: theme.typography.sm.fontSize,
-          color: theme.colors.primary,
-        ),
-      ),
     );
   }
 }
@@ -1581,16 +1545,6 @@ class ShowTwistInfo extends ShowForm {
   }
 
   @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final usage = ManageTwists._usageCache;
-    if (usage != null && usage.personal.twists.isAtLimit) {
-      context.showToast(message: 'Upgrade to add more twists.');
-      return const CommandSkipped();
-    }
-    return super.run(context);
-  }
-
-  @override
   Widget? buildBody(BuildContext context) {
     if (twist.environment == 'public') return null;
     final theme = context.theme;
@@ -1620,17 +1574,23 @@ class ShowTwistInfo extends ShowForm {
   }
 
   static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
-    // Fetch subscription and AI keys in parallel
+    // Fetch subscription, AI keys, and usage in parallel
     final results = await Future.wait([
       UpgradeApi.getSubscription(),
       UpgradeApi.getAiKeys(),
+      UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
     ]);
     final subscription = results[0] as SubscriptionInfo;
     final aiKeys = results[1] as List<String>;
+    final usage = results[2] as UsageData?;
     final hasAiKeys = aiKeys.isNotEmpty;
 
     // Block AI-required twists for free users without keys
     final blocked = twist.aiRequired && subscription.isFree && !hasAiKeys;
+
+    // Check if personal twist limit is reached
+    final atTwistLimit =
+        usage != null && usage.personal.twists.isAtLimit;
 
     return FormData(
       title: twist.name,
@@ -1647,7 +1607,12 @@ class ShowTwistInfo extends ShowForm {
               ),
             ),
             if (!blocked)
-              FormButton(key: 'add', buildCommand: (_) => SetupTwist(twist)),
+              FormButton(
+                key: 'add',
+                buildCommand: (_) => atTwistLimit
+                    ? _UpgradeCommand('Upgrade to add more twists')
+                    : SetupTwist(twist),
+              ),
           ],
         ),
       ],

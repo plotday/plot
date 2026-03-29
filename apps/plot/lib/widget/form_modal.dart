@@ -315,7 +315,7 @@ class FormModalState extends State<_FormModal> {
   bool _isFocusSlotEnabled(int focusIndex) {
     final (item, _) = _getItemAndSubIndex(focusIndex);
     if (!item.isFocusable) return false;
-    if (item is FormButton) return _isFormValid();
+    if (item is FormButton) return item.skipValidation || _isFormValid();
     if (item is FormSelect) return item.enabled;
     return true;
   }
@@ -779,7 +779,7 @@ class FormModalState extends State<_FormModal> {
                                         context,
                                         highlightedSubIndex,
                                         enabled: item is FormButton
-                                            ? _isFormValid()
+                                            ? (item.skipValidation || _isFormValid())
                                             : true,
                                         focusNodes: itemFocusNodes,
                                         controller: item is FormButton

@@ -1,3 +1,4 @@
+- Manage connections and twists now show your current usage at the top of the list, and limit enforcement happens when you enable a channel or add a twist — clearer messaging with an upgrade button instead of blocking
 - Fixed unread threads disappearing from the activity feed when opened — the thread now stays in the unread section until you navigate to a different thread
 - Your agenda now shows calendar events from all priorities (dimmed) so you can see your full schedule while focused on one priority — events in the current priority show full detail and associated threads
 - Fixed threads from other priorities appearing in the agenda when they shouldn't — only todos and events from the current priority (and its sub-priorities) are shown at full prominence

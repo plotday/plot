@@ -438,10 +438,16 @@ class FormSelect<T> extends FormItem {
 
 /// Button form item
 class FormButton extends FormItem {
-  FormButton({required super.key, required this.buildCommand})
-    : super(required: false, label: '');
+  FormButton({
+    required super.key,
+    required this.buildCommand,
+    this.skipValidation = false,
+  }) : super(required: false, label: '');
 
   final Command Function(Map<String, dynamic> values) buildCommand;
+
+  /// When true, this button remains enabled even when form validation fails.
+  final bool skipValidation;
 
   /// Whether this is the primary (first) button, styled with accent color.
   bool isPrimary = false;
@@ -1134,6 +1140,11 @@ class FormChannelListController {
       _onCountChanged?.call();
     }
   }
+
+  /// Notify the form that validation state may have changed (e.g. channel toggled).
+  void notifyValidationChanged() {
+    _onCountChanged?.call();
+  }
 }
 
 /// Form item that displays a list of channels via an external builder.
@@ -1144,10 +1155,16 @@ class FormChannelList extends FormItem {
     required super.key,
     required this.controller,
     required this.builder,
+    this.validator,
   }) : super(required: false);
 
   final FormChannelListController controller;
   final Widget Function(BuildContext) builder;
+
+  /// Optional validator that controls form-level validity.
+  /// When provided and returns false, buttons without [FormButton.skipValidation]
+  /// will be disabled.
+  final bool Function()? validator;
 
   @override
   bool get isFocusable => true;
@@ -1170,7 +1187,7 @@ class FormChannelList extends FormItem {
   void setValue(dynamic value) {}
 
   @override
-  bool isValid() => true;
+  bool isValid() => validator?.call() ?? true;
 
   void addListener(VoidCallback listener) {
     controller._onCountChanged = listener;

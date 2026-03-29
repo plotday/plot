@@ -1,11 +1,16 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/twist_api.dart';
+import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/command/base.dart';
+import 'package:plot/env.dart';
 import 'package:plot/store/store.dart' show Priority, PriorityOrder;
 import 'package:plot/util/uuid.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
@@ -56,6 +61,7 @@ class SetupSourceWidget extends StatefulWidget {
     this.refreshNotifier,
     this.onChanged,
     this.channelListController,
+    this.usage,
     super.key,
   });
 
@@ -83,6 +89,9 @@ class SetupSourceWidget extends StatefulWidget {
   /// Controller for keyboard navigation integration with FormChannelList.
   final FormChannelListController? channelListController;
 
+  /// Usage data for checking connection limits when enabling channels.
+  final UsageData? usage;
+
   @override
   State<SetupSourceWidget> createState() => _SetupSourceWidgetState();
 }
@@ -109,6 +118,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
   /// Cached priority names for display (priorityId → title).
   final Map<String, String> _priorityNames = {};
+
+  /// Cached priority organizationIds for limit checks (priorityId → orgId or null).
+  final Map<String, int?> _priorityOrgIds = {};
 
   /// Whether we've seeded _localSelectedChannels from server state (edit mode).
   bool _initializedFromServer = false;
@@ -157,6 +169,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         if (mounted) {
           setState(() {
             _priorityNames[id] = priority.title;
+            _priorityOrgIds[id] = priority.organizationId;
           });
         }
       } catch (_) {
@@ -254,6 +267,48 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     }
   }
 
+  /// Synchronous check if enabling [key] with [priority] would be the first
+  /// channel of its type (personal or team) for this connector, and whether
+  /// that type is at its connection limit.
+  /// Returns an upgrade message if blocked, or null if allowed.
+  String? _checkConnectionLimitSync(String key, Priority priority) {
+    final usage = widget.usage;
+    if (usage == null) return null;
+
+    final isTeam = priority.organizationId != null;
+
+    // Check if there's already another enabled channel of the same type
+    for (final existingKey in _localSelectedChannels) {
+      if (existingKey == key) continue;
+      final existingPriorityId = _channelPriorities[existingKey];
+      if (existingPriorityId == null) continue;
+      // Use cached org ID if available
+      if (_priorityOrgIds.containsKey(existingPriorityId)) {
+        final existingIsTeam = _priorityOrgIds[existingPriorityId] != null;
+        if (isTeam == existingIsTeam) return null;
+      }
+    }
+
+    // This would be the first channel of this type — check limits
+    if (isTeam) {
+      final orgId = priority.organizationId.toString();
+      final org = usage.organizations.firstWhereOrNull(
+        (o) => o.id == orgId,
+      );
+      if (org != null && org.connections.isAtLimit) {
+        return org.isAdmin
+            ? '${org.name} has reached its connection limit. Upgrade to add more.'
+            : '${org.name} has reached its connection limit. Contact an admin to upgrade.';
+      }
+    } else {
+      if (usage.personal.connections.isAtLimit) {
+        return 'You\'ve reached your personal connection limit. Upgrade for more.';
+      }
+    }
+
+    return null;
+  }
+
   void _handleChannelTap(TwistChannel channel) async {
     final key = '${channel.provider.name}:${channel.id}';
     final isEnabled = _localSelectedChannels.contains(key);
@@ -304,24 +359,36 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         ),
         FormButton(
           key: 'save',
-          buildCommand: (values) => _CallbackCommand(
-            title: 'Save',
-            icon: FontAwesomeIcons.check,
-            onRun: () async {
-              final priority = values['priority'] as Priority?;
-              final createThreads = values['createThreads'] as String? ?? 'all';
-              if (priority != null) {
-                setState(() {
-                  _localSelectedChannels.add(key);
-                  _channelPriorities[key] = priority.id.toString();
-                  _channelCreateThreads[key] = createThreads;
-                  _priorityNames[priority.id.toString()] = priority.title;
-                });
-                _notifyChanged();
+          buildCommand: (values) {
+            final priority = values['priority'] as Priority?;
+            // Check connection limit for the selected priority
+            if (priority != null && !isEnabled) {
+              final limitMessage = _checkConnectionLimitSync(key, priority);
+              if (limitMessage != null) {
+                return _UpgradeChannelCommand(limitMessage);
               }
-              return const CommandDone();
-            },
-          ),
+            }
+            return _CallbackCommand(
+              title: 'Save',
+              icon: FontAwesomeIcons.check,
+              onRun: () async {
+                final createThreads =
+                    values['createThreads'] as String? ?? 'all';
+                if (priority != null) {
+                  setState(() {
+                    _localSelectedChannels.add(key);
+                    _channelPriorities[key] = priority.id.toString();
+                    _channelCreateThreads[key] = createThreads;
+                    _priorityNames[priority.id.toString()] = priority.title;
+                    _priorityOrgIds[priority.id.toString()] =
+                        priority.organizationId;
+                  });
+                  _notifyChanged();
+                }
+                return const CommandDone();
+              },
+            );
+          },
         ),
       ];
 
@@ -390,8 +457,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   }
 
   void _notifyChanged() {
-    if (widget.onChanged == null) return;
-    widget.onChanged!(
+    widget.onChanged?.call(
       IntegrationChanges(
         selectedChannels: Set.of(_localSelectedChannels),
         removedAccounts: Set.of(_removedAccounts),
@@ -399,6 +465,8 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         channelCreateThreads: Map.of(_channelCreateThreads),
       ),
     );
+    // Notify form that validation state may have changed
+    widget.channelListController?.notifyValidationChanged();
   }
 
   /// Collects toggleable channels from the tree in display order.
@@ -858,6 +926,23 @@ class _CallbackCommand extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) => onRun();
+}
+
+/// Upgrade command shown in channel config when a connection limit is reached.
+class _UpgradeChannelCommand extends Command {
+  _UpgradeChannelCommand(String title)
+    : super(
+        title: title,
+        icon: PlotIcon.sparkles,
+        eventObject: EventObject.modal,
+        eventAction: EventAction.opened,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    launchUrl(Uri.parse('${Env.siteRoot}/upgrade'));
+    return const CommandSkipped();
+  }
 }
 
 class ProviderIcon extends StatelessWidget {
