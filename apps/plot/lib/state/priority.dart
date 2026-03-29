@@ -21,7 +21,13 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Tracks threads that should stay in the unread section while being viewed,
   /// along with their original sort values to prevent position jumps when
   /// urgency is cleared by sync after marking as read.
-  final Map<ThreadId, ({int urgencyRank, int importance, DateTime activityAt})>
+  ///
+  /// Also caches the full [Thread] so that when a thread transitions from
+  /// unread→read and falls outside the SQL LIMIT (the ORDER BY puts read
+  /// threads after unreads, so the newly-read thread can be pushed past the
+  /// row limit), the cached thread can be injected into the feed results.
+  final Map<ThreadId,
+          ({int urgencyRank, int importance, DateTime activityAt, Thread thread})>
       _stickyUnreadIds = {};
   ThreadHeaderNotifier? headerNotifier;
 
@@ -349,6 +355,23 @@ class PriorityBloc extends Cubit<PriorityState> {
   void optimisticallyUpdateThread(Thread updatedThread) {
     if (updatedThread.draft) return;
     _optimisticTimestamp = DateTime.now();
+
+    // Keep sticky cache in sync so edits (rename, archive, etc.) aren't
+    // reverted when the stream re-emits and the thread is outside the LIMIT.
+    if (_stickyUnreadIds.containsKey(updatedThread.id)) {
+      if (updatedThread.archivedAt != null) {
+        // Archived — stop injecting so it disappears from the feed.
+        _stickyUnreadIds.remove(updatedThread.id);
+      } else {
+        final old = _stickyUnreadIds[updatedThread.id]!;
+        _stickyUnreadIds[updatedThread.id] = (
+          urgencyRank: old.urgencyRank,
+          importance: old.importance,
+          activityAt: old.activityAt,
+          thread: updatedThread,
+        );
+      }
+    }
 
     final foundInAgenda = state.agendaItems.any(
       (item) => item.when(
@@ -756,6 +779,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         urgencyRank: thread.urgencyRank,
         importance: thread.importance,
         activityAt: thread.activityAt,
+        thread: thread,
       );
     }
 
@@ -1588,12 +1612,34 @@ class PriorityBloc extends Cubit<PriorityState> {
               (rawRowCount < _activityFeedLimit &&
                   (isSearching || _activityFeedSyncNoMore)) ||
               threadCountStalled;
+          // Inject sticky threads that fell outside the SQL LIMIT
+          // after being marked as read (unreadSort dropped 1→0,
+          // pushing them past the LIMIT boundary).
+          final allThreads = List<Thread>.from(threads);
+          final threadIds = threads.map((t) => t.id).toSet();
+          for (final entry in _stickyUnreadIds.entries.toList()) {
+            if (threadIds.contains(entry.key)) {
+              // Refresh cached thread with latest stream data
+              _stickyUnreadIds[entry.key] = (
+                urgencyRank: entry.value.urgencyRank,
+                importance: entry.value.importance,
+                activityAt: entry.value.activityAt,
+                thread: threads.firstWhere((t) => t.id == entry.key),
+              );
+            } else {
+              // Thread fell outside LIMIT because it was marked read
+              // (unreadSort dropped 1→0). Inject with unread: false so
+              // the indicator updates while the position stays sticky.
+              allThreads.add(entry.value.thread.copyWith(unread: false));
+            }
+          }
+
           final items = <AgendaItem>[];
 
           // Partition into unread and read
           final unreadThreads = <Thread>[];
           final readThreads = <Thread>[];
-          for (final thread in threads) {
+          for (final thread in allThreads) {
             if (thread.unread ||
                 _stickyUnreadIds.containsKey(thread.id)) {
               unreadThreads.add(thread);
