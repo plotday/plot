@@ -273,6 +273,14 @@ export function collectToolPermissions(
 export type ProviderDeclaration = {
   provider: string;
   scopes: string[];
+  /** Optional scope groups the user can toggle before OAuth. */
+  optionalScopes?: Array<{
+    id: string;
+    label: string;
+    description?: string;
+    scopes: string[];
+    default: boolean;
+  }>;
 };
 
 /**
@@ -293,21 +301,30 @@ export function collectToolProviders(
 export function mergeProviderDeclarations(
   declarations: ProviderDeclaration[]
 ): ProviderDeclaration[] {
-  const byProvider = new Map<string, Set<string>>();
+  const byProvider = new Map<string, {
+    scopes: Set<string>;
+    optionalScopes?: ProviderDeclaration["optionalScopes"];
+  }>();
 
   for (const decl of declarations) {
     if (!byProvider.has(decl.provider)) {
-      byProvider.set(decl.provider, new Set());
+      byProvider.set(decl.provider, { scopes: new Set() });
     }
+    const entry = byProvider.get(decl.provider)!;
     for (const scope of decl.scopes) {
-      byProvider.get(decl.provider)!.add(scope);
+      entry.scopes.add(scope);
+    }
+    // First declaration with optionalScopes wins (connector-level)
+    if (decl.optionalScopes && !entry.optionalScopes) {
+      entry.optionalScopes = decl.optionalScopes;
     }
   }
 
   return Array.from(byProvider.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([provider, scopes]) => ({
+    .map(([provider, entry]) => ({
       provider,
-      scopes: Array.from(scopes).sort(),
+      scopes: Array.from(entry.scopes).sort(),
+      ...(entry.optionalScopes ? { optionalScopes: entry.optionalScopes } : {}),
     }));
 }

@@ -260,6 +260,7 @@ class TwistApi {
     required String provider,
     required String redirectUri,
     String? platform,
+    List<String>? enabledScopeGroups,
   }) async {
     final response = await api.post<Map<String, dynamic>>(
       '/twist/$priorityTwistId/integrations/auth',
@@ -267,6 +268,8 @@ class TwistApi {
         'provider': provider,
         'redirectUri': redirectUri,
         if (platform != null) 'platform': platform,
+        if (enabledScopeGroups != null)
+          'enabledScopeGroups': enabledScopeGroups,
       },
     );
     return TwistAuthUrl.fromJson(response);
@@ -547,6 +550,36 @@ class TwistAuthUrl {
   }
 }
 
+/// An optional scope group that users can toggle before OAuth.
+class OptionalScopeGroup extends Equatable {
+  final String id;
+  final String label;
+  final String? description;
+  final List<String> scopes;
+  final bool defaultEnabled;
+
+  const OptionalScopeGroup({
+    required this.id,
+    required this.label,
+    this.description,
+    required this.scopes,
+    required this.defaultEnabled,
+  });
+
+  factory OptionalScopeGroup.fromJson(Map<String, dynamic> json) {
+    return OptionalScopeGroup(
+      id: json['id'] as String,
+      label: json['label'] as String,
+      description: json['description'] as String?,
+      scopes: (json['scopes'] as List<dynamic>).cast<String>(),
+      defaultEnabled: json['default'] as bool? ?? false,
+    );
+  }
+
+  @override
+  List<Object?> get props => [id, label, description, scopes, defaultEnabled];
+}
+
 /// Result from connecting a no-provider connector
 class TwistConnectResult {
   final List<TwistChannel>? syncables;
@@ -590,8 +623,13 @@ class TwistIntegrations {
 class TwistProvider extends Equatable {
   final AuthProvider provider;
   final List<String> scopes;
+  final List<OptionalScopeGroup>? optionalScopes;
 
-  const TwistProvider({required this.provider, required this.scopes});
+  const TwistProvider({
+    required this.provider,
+    required this.scopes,
+    this.optionalScopes,
+  });
 
   factory TwistProvider.fromJson(Map<String, dynamic> json) {
     return TwistProvider(
@@ -600,11 +638,14 @@ class TwistProvider extends Equatable {
         orElse: () => AuthProvider.other,
       ),
       scopes: (json['scopes'] as List<dynamic>).cast<String>(),
+      optionalScopes: (json['optionalScopes'] as List<dynamic>?)
+          ?.map((g) => OptionalScopeGroup.fromJson(g as Map<String, dynamic>))
+          .toList(),
     );
   }
 
   @override
-  List<Object?> get props => [provider, scopes];
+  List<Object?> get props => [provider, scopes, optionalScopes];
 }
 
 /// A connected account for a twist integration

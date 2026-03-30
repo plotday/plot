@@ -339,10 +339,27 @@ export function twistFactory({
       // For sources using the new API, add provider declaration from source metadata
       // Skip for no-provider connectors (provider is undefined)
       if (sourceProvider?.provider) {
+        // Resolve scopes — the connector may declare string[] or ScopeConfig.
+        // getSourceMetadata() passes through the raw value from the connector.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rawScopes: any = sourceProvider.scopes;
+        let requiredScopes: string[];
+        let optionalScopes: any[] | undefined;
+        if (Array.isArray(rawScopes)) {
+          requiredScopes = rawScopes;
+        } else if (rawScopes?.required) {
+          requiredScopes = rawScopes.required;
+          optionalScopes = rawScopes.optional;
+        } else {
+          requiredScopes = [];
+        }
         allProviders.push({
           provider: sourceProvider.provider,
-          scopes: sourceProvider.scopes ?? [],
+          scopes: requiredScopes,
+          ...(optionalScopes ? { optionalScopes } : {}),
         });
+        // Normalize scopes to string[] so downstream consumers see a flat array
+        sourceProvider = { ...sourceProvider, scopes: requiredScopes };
       }
       providers = mergeProviderDeclarations(allProviders);
 
