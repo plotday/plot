@@ -1100,6 +1100,17 @@ class AddSourceDetail extends ShowForm {
     // Pre-fetch integrations for the draft
     final integrations = await TwistApi.getIntegrations(draftId);
 
+    // Track enabled scope groups per provider (for providers with optional scopes)
+    final scopeGroupSelections = <String, Set<String>>{};
+    for (final provider in integrations.providers) {
+      if (provider.optionalScopes != null) {
+        scopeGroupSelections[provider.provider.name] = {
+          for (final group in provider.optionalScopes!)
+            if (group.defaultEnabled) group.id,
+        };
+      }
+    }
+
     return FormData(
       title: 'Set up ${twist.name}',
       groups: [
@@ -1113,17 +1124,17 @@ class AddSourceDetail extends ShowForm {
                 divider: false,
                 builder: (formContext) => Padding(
                   padding: formContext.theme.spacing.padding.copyWith(top: 0),
-                  child: Padding(
-                    padding: .only(top: context.theme.spacing.md),
-                    child: _IntegrationAuthButton(
-                      provider: provider,
-                      hasExistingAccount: false,
-                      priorityTwistId: draftId,
-                      onSuccess: () {
-                        // Activate the source (no priority needed)
-                        _activateSource(formContext, draftId, twist.name);
-                      },
-                    ),
+                  child: _AuthWithScopeToggles(
+                    provider: provider,
+                    priorityTwistId: draftId,
+                    initialEnabledGroups:
+                        scopeGroupSelections[provider.provider.name],
+                    onScopeGroupsChanged: (groups) {
+                      scopeGroupSelections[provider.provider.name] = groups;
+                    },
+                    onSuccess: () {
+                      _activateSource(formContext, draftId, twist.name);
+                    },
                   ),
                 ),
               ),
@@ -2134,18 +2145,115 @@ class ShowAddIntegrationAccount extends ShowForm {
   }
 }
 
+/// Combines optional scope toggles with the auth button for a provider.
+class _AuthWithScopeToggles extends StatefulWidget {
+  const _AuthWithScopeToggles({
+    required this.provider,
+    required this.priorityTwistId,
+    required this.onSuccess,
+    this.initialEnabledGroups,
+    this.onScopeGroupsChanged,
+  });
+
+  final TwistProvider provider;
+  final String priorityTwistId;
+  final VoidCallback onSuccess;
+  final Set<String>? initialEnabledGroups;
+  final ValueChanged<Set<String>>? onScopeGroupsChanged;
+
+  @override
+  State<_AuthWithScopeToggles> createState() => _AuthWithScopeTogglesState();
+}
+
+class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
+  late final Set<String> _enabledGroups;
+
+  @override
+  void initState() {
+    super.initState();
+    _enabledGroups = Set.of(widget.initialEnabledGroups ?? {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final optionalScopes = widget.provider.optionalScopes;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (optionalScopes != null && optionalScopes.isNotEmpty) ...[
+          for (final group in optionalScopes)
+            Padding(
+              padding: EdgeInsets.only(bottom: context.theme.spacing.sm),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(group.label, style: context.theme.typography.base),
+                        if (group.description != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              group.description!,
+                              style: context.theme.typography.sm.copyWith(
+                                color:
+                                    context.theme.colorScheme.mutedForeground,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  FSwitch(
+                    value: _enabledGroups.contains(group.id),
+                    onChange: (value) {
+                      setState(() {
+                        if (value) {
+                          _enabledGroups.add(group.id);
+                        } else {
+                          _enabledGroups.remove(group.id);
+                        }
+                      });
+                      widget.onScopeGroupsChanged?.call(_enabledGroups);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          SizedBox(height: context.theme.spacing.xs),
+        ],
+        Padding(
+          padding: EdgeInsets.only(top: context.theme.spacing.md),
+          child: _IntegrationAuthButton(
+            provider: widget.provider,
+            hasExistingAccount: false,
+            priorityTwistId: widget.priorityTwistId,
+            enabledScopeGroups:
+                _enabledGroups.isNotEmpty ? _enabledGroups.toList() : null,
+            onSuccess: widget.onSuccess,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _IntegrationAuthButton extends StatefulWidget {
   const _IntegrationAuthButton({
     required this.provider,
     required this.hasExistingAccount,
     required this.priorityTwistId,
     required this.onSuccess,
+    this.enabledScopeGroups,
   });
 
   final TwistProvider provider;
   final bool hasExistingAccount;
   final String priorityTwistId;
   final VoidCallback onSuccess;
+  final List<String>? enabledScopeGroups;
 
   @override
   State<_IntegrationAuthButton> createState() => _IntegrationAuthButtonState();
@@ -2188,6 +2296,7 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
         provider: widget.provider.provider.name,
         redirectUri: redirectUri,
         platform: platform,
+        enabledScopeGroups: widget.enabledScopeGroups,
       );
 
       if (_useNativeGoogleSignIn) {
