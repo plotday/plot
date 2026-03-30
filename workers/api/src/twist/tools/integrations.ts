@@ -50,6 +50,13 @@ import { createSchedule } from "../../app/sync/smart-schedule";
 type IntegrationProviderConfig = {
   provider: AuthProvider;
   scopes: string[];
+  optionalScopes?: Array<{
+    id: string;
+    label: string;
+    description?: string;
+    scopes: string[];
+    default: boolean;
+  }>;
   linkTypes?: LinkTypeConfig[];
   getChannels: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
   onChannelEnabled: (channel: Channel) => Promise<void>;
@@ -70,6 +77,7 @@ type AuthState = {
   codeVerifier?: string; // Optional for Google Sign-In flows
   timestamp?: number; // Optional for Google Sign-In flows
   callback?: Callback;
+  enabledScopeGroups?: string[];
 };
 
 type ChannelConfig = {
@@ -998,6 +1006,16 @@ export class Integrations extends Tool implements IAuth {
     };
     await this.store.set(tokenKey, token);
 
+    // Store enabled scope groups if present in the auth state
+    const authStateKey = `auth_state:${tokenInfo.provider}`;
+    const authState = await this.store.get<AuthState>(authStateKey);
+    if (authState?.enabledScopeGroups) {
+      await this.store.set(
+        `enabled_scope_groups:${tokenInfo.provider}:${actor.id}`,
+        authState.enabledScopeGroups
+      );
+    }
+
     // Record user connection for per-user connection tracking
     const contact = await this.db
       .selectFrom("contact")
@@ -1338,12 +1356,13 @@ export class Integrations extends Tool implements IAuth {
    * Returns accounts, providers, and channels.
    */
   async getIntegrationData(currentActorId?: ActorId): Promise<{
-    providers: Array<{ provider: AuthProvider; scopes: string[] }>;
+    providers: Array<{ provider: AuthProvider; scopes: string[]; optionalScopes?: any[] }>;
     accounts: Array<{
       provider: AuthProvider;
       actorId: ActorId;
       email: string | null;
       name: string | null;
+      enabledScopeGroups?: string[];
     }>;
     syncables: Array<{
       provider: AuthProvider;
@@ -1370,6 +1389,7 @@ export class Integrations extends Tool implements IAuth {
     const providers = this.providerConfigs.map(p => ({
       provider: p.provider,
       scopes: p.scopes,
+      ...(p.optionalScopes ? { optionalScopes: p.optionalScopes } : {}),
     }));
 
     // Resolve all contact IDs belonging to the current user so we can
@@ -1400,6 +1420,7 @@ export class Integrations extends Tool implements IAuth {
       actorId: ActorId;
       email: string | null;
       name: string | null;
+      enabledScopeGroups?: string[];
     }> = [];
 
     // Track which channel IDs have access from any current-user contact
@@ -1454,11 +1475,17 @@ export class Integrations extends Tool implements IAuth {
           contactUserId = contact?.user_id ?? null;
         }
 
+        // Look up stored scope group selections
+        const enabledScopeGroups = await this.store.get<string[]>(
+          `enabled_scope_groups:${provider}:${actorId}`
+        );
+
         accounts.push({
           provider,
           actorId: actorId as ActorId,
           email,
           name,
+          ...(enabledScopeGroups ? { enabledScopeGroups } : {}),
         });
 
         // Get this actor's channel access (may be a tree)
