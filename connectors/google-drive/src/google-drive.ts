@@ -42,7 +42,16 @@ import {
   listFilesInFolder,
   listFolders,
   listSharedDrives,
+  listSharedWithMe,
 } from "./google-api";
+
+const VIRTUAL_MY_DRIVE = "my-drive";
+const VIRTUAL_SHARED_DRIVES = "shared-drives";
+const VIRTUAL_SHARED_WITH_ME = "shared-with-me";
+
+function isVirtualChannel(id: string): boolean {
+  return id === VIRTUAL_MY_DRIVE || id === VIRTUAL_SHARED_DRIVES || id === VIRTUAL_SHARED_WITH_ME;
+}
 
 const MIME_TO_LINK_TYPE: Record<string, string> = {
   "application/vnd.google-apps.document": "doc",
@@ -107,10 +116,14 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       listSharedDrives(api),
     ]);
 
-    // Build node map for all folders
+    // Separate owned folders (My Drive) from shared-with-me folders.
+    // Drive API omits ownedByMe for shared drive files, so only === true is truly owned.
+    const ownedFolders = folders.filter(f => f.ownedByMe === true);
+
+    // Build node map for owned folders only
     type ChannelNode = { id: string; title: string; children: ChannelNode[] };
     const nodeMap = new Map<string, ChannelNode>();
-    for (const f of folders) {
+    for (const f of ownedFolders) {
       nodeMap.set(f.id, { id: f.id, title: f.name, children: [] });
     }
 
@@ -124,10 +137,33 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       });
     }
 
-    // Link children to parents
+    // Build separate tree for shared-with-me folders (not owned, not in a shared drive)
+    const sharedWithMeNodeMap = new Map<string, ChannelNode>();
+    const sharedDriveIds = new Set(sharedDriveMap.keys());
+    for (const f of folders) {
+      if (f.ownedByMe !== true && !nodeMap.has(f.id)) {
+        sharedWithMeNodeMap.set(f.id, { id: f.id, title: f.name, children: [] });
+      }
+    }
+
+    // Also add non-owned folders that live inside shared drives to the main nodeMap
+    for (const f of folders) {
+      if (f.ownedByMe !== true && !nodeMap.has(f.id)) {
+        const parentId = f.parents?.[0];
+        if (parentId && (nodeMap.has(parentId) || sharedDriveIds.has(parentId))) {
+          // This folder belongs in a shared drive, move it to the main map
+          const node = sharedWithMeNodeMap.get(f.id)!;
+          sharedWithMeNodeMap.delete(f.id);
+          nodeMap.set(f.id, node);
+        }
+      }
+    }
+
+    // Link children to parents (My Drive + shared drive trees)
     const roots: ChannelNode[] = [];
     for (const f of folders) {
-      const node = nodeMap.get(f.id)!;
+      const node = nodeMap.get(f.id);
+      if (!node) continue;
       const parentId = f.parents?.[0];
       if (parentId) {
         const parentFolder = nodeMap.get(parentId);
@@ -141,12 +177,27 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           continue;
         }
       }
-      // No known parent in our set -> root folder (My Drive)
-      roots.push(node);
+      // No known parent in our set -> root folder (My Drive), only if owned
+      if (f.ownedByMe === true) {
+        roots.push(node);
+      }
     }
 
-    // Combine: shared drives first, then root My Drive folders
-    const allRoots = [...sharedDriveMap.values(), ...roots];
+    // Link children to parents (shared-with-me tree)
+    const sharedWithMeRoots: ChannelNode[] = [];
+    for (const f of folders) {
+      const node = sharedWithMeNodeMap.get(f.id);
+      if (!node) continue;
+      const parentId = f.parents?.[0];
+      if (parentId) {
+        const parentNode = sharedWithMeNodeMap.get(parentId);
+        if (parentNode) {
+          parentNode.children.push(node);
+          continue;
+        }
+      }
+      sharedWithMeRoots.push(node);
+    }
 
     // Strip empty children arrays for clean output
     const clean = (nodes: ChannelNode[]): Channel[] => {
@@ -158,7 +209,30 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       });
     };
 
-    return clean(allRoots);
+    // Nest under virtual parent channels
+    const result: Channel[] = [
+      {
+        id: VIRTUAL_MY_DRIVE,
+        title: "My Drive",
+        ...(roots.length > 0 ? { children: clean(roots) } : {}),
+      },
+    ];
+
+    if (sharedDriveMap.size > 0) {
+      result.push({
+        id: VIRTUAL_SHARED_DRIVES,
+        title: "Shared drives",
+        children: clean([...sharedDriveMap.values()]),
+      });
+    }
+
+    result.push({
+      id: VIRTUAL_SHARED_WITH_ME,
+      title: "Shared with me",
+      ...(sharedWithMeRoots.length > 0 ? { children: clean(sharedWithMeRoots) } : {}),
+    });
+
+    return result;
   }
 
   /**
@@ -166,20 +240,34 @@ export class GoogleDrive extends Connector<GoogleDrive> {
    */
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
-
-    // Auto-start sync: setup watch and queue first batch
     await this.set(`sync_lock_${channel.id}`, true);
 
     const api = await this.getApi(channel.id);
     const changesToken = await getChangesStartToken(api);
 
-    const initialState: SyncState = {
-      folderId: channel.id,
-      changesToken,
-      sequence: 1,
-    };
+    if (isVirtualChannel(channel.id) && channel.id !== VIRTUAL_SHARED_WITH_ME) {
+      // My Drive / Shared drives: discover sub-channels and iterate
+      const subChannelIds = await this.discoverSubChannels(api, channel.id);
+      const initialState: SyncState = {
+        folderId: channel.id,
+        changesToken,
+        sequence: 1,
+        virtualChannelId: channel.id,
+        subChannelIds,
+        currentSubChannelIndex: 0,
+      };
+      await this.set(`sync_state_${channel.id}`, initialState);
+    } else {
+      // Individual folder or Shared with me
+      const initialState: SyncState = {
+        folderId: channel.id,
+        changesToken,
+        sequence: 1,
+        ...(channel.id === VIRTUAL_SHARED_WITH_ME ? { virtualChannelId: channel.id } : {}),
+      };
+      await this.set(`sync_state_${channel.id}`, initialState);
+    }
 
-    await this.set(`sync_state_${channel.id}`, initialState);
     await this.setupDriveWatch(channel.id);
 
     const syncCallback = await this.callback(
@@ -199,15 +287,70 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     await this.clear(`sync_enabled_${channel.id}`);
   }
 
-  private async getApi(folderId: string): Promise<GoogleApi> {
+  private async getApi(folderId: string, authChannelId?: string): Promise<GoogleApi> {
     // Get token for the channel (folder) from integrations
-    const token = await this.tools.integrations.get(folderId);
+    const token = await this.tools.integrations.get(authChannelId ?? folderId);
 
     if (!token) {
       throw new Error("Authorization no longer available");
     }
 
     return new GoogleApi(token.token);
+  }
+
+  /**
+   * Discover sub-channel IDs for a virtual parent channel.
+   */
+  private async discoverSubChannels(api: GoogleApi, virtualChannelId: string): Promise<string[]> {
+    if (virtualChannelId === VIRTUAL_SHARED_DRIVES) {
+      const drives = await listSharedDrives(api);
+      return drives.map(d => d.id);
+    }
+    // VIRTUAL_MY_DRIVE: root-level owned folders (no parent in folder set or shared drives)
+    const [folders, sharedDrives] = await Promise.all([
+      listFolders(api),
+      listSharedDrives(api),
+    ]);
+    const sharedDriveIds = new Set(sharedDrives.map(d => d.id));
+    const ownedFolders = folders.filter(f => f.ownedByMe === true);
+    const folderIds = new Set(ownedFolders.map(f => f.id));
+    return ownedFolders
+      .filter(f => {
+        const parentId = f.parents?.[0];
+        if (!parentId) return true;
+        return !folderIds.has(parentId) && !sharedDriveIds.has(parentId);
+      })
+      .map(f => f.id);
+  }
+
+  /**
+   * Sync files from a newly discovered sub-channel under a virtual parent.
+   */
+  private async syncNewSubChannel(
+    virtualChannelId: string,
+    subChannelId: string,
+    pageToken?: string
+  ): Promise<void> {
+    const api = await this.getApi(virtualChannelId, virtualChannelId);
+    const result = await listFilesInFolder(api, subChannelId, pageToken);
+
+    for (const file of result.files) {
+      try {
+        const thread = await this.buildThreadFromFile(
+          api, file, subChannelId, false, virtualChannelId
+        );
+        await this.tools.integrations.saveLink(thread);
+      } catch (error) {
+        console.error(`Failed to process file ${file.id}:`, error);
+      }
+    }
+
+    if (result.nextPageToken) {
+      const nextCallback = await this.callback(
+        this.syncNewSubChannel, virtualChannelId, subChannelId, result.nextPageToken
+      );
+      await this.runTask(nextCallback);
+    }
   }
 
   async getFolders(folderId: string): Promise<DocumentFolder[]> {
@@ -298,12 +441,13 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   ): Promise<string | void> {
     const fileId = meta.fileId as string | undefined;
     const folderId = meta.folderId as string | undefined;
+    const authChannelId = meta.authChannelId as string | undefined;
     if (!fileId || !folderId) {
       console.warn("No fileId/folderId in thread meta, cannot add comment");
       return;
     }
 
-    const api = await this.getApi(folderId);
+    const api = await this.getApi(folderId, authChannelId);
     const comment = await createComment(api, fileId, body);
     return `comment-${comment.id}`;
   }
@@ -316,12 +460,13 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   ): Promise<string | void> {
     const fileId = meta.fileId as string | undefined;
     const folderId = meta.folderId as string | undefined;
+    const authChannelId = meta.authChannelId as string | undefined;
     if (!fileId || !folderId) {
       console.warn("No fileId/folderId in thread meta, cannot add reply");
       return;
     }
 
-    const api = await this.getApi(folderId);
+    const api = await this.getApi(folderId, authChannelId);
     const reply = await createReply(api, fileId, commentId, body);
     return `reply-${commentId}-${reply.id}`;
   }
@@ -341,7 +486,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     }
 
     try {
-      const api = await this.getApi(folderId);
+      const api = await this.getApi(folderId, isVirtualChannel(folderId) ? folderId : undefined);
       const watchId = crypto.randomUUID();
 
       // Watch for changes using the Drive changes API
@@ -385,7 +530,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     }
 
     try {
-      const api = await this.getApi(folderId);
+      const api = await this.getApi(folderId, isVirtualChannel(folderId) ? folderId : undefined);
       await api.call(
         "POST",
         "https://www.googleapis.com/drive/v3/channels/stop",
@@ -512,44 +657,88 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         return;
       }
 
-      const api = await this.getApi(folderId);
-      const result = await listFilesInFolder(api, folderId, state.pageToken);
+      const authChannelId = state.virtualChannelId;
+      const api = await this.getApi(folderId, authChannelId);
 
-      for (const file of result.files) {
-        try {
-          const thread = await this.buildThreadFromFile(
-            api,
-            file,
-            folderId,
-            initialSync
-          );
-          await this.tools.integrations.saveLink(thread);
-        } catch (error) {
-          console.error(`Failed to process file ${file.id}:`, error);
+      if (state.virtualChannelId === VIRTUAL_SHARED_WITH_ME) {
+        // Shared with me: query-based sync
+        const result = await listSharedWithMe(api, state.pageToken);
+        for (const file of result.files) {
+          try {
+            const thread = await this.buildThreadFromFile(
+              api, file, file.parents?.[0] ?? folderId, initialSync, state.virtualChannelId
+            );
+            await this.tools.integrations.saveLink(thread);
+          } catch (error) {
+            console.error(`Failed to process file ${file.id}:`, error);
+          }
         }
-      }
 
-      if (result.nextPageToken) {
-        // More pages to process
-        await this.set(`sync_state_${folderId}`, {
-          ...state,
-          pageToken: result.nextPageToken,
-        });
+        if (result.nextPageToken) {
+          await this.set(`sync_state_${folderId}`, { ...state, pageToken: result.nextPageToken });
+          const syncCallback = await this.callback(this.syncBatch, batchNumber + 1, folderId, initialSync);
+          await this.runTask(syncCallback);
+        } else {
+          await this.set(`sync_state_${folderId}`, { ...state, pageToken: undefined });
+          await this.clear(`sync_lock_${folderId}`);
+        }
+      } else if (state.subChannelIds) {
+        // My Drive / Shared drives: iterate sub-channels
+        const subIndex = state.currentSubChannelIndex ?? 0;
+        if (subIndex >= state.subChannelIds.length) {
+          await this.set(`sync_state_${folderId}`, {
+            ...state, pageToken: undefined, currentSubChannelIndex: undefined,
+          });
+          await this.clear(`sync_lock_${folderId}`);
+          return;
+        }
 
-        const syncCallback = await this.callback(
-          this.syncBatch,
-          batchNumber + 1,
-          folderId,
-          initialSync
-        );
+        const currentSubId = state.subChannelIds[subIndex];
+        const result = await listFilesInFolder(api, currentSubId, state.pageToken);
+
+        for (const file of result.files) {
+          try {
+            const thread = await this.buildThreadFromFile(
+              api, file, currentSubId, initialSync, state.virtualChannelId
+            );
+            await this.tools.integrations.saveLink(thread);
+          } catch (error) {
+            console.error(`Failed to process file ${file.id}:`, error);
+          }
+        }
+
+        if (result.nextPageToken) {
+          await this.set(`sync_state_${folderId}`, { ...state, pageToken: result.nextPageToken });
+        } else {
+          // Move to next sub-channel
+          await this.set(`sync_state_${folderId}`, {
+            ...state, pageToken: undefined, currentSubChannelIndex: subIndex + 1,
+          });
+        }
+
+        const syncCallback = await this.callback(this.syncBatch, batchNumber + 1, folderId, initialSync);
         await this.runTask(syncCallback);
       } else {
-        // Sync complete
-        await this.set(`sync_state_${folderId}`, {
-          ...state,
-          pageToken: undefined,
-        });
-        await this.clear(`sync_lock_${folderId}`);
+        // Non-virtual: single folder sync
+        const result = await listFilesInFolder(api, folderId, state.pageToken);
+
+        for (const file of result.files) {
+          try {
+            const thread = await this.buildThreadFromFile(api, file, folderId, initialSync);
+            await this.tools.integrations.saveLink(thread);
+          } catch (error) {
+            console.error(`Failed to process file ${file.id}:`, error);
+          }
+        }
+
+        if (result.nextPageToken) {
+          await this.set(`sync_state_${folderId}`, { ...state, pageToken: result.nextPageToken });
+          const syncCallback = await this.callback(this.syncBatch, batchNumber + 1, folderId, initialSync);
+          await this.runTask(syncCallback);
+        } else {
+          await this.set(`sync_state_${folderId}`, { ...state, pageToken: undefined });
+          await this.clear(`sync_lock_${folderId}`);
+        }
       }
     } catch (error) {
       console.error(
@@ -565,26 +754,37 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     changesToken: string
   ): Promise<void> {
     try {
-      const api = await this.getApi(folderId);
+      const state = await this.get<SyncState>(`sync_state_${folderId}`);
+      const authChannelId = state?.virtualChannelId;
+      const api = await this.getApi(folderId, authChannelId);
       const result = await listChanges(api, changesToken);
 
-      // Filter changes to files in our synced folder
+      // Determine which files to accept based on channel type
+      const isSharedWithMe = state?.virtualChannelId === VIRTUAL_SHARED_WITH_ME;
+      const trackedFolderIds = state?.subChannelIds
+        ? new Set(state.subChannelIds)
+        : isSharedWithMe ? null : new Set([folderId]);
+
       for (const change of result.changes) {
         if (change.removed || !change.file) continue;
 
-        // Check if file is in our folder
-        if (!change.file.parents?.includes(folderId)) continue;
-
         // Skip folders
-        if (change.file.mimeType === "application/vnd.google-apps.folder")
-          continue;
+        if (change.file.mimeType === "application/vnd.google-apps.folder") continue;
+
+        if (isSharedWithMe) {
+          // Shared with me: accept files not owned by the user
+          if (change.file.ownedByMe !== false) continue;
+        } else if (trackedFolderIds) {
+          // Folder-based: check if file is in a tracked folder
+          if (!change.file.parents?.some(p => trackedFolderIds.has(p))) continue;
+        }
 
         try {
+          const fileFolderId = trackedFolderIds
+            ? (change.file.parents?.find(p => trackedFolderIds.has(p)) ?? folderId)
+            : (change.file.parents?.[0] ?? folderId);
           const thread = await this.buildThreadFromFile(
-            api,
-            change.file,
-            folderId,
-            false // incremental sync
+            api, change.file, fileFolderId, false, authChannelId
           );
           await this.tools.integrations.saveLink(thread);
         } catch (error) {
@@ -606,11 +806,30 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       } else {
         // Update stored changes token for next incremental sync
         const newToken = result.newStartPageToken || changesToken;
-        const state = await this.get<SyncState>(`sync_state_${folderId}`);
         if (state) {
+          // For virtual channels with sub-channels: discover new ones
+          let updatedSubChannelIds = state.subChannelIds;
+          if (state.virtualChannelId && state.subChannelIds) {
+            const currentSubIds = await this.discoverSubChannels(api, state.virtualChannelId);
+            const existingSet = new Set(state.subChannelIds);
+            const newSubIds = currentSubIds.filter(id => !existingSet.has(id));
+
+            if (newSubIds.length > 0) {
+              updatedSubChannelIds = [...state.subChannelIds, ...newSubIds];
+              // Queue initial sync for new sub-channels
+              for (const newId of newSubIds) {
+                const newSubCallback = await this.callback(
+                  this.syncNewSubChannel, state.virtualChannelId, newId
+                );
+                await this.runTask(newSubCallback);
+              }
+            }
+          }
+
           await this.set(`sync_state_${folderId}`, {
             ...state,
             changesToken: newToken,
+            ...(updatedSubChannelIds ? { subChannelIds: updatedSubChannelIds } : {}),
           });
         }
         await this.clear(`sync_lock_${folderId}`);
@@ -628,7 +847,8 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     api: GoogleApi,
     file: GoogleDriveFile,
     folderId: string,
-    initialSync: boolean
+    initialSync: boolean,
+    channelId?: string
   ): Promise<NewLinkWithNotes> {
     const canonicalSource = `google-drive:file:${file.id}`;
 
@@ -711,14 +931,15 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       author,
       sourceUrl: file.webViewLink ?? null,
       actions: actions.length > 0 ? actions : null,
-      channelId: folderId,
+      channelId: channelId ?? folderId,
       meta: {
         fileId: file.id,
         folderId,
         mimeType: file.mimeType,
         webViewLink: file.webViewLink || null,
         syncProvider: "google",
-        syncableId: folderId,
+        syncableId: channelId ?? folderId,
+        ...(channelId ? { authChannelId: channelId } : {}),
       },
       notes,
       preview: file.description || null,

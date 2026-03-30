@@ -16,6 +16,7 @@ export type GoogleDriveFile = {
     displayName?: string;
   }>;
   parents?: string[];
+  ownedByMe?: boolean;
 };
 
 export type GoogleDriveComment = {
@@ -52,6 +53,12 @@ export type SyncState = {
   more?: boolean;
   sequence?: number;
   timeMin?: Date;
+  /** The virtual channel ID when syncing via a virtual parent (e.g. "my-drive", "shared-drives") */
+  virtualChannelId?: string;
+  /** Sub-channel (drive/folder) IDs tracked by a virtual channel */
+  subChannelIds?: string[];
+  /** Index of the sub-channel currently being synced during initial sync */
+  currentSubChannelIndex?: number;
 };
 
 export class GoogleApi {
@@ -122,7 +129,7 @@ export async function listFolders(api: GoogleApi): Promise<GoogleDriveFile[]> {
       corpora: "allDrives",
       includeItemsFromAllDrives: true,
       supportsAllDrives: true,
-      fields: "nextPageToken,files(id,name,description,parents)",
+      fields: "nextPageToken,files(id,name,description,parents,ownedByMe)",
       pageSize: 100,
       pageToken,
     })) as { files: GoogleDriveFile[]; nextPageToken?: string } | null;
@@ -174,7 +181,27 @@ export async function listFilesInFolder(
     includeItemsFromAllDrives: true,
     supportsAllDrives: true,
     fields:
-      "nextPageToken,files(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents)",
+      "nextPageToken,files(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents,ownedByMe)",
+    pageSize: 50,
+    pageToken,
+  })) as { files: GoogleDriveFile[]; nextPageToken?: string } | null;
+
+  return data || { files: [] };
+}
+
+/**
+ * List files shared with the user (non-folder items only).
+ */
+export async function listSharedWithMe(
+  api: GoogleApi,
+  pageToken?: string
+): Promise<{ files: GoogleDriveFile[]; nextPageToken?: string }> {
+  const data = (await api.call("GET", `${DRIVE_API}/files`, {
+    q: "sharedWithMe=true and mimeType!='application/vnd.google-apps.folder' and trashed=false",
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+    fields:
+      "nextPageToken,files(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents,ownedByMe)",
     pageSize: 50,
     pageToken,
   })) as { files: GoogleDriveFile[]; nextPageToken?: string } | null;
@@ -276,7 +303,7 @@ export async function listChanges(
     includeItemsFromAllDrives: true,
     supportsAllDrives: true,
     fields:
-      "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents))",
+      "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,description,webViewLink,iconLink,createdTime,modifiedTime,owners,permissions(emailAddress,displayName),parents,ownedByMe))",
     pageSize: 100,
     includeRemoved: true,
   })) as {
