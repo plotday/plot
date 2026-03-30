@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 /// Metadata extracted from a URL's HTML page.
@@ -13,7 +15,7 @@ Future<UrlMetadata> fetchUrlMetadata(String url) async {
     );
     if (response.statusCode != 200) return (title: null, favicon: null);
 
-    final body = response.body;
+    final body = utf8.decode(response.bodyBytes, allowMalformed: true);
 
     // Extract <title>...</title> content
     String? title;

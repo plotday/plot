@@ -1,3 +1,4 @@
+- Fixed link titles showing garbled characters (e.g. "â¢" instead of "™") when adding URLs from certain websites
 - New threads created as tasks now default to the "Action" type with a checklist icon, making it easier to distinguish tasks from notes at a glance
 - When creating or editing a sub-priority under a team priority, the team is now automatically inherited and shown as read-only — only team admins can remove a priority from a team
 - Google Drive channels are now grouped under My Drive, Shared drives, and Shared with me — enable a top-level group to watch all folders in it, including new ones added later
