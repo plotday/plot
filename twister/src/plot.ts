@@ -359,10 +359,11 @@ export type ThreadMeta = {
 /**
  * Thread sub-type that determines the thread's icon and category.
  * Available types depend on whether the priority is shared:
- * - Private priorities: "notes" (default), "idea", "goal", "decision"
+ * - Private priorities: "action" (default for tasks), "notes" (default), "idea", "goal", "decision"
  * - Shared priorities: all above plus "discussion" (default), "announcement", "ask"
  */
 export type ThreadType =
+  | "action"
   | "notes"
   | "idea"
   | "goal"
