@@ -167,8 +167,11 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       try {
         final priority = await Priority.getOne(Uuid.fromString(id));
         if (mounted) {
+          final ancestorTitles =
+              priority.ancestors(includeSelf: true).map((a) => a.title);
           setState(() {
-            _priorityNames[id] = priority.title;
+            _priorityNames[id] =
+                ancestorTitles.join(Priority.separator);
             _priorityOrgIds[id] = priority.organizationId;
           });
         }
@@ -513,11 +516,13 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           !isForceEnabled && (widget.setupMode || channel.currentUserHasAccess);
       final isExpanded = _expandedChannels.contains(key);
 
-      // Resolve priority name for display
+      // Resolve priority info for display
       final priorityId = _channelPriorities[key];
       String? priorityName;
+      bool isTeamPriority = false;
       if (priorityId != null) {
         priorityName = _priorityNames[priorityId];
+        isTeamPriority = _priorityOrgIds[priorityId] != null;
       }
 
       // Determine highlight and focus node for toggleable rows
@@ -559,6 +564,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
               : null,
           isForceEnabled: isForceEnabled,
           priorityName: widget.isAccountBased ? priorityName : null,
+          isTeamPriority: widget.isAccountBased && isTeamPriority,
           highlighted: highlighted,
           focusNode: focusNode,
         ),
@@ -776,6 +782,7 @@ class _ChannelRow extends StatefulWidget {
     this.onExpandToggle,
     this.isForceEnabled = false,
     this.priorityName,
+    this.isTeamPriority = false,
     this.highlighted = false,
     this.focusNode,
   });
@@ -790,6 +797,7 @@ class _ChannelRow extends StatefulWidget {
   final VoidCallback? onExpandToggle;
   final bool isForceEnabled;
   final String? priorityName;
+  final bool isTeamPriority;
   final bool highlighted;
   final FocusNode? focusNode;
 
@@ -836,17 +844,21 @@ class _ChannelRowState extends State<_ChannelRow> {
               ),
               child: Row(
                 children: [
-                  if (widget.hasChildren)
-                    Padding(
-                      padding: EdgeInsets.only(right: theme.spacing.sm),
-                      child: Icon(
-                        widget.isExpanded
-                            ? FontAwesomeIcons.chevronDown
-                            : FontAwesomeIcons.chevronRight,
-                        size: 10,
-                        color: theme.colors.mutedForeground,
-                      ),
+                  Padding(
+                    padding: EdgeInsets.only(right: theme.spacing.sm),
+                    child: SizedBox(
+                      width: 10,
+                      child: widget.hasChildren
+                          ? Icon(
+                              widget.isExpanded
+                                  ? FontAwesomeIcons.chevronDown
+                                  : FontAwesomeIcons.chevronRight,
+                              size: 10,
+                              color: theme.colors.mutedForeground,
+                            )
+                          : null,
                     ),
+                  ),
                   Opacity(
                     opacity: widget.isForceEnabled ? 0.5 : 1.0,
                     child: IgnorePointer(
@@ -893,6 +905,14 @@ class _ChannelRowState extends State<_ChannelRow> {
                               color: theme.colors.mutedForeground,
                             ),
                           ),
+                          Icon(
+                            widget.isTeamPriority
+                                ? FontAwesomeIcons.building
+                                : FontAwesomeIcons.lock,
+                            size: 10,
+                            color: theme.colors.mutedForeground,
+                          ),
+                          SizedBox(width: theme.spacing.xs),
                           Flexible(
                             child: Text(
                               widget.priorityName!,
