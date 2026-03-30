@@ -74,9 +74,11 @@ export async function getPersonalConnectionCount(
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("source_channel as sc")
+          .innerJoin("priority_twist as pt", "pt.id", "sc.priority_twist_id")
           .leftJoin("priority as p", "p.id", "sc.priority_id")
           .whereRef("sc.priority_twist_id", "=", "ptc.priority_twist_id")
           .where("sc.enabled", "=", true)
+          .where("pt.archived_at", "is", null)
           .where((eb) =>
             eb.or([
               eb("sc.priority_id", "is", null),
@@ -105,9 +107,11 @@ export async function getOrgConnectionCount(
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("source_channel as sc")
+          .innerJoin("priority_twist as pt", "pt.id", "sc.priority_twist_id")
           .innerJoin("priority as p", "p.id", "sc.priority_id")
           .whereRef("sc.priority_twist_id", "=", "ptc.priority_twist_id")
           .where("sc.enabled", "=", true)
+          .where("pt.archived_at", "is", null)
           .where("p.organization_id", "=", organizationId)
           .select(sql`1`.as("x"))
       )
@@ -239,12 +243,14 @@ export async function checkChannelConnectionLimit(
   if (organizationId) {
     const existingOrgChannel = await db
       .selectFrom("priority_twist_connection as ptc")
+      .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
       .innerJoin("source_channel as sc", "sc.priority_twist_id", "ptc.priority_twist_id")
       .innerJoin("priority as p", "p.id", "sc.priority_id")
       .where("ptc.user_id", "=", userId)
       .where("ptc.provider", "=", connection.provider)
       .where("ptc.actor_id", "=", connection.actor_id)
       .where("sc.enabled", "=", true)
+      .where("pt.archived_at", "is", null)
       .where("p.organization_id", "=", organizationId)
       .select(sql`1`.as("x"))
       .executeTakeFirst();
@@ -309,12 +315,14 @@ export async function checkChannelConnectionLimit(
   // Personal channel — check if this connection already has a personal channel
   const existingPersonalChannel = await db
     .selectFrom("priority_twist_connection as ptc")
+    .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
     .innerJoin("source_channel as sc", "sc.priority_twist_id", "ptc.priority_twist_id")
     .leftJoin("priority as p", "p.id", "sc.priority_id")
     .where("ptc.user_id", "=", userId)
     .where("ptc.provider", "=", connection.provider)
     .where("ptc.actor_id", "=", connection.actor_id)
     .where("sc.enabled", "=", true)
+    .where("pt.archived_at", "is", null)
     .where((eb) =>
       eb.or([
         eb("sc.priority_id", "is", null),

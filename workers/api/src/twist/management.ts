@@ -64,9 +64,15 @@ async function cleanupFailedInstallation(
     }
   }
 
-  // Step 3: Archive the priority_twist record
+  // Step 3: Disable channels and archive the priority_twist record
   try {
-    logger.info("Archiving priority_twist record");
+    logger.info("Disabling channels and archiving priority_twist record");
+    await db
+      .updateTable("source_channel")
+      .set({ enabled: false })
+      .where("priority_twist_id", "=", priorityTwistId)
+      .where("enabled", "=", true)
+      .execute();
     await db
       .updateTable("priority_twist")
       .set({ archived_at: new Date().toISOString() })
@@ -542,6 +548,14 @@ export async function deleteTwist(
         logger.error("Error calling deactivate callback (continuing with deletion)", deactivateError as Error);
       }
     }
+
+    // Disable all channels before archiving
+    await db
+      .updateTable("source_channel")
+      .set({ enabled: false })
+      .where("priority_twist_id", "=", priority_twist_id)
+      .where("enabled", "=", true)
+      .execute();
 
     // Clean up connection rows before archiving
     await db
