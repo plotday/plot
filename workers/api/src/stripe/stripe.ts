@@ -4,6 +4,7 @@ import type Stripe from "stripe";
 import type { Bindings } from "../env";
 import {
   createFreeTierBillingCycle,
+  createFreeSubscription,
   createStripeClient,
   getBillingCycleDates,
   mapStripeStatus,
@@ -216,6 +217,32 @@ async function handleSubscriptionUpdate(
   // Enforce limits on downgrade
   await enforceDowngradeLimits(c.var.db, customerId, plan, logger);
 
+  // Cancel any old free-tier Stripe subscriptions when upgrading to a paid plan
+  if (plan !== "free") {
+    try {
+      const stripeClient = createStripeClient(c.env.STRIPE_SECRET_KEY);
+      const activeSubscriptions = await stripeClient.subscriptions.list({
+        customer: customerId,
+        status: "active",
+      });
+
+      for (const sub of activeSubscriptions.data) {
+        if (sub.id !== subscription.id && sub.metadata.plan === "free") {
+          await stripeClient.subscriptions.cancel(sub.id);
+          logger.info("Canceled old free subscription on upgrade", {
+            canceled_subscription_id: sub.id,
+            new_subscription_id: subscription.id,
+            customer_id: customerId,
+          });
+        }
+      }
+    } catch (error) {
+      logger.error("Failed to cancel old free subscription", error as Error, {
+        customer_id: customerId,
+      });
+    }
+  }
+
   // Backfill embeddings when upgrading from free to a paid plan
   if (plan !== "free") {
     const upgradeUser = await c.var.db
@@ -317,6 +344,43 @@ async function handleSubscriptionDeleted(
 
   // Enforce limits after reverting to free tier
   await enforceDowngradeLimits(c.var.db, customerId, "free", logger);
+
+  // Reinstate a free-tier Stripe subscription so usage limits continue to track
+  const deletedUserSub = await c.var.db
+    .selectFrom("user_subscription")
+    .select("user_id")
+    .where("stripe_customer_id", "=", customerId)
+    .executeTakeFirst();
+
+  if (deletedUserSub) {
+    try {
+      const stripeClient = createStripeClient(c.env.STRIPE_SECRET_KEY);
+      const freeSub = await createFreeSubscription(stripeClient, {
+        customerId,
+        userId: deletedUserSub.user_id,
+      });
+      const freeDates = getBillingCycleDates(freeSub);
+
+      await c.var.db
+        .updateTable("user_subscription")
+        .set({
+          stripe_subscription_id: freeSub.id,
+          billing_cycle_start: freeDates.start.toISOString(),
+          billing_cycle_end: freeDates.end.toISOString(),
+        })
+        .where("stripe_customer_id", "=", customerId)
+        .execute();
+
+      logger.info("Reinstated free Stripe subscription after cancellation", {
+        customer_id: customerId,
+        free_subscription_id: freeSub.id,
+      });
+    } catch (error) {
+      logger.error("Failed to reinstate free subscription", error as Error, {
+        customer_id: customerId,
+      });
+    }
+  }
 
   logger.info("Reverted customer to free tier", {
     customer_id: customerId,

@@ -1,3 +1,5 @@
+- Fixed the Manage Subscription page showing both a free and paid subscription after upgrading — upgrading now cleanly replaces the free plan
+- Attio CRM connection — sync deals, people, and tasks from Attio into Plot, with bidirectional updates for deal stages and comments
 - Fixed link titles showing garbled characters (e.g. "â¢" instead of "™") when adding URLs from certain websites
 - New threads created as tasks now default to the "Action" type with a checklist icon, making it easier to distinguish tasks from notes at a glance
 - When creating or editing a sub-priority under a team priority, the team is now automatically inherited and shown as read-only — only team admins can remove a priority from a team
