@@ -206,6 +206,7 @@ const AuthRequestSchema = z.object({
   provider: z.string(),
   redirectUri: z.string(),
   platform: z.enum(["ios", "android", "desktop"]).optional(),
+  enabledScopeGroups: z.array(z.string()).optional(),
 });
 
 twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
@@ -250,7 +251,23 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
     );
   }
 
-  // Create a callback token pointing to the Integrations tool's onAuth method
+  // Resolve final scopes including optional scope groups
+    let finalScopes = [...providerDecl.scopes];
+    const { enabledScopeGroups } = parseResult.data;
+    if (providerDecl.optionalScopes) {
+      for (const group of providerDecl.optionalScopes) {
+        // If client sent explicit selections, use those; otherwise use defaults
+        const isEnabled = enabledScopeGroups
+          ? enabledScopeGroups.includes(group.id)
+          : group.default;
+        if (isEnabled) {
+          finalScopes.push(...group.scopes);
+        }
+      }
+      finalScopes = [...new Set(finalScopes)];
+    }
+
+    // Create a callback token pointing to the Integrations tool's onAuth method
   const callbacksId = c.env.CALLBACKS.idFromName(priorityTwistId);
   const callbacksStub = c.env.CALLBACKS.get(callbacksId);
   const callback = await callbacksStub.create({
@@ -263,7 +280,8 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
   // Generate the auth URL
   const result = await Integrations.GenerateAuthUrl({
     provider: provider as any,
-    scopes: providerDecl.scopes,
+    scopes: finalScopes,
+    enabledScopeGroups,
     callback: callback as any,
     redirectUri,
     platform,

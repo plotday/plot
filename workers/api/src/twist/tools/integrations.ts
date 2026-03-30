@@ -2338,6 +2338,7 @@ export class Integrations extends Tool implements IAuth {
     platform,
     env,
     storage,
+    enabledScopeGroups,
   }: {
     provider: AuthProvider;
     scopes: string[];
@@ -2346,6 +2347,7 @@ export class Integrations extends Tool implements IAuth {
     platform?: "ios" | "android" | "desktop";
     env: Bindings;
     storage: DurableObjectNamespace<Storage>;
+    enabledScopeGroups?: string[];
   }): Promise<{ url: string; clientId: string; state: string } | null> {
     const config = PROVIDER_CONFIGS[provider];
     if (!config) {
@@ -2376,6 +2378,7 @@ export class Integrations extends Tool implements IAuth {
       codeVerifier,
       timestamp: Date.now(),
       callback,
+      enabledScopeGroups,
     };
     await storageObj.set(
       state,
