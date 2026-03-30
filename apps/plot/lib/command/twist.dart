@@ -269,6 +269,9 @@ class ManageConnections extends Command {
       );
     }
 
+    // Exclude sources with no enabled channels — they don't count as active
+    activeItems.removeWhere((item) => item.enabledCount == 0);
+
     // Build available connections (all source twists, including active ones
     // since additional accounts can be added)
     final availableItems = allTwists
