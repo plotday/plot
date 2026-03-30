@@ -1,6 +1,7 @@
 part of 'store.dart';
 
 enum ThreadSubType {
+  action('action', PlotIcon.action, 'Action'),
   notes('notes', PlotIcon.notes, 'Notes'),
   idea('idea', PlotIcon.idea, 'Idea'),
   goal('goal', PlotIcon.goal, 'Goal'),

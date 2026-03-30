@@ -417,17 +417,11 @@ class ManageSubscription extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    try {
-      final url = await UpgradeApi.getPortalUrl();
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      return const CommandDone();
-    } catch (e, t) {
-      log.warning('Failed to open subscription management', e, t);
-      return CommandMessage(
-        'Failed to open subscription management',
-        isError: true,
-      );
-    }
+    await launchUrl(
+      Uri.parse('${Env.siteRoot}/upgrade'),
+      mode: LaunchMode.externalApplication,
+    );
+    return const CommandDone();
   }
 }
 

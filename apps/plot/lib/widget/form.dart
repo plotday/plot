@@ -263,7 +263,7 @@ class FormSelect<T> extends FormItem {
 
   /// When set, the field looks enabled but shows this message as a toast
   /// instead of opening the selection modal.
-  final String? readonlyMessage;
+  String? readonlyMessage;
 
   /// Callback when value changes.
   final VoidCallback? onChanged;

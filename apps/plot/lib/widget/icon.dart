@@ -129,6 +129,7 @@ class PlotIcon {
   static const undecided = FontAwesomeIcons.userQuestion;
 
   // Thread sub-types
+  static const action = FontAwesomeIcons.clipboardListCheck;
   static const bullhorn = FontAwesomeIcons.bullhorn;
 
   // Associations

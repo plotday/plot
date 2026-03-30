@@ -288,6 +288,72 @@ class NewPriority extends ShowForm {
             orgs = orgList.cast<Map<String, dynamic>>();
           } catch (_) {}
 
+          // Determine initial team state from default parent
+          final parentOrgId = defaultParent.organizationId;
+          final parentOrg = parentOrgId != null
+              ? orgs.firstWhereOrNull(
+                  (o) => int.tryParse(o['id'] as String) == parentOrgId,
+                )
+              : null;
+
+          final parentSelect = FormSelect<Priority>(
+            key: 'parent',
+            label: 'Parent',
+            initialValue: defaultParent,
+            items: (search) async => Priority.excludePlot(
+              await Priority.get(
+                order: PriorityOrder.nested,
+                search: search,
+              ),
+            ),
+            labelBuilder: (p) => PriorityLabel(priority: p),
+            titleBuilder: (p) => p.ancestorsLabel() != null
+                ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
+                : p.title,
+          );
+
+          final teamSelect = orgs.isNotEmpty
+              ? FormSelect<Map<String, dynamic>?>(
+                  key: 'team',
+                  label: 'Team',
+                  initialValue: parentOrg,
+                  hasInitialValue: true,
+                  readonlyMessage: parentOrg != null
+                      ? 'Team is inherited from parent priority'
+                      : null,
+                  items: (search) async =>
+                      <Map<String, dynamic>?>[null, ...orgs]
+                          .where(
+                            (o) =>
+                                search == null ||
+                                (o?['name']?.toString().toLowerCase() ??
+                                        'personal')
+                                    .contains(search.toLowerCase()),
+                          )
+                          .toList(),
+                  titleBuilder: (o) => o?['name'] as String? ?? 'Personal',
+                )
+              : null;
+
+          // Update team field when parent selection changes
+          if (teamSelect != null) {
+            parentSelect.addListener(() {
+              final selected = parentSelect.getValue();
+              if (selected != null && selected.organizationId != null) {
+                final org = orgs.firstWhereOrNull(
+                  (o) =>
+                      int.tryParse(o['id'] as String) ==
+                      selected.organizationId,
+                );
+                teamSelect.setValue(org);
+                teamSelect.readonlyMessage =
+                    'Team is inherited from parent priority';
+              } else {
+                teamSelect.readonlyMessage = null;
+              }
+            });
+          }
+
           return FormData(
             title: parent == null ? 'Add a priority' : 'Add a sub-priority',
             groups: [
@@ -298,42 +364,8 @@ class NewPriority extends ShowForm {
                     label: 'Priority Name',
                     required: true,
                   ),
-                  FormSelect<Priority>(
-                    key: 'parent',
-                    label: 'Parent',
-                    initialValue: defaultParent,
-                    items: (search) async => Priority.excludePlot(
-                      await Priority.get(
-                        order: PriorityOrder.nested,
-                        search: search,
-                      ),
-                    ),
-                    labelBuilder: (p) => PriorityLabel(priority: p),
-                    titleBuilder: (p) => p.ancestorsLabel() != null
-                        ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
-                        : p.title,
-                  ),
-                  if (orgs.isNotEmpty)
-                    FormSelect<Map<String, dynamic>?>(
-                      key: 'team',
-                      label: 'Team',
-                      initialValue: null,
-                      hasInitialValue: true,
-                      items: (search) async => <Map<String, dynamic>?>[
-                        null,
-                        ...orgs,
-                      ]
-                          .where(
-                            (o) =>
-                                search == null ||
-                                (o?['name']?.toString().toLowerCase() ??
-                                        'personal')
-                                    .contains(search.toLowerCase()),
-                          )
-                          .toList(),
-                      titleBuilder: (o) =>
-                          o?['name'] as String? ?? 'Personal',
-                    ),
+                  parentSelect,
+                  if (teamSelect != null) teamSelect,
                   FormSelect<ThemeColor?>(
                     key: 'color',
                     label: 'Color',
@@ -365,6 +397,11 @@ class NewPriority extends ShowForm {
                         color: color,
                         draft: true,
                       );
+                      // Parent's team takes precedence (constructor already
+                      // inherits organizationId from parent)
+                      if (selectedParent.organizationId != null) {
+                        return AddPriority(Future.value(priority));
+                      }
                       return AddPriority(
                         Future.value(
                           team != null
@@ -413,10 +450,94 @@ class EditPriorityCommand extends ShowForm {
           final effectiveOrgId = p.organizationId ?? parent?.organizationId;
           final isTeamDescendant = effectiveOrgId != null && !p.root;
           final currentOrg = orgs.firstWhereOrNull(
-            (o) =>
-                int.tryParse(o['id'] as String) == effectiveOrgId,
+            (o) => int.tryParse(o['id'] as String) == effectiveOrgId,
           );
           final isTeamAdmin = currentOrg?['role'] == 'admin';
+
+          final parentSelect = FormSelect<Priority>(
+            key: 'parent',
+            label: 'Parent',
+            initialValue: parent,
+            enabled: !isRoot || p.organizationId != null,
+            placeholder: 'None',
+            items: (search) async {
+              final priorities = Priority.excludePlot(
+                await Priority.get(
+                  order: PriorityOrder.nested,
+                  search: search,
+                ),
+              );
+              return priorities.where((candidate) {
+                if (candidate.id == p.id) return false;
+                if (p.path.isParent(candidate.path)) return false;
+                if (p.personal && !candidate.personal) return false;
+                // Team roots can only be placed under personal priorities
+                if (isRoot &&
+                    p.organizationId != null &&
+                    !candidate.personal) {
+                  return false;
+                }
+                // Team descendants can only move within the same team
+                if (isTeamDescendant &&
+                    candidate.organizationId != effectiveOrgId) {
+                  return false;
+                }
+                return true;
+              }).toList();
+            },
+            labelBuilder: (item) => PriorityLabel(priority: item),
+            titleBuilder: (item) => item.ancestorsLabel() != null
+                ? '${item.ancestorsLabel()}${Priority.separator}${item.title}'
+                : item.title,
+          );
+
+          // Unified team selector — readonly for descendants, editable for
+          // roots (admin only when already in a team)
+          final showTeamSelect = orgs.isNotEmpty || currentOrg != null;
+          final teamSelect = showTeamSelect
+              ? FormSelect<Map<String, dynamic>?>(
+                  key: 'team',
+                  label: 'Team',
+                  initialValue: currentOrg,
+                  hasInitialValue: true,
+                  readonlyMessage: isTeamDescendant
+                      ? 'Team is inherited from parent priority'
+                      : null,
+                  enabled: isTeamDescendant ||
+                      p.organizationId == null ||
+                      isTeamAdmin,
+                  items: (search) async =>
+                      <Map<String, dynamic>?>[null, ...orgs]
+                          .where(
+                            (o) =>
+                                search == null ||
+                                (o?['name']?.toString().toLowerCase() ??
+                                        'personal')
+                                    .contains(search.toLowerCase()),
+                          )
+                          .toList(),
+                  titleBuilder: (o) => o?['name'] as String? ?? 'Personal',
+                )
+              : null;
+
+          // Update team field when parent selection changes
+          if (teamSelect != null) {
+            parentSelect.addListener(() {
+              final newParent = parentSelect.getValue();
+              if (newParent != null && newParent.organizationId != null) {
+                final org = orgs.firstWhereOrNull(
+                  (o) =>
+                      int.tryParse(o['id'] as String) ==
+                      newParent.organizationId,
+                );
+                teamSelect.setValue(org);
+                teamSelect.readonlyMessage =
+                    'Team is inherited from parent priority';
+              } else if (isTeamAdmin || effectiveOrgId == null) {
+                teamSelect.readonlyMessage = null;
+              }
+            });
+          }
 
           return FormData(
             title: 'Edit priority',
@@ -429,68 +550,8 @@ class EditPriorityCommand extends ShowForm {
                     initialValue: p.title,
                     required: true,
                   ),
-                  FormSelect<Priority>(
-                    key: 'parent',
-                    label: 'Parent',
-                    initialValue: parent,
-                    enabled: !isRoot || p.organizationId != null,
-                    placeholder: 'None',
-                    items: (search) async {
-                      final priorities = Priority.excludePlot(
-                        await Priority.get(
-                          order: PriorityOrder.nested,
-                          search: search,
-                        ),
-                      );
-                      return priorities.where((candidate) {
-                        if (candidate.id == p.id) return false;
-                        if (p.path.isParent(candidate.path)) return false;
-                        if (p.personal && !candidate.personal) return false;
-                        // Team roots can only be placed under personal priorities
-                        if (isRoot && p.organizationId != null && !candidate.personal) return false;
-                        return true;
-                      }).toList();
-                    },
-                    labelBuilder: (item) => PriorityLabel(priority: item),
-                    titleBuilder: (item) => item.ancestorsLabel() != null
-                        ? '${item.ancestorsLabel()}${Priority.separator}${item.title}'
-                        : item.title,
-                  ),
-                  // Team selector: readonly for descendants, editable for roots
-                  if (isTeamDescendant && currentOrg != null)
-                    FormSelect<Map<String, dynamic>?>(
-                      key: 'team',
-                      label: 'Team',
-                      initialValue: currentOrg,
-                      hasInitialValue: true,
-                      readonlyMessage: 'Team is inherited from parent priority',
-                      items: (search) async => [],
-                      titleBuilder: (o) =>
-                          o?['name'] as String? ?? 'Personal',
-                    ),
-                  if (!isTeamDescendant && orgs.isNotEmpty)
-                    FormSelect<Map<String, dynamic>?>(
-                      key: 'team',
-                      label: 'Team',
-                      initialValue: currentOrg,
-                      hasInitialValue: true,
-                      enabled:
-                          p.organizationId == null || isTeamAdmin,
-                      items: (search) async => <Map<String, dynamic>?>[
-                        null,
-                        ...orgs,
-                      ]
-                          .where(
-                            (o) =>
-                                search == null ||
-                                (o?['name']?.toString().toLowerCase() ??
-                                        'personal')
-                                    .contains(search.toLowerCase()),
-                          )
-                          .toList(),
-                      titleBuilder: (o) =>
-                          o?['name'] as String? ?? 'Personal',
-                    ),
+                  parentSelect,
+                  if (teamSelect != null) teamSelect,
                   FormSelect<ThemeColor?>(
                     key: 'color',
                     label: 'Color',
@@ -524,22 +585,24 @@ class EditPriorityCommand extends ShowForm {
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
                       final team = values['team'] as Map<String, dynamic>?;
-                      // Only set organizationId if the team selector was shown
-                      final hasTeamSelector =
-                          !isTeamDescendant && orgs.isNotEmpty;
+                      // Parent's team takes precedence
+                      Value<int?> orgId;
+                      if (newParent?.organizationId != null) {
+                        orgId = Value(newParent!.organizationId);
+                      } else if (showTeamSelect) {
+                        orgId = team != null
+                            ? Value(int.parse(team['id'] as String))
+                            : const Value(null);
+                      } else {
+                        orgId = const Value.absent();
+                      }
                       return EditPriority(
                         Future.value(
                           p.copyWith(
                             title: title,
                             parent: newParent,
                             color: Value(color),
-                            organizationId: hasTeamSelector
-                                ? (team != null
-                                    ? Value(
-                                        int.parse(team['id'] as String),
-                                      )
-                                    : const Value(null))
-                                : const Value.absent(),
+                            organizationId: orgId,
                           ),
                         ),
                       );
@@ -707,7 +770,7 @@ class SharePriority extends PriorityCommand {
 class ManagePrioritySharing extends ShowCommands {
   ManagePrioritySharing(this.priority)
     : super(
-        title: priority.sharing ? 'Manage sharing' : 'Share priority',
+        title: priority.sharing ? 'Sharing' : 'Share',
         icon: _sharingIcon(priority),
         commandsBuilder: (context) => _getSharingCommands(priority),
         showFilter: true,
@@ -716,9 +779,7 @@ class ManagePrioritySharing extends ShowCommands {
   static IconData _sharingIcon(Priority priority) {
     final isTeam = priority.organizationId != null;
     if (isTeam) {
-      return priority.sharing
-          ? PlotIcon.buildingUser
-          : PlotIcon.buildingLock;
+      return priority.sharing ? PlotIcon.buildingUser : PlotIcon.buildingLock;
     }
     return priority.sharing ? PlotIcon.users : PlotIcon.private;
   }
@@ -728,10 +789,11 @@ class ManagePrioritySharing extends ShowCommands {
   static Future<Commands> _getSharingCommands(Priority priority) async {
     // Read current inheritMembers from DB (priority arg may be stale after toggle)
     final db = Store.get;
-    final row = await (db.select(db.priorities)
-          ..where((p) => p.id.equalsValue(priority.id)))
-        .getSingleOrNull();
-    final currentInheritMembers = row?.inheritMembers ?? priority.inheritMembers;
+    final row = await (db.select(
+      db.priorities,
+    )..where((p) => p.id.equalsValue(priority.id))).getSingleOrNull();
+    final currentInheritMembers =
+        row?.inheritMembers ?? priority.inheritMembers;
     // Build a priority with the refreshed inheritMembers value
     final current = currentInheritMembers != priority.inheritMembers
         ? priority.copyWith(inheritMembers: currentInheritMembers)

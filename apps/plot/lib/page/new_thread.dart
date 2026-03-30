@@ -133,6 +133,7 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   ThreadSubType _defaultSubType() {
+    if (_selectedType == NewThreadType.task) return ThreadSubType.action;
     if (_hasMembers) {
       final priorityId = context
           .read<PriorityBloc>()
@@ -795,8 +796,8 @@ class NewThreadPageState extends State<NewThreadPage> {
         bloc.updateDraftLocal(currentDraft.copyWith(icon: const Value(null)));
       }
     } else {
-      // Restore sub-type icon for note/task
-      _selectedSubType ??= _defaultSubType();
+      // Reset sub-type icon for note/task
+      _selectedSubType = _defaultSubType();
       bloc.updateDraftLocal(
         bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
       );
