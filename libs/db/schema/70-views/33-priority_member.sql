@@ -26,6 +26,7 @@ FROM
     LEFT JOIN priority_user pu ON pu.user_id = c.user_id
         AND pu.priority_id = pc.priority_id
 WHERE
-    pu.user_id IS NOT NULL
-    OR pc.invited_by IS NOT NULL;
+    (pu.user_id IS NOT NULL
+    OR pc.invited_by IS NOT NULL)
+    AND (c.user_id IS NULL OR c."primary" = true);
 

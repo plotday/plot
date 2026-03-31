@@ -1,3 +1,4 @@
+- Fixed linked contacts appearing multiple times in sharing and assignment lists — each person now shows once with their primary name and email
 - Assigning tasks in shared priorities now shows members in their own section at the top, making it easier to find the right person — assigned users also highlight in accent color so it's clear who's already assigned
 - Google Chat spaces now sync new messages in realtime — no more waiting for a manual refresh to see new conversations
 - Fixed threads not showing as unread when someone else adds new notes — previously, once you read a thread, new notes from others wouldn't trigger the unread indicator
