@@ -1,5 +1,6 @@
 {
   "name": "@plotday/connector-fellow",
+  "plotTwistId": "019d4512-3ada-747f-8be6-cd1f3975b0dc",
   "displayName": "Fellow",
   "description": "Sync Fellow meeting notes and action items",
   "publisher": "Plot",
@@ -36,6 +37,13 @@
     "directory": "connectors/fellow"
   },
   "homepage": "https://plot.day",
-  "keywords": ["plot", "connector", "fellow", "meetings"],
-  "publishConfig": { "access": "public" }
+  "keywords": [
+    "plot",
+    "connector",
+    "fellow",
+    "meetings"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
