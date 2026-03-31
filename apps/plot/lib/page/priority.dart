@@ -1091,7 +1091,11 @@ class _PriorityPageState extends State<PriorityPage> {
               (p) => p.id == state.context.id,
             );
             if (p == null) return false;
-            return p.unread || p.descendants().any((d) => d.unread);
+            // Use path-based matching on flat list since priorities
+            // here don't have children populated (only asNested does that)
+            return prioritiesState.priorities.any(
+              (d) => (d.id == p.id || p.path.isParent(d.path)) && d.unread,
+            );
           },
           builder: (context, hasUnread) => _DesktopTabBar(
             currentTab: _currentTab,
