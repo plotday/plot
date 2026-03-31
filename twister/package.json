@@ -90,6 +90,11 @@
       "types": "./dist/tools/store.d.ts",
       "default": "./dist/tools/store.js"
     },
+    "./tools/imap": {
+      "@plotday/connector": "./src/tools/imap.ts",
+      "types": "./dist/tools/imap.d.ts",
+      "default": "./dist/tools/imap.js"
+    },
     "./utils/types": {
       "@plotday/connector": "./src/utils/types.ts",
       "types": "./dist/utils/types.d.ts",
@@ -179,6 +184,11 @@
       "@plotday/connector": "./src/llm-docs/tools/store.ts",
       "types": "./dist/llm-docs/tools/store.d.ts",
       "default": "./dist/llm-docs/tools/store.js"
+    },
+    "./llm-docs/tools/imap": {
+      "@plotday/connector": "./src/llm-docs/tools/imap.ts",
+      "types": "./dist/llm-docs/tools/imap.d.ts",
+      "default": "./dist/llm-docs/tools/imap.js"
     },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
