@@ -314,7 +314,7 @@ abstract class BaseTable {
             .reduce((value, last) => value.isAfter(last) ? value : last);
       }
       // Extract last cursor value for composite cursor pagination
-      returnLastId = rows.last[cursorColumn] as String?;
+      returnLastId = rows.last[cursorColumn]?.toString();
     }
     final more = limit != null && rows.length >= limit!;
     return (rows, lastUpdated, returnLastId, returnRange, more);
