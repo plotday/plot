@@ -274,6 +274,14 @@ class Actor extends ActorRow {
     }
     // archived == null means no filter (include all)
 
+    // Exclude contacts with no name and no email (they'd show as "Unknown")
+    // Skip this filter when querying by specific ID (e.g. resolving note authors)
+    if (id == null) {
+      query.where(
+        a.name.isNotNull() | a.email.isNotNull(),
+      );
+    }
+
     // Filter by ID
     if (id != null) {
       query.where(a.id.equalsValue(id));
