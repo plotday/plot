@@ -427,15 +427,15 @@ class _PrioritiesListState extends State<PrioritiesList>
                     bottom: 2,
                   ),
                   child: PriorityNotification(
-                    unread: widget.root.unread,
-                    active: widget.root.active,
+                    unread: _hasDescendantUnread(widget.root),
+                    active: _hasDescendantActive(widget.root),
                     color: widget.root.displayColor,
                   ),
                 ),
                 textStyle: itemStyle.copyWith(
                   color: context.colour.colours.fromTheme(
                     widget.root.displayColor,
-                    muted: !widget.root.active && !widget.root.unread,
+                    muted: !_hasDescendantActive(widget.root) && !_hasDescendantUnread(widget.root),
                   ),
                 ),
                 trailingBuilder: (isHovered, hasFocus) {
