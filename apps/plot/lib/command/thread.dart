@@ -994,13 +994,17 @@ class ScheduleThread extends _UpdateThreadCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await saveOptimistically(
-      context,
-      thread.copyWith(
-        on: Value(CustomDateRange(when, null)),
-        at: const Value(null), // Clear any existing datetime scheduling
-      ),
+    var updated = thread;
+    // Ensure thread is a todo (creates per-user schedule if needed)
+    if (!updated.todo) {
+      updated = updated.copyWith(todo: true);
+    }
+    // Move to the target date on the per-user schedule only
+    updated = updated.reorderTo(
+      updated.order,
+      date: when == Thread.todoNowDate ? null : when,
     );
+    await saveOptimistically(context, updated);
     return const CommandDone();
   }
 }
