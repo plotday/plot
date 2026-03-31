@@ -5,7 +5,7 @@ import type { DB } from "../db";
 import { createDb } from "../db";
 import type { Bindings } from "../env";
 import { createSchedule } from "../app/sync/smart-schedule";
-import { rpcUser } from "../rpc";
+import { rpc, rpcUser } from "../rpc";
 
 /**
  * AI-powered note analysis for auto-tagging todos, reply-needed notes,
@@ -25,12 +25,25 @@ export async function analyzeNote(
     const result = await classifyNote(env, context);
 
     if (result.tags.length > 0) {
-      await applyTagChanges(env, db, result.tags, context.memberIds, userId);
+      // Guard: if the LLM assigned more than 2 people, it's almost certainly wrong.
+      // A single note rarely clearly assigns tasks to more than 2 specific people.
+      const newAssignments = result.tags.filter(t => !t.done);
+      const uniqueAssignees = new Set(newAssignments.map(t => t.actorId));
+      if (uniqueAssignees.size > 2) {
+        console.warn(
+          `[note-analysis] Rejecting ${uniqueAssignees.size} assignments for note ${noteId} — LLM assigned too many people`
+        );
+        result.tags = result.tags.filter(t => t.done); // keep only completions
+      }
 
-      // Unarchive thread if actionable tags found and channel uses 'actionable' mode
-      const actionableTags = result.tags.filter(t => !t.done);
-      if (actionableTags.length > 0) {
-        await maybeUnarchiveActionableThread(db, threadId);
+      if (result.tags.length > 0) {
+        await applyTagChanges(env, db, result.tags, context.memberIds, userId);
+
+        // Unarchive thread if actionable tags found and channel uses 'actionable' mode
+        const actionableTags = result.tags.filter(t => !t.done);
+        if (actionableTags.length > 0) {
+          await maybeUnarchiveActionableThread(db, threadId);
+        }
       }
     }
 
@@ -131,18 +144,25 @@ async function gatherContext(
         .select(["l.title", "l.status", "l.type", "c.name as assignee_name"])
         .where("l.thread_id", "=", threadId)
         .execute(),
-      // Priority members with names and user IDs
-      db
-        .selectFrom("priority_contact as pc")
-        .innerJoin("contact as c", "c.id", "pc.contact_id")
-        .select([
-          "c.id",
-          "c.name",
-          "c.user_id as userId",
-        ])
-        .where("pc.priority_id", "=", thread.priority_id)
-        .where("c.user_id", "is not", null)
-        .execute(),
+      // Priority members: users with actual access (via priority_user hierarchy),
+      // resolved to their primary contact record.
+      (async () => {
+        const usersData = await rpc(db, "get_users_with_priority_access", {
+          target_priority_id: thread.priority_id,
+        });
+        const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
+        if (userIds.length === 0) return [];
+        return db
+          .selectFrom("contact")
+          .select([
+            "id",
+            "name",
+            "user_id as userId",
+          ])
+          .where("user_id", "in", userIds)
+          .where("primary", "=", true)
+          .execute();
+      })(),
       // Note author name
       db
         .selectFrom("contact")
