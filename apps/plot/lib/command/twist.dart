@@ -195,11 +195,12 @@ class ManageConnections extends Command {
   static Future<List<SelectGroup<_ConnectionItem>>> _fetchItems(
     String? search,
   ) async {
-    // Fetch sources and available twists (always refresh these).
-    // Upcoming connections are cached per session to avoid slow refreshes.
+    // Fetch source summaries, available twists, usage, and upcoming connections
+    // in parallel. Source summaries include account info and enabled counts,
+    // eliminating N separate /integrations calls.
     final defaultPriority = await Priority.getDefault();
     final futures = <Future<dynamic>>[
-      TwistApi.getUserSources(),
+      TwistApi.getSourcesSummary(),
       TwistApi.getAllTwists(defaultPriority),
       UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
     ];
@@ -214,7 +215,7 @@ class ManageConnections extends Command {
     }
     final results = await Future.wait(futures);
 
-    final sourcesData = results[0] as List<Map<String, dynamic>>;
+    final summaries = results[0] as List<SourceSummary>;
     final allTwists = results[1] as List<Twist>;
     final usage = results[2] as UsageData?;
     if (results.length > 3) {
@@ -227,44 +228,19 @@ class ManageConnections extends Command {
     }
     final upcomingResult = _upcomingCache;
 
-    // Fetch all integrations in parallel
-    final sourceIds = sourcesData.map((json) {
-      final idValue = json['id'];
-      return idValue is int ? idValue.toString() : idValue as String;
-    }).toList();
-    final integrationResults = await Future.wait(
-      sourceIds.map(
-        (id) => TwistApi.getIntegrations(
-          id,
-        ).then<TwistIntegrations?>((r) => r).catchError((_) => null),
-      ),
-    );
-
-    // Build active connections
+    // Build active connections from summaries
     final activeItems = <_ActiveSource>[];
-    for (var i = 0; i < sourcesData.length; i++) {
-      final json = sourcesData[i];
-      final id = sourceIds[i];
-      final integrations = integrationResults[i];
-
-      final enabledCount = integrations != null
-          ? _countEnabled(integrations.channels)
-          : 0;
-      final firstAccount =
-          integrations != null && integrations.accounts.isNotEmpty
-          ? integrations.accounts.first
-          : null;
-
+    for (final summary in summaries) {
       activeItems.add(
         _ActiveSource(
-          id: id,
-          name: json['name'] as String,
-          accountName: firstAccount?.displayName,
-          accountEmail: firstAccount?.email,
-          logoUrl: json['logo_url'] as String?,
-          logoUrlDark: json['logo_url_dark'] as String?,
-          provider: firstAccount?.provider,
-          enabledCount: enabledCount,
+          id: summary.id,
+          name: summary.name,
+          accountName: summary.displayName,
+          accountEmail: summary.accountEmail,
+          logoUrl: summary.logoUrl,
+          logoUrlDark: summary.logoUrlDark,
+          provider: summary.provider,
+          enabledCount: summary.enabledCount,
         ),
       );
     }
@@ -341,15 +317,6 @@ class ManageConnections extends Command {
       if (filteredUpcoming.isNotEmpty)
         SelectGroup(title: 'Upcoming connections', items: filteredUpcoming),
     ];
-  }
-
-  static int _countEnabled(List<TwistChannel> channels) {
-    var count = 0;
-    for (final ch in channels) {
-      if (ch.enabled) count++;
-      count += _countEnabled(ch.children);
-    }
-    return count;
   }
 
   static Widget _buildItem(_ConnectionItem item, bool isLoading) {
@@ -2194,7 +2161,7 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(group.label, style: context.theme.typography.base),
+                        Text(group.label, style: context.theme.typography.md),
                         if (group.description != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 2),
@@ -2202,7 +2169,7 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
                               group.description!,
                               style: context.theme.typography.sm.copyWith(
                                 color:
-                                    context.theme.colorScheme.mutedForeground,
+                                    context.theme.colors.mutedForeground,
                               ),
                             ),
                           ),

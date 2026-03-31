@@ -116,6 +116,101 @@ twists.get("/sources", async (c) => {
   }
 });
 
+// GET /sources/summary - List user's connected sources with account info and enabled channel counts
+// Optimized for the Connections modal list view: returns everything needed in a single request
+// instead of requiring N separate /twist/:id/integrations calls.
+twists.get("/sources/summary", async (c) => {
+  try {
+    const userId = c.var.user.id;
+
+    // Get all active source priority_twists for the current user
+    const sources = await c.var.db
+      .selectFrom("priority_twist")
+      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      .select([
+        "priority_twist.id",
+        "priority_twist.name",
+        "twist.logo_url",
+        "twist.logo_url_dark",
+      ])
+      .where("twist.is_source", "=", true)
+      .where("priority_twist.owner_id", "=", userId)
+      .where("priority_twist.archived_at", "is", null)
+      .execute();
+
+    if (sources.length === 0) {
+      return c.json([]);
+    }
+
+    const sourceIds = sources.map((s) => s.id);
+
+    // Batch query: enabled channel counts per source
+    const enabledCounts = await c.var.db
+      .selectFrom("source_channel")
+      .select(["priority_twist_id"])
+      .select((eb) => eb.fn.countAll().as("enabled_count"))
+      .where("priority_twist_id", "in", sourceIds)
+      .where("enabled", "=", true)
+      .groupBy("priority_twist_id")
+      .execute();
+
+    const countMap = new Map<string, number>();
+    for (const row of enabledCounts) {
+      countMap.set(row.priority_twist_id, Number(row.enabled_count));
+    }
+
+    // Batch query: first connected account per source (via priority_twist_connection + contact)
+    const accounts = await c.var.db
+      .selectFrom("priority_twist_connection as ptc")
+      .innerJoin("contact as c", "c.id", "ptc.actor_id")
+      .select([
+        "ptc.priority_twist_id",
+        "ptc.provider",
+        "c.name as account_name",
+        "c.email as account_email",
+      ])
+      .where("ptc.priority_twist_id", "in", sourceIds)
+      .where("ptc.user_id", "=", userId)
+      .execute();
+
+    // Use the first account per source
+    const accountMap = new Map<string, { provider: string; name: string | null; email: string | null }>();
+    for (const row of accounts) {
+      if (!accountMap.has(row.priority_twist_id)) {
+        accountMap.set(row.priority_twist_id, {
+          provider: row.provider,
+          name: row.account_name,
+          email: row.account_email,
+        });
+      }
+    }
+
+    const result = sources.map((source) => {
+      const account = accountMap.get(source.id);
+      return {
+        id: source.id,
+        name: source.name,
+        logo_url: source.logo_url,
+        logo_url_dark: source.logo_url_dark,
+        account_name: account?.name ?? null,
+        account_email: account?.email ?? null,
+        provider: account?.provider ?? null,
+        enabled_count: countMap.get(source.id) ?? 0,
+      };
+    });
+
+    return c.json(result);
+  } catch (error) {
+    const context = extractRequestContext(c);
+    const logger = createLogger(context);
+    logger.error("Error fetching source summaries", error as Error);
+    if (error instanceof Error) {
+      return c.json({ message: `Error fetching source summaries: ${error.message}` }, 400);
+    }
+    throw error;
+  }
+});
+
 // GET /twists - List all twists accessible to user for a priority
 twists.get("/twists", async (c) => {
   const priorityId = c.req.query("priorityId");

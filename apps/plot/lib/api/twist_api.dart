@@ -358,6 +358,16 @@ class TwistApi {
     return response.cast<Map<String, dynamic>>();
   }
 
+  /// Get source summaries with account info and enabled channel counts.
+  /// Optimized for the Connections modal list view.
+  static Future<List<SourceSummary>> getSourcesSummary() async {
+    final response = await api.get<List<dynamic>>('/sources/summary');
+    return response
+        .cast<Map<String, dynamic>>()
+        .map((json) => SourceSummary.fromJson(json))
+        .toList();
+  }
+
   /// Update the priority routing for a channel
   static Future<void> setChannelPriority({
     required String priorityTwistId,
@@ -425,6 +435,51 @@ class TwistApi {
       '/twist/$priorityTwistId/syncables/$provider/refresh',
     );
   }
+}
+
+/// Summary of a connected source for the Connections modal list view.
+class SourceSummary {
+  final String id; // priority_twist_id
+  final String name;
+  final String? logoUrl;
+  final String? logoUrlDark;
+  final String? accountName;
+  final String? accountEmail;
+  final AuthProvider? provider;
+  final int enabledCount;
+
+  const SourceSummary({
+    required this.id,
+    required this.name,
+    this.logoUrl,
+    this.logoUrlDark,
+    this.accountName,
+    this.accountEmail,
+    this.provider,
+    required this.enabledCount,
+  });
+
+  factory SourceSummary.fromJson(Map<String, dynamic> json) {
+    final providerStr = json['provider'] as String?;
+    return SourceSummary(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      logoUrl: json['logo_url'] as String?,
+      logoUrlDark: json['logo_url_dark'] as String?,
+      accountName: json['account_name'] as String?,
+      accountEmail: json['account_email'] as String?,
+      provider: providerStr != null
+          ? AuthProvider.values.firstWhere(
+              (v) => v.name == providerStr,
+              orElse: () => AuthProvider.other,
+            )
+          : null,
+      enabledCount: json['enabled_count'] as int? ?? 0,
+    );
+  }
+
+  /// Display name matching the existing TwistAccount.displayName pattern.
+  String? get displayName => accountName ?? accountEmail;
 }
 
 /// An upcoming connection not yet available as a source
