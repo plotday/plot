@@ -8,7 +8,6 @@ import type {
   ImapMessage,
   ImapFetchOptions,
   ImapFlagOperation,
-  ImapAddress,
 } from "@plotday/twister/tools/imap";
 import { type ToolPermission } from "../permissions";
 import { Tool } from "./tool";
@@ -211,18 +210,9 @@ export class Imap extends Tool implements IImap {
     const uidSet = uids.join(",");
     const flagList = `(${flags.join(" ")})`;
 
-    let storeCmd: string;
-    switch (operation) {
-      case "add":
-        storeCmd = `UID STORE ${uidSet} +FLAGS ${flagList}`;
-        break;
-      case "remove":
-        storeCmd = `UID STORE ${uidSet} -FLAGS ${flagList}`;
-        break;
-      case "set":
-        storeCmd = `UID STORE ${uidSet} FLAGS ${flagList}`;
-        break;
-    }
+    const prefix =
+      operation === "add" ? "+" : operation === "remove" ? "-" : "";
+    const storeCmd = `UID STORE ${uidSet} ${prefix}FLAGS ${flagList}`;
 
     const resp = await this.sendCommand(conn, storeCmd);
     if (!resp.ok) {
