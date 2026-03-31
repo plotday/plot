@@ -188,10 +188,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Handle twists
             MANUAL_TWISTS="${{ github.event.inputs.twists }}"
-            if [ -z "$MANUAL_TWISTS" ] || [ "$MANUAL_TWISTS" = "all" ]; then
+            if [ "$MANUAL_TWISTS" = "all" ]; then
               echo "Manual trigger: deploying all twists"
               TWISTS_TO_DEPLOY=("${TWIST_LIST[@]}")
-            else
+            elif [ -n "$MANUAL_TWISTS" ]; then
               echo "Manual trigger: deploying specified twists"
               IFS=',' read -ra INPUT_LIST <<< "$MANUAL_TWISTS"
               for twist in "${INPUT_LIST[@]}"; do
@@ -202,14 +202,16 @@ jobs:
                   echo "Warning: twist '$twist' not found in twists/ or public/twists/"
                 fi
               done
+            else
+              echo "Manual trigger: no twists specified, skipping"
             fi
 
             # Handle connectors
             MANUAL_CONNECTORS="${{ github.event.inputs.connectors }}"
-            if [ -z "$MANUAL_CONNECTORS" ] || [ "$MANUAL_CONNECTORS" = "all" ]; then
+            if [ "$MANUAL_CONNECTORS" = "all" ]; then
               echo "Manual trigger: deploying all connectors"
               CONNECTORS_TO_DEPLOY=("${CONNECTOR_LIST[@]}")
-            else
+            elif [ -n "$MANUAL_CONNECTORS" ]; then
               echo "Manual trigger: deploying specified connectors"
               IFS=',' read -ra INPUT_LIST <<< "$MANUAL_CONNECTORS"
               for connector in "${INPUT_LIST[@]}"; do
@@ -220,6 +222,8 @@ jobs:
                   echo "Warning: connector '$connector' not found in public/connectors/"
                 fi
               done
+            else
+              echo "Manual trigger: no connectors specified, skipping"
             fi
 
             # Output twists
