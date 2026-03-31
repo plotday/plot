@@ -37,6 +37,12 @@ export async function createLink(
     const threadData: any = {
       title: link.title,
       ...(hasSource ? { source: (link as any).source } : {}),
+      // Use thread.key for database-level dedup: concurrent createLink calls
+      // for the same source will upsert the same thread instead of creating
+      // duplicates. relatedSource takes precedence so related links share a thread.
+      ...(hasSource
+        ? { key: link.relatedSource ?? (link as any).source }
+        : {}),
       ...(link.author ? { author: link.author } : {}),
       ...(link.assignee !== undefined ? { assignee: link.assignee } : {}),
       ...(link.meta !== undefined ? { meta: link.meta } : {}),

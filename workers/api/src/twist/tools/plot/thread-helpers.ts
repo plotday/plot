@@ -721,6 +721,9 @@ export async function prepareThreadForDb(
       ? { archived_at: activity.archived ? new Date().toISOString() : null }
       : {}),
     ...("id" in activity && activity.id ? { id: activity.id } : {}),
+    ...("key" in activity && (activity as any).key !== undefined
+      ? { key: (activity as any).key }
+      : {}),
     // Map SDK 'type' field to database 'icon' column, with 'icon' as fallback for internal callers
     ...("type" in activity && (activity as any).type !== undefined
       ? { icon: (activity as any).type }
@@ -738,6 +741,11 @@ export async function prepareThreadForDb(
       sync_depth: plot.syncDepth + 1,
       ...(activity.archived !== undefined
         ? { archived_at: activity.archived ? new Date().toISOString() : null }
+        : {}),
+      // key must be in upsert (p_thread) so upsert_thread can look up
+      // existing threads by (key, priority_id) for database-level dedup
+      ...("key" in activity && (activity as any).key !== undefined
+        ? { key: (activity as any).key }
         : {}),
     };
 
