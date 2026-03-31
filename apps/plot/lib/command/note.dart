@@ -53,6 +53,7 @@ abstract class NoteCommand extends Command {
     required super.eventAction,
     super.icon,
     super.hoverIcon,
+    super.on,
     String? title,
   }) : super(title: title ?? 'Note', subtitle: '');
 
@@ -435,6 +436,21 @@ class PickNoteAssignee extends ShowCommands {
         ? await Future.wait(assigneeIds.map(Actor.getOne))
         : <Actor>[];
 
+    // Resolve members for the "Members" section
+    final memberActors = await _getMemberActors(activity.priority.id);
+    final memberActorIds = memberActors.map((a) => a.id).toSet();
+
+    // Exclude already-assigned members from the Members section
+    final unassignedMembers = memberActors
+        .where((a) => !assigneeIds.contains(a.id))
+        .toList();
+
+    // Exclude both assigned and member actors from Contacts
+    final excludeFromContacts = <ActorId>[
+      ...assigneeIds,
+      ...memberActorIds,
+    ];
+
     return Commands(
       prompt: 'Assign to',
       groups: [
@@ -445,14 +461,46 @@ class PickNoteAssignee extends ShowCommands {
                 .map((actor) => AssignNoteActor(freshNote, actor))
                 .toList(),
           ),
+        if (unassignedMembers.isNotEmpty)
+          StaticCommandGroup(
+            title: 'Members',
+            commands: unassignedMembers
+                .map((actor) => AssignNoteActor(freshNote, actor))
+                .toList(),
+          ),
         ActorGroup(
           title: 'Contacts',
           priorityId: activity.priority.id,
-          excludeActorIds: assigneeIds,
+          excludeActorIds: excludeFromContacts,
           builder: (actor) => AssignNoteActor(freshNote, actor),
         ),
       ],
     );
+  }
+
+  /// Resolves the members of the sharing priority (direct or ancestor).
+  static Future<List<Actor>> _getMemberActors(PriorityId priorityId) async {
+    // Fetch enriched priority to get sharingAncestorId
+    final enriched = await Priority.get(id: priorityId, archived: null);
+    if (enriched.isEmpty) return [];
+    final priority = enriched.first;
+
+    // Use the sharing ancestor if this priority inherits sharing
+    final sharingId = priority.sharingAncestorId ?? priority.id;
+
+    final members = await PriorityMember.getForPriority(sharingId);
+    if (members.isEmpty) return [];
+
+    final actors = <Actor>[];
+    for (final member in members) {
+      try {
+        final actor = await Actor.getOne(member.contactId);
+        actors.add(actor);
+      } catch (_) {
+        // Skip members whose actors can't be resolved
+      }
+    }
+    return actors;
   }
 }
 
@@ -470,8 +518,9 @@ class AssignNoteActor extends NoteCommand {
         icon: note.isCompletedBy(actor.id)
             ? PlotIcon.othersTaskDone
             : note.isAssignedTo(actor.id)
-            ? PlotIcon.assignRemove
+            ? PlotIcon.othersTask
             : PlotIcon.assignAdd,
+        on: note.isAssignedTo(actor.id),
       );
 
   final Actor actor;
@@ -780,6 +829,22 @@ class PickDraftNoteAssignee extends ShowCommands {
         ? await Future.wait(assigneeIds.map(Actor.getOne))
         : <Actor>[];
 
+    // Resolve members for the "Members" section
+    final memberActors =
+        await PickNoteAssignee._getMemberActors(priorityId);
+    final memberActorIds = memberActors.map((a) => a.id).toSet();
+
+    // Exclude already-assigned members from the Members section
+    final unassignedMembers = memberActors
+        .where((a) => !assigneeIds.contains(a.id))
+        .toList();
+
+    // Exclude both assigned and member actors from Contacts
+    final excludeFromContacts = <ActorId>[
+      ...assigneeIds,
+      ...memberActorIds,
+    ];
+
     return Commands(
       prompt: 'Assign to',
       groups: [
@@ -793,10 +858,20 @@ class PickDraftNoteAssignee extends ShowCommands {
                 )
                 .toList(),
           ),
+        if (unassignedMembers.isNotEmpty)
+          StaticCommandGroup(
+            title: 'Members',
+            commands: unassignedMembers
+                .map(
+                  (actor) =>
+                      _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),
+                )
+                .toList(),
+          ),
         ActorGroup(
           title: 'Contacts',
           priorityId: priorityId,
-          excludeActorIds: assigneeIds,
+          excludeActorIds: excludeFromContacts,
           builder: (actor) =>
               _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),
         ),
@@ -816,8 +891,9 @@ class _AssignDraftNoteActor extends NoteCommand {
         icon: note.isCompletedBy(actor.id)
             ? PlotIcon.othersTaskDone
             : note.isAssignedTo(actor.id)
-            ? PlotIcon.assignRemove
+            ? PlotIcon.othersTask
             : PlotIcon.assignAdd,
+        on: note.isAssignedTo(actor.id),
       );
 
   final Actor actor;

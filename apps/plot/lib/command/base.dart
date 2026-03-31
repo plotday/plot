@@ -143,6 +143,7 @@ class CommandWrapper extends Command {
          icon: icon.or(command.icon),
          hoverIcon: hoverIcon.or(command.hoverIcon),
          shortcut: command.shortcut,
+         on: command.on,
        );
 
   @override

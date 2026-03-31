@@ -535,7 +535,9 @@ class _ListTileState extends State<ListTile> {
               return Icon(
                 widget.icon ?? widget.command?.icon,
                 size: iconSize,
-                color: context.theme.plotColors.muted,
+                color: widget.command?.on == true
+                    ? context.theme.colors.primary
+                    : context.theme.plotColors.muted,
               );
             }
 

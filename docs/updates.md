@@ -1,3 +1,5 @@
+- Assigning tasks in shared priorities now shows members in their own section at the top, making it easier to find the right person — assigned users also highlight in accent color so it's clear who's already assigned
+- Google Chat spaces now sync new messages in realtime — no more waiting for a manual refresh to see new conversations
 - Fixed threads not showing as unread when someone else adds new notes — previously, once you read a thread, new notes from others wouldn't trigger the unread indicator
 - Fixed the Manage Subscription page showing both a free and paid subscription after upgrading — upgrading now cleanly replaces the free plan
 - Attio CRM connection — sync deals, people, and tasks from Attio into Plot, with bidirectional updates for deal stages and comments
