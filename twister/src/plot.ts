@@ -827,14 +827,10 @@ export enum ActorType {
  * };
  * ```
  */
-export type NewContact = {
-  /**
-   * Email address of the contact.
-   * Either email or source must be provided for contact resolution.
-   */
-  email?: string;
-  /** Optional display name for the contact */
-  name?: string;
+/**
+ * Common fields shared by all NewContact variants.
+ */
+type NewContactBase = {
   /** Optional avatar image URL for the contact */
   avatar?: string;
   /**
@@ -843,6 +839,16 @@ export type NewContact = {
    */
   source?: { provider: AuthProvider; accountId: string };
 };
+
+/**
+ * At least one of `email` or `name` must be provided so the contact can be
+ * identified in the UI. Contacts with neither would display as "Unknown".
+ */
+export type NewContact = NewContactBase &
+  (
+    | { email: string; name?: string }
+    | { email?: string; name: string }
+  );
 
 export type ContentType = "text" | "markdown" | "html";
 

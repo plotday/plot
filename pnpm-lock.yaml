@@ -43,6 +43,16 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  connectors/attio:
+    dependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   connectors/fellow:
     dependencies:
       '@plotday/twister':
