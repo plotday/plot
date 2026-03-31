@@ -1,5 +1,6 @@
 {
   "name": "@plotday/connector-google-tasks",
+  "plotTwistId": "019d4129-4aee-7629-9d7b-b9fdb87db532",
   "displayName": "Google Tasks",
   "description": "Tasks from Google Tasks",
   "logoUrl": "https://api.iconify.design/logos/google-tasks.svg",
@@ -18,10 +19,16 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint"
   },
   "dependencies": {
     "@plotday/twister": "workspace:^"
@@ -35,6 +42,12 @@
     "directory": "connectors/google-tasks"
   },
   "homepage": "https://plot.day",
-  "keywords": ["plot", "connector", "google-tasks"],
-  "publishConfig": { "access": "public" }
+  "keywords": [
+    "plot",
+    "connector",
+    "google-tasks"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
