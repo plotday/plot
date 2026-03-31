@@ -587,6 +587,42 @@ AND (
 
 Querying `thread_unread` with only `read_at IS NULL` and `urgency != 'passive'` — this misses archived, draft, and private thread visibility, causing phantom notifications and incorrect unread counts.
 
+## Plot App URLs
+
+The app uses base58-encoded UUIDs in URLs. URL formats:
+
+- **Production**: `https://app.plot.day/{priority_base58}/{thread_base58?}`
+- **Dev**: `http://localhost:8788/{priority_base58}/{thread_base58?}`
+
+The first path segment is the priority ID, the second (optional) is the thread ID.
+
+### Decoding base58 to UUID
+
+Base58 alphabet: `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`
+
+Decode a segment to a UUID:
+
+```bash
+python3 -c "
+A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+s='CXH9QUq4zFmvTopn1i8Xv'; n=0
+for c in s: n=n*58+A.index(c)
+h=format(n,'032x'); print(f'{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}')
+"
+```
+
+### Existing implementations
+
+- **Dart** (decode + encode): `apps/plot/lib/util/uuid.dart` — `Uuid.fromShortString()` / `toShortString()`
+- **TypeScript** (encode only): `workers/api/src/state/email-notify.ts` — `uuidToBase58()`
+
+### Looking up decoded IDs
+
+Once decoded, query the database:
+
+- **Local DB**: `psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "SELECT id, title FROM priority WHERE id = '<uuid>'"`
+- **Prod DB**: Use the `prod-db-investigate` skill (psql on port 5433)
+
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.
