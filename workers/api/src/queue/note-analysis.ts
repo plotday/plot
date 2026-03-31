@@ -40,7 +40,8 @@ export async function analyzeNote(
       threadId,
       userId,
       context.members,
-      result.unread
+      result.unread,
+      context.noteCreatedAt
     );
 
     return true;
@@ -51,6 +52,7 @@ export async function analyzeNote(
 
 interface NoteContext {
   noteId: string;
+  noteCreatedAt: Date;
   noteContent: string;
   noteAuthorId: string;
   noteAuthorName: string | null;
@@ -106,7 +108,7 @@ async function gatherContext(
   const [note, thread] = await Promise.all([
     db
       .selectFrom("note")
-      .select(["id", "content", "author_id", "mentions"])
+      .select(["id", "created_at", "content", "author_id", "mentions"])
       .where("id", "=", noteId)
       .executeTakeFirst(),
     db
@@ -223,6 +225,7 @@ async function gatherContext(
 
   return {
     noteId,
+    noteCreatedAt: note.created_at,
     noteContent: note.content,
     noteAuthorId: note.author_id,
     noteAuthorName: author?.name ?? null,
@@ -528,7 +531,8 @@ async function applyUnreadStatus(
   threadId: string,
   noteAuthorUserId: string,
   members: Array<{ id: string; name: string | null; userId: string | null }>,
-  unread: AnalysisResult["unread"]
+  unread: AnalysisResult["unread"],
+  noteCreatedAt: Date
 ): Promise<void> {
   for (const member of members) {
     if (!member.userId) continue;
@@ -545,6 +549,7 @@ async function applyUnreadStatus(
         p_thread_id: threadId,
         p_urgency: urgency,
         p_importance: importance,
+        p_note_created_at: noteCreatedAt.toISOString(),
       });
 
       // passive: unread in app but no push notification

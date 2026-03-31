@@ -548,7 +548,7 @@ const UPCOMING_CONNECTIONS: UpcomingConnection[] = [
   },
   {
     name: "Google Tasks",
-    ...si("googletasks", "4285F4", "4285F4"),
+    logo: "https://plot.day/assets/logo-google-tasks.svg",
     category: "Productivity",
     entities: ["Tasks", "Lists"],
     description: "Sync tasks and lists from Google Tasks",

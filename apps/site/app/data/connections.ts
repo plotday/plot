@@ -594,7 +594,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Google Tasks",
-    ...si("googletasks", "4285F4", "4285F4"),
+    logo: "/assets/logo-google-tasks.svg",
     category: "Productivity",
     entities: ["Tasks", "Lists"],
     available: false,

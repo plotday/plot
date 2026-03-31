@@ -1,3 +1,4 @@
+- Fixed threads not showing as unread when someone else adds new notes — previously, once you read a thread, new notes from others wouldn't trigger the unread indicator
 - Fixed the Manage Subscription page showing both a free and paid subscription after upgrading — upgrading now cleanly replaces the free plan
 - Attio CRM connection — sync deals, people, and tasks from Attio into Plot, with bidirectional updates for deal stages and comments
 - Fixed link titles showing garbled characters (e.g. "â¢" instead of "™") when adding URLs from certain websites

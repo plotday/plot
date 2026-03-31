@@ -977,7 +977,8 @@ CREATE OR REPLACE FUNCTION "user".upsert_thread_unread (
     p_urgency text,
     p_importance smallint DEFAULT 50,
     p_read_at timestamptz DEFAULT NULL::timestamptz,
-    p_bumped_at timestamptz DEFAULT NULL::timestamptz
+    p_bumped_at timestamptz DEFAULT NULL::timestamptz,
+    p_note_created_at timestamptz DEFAULT NULL::timestamptz
 )
     RETURNS thread_unread
     LANGUAGE plpgsql
@@ -1005,7 +1006,15 @@ BEGIN
         DO UPDATE SET
             urgency = EXCLUDED.urgency,
             importance = EXCLUDED.importance,
-            read_at = COALESCE(EXCLUDED.read_at, thread_unread.read_at),
+            read_at = CASE
+                -- Race condition: user read after the note was created → preserve their read
+                WHEN p_note_created_at IS NOT NULL
+                    AND thread_unread.read_at IS NOT NULL
+                    AND thread_unread.read_at >= p_note_created_at
+                THEN thread_unread.read_at
+                -- New activity or no timestamp context: use caller's value (NULL = unread)
+                ELSE EXCLUDED.read_at
+            END,
             bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END,
             updated_at = now()
     RETURNING * INTO v_row;

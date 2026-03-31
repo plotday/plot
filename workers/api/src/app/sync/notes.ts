@@ -200,7 +200,7 @@ notes.post("/sync/notes", async (c) => {
           let affectedUserIds: string[] = [];
           if (!analysisHandledUnread) {
             try {
-              affectedUserIds = await markThreadUnreadForOthers(c.env, db, priorityId, body.thread_id, c.var.user.id);
+              affectedUserIds = await markThreadUnreadForOthers(c.env, db, priorityId, body.thread_id, c.var.user.id, new Date().toISOString());
             } catch (error) {
               const logger = createLogger({ operation: "sync:notes:markUnread" });
               logger.error("Failed to mark thread unread for others", error as Error);
@@ -261,7 +261,8 @@ export async function markThreadUnreadForOthers(
   db: Kysely<DB>,
   priorityId: string,
   threadId: string,
-  excludeUserId: string
+  excludeUserId: string,
+  noteCreatedAt?: string
 ): Promise<string[]> {
   // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
   // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
@@ -280,6 +281,7 @@ export async function markThreadUnreadForOthers(
         p_thread_id: threadId,
         p_urgency: "inform-updates",
         p_importance: 50,
+        ...(noteCreatedAt ? { p_note_created_at: noteCreatedAt } : {}),
       });
 
       markedUserIds.push(userId);

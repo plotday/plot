@@ -4363,6 +4363,7 @@ export type Database = {
         Args: {
           p_bumped_at?: string
           p_importance?: number
+          p_note_created_at?: string
           p_read_at?: string
           p_thread_id: string
           p_urgency: string

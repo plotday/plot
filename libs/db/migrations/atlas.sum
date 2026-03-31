@@ -1,4 +1,4 @@
-h1:G1V4hHQsdRWfCGyDHa5jr6/eadrvEj45UFvFzSBxkyo=
+h1:Rb6f61bziCrR8E9UIX9BEGE7h3U7HhM8l+Y+S78Cx3M=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -149,3 +149,4 @@ h1:G1V4hHQsdRWfCGyDHa5jr6/eadrvEj45UFvFzSBxkyo=
 20260328040342_add_thread_association.sql h1:wG25M3pkGlpJFvH1VXCaRBSb9zXozW7kdKlzff7YXeM=
 20260328140307_allow_visual_parent_for_team_roots.sql h1:38ONc5amhN5jekMdgfeDNdtg6nkWokLRGZfGMijdCbQ=
 20260329010332_fix_share_priority_skip_org_extraction.sql h1:KbxjJr/iiqwggNeYOfb3HxhJddoLYGR6tZFDsuegH/8=
+20260331011036_fix_upsert_thread_unread_clear_read_at.sql h1:y3e8E5RFubLlC0E3k695r2PA3tdetY+W9rbPb4Ad/Gc=
