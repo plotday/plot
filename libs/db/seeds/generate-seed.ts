@@ -1586,22 +1586,27 @@ function processSource(
     ],
   });
 
-  // Use DO block to chain bigint IDENTITY inserts
+  // Try to use a public twist if one exists with the same name, otherwise create a personal one
   outLines.push(`DO $$`);
   outLines.push(`DECLARE`);
   outLines.push(`  v_twist_admin_id bigint;`);
   outLines.push(`  v_twist_id bigint;`);
   outLines.push(`BEGIN`);
   outLines.push(
-    `  INSERT INTO twist_admin (user_id) VALUES (${sqlString(userId)}) RETURNING id INTO v_twist_admin_id;`
+    `  SELECT t.id INTO v_twist_id FROM twist t WHERE t.name = ${sqlString(source.name)} AND t.environment = 'public' AND t.is_source = true AND t.archived_at IS NULL LIMIT 1;`
+  );
+  outLines.push(`  IF v_twist_id IS NULL THEN`);
+  outLines.push(
+    `    INSERT INTO twist_admin (user_id) VALUES (${sqlString(userId)}) RETURNING id INTO v_twist_admin_id;`
   );
   outLines.push(
-    `  INSERT INTO twist (twist_admin_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
+    `    INSERT INTO twist (twist_admin_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
   );
   outLines.push(
-    `  VALUES (v_twist_admin_id, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)})`
+    `    VALUES (v_twist_admin_id, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)})`
   );
-  outLines.push(`  RETURNING id INTO v_twist_id;`);
+  outLines.push(`    RETURNING id INTO v_twist_id;`);
+  outLines.push(`  END IF;`);
   outLines.push(
     `  INSERT INTO priority_twist (id, twist_id, owner_id, priority_id, name, config)`
   );
@@ -1629,22 +1634,27 @@ function processTwist(
 
   twistIdMap[twist.ref] = priorityTwistId;
 
-  // Use DO block to chain bigint IDENTITY inserts (same pattern as processSource)
+  // Try to use a public twist if one exists with the same name, otherwise create a personal one
   outLines.push(`DO $$`);
   outLines.push(`DECLARE`);
   outLines.push(`  v_twist_admin_id bigint;`);
   outLines.push(`  v_twist_id bigint;`);
   outLines.push(`BEGIN`);
   outLines.push(
-    `  INSERT INTO twist_admin (user_id) VALUES (${sqlString(userId)}) RETURNING id INTO v_twist_admin_id;`
+    `  SELECT t.id INTO v_twist_id FROM twist t WHERE t.name = ${sqlString(twist.name)} AND t.environment = 'public' AND t.is_source = false AND t.archived_at IS NULL LIMIT 1;`
+  );
+  outLines.push(`  IF v_twist_id IS NULL THEN`);
+  outLines.push(
+    `    INSERT INTO twist_admin (user_id) VALUES (${sqlString(userId)}) RETURNING id INTO v_twist_admin_id;`
   );
   outLines.push(
-    `  INSERT INTO twist (twist_admin_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
+    `    INSERT INTO twist (twist_admin_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
   );
   outLines.push(
-    `  VALUES (v_twist_admin_id, 'personal', ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)})`
+    `    VALUES (v_twist_admin_id, 'personal', ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)})`
   );
-  outLines.push(`  RETURNING id INTO v_twist_id;`);
+  outLines.push(`    RETURNING id INTO v_twist_id;`);
+  outLines.push(`  END IF;`);
   outLines.push(
     `  INSERT INTO priority_twist (id, twist_id, owner_id, priority_id, name, config)`
   );
