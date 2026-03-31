@@ -50,7 +50,9 @@ export class GoogleTasks extends Connector<GoogleTasks> {
     {
       type: "task",
       label: "Task",
-      logo: "https://api.iconify.design/logos/google-tasks.svg",
+      // Logo: full-color SVG from static assets (iconify has no logos/google-tasks)
+      // logoMono: monochrome version from simple-icons (works fine on iconify)
+      logo: "https://plot.day/assets/logo-google-tasks.svg",
       logoMono: "https://api.iconify.design/simple-icons/googletasks.svg",
       statuses: [
         { status: "open", label: "Open" },

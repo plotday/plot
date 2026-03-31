@@ -63,7 +63,9 @@ export class GoogleChat extends Connector<GoogleChat> {
     {
       type: "message",
       label: "Message",
-      logo: "https://api.iconify.design/logos/google-chat.svg",
+      // Logo: full-color SVG from static assets (iconify has no logos/google-chat)
+      // logoMono: monochrome version from simple-icons (works fine on iconify)
+      logo: "https://plot.day/assets/logo-google-chat.svg",
       logoMono: "https://api.iconify.design/simple-icons/googlechat.svg",
     },
   ];
