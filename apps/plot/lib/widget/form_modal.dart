@@ -495,7 +495,7 @@ class FormModalState extends State<_FormModal> {
       onActivate: (index) async {
         if (index >= _allFocusSlotsCount()) return;
         final (item, _) = _getItemAndSubIndex(index);
-        if (item is FormButton || item is FormTextInput) {
+        if (item is FormButton || item.onSubmitted != null) {
           // Enter key triggers form submission (primary button)
           await _submitForm();
         }
@@ -570,7 +570,7 @@ class FormModalState extends State<_FormModal> {
                         if (controller != null) {
                           controller.run();
                         }
-                      } else if (item is FormTextInput) {
+                      } else if (item.onSubmitted != null) {
                         // For text inputs, trigger primary button (first button)
                         _submitForm();
                       } else if (item.canActivate) {

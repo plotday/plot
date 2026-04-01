@@ -382,8 +382,18 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
     );
     disposeRpc(result);
 
-    // Result should be the channel list
-    const syncables = Array.isArray(result) ? result : [];
+    // Result should be the channel list — annotate with defaults since
+    // getChannels() returns raw channels without enabled/access metadata
+    const rawChannels = Array.isArray(result) ? result : [];
+    const syncables = rawChannels.map((ch: any) => ({
+      ...ch,
+      provider: "other",
+      enabled: false,
+      enabledBy: null,
+      priorityId: null,
+      createThreads: ch.createThreads ?? "all",
+      currentUserHasAccess: true,
+    }));
 
     logger.info("No-provider connect successful", {
       channel_count: syncables.length,

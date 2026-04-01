@@ -767,11 +767,11 @@ class TwistChannel extends Equatable {
       ),
       id: json['id'] as String,
       title: json['title'] as String,
-      enabled: json['enabled'] as bool,
+      enabled: json['enabled'] as bool? ?? false,
       enabledBy: json['enabledBy'] as String?,
       priorityId: json['priorityId'] as String?,
       createThreads: json['createThreads'] as String? ?? 'all',
-      currentUserHasAccess: json['currentUserHasAccess'] as bool,
+      currentUserHasAccess: json['currentUserHasAccess'] as bool? ?? true,
       children:
           (json['children'] as List<dynamic>?)
               ?.map((c) => TwistChannel.fromJson(c as Map<String, dynamic>))

@@ -1128,9 +1128,7 @@ class AddSourceDetail extends ShowForm {
                 buildCommand: (_) => ConnectNoProviderCommand(
                   priorityTwistId: draftId,
                   optionItems: optionItems,
-                  onConnected: (_) {
-                    _activateSource(context, draftId, twist.name);
-                  },
+                  activateAs: twist.name,
                 ),
               ),
           ],
@@ -2025,11 +2023,13 @@ class ConnectConnectorAccount extends ShowForm {
 // ============================================================================
 
 /// Connects a no-provider source by sending option values to the API.
+/// If [activateAs] is provided, also activates the draft after connecting.
 class ConnectNoProviderCommand extends Command {
   ConnectNoProviderCommand({
     required this.priorityTwistId,
     required this.optionItems,
-    required this.onConnected,
+    this.activateAs,
+    this.onConnected,
   }) : super(
          title: 'Connect',
          icon: PlotIcon.connection,
@@ -2039,7 +2039,12 @@ class ConnectNoProviderCommand extends Command {
 
   final String priorityTwistId;
   final TwistOptionItems optionItems;
-  final void Function(List<TwistChannel> syncables) onConnected;
+
+  /// If set, activates the draft with this name after connecting.
+  final String? activateAs;
+
+  /// Called after a successful connect (but before activation).
+  final void Function(List<TwistChannel> syncables)? onConnected;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -2054,7 +2059,17 @@ class ConnectNoProviderCommand extends Command {
       }
 
       if (result.syncables != null) {
-        onConnected(result.syncables!);
+        onConnected?.call(result.syncables!);
+      }
+
+      // Activate the draft source if requested
+      if (activateAs != null) {
+        await TwistApi.activateDraft(
+          draftId: priorityTwistId,
+          name: activateAs!,
+        );
+        AddSourceDetail.lastActivatedSourceId = priorityTwistId;
+        AddSourceDetail.clearDraft();
       }
 
       return const CommandDone(message: 'Connected');

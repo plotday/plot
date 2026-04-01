@@ -449,6 +449,23 @@ export class Usage extends DurableObject<Bindings> {
       priority_twist_id: priorityTwistId,
     });
 
+    // Check if priority_twist still exists before flushing
+    const pt = await db
+      .selectFrom("priority_twist")
+      .select("id")
+      .where("id", "=", priorityTwistId)
+      .executeTakeFirst();
+
+    if (!pt) {
+      logger.info("priority_twist no longer exists, discarding usage records", {
+        row_count: records.length,
+        hour: new Date(hour).toISOString(),
+      });
+      // Clear all local usage data since the twist is gone
+      this.sql.exec("DELETE FROM usage");
+      return;
+    }
+
     logger.info("Flushing usage records", {
       row_count: records.length,
       priority_twist_id: priorityTwistId,
