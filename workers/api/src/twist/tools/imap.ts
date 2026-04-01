@@ -1,5 +1,5 @@
-import type { Imap as IImap } from "@plotday/twister/tools/imap";
 import type {
+  Imap as IImap,
   ImapSession,
   ImapConnectOptions,
   ImapMailbox,
