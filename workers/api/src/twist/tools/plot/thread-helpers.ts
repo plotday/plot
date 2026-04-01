@@ -171,18 +171,16 @@ export async function convertNoteToMarkdown(
  * @param markdown - The markdown content to create a preview from
  * @returns A plain text preview (max 100 characters) or null if input is empty
  */
-export function createPreviewFromMarkdown(
-  markdown: string | null | undefined
-): string | null {
-  if (!markdown) return null;
 
-  let preview = markdown;
+/** Strips markdown formatting from text, keeping plain text content. */
+export function stripMarkdown(text: string): string {
+  let result = text;
 
   // Strip HTML tags (keep inner text)
-  preview = preview.replace(/<[^>]+>/g, "");
+  result = result.replace(/<[^>]+>/g, "");
 
   // Decode common HTML entities
-  preview = preview
+  result = result
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -190,36 +188,53 @@ export function createPreviewFromMarkdown(
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ");
 
-  // Strip markdown formatting
   // Remove code blocks
-  preview = preview.replace(/```[\s\S]*?```/g, "");
-  preview = preview.replace(/`[^`]+`/g, "");
+  result = result.replace(/```[\s\S]*?```/g, "");
+  result = result.replace(/`[^`]+`/g, "");
 
   // Remove headers
-  preview = preview.replace(/^#+\s+/gm, "");
+  result = result.replace(/^#+\s+/gm, "");
+
+  // Remove images (before links so ![alt](url) doesn't become [alt](url))
+  result = result.replace(/!\[([^\]]*)\]\([^)]+\)/g, "");
 
   // Remove links but keep link text
-  preview = preview.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-
-  // Remove images
-  preview = preview.replace(/!\[([^\]]*)\]\([^)]+\)/g, "");
+  result = result.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
 
   // Remove bold/italic
-  preview = preview.replace(/(\*\*|__)(.*?)\1/g, "$2");
-  preview = preview.replace(/(\*|_)(.*?)\1/g, "$2");
+  result = result.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  result = result.replace(/(\*|_)(.*?)\1/g, "$2");
 
   // Remove strikethrough
-  preview = preview.replace(/~~(.*?)~~/g, "$1");
+  result = result.replace(/~~(.*?)~~/g, "$1");
 
   // Remove blockquotes
-  preview = preview.replace(/^>\s+/gm, "");
+  result = result.replace(/^>\s+/gm, "");
 
   // Remove horizontal rules
-  preview = preview.replace(/^[-*_]{3,}$/gm, "");
+  result = result.replace(/^[-*_]{3,}$/gm, "");
 
   // Remove list markers
-  preview = preview.replace(/^[\s]*[-*+]\s+/gm, "");
-  preview = preview.replace(/^[\s]*\d+\.\s+/gm, "");
+  result = result.replace(/^[\s]*[-*+]\s+/gm, "");
+  result = result.replace(/^[\s]*\d+\.\s+/gm, "");
+
+  return result;
+}
+
+/**
+ * Strips markdown formatting from a title.
+ * "Complete [GTM Module 4 assignments](https://example.com)" → "Complete GTM Module 4 assignments"
+ */
+export function cleanTitle(title: string): string {
+  return stripMarkdown(title).replace(/\s+/g, " ").trim();
+}
+
+export function createPreviewFromMarkdown(
+  markdown: string | null | undefined
+): string | null {
+  if (!markdown) return null;
+
+  let preview = stripMarkdown(markdown);
 
   // Strip raw URLs (standalone URLs not part of markdown links)
   preview = preview.replace(/https?:\/\/[^\s)>\]]+/g, "");
@@ -712,7 +727,7 @@ export async function prepareThreadForDb(
     created_by: plot.priorityTwistId,
     updated_by: plot.getUpdatedBy(),
     priority_id: targetPriorityId,
-    title: activity.title?.trim() || "Untitled",
+    title: cleanTitle(activity.title?.trim() || "Untitled"),
     preview: previewText,
     draft: false,
     private: activity.private ?? false,
@@ -751,7 +766,9 @@ export async function prepareThreadForDb(
 
     if (activity.title !== undefined) {
       upsertFields.title =
-        activity.title && activity.title.trim() !== "" ? activity.title : null;
+        activity.title && activity.title.trim() !== ""
+          ? cleanTitle(activity.title)
+          : null;
     }
     if ("preview" in activity && activity.preview !== undefined) {
       upsertFields.preview = previewText;

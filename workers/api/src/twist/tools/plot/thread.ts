@@ -21,6 +21,7 @@ import { createLogger } from "@plotday/worker-util";
 import { sql } from "kysely";
 import { rpc, rpcUser } from "../../../rpc";
 import {
+  cleanTitle,
   handleDbOperationError,
   markThreadReadForAuthor,
   prepareThreadForDb,
@@ -69,6 +70,7 @@ function ensureIncreasingThreadCreatedTimestamps(
 export { createNote, createNotes, getNotes, updateNote } from "./note";
 export {
   actorTypeToString,
+  cleanTitle,
   convertNoteToMarkdown,
   createPreviewFromMarkdown,
   markThreadReadForAuthor,
@@ -328,7 +330,9 @@ async function updateThreadsByMatch(
   }
   if (activity.title !== undefined) {
     dbUpdate.title =
-      activity.title && activity.title.trim() !== "" ? activity.title : null;
+      activity.title && activity.title.trim() !== ""
+        ? cleanTitle(activity.title)
+        : null;
   }
   if (activity.private !== undefined) {
     dbUpdate.private = activity.private;
@@ -395,7 +399,9 @@ export async function updateThread(
 
     if (activity.title !== undefined) {
       dbUpdate.title =
-        activity.title && activity.title.trim() !== "" ? activity.title : null;
+        activity.title && activity.title.trim() !== ""
+          ? cleanTitle(activity.title)
+          : null;
     }
     if (activity.private !== undefined) {
       dbUpdate.private = activity.private;
