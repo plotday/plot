@@ -277,12 +277,57 @@ class Link extends Equatable {
     return rows.map((row) => Link(row)).toList();
   }
 
-  /// Watch links for a given thread
+  /// Watch links for a given thread.
+  ///
+  /// Filters out links whose schedule has fully ended (upper bound in the past)
+  /// when other links still have active/upcoming schedules. If all links have
+  /// ended schedules, shows only the most recent one.
   static Stream<List<Link>> watchForThread(ThreadId threadId) {
-    return (Store.get.select(Store.get.links)
-          ..where((l) => l.threadId.equals(threadId.toBytes())))
-        .watch()
-        .map((rows) => rows.map((row) => Link(row)).toList());
+    final db = Store.get;
+    final sched = db.alias(db.schedules, 'link_sched');
+    final query = db.select(db.links).join([
+      leftOuterJoin(
+        sched,
+        sched.linkId.equalsExp(db.links.id) &
+            sched.occurrence.isNull() &
+            sched.archivedAt.isNull(),
+      ),
+    ])
+      ..where(db.links.threadId.equals(threadId.toBytes()));
+
+    return query.watch().map((rows) {
+      final now = DateTime.now();
+      final activeLinks = <Link>[];
+      Link? mostRecentEnded;
+      DateTime? mostRecentEndTime;
+      final seen = <Uuid>{};
+
+      for (final row in rows) {
+        final linkRow = row.readTable(db.links);
+        if (!seen.add(linkRow.id)) continue;
+        final schedule = row.readTableOrNull(sched);
+        final link = Link(linkRow);
+
+        if (schedule == null) {
+          activeLinks.add(link);
+          continue;
+        }
+
+        final endTime = schedule.endAt ?? schedule.endOn?.toDateTime();
+        if (endTime == null || endTime.isAfter(now)) {
+          activeLinks.add(link);
+        } else {
+          if (mostRecentEndTime == null || endTime.isAfter(mostRecentEndTime)) {
+            mostRecentEndTime = endTime;
+            mostRecentEnded = link;
+          }
+        }
+      }
+
+      if (activeLinks.isNotEmpty) return activeLinks;
+      if (mostRecentEnded != null) return [mostRecentEnded];
+      return rows.map((r) => Link(r.readTable(db.links))).toList();
+    });
   }
 
   @override
