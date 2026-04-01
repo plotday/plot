@@ -2848,6 +2848,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool? todo,
     bool bump = false,
     Value<DateTime?> bumpedAt = const Value.absent(),
+    Value<DateTime?> readAt = const Value.absent(),
   }) {
     final now = DateTime.now();
 
@@ -2870,6 +2871,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         icon.present ||
         archivedAt.present ||
         bumpedAt.present ||
+        readAt.present ||
         title.present) {
       activityDirty = true;
       activity = _thread.copyWith(
@@ -2883,6 +2885,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         updatedAt: now,
         archivedAt: archivedAt,
         bumpedAt: bumpedAt,
+        readAt: readAt,
         title: !recurring ? title : const Value.absent(),
         unread: unread,
       );
