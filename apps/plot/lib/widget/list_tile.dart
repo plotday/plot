@@ -299,7 +299,7 @@ class _ListTileState extends State<ListTile> {
   }
 
   void _onFocusChange() {
-    setState(() {}); // Rebuild when focus changes
+    if (mounted) setState(() {}); // Rebuild when focus changes
   }
 
   @override
