@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
+import { cleanTitle } from "../../twist/tools/plot/thread";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { notifySync } from "./notify";
 
@@ -111,15 +112,19 @@ threads.get("/sync/threads", async (c) => {
 threads.post("/sync/threads", async (c) => {
   const body = await c.req.json();
 
+  const threadData = body.thread || body;
+  if (threadData.title && typeof threadData.title === "string") {
+    threadData.title = cleanTitle(threadData.title);
+  }
+
   const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
     return rpcUser(trx, "upsert_thread", {
       user_id: c.var.user.id,
-      p_thread: (body.thread || body) as any,
+      p_thread: threadData as any,
       p_defaults: (body.defaults || {}) as any,
     });
   });
 
-  const threadData = body.thread || body;
   notifySync(c, threadData.priority_id);
 
   return c.json(result as any);

@@ -6,6 +6,7 @@ import { captureServerError } from "../utils/error-capture";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
+import { cleanTitle } from "../twist/tools/plot/thread";
 
 const summary = new Hono<{ Bindings: Bindings }>();
 
@@ -27,7 +28,7 @@ summary.post("/summary", async (c) => {
     // Check free-tier AI limit
     const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
     if (!aiAllowed.allowed) {
-      return c.json({ title: body.body.replaceAll(/\s+/g, " ").trim().slice(0, 60) });
+      return c.json({ title: cleanTitle(body.body).slice(0, 60) });
     }
 
     const result = await summarize(c.env.AI, body.body);
@@ -47,8 +48,7 @@ async function summarize(ai: Ai, body: string) {
   }
   if (body.length < 40) {
     return {
-      // TODO remove Markdown formatting
-      title: body.replaceAll(/\s+/g, " ").trim(),
+      title: cleanTitle(body),
     };
   }
   try {
@@ -71,7 +71,7 @@ async function summarize(ai: Ai, body: string) {
       throw new Error("Response is a stream");
     }
     const json = {
-      title: response.response?.replace(/^"(.*)"$/, "$1")?.trim() || body.replaceAll(/\s+/g, " ").trim().slice(0, 60),
+      title: response.response?.replace(/^"(.*)"$/, "$1")?.trim() || cleanTitle(body).slice(0, 60),
     };
     return json;
   } catch (e) {
