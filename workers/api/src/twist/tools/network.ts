@@ -87,6 +87,7 @@ export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
 ];
 
+
 /**
  * Checks if a callback's scopes satisfy the requirements for a Slack event.
  */
@@ -413,10 +414,66 @@ export class Network extends Tool implements INetwork {
     }
   }
 
+  /**
+   * Creates a generic Pub/Sub-backed webhook.
+   * Each webhook gets its own dedicated Pub/Sub topic and push subscription.
+   * Used when connectors explicitly request `pubsub: true`.
+   *
+   * @returns Pub/Sub topic name (e.g., "projects/plot-prod/topics/ps-abc123")
+   */
+  private async createPubSubWebhook(
+    callbackFunctionName: string,
+    extraArgs?: any[]
+  ): Promise<string> {
+    if (
+      !this.env?.GCP_PROJECT_ID ||
+      !this.env?.GCP_SERVICE_ACCOUNT_EMAIL ||
+      !this.env?.GCP_SERVICE_ACCOUNT_KEY
+    ) {
+      throw new Error(
+        "GCP configuration missing. Required: GCP_PROJECT_ID, GCP_SERVICE_ACCOUNT_EMAIL, GCP_SERVICE_ACCOUNT_KEY"
+      );
+    }
+
+    const pubsubConfig = {
+      projectId: this.env.GCP_PROJECT_ID,
+      serviceAccountEmail: this.env.GCP_SERVICE_ACCOUNT_EMAIL,
+      serviceAccountKey: this.env.GCP_SERVICE_ACCOUNT_KEY,
+    };
+
+    try {
+      const callbackToken = await this.callbacks!.create({
+        priorityTwistId: this.priorityTwistId!,
+        path: this.path!,
+        functionName: callbackFunctionName,
+        extraArgs,
+      });
+
+      const topicId = `ps-${callbackToken}`;
+      const topicName = await createTopic(pubsubConfig, topicId);
+
+      const pushEndpoint = `${this.baseUrl}/hook/pubsub/${topicId}`;
+      await createPushSubscription(pubsubConfig, {
+        topicName,
+        subscriptionName: topicId,
+        pushEndpoint,
+      });
+
+      return topicName;
+    } catch (error) {
+      throw new Error(
+        `Failed to create Pub/Sub webhook: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
   async createWebhook<TCallback extends (request: any, ...args: any[]) => any>(
     options: {
       provider?: AuthProvider;
       authorization?: Authorization;
+      pubsub?: boolean;
     },
     callback: TCallback,
     ...extraArgs: any[]
@@ -443,6 +500,11 @@ export class Network extends Tool implements INetwork {
       throw new Error(
         "Cannot create callback: function has no name. Use named functions or methods."
       );
+    }
+
+    // Handle explicit Pub/Sub webhook request (connector opt-in)
+    if (options.pubsub && this.env?.GCP_PROJECT_ID) {
+      return this.createPubSubWebhook(callbackFunctionName, extraArgs);
     }
 
     // Handle provider-specific webhook creation
@@ -534,26 +596,32 @@ export class Network extends Tool implements INetwork {
       return;
     }
 
-    // Handle Gmail webhooks (format: projects/{projectId}/topics/gmail-{callbackToken})
-    if (url.startsWith("projects/") && url.includes("/topics/gmail-")) {
-      // Extract topic ID (gmail-{token})
+    // Handle Pub/Sub webhooks (format: projects/{projectId}/topics/{prefix}-{callbackToken})
+    // Covers Gmail (gmail-{token}) and generic Pub/Sub (ps-{token})
+    if (url.startsWith("projects/") && url.includes("/topics/")) {
       const topicParts = url.split("/topics/");
       if (topicParts.length !== 2) {
         const logger = createLogger({ priority_twist_id: this.priorityTwistId });
-        logger.warn("Invalid Gmail webhook format", { url });
+        logger.warn("Invalid Pub/Sub webhook format", { url });
         return;
       }
 
-      const topicId = topicParts[1]; // e.g., "gmail-abc123xyz789"
-      const callbackToken = topicId.startsWith("gmail-")
-        ? topicId.substring(6) // Remove "gmail-" prefix
-        : topicId;
+      const topicId = topicParts[1]; // e.g., "gmail-abc123" or "ps-abc123"
+      // Strip the provider prefix to get the callback token
+      const prefixes = ["gmail-", "ps-"];
+      let callbackToken = topicId;
+      for (const prefix of prefixes) {
+        if (topicId.startsWith(prefix)) {
+          callbackToken = topicId.substring(prefix.length);
+          break;
+        }
+      }
 
       // Extract project ID from topic name
       const projectIdMatch = url.match(/projects\/([^/]+)/);
       if (!projectIdMatch) {
         const logger = createLogger({ priority_twist_id: this.priorityTwistId });
-        logger.warn("Could not extract project ID from Gmail webhook", { url });
+        logger.warn("Could not extract project ID from Pub/Sub webhook", { url });
         return;
       }
       const projectId = projectIdMatch[1];

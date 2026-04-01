@@ -485,6 +485,113 @@ webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
   }
 });
 
+// Generic Pub/Sub webhook endpoint - handles push notifications from any Google service
+// (Google Chat via Workspace Events, and future services). Gmail keeps its own route
+// for backward compatibility with existing Pub/Sub subscriptions.
+webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+
+  try {
+    const authHeader = c.req.header("authorization");
+
+    // Verify Pub/Sub JWT token
+    const isValid = await verifyPubSubToken(authHeader, c.env.GCP_PROJECT_ID);
+    if (!isValid) {
+      logger.warn("Pub/Sub webhook missing or invalid authorization");
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    // Get topic ID from URL (format: {prefix}-{callbackToken})
+    const topicId = c.req.param("topicId");
+    if (!topicId) {
+      return new Response("Bad request (missing topicId)", { status: 400 });
+    }
+
+    // Extract callback token by stripping the provider prefix
+    const prefixes = ["ps-", "gmail-"];
+    let callbackToken = topicId;
+    for (const prefix of prefixes) {
+      if (topicId.startsWith(prefix)) {
+        callbackToken = topicId.substring(prefix.length);
+        break;
+      }
+    }
+
+    if (!callbackToken) {
+      return new Response("Bad request (invalid topicId format)", {
+        status: 400,
+      });
+    }
+
+    // Parse Pub/Sub message
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch (error) {
+      logger.warn("Failed to parse Pub/Sub webhook body", error as Error);
+      return new Response("Bad request", { status: 400 });
+    }
+
+    // Pub/Sub push messages have a specific format
+    // https://cloud.google.com/pubsub/docs/push#receiving_messages
+    const message = body.message;
+    if (!message) {
+      logger.warn("Pub/Sub webhook missing message field");
+      return new Response("Bad request (missing message)", { status: 400 });
+    }
+
+    // Decode base64-encoded message data
+    let decodedData: any = {};
+    if (message.data) {
+      try {
+        const decoded = atob(message.data);
+        decodedData = JSON.parse(decoded);
+      } catch (error) {
+        logger.warn("Failed to decode Pub/Sub message data", error as Error);
+        // Continue with empty data - the callback might not need it
+      }
+    }
+
+    // Extract headers for callback
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(c.req.header())) {
+      headers[key] = value;
+    }
+
+    // Get URL parameters
+    const url = new URL(c.req.url);
+    const params: Record<string, string> = {};
+    url.searchParams.forEach((value, key) => {
+      params[key] = value;
+    });
+
+    // Construct callback request with decoded data
+    const webhookRequest = {
+      method: "POST",
+      headers,
+      params,
+      body: {
+        ...body,
+        decodedData,
+      },
+    };
+
+    // Call the callback using the decoded token
+    using _result = await Network.HandleGmailWebhook(
+      c.env.CALLBACKS,
+      callbackToken,
+      webhookRequest
+    );
+
+    // Always return 200 OK to acknowledge message
+    return c.json({ ok: true });
+  } catch (error) {
+    // Return 500 to indicate failure, so Pub/Sub will retry
+    return captureServerError(c, error, "Error processing Pub/Sub webhook");
+  }
+});
+
 // Webhook endpoint - handles all HTTP methods for webhook URLs
 webhook.all(Network.PATH, webhookRateLimiter, async (c) => {
   const context = extractRequestContext(c);
