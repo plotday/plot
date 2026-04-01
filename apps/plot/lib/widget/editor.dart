@@ -1831,27 +1831,34 @@ class ViewerState extends State<Viewer> {
   @override
   Widget build(BuildContext context) {
     bool isDark = context.colour.brightness == Brightness.dark;
-    return BoxToSliverAdapter(
-      child: SuperReader(
-        editor: _editor,
-        stylesheet: _buildStylesheet(context, isDark),
-        // selection: _selection,
-        selectionLayerLinks: _selectionLayerLinks,
-        selectionStyle: SelectionStyles(
-          selectionColor: context.theme.colors.primaryForeground,
+    // Wrap in SingleChildScrollView to prevent SuperReader's internal
+    // DocumentScrollable from finding the ancestor reversed CustomScrollView.
+    // Without this, auto-scroll during text selection drag goes in the wrong
+    // direction because the ancestor list is reversed.
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      child: BoxToSliverAdapter(
+        child: SuperReader(
+          editor: _editor,
+          stylesheet: _buildStylesheet(context, isDark),
+          // selection: _selection,
+          selectionLayerLinks: _selectionLayerLinks,
+          selectionStyle: SelectionStyles(
+            selectionColor: context.theme.colors.primaryForeground,
+          ),
+          componentBuilders: <ComponentBuilder>[
+            const BlockquoteComponentBuilder(),
+            const PlotCodeBlockComponentBuilder(),
+            const MarkdownTableComponentBuilder(),
+            const ParagraphComponentBuilder(),
+            const ListItemComponentBuilder(),
+            const ImageComponentBuilder(),
+            const HorizontalRuleComponentBuilder(),
+            PlotTaskComponentBuilder(_editor),
+          ],
+          contentTapDelegateFactory: (readerContext) =>
+              ViewerTapHandler(readerContext.document, context: context),
         ),
-        componentBuilders: <ComponentBuilder>[
-          const BlockquoteComponentBuilder(),
-          const PlotCodeBlockComponentBuilder(),
-          const MarkdownTableComponentBuilder(),
-          const ParagraphComponentBuilder(),
-          const ListItemComponentBuilder(),
-          const ImageComponentBuilder(),
-          const HorizontalRuleComponentBuilder(),
-          PlotTaskComponentBuilder(_editor),
-        ],
-        contentTapDelegateFactory: (readerContext) =>
-            ViewerTapHandler(readerContext.document, context: context),
       ),
     );
   }
