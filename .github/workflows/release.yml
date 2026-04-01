@@ -1180,5 +1180,5 @@ jobs:
             echo "- Manifest: https://download.plot.day/latest-windows.json"
             echo ""
             echo "### Admin"
-            echo "- [Microsoft Partner Center](https://partner.microsoft.com/en-us/dashboard/products/9PKTCSN8SNZF/submissions/1152921505700730849/packages)"
+            echo "- [Microsoft Partner Center](https://partner.microsoft.com/en-us/dashboard/products/9PKTCSN8SNZF/)"
           } >> "$GITHUB_STEP_SUMMARY"
