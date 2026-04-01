@@ -138,6 +138,31 @@ CREATE TRIGGER priority_propagate_org_id
     FOR EACH ROW
     EXECUTE FUNCTION propagate_organization_id ();
 
+-- When organization_id changes on a priority, propagate to all descendants
+CREATE OR REPLACE FUNCTION propagate_organization_id_to_descendants ()
+    RETURNS TRIGGER
+    AS $$
+BEGIN
+    IF NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+        UPDATE
+            public.priority
+        SET
+            organization_id = NEW.organization_id
+        WHERE
+            path <@ NEW.path
+            AND path != NEW.path
+            AND (organization_id IS DISTINCT FROM NEW.organization_id);
+    END IF;
+    RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER priority_propagate_org_id_update
+    AFTER UPDATE OF organization_id ON public.priority
+    FOR EACH ROW
+    EXECUTE FUNCTION propagate_organization_id_to_descendants ();
+
 -- Per-user priority settings (per-key with JSONB values)
 CREATE TABLE "public"."priority_setting" (
     "updated_at" timestamptz NOT NULL DEFAULT now(),
