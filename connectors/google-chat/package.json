@@ -1,5 +1,6 @@
 {
   "name": "@plotday/connector-google-chat",
+  "plotTwistId": "019d4121-bf8d-7462-9574-3d470f086431",
   "displayName": "Google Chat",
   "description": "Messages from Google Chat spaces",
   "logoUrl": "https://api.iconify.design/logos/google-chat.svg",
@@ -47,5 +48,7 @@
     "google-chat",
     "messaging"
   ],
-  "publishConfig": { "access": "public" }
+  "publishConfig": {
+    "access": "public"
+  }
 }

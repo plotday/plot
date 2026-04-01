@@ -16,17 +16,24 @@ import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import {
   GoogleChatApi,
   type Message,
-  type Space,
+  type MemberInfo,
   type SyncState,
   extractMessageId,
   extractSpaceId,
-  groupMessagesByThread,
-  senderToNewActor,
+  toSpaceName,
   syncChatSpace,
   transformChatThread,
 } from "./google-chat-api";
 
 const DM_CHANNEL_ID = "__direct_messages__";
+const MAX_SYNC_BATCHES = 50;
+
+/** Workspace Events event types for Google Chat messages. */
+const CHAT_EVENT_TYPES = [
+  "google.workspace.chat.message.v1.created",
+  "google.workspace.chat.message.v1.updated",
+  "google.workspace.chat.message.v1.deleted",
+];
 
 /**
  * Google Chat connector for syncing spaces and messages into Plot.
@@ -97,21 +104,24 @@ export class GoogleChat extends Connector<GoogleChat> {
     token: AuthToken
   ): Promise<Channel[]> {
     const api = new GoogleChatApi(token.token);
-    const spaces = await api.listSpaces();
-
     const channels: Channel[] = [];
 
     // Named spaces as individual channels
-    for (const space of spaces) {
-      if (space.spaceType === "SPACE") {
-        channels.push({
-          id: space.name,
-          title: space.displayName || extractSpaceId(space.name),
-        });
+    try {
+      const spaces = await api.listSpaces();
+      for (const space of spaces) {
+        if (space.spaceType === "SPACE") {
+          channels.push({
+            id: extractSpaceId(space.name),
+            title: space.displayName || extractSpaceId(space.name),
+          });
+        }
       }
+    } catch {
+      // Chat API may not be configured — still return the DM channel
     }
 
-    // Synthetic channel for all DMs and group DMs
+    // Synthetic channel for all DMs and group DMs (always included)
     channels.push({
       id: DM_CHANNEL_ID,
       title: "Direct Messages",
@@ -123,9 +133,6 @@ export class GoogleChat extends Connector<GoogleChat> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Setup webhook for real-time updates
-    await this.setupChannelWebhook(channel.id);
-
     // Start initial sync
     const initialState: SyncState = {
       channelId: channel.id,
@@ -134,11 +141,11 @@ export class GoogleChat extends Connector<GoogleChat> {
     await this.set(`sync_state_${channel.id}`, initialState);
 
     if (channel.id === DM_CHANNEL_ID) {
-      // For DMs, list all DM spaces and sync each
+      // For DMs, list all DM spaces and sync each (batch only, no realtime)
       const syncCallback = await this.callback(this.syncDmSpaces, true);
       await this.run(syncCallback);
     } else {
-      // For named spaces, sync directly
+      // For named spaces, sync directly and setup realtime via Workspace Events
       const syncCallback = await this.callback(
         this.syncBatch,
         1,
@@ -147,27 +154,22 @@ export class GoogleChat extends Connector<GoogleChat> {
         true
       );
       await this.run(syncCallback);
+
+      // Setup realtime incremental sync via Workspace Events API + Pub/Sub
+      await this.setupRealtimeSync(channel.id);
     }
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
-    // Clean up subscription
-    const subData = await this.get<{ subscriptionId: string }>(
-      `subscription_${channel.id}`
-    );
-    if (subData?.subscriptionId) {
-      try {
-        const api = await this.getApi(channel.id);
-        await api.deleteSubscription(subData.subscriptionId);
-      } catch (error) {
-        console.error("Failed to delete subscription:", error);
-      }
+    // Tear down realtime sync for named spaces
+    if (channel.id !== DM_CHANNEL_ID) {
+      await this.teardownRealtimeSync(channel.id);
     }
-    await this.clear(`subscription_${channel.id}`);
-    await this.clear(`channel_webhook_${channel.id}`);
+
     await this.clear(`sync_state_${channel.id}`);
     await this.clear(`sync_enabled_${channel.id}`);
     await this.clear(`member_emails_${channel.id}`);
+    await this.clear(`member_info_${channel.id}`);
   }
 
   // ---- Auth ----
@@ -182,154 +184,6 @@ export class GoogleChat extends Connector<GoogleChat> {
     return new GoogleChatApi(token.token);
   }
 
-  // ---- Webhook setup (Workspace Events API via Pub/Sub) ----
-
-  private async setupChannelWebhook(channelId: string): Promise<void> {
-    if (channelId === DM_CHANNEL_ID) {
-      // DMs: we don't subscribe to individual DM spaces during initial setup.
-      // Instead, we subscribe to each DM space as we discover them.
-      return;
-    }
-
-    const topicName = await this.tools.network.createWebhook(
-      {},
-      this.onChatWebhook,
-      channelId
-    );
-
-    // Localhost guard
-    if (
-      topicName.includes("localhost") ||
-      topicName.includes("127.0.0.1")
-    ) {
-      return;
-    }
-
-    try {
-      const api = await this.getApi(channelId);
-      const subscription = await api.createSubscription(
-        channelId,
-        topicName,
-        [
-          "google.workspace.chat.message.v1.created",
-          "google.workspace.chat.message.v1.updated",
-          "google.workspace.chat.message.v1.deleted",
-        ]
-      );
-
-      await this.set(`subscription_${channelId}`, {
-        subscriptionId: subscription.name,
-        expireTime: subscription.expireTime,
-      });
-      await this.set(`channel_webhook_${channelId}`, {
-        topicName,
-        channelId,
-        created: new Date().toISOString(),
-      });
-
-      // Schedule renewal before expiry
-      await this.scheduleSubscriptionRenewal(channelId);
-    } catch (error) {
-      console.error("Failed to setup Google Chat webhook:", error);
-    }
-  }
-
-  private async scheduleSubscriptionRenewal(
-    channelId: string
-  ): Promise<void> {
-    const subData = await this.get<{
-      subscriptionId: string;
-      expireTime: string;
-    }>(`subscription_${channelId}`);
-    if (!subData?.expireTime) return;
-
-    // Renew 24 hours before expiry
-    const expiry = new Date(subData.expireTime);
-    const renewAt = new Date(expiry.getTime() - 24 * 60 * 60 * 1000);
-
-    // Only schedule if renewal is in the future
-    if (renewAt > new Date()) {
-      const renewCallback = await this.callback(
-        this.renewSubscription,
-        channelId
-      );
-      await this.run(renewCallback);
-    }
-  }
-
-  async renewSubscription(channelId: string): Promise<void> {
-    const subData = await this.get<{
-      subscriptionId: string;
-      expireTime: string;
-    }>(`subscription_${channelId}`);
-    if (!subData?.subscriptionId) return;
-
-    try {
-      const api = await this.getApi(channelId);
-      const renewed = await api.renewSubscription(subData.subscriptionId);
-      await this.set(`subscription_${channelId}`, {
-        subscriptionId: renewed.name ?? subData.subscriptionId,
-        expireTime: renewed.expireTime,
-      });
-
-      // Schedule next renewal
-      await this.scheduleSubscriptionRenewal(channelId);
-    } catch (error) {
-      console.error("Failed to renew subscription:", error);
-      // Re-create the subscription from scratch
-      await this.setupChannelWebhook(channelId);
-    }
-  }
-
-  // ---- Webhook handler ----
-
-  async onChatWebhook(
-    request: WebhookRequest,
-    channelId: string
-  ): Promise<void> {
-    // Workspace Events API delivers via Pub/Sub (base64-encoded JSON)
-    const body = request.body as { message?: { data: string } };
-    const message = body?.message;
-    if (!message) {
-      console.warn("No message in webhook body");
-      return;
-    }
-
-    let data: any;
-    try {
-      const decoded = atob(message.data);
-      data = JSON.parse(decoded);
-    } catch (error) {
-      console.error("Failed to decode webhook message:", error);
-      return;
-    }
-
-    // Trigger incremental sync for any message event
-    if (data) {
-      await this.startIncrementalSync(channelId);
-    }
-  }
-
-  private async startIncrementalSync(channelId: string): Promise<void> {
-    const enabled = await this.get<boolean>(`sync_enabled_${channelId}`);
-    if (!enabled) return;
-
-    const incrementalState: SyncState = {
-      channelId,
-      initialSync: false,
-    };
-    await this.set(`sync_state_${channelId}`, incrementalState);
-
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      "incremental",
-      channelId,
-      false
-    );
-    await this.run(syncCallback);
-  }
-
   // ---- Batch sync ----
 
   async syncBatch(
@@ -338,6 +192,10 @@ export class GoogleChat extends Connector<GoogleChat> {
     channelId: string,
     initialSync?: boolean
   ): Promise<void> {
+    if (batchNumber > MAX_SYNC_BATCHES) {
+      console.warn(`Sync batch limit reached for channel ${channelId}`);
+      return;
+    }
     const isInitial = initialSync ?? mode === "full";
 
     try {
@@ -350,17 +208,17 @@ export class GoogleChat extends Connector<GoogleChat> {
       const result = await syncChatSpace(api, state, 100);
 
       if (result.threads.length > 0) {
-        // Resolve member emails for contact matching and private thread mentions
-        const memberEmails = await this.getMemberEmails(api, channelId);
+        // Resolve member info for contact matching and private thread mentions
+        const memberInfo = await this.getMemberInfo(api, channelId);
         const members: NewActor[] = [];
-        for (const [, email] of memberEmails) {
-          members.push({ email });
+        for (const [, info] of memberInfo) {
+          if (info.email) members.push({ email: info.email });
         }
         await this.processMessageThreads(
           result.threads,
           channelId,
           isInitial,
-          memberEmails,
+          memberInfo,
           members
         );
       }
@@ -394,7 +252,7 @@ export class GoogleChat extends Connector<GoogleChat> {
     threads: Message[][],
     channelId: string,
     initialSync: boolean,
-    memberEmails?: Map<string, string>,
+    memberInfo?: Map<string, MemberInfo>,
     members?: NewActor[]
   ): Promise<void> {
     const spaceId = extractSpaceId(channelId);
@@ -419,7 +277,7 @@ export class GoogleChat extends Connector<GoogleChat> {
           filtered,
           spaceId,
           initialSync,
-          memberEmails,
+          memberInfo,
           members
         );
 
@@ -439,38 +297,41 @@ export class GoogleChat extends Connector<GoogleChat> {
   }
 
   /**
-   * Fetches and caches member emails for a space, used to resolve
-   * Google Chat user IDs to email addresses for contact matching.
+   * Fetches and caches member info (email + displayName) for a space,
+   * used to resolve Google Chat user IDs to contact details.
    */
-  private async getMemberEmails(
+  private async getMemberInfo(
     api: GoogleChatApi,
     channelId: string
-  ): Promise<Map<string, string>> {
+  ): Promise<Map<string, MemberInfo>> {
     // Check cache
-    const cached = await this.get<Record<string, string>>(
-      `member_emails_${channelId}`
+    const cached = await this.get<Record<string, MemberInfo>>(
+      `member_info_${channelId}`
     );
     if (cached) {
       return new Map(Object.entries(cached));
     }
 
     try {
-      const members = await api.listMembers(channelId);
-      const emails = new Map<string, string>();
+      const members = await api.listMembers(toSpaceName(channelId));
+      const info = new Map<string, MemberInfo>();
       for (const m of members) {
-        if (m.member.email) {
-          emails.set(m.member.name, m.member.email);
+        if (m.member.email || m.member.displayName) {
+          info.set(m.member.name, {
+            ...(m.member.email ? { email: m.member.email } : {}),
+            ...(m.member.displayName ? { displayName: m.member.displayName } : {}),
+          });
         }
       }
 
       // Cache for future batches
       await this.set(
-        `member_emails_${channelId}`,
-        Object.fromEntries(emails)
+        `member_info_${channelId}`,
+        Object.fromEntries(info)
       );
-      return emails;
+      return info;
     } catch (error) {
-      console.error("Failed to fetch member emails:", error);
+      console.error("Failed to fetch member info:", error);
       return new Map();
     }
   }
@@ -518,6 +379,10 @@ export class GoogleChat extends Connector<GoogleChat> {
     spaceName: string,
     initialSync?: boolean
   ): Promise<void> {
+    if (batchNumber > MAX_SYNC_BATCHES) {
+      console.warn(`DM sync batch limit reached for ${spaceName}`);
+      return;
+    }
     const isInitial = initialSync ?? true;
 
     try {
@@ -530,13 +395,13 @@ export class GoogleChat extends Connector<GoogleChat> {
       const result = await syncChatSpace(api, state, 100);
 
       if (result.threads.length > 0) {
-        const memberEmails = await this.getMemberEmails(api, spaceName);
+        const memberInfo = await this.getMemberInfo(api, spaceName);
         const spaceId = extractSpaceId(spaceName);
 
         // Build members list for private thread mentions
         const members: NewActor[] = [];
-        for (const [, email] of memberEmails) {
-          members.push({ email });
+        for (const [, info] of memberInfo) {
+          if (info.email) members.push({ email: info.email });
         }
 
         for (const threadMessages of result.threads) {
@@ -545,7 +410,7 @@ export class GoogleChat extends Connector<GoogleChat> {
               threadMessages,
               spaceId,
               isInitial,
-              memberEmails,
+              memberInfo,
               members
             );
 
@@ -583,6 +448,310 @@ export class GoogleChat extends Connector<GoogleChat> {
         error
       );
       throw error;
+    }
+  }
+
+  // ---- Realtime sync via Workspace Events API + Pub/Sub ----
+
+  /**
+   * Sets up a Workspace Events subscription for a named space.
+   * Creates a Pub/Sub topic (via createWebhook) and registers a subscription
+   * that delivers Chat message events to the onChatWebhook handler.
+   */
+  private async setupRealtimeSync(channelId: string): Promise<void> {
+    try {
+      // Request a Pub/Sub-backed webhook — returns a topic name instead of a URL
+      const topicName = await this.tools.network.createWebhook(
+        { pubsub: true },
+        this.onChatWebhook,
+        channelId
+      );
+
+      // Skip if localhost (development environment)
+      if (topicName.includes("localhost") || topicName.includes("127.0.0.1")) {
+        return;
+      }
+
+      const api = await this.getApi(channelId);
+      const subscription = await api.createSubscription(
+        toSpaceName(channelId),
+        topicName,
+        CHAT_EVENT_TYPES
+      );
+
+      await this.set(`ws_subscription_${channelId}`, {
+        subscriptionName: subscription.name,
+        topicName,
+        expireTime: subscription.expireTime,
+        created: new Date().toISOString(),
+      });
+
+      // Schedule renewal before the 7-day TTL expires
+      await this.scheduleSubscriptionRenewal(channelId);
+    } catch (error) {
+      console.error(
+        `Failed to setup realtime sync for ${channelId}:`,
+        error
+      );
+      // Non-fatal: batch sync still works without realtime
+    }
+  }
+
+  /**
+   * Tears down the Workspace Events subscription and Pub/Sub resources.
+   */
+  private async teardownRealtimeSync(channelId: string): Promise<void> {
+    // Cancel scheduled renewal
+    const taskToken = await this.get<string>(
+      `ws_renewal_task_${channelId}`
+    );
+    if (taskToken) {
+      try {
+        await this.cancelTask(taskToken);
+      } catch {
+        // Task may already have executed
+      }
+      await this.clear(`ws_renewal_task_${channelId}`);
+    }
+
+    const subData = await this.get<{
+      subscriptionName: string;
+      topicName: string;
+    }>(`ws_subscription_${channelId}`);
+
+    if (subData) {
+      // Delete Workspace Events subscription
+      if (subData.subscriptionName) {
+        try {
+          const api = await this.getApi(channelId);
+          await api.deleteSubscription(subData.subscriptionName);
+        } catch (error) {
+          console.error(
+            "Failed to delete Workspace Events subscription:",
+            error
+          );
+        }
+      }
+
+      // Delete Pub/Sub topic and push subscription
+      if (subData.topicName) {
+        try {
+          await this.tools.network.deleteWebhook(subData.topicName);
+        } catch (error) {
+          console.error("Failed to delete Pub/Sub webhook:", error);
+        }
+      }
+
+      await this.clear(`ws_subscription_${channelId}`);
+    }
+  }
+
+  /**
+   * Handles incoming Workspace Events delivered via Pub/Sub push.
+   * Parses the CloudEvent and triggers incremental sync for affected messages.
+   */
+  async onChatWebhook(
+    request: WebhookRequest,
+    channelId: string
+  ): Promise<void> {
+    const body = request.body as {
+      message?: { data: string };
+      decodedData?: {
+        type?: string;
+        data?: {
+          message?: Message;
+          name?: string;
+        };
+      };
+    };
+
+    const decodedData = body?.decodedData;
+    if (!decodedData) {
+      // Try decoding from raw Pub/Sub message
+      const message = body?.message;
+      if (!message?.data) {
+        console.warn("No data in Google Chat webhook");
+        return;
+      }
+      // The webhook route already decodes this, but handle edge cases
+      console.warn("No decodedData in Google Chat webhook body");
+      return;
+    }
+
+    const eventType = decodedData.type;
+    if (!eventType) {
+      console.warn("No event type in Workspace Events notification");
+      return;
+    }
+
+    // Only handle message events
+    if (!eventType.startsWith("google.workspace.chat.message.v1.")) {
+      return;
+    }
+
+    // Handle message deletion: archive the corresponding Plot thread
+    if (eventType === "google.workspace.chat.message.v1.deleted") {
+      const messageName = decodedData.data?.name;
+      if (messageName) {
+        await this.handleMessageDeleted(messageName, channelId);
+      }
+      return;
+    }
+
+    // Handle message created/updated: sync the message
+    const api = await this.getApi(channelId);
+    let message: Message | null = null;
+
+    if (decodedData.data?.message) {
+      message = decodedData.data.message;
+    } else if (decodedData.data?.name) {
+      // Event only includes resource name; fetch the message
+      try {
+        const spaceName = toSpaceName(channelId);
+        const result = await api.listMessages(spaceName, {
+          pageSize: 1,
+          filter: `name = "${decodedData.data.name}"`,
+        });
+        if (result.messages.length > 0) {
+          message = result.messages[0];
+        }
+      } catch (error) {
+        console.error("Failed to fetch message for Chat event:", error);
+        return;
+      }
+    }
+
+    if (!message) {
+      console.warn("Cannot extract message from Chat event");
+      return;
+    }
+
+    // Process as a single-message thread (incremental sync)
+    const memberInfo = await this.getMemberInfo(api, channelId);
+    const members: NewActor[] = [];
+    for (const [, info] of memberInfo) {
+      if (info.email) members.push({ email: info.email });
+    }
+
+    await this.processMessageThreads(
+      [[message]],
+      channelId,
+      false, // incremental sync: don't set unread/archived
+      memberInfo,
+      members
+    );
+  }
+
+  /**
+   * Archives a Plot thread when the corresponding Google Chat message is deleted.
+   */
+  private async handleMessageDeleted(
+    messageName: string,
+    channelId: string
+  ): Promise<void> {
+    try {
+      // Extract thread key from message name to construct the source identifier
+      // Message name format: spaces/{spaceId}/messages/{messageId}
+      // Thread source format: google-chat:{spaceId}:thread:{threadKey}
+      // For single messages, the threadKey equals the messageId
+      const spaceId = extractSpaceId(channelId);
+      const messageId = extractMessageId(messageName);
+      const source = `google-chat:${spaceId}:thread:${messageId}`;
+
+      await this.tools.integrations.saveLink({
+        source,
+        type: "message",
+        archived: true,
+        channelId,
+        meta: {
+          syncProvider: "google-chat",
+          syncableId: channelId,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to archive deleted Chat message:", error);
+    }
+  }
+
+  // ---- Subscription renewal ----
+
+  /**
+   * Schedules a task to renew the Workspace Events subscription
+   * before its 7-day TTL expires (renews 1 day before expiry).
+   */
+  private async scheduleSubscriptionRenewal(
+    channelId: string
+  ): Promise<void> {
+    const subData = await this.get<{ expireTime?: string }>(
+      `ws_subscription_${channelId}`
+    );
+    if (!subData?.expireTime) return;
+
+    const expiry = new Date(subData.expireTime);
+    // Renew 1 day before expiry
+    const renewalTime = new Date(expiry.getTime() - 24 * 60 * 60 * 1000);
+
+    if (renewalTime <= new Date()) {
+      // Already past renewal window, renew immediately
+      await this.renewSubscription(channelId);
+      return;
+    }
+
+    const renewalCallback = await this.callback(
+      this.renewSubscription,
+      channelId
+    );
+    const taskToken = await this.runTask(renewalCallback, {
+      runAt: renewalTime,
+    });
+    if (taskToken) {
+      await this.set(`ws_renewal_task_${channelId}`, taskToken);
+    }
+  }
+
+  /**
+   * Renews the Workspace Events subscription before it expires.
+   * If renewal fails, falls back to recreating the entire setup.
+   */
+  async renewSubscription(channelId: string): Promise<void> {
+    try {
+      const subData = await this.get<{
+        subscriptionName: string;
+        topicName: string;
+        expireTime: string;
+      }>(`ws_subscription_${channelId}`);
+
+      if (!subData?.subscriptionName) {
+        console.warn(
+          `No subscription found for channel ${channelId}, recreating`
+        );
+        await this.setupRealtimeSync(channelId);
+        return;
+      }
+
+      const api = await this.getApi(channelId);
+      const renewed = await api.renewSubscription(subData.subscriptionName);
+
+      // Update stored data with new expiry
+      await this.set(`ws_subscription_${channelId}`, {
+        ...subData,
+        expireTime: renewed.expireTime,
+      });
+
+      // Schedule next renewal
+      await this.scheduleSubscriptionRenewal(channelId);
+    } catch (error) {
+      console.error(
+        `Failed to renew subscription for ${channelId}:`,
+        error
+      );
+      // Try recreating from scratch
+      try {
+        await this.teardownRealtimeSync(channelId);
+        await this.setupRealtimeSync(channelId);
+      } catch (retryError) {
+        console.error("Failed to recreate realtime sync:", retryError);
+      }
     }
   }
 

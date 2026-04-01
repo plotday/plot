@@ -2,6 +2,7 @@ import type {
   NewLinkWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
+import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 // ---- Google Chat API types ----
 
@@ -233,10 +234,28 @@ export class GoogleChatApi {
       },
     });
 
-    // createSubscription returns a long-running operation; the subscription
-    // details are in the response metadata or we poll the operation.
-    // For simplicity, return the metadata directly if present.
-    return data.response ?? data.metadata ?? data;
+    // createSubscription returns a long-running operation (LRO).
+    // If completed immediately, data.response contains the subscription.
+    if (data.response) return data.response;
+
+    // Poll the operation until done (max 5 attempts, 1s delay)
+    if (data.name) {
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const op = await this.call(
+          `${this.workspaceEventsBaseUrl}/${data.name}`
+        );
+        if (op.done && op.response) return op.response;
+        if (op.error) {
+          throw new Error(
+            `Subscription creation failed: ${op.error.message ?? JSON.stringify(op.error)}`
+          );
+        }
+      }
+    }
+
+    // Return best available data if operation hasn't completed
+    return data.metadata?.subscription ?? data;
   }
 
   async renewSubscription(subscriptionName: string): Promise<Subscription> {
@@ -263,6 +282,14 @@ export function extractSpaceId(spaceName: string): string {
 }
 
 /**
+ * Converts a bare space ID back to a resource name: "AAAA" → "spaces/AAAA".
+ * Idempotent: "spaces/AAAA" → "spaces/AAAA".
+ */
+export function toSpaceName(spaceId: string): string {
+  return spaceId.startsWith("spaces/") ? spaceId : `spaces/${spaceId}`;
+}
+
+/**
  * Extracts the thread key from a thread name like "spaces/AAAA/threads/BBBB".
  */
 export function extractThreadKey(threadName: string): string {
@@ -278,18 +305,29 @@ export function extractMessageId(messageName: string): string {
   return parts[parts.length - 1];
 }
 
+export type MemberInfo = {
+  email?: string;
+  displayName?: string;
+};
+
 /**
  * Converts a Google Chat sender into a NewActor for Plot.
- * Uses the sender's display name; email is resolved via membership data.
+ * Uses the sender's display name; email and name are resolved via membership data.
+ * Always provides at least a name so contacts are never "Unknown".
  */
 export function senderToNewActor(
   sender: MessageSender,
-  memberEmails?: Map<string, string>
+  memberInfo?: Map<string, MemberInfo>
 ): NewActor {
-  const email = memberEmails?.get(sender.name);
+  const info = memberInfo?.get(sender.name);
+  const email = info?.email;
+  // Use sender displayName first, fall back to membership displayName,
+  // then fall back to the user resource name (e.g. "users/12345…")
+  const name = sender.displayName || info?.displayName || sender.name;
   return {
-    name: sender.displayName,
+    name,
     ...(email ? { email } : {}),
+    source: { provider: AuthProvider.Google, accountId: sender.name },
   };
 }
 
@@ -319,7 +357,7 @@ export function transformChatThread(
   messages: Message[],
   spaceId: string,
   initialSync: boolean,
-  memberEmails?: Map<string, string>,
+  memberInfo?: Map<string, MemberInfo>,
   members?: NewActor[]
 ): NewLinkWithNotes {
   const firstMessage = messages[0];
@@ -337,7 +375,7 @@ export function transformChatThread(
     title,
     private: true,
     created: new Date(firstMessage.createTime),
-    author: senderToNewActor(firstMessage.sender, memberEmails),
+    author: senderToNewActor(firstMessage.sender, memberInfo),
     sourceUrl: null,
     meta: {
       spaceId,
@@ -350,7 +388,7 @@ export function transformChatThread(
       content: msg.formattedText ?? msg.text ?? null,
       contentType: msg.formattedText ? ("html" as const) : ("text" as const),
       created: new Date(msg.createTime),
-      author: senderToNewActor(msg.sender, memberEmails),
+      author: senderToNewActor(msg.sender, memberInfo),
       ...(members && members.length > 0 ? { mentions: members } : {}),
     })),
     preview,
@@ -370,7 +408,7 @@ export async function syncChatSpace(
   state: SyncState;
   hasMore: boolean;
 }> {
-  const { messages, nextPageToken } = await api.listMessages(state.channelId, {
+  const { messages, nextPageToken } = await api.listMessages(toSpaceName(state.channelId), {
     pageSize: batchSize,
     pageToken: state.pageToken,
   });

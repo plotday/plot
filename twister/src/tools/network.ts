@@ -136,6 +136,10 @@ export abstract class Network extends ITool {
    * - **Gmail** (Google with Gmail scopes): Returns a Google Pub/Sub topic name instead of a webhook URL.
    *   The topic name (e.g., "projects/plot-prod/topics/gmail-webhook-abc123") should be passed
    *   to the Gmail API's `users.watch` endpoint. Requires `authorization` parameter with Gmail scopes.
+   * - **Pub/Sub** (`pubsub: true`): Returns a Google Pub/Sub topic name instead of a webhook URL.
+   *   Use this for services that deliver events via Pub/Sub (e.g., Google Workspace Events API).
+   *   A Pub/Sub topic and push subscription are created automatically; the returned topic name
+   *   can be passed to any Google API that accepts a Pub/Sub notification endpoint.
    * - **Default**: Returns a standard webhook URL for all other cases.
    *
    * @param options - Webhook creation options
@@ -143,29 +147,30 @@ export abstract class Network extends ITool {
    * @param options.authorization - Optional authorization for provider-specific webhooks (required for Slack and Gmail)
    * @param callback - Function receiving (request, ...extraArgs)
    * @param extraArgs - Additional arguments to pass to the callback (type-checked, no functions allowed)
-   * @returns Promise resolving to the webhook URL, or for Gmail, a Pub/Sub topic name
+   * @returns Promise resolving to the webhook URL, or for Gmail/Pub/Sub, a Pub/Sub topic name
    *
    * @example
    * ```typescript
-   * // Gmail webhook - returns Pub/Sub topic name
+   * // Pub/Sub webhook for Workspace Events API
    * const topicName = await this.tools.network.createWebhook(
-   *   {
-   *     provider: AuthProvider.Google,
-   *     authorization: gmailAuth
-   *   },
+   *   { pubsub: true },
+   *   this.onEventReceived,
+   *   channelId
+   * );
+   * // topicName: "projects/plot-prod/topics/ps-abc123"
+   *
+   * // Pass topic name to Workspace Events API
+   * await api.createSubscription(targetResource, topicName, eventTypes);
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Gmail webhook - auto-detected from scopes, returns Pub/Sub topic name
+   * const topicName = await this.tools.network.createWebhook(
+   *   {},
    *   this.onGmailNotification,
    *   "inbox"
    * );
-   * // topicName: "projects/plot-prod/topics/gmail-webhook-abc123"
-   *
-   * // Pass topic name to Gmail API
-   * await gmailApi.users.watch({
-   *   userId: 'me',
-   *   requestBody: {
-   *     topicName: topicName,  // Use the returned topic name
-   *     labelIds: ['INBOX']
-   *   }
-   * });
    * ```
    */
   abstract createWebhook<
@@ -175,6 +180,8 @@ export abstract class Network extends ITool {
     options: {
       provider?: AuthProvider;
       authorization?: Authorization;
+      /** When true, creates a Google Pub/Sub topic instead of a webhook URL. */
+      pubsub?: boolean;
     },
     callback: TCallback,
     ...extraArgs: TArgs
