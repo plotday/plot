@@ -95,6 +95,11 @@
       "types": "./dist/tools/imap.d.ts",
       "default": "./dist/tools/imap.js"
     },
+    "./tools/smtp": {
+      "@plotday/connector": "./src/tools/smtp.ts",
+      "types": "./dist/tools/smtp.d.ts",
+      "default": "./dist/tools/smtp.js"
+    },
     "./utils/types": {
       "@plotday/connector": "./src/utils/types.ts",
       "types": "./dist/utils/types.d.ts",
@@ -189,6 +194,11 @@
       "@plotday/connector": "./src/llm-docs/tools/imap.ts",
       "types": "./dist/llm-docs/tools/imap.d.ts",
       "default": "./dist/llm-docs/tools/imap.js"
+    },
+    "./llm-docs/tools/smtp": {
+      "@plotday/connector": "./src/llm-docs/tools/smtp.ts",
+      "types": "./dist/llm-docs/tools/smtp.d.ts",
+      "default": "./dist/llm-docs/tools/smtp.js"
     },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
