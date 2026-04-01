@@ -23,6 +23,8 @@ export type TextDef = {
   default: string;
   placeholder?: string;
   secure?: boolean; // Encrypted at rest, masked in UI, never returned to clients
+  helpText?: string; // Help text displayed below the input field
+  helpUrl?: string; // URL for a "Learn more" link shown after helpText
 };
 
 /**

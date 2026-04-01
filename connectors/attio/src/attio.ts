@@ -92,9 +92,13 @@ export class Attio extends Connector<Attio> {
         apiKey: {
           type: "text" as const,
           secure: true,
-          label: "API Key",
+          label: "Access Token",
           default: "",
           placeholder: "c_...",
+          helpText:
+            "In Attio, go to Settings → Developers → Access tokens, then click Generate access token.",
+          helpUrl:
+            "https://attio.com/help/apps/other-apps/generating-an-api-key",
         },
       }),
       network: build(Network, { urls: ["https://api.attio.com/*"] }),
