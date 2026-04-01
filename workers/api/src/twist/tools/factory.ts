@@ -18,6 +18,7 @@ import { AI, type ByokKeys } from "./ai";
 import { Callbacks } from "./callbacks";
 import { Integrations } from "./integrations";
 import { Imap, type ImapOptions } from "./imap";
+import { Smtp, type SmtpOptions } from "./smtp";
 import { Network } from "./network";
 import { Plot } from "./plot";
 import { Store } from "./store";
@@ -66,6 +67,7 @@ function getToolClass(
   | typeof Callbacks
   | typeof Twists
   | typeof Imap
+  | typeof Smtp
   | null {
   switch (toolId) {
     case "Plot":
@@ -86,6 +88,8 @@ function getToolClass(
       return Twists;
     case "Imap":
       return Imap;
+    case "Smtp":
+      return Smtp;
     case "Options":
       return null; // Handled specially — not a real tool
     default:
@@ -234,6 +238,8 @@ export function createTool(
       });
     case "Imap":
       return new Imap(options as ImapOptions);
+    case "Smtp":
+      return new Smtp(options as SmtpOptions);
     case "Options":
       // Options is not a real tool — return a plain object with resolved values.
       // The schema is passed as `options`, config comes from priority_twist.config
