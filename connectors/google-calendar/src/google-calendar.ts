@@ -646,6 +646,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         error
       );
 
+      // Clear lock and state so future syncs aren't permanently blocked
+      await this.clear(`sync_lock_${calendarId}`);
+      await this.clear(`sync_state_${calendarId}`);
+
       throw error;
     }
   }
