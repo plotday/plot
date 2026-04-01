@@ -5,7 +5,9 @@ WITH base AS (
         pu.user_id,
         c.child_id AS priority_id,
         MIN(pu.created_at) AS joined_at,
-        LEAST (MIN(pu.archived_at), MIN(c.archived_at)) AS archived_at,
+        CASE WHEN bool_or(pu.archived_at IS NULL AND c.archived_at IS NULL) THEN NULL
+             ELSE LEAST(MIN(pu.archived_at), MIN(c.archived_at))
+        END AS archived_at,
         CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE 'viewer' END AS role
     FROM
         priority_user pu
