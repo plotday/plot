@@ -139,6 +139,19 @@ abstract class FormItem {
   /// Check if the form item is valid
   bool isValid();
 
+  /// Add a listener for value changes. Override in subclasses with editable
+  /// state that the form modal should react to (e.g. re-evaluate validation).
+  void addChangeListener(VoidCallback listener) {}
+
+  /// Remove a value change listener.
+  void removeChangeListener(VoidCallback listener) {}
+
+  /// Called when the user presses Enter in a text field.
+  /// Set by FormModalState to trigger form submission.
+  /// Override the setter in subclasses with text input.
+  set onSubmitted(VoidCallback? callback) {}
+  VoidCallback? get onSubmitted => null;
+
   /// Build the widget for this form item.
   /// [highlightedSubIndex] is the sub-item index that should be highlighted,
   /// or -1 if no sub-item is highlighted.
@@ -167,9 +180,13 @@ class FormTextInput extends FormItem {
   final int maxLines;
   final TextEditingController controller;
 
-  /// Callback fired when Enter is pressed in the text field.
-  /// Set by FormModalState to trigger form submission.
-  VoidCallback? onSubmitted;
+  VoidCallback? _onSubmitted;
+
+  @override
+  set onSubmitted(VoidCallback? callback) => _onSubmitted = callback;
+
+  @override
+  VoidCallback? get onSubmitted => _onSubmitted;
 
   @override
   String getValue() => controller.text;
@@ -203,7 +220,7 @@ class FormTextInput extends FormItem {
       placeholder: placeholder,
       highlighted: highlightedSubIndex >= 0,
       focusNode: focusNodes.firstOrNull,
-      onSubmitted: onSubmitted != null ? (_) => onSubmitted!() : null,
+      onSubmitted: _onSubmitted != null ? (_) => _onSubmitted!() : null,
     );
   }
 
@@ -652,10 +669,15 @@ class FormInfo extends FormItem {
           : null,
       child: Padding(
         padding: EdgeInsets.symmetric(
-          horizontal: text != null ? context.theme.spacing.lg : 0,
+          horizontal: text != null ? context.theme.spacing.xl : 0,
         ),
         child: text != null
-            ? SelectableText(text!, style: context.theme.typography.md)
+            ? SelectableText(
+                text!,
+                style: context.theme.typography.md.copyWith(
+                  color: context.theme.colors.mutedForeground,
+                ),
+              )
             : builder!(context),
       ),
     );

@@ -739,19 +739,25 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
 
   if (resourceType == _ResourceType.connections) {
     final personal = usage.personal.connections;
-    parts.add(personal.isUnlimited
-        ? '${personal.count} personal'
-        : '${personal.count} of ${personal.limit} personal');
+    parts.add(
+      personal.isUnlimited
+          ? '${personal.count} personal'
+          : '${personal.count} of ${personal.limit} personal',
+    );
     for (final org in usage.organizations) {
-      parts.add(org.connections.isUnlimited
-          ? '${org.connections.count} ${org.name}'
-          : '${org.connections.count} of ${org.connections.limit} ${org.name}');
+      parts.add(
+        org.connections.isUnlimited
+            ? '${org.connections.count} ${org.name}'
+            : '${org.connections.count} of ${org.connections.limit} ${org.name}',
+      );
     }
   } else {
     final personal = usage.personal.twists;
-    parts.add(personal.isUnlimited
-        ? '${personal.count} personal'
-        : '${personal.count} of ${personal.limit} personal');
+    parts.add(
+      personal.isUnlimited
+          ? '${personal.count} personal'
+          : '${personal.count} of ${personal.limit} personal',
+    );
   }
 
   return '(${parts.join(', ')})';
@@ -1081,6 +1087,12 @@ class AddSourceDetail extends ShowForm {
       }
     }
 
+    // Build option form items (for connectors using API key auth)
+    final hasOptions = twist.options != null && twist.options!.isNotEmpty;
+    final optionItems = hasOptions
+        ? TwistOptionItems(options: twist.options!)
+        : null;
+
     return FormData(
       title: 'Set up ${twist.name}',
       groups: [
@@ -1109,6 +1121,18 @@ class AddSourceDetail extends ShowForm {
                 ),
               ),
             ),
+            if (optionItems != null) ...optionItems.items,
+            if (integrations.providers.isEmpty && optionItems != null)
+              FormButton(
+                key: 'connect',
+                buildCommand: (_) => ConnectNoProviderCommand(
+                  priorityTwistId: draftId,
+                  optionItems: optionItems,
+                  onConnected: (_) {
+                    _activateSource(context, draftId, twist.name);
+                  },
+                ),
+              ),
           ],
         ),
       ],
@@ -1268,14 +1292,8 @@ class ManageTwists extends ShowCommands {
 
     return Commands(
       groups: [
-        StaticCommandGroup(
-          title: activeTitle,
-          commands: editCommands.toList(),
-        ),
-        StaticCommandGroup(
-          title: 'Available twists',
-          commands: addCommands,
-        ),
+        StaticCommandGroup(title: activeTitle, commands: editCommands.toList()),
+        StaticCommandGroup(title: 'Available twists', commands: addCommands),
       ],
     );
   }
@@ -1570,8 +1588,7 @@ class ShowTwistInfo extends ShowForm {
     final blocked = twist.aiRequired && subscription.isFree && !hasAiKeys;
 
     // Check if personal twist limit is reached
-    final atTwistLimit =
-        usage != null && usage.personal.twists.isAtLimit;
+    final atTwistLimit = usage != null && usage.personal.twists.isAtLimit;
 
     return FormData(
       title: twist.name,
@@ -2015,7 +2032,7 @@ class ConnectNoProviderCommand extends Command {
     required this.onConnected,
   }) : super(
          title: 'Connect',
-         icon: PlotIcon.link,
+         icon: PlotIcon.connection,
          eventObject: EventObject.twist,
          eventAction: EventAction.updated,
        );
@@ -2168,8 +2185,7 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
                             child: Text(
                               group.description!,
                               style: context.theme.typography.sm.copyWith(
-                                color:
-                                    context.theme.colors.mutedForeground,
+                                color: context.theme.colors.mutedForeground,
                               ),
                             ),
                           ),
@@ -2200,8 +2216,9 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
             provider: widget.provider,
             hasExistingAccount: false,
             priorityTwistId: widget.priorityTwistId,
-            enabledScopeGroups:
-                _enabledGroups.isNotEmpty ? _enabledGroups.toList() : null,
+            enabledScopeGroups: _enabledGroups.isNotEmpty
+                ? _enabledGroups.toList()
+                : null,
             onSuccess: widget.onSuccess,
           ),
         ),

@@ -109,6 +109,7 @@ class FormModalState extends State<_FormModal> {
     // The FormItems are owned by the FormData, not by FormBarState.
     for (var group in _formGroups) {
       for (var item in group.items) {
+        item.removeChangeListener(_onFormChanged);
         if (item is FormTextInput) {
           item.controller.removeListener(_onFormChanged);
         } else if (item is FormSelect) {
@@ -145,8 +146,9 @@ class FormModalState extends State<_FormModal> {
     bool foundPrimaryButton = false;
     for (var group in _formGroups) {
       for (var item in group.items) {
+        item.addChangeListener(_onFormChanged);
+        item.onSubmitted = _submitForm;
         if (item is FormTextInput) {
-          item.onSubmitted = _submitForm;
           item.controller.addListener(_onFormChanged);
         } else if (item is FormSelect) {
           item.addListener(_onFormChanged);

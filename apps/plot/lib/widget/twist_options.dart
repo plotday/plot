@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:plot/style/spacing.dart';
 import 'form.dart';
@@ -49,7 +50,19 @@ class TwistOptionItems {
         ),
         _ => null,
       };
-      if (item != null) _items.add(item);
+      if (item != null) {
+        _items.add(item);
+        // Add help text below the option if provided
+        final helpText = def['helpText'] as String?;
+        final helpUrl = def['helpUrl'] as String?;
+        if (helpText != null) {
+          _items.add(_TwistHelpItem(
+            optionKey: entry.key,
+            helpText: helpText,
+            helpUrl: helpUrl,
+          ));
+        }
+      }
     }
   }
 
@@ -217,7 +230,11 @@ class _TwistTextItem extends FormItem {
              ? ''
              : (owner._values[optionKey] ?? '').toString(),
        ),
-       super(key: 'option_$optionKey', label: def['label'] as String);
+       super(
+         key: 'option_$optionKey',
+         label: def['label'] as String,
+         required: def['required'] == true || def['secure'] == true,
+       );
 
   final String optionKey;
   final Map<String, dynamic> def;
@@ -225,6 +242,24 @@ class _TwistTextItem extends FormItem {
   final TextEditingController _controller;
   final bool _secure;
   bool _changed;
+
+  VoidCallback? _onSubmitted;
+
+  @override
+  set onSubmitted(VoidCallback? callback) => _onSubmitted = callback;
+
+  @override
+  VoidCallback? get onSubmitted => _onSubmitted;
+
+  @override
+  void addChangeListener(VoidCallback listener) {
+    _controller.addListener(listener);
+  }
+
+  @override
+  void removeChangeListener(VoidCallback listener) {
+    _controller.removeListener(listener);
+  }
 
   @override
   dynamic getValue() {
@@ -245,7 +280,12 @@ class _TwistTextItem extends FormItem {
   }
 
   @override
-  bool isValid() => true;
+  bool isValid() {
+    if (!this.required) return true;
+    // Secure fields use `true` as a sentinel for existing redacted values
+    if (_secure && !_changed && owner._values[optionKey] == true) return true;
+    return _controller.text.isNotEmpty;
+  }
 
   @override
   Widget build(
@@ -263,6 +303,7 @@ class _TwistTextItem extends FormItem {
           : def['placeholder'] as String?,
       highlighted: highlightedSubIndex >= 0,
       focusNode: focusNodes.firstOrNull,
+      onSubmitted: _onSubmitted != null ? (_) => _onSubmitted!() : null,
       obscureText: _secure,
       onChanged: (value) {
         _changed = true;
@@ -318,6 +359,73 @@ class _TwistNumberItem extends FormItem {
           owner._updateValue(optionKey, numValue);
         }
       },
+    );
+  }
+}
+
+/// Non-focusable help text displayed below an option.
+class _TwistHelpItem extends FormItem {
+  _TwistHelpItem({
+    required String optionKey,
+    required this.helpText,
+    this.helpUrl,
+  }) : super(key: 'option_${optionKey}_help');
+
+  final String helpText;
+  final String? helpUrl;
+
+  @override
+  bool get isFocusable => false;
+
+  @override
+  dynamic getValue() => null;
+
+  @override
+  void setValue(dynamic value) {}
+
+  @override
+  bool isValid() => true;
+
+  @override
+  Widget build(
+    BuildContext context,
+    int highlightedSubIndex, {
+    bool enabled = true,
+    List<FocusNode> focusNodes = const [],
+    FormButtonController? controller,
+  }) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: context.theme.spacing.xl,
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: helpText),
+            if (helpUrl != null) ...[
+              const TextSpan(text: ' '),
+              WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: GestureDetector(
+                  onTap: () => launchUrl(Uri.parse(helpUrl!)),
+                  child: Text(
+                    'Learn more',
+                    style: context.theme.typography.sm.copyWith(
+                      color: context.theme.colors.primary,
+                      decoration: TextDecoration.underline,
+                      decorationColor: context.theme.colors.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+          style: context.theme.typography.sm.copyWith(
+            color: context.theme.colors.mutedForeground,
+          ),
+        ),
+      ),
     );
   }
 }
