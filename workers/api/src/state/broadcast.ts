@@ -50,6 +50,15 @@ export class Broadcast extends DurableObject<Bindings> {
     this.deviceActivityTableReady = true;
   }
 
+  private removeDeviceActivity(clientId: string): void {
+    this.ensureDeviceActivityTable();
+    this.ctx.storage.sql.exec(
+      "DELETE FROM device_activity WHERE client_id = ?",
+      clientId
+    );
+    this.lastActivityWrite.delete(clientId);
+  }
+
   private maybeRecordActivity(clientId: string): void {
     const now = Date.now();
     const lastWrite = this.lastActivityWrite.get(clientId) ?? 0;
@@ -88,6 +97,19 @@ export class Broadcast extends DurableObject<Bindings> {
     if (url.pathname === "/others-active" && request.method === "GET") {
       const excludeClient = url.searchParams.get("excludeClient") ?? "";
       this.ensureDeviceActivityTable();
+      // Clean up stale entries for clients that are no longer connected
+      const allCursor = this.ctx.storage.sql.exec(
+        "SELECT client_id FROM device_activity"
+      );
+      const allClientIds = [...allCursor] as { client_id: string }[];
+      for (const row of allClientIds) {
+        if (!this.connections.has(row.client_id)) {
+          this.ctx.storage.sql.exec(
+            "DELETE FROM device_activity WHERE client_id = ?",
+            row.client_id
+          );
+        }
+      }
       const cursor = this.ctx.storage.sql.exec(
         "SELECT MAX(last_active_at) AS max_active FROM device_activity WHERE client_id != ?",
         excludeClient
@@ -230,11 +252,13 @@ export class Broadcast extends DurableObject<Bindings> {
     server.addEventListener("close", () => {
       this.connections.delete(clientId);
       this.inactiveClients.delete(clientId);
+      this.removeDeviceActivity(clientId);
     });
 
     server.addEventListener("error", () => {
       this.connections.delete(clientId);
       this.inactiveClients.delete(clientId);
+      this.removeDeviceActivity(clientId);
     });
 
     server.addEventListener("message", (event) => {

@@ -1,3 +1,4 @@
+- Fixed notifications not appearing on desktop when other devices had previously connected — stale device records were suppressing notifications even after those devices disconnected
 - Fixed linked contacts appearing multiple times in sharing and assignment lists — each person now shows once with their primary name and email
 - Assigning tasks in shared priorities now shows members in their own section at the top, making it easier to find the right person — assigned users also highlight in accent color so it's clear who's already assigned
 - Google Chat spaces now sync new messages in realtime — no more waiting for a manual refresh to see new conversations
