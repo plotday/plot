@@ -494,7 +494,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     query.where(
       a.priorityId.isIn(idBytes) &
           a.unread.equals(true) &
-          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)) &
+          a.readAt.isNull() &
           a.archivedAt.isNull() &
           a.draft.equals(false),
     );
@@ -513,7 +513,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     query.where(
       a.unread.equals(true) &
-          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)) &
+          a.readAt.isNull() &
           a.archivedAt.isNull() &
           a.draft.equals(false),
     );

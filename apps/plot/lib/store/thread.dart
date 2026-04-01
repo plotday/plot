@@ -21,7 +21,8 @@ class Threads extends Table
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   IntColumn get importance => integer().withDefault(const Constant(0))();
   TextColumn get urgency => text().nullable()();
-  BoolColumn get unreadUpdated => boolean().nullable()();
+  DateTimeColumn get readAt =>
+      dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get bumpedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get icon => text().nullable()();
@@ -245,28 +246,31 @@ class ThreadsBase extends BaseTable {
     final result = <Insertable<DataClass>>[];
     for (final row in rows) {
       final activityRow = row as ThreadRow;
-      // Check if local has a pending unread change
       final local = await (store.select(
         store.threads,
-      )..where((t) => t.id.equals(activityRow.id.toBytes()))).getSingleOrNull();
+      )..where((t) => t.id.equals(activityRow.id.toBytes())))
+          .getSingleOrNull();
       var merged = activityRow;
 
-      // Handle pending unread/bumped changes
-      if (local != null && local.unreadUpdated == true) {
-        if (activityRow.unread == local.unread &&
-            activityRow.bumpedAt == local.bumpedAt) {
-          // Server confirms our local state - clear the pending flag
-          merged = merged.copyWith(unreadUpdated: const Value(null));
+      // Conflict resolution: local has a pending read (readAt != null)
+      if (local != null && local.readAt != null) {
+        final serverContent =
+            activityRow.lastNoteSourceCreatedAt ?? activityRow.createdAt;
+
+        if (activityRow.unread == false) {
+          // Server agrees thread is read — clear local readAt
+          merged = merged.copyWith(readAt: const Value(null));
+        } else if (serverContent.isAfter(local.readAt!)) {
+          // Server says unread AND there's new content since we read
+          // → accept server's unread state, clear readAt
+          merged = merged.copyWith(readAt: const Value(null));
         } else {
-          // Server disagrees — preserve local state until push confirms.
-          // If genuinely new content arrived, the server will re-mark unread
-          // after our push confirms, and the next pull will accept it.
+          // Server says unread but no new content — keep local read
           merged = merged.copyWith(
-            unread: local.unread,
-            importance: local.importance,
-            urgency: Value(local.urgency),
-            unreadUpdated: const Value(true),
-            bumpedAt: Value(local.bumpedAt),
+            unread: false,
+            importance: 0,
+            urgency: const Value(null),
+            readAt: Value(local.readAt),
           );
         }
       }
@@ -288,7 +292,7 @@ class ThreadsBase extends BaseTable {
     json.remove('unread');
     json.remove('importance');
     json.remove('urgency');
-    json.remove('unread_updated');
+    json.remove('read_at');
 
     // Remove mentions - it's a calculated field from notes
     json.remove('mentions');
@@ -592,11 +596,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     ]);
   }
 
-  /// Tracks consecutive push failures for thread-unread to break infinite
-  /// retry loops. Cleared on success, incremented on transient failure.
-  static int _unreadPushFailures = 0;
-  static const _maxUnreadPushFailures = 3;
-
   static Future<bool> push() async {
     final success =
         await Store.get.push(Store.get.threads, ThreadsBase()) &&
@@ -608,124 +607,63 @@ class Thread extends Equatable implements Comparable<Thread> {
         ) &&
         await Store.get.push(Store.get.threadTags, ThreadTagsBase());
 
-    // Batch push unread changes
-    final unreadActivities = await (Store.get.select(
+    // Push pending read changes (readAt != null means user read locally)
+    final readActivities = await (Store.get.select(
       Store.get.threads,
-    )..where((t) => t.unreadUpdated.equals(true))).get();
+    )..where((t) => t.readAt.isNotNull()))
+        .get();
 
-    if (unreadActivities.isEmpty) {
+    if (readActivities.isEmpty) {
       return success;
     }
 
-    // Get the max pulledAt from activities and notes for read_at timestamp
-    final syncStates = await (Store.get.select(
-      Store.get.syncStates,
-    )..where((row) => row.entity.isIn(['threads', 'notes']))).get();
-
-    final maxPulledAtMicros = syncStates
-        .map((s) => s.pulledAt)
-        .whereType<int>()
-        .fold<int?>(
-          null,
-          (max, value) => max == null || value > max ? value : max,
-        );
-
-    // We use the latest pulledAt since the user hasn't read anything since that point, even if it exists remotely
-    final readAt = maxPulledAtMicros != null
-        ? DateTime.fromMicrosecondsSinceEpoch(maxPulledAtMicros, isUtc: true)
-        : DateTime.now().toUtc();
-
-    // Separate activities into read and unread lists
-    final toMarkRead = <ThreadRow>[];
-    final toMarkUnread = <ThreadRow>[];
-
-    for (final activity in unreadActivities) {
-      if (activity.unread) {
-        toMarkUnread.add(activity);
-      } else {
-        toMarkRead.add(activity);
-      }
-    }
-
     try {
-      // Batch all read/unread changes into a single POST
-      final records = <Map<String, dynamic>>[
-        ...toMarkRead.map(
-          (activity) => <String, dynamic>{
-            'thread_id': activity.id.toString(),
-            'read_at': readAt.toIso8601String(),
-            if (activity.bumpedAt != null)
-              'bumped_at': activity.bumpedAt!.toUtc().toIso8601String(),
-          },
-        ),
-        ...toMarkUnread.map(
-          (activity) => <String, dynamic>{
-            'thread_id': activity.id.toString(),
-            'urgency': 'inform-updates',
-          },
-        ),
-      ];
+      final records = readActivities
+          .map(
+            (activity) => <String, dynamic>{
+              'thread_id': activity.id.toString(),
+              'read_at': activity.readAt!.toUtc().toIso8601String(),
+              if (activity.bumpedAt != null)
+                'bumped_at': activity.bumpedAt!.toUtc().toIso8601String(),
+            },
+          )
+          .toList();
 
-      if (records.isNotEmpty) {
-        final response = await api.post<dynamic>(
-          '/sync/thread-unread',
-          body: records,
-        );
+      final response = await api.post<dynamic>(
+        '/sync/thread-unread',
+        body: records,
+      );
 
-        // Server returns { failed: [...threadIds] } for threads we can't access
-        if (response is Map && response['failed'] is List) {
-          final failedIds = (response['failed'] as List).cast<String>();
-          if (failedIds.isNotEmpty) {
-            log.warning(
-              'Server rejected ${failedIds.length} thread-unread records: $failedIds',
-            );
-            final failedUuids = failedIds
-                .map((id) => Uuid.fromString(id).toBytes())
-                .toList();
-            await (Store.get.update(Store.get.threads)
-                  ..where((t) => t.id.isIn(failedUuids)))
-                .write(const ThreadsCompanion(unreadUpdated: Value(null)));
-          }
+      // Handle server-rejected threads (no access)
+      if (response is Map && response['failed'] is List) {
+        final failedIds = (response['failed'] as List).cast<String>();
+        if (failedIds.isNotEmpty) {
+          log.warning(
+            'Server rejected ${failedIds.length} thread-unread records: $failedIds',
+          );
         }
       }
 
-      // Don't clear unreadUpdated here - let processPulledRows clear it
-      // when the server confirms the unread state matches.
-      // Clearing eagerly creates a race: a concurrent pull with stale data
-      // (started before the activity_read push) can overwrite unread with
-      // the stale server value because unreadUpdated was already null.
-      _unreadPushFailures = 0;
+      // Clear readAt for all pushed threads
+      final allIds = readActivities.map((a) => a.id.toBytes()).toList();
+      await (Store.get.update(Store.get.threads)
+            ..where((t) => t.id.isIn(allIds)))
+          .write(const ThreadsCompanion(readAt: Value(null)));
     } catch (e) {
       if (e is ApiException && Store._isPermanentError(e)) {
-        // Permanent error (403, 404, 422, etc.) — these threads will never
-        // sync successfully. Clear unreadUpdated to stop retrying.
+        // Permanent error — clear readAt to stop retrying
         log.warning(
-          'Permanent error pushing thread-unread, clearing ${unreadActivities.length} records: $e',
+          'Permanent error pushing thread-unread, '
+          'clearing ${readActivities.length} records: $e',
         );
-        final allIds = unreadActivities.map((a) => a.id.toBytes()).toList();
+        final allIds = readActivities.map((a) => a.id.toBytes()).toList();
         await (Store.get.update(Store.get.threads)
               ..where((t) => t.id.isIn(allIds)))
-            .write(const ThreadsCompanion(unreadUpdated: Value(null)));
-        _unreadPushFailures = 0;
+            .write(const ThreadsCompanion(readAt: Value(null)));
       } else {
-        _unreadPushFailures++;
-        if (_unreadPushFailures >= _maxUnreadPushFailures) {
-          // Too many consecutive failures — clear unreadUpdated to break
-          // the retry loop. The server fix will resolve the root cause;
-          // this is a safety net against any future similar issue.
-          log.warning(
-            'Thread-unread push failed $_unreadPushFailures times consecutively, '
-            'clearing ${unreadActivities.length} records to break retry loop: $e',
-          );
-          final allIds = unreadActivities.map((a) => a.id.toBytes()).toList();
-          await (Store.get.update(Store.get.threads)
-                ..where((t) => t.id.isIn(allIds)))
-              .write(const ThreadsCompanion(unreadUpdated: Value(null)));
-          _unreadPushFailures = 0;
-        } else {
-          log.warning('Failed to push activity_read changes: $e');
-          rethrow;
-        }
+        // Transient error — readAt stays, retry on next push cycle
+        log.warning('Failed to push thread-unread changes: $e');
+        rethrow;
       }
     }
 
@@ -1021,7 +959,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       a.archivedAt.isNull() &
           a.draft.equals(false) &
           a.unread.equals(true) &
-          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+          a.readAt.isNull(),
     );
     final unreadCountStream = unreadQuery.watch().map(
       (rows) => rows.map((r) => r.read(a.id)).toSet().length,
@@ -1304,7 +1242,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (filterUnread) {
       query.where(
         a.unread.equals(true) &
-            (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+            a.readAt.isNull(),
       );
     }
     if (archived != null) {
@@ -1587,7 +1525,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
         final unreadSort =
             a.unread.equals(true) &
-            (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false));
+            a.readAt.isNull();
 
         query.orderBy([
           OrderingTerm.desc(unreadSort),
@@ -1687,7 +1625,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     query.where(
       a.id.isIn(idBytes) &
           a.unread.equals(true) &
-          (a.unreadUpdated.isNull() | a.unreadUpdated.equals(false)),
+          a.readAt.isNull(),
     );
 
     final results = await query.get();
@@ -2094,7 +2032,7 @@ class Thread extends Equatable implements Comparable<Thread> {
          unread: false,
          importance: 0,
          urgency: null,
-         unreadUpdated: null,
+         readAt: null,
        ),
        _schedule = null,
        _userSchedule = null,
@@ -2192,7 +2130,12 @@ class Thread extends Equatable implements Comparable<Thread> {
     return result;
   }
 
-  bool? get unreadUpdated => _thread.unreadUpdated;
+  DateTime? get readAt => _thread.readAt;
+
+  /// The content timestamp — GREATEST(lastNoteSourceCreatedAt, createdAt).
+  /// Used as the read_at value when the user reads this thread.
+  DateTime get contentTimestamp =>
+      lastNoteSourceCreatedAt ?? createdAt;
   String? get urgency => _thread.urgency;
   int get importance => _thread.importance;
 
@@ -2942,9 +2885,6 @@ class Thread extends Equatable implements Comparable<Thread> {
         bumpedAt: bumpedAt,
         title: !recurring ? title : const Value.absent(),
         unread: unread,
-        unreadUpdated: unread != null || bumpedAt.present
-            ? Value(true)
-            : const Value.absent(),
       );
     }
 
@@ -3143,13 +3083,13 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     // Set bumpedAt on the thread when bumping (agenda done)
-    // Also trigger thread-read sync by marking unreadUpdated so bumped_at gets pushed
+    // Also trigger thread-read sync so bumped_at gets pushed
     if (bump && todo == false) {
       activityDirty = true;
       activity = activity.copyWith(
         bumpedAt: Value(DateTime.now()),
         unread: false,
-        unreadUpdated: const Value(true),
+        readAt: Value(contentTimestamp),
       );
     }
 

@@ -2020,7 +2020,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 289;
+  int get schemaVersion => 290;
 
   @override
   MigrationStrategy get migration {
@@ -2615,6 +2615,11 @@ class Store extends _$Store {
     }
     if (from < 289) {
       await _safeCreateTable(m, threadAssociations);
+    }
+    if (from < 290) {
+      await m.addColumn(threads, threads.readAt);
+      // Drop unreadUpdated by rebuilding the table (Drift keeps only current columns)
+      await m.alterTable(TableMigration(threads));
     }
   }
 

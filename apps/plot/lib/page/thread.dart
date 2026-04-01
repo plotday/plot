@@ -6,6 +6,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:plot/store/store.dart';
+import 'package:plot/util/value.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/state/priority.dart';
 
@@ -155,7 +156,10 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
     _markReadTimer = Timer(const Duration(milliseconds: 750), () {
       final thread = context.read<ThreadBloc>().state.thread;
       if (thread.unread) {
-        thread.copyWith(unread: false).save();
+        thread.copyWith(
+          unread: false,
+          readAt: Value(thread.contentTimestamp),
+        ).save();
       }
     });
   }
