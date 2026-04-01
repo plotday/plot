@@ -971,6 +971,14 @@ BEGIN
 END;
 $function$;
 
+-- PRECISION BOUNDARY: JavaScript Date (used by the pg driver and client apps)
+-- has only millisecond precision, but PostgreSQL timestamptz has microsecond
+-- precision. Any >= / <= / = comparison between a client-provided timestamp and
+-- a database-stored timestamp MUST truncate the DB value with
+-- date_trunc('milliseconds', ...) to avoid sub-millisecond mismatches causing
+-- silent failures. See also: updatedSinceCursor() in
+-- workers/api/src/app/sync/helpers.ts which documents the same pattern.
+
 CREATE OR REPLACE FUNCTION "user".upsert_thread_unread (
     user_id uuid,
     p_thread_id uuid,
@@ -1008,9 +1016,10 @@ BEGIN
             importance = EXCLUDED.importance,
             read_at = CASE
                 -- Race condition: user read after the note was created → preserve their read
+                -- Truncate to ms precision (see PRECISION BOUNDARY comment above)
                 WHEN p_note_created_at IS NOT NULL
                     AND thread_unread.read_at IS NOT NULL
-                    AND thread_unread.read_at >= p_note_created_at
+                    AND thread_unread.read_at >= date_trunc('milliseconds', p_note_created_at)
                 THEN thread_unread.read_at
                 -- New activity or no timestamp context: use caller's value (NULL = unread)
                 ELSE EXCLUDED.read_at
@@ -1054,6 +1063,7 @@ BEGIN
     -- race guard (read_at >= note_created_at) preserves it.
     -- If a row exists, only clear it if the client has seen all current content
     -- (p_read_at >= thread's content timestamp).
+    -- Truncate DB timestamp to ms precision (see PRECISION BOUNDARY comment above)
     INSERT INTO thread_unread (user_id, thread_id, urgency, importance, read_at, bumped_at)
         VALUES (clear_thread_unread.user_id, p_thread_id, 'inform-updates', 50, p_read_at, p_bumped_at)
     ON CONFLICT (user_id, thread_id)
@@ -1063,11 +1073,11 @@ BEGIN
             bumped_at = CASE WHEN p_bumped_at IS NOT NULL THEN p_bumped_at ELSE thread_unread.bumped_at END
         WHERE
             thread_unread.read_at IS NULL
-            AND p_read_at >= (
+            AND p_read_at >= date_trunc('milliseconds', (
                 SELECT COALESCE(t.last_note_source_created_at, t.created_at)
                 FROM thread t
                 WHERE t.id = p_thread_id
-            );
+            ));
 END;
 $function$;
 

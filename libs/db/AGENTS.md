@@ -73,6 +73,30 @@
   - User schema views/functions live in `90-user-schema/` (after public views)
   - If you get "relation does not exist" errors during migration generation, move the function to a later directory
 
+## Timestamp Precision Boundary (JavaScript ↔ PostgreSQL)
+
+JavaScript `Date` has only **millisecond** precision, but PostgreSQL `timestamptz` has **microsecond** precision. When a client-provided timestamp (which passed through JS Date) is compared against a database-stored timestamp using `>=`, `<=`, or `=`, the sub-millisecond digits cause silent mismatches.
+
+**Rule:** Any SQL comparison between a client-provided timestamp and a DB timestamp **MUST** truncate the DB value:
+
+```sql
+-- WRONG: fails when DB has sub-millisecond digits
+WHERE p_client_timestamp >= db_column
+
+-- CORRECT: truncate DB value to match client precision
+WHERE p_client_timestamp >= date_trunc('milliseconds', db_column)
+```
+
+This applies to:
+- SQL functions that receive timestamps from the API (parameters like `p_read_at`, `p_note_created_at`)
+- Sync cursor comparisons (see `updatedSinceCursor()` in `workers/api/src/app/sync/helpers.ts`)
+- Any WHERE guard that compares client input against stored timestamps
+
+**Where this is already applied:**
+- `updatedSinceCursor()` — sync pagination
+- `clear_thread_unread()` — thread read guard
+- `upsert_thread_unread()` — race condition guard
+
 ## Thread Visibility in Views
 
 Any view or query that joins `thread_unread` to determine what a user can see must enforce thread visibility. The canonical reference is the `user.thread` view. Required filters when joining thread (aliased as `a`) with `thread_unread`:
