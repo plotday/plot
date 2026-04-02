@@ -7,6 +7,7 @@ import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
 import { cleanTitle } from "../twist/tools/plot/thread";
+import { loadBuiltinProviderConfig, summarizeWithProvider } from "../utils/ai-provider";
 
 const summary = new Hono<{ Bindings: Bindings }>();
 
@@ -31,9 +32,22 @@ summary.post("/summary", async (c) => {
       return c.json({ title: cleanTitle(body.body).slice(0, 60) });
     }
 
-    const result = await summarize(c.env.AI, body.body);
+    // Check if user has a custom builtin AI provider configured
+    const providerConfig = await loadBuiltinProviderConfig(c.var.db, c.var.user.id, c.env);
+
+    let result;
+    if (providerConfig) {
+      result = await summarizeWithProvider(providerConfig, body.body);
+      if (result) {
+        recordAiUsage(c.env, c.var.user.id, "note_processing");
+        return c.json({ title: result });
+      }
+      // Fall through to default if provider call failed to produce a result
+    }
+
+    const defaultResult = await summarize(c.env.AI, body.body);
     recordAiUsage(c.env, c.var.user.id, "note_processing");
-    return c.json(result);
+    return c.json(defaultResult);
   } catch (error) {
     return captureServerError(c, error, "Error processing request.");
   }

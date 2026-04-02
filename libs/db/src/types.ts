@@ -12,34 +12,46 @@ export type Database = {
       ai_key: {
         Row: {
           created_at: string
+          custom_base_url: string | null
           encrypted_key: string
+          fast_model: string | null
           id: number
           iv: string
           key_suffix: string
+          name: string | null
           organization_id: number | null
           provider: Database["public"]["Enums"]["ai_provider"]
+          thinking_model: string | null
           updated_at: string
           user_id: string | null
         }
         Insert: {
           created_at?: string
+          custom_base_url?: string | null
           encrypted_key: string
+          fast_model?: string | null
           id?: never
           iv: string
           key_suffix: string
+          name?: string | null
           organization_id?: number | null
           provider: Database["public"]["Enums"]["ai_provider"]
+          thinking_model?: string | null
           updated_at?: string
           user_id?: string | null
         }
         Update: {
           created_at?: string
+          custom_base_url?: string | null
           encrypted_key?: string
+          fast_model?: string | null
           id?: never
           iv?: string
           key_suffix?: string
+          name?: string | null
           organization_id?: number | null
           provider?: Database["public"]["Enums"]["ai_provider"]
+          thinking_model?: string | null
           updated_at?: string
           user_id?: string | null
         }
@@ -52,6 +64,64 @@ export type Database = {
           },
           {
             foreignKeyName: "ai_key_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_preference: {
+        Row: {
+          builtin_ai_key_id: number | null
+          created_at: string
+          id: number
+          organization_id: number | null
+          twist_ai_disabled: boolean
+          twist_ai_key_id: number | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          builtin_ai_key_id?: number | null
+          created_at?: string
+          id?: never
+          organization_id?: number | null
+          twist_ai_disabled?: boolean
+          twist_ai_key_id?: number | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          builtin_ai_key_id?: number | null
+          created_at?: string
+          id?: never
+          organization_id?: number | null
+          twist_ai_disabled?: boolean
+          twist_ai_key_id?: number | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_preference_builtin_ai_key_id_fkey"
+            columns: ["builtin_ai_key_id"]
+            referencedRelation: "ai_key"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_preference_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_preference_twist_ai_key_id_fkey"
+            columns: ["twist_ai_key_id"]
+            referencedRelation: "ai_key"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_preference_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
@@ -431,6 +501,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "link_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "link_thread_id_fkey"
@@ -907,6 +983,12 @@ export type Database = {
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
         ]
       }
       priority_setting: {
@@ -949,6 +1031,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_setting_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "priority_setting_user_id_fkey"
@@ -1019,6 +1107,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "priority_twist_twist_id_fkey"
@@ -1233,6 +1327,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_user_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "priority_user_user_id_fkey"
@@ -1539,6 +1639,12 @@ export type Database = {
             referencedColumns: ["priority_id"]
           },
           {
+            foreignKeyName: "series_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
             foreignKeyName: "series_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
@@ -1606,6 +1712,12 @@ export type Database = {
             referencedColumns: ["priority_id"]
           },
           {
+            foreignKeyName: "session_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
             foreignKeyName: "session_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
@@ -1668,6 +1780,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "source_channel_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "source_channel_priority_twist_id_fkey"
@@ -1762,6 +1880,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
         ]
       }
@@ -2150,6 +2274,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "twist_admin_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "twist_admin_publisher_id_fkey"
@@ -2548,6 +2678,12 @@ export type Database = {
             referencedColumns: ["priority_id"]
           },
           {
+            foreignKeyName: "priority_twist_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
+          {
             foreignKeyName: "priority_twist_twist_id_fkey"
             columns: ["twist_id"]
             referencedRelation: "twist"
@@ -2598,6 +2734,12 @@ export type Database = {
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
+          {
+            foreignKeyName: "priority_contact_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
         ]
       }
       priority_setting_inherited: {
@@ -2636,6 +2778,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
         ]
       }
@@ -2722,6 +2870,12 @@ export type Database = {
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
         ]
       }
       priority_twist_channel_link_update: {
@@ -2806,6 +2960,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
         ]
       }
@@ -2922,15 +3082,13 @@ export type Database = {
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
         ]
-      }
-      priority_twist_child: {
-        Row: {
-          archived_at: string | null
-          priority_id: string | null
-          priority_twist_id: string | null
-        }
-        Relationships: []
       }
       priority_twist_link_update: {
         Row: {
@@ -2994,6 +3152,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
         ]
       }
@@ -3086,6 +3250,12 @@ export type Database = {
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
         ]
       }
       priority_twist_note_update: {
@@ -3176,6 +3346,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
         ]
       }
@@ -3284,6 +3460,12 @@ export type Database = {
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
         ]
       }
       priority_twist_thread_read: {
@@ -3313,6 +3495,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
           {
             foreignKeyName: "thread_unread_thread_id_fkey"
@@ -3394,6 +3582,12 @@ export type Database = {
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
         ]
       }
       priority_twist_thread_tag_change: {
@@ -3465,6 +3659,12 @@ export type Database = {
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
           },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
+          },
         ]
       }
       thread_tags: {
@@ -3535,6 +3735,12 @@ export type Database = {
             columns: ["priority_id"]
             referencedRelation: "priority_child"
             referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "thread_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child_twist"
+            referencedColumns: ["priority_child_id"]
           },
         ]
       }
@@ -3747,7 +3953,7 @@ export type Database = {
       week_from_date: { Args: { d: string }; Returns: unknown }
     }
     Enums: {
-      ai_provider: "openai" | "anthropic" | "google"
+      ai_provider: "openai" | "anthropic" | "google" | "custom"
       enter_behavior: "enter_newline" | "enter_submits"
       organization_role: "admin" | "member"
       subscription_plan: "free" | "core" | "pro" | "team"
@@ -4522,7 +4728,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      ai_provider: ["openai", "anthropic", "google"],
+      ai_provider: ["openai", "anthropic", "google", "custom"],
       enter_behavior: ["enter_newline", "enter_submits"],
       organization_role: ["admin", "member"],
       subscription_plan: ["free", "core", "pro", "team"],

@@ -550,23 +550,52 @@ class ChangeAiPreference extends ShowForm {
       },
     );
 
-    // Fetch existing BYOK keys to pre-populate placeholders
-    final existingSuffixes = <String, String>{};
-    try {
-      final keys = await api.get<List<dynamic>>('/ai-keys');
-      for (final k in keys.cast<Map<String, dynamic>>()) {
-        existingSuffixes[k['provider'] as String] = k['key_suffix'] as String;
-      }
-    } catch (_) {}
+    // Fetch existing providers and preferences
+    final providers = await _fetchProviders(null);
+    final prefs = await _fetchPreference(null);
+
+    // Provider list items
+    final providerItems = _buildProviderListItems(providers, null);
+
+    // Built-in features provider select
+    final builtinSelect = _buildProviderSelect(
+      key: 'builtinAiKeyId',
+      label: 'Built-in Plot features',
+      providers: providers,
+      initialValue: prefs['builtin_ai_key_id'],
+      includeDisabled: false,
+    );
+
+    // Twist AI provider select
+    final twistSelect = _buildProviderSelect(
+      key: 'twistAiKeyId',
+      label: 'Twists using AI',
+      providers: providers,
+      initialValue: prefs['twist_ai_disabled'] == true
+          ? 'disabled'
+          : prefs['twist_ai_key_id'],
+      includeDisabled: true,
+    );
 
     return FormData(
       title: 'AI preferences',
       groups: [
         StaticFormGroup(items: [toggle, warning]),
         StaticFormGroup(
-          title: 'Your API keys',
-          subtitle: 'Your keys are used for AI in your personal priorities.',
-          items: _buildByokFields(existingSuffixes),
+          title: 'AI providers',
+          subtitle: 'Configure API keys for AI providers.',
+          items: [
+            ...providerItems,
+            FormButton(
+              key: 'addProvider',
+              buildCommand: (_) => _AddAiProvider(orgId: null),
+            ),
+          ],
+        ),
+        StaticFormGroup(
+          title: 'Provider selection',
+          subtitle: 'Choose which provider to use for each feature.',
+          items: [builtinSelect, twistSelect],
         ),
         StaticFormGroup(
           items: [
@@ -575,9 +604,8 @@ class ChangeAiPreference extends ShowForm {
               buildCommand: (values) => _SaveAiPreference(
                 aiEnabled: values['aiEnabled'] as bool,
                 previousValue: currentValue,
-                openaiKey: values['openai'] as String?,
-                anthropicKey: values['anthropic'] as String?,
-                googleKey: values['google'] as String?,
+                builtinAiKeyId: values['builtinAiKeyId'],
+                twistAiKeyId: values['twistAiKeyId'],
                 orgId: null,
               ),
             ),
@@ -637,31 +665,140 @@ class EnableNotifications extends Command {
   }
 }
 
-/// Build text fields for each AI provider key.
-/// Shows existing key suffix as placeholder when a key is already configured.
-List<FormItem> _buildByokFields(Map<String, String> existingSuffixes) {
-  return [
-    for (final provider in ['openai', 'anthropic', 'google'])
-      FormTextInput(
-        key: provider,
-        label: _providerDisplayName(provider),
-        placeholder: existingSuffixes.containsKey(provider)
-            ? 'Configured (...${existingSuffixes[provider]})'
-            : 'Paste API key',
-      ),
-  ];
-}
-
 String _providerDisplayName(String provider) {
   return switch (provider) {
     'openai' => 'OpenAI',
     'anthropic' => 'Anthropic',
     'google' => 'Google',
+    'custom' => 'Custom',
     _ => provider,
   };
 }
 
-/// Command for per-org AI preferences (BYOK keys only, no AI toggle).
+/// Fetch configured AI providers for a user or org.
+Future<List<Map<String, dynamic>>> _fetchProviders(String? orgId) async {
+  try {
+    final path = orgId != null ? '/organization/$orgId/ai-keys' : '/ai-keys';
+    final keys = await api.get<List<dynamic>>(path);
+    return keys.cast<Map<String, dynamic>>();
+  } catch (_) {
+    return [];
+  }
+}
+
+/// Fetch AI preference selections for a user or org.
+Future<Map<String, dynamic>> _fetchPreference(String? orgId) async {
+  try {
+    final path =
+        orgId != null ? '/organization/$orgId/ai-preference' : '/ai-preference';
+    return await api.get<Map<String, dynamic>>(path);
+  } catch (_) {
+    return {
+      'builtin_ai_key_id': null,
+      'twist_ai_key_id': null,
+      'twist_ai_disabled': false,
+    };
+  }
+}
+
+/// Build FormInfo items showing configured providers with remove buttons.
+List<FormItem> _buildProviderListItems(
+  List<Map<String, dynamic>> providers,
+  String? orgId,
+) {
+  return [
+    for (final p in providers)
+      FormInfo(
+        key: 'provider_${p['id']}',
+        builder: (context) {
+          final provider = p['provider'] as String;
+          final suffix = p['key_suffix'] as String;
+          final name = p['name'] as String?;
+          final label = provider == 'custom'
+              ? (name ?? 'Custom')
+              : _providerDisplayName(provider);
+          return Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: context.theme.spacing.lg,
+              vertical: context.theme.spacing.xs,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$label (...$suffix)',
+                    style: context.theme.typography.sm,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () async {
+                    final basePath = orgId != null
+                        ? '/organization/$orgId/ai-keys/${p['id']}'
+                        : '/ai-keys/${p['id']}';
+                    try {
+                      await api.delete<Map<String, dynamic>>(basePath);
+                      if (context.mounted) {
+                        context.showToast(message: 'Provider removed');
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        context.showToast(
+                          message: 'Failed to remove',
+                          isError: true,
+                        );
+                      }
+                    }
+                  },
+                  child: Icon(
+                    FontAwesomeIcons.xmark,
+                    size: 14,
+                    color: context.theme.colors.mutedForeground,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+  ];
+}
+
+/// Build a provider selection dropdown.
+FormSelect<dynamic> _buildProviderSelect({
+  required String key,
+  required String label,
+  required List<Map<String, dynamic>> providers,
+  required dynamic initialValue,
+  required bool includeDisabled,
+}) {
+  return FormSelect<dynamic>(
+    key: key,
+    label: label,
+    initialValue: initialValue,
+    hasInitialValue: true,
+    titleBuilder: (value) {
+      if (value == null) return 'Plot';
+      if (value == 'disabled') return 'Disabled';
+      // Find the provider by id
+      final p = providers.firstWhereOrNull(
+        (p) => p['id'] == value || p['id'].toString() == value.toString(),
+      );
+      if (p == null) return 'Plot';
+      final provider = p['provider'] as String;
+      final name = p['name'] as String?;
+      return provider == 'custom'
+          ? (name ?? 'Custom')
+          : _providerDisplayName(provider);
+    },
+    items: (_) async => [
+      null, // Plot
+      if (includeDisabled) 'disabled',
+      ...providers.map((p) => p['id']),
+    ],
+  );
+}
+
+/// Command for per-org AI preferences.
 class OrgAiPreferences extends ShowForm {
   OrgAiPreferences({required this.orgId, required this.orgName})
     : super(
@@ -680,21 +817,46 @@ class OrgAiPreferences extends ShowForm {
     String orgId,
     String orgName,
   ) async {
-    final existingSuffixes = <String, String>{};
-    try {
-      final keys = await api.get<List<dynamic>>('/organization/$orgId/ai-keys');
-      for (final k in keys.cast<Map<String, dynamic>>()) {
-        existingSuffixes[k['provider'] as String] = k['key_suffix'] as String;
-      }
-    } catch (_) {}
+    final providers = await _fetchProviders(orgId);
+    final prefs = await _fetchPreference(orgId);
+
+    final providerItems = _buildProviderListItems(providers, orgId);
+
+    final builtinSelect = _buildProviderSelect(
+      key: 'builtinAiKeyId',
+      label: 'Built-in Plot features',
+      providers: providers,
+      initialValue: prefs['builtin_ai_key_id'],
+      includeDisabled: false,
+    );
+
+    final twistSelect = _buildProviderSelect(
+      key: 'twistAiKeyId',
+      label: 'Twists using AI',
+      providers: providers,
+      initialValue: prefs['twist_ai_disabled'] == true
+          ? 'disabled'
+          : prefs['twist_ai_key_id'],
+      includeDisabled: true,
+    );
 
     return FormData(
       title: '$orgName AI preferences',
       groups: [
         StaticFormGroup(
-          title: 'Organization API keys',
-          subtitle: 'These keys are used for AI in $orgName priorities.',
-          items: _buildByokFields(existingSuffixes),
+          title: 'AI providers',
+          subtitle: 'These providers are used for AI in $orgName priorities.',
+          items: [
+            ...providerItems,
+            FormButton(
+              key: 'addProvider',
+              buildCommand: (_) => _AddAiProvider(orgId: orgId),
+            ),
+          ],
+        ),
+        StaticFormGroup(
+          title: 'Provider selection',
+          items: [builtinSelect, twistSelect],
         ),
         StaticFormGroup(
           items: [
@@ -703,9 +865,8 @@ class OrgAiPreferences extends ShowForm {
               buildCommand: (values) => _SaveAiPreference(
                 aiEnabled: null,
                 previousValue: null,
-                openaiKey: values['openai'] as String?,
-                anthropicKey: values['anthropic'] as String?,
-                googleKey: values['google'] as String?,
+                builtinAiKeyId: values['builtinAiKeyId'],
+                twistAiKeyId: values['twistAiKeyId'],
                 orgId: orgId,
               ),
             ),
@@ -716,13 +877,224 @@ class OrgAiPreferences extends ShowForm {
   }
 }
 
+/// Sub-modal for adding a new AI provider.
+class _AddAiProvider extends ShowForm {
+  _AddAiProvider({this.orgId})
+    : super(
+        title: 'Add provider',
+        icon: FontAwesomeIcons.plus,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+        form: (context) => _buildAddForm(context, orgId),
+      );
+
+  final String? orgId;
+
+  static Future<FormData> _buildAddForm(
+    BuildContext context,
+    String? orgId,
+  ) async {
+    // Fetch existing providers to exclude already-configured standard ones
+    final existing = await _fetchProviders(orgId);
+    final configuredStandard = existing
+        .where((p) => p['provider'] != 'custom')
+        .map((p) => p['provider'] as String)
+        .toSet();
+
+    final availableProviders = <String>[
+      if (!configuredStandard.contains('openai')) 'openai',
+      if (!configuredStandard.contains('anthropic')) 'anthropic',
+      if (!configuredStandard.contains('google')) 'google',
+      'custom',
+    ];
+
+    final selectedProvider = ValueNotifier<String?>(null);
+
+    final providerSelect = FormSelect<String>(
+      key: 'provider',
+      label: 'Provider',
+      required: true,
+      titleBuilder: (value) => value == 'custom'
+          ? 'Custom OpenAI-compatible'
+          : _providerDisplayName(value),
+      items: (_) async => availableProviders,
+      onChanged: () {},
+    );
+    providerSelect.addChangeListener(() {
+      selectedProvider.value = providerSelect.getValue();
+    });
+
+    final apiKeyField = FormTextInput(
+      key: 'apiKey',
+      label: 'API key',
+      required: true,
+      placeholder: 'Paste API key',
+    );
+
+    // Custom-only fields
+    final nameField = FormTextInput(
+      key: 'name',
+      label: 'Display name',
+      placeholder: 'e.g. Local Ollama',
+    );
+
+    final baseUrlField = FormTextInput(
+      key: 'customBaseUrl',
+      label: 'Base URL',
+      placeholder: 'e.g. http://localhost:11434/v1',
+    );
+
+    final fastModelField = FormTextInput(
+      key: 'fastModel',
+      label: 'Fast model',
+      placeholder: 'e.g. llama3.2',
+    );
+
+    final thinkingModelField = FormTextInput(
+      key: 'thinkingModel',
+      label: 'Thinking model',
+      placeholder: 'e.g. qwq',
+    );
+
+    // Use FormInfo to conditionally show custom fields
+    final customFields = FormInfo(
+      key: 'customFields',
+      builder: (context) {
+        return ValueListenableBuilder<String?>(
+          valueListenable: selectedProvider,
+          builder: (context, provider, _) {
+            if (provider != 'custom') return const SizedBox.shrink();
+            return Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: context.theme.spacing.lg,
+              ),
+              child: Text(
+                'Configure your OpenAI-compatible endpoint below.',
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.colors.mutedForeground,
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    return FormData(
+      title: 'Add provider',
+      groups: [
+        StaticFormGroup(
+          items: [providerSelect, apiKeyField, customFields, nameField, baseUrlField, fastModelField, thinkingModelField],
+        ),
+        StaticFormGroup(
+          items: [
+            FormButton(
+              key: 'save',
+              buildCommand: (values) => _SaveAiProvider(
+                provider: values['provider'] as String?,
+                apiKey: values['apiKey'] as String?,
+                name: values['name'] as String?,
+                customBaseUrl: values['customBaseUrl'] as String?,
+                fastModel: values['fastModel'] as String?,
+                thinkingModel: values['thinkingModel'] as String?,
+                orgId: orgId,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Saves a new AI provider key.
+class _SaveAiProvider extends Command {
+  _SaveAiProvider({
+    required this.provider,
+    required this.apiKey,
+    this.name,
+    this.customBaseUrl,
+    this.fastModel,
+    this.thinkingModel,
+    this.orgId,
+  }) : super(
+         title: 'Save',
+         eventObject: EventObject.settings,
+         eventAction: EventAction.updated,
+       );
+
+  final String? provider;
+  final String? apiKey;
+  final String? name;
+  final String? customBaseUrl;
+  final String? fastModel;
+  final String? thinkingModel;
+  final String? orgId;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (provider == null || provider!.isEmpty) {
+      return CommandMessage('Please select a provider', isError: true);
+    }
+    if (apiKey == null || apiKey!.trim().isEmpty) {
+      return CommandMessage('API key is required', isError: true);
+    }
+    if (provider == 'custom') {
+      if (name == null || name!.trim().isEmpty) {
+        return CommandMessage('Display name is required', isError: true);
+      }
+      if (customBaseUrl == null || customBaseUrl!.trim().isEmpty) {
+        return CommandMessage('Base URL is required', isError: true);
+      }
+      if (fastModel == null || fastModel!.trim().isEmpty) {
+        return CommandMessage('Fast model is required', isError: true);
+      }
+      if (thinkingModel == null || thinkingModel!.trim().isEmpty) {
+        return CommandMessage('Thinking model is required', isError: true);
+      }
+    }
+
+    try {
+      final basePath = orgId != null
+          ? '/organization/$orgId/ai-keys'
+          : '/ai-keys';
+
+      final body = <String, dynamic>{
+        'provider': provider,
+        'key': apiKey!.trim(),
+      };
+      if (provider == 'custom') {
+        body['name'] = name!.trim();
+        body['customBaseUrl'] = customBaseUrl!.trim();
+        body['fastModel'] = fastModel!.trim();
+        body['thinkingModel'] = thinkingModel!.trim();
+      }
+
+      final result = await api.post<Map<String, dynamic>>(basePath, body: body);
+
+      final warning = result['warning'] as String?;
+      if (warning != null) {
+        return CommandMessage(warning, isError: true);
+      }
+
+      return const CommandDone();
+    } catch (e, t) {
+      log.warning('Failed to save AI provider', e, t);
+      final msg = e.toString();
+      if (msg.contains('Invalid API key')) {
+        return CommandMessage('Invalid API key', isError: true);
+      }
+      return CommandMessage('Failed to save: $msg', isError: true);
+    }
+  }
+}
+
 class _SaveAiPreference extends Command {
   _SaveAiPreference({
     required this.aiEnabled,
     required this.previousValue,
-    this.openaiKey,
-    this.anthropicKey,
-    this.googleKey,
+    this.builtinAiKeyId,
+    this.twistAiKeyId,
     this.orgId,
   }) : super(
          title: 'Save',
@@ -733,9 +1105,8 @@ class _SaveAiPreference extends Command {
   /// null when saving org-only preferences (no AI toggle).
   final bool? aiEnabled;
   final bool? previousValue;
-  final String? openaiKey;
-  final String? anthropicKey;
-  final String? googleKey;
+  final dynamic builtinAiKeyId;
+  final dynamic twistAiKeyId;
 
   /// non-null when saving org keys.
   final String? orgId;
@@ -743,39 +1114,37 @@ class _SaveAiPreference extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // Save BYOK keys (validate each non-empty key first)
-      final keysToSave = <String, String>{};
-      if (openaiKey != null && openaiKey!.trim().isNotEmpty) {
-        keysToSave['openai'] = openaiKey!.trim();
-      }
-      if (anthropicKey != null && anthropicKey!.trim().isNotEmpty) {
-        keysToSave['anthropic'] = anthropicKey!.trim();
-      }
-      if (googleKey != null && googleKey!.trim().isNotEmpty) {
-        keysToSave['google'] = googleKey!.trim();
+      // Save provider selections
+      final prefPath = orgId != null
+          ? '/organization/$orgId/ai-preference'
+          : '/ai-preference';
+
+      final prefBody = <String, dynamic>{};
+
+      // builtinAiKeyId: null means Plot, an int means a specific provider
+      if (builtinAiKeyId == null) {
+        prefBody['builtinAiKeyId'] = null;
+      } else if (builtinAiKeyId != 'disabled') {
+        prefBody['builtinAiKeyId'] = builtinAiKeyId is int
+            ? builtinAiKeyId
+            : int.tryParse(builtinAiKeyId.toString());
       }
 
-      final basePath = orgId != null
-          ? '/organization/$orgId/ai-keys'
-          : '/ai-keys';
-
-      for (final entry in keysToSave.entries) {
-        final result = await api.post<Map<String, dynamic>>(
-          basePath,
-          body: {'provider': entry.key, 'key': entry.value},
-        );
-
-        // The API returns 400 with { error: ... } if validation fails.
-        // api.post throws on non-2xx, so we get here only on success.
-        // Check for warnings (key saved but validation uncertain).
-        final warning = result['warning'] as String?;
-        if (warning != null) {
-          return CommandMessage(
-            '${_providerDisplayName(entry.key)}: $warning',
-            isError: true,
-          );
-        }
+      // twistAiKeyId: 'disabled' means disabled, null means Plot, int means provider
+      if (twistAiKeyId == 'disabled') {
+        prefBody['twistAiKeyId'] = null;
+        prefBody['twistAiDisabled'] = true;
+      } else if (twistAiKeyId == null) {
+        prefBody['twistAiKeyId'] = null;
+        prefBody['twistAiDisabled'] = false;
+      } else {
+        prefBody['twistAiKeyId'] = twistAiKeyId is int
+            ? twistAiKeyId
+            : int.tryParse(twistAiKeyId.toString());
+        prefBody['twistAiDisabled'] = false;
       }
+
+      await api.post<Map<String, dynamic>>(prefPath, body: prefBody);
 
       // Save AI toggle (personal preferences only)
       if (aiEnabled != null && context.mounted) {
@@ -795,7 +1164,6 @@ class _SaveAiPreference extends Command {
       return const CommandDone();
     } catch (e, t) {
       log.warning('Failed to save AI preferences', e, t);
-      // Extract error message from API response if available
       final msg = e.toString();
       if (msg.contains('Invalid API key')) {
         return CommandMessage('Invalid API key', isError: true);

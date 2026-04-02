@@ -109,7 +109,9 @@ Internal catalog of product features for marketing content generation. Direct an
 - Categories: Calendar, Communication, Email, Project Management, Design, Documents, Development, CRM, Customer Support, Cloud Storage, Finance, HR, Marketing, Analytics, Notes, Productivity, Automation, E-commerce, Cloud, Security, Product
 
 ### Built-in Tool Capabilities
-- AI: Multiple LLM providers (OpenAI, Anthropic, Google, Workers AI)
+- AI: Multiple LLM providers (OpenAI, Anthropic, Google, Workers AI, custom OpenAI-compatible endpoints)
+  - Flexible provider configuration: add multiple providers and choose which to use for built-in features vs twist AI
+  - Custom OpenAI-compatible endpoints: point to any API (local LLMs, proxies, alternative providers) with configurable model names
   - Text generation and analysis
   - Structured output with schemas
   - Tool calling support

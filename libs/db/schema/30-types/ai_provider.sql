@@ -1,1 +1,1 @@
-CREATE TYPE ai_provider AS ENUM ('openai', 'anthropic', 'google');
+CREATE TYPE ai_provider AS ENUM ('openai', 'anthropic', 'google', 'custom');
