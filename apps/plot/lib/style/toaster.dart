@@ -11,10 +11,24 @@ FToasterStyleDelta buildToasterStyleDelta(
   FTypography typography,
   PlotIconSizes iconSizes,
 ) {
-  final destructiveColor = RayOklch.fromComponents(
-    colourScheme.brightness == Brightness.light ? 0.2 : 0.65,
-    colourScheme.brightness == Brightness.light ? 0.8 : 0.15,
-    25.72,
+  final isLight = colourScheme.brightness == Brightness.light;
+  const hue = 25.72;
+
+  // Opaque background and contrasting foreground for destructive toasts
+  final destructiveBg = RayOklch.fromComponents(
+    isLight ? 0.95 : 0.2,
+    isLight ? 0.05 : 0.05,
+    hue,
+  ).toColor();
+  final destructiveFg = RayOklch.fromComponents(
+    isLight ? 0.4 : 0.8,
+    isLight ? 0.15 : 0.15,
+    hue,
+  ).toColor();
+  final destructiveBorder = RayOklch.fromComponents(
+    isLight ? 0.8 : 0.35,
+    isLight ? 0.1 : 0.1,
+    hue,
   ).toColor();
 
   return FToasterStyleDelta.delta(
@@ -51,25 +65,23 @@ FToasterStyleDelta buildToasterStyleDelta(
         FToastStyleDelta.delta(
           decoration: DecorationDelta.value(
             BoxDecoration(
-              color: destructiveColor.withValues(alpha: 0.1),
+              color: destructiveBg,
               borderRadius: borderRadius.md,
-              border: Border.all(
-                color: destructiveColor.withValues(alpha: 0.3),
-              ),
+              border: Border.all(color: destructiveBorder),
             ),
           ),
           iconStyle: IconThemeDataDelta.value(
-            IconThemeData(color: destructiveColor, size: iconSizes.lg),
+            IconThemeData(color: destructiveFg, size: iconSizes.lg),
           ),
           titleTextStyle: TextStyleDelta.value(
             typography.sm.copyWith(
-              color: destructiveColor,
+              color: destructiveFg,
               fontWeight: FontWeight.w500,
             ),
           ),
           descriptionTextStyle: TextStyleDelta.value(
             typography.sm.copyWith(
-              color: destructiveColor,
+              color: destructiveFg,
               overflow: TextOverflow.ellipsis,
             ),
           ),
