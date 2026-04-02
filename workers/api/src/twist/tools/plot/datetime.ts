@@ -220,7 +220,7 @@ export function calculateDbEndFromRecurrenceUntil(
   // return null for dbEnd to create open-ended range
   if (recurrenceRule && !recurrenceUntil && !recurrenceCount) {
     const duration = calculateDurationInSeconds(start, end);
-    return { dbEnd: null, duration: duration || null };
+    return { dbEnd: null, duration: duration ?? 0 };
   }
 
   // If recurrenceCount is provided, calculate recurrenceUntil from it
@@ -238,47 +238,40 @@ export function calculateDbEndFromRecurrenceUntil(
 
   // For recurring activities, calculate the end of the final occurrence
   // and the duration of each occurrence
-  if (start && end && finalRecurrenceUntil) {
-    const duration = calculateDurationInSeconds(start, end);
-    if (duration !== null) {
-      if (
-        typeof finalRecurrenceUntil === "string" &&
-        typeof start === "string"
-      ) {
-        // Date-based: add duration to finalRecurrenceUntil to get final end
-        const recurrenceUntilDate = new Date(finalRecurrenceUntil);
-        const durationDays = Math.floor(duration / (24 * 60 * 60));
-        const finalEndDate = new Date(
-          recurrenceUntilDate.getTime() + durationDays * 24 * 60 * 60 * 1000
-        );
-        return {
-          dbEnd: finalEndDate.toISOString().split("T")[0],
-          duration,
-        };
-      } else if (
-        finalRecurrenceUntil instanceof Date &&
-        start instanceof Date
-      ) {
-        // DateTime-based: add duration to finalRecurrenceUntil to get final end
-        const finalEndDate = new Date(
-          finalRecurrenceUntil.getTime() + duration * 1000
-        );
-        return {
-          dbEnd: finalEndDate,
-          duration,
-        };
-      }
+  if (start && finalRecurrenceUntil) {
+    const duration = calculateDurationInSeconds(start, end) ?? 0;
+    if (
+      typeof finalRecurrenceUntil === "string" &&
+      typeof start === "string"
+    ) {
+      // Date-based: add duration to finalRecurrenceUntil to get final end
+      const recurrenceUntilDate = new Date(finalRecurrenceUntil);
+      const durationDays = Math.floor(duration / (24 * 60 * 60));
+      const finalEndDate = new Date(
+        recurrenceUntilDate.getTime() + durationDays * 24 * 60 * 60 * 1000
+      );
+      return {
+        dbEnd: finalEndDate.toISOString().split("T")[0],
+        duration,
+      };
+    } else if (
+      finalRecurrenceUntil instanceof Date &&
+      start instanceof Date
+    ) {
+      // DateTime-based: add duration to finalRecurrenceUntil to get final end
+      const finalEndDate = new Date(
+        finalRecurrenceUntil.getTime() + duration * 1000
+      );
+      return {
+        dbEnd: finalEndDate,
+        duration,
+      };
     }
   }
 
-  // For ongoing recurrence (recurrenceUntil without specific end), leave dbEnd null for open range
-  if (start && finalRecurrenceUntil && !recurrenceCount && !end) {
-    const duration = calculateDurationInSeconds(start, end);
-    return { dbEnd: null, duration: duration || null };
-  }
-
-  // Fallback
-  return { dbEnd: end, duration: null };
+  // Fallback: use 0 duration if recurrence rule is present (DB constraint
+  // requires both recurrence_rule and duration to be set or both null)
+  return { dbEnd: end, duration: recurrenceRule ? 0 : null };
 }
 
 export function calculateDurationInSeconds(

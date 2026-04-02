@@ -64,9 +64,7 @@ export function convertScheduleToDb(
     );
     const range = convertTimeRange(schedule.start, dbEnd);
     Object.assign(dbSchedule, range);
-    if (duration != null) {
-      dbSchedule.duration = formatInterval(duration);
-    }
+    dbSchedule.duration = formatInterval(duration ?? 0);
   } else {
     const range = convertTimeRange(schedule.start, schedule.end);
     Object.assign(dbSchedule, range);
