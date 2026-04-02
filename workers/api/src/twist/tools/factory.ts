@@ -183,6 +183,7 @@ export function createTool(
         environment,
         baseUrl: env.API_ROOT,
         path,
+        env,
         store: new Store({
           path,
           storage: env.STORAGE,
