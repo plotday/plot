@@ -90,23 +90,23 @@ class FormModalState extends State<_FormModal> {
     final previousDepth = _lastModalStackDepth;
     _lastModalStackDepth = newDepth;
 
-    // A child modal was popped — restore focus to our highlighted item
+    // A child modal was popped — restore focus and optionally refresh form.
+    // Defer so FormSelect.activate can set its value before we snapshot
+    // current values for the refresh.
     if (newDepth < previousDepth && mounted) {
+      final restoreIndex = _highlightedIndex;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _highlightedIndex < _focusNodes.length) {
-          _focusNodes[_highlightedIndex].requestFocus();
+        if (!mounted) return;
+        if (widget.form.onRefresh != null) {
+          _refreshForm(restoreFocusIndex: restoreIndex);
+        } else if (restoreIndex < _focusNodes.length) {
+          _focusNodes[restoreIndex].requestFocus();
         }
       });
     }
   }
 
-  @override
-  void dispose() {
-    _modalStackNotifier?.removeListener(_onModalStackChanged);
-    // Remove listeners from text input controllers and select fields
-    // Note: We don't dispose the controllers here because the FormItem instances
-    // might be reused if another dialog (like SelectBar) was on top and closes.
-    // The FormItems are owned by the FormData, not by FormBarState.
+  void _teardownItems() {
     for (var group in _formGroups) {
       for (var item in group.items) {
         item.removeChangeListener(_onFormChanged);
@@ -123,6 +123,51 @@ class FormModalState extends State<_FormModal> {
         }
       }
     }
+  }
+
+  Future<void> _refreshForm({int? restoreFocusIndex}) async {
+    final onRefresh = widget.form.onRefresh;
+    if (onRefresh == null) return;
+
+    // Capture current values before tearing down old items so user edits
+    // aren't lost when the form rebuilds with server-fetched defaults.
+    final savedValues = <String, (dynamic,)>{};
+    for (var group in _formGroups) {
+      for (var item in group.items) {
+        savedValues[item.key] = (item.getValue(),);
+      }
+    }
+
+    final newGroups = await onRefresh();
+    if (!mounted) return;
+    _teardownItems();
+    for (var node in _focusNodes) {
+      node.dispose();
+    }
+
+    // Restore values into new items that match by key
+    for (var group in newGroups) {
+      for (var item in group.items) {
+        final saved = savedValues[item.key];
+        if (saved != null) {
+          item.setValue(saved.$1);
+        }
+      }
+    }
+
+    _initForm(newGroups);
+    // Restore focus to the item that was highlighted before refresh
+    if (restoreFocusIndex != null &&
+        restoreFocusIndex < _focusNodes.length) {
+      _highlightedIndex = restoreFocusIndex;
+    }
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _modalStackNotifier?.removeListener(_onModalStackChanged);
+    _teardownItems();
     // Dispose focus nodes
     for (var node in _focusNodes) {
       node.dispose();
@@ -131,8 +176,8 @@ class FormModalState extends State<_FormModal> {
     super.dispose();
   }
 
-  void _initForm() {
-    _formGroups = widget.groups;
+  void _initForm([List<StaticFormGroup>? groups]) {
+    _formGroups = groups ?? widget.groups;
 
     // Create focus nodes — one per focusable sub-item
     final totalCount = _allFocusSlotsCount();
@@ -195,7 +240,15 @@ class FormModalState extends State<_FormModal> {
       }
     }
 
-    // No text inputs, find first button
+    // No text inputs, find primary button first
+    for (int i = 0; i < totalSlots; i++) {
+      final (item, _) = _getItemAndSubIndex(i);
+      if (item is FormButton && item.isPrimary && _isFocusSlotEnabled(i)) {
+        return i;
+      }
+    }
+
+    // Fall back to first button
     for (int i = 0; i < totalSlots; i++) {
       final (item, _) = _getItemAndSubIndex(i);
       if (item is FormButton && _isFocusSlotEnabled(i)) {
@@ -525,13 +578,21 @@ class FormModalState extends State<_FormModal> {
                 }
                 return KeyEventResult.handled;
               }
-              if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                _moveHighlight(-1);
-                return KeyEventResult.handled;
-              }
-              if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                _moveHighlight(1);
-                return KeyEventResult.handled;
+              if (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+                  event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                final isShiftPressed =
+                    HardwareKeyboard.instance.logicalKeysPressed.contains(
+                      LogicalKeyboardKey.shiftLeft,
+                    ) ||
+                    HardwareKeyboard.instance.logicalKeysPressed.contains(
+                      LogicalKeyboardKey.shiftRight,
+                    );
+                if (!isShiftPressed) {
+                  _moveHighlight(
+                    event.logicalKey == LogicalKeyboardKey.arrowUp ? -1 : 1,
+                  );
+                  return KeyEventResult.handled;
+                }
               }
             }
             return KeyEventResult.ignored;
@@ -622,6 +683,9 @@ class FormModalState extends State<_FormModal> {
                   return FormScope(
                     values: _collectFormValues(),
                     validate: _isFormValid,
+                    refresh: widget.form.onRefresh != null
+                        ? _refreshForm
+                        : null,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,

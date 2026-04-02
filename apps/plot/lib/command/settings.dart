@@ -513,17 +513,27 @@ class ChangeAiPreference extends ShowForm {
       );
 
   static Future<FormData> _buildForm(BuildContext context) async {
+    final groups = await _buildGroups(null);
+
+    return FormData(
+      title: 'AI preferences',
+      groups: groups,
+      onRefresh: () => _buildResolvedGroups(null),
+    );
+  }
+
+  static Future<List<FormGroup>> _buildGroups(String? orgId) async {
     // Fetch existing providers and preferences
-    final providers = await _fetchProviders(null);
-    final prefs = await _fetchPreference(null);
+    final providers = await _fetchProviders(orgId);
+    final prefs = await _fetchPreference(orgId);
 
     // Provider list items
-    final providerItems = _buildProviderListItems(providers, null);
+    final providerItems = _buildProviderListItems(providers, orgId);
 
     // Built-in features provider select
     final builtinSelect = _buildProviderSelect(
       key: 'builtinAiKeyId',
-      label: 'Built-in Plot features',
+      label: 'AI provider for built-in features',
       providers: providers,
       initialValue: prefs['builtin_ai_disabled'] == true
           ? 'disabled'
@@ -534,7 +544,7 @@ class ChangeAiPreference extends ShowForm {
     // Twist AI provider select
     final twistSelect = _buildProviderSelect(
       key: 'twistAiKeyId',
-      label: 'Twists using AI',
+      label: 'AI provider for twists',
       providers: providers,
       initialValue: prefs['twist_ai_disabled'] == true
           ? 'disabled'
@@ -542,37 +552,51 @@ class ChangeAiPreference extends ShowForm {
       includeDisabled: true,
     );
 
-    return FormData(
-      title: 'AI preferences',
-      groups: [
-        StaticFormGroup(
-          title: 'AI providers',
-          items: [
-            builtinSelect,
-            twistSelect,
-            ...providerItems,
-            FormButton(
-              key: 'addProvider',
-              isPrimary: false,
-              buildCommand: (_) => _AddAiProvider(orgId: null),
+    return [
+      StaticFormGroup(items: [builtinSelect, twistSelect]),
+      StaticFormGroup(
+        title: 'AI providers',
+        items: [
+          ...providerItems,
+          FormButton(
+            key: 'addProvider',
+            isPrimary: false,
+            buildCommand: (_) => _AddAiProvider(orgId: orgId),
+          ),
+        ],
+      ),
+      StaticFormGroup(
+        items: [
+          FormButton(
+            key: 'save',
+            isPrimary: true,
+            buildCommand: (values) => _SaveAiPreference(
+              builtinAiKeyId: values['builtinAiKeyId'],
+              twistAiKeyId: values['twistAiKeyId'],
+              orgId: orgId,
             ),
-          ],
-        ),
-        StaticFormGroup(
-          items: [
-            FormButton(
-              key: 'save',
-              isPrimary: true,
-              buildCommand: (values) => _SaveAiPreference(
-                builtinAiKeyId: values['builtinAiKeyId'],
-                twistAiKeyId: values['twistAiKeyId'],
-                orgId: null,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
+          ),
+        ],
+      ),
+    ];
+  }
+
+  static Future<List<StaticFormGroup>> _buildResolvedGroups(
+    String? orgId,
+  ) async {
+    final groups = await _buildGroups(orgId);
+    final resolved = <StaticFormGroup>[];
+    for (final group in groups) {
+      final items = await group.list();
+      if (items.isNotEmpty) {
+        resolved.add(StaticFormGroup(
+          title: group.title,
+          subtitle: group.subtitle,
+          items: items,
+        ));
+      }
+    }
+    return resolved;
   }
 }
 
@@ -679,16 +703,17 @@ List<FormItem> _buildProviderListItems(
               ? (name ?? 'Custom')
               : _providerDisplayName(provider);
           return Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: context.theme.spacing.lg,
-              vertical: context.theme.spacing.xs,
+            padding: EdgeInsets.only(
+              left: context.theme.spacing.xl,
+              right: context.theme.spacing.xl,
+              bottom: context.theme.spacing.md,
             ),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
                     '$label (...$suffix)',
-                    style: context.theme.typography.sm,
+                    style: context.theme.typography.md,
                   ),
                 ),
                 GestureDetector(
@@ -700,6 +725,7 @@ List<FormItem> _buildProviderListItems(
                       await api.delete<Map<String, dynamic>>(basePath);
                       if (context.mounted) {
                         context.showToast(message: 'Provider removed');
+                        await FormScope.of(context)?.refresh?.call();
                       }
                     } catch (e) {
                       if (context.mounted) {
@@ -753,8 +779,8 @@ FormSelect<dynamic> _buildProviderSelect({
     },
     items: (_) async => [
       null, // Plot
-      if (includeDisabled) 'disabled',
       ...providers.map((p) => p['id']),
+      if (includeDisabled) 'disabled',
     ],
   );
 }
@@ -775,6 +801,19 @@ class OrgAiPreferences extends ShowForm {
 
   static Future<FormData> _buildOrgForm(
     BuildContext context,
+    String orgId,
+    String orgName,
+  ) async {
+    final groups = await _buildOrgGroups(orgId, orgName);
+
+    return FormData(
+      title: '$orgName AI preferences',
+      groups: groups,
+      onRefresh: () => _buildResolvedOrgGroups(orgId, orgName),
+    );
+  }
+
+  static Future<List<FormGroup>> _buildOrgGroups(
     String orgId,
     String orgName,
   ) async {
@@ -803,38 +842,54 @@ class OrgAiPreferences extends ShowForm {
       includeDisabled: true,
     );
 
-    return FormData(
-      title: '$orgName AI preferences',
-      groups: [
-        StaticFormGroup(
-          title: 'AI providers',
-          subtitle: 'These providers are used for AI in $orgName priorities.',
-          items: [
-            builtinSelect,
-            twistSelect,
-            ...providerItems,
-            FormButton(
-              key: 'addProvider',
-              isPrimary: false,
-              buildCommand: (_) => _AddAiProvider(orgId: orgId),
+    return [
+      StaticFormGroup(
+        title: 'AI providers',
+        subtitle: 'These providers are used for AI in $orgName priorities.',
+        items: [
+          builtinSelect,
+          twistSelect,
+          ...providerItems,
+          FormButton(
+            key: 'addProvider',
+            isPrimary: false,
+            buildCommand: (_) => _AddAiProvider(orgId: orgId),
+          ),
+        ],
+      ),
+      StaticFormGroup(
+        items: [
+          FormButton(
+            key: 'save',
+            isPrimary: true,
+            buildCommand: (values) => _SaveAiPreference(
+              builtinAiKeyId: values['builtinAiKeyId'],
+              twistAiKeyId: values['twistAiKeyId'],
+              orgId: orgId,
             ),
-          ],
-        ),
-        StaticFormGroup(
-          items: [
-            FormButton(
-              key: 'save',
-              isPrimary: true,
-              buildCommand: (values) => _SaveAiPreference(
-                builtinAiKeyId: values['builtinAiKeyId'],
-                twistAiKeyId: values['twistAiKeyId'],
-                orgId: orgId,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
+          ),
+        ],
+      ),
+    ];
+  }
+
+  static Future<List<StaticFormGroup>> _buildResolvedOrgGroups(
+    String orgId,
+    String orgName,
+  ) async {
+    final groups = await _buildOrgGroups(orgId, orgName);
+    final resolved = <StaticFormGroup>[];
+    for (final group in groups) {
+      final items = await group.list();
+      if (items.isNotEmpty) {
+        resolved.add(StaticFormGroup(
+          title: group.title,
+          subtitle: group.subtitle,
+          items: items,
+        ));
+      }
+    }
+    return resolved;
   }
 }
 
@@ -874,9 +929,7 @@ class _AddAiProvider extends Command {
       itemBuilder: (provider, _) => Padding(
         padding: context.theme.spacing.paddingSm,
         child: Text(
-          provider == 'custom'
-              ? 'Custom OpenAI-compatible'
-              : _providerDisplayName(provider),
+          provider == 'custom' ? 'Custom' : _providerDisplayName(provider),
           style: context.theme.typography.md.copyWith(
             fontWeight: FontWeight.w600,
           ),
@@ -886,10 +939,20 @@ class _AddAiProvider extends Command {
 
     if (!context.mounted || !result.present) return const CommandDone();
 
-    return _ConfigureAiProvider(
+    final configResult = await _ConfigureAiProvider(
       provider: result.value,
       orgId: orgId,
     ).run(context);
+
+    // Don't propagate CommandDone — it would pop the parent AI preferences form.
+    // Return CommandSkipped so the user stays in AI preferences.
+    if (configResult is CommandDone) {
+      if (context.mounted) {
+        context.showToast(message: 'Provider added');
+      }
+      return const CommandSkipped();
+    }
+    return configResult;
   }
 }
 

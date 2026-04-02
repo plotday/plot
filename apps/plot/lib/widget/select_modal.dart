@@ -229,6 +229,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         _error = widget.emptyMessage ?? 'No matches';
       }
       _updateHighlightedIndex();
+      _scrollToHighlighted();
     } else {
       _initItems();
     }
@@ -249,6 +250,15 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     _scrollController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  /// Scrolls to the highlighted index after a frame so the ListView is laid out.
+  void _scrollToHighlighted() {
+    if (_highlightedIndex > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) _scrollToIndex(_highlightedIndex);
+      });
+    }
   }
 
   /// Updates the highlighted index to match the selected value if present.
