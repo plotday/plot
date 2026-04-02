@@ -493,6 +493,7 @@ class FormButton extends FormItem {
       controller: controller,
       highlighted: highlightedSubIndex >= 0,
       enabled: enabled,
+      skipValidation: skipValidation,
       focusNode: focusNodes.firstOrNull,
       isPrimary: isPrimary,
     );
@@ -505,6 +506,7 @@ class _FormButtonWidget extends StatefulWidget {
     required this.controller,
     required this.highlighted,
     required this.enabled,
+    this.skipValidation = false,
     this.focusNode,
     this.isPrimary = false,
   });
@@ -513,6 +515,7 @@ class _FormButtonWidget extends StatefulWidget {
   final FormButtonController? controller;
   final bool highlighted;
   final bool enabled;
+  final bool skipValidation;
   final FocusNode? focusNode;
   final bool isPrimary;
 
@@ -551,8 +554,10 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
 
     // Create the run function that validates, executes, and handles result
     Future<CommandReturn> runWrappedCommand() async {
-      // Validate form before executing
-      if (formValidate != null && !formValidate()) {
+      // Validate form before executing (skip for buttons that opt out)
+      if (!widget.skipValidation &&
+          formValidate != null &&
+          !formValidate()) {
         context.showToast(
           message: 'Please fill in all required fields',
           isError: true,
