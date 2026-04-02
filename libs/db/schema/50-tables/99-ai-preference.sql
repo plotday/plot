@@ -7,6 +7,7 @@ CREATE TABLE "public"."ai_preference" (
     "builtin_ai_key_id" bigint REFERENCES public."ai_key" ON DELETE SET NULL,
     "twist_ai_key_id" bigint REFERENCES public."ai_key" ON DELETE SET NULL,
     "twist_ai_disabled" boolean NOT NULL DEFAULT false,
+    "builtin_ai_disabled" boolean NOT NULL DEFAULT false,
     CONSTRAINT ai_preference_scope_check CHECK (
         (user_id IS NOT NULL AND organization_id IS NULL)
         OR (user_id IS NULL AND organization_id IS NOT NULL)

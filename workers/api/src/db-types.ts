@@ -80,6 +80,7 @@ export interface AiKey {
 }
 
 export interface AiPreference {
+  builtin_ai_disabled: Generated<boolean>;
   builtin_ai_key_id: Int8 | null;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
@@ -650,6 +651,12 @@ export interface PriorityTwistChannelNoteCreate {
   thread_title: string | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
+}
+
+export interface PriorityTwistChild {
+  archived_at: Timestamp | null;
+  priority_id: string | null;
+  priority_twist_id: string | null;
 }
 
 export interface PriorityTwistConnection {
@@ -1383,6 +1390,7 @@ export interface DB {
   priority_twist_channel_link_create: PriorityTwistChannelLinkCreate;
   priority_twist_channel_link_update: PriorityTwistChannelLinkUpdate;
   priority_twist_channel_note_create: PriorityTwistChannelNoteCreate;
+  priority_twist_child: PriorityTwistChild;
   priority_twist_connection: PriorityTwistConnection;
   priority_twist_link_update: PriorityTwistLinkUpdate;
   priority_twist_note_create: PriorityTwistNoteCreate;

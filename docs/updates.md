@@ -1,3 +1,4 @@
+- AI preferences now let you disable built-in AI features and twist AI independently using the provider dropdowns, replacing the previous all-or-nothing toggle
 - You can now configure your own AI providers in AI preferences — choose from OpenAI, Anthropic, Google, or any custom OpenAI-compatible endpoint, and select which provider to use for built-in features and twist AI separately
 - Fixed threads staying unread after reading them — the thread would appear read until you restarted the app, then revert to unread
 - Fixed notifications not appearing on desktop when other devices had previously connected — stale device records were suppressing notifications even after those devices disconnected

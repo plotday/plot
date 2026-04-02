@@ -459,15 +459,27 @@ class FormButton extends FormItem {
     required super.key,
     required this.buildCommand,
     this.skipValidation = false,
-  }) : super(required: false, label: '');
+    bool? isPrimary,
+  })  : _isPrimaryOverride = isPrimary,
+        _isPrimary = isPrimary ?? false,
+        super(required: false, label: '');
 
   final Command Function(Map<String, dynamic> values) buildCommand;
 
   /// When true, this button remains enabled even when form validation fails.
   final bool skipValidation;
 
+  /// Explicit override for primary styling, or null to use auto-assignment.
+  final bool? _isPrimaryOverride;
+
   /// Whether this is the primary (first) button, styled with accent color.
-  bool isPrimary = false;
+  bool _isPrimary;
+
+  bool get isPrimary => _isPrimary;
+  set isPrimary(bool value) {
+    // Only allow auto-assignment when no explicit override was set.
+    if (_isPrimaryOverride == null) _isPrimary = value;
+  }
 
   @override
   dynamic getValue() => null;

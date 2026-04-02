@@ -685,7 +685,10 @@ class FormModalState extends State<_FormModal> {
                                   (index == 0 ||
                                       group != _getGroupAtIndex(index - 1))) {
                                 header = Padding(
-                                  padding: context.theme.spacing.paddingSm,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: context.theme.spacing.xl,
+                                    vertical: context.theme.spacing.sm,
+                                  ),
                                   child: group.subtitle != null
                                       ? Row(
                                           children: [

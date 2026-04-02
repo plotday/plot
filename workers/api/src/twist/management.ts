@@ -150,12 +150,12 @@ export async function add(
         ? JSON.parse(twistRecord.permissions)
         : twistRecord.permissions;
       if (perms._ai_required === true) {
-        const userSettings = await db
-          .selectFrom("user_settings")
-          .selectAll()
+        const aiPref = await db
+          .selectFrom("ai_preference")
+          .select("twist_ai_disabled")
           .where("user_id", "=", userId)
-          .executeTakeFirst() as { ai_enabled?: boolean } | undefined;
-        if (userSettings?.ai_enabled === false) {
+          .executeTakeFirst();
+        if (aiPref?.twist_ai_disabled === true) {
           throw new Error("This twist requires AI features which are disabled in your settings.");
         }
 
@@ -665,12 +665,12 @@ export async function activateDraft(
       ? JSON.parse(twistRecord.permissions)
       : twistRecord.permissions;
     if (perms._ai_required === true) {
-      const userSettings = await db
-        .selectFrom("user_settings")
-        .selectAll()
+      const aiPref = await db
+        .selectFrom("ai_preference")
+        .select("twist_ai_disabled")
         .where("user_id", "=", draft.owner_id)
-        .executeTakeFirst() as { ai_enabled?: boolean } | undefined;
-      if (userSettings?.ai_enabled === false) {
+        .executeTakeFirst();
+      if (aiPref?.twist_ai_disabled === true) {
         throw new Error("This twist requires AI features which are disabled in your settings.");
       }
 

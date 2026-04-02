@@ -119,16 +119,16 @@ export function twistFactory({
       }
     }
 
-    // Query user's AI preference at runtime (not during deployment)
+    // Query user's twist AI preference at runtime (not during deployment)
     let aiEnabled: boolean | undefined;
     if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
-      const ownerSettings = await db
+      const ownerPref = await db
         .selectFrom("priority_twist")
-        .innerJoin("user_settings", "user_settings.user_id", "priority_twist.owner_id")
-        .select("user_settings.ai_enabled")
+        .innerJoin("ai_preference", "ai_preference.user_id", "priority_twist.owner_id")
+        .select("ai_preference.twist_ai_disabled")
         .where("priority_twist.id", "=", priorityTwistId)
         .executeTakeFirst();
-      aiEnabled = ownerSettings?.ai_enabled ?? true;
+      aiEnabled = ownerPref?.twist_ai_disabled !== true;
     }
 
     // Resolve effective plan at runtime (not during deployment)

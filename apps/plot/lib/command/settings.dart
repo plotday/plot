@@ -513,43 +513,6 @@ class ChangeAiPreference extends ShowForm {
       );
 
   static Future<FormData> _buildForm(BuildContext context) async {
-    final currentValue = context.read<SettingsBloc>().state.aiEnabled;
-    final showWarning = ValueNotifier(!currentValue);
-
-    final toggle = FormToggle(
-      key: 'aiEnabled',
-      label: 'Enable AI features',
-      details:
-          'AI is used for search, smart notifications, and twist capabilities.',
-      initialValue: currentValue,
-    );
-    toggle.addListener(() {
-      showWarning.value = !toggle.getValue();
-    });
-
-    final warning = FormInfo(
-      key: 'warning',
-      builder: (context) {
-        return ValueListenableBuilder<bool>(
-          valueListenable: showWarning,
-          builder: (context, show, _) {
-            if (!show) return const SizedBox.shrink();
-            return Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.theme.spacing.lg,
-              ),
-              child: Text(
-                'Twists that require AI will be archived.',
-                style: context.theme.typography.sm.copyWith(
-                  color: context.theme.colors.destructive,
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
     // Fetch existing providers and preferences
     final providers = await _fetchProviders(null);
     final prefs = await _fetchPreference(null);
@@ -562,8 +525,10 @@ class ChangeAiPreference extends ShowForm {
       key: 'builtinAiKeyId',
       label: 'Built-in Plot features',
       providers: providers,
-      initialValue: prefs['builtin_ai_key_id'],
-      includeDisabled: false,
+      initialValue: prefs['builtin_ai_disabled'] == true
+          ? 'disabled'
+          : prefs['builtin_ai_key_id'],
+      includeDisabled: true,
     );
 
     // Twist AI provider select
@@ -580,30 +545,25 @@ class ChangeAiPreference extends ShowForm {
     return FormData(
       title: 'AI preferences',
       groups: [
-        StaticFormGroup(items: [toggle, warning]),
         StaticFormGroup(
           title: 'AI providers',
-          subtitle: 'Configure API keys for AI providers.',
           items: [
+            builtinSelect,
+            twistSelect,
             ...providerItems,
             FormButton(
               key: 'addProvider',
+              isPrimary: false,
               buildCommand: (_) => _AddAiProvider(orgId: null),
             ),
           ],
         ),
         StaticFormGroup(
-          title: 'Provider selection',
-          subtitle: 'Choose which provider to use for each feature.',
-          items: [builtinSelect, twistSelect],
-        ),
-        StaticFormGroup(
           items: [
             FormButton(
               key: 'save',
+              isPrimary: true,
               buildCommand: (values) => _SaveAiPreference(
-                aiEnabled: values['aiEnabled'] as bool,
-                previousValue: currentValue,
                 builtinAiKeyId: values['builtinAiKeyId'],
                 twistAiKeyId: values['twistAiKeyId'],
                 orgId: null,
@@ -689,8 +649,9 @@ Future<List<Map<String, dynamic>>> _fetchProviders(String? orgId) async {
 /// Fetch AI preference selections for a user or org.
 Future<Map<String, dynamic>> _fetchPreference(String? orgId) async {
   try {
-    final path =
-        orgId != null ? '/organization/$orgId/ai-preference' : '/ai-preference';
+    final path = orgId != null
+        ? '/organization/$orgId/ai-preference'
+        : '/ai-preference';
     return await api.get<Map<String, dynamic>>(path);
   } catch (_) {
     return {
@@ -824,10 +785,12 @@ class OrgAiPreferences extends ShowForm {
 
     final builtinSelect = _buildProviderSelect(
       key: 'builtinAiKeyId',
-      label: 'Built-in Plot features',
+      label: 'Built-in features',
       providers: providers,
-      initialValue: prefs['builtin_ai_key_id'],
-      includeDisabled: false,
+      initialValue: prefs['builtin_ai_disabled'] == true
+          ? 'disabled'
+          : prefs['builtin_ai_key_id'],
+      includeDisabled: true,
     );
 
     final twistSelect = _buildProviderSelect(
@@ -847,24 +810,22 @@ class OrgAiPreferences extends ShowForm {
           title: 'AI providers',
           subtitle: 'These providers are used for AI in $orgName priorities.',
           items: [
+            builtinSelect,
+            twistSelect,
             ...providerItems,
             FormButton(
               key: 'addProvider',
+              isPrimary: false,
               buildCommand: (_) => _AddAiProvider(orgId: orgId),
             ),
           ],
         ),
         StaticFormGroup(
-          title: 'Provider selection',
-          items: [builtinSelect, twistSelect],
-        ),
-        StaticFormGroup(
           items: [
             FormButton(
               key: 'save',
+              isPrimary: true,
               buildCommand: (values) => _SaveAiPreference(
-                aiEnabled: null,
-                previousValue: null,
                 builtinAiKeyId: values['builtinAiKeyId'],
                 twistAiKeyId: values['twistAiKeyId'],
                 orgId: orgId,
@@ -877,24 +838,20 @@ class OrgAiPreferences extends ShowForm {
   }
 }
 
-/// Sub-modal for adding a new AI provider.
-class _AddAiProvider extends ShowForm {
+/// Opens a provider selection list, then shows the configuration form.
+class _AddAiProvider extends Command {
   _AddAiProvider({this.orgId})
     : super(
         title: 'Add provider',
         icon: FontAwesomeIcons.plus,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
-        form: (context) => _buildAddForm(context, orgId),
       );
 
   final String? orgId;
 
-  static Future<FormData> _buildAddForm(
-    BuildContext context,
-    String? orgId,
-  ) async {
-    // Fetch existing providers to exclude already-configured standard ones
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
     final existing = await _fetchProviders(orgId);
     final configuredStandard = existing
         .where((p) => p['provider'] != 'custom')
@@ -908,90 +865,103 @@ class _AddAiProvider extends ShowForm {
       'custom',
     ];
 
-    final selectedProvider = ValueNotifier<String?>(null);
+    if (!context.mounted) return const CommandSkipped();
 
-    final providerSelect = FormSelect<String>(
-      key: 'provider',
-      label: 'Provider',
-      required: true,
-      titleBuilder: (value) => value == 'custom'
-          ? 'Custom OpenAI-compatible'
-          : _providerDisplayName(value),
-      items: (_) async => availableProviders,
-      onChanged: () {},
-    );
-    providerSelect.addChangeListener(() {
-      selectedProvider.value = providerSelect.getValue();
-    });
-
-    final apiKeyField = FormTextInput(
-      key: 'apiKey',
-      label: 'API key',
-      required: true,
-      placeholder: 'Paste API key',
+    final result = await SelectModal.open<String>(
+      context,
+      showFilter: false,
+      items: (_) async => [SelectGroup(items: availableProviders)],
+      itemBuilder: (provider, _) => Padding(
+        padding: context.theme.spacing.paddingSm,
+        child: Text(
+          provider == 'custom'
+              ? 'Custom OpenAI-compatible'
+              : _providerDisplayName(provider),
+          style: context.theme.typography.md.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
     );
 
-    // Custom-only fields
-    final nameField = FormTextInput(
-      key: 'name',
-      label: 'Display name',
-      placeholder: 'e.g. Local Ollama',
-    );
+    if (!context.mounted || !result.present) return const CommandDone();
 
-    final baseUrlField = FormTextInput(
-      key: 'customBaseUrl',
-      label: 'Base URL',
-      placeholder: 'e.g. http://localhost:11434/v1',
-    );
+    return _ConfigureAiProvider(
+      provider: result.value,
+      orgId: orgId,
+    ).run(context);
+  }
+}
 
-    final fastModelField = FormTextInput(
-      key: 'fastModel',
-      label: 'Fast model',
-      placeholder: 'e.g. llama3.2',
-    );
+/// Configuration form for a specific AI provider.
+class _ConfigureAiProvider extends ShowForm {
+  _ConfigureAiProvider({required this.provider, this.orgId})
+    : super(
+        title: provider == 'custom'
+            ? 'Add custom provider'
+            : 'Add ${_providerDisplayName(provider)}',
+        icon: FontAwesomeIcons.plus,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.opened,
+        form: (context) => _buildForm(provider, orgId),
+      );
 
-    final thinkingModelField = FormTextInput(
-      key: 'thinkingModel',
-      label: 'Thinking model',
-      placeholder: 'e.g. qwq',
-    );
+  final String provider;
+  final String? orgId;
 
-    // Use FormInfo to conditionally show custom fields
-    final customFields = FormInfo(
-      key: 'customFields',
-      builder: (context) {
-        return ValueListenableBuilder<String?>(
-          valueListenable: selectedProvider,
-          builder: (context, provider, _) {
-            if (provider != 'custom') return const SizedBox.shrink();
-            return Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.theme.spacing.lg,
-              ),
-              child: Text(
-                'Configure your OpenAI-compatible endpoint below.',
-                style: context.theme.typography.sm.copyWith(
-                  color: context.theme.colors.mutedForeground,
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+  static Future<FormData> _buildForm(String provider, String? orgId) async {
+    final isCustom = provider == 'custom';
+    final title = isCustom
+        ? 'Add custom provider'
+        : 'Add ${_providerDisplayName(provider)}';
 
     return FormData(
-      title: 'Add provider',
+      title: title,
       groups: [
         StaticFormGroup(
-          items: [providerSelect, apiKeyField, customFields, nameField, baseUrlField, fastModelField, thinkingModelField],
+          items: [
+            if (isCustom)
+              FormTextInput(
+                key: 'name',
+                label: 'Display name',
+                required: true,
+                placeholder: 'e.g. Local Ollama',
+              ),
+            if (isCustom)
+              FormTextInput(
+                key: 'customBaseUrl',
+                label: 'Base URL',
+                required: true,
+                placeholder: 'e.g. http://localhost:11434/v1',
+              ),
+            FormTextInput(
+              key: 'apiKey',
+              label: 'API key',
+              required: true,
+              placeholder: 'Paste API key',
+            ),
+            if (isCustom)
+              FormTextInput(
+                key: 'fastModel',
+                label: 'Fast model',
+                required: true,
+                placeholder: 'e.g. llama3.2',
+              ),
+            if (isCustom)
+              FormTextInput(
+                key: 'thinkingModel',
+                label: 'Thinking model',
+                required: true,
+                placeholder: 'e.g. qwq',
+              ),
+          ],
         ),
         StaticFormGroup(
           items: [
             FormButton(
               key: 'save',
               buildCommand: (values) => _SaveAiProvider(
-                provider: values['provider'] as String?,
+                provider: provider,
                 apiKey: values['apiKey'] as String?,
                 name: values['name'] as String?,
                 customBaseUrl: values['customBaseUrl'] as String?,
@@ -1090,21 +1060,14 @@ class _SaveAiProvider extends Command {
 }
 
 class _SaveAiPreference extends Command {
-  _SaveAiPreference({
-    required this.aiEnabled,
-    required this.previousValue,
-    this.builtinAiKeyId,
-    this.twistAiKeyId,
-    this.orgId,
-  }) : super(
-         title: 'Save',
-         eventObject: EventObject.settings,
-         eventAction: EventAction.updated,
-       );
+  _SaveAiPreference({this.builtinAiKeyId, this.twistAiKeyId, this.orgId})
+    : super(
+        title: 'Save',
+        icon: FontAwesomeIcons.check,
+        eventObject: EventObject.settings,
+        eventAction: EventAction.updated,
+      );
 
-  /// null when saving org-only preferences (no AI toggle).
-  final bool? aiEnabled;
-  final bool? previousValue;
   final dynamic builtinAiKeyId;
   final dynamic twistAiKeyId;
 
@@ -1121,13 +1084,18 @@ class _SaveAiPreference extends Command {
 
       final prefBody = <String, dynamic>{};
 
-      // builtinAiKeyId: null means Plot, an int means a specific provider
-      if (builtinAiKeyId == null) {
+      // builtinAiKeyId: 'disabled' means disabled, null means Plot, int means provider
+      if (builtinAiKeyId == 'disabled') {
         prefBody['builtinAiKeyId'] = null;
-      } else if (builtinAiKeyId != 'disabled') {
+        prefBody['builtinAiDisabled'] = true;
+      } else if (builtinAiKeyId == null) {
+        prefBody['builtinAiKeyId'] = null;
+        prefBody['builtinAiDisabled'] = false;
+      } else {
         prefBody['builtinAiKeyId'] = builtinAiKeyId is int
             ? builtinAiKeyId
             : int.tryParse(builtinAiKeyId.toString());
+        prefBody['builtinAiDisabled'] = false;
       }
 
       // twistAiKeyId: 'disabled' means disabled, null means Plot, int means provider
@@ -1146,16 +1114,20 @@ class _SaveAiPreference extends Command {
 
       await api.post<Map<String, dynamic>>(prefPath, body: prefBody);
 
-      // Save AI toggle (personal preferences only)
-      if (aiEnabled != null && context.mounted) {
-        await context.read<SettingsBloc>().setAiEnabled(aiEnabled!);
+      // Update local AI enabled state (personal preferences only)
+      if (orgId == null && context.mounted) {
+        final builtinDisabled = builtinAiKeyId == 'disabled';
+        final twistDisabled = twistAiKeyId == 'disabled';
+        await context.read<SettingsBloc>().setAiEnabled(
+          !(builtinDisabled && twistDisabled),
+        );
 
-        // If toggling AI off, archive twists that require AI
-        if (previousValue == true && !aiEnabled!) {
+        // If twist AI was just disabled, archive twists that require AI
+        if (twistDisabled) {
           final archived = await _archiveAiRequiringTwists();
           if (archived > 0) {
             return CommandMessage(
-              'AI disabled. $archived twist${archived == 1 ? '' : 's'} archived.',
+              'Twist AI disabled. $archived twist${archived == 1 ? '' : 's'} archived.',
             );
           }
         }

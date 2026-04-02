@@ -95,18 +95,18 @@ export function recordAiUsage(
 }
 
 /**
- * Check if AI features are enabled for a user via user_settings.
+ * Check if built-in AI features are enabled for a user via ai_preference.
  */
 export async function isAiEnabled(
   db: Kysely<DB>,
   userId: string
 ): Promise<boolean> {
-  const settings = await db
-    .selectFrom("user_settings")
-    .select("ai_enabled")
+  const pref = await db
+    .selectFrom("ai_preference")
+    .select("builtin_ai_disabled")
     .where("user_id", "=", userId)
     .executeTakeFirst();
 
-  // null or true = enabled, only explicit false disables
-  return settings?.ai_enabled !== false;
+  // No preference row or false = enabled, only explicit true disables
+  return pref?.builtin_ai_disabled !== true;
 }

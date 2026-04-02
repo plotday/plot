@@ -193,11 +193,11 @@ aiKeys.get("/ai-preference", async (c) => {
 
   const pref = await c.var.db
     .selectFrom("ai_preference")
-    .select(["builtin_ai_key_id", "twist_ai_key_id", "twist_ai_disabled"])
+    .select(["builtin_ai_key_id", "twist_ai_key_id", "twist_ai_disabled", "builtin_ai_disabled"])
     .where("user_id", "=", user.id)
     .executeTakeFirst();
 
-  return c.json(pref ?? { builtin_ai_key_id: null, twist_ai_key_id: null, twist_ai_disabled: false });
+  return c.json(pref ?? { builtin_ai_key_id: null, twist_ai_key_id: null, twist_ai_disabled: false, builtin_ai_disabled: false });
 });
 
 // POST /ai-preference — set user's AI provider selections
@@ -207,6 +207,7 @@ aiKeys.post("/ai-preference", async (c) => {
     builtinAiKeyId?: number | null;
     twistAiKeyId?: number | null;
     twistAiDisabled?: boolean;
+    builtinAiDisabled?: boolean;
   }>();
 
   try {
@@ -216,11 +217,13 @@ aiKeys.post("/ai-preference", async (c) => {
     if (body.builtinAiKeyId !== undefined) values.builtin_ai_key_id = body.builtinAiKeyId;
     if (body.twistAiKeyId !== undefined) values.twist_ai_key_id = body.twistAiKeyId;
     if (body.twistAiDisabled !== undefined) values.twist_ai_disabled = body.twistAiDisabled;
+    if (body.builtinAiDisabled !== undefined) values.builtin_ai_disabled = body.builtinAiDisabled;
 
     const updateSet: any = {};
     if (body.builtinAiKeyId !== undefined) updateSet.builtin_ai_key_id = body.builtinAiKeyId;
     if (body.twistAiKeyId !== undefined) updateSet.twist_ai_key_id = body.twistAiKeyId;
     if (body.twistAiDisabled !== undefined) updateSet.twist_ai_disabled = body.twistAiDisabled;
+    if (body.builtinAiDisabled !== undefined) updateSet.builtin_ai_disabled = body.builtinAiDisabled;
 
     await c.var.db
       .insertInto("ai_preference")
@@ -232,6 +235,27 @@ aiKeys.post("/ai-preference", async (c) => {
           .doUpdateSet(updateSet)
       )
       .execute();
+
+    // Backward compat: derive user_settings.ai_enabled from both disabled flags
+    const builtinDisabled = body.builtinAiDisabled ?? false;
+    const twistDisabled = body.twistAiDisabled ?? false;
+    if (body.builtinAiDisabled !== undefined || body.twistAiDisabled !== undefined) {
+      // Re-read the full preference to get both flags accurately
+      const fullPref = await c.var.db
+        .selectFrom("ai_preference")
+        .select(["builtin_ai_disabled", "twist_ai_disabled"])
+        .where("user_id", "=", user.id)
+        .executeTakeFirst();
+      const allDisabled = (fullPref?.builtin_ai_disabled ?? builtinDisabled)
+        && (fullPref?.twist_ai_disabled ?? twistDisabled);
+      await c.var.db
+        .insertInto("user_settings")
+        .values({ user_id: user.id, ai_enabled: !allDisabled } as any)
+        .onConflict((oc) =>
+          oc.column("user_id").doUpdateSet({ ai_enabled: !allDisabled } as any)
+        )
+        .execute();
+    }
 
     return c.json({ success: true });
   } catch (err) {
@@ -422,11 +446,11 @@ aiKeys.get("/organization/:id/ai-preference", async (c) => {
 
   const pref = await c.var.db
     .selectFrom("ai_preference")
-    .select(["builtin_ai_key_id", "twist_ai_key_id", "twist_ai_disabled"])
+    .select(["builtin_ai_key_id", "twist_ai_key_id", "twist_ai_disabled", "builtin_ai_disabled"])
     .where("organization_id", "=", orgId as any)
     .executeTakeFirst();
 
-  return c.json(pref ?? { builtin_ai_key_id: null, twist_ai_key_id: null, twist_ai_disabled: false });
+  return c.json(pref ?? { builtin_ai_key_id: null, twist_ai_key_id: null, twist_ai_disabled: false, builtin_ai_disabled: false });
 });
 
 // POST /organization/:id/ai-preference
@@ -441,6 +465,7 @@ aiKeys.post("/organization/:id/ai-preference", async (c) => {
     builtinAiKeyId?: number | null;
     twistAiKeyId?: number | null;
     twistAiDisabled?: boolean;
+    builtinAiDisabled?: boolean;
   }>();
 
   try {
@@ -450,11 +475,13 @@ aiKeys.post("/organization/:id/ai-preference", async (c) => {
     if (body.builtinAiKeyId !== undefined) values.builtin_ai_key_id = body.builtinAiKeyId;
     if (body.twistAiKeyId !== undefined) values.twist_ai_key_id = body.twistAiKeyId;
     if (body.twistAiDisabled !== undefined) values.twist_ai_disabled = body.twistAiDisabled;
+    if (body.builtinAiDisabled !== undefined) values.builtin_ai_disabled = body.builtinAiDisabled;
 
     const updateSet: any = {};
     if (body.builtinAiKeyId !== undefined) updateSet.builtin_ai_key_id = body.builtinAiKeyId;
     if (body.twistAiKeyId !== undefined) updateSet.twist_ai_key_id = body.twistAiKeyId;
     if (body.twistAiDisabled !== undefined) updateSet.twist_ai_disabled = body.twistAiDisabled;
+    if (body.builtinAiDisabled !== undefined) updateSet.builtin_ai_disabled = body.builtinAiDisabled;
 
     await c.var.db
       .insertInto("ai_preference")
