@@ -72,6 +72,14 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   // ---- Optional metadata ----
 
   /**
+   * When true, this connector has a single implicit channel.
+   * `getChannels()` must return exactly one Channel.
+   * The UI will show channel config (priority, create threads) inline
+   * instead of a channel list.
+   */
+  readonly singleChannel?: boolean;
+
+  /**
    * Registry of link types this connector creates (e.g., issue, event, message).
    * Used for display in the UI (icons, labels, statuses).
    */
@@ -85,6 +93,30 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * messaging) where user replies should be written back to the external service.
    */
   static readonly handleReplies?: boolean;
+
+  // ---- Account identity (abstract — every connector must implement) ----
+
+  /**
+   * Returns a human-readable name for the connected account.
+   * Shown in the connections list and edit modal to identify this connection.
+   *
+   * For OAuth connectors, this is typically the workspace or organization name
+   * (e.g., "Acme Corp" for a Linear workspace). For API key connectors, this
+   * could be the workspace name from the external service.
+   *
+   * Override this in your connector to return a meaningful account name.
+   *
+   * @param auth - The authorization (null for no-provider connectors)
+   * @param token - The access token (null for no-provider connectors)
+   * @returns Promise resolving to the account display name
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  getAccountName(
+    auth: Authorization | null,
+    token: AuthToken | null
+  ): Promise<string | null> {
+    return Promise.resolve(null);
+  }
 
   // ---- Channel lifecycle (abstract — every connector must implement) ----
 

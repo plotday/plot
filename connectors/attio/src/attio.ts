@@ -113,6 +113,17 @@ export class Attio extends Connector<Attio> {
     return new AttioAPI(apiKey);
   }
 
+  // ---- Account Identity ----
+
+  override async getAccountName(
+    _auth: Authorization | null,
+    _token: AuthToken | null
+  ): Promise<string> {
+    const api = this.getAPI();
+    const workspace = await api.getWorkspace();
+    return workspace.name;
+  }
+
   // ---- Channel Lifecycle ----
 
   /**

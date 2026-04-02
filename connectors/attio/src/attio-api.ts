@@ -225,6 +225,37 @@ export class AttioAPI {
     return (await response.json()) as T;
   }
 
+  /** Get the current workspace info via /v2/self. */
+  async getWorkspace(): Promise<{ name: string }> {
+    // /v2/self returns { workspace_id, token_id } — no workspace name.
+    const self = await this.request<{
+      workspace_id: string;
+      token_id: string;
+    }>("GET", "/self");
+
+    // Try to get a friendly name from workspace members (requires user_management:read)
+    try {
+      const members = await this.request<{
+        data: Array<{
+          first_name: string;
+          last_name: string;
+          email_address: string;
+        }>;
+      }>("GET", "/workspace_members");
+      const first = members?.data?.[0];
+      if (first) {
+        const name = [first.first_name, first.last_name]
+          .filter(Boolean)
+          .join(" ");
+        if (name) return { name };
+      }
+    } catch {
+      // Missing scope or other error — fall through
+    }
+
+    return { name: self.workspace_id };
+  }
+
   /** Query records for a given object type (deals, people, companies). */
   async queryRecords(
     objectSlug: string,
