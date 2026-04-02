@@ -279,15 +279,8 @@ export class EmailNotify extends DurableObject<Bindings> {
           })
         );
 
-        // Generate AI subject line
-        const subject = await this.generateSubject(
-          threadsResult.rows.map((r) => ({
-            title: r.thread_title,
-            preview: r.thread_preview,
-          })),
-          priorities.map((p) => p.title),
-          user.name
-        );
+        // Generate subject line
+        const subject = this.formatSubject(priorities.map((p) => p.title));
 
         // Enqueue email
         await this.env.MAIL_QUEUE.send({
@@ -321,86 +314,14 @@ export class EmailNotify extends DurableObject<Bindings> {
     }
   }
 
-  private async generateSubject(
-    threads: Array<{ title: string | null; preview: string | null }>,
-    priorityTitles: string[],
-    userName: string | null
-  ): Promise<string> {
-    const fallback = this.fallbackSubject(threads, priorityTitles);
-
-    try {
-      const descriptions = threads
-        .slice(0, 5)
-        .map((t) => {
-          const title = t.title || "Untitled";
-          const preview = t.preview ? `: ${t.preview.slice(0, 100)}` : "";
-          return `- ${title}${preview}`;
-        })
-        .join("\n");
-
-      const priorityHint =
-        priorityTitles.length > 0
-          ? ` These items are from: ${priorityTitles.join(", ")}.`
-          : "";
-
-      const recipientHint = userName
-        ? ` The recipient's name is '${userName}'. When their name appears in thread titles, refer to them as 'you' instead.`
-        : "";
-
-      const messages = [
-        {
-          role: "system" as const,
-          content:
-            "You write email subject lines for a productivity app called Plot. " +
-            "Given a list of unread items, write a short, compelling email subject line. " +
-            "Use the phrase 'activity' rather than 'updates'. Sound productive, not like a social media notification. " +
-            "Mention at least one specific person, item title, or priority name from the input. " +
-            "If there are multiple items, end with '(and more)'. " +
-            "ONLY use words and facts that appear in the input. " +
-            "Do NOT infer or invent details. " +
-            "No markdown, no quotes, no preamble. Just the subject line." +
-            priorityHint +
-            recipientHint,
-        },
-        {
-          role: "user" as const,
-          content: `${threads.length} unread item${threads.length > 1 ? "s" : ""}:\n${descriptions}`,
-        },
-      ];
-
-      const response = await this.env.AI.run(
-        "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-        { messages, max_tokens: 64 }
-      );
-
-      if (response instanceof ReadableStream) {
-        return fallback;
-      }
-
-      const text = typeof response === "string" ? response : response.response;
-      return text?.replace(/^"(.*)"$/, "$1")?.trim() || fallback;
-    } catch (e) {
-      this.captureException(e as Error, { context: "email-subject-generation" });
-      return fallback;
-    }
-  }
-
-  private fallbackSubject(
-    threads: Array<{ title: string | null; preview: string | null }>,
-    priorityTitles: string[]
-  ): string {
-    const prefix =
-      priorityTitles.length > 0 ? `${priorityTitles[0]}: ` : "";
-
-    if (threads.length === 1) {
-      return `${prefix}${threads[0].title || "New activity"}`;
-    }
-
-    const top = threads[0].title;
-    if (top) {
-      return `${prefix}${top} (and ${threads.length - 1} more)`;
-    }
-    return `${prefix}${threads.length} new items`;
+  private formatSubject(priorityTitles: string[]): string {
+    if (priorityTitles.length === 0) return "New activity in Plot";
+    if (priorityTitles.length === 1) return `Activity in ${priorityTitles[0]}`;
+    if (priorityTitles.length === 2)
+      return `Activity in ${priorityTitles[0]} and ${priorityTitles[1]}`;
+    const last = priorityTitles[priorityTitles.length - 1];
+    const rest = priorityTitles.slice(0, -1).join(", ");
+    return `Activity in ${rest}, and ${last}`;
   }
 
   private async clearPending(): Promise<void> {
