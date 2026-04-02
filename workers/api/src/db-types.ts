@@ -6,7 +6,7 @@
 import type { ColumnType } from "kysely";
 import type { IPostgresInterval } from "postgres-interval";
 
-export type AiProvider = "anthropic" | "google" | "openai";
+export type AiProvider = "anthropic" | "custom" | "google" | "openai";
 
 export type ArrayType<T> = ArrayTypeImpl<T> extends (infer U)[]
   ? U[]
@@ -65,12 +65,27 @@ export interface Actor {
 
 export interface AiKey {
   created_at: Generated<Timestamp>;
+  custom_base_url: string | null;
   encrypted_key: string;
+  fast_model: string | null;
   id: Generated<Int8>;
   iv: string;
   key_suffix: string;
+  name: string | null;
   organization_id: Int8 | null;
   provider: AiProvider;
+  thinking_model: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
+export interface AiPreference {
+  builtin_ai_key_id: Int8 | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  organization_id: Int8 | null;
+  twist_ai_disabled: Generated<boolean>;
+  twist_ai_key_id: Int8 | null;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
 }
@@ -637,12 +652,6 @@ export interface PriorityTwistChannelNoteCreate {
   updated_by: number | null;
 }
 
-export interface PriorityTwistChild {
-  archived_at: Timestamp | null;
-  priority_id: string | null;
-  priority_twist_id: string | null;
-}
-
 export interface PriorityTwistConnection {
   actor_id: string;
   connected_at: Generated<Timestamp>;
@@ -936,6 +945,16 @@ export interface Thread {
   title: string | null;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
+}
+
+export interface ThreadAssociation {
+  archived_at: Timestamp | null;
+  child_thread_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  order: number;
+  parent_thread_id: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface ThreadRead {
@@ -1283,6 +1302,17 @@ export interface UserThread {
   user_id: string | null;
 }
 
+export interface UserThreadAssociation {
+  archived_at: Timestamp | null;
+  child_thread_id: string | null;
+  created_at: Timestamp | null;
+  id: string | null;
+  order: number | null;
+  parent_thread_id: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface UserThreadTags {
   archived_at: Timestamp | null;
   id: string | null;
@@ -1318,6 +1348,7 @@ export interface UserTwist {
 export interface DB {
   actor: Actor;
   ai_key: AiKey;
+  ai_preference: AiPreference;
   "atlas_schema_revisions.atlas_schema_revisions": AtlasSchemaRevisionsAtlasSchemaRevisions;
   contact: Contact;
   contact_external_account: ContactExternalAccount;
@@ -1352,7 +1383,6 @@ export interface DB {
   priority_twist_channel_link_create: PriorityTwistChannelLinkCreate;
   priority_twist_channel_link_update: PriorityTwistChannelLinkUpdate;
   priority_twist_channel_note_create: PriorityTwistChannelNoteCreate;
-  priority_twist_child: PriorityTwistChild;
   priority_twist_connection: PriorityTwistConnection;
   priority_twist_link_update: PriorityTwistLinkUpdate;
   priority_twist_note_create: PriorityTwistNoteCreate;
@@ -1372,6 +1402,7 @@ export interface DB {
   session: Session;
   source_channel: SourceChannel;
   thread: Thread;
+  thread_association: ThreadAssociation;
   thread_read: ThreadRead;
   thread_tag: ThreadTag;
   thread_tags: ThreadTags;
@@ -1397,6 +1428,7 @@ export interface DB {
   "user.schedule": UserSchedule;
   "user.source_channel": UserSourceChannel;
   "user.thread": UserThread;
+  "user.thread_association": UserThreadAssociation;
   "user.thread_tags": UserThreadTags;
   "user.twist": UserTwist;
 }

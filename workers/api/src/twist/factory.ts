@@ -5,7 +5,7 @@ import { type Priority } from "@plotday/twister/plot";
 import type { DB } from "../db-types";
 import { type Bindings, type TwistEnvironment } from "../env";
 import { decrypt } from "../utils/encryption";
-import type { ByokKeys } from "./tools/ai";
+import type { AiProviderConfig } from "./tools/ai";
 import { createLogger } from "@plotday/worker-util";
 import { getEffectivePlan } from "../utils/plan";
 import { handleTwistOperation } from "./error-handling";
@@ -146,51 +146,101 @@ export function twistFactory({
       }
     }
 
-    // Resolve BYOK keys at runtime (not during deployment)
-    let byokKeys: ByokKeys | undefined;
+    // Resolve AI provider config at runtime (not during deployment)
+    let providerConfig: AiProviderConfig | undefined;
     if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
-      // Determine scope: org priority → org keys, else → user keys
+      // Determine scope: org priority → org preference, else → user preference
       const priorityOrg = await db
         .selectFrom("priority")
         .select("organization_id")
         .where("id", "=", priorityId)
         .executeTakeFirst();
 
-      let aiKeyRows;
+      let aiPref;
+      let scopeFilter: { column: "user_id" | "organization_id"; value: any };
+
       if (priorityOrg?.organization_id) {
-        aiKeyRows = await db
-          .selectFrom("ai_key")
-          .select(["provider", "encrypted_key", "iv"])
+        aiPref = await db
+          .selectFrom("ai_preference")
+          .select(["twist_ai_key_id", "twist_ai_disabled"])
           .where("organization_id", "=", priorityOrg.organization_id)
-          .execute();
+          .executeTakeFirst();
+        scopeFilter = { column: "organization_id", value: priorityOrg.organization_id };
       } else {
-        // Get owner_id from priority_twist (already queried nearby for aiEnabled)
         const pt = await db
           .selectFrom("priority_twist")
           .select("owner_id")
           .where("id", "=", priorityTwistId)
           .executeTakeFirst();
         if (pt?.owner_id) {
-          aiKeyRows = await db
-            .selectFrom("ai_key")
-            .select(["provider", "encrypted_key", "iv"])
+          aiPref = await db
+            .selectFrom("ai_preference")
+            .select(["twist_ai_key_id", "twist_ai_disabled"])
             .where("user_id", "=", pt.owner_id)
-            .execute();
+            .executeTakeFirst();
+          scopeFilter = { column: "user_id", value: pt.owner_id };
+        } else {
+          scopeFilter = { column: "user_id", value: null };
         }
       }
 
-      if (aiKeyRows && aiKeyRows.length > 0) {
-        const keys: ByokKeys = {};
-        for (const row of aiKeyRows) {
+      // If twist AI is explicitly disabled via preference, we'll handle below in tool creation
+      if (aiPref?.twist_ai_disabled) {
+        // Signal to tool factory that AI is disabled
+        effectivePlan = "free" as any; // Forces AIDisabledStub when no byok keys
+      } else if (aiPref?.twist_ai_key_id) {
+        // Load the specific ai_key row for the selected provider
+        const aiKeyRow = await db
+          .selectFrom("ai_key")
+          .select(["provider", "encrypted_key", "iv", "custom_base_url", "fast_model", "thinking_model"])
+          .where("id", "=", aiPref.twist_ai_key_id)
+          .executeTakeFirst();
+
+        if (aiKeyRow) {
+          const plainKey = await decrypt(
+            aiKeyRow.encrypted_key,
+            aiKeyRow.iv,
+            env.AI_KEY_ENCRYPTION_KEY
+          );
+          providerConfig = {
+            provider: aiKeyRow.provider as AiProviderConfig["provider"],
+            apiKey: plainKey,
+            ...(aiKeyRow.custom_base_url ? { baseUrl: aiKeyRow.custom_base_url } : {}),
+            ...(aiKeyRow.fast_model ? { fastModel: aiKeyRow.fast_model } : {}),
+            ...(aiKeyRow.thinking_model ? { thinkingModel: aiKeyRow.thinking_model } : {}),
+          };
+        }
+      } else if (!aiPref) {
+        // No preference row: fall back to legacy behavior — check for any ai_key rows
+        // This preserves backward compatibility during migration
+        let aiKeyRows;
+        if (scopeFilter.value) {
+          aiKeyRows = await db
+            .selectFrom("ai_key")
+            .select(["provider", "encrypted_key", "iv", "custom_base_url", "fast_model", "thinking_model"])
+            .where(scopeFilter.column, "=", scopeFilter.value)
+            .orderBy("updated_at", "desc")
+            .limit(1)
+            .execute();
+        }
+
+        if (aiKeyRows && aiKeyRows.length > 0) {
+          const row = aiKeyRows[0];
           const plainKey = await decrypt(
             row.encrypted_key,
             row.iv,
             env.AI_KEY_ENCRYPTION_KEY
           );
-          keys[row.provider as keyof ByokKeys] = plainKey;
+          providerConfig = {
+            provider: row.provider as AiProviderConfig["provider"],
+            apiKey: plainKey,
+            ...(row.custom_base_url ? { baseUrl: row.custom_base_url } : {}),
+            ...(row.fast_model ? { fastModel: row.fast_model } : {}),
+            ...(row.thinking_model ? { thinkingModel: row.thinking_model } : {}),
+          };
         }
-        byokKeys = keys;
       }
+      // else: aiPref exists with twist_ai_key_id=null and twist_ai_disabled=false → Plot AI (no providerConfig)
     }
 
     // Resolve secure options at runtime (decrypt secure values from secure_option table)
@@ -246,7 +296,7 @@ export function twistFactory({
           config: priorityTwistConfig,
           sourceProvider,
           aiEnabled,
-          byokKeys,
+          providerConfig,
           effectivePlan,
           secureOptions: resolvedSecureOptions,
         });
@@ -281,7 +331,7 @@ export function twistFactory({
         ctx,
         sourceProvider,
         aiEnabled,
-        byokKeys,
+        providerConfig,
       });
 
       // Track tool for permission collection

@@ -14,7 +14,7 @@ import type { DB } from "../../db-types";
 import { type TwistEnvironment, type Bindings } from "../../env";
 import { type ToolPermission } from "../permissions";
 import { Twists } from "./twists";
-import { AI, type ByokKeys } from "./ai";
+import { AI, type AiProviderConfig } from "./ai";
 import { Callbacks } from "./callbacks";
 import { Integrations } from "./integrations";
 import { Imap, type ImapOptions } from "./imap";
@@ -131,7 +131,7 @@ export function createTool(
     config,
     sourceProvider,
     aiEnabled,
-    byokKeys,
+    providerConfig,
     effectivePlan,
     secureOptions,
   }: {
@@ -147,8 +147,8 @@ export function createTool(
     sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean } | null;
     /** Whether AI features are enabled for the user. Undefined during deployment. */
     aiEnabled?: boolean;
-    /** BYOK API keys for AI providers. When set, only these providers are available. */
-    byokKeys?: ByokKeys;
+    /** AI provider configuration. When set, uses this provider instead of Plot AI. */
+    providerConfig?: AiProviderConfig;
     /** The user's effective plan (e.g. "free", "pro", "team"). Undefined during deployment. */
     effectivePlan?: string;
     /** Pre-resolved decrypted secure option values. */
@@ -169,11 +169,11 @@ export function createTool(
       if (aiEnabled === false && (options as any)?.required === false) {
         return new AIDisabledStub();
       }
-      // Return disabled stub for free users without BYOK keys
-      if (effectivePlan === "free" && !byokKeys) {
+      // Return disabled stub for free users without a provider configured
+      if (effectivePlan === "free" && !providerConfig) {
         return new AIDisabledStub();
       }
-      return new AI({ env, priorityTwistId, byokKeys });
+      return new AI({ env, priorityTwistId, providerConfig });
     case "Network":
       return new Network({
         ...options,

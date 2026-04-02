@@ -22,14 +22,23 @@ import { Usage } from "../../state/usage";
 import type { ToolPermission } from "../permissions";
 import { Tool } from "./tool";
 
-export type ByokKeys = Partial<Record<"openai" | "anthropic" | "google", string>>;
+/** Configuration for a single AI provider selected by the user. */
+export type AiProviderConfig = {
+  provider: "openai" | "anthropic" | "google" | "custom";
+  apiKey: string;
+  /** Custom provider only: base URL of the OpenAI-compatible endpoint */
+  baseUrl?: string;
+  /** Custom provider only: model name for fast/balanced tiers */
+  fastModel?: string;
+  /** Custom provider only: model name for capable tier */
+  thinkingModel?: string;
+};
 
 /**
- * BYOK provider fallback mapping per speed tier.
- * When a user only has keys for certain providers, we pick the best
- * model from their available providers at each tier.
+ * Provider fallback mapping per speed tier.
+ * Used when a single standard provider is configured.
  */
-const BYOK_MODEL_MAP: Record<
+const PROVIDER_MODEL_MAP: Record<
   string,
   Record<string, AIModel>
 > = {
@@ -59,47 +68,56 @@ function modelProvider(model: AIModel): string | null {
   return null; // Workers AI model
 }
 
+/** Sentinel value used when selectModel returns a custom model name */
+const CUSTOM_MODEL_PREFIX = "__custom__/";
+
 export class AI extends Tool implements IAI {
   static Permissions(_options?: AIOptions): ToolPermission[] {
     return [{ domain: "ai", entity: "prompt", flags: ["use"] }];
   }
-  private openai: ReturnType<typeof createOpenAI>;
-  private anthropic: ReturnType<typeof createAnthropic>;
-  private google: ReturnType<typeof createGoogleGenerativeAI>;
+  private openai!: ReturnType<typeof createOpenAI>;
+  private anthropic!: ReturnType<typeof createAnthropic>;
+  private google!: ReturnType<typeof createGoogleGenerativeAI>;
   private cloudflare: ReturnType<typeof createWorkersAI>;
   private workersAI: Bindings["AI"];
   private usage: DurableObjectStub<Usage>;
-  /** When set, only these providers are available for prompt(). */
-  private availableProviders: Set<string> | null = null;
+  /** The single configured provider, or null for Plot AI (gateway mode). */
+  private providerConfig: AiProviderConfig | null = null;
 
   constructor({
     env,
     priorityTwistId,
-    byokKeys,
+    providerConfig,
   }: {
     env: Bindings;
     priorityTwistId: string;
-    byokKeys?: ByokKeys;
+    providerConfig?: AiProviderConfig;
   }) {
     super();
 
-    const hasByok = byokKeys && Object.keys(byokKeys).length > 0;
+    if (providerConfig) {
+      this.providerConfig = providerConfig;
 
-    if (hasByok) {
-      // BYOK mode: create provider instances with direct API keys (no AI Gateway)
-      this.availableProviders = new Set(Object.keys(byokKeys));
-
-      this.openai = createOpenAI({
-        apiKey: byokKeys.openai ?? "unused",
-      });
-      this.anthropic = createAnthropic({
-        apiKey: byokKeys.anthropic ?? "unused",
-      });
-      this.google = createGoogleGenerativeAI({
-        apiKey: byokKeys.google ?? "unused",
-      });
+      switch (providerConfig.provider) {
+        case "openai":
+          this.openai = createOpenAI({ apiKey: providerConfig.apiKey });
+          break;
+        case "anthropic":
+          this.anthropic = createAnthropic({ apiKey: providerConfig.apiKey });
+          break;
+        case "google":
+          this.google = createGoogleGenerativeAI({ apiKey: providerConfig.apiKey });
+          break;
+        case "custom":
+          // Custom OpenAI-compatible endpoint
+          this.openai = createOpenAI({
+            apiKey: providerConfig.apiKey,
+            baseURL: providerConfig.baseUrl,
+          });
+          break;
+      }
     } else {
-      // Standard mode: AI Gateway
+      // Plot AI mode: AI Gateway to all providers
       const gatewayBaseUrl = `https://gateway.ai.cloudflare.com/v1/${env.AI_GATEWAY_ACCOUNT_ID}/${env.AI_GATEWAY_ID}`;
       const gatewayHeaders = {
         "cf-aig-authorization": `Bearer ${env.AI_GATEWAY_TOKEN}`,
@@ -122,7 +140,7 @@ export class AI extends Tool implements IAI {
       });
     }
 
-    // Workers AI always available (used for embeddings regardless of BYOK)
+    // Workers AI always available (used for embeddings regardless of provider config)
     this.cloudflare = createWorkersAI({ binding: env.AI });
     this.workersAI = env.AI;
 
@@ -136,95 +154,69 @@ export class AI extends Tool implements IAI {
 
   /**
    * Selects the best AI model based on speed and cost preferences.
-   * When BYOK is active, restricts to available providers.
+   * When a provider is configured, restricts to that provider.
+   * Returns a custom model string prefixed with CUSTOM_MODEL_PREFIX for custom providers.
    */
-  private selectModel(preferences: ModelPreferences): AIModel {
+  private selectModel(preferences: ModelPreferences): string {
     const { speed, cost, hint } = preferences;
+    const config = this.providerConfig;
 
-    // Allow explicit model override via hint for any valid AIModel
+    // Handle model hints
     if (hint && Object.values(AIModel).includes(hint as AIModel)) {
       const hintModel = hint as AIModel;
-      // If BYOK active, validate the hint model's provider is available
-      if (this.availableProviders) {
-        const provider = modelProvider(hintModel);
-        if (!provider || !this.availableProviders.has(provider)) {
-          // Hint unavailable, fall through to tier-based selection
-        } else {
+      if (config) {
+        const hintProvider = modelProvider(hintModel);
+        // If hint matches configured provider, use it
+        if (hintProvider === config.provider) {
           return hintModel;
         }
+        // Otherwise fall through to tier-based selection for the configured provider
       } else {
+        // Plot AI mode: any hint is valid
         return hintModel;
       }
     }
 
-    // If BYOK is active, use the provider-restricted model map
-    if (this.availableProviders) {
+    // Custom provider: use user-configured model names
+    if (config?.provider === "custom") {
       const tier = speed || "fast";
-      const tierMap = BYOK_MODEL_MAP[tier] ?? BYOK_MODEL_MAP.fast;
-
-      // Find the first available provider in this tier
-      for (const provider of this.availableProviders) {
-        if (tierMap[provider]) {
-          return tierMap[provider];
-        }
+      if (tier === "capable") {
+        return `${CUSTOM_MODEL_PREFIX}${config.thinkingModel}`;
       }
+      return `${CUSTOM_MODEL_PREFIX}${config.fastModel}`;
+    }
+
+    // Standard BYOK provider: use the tier map for that provider
+    if (config) {
+      const tier = speed || "fast";
+      const tierMap = PROVIDER_MODEL_MAP[tier] ?? PROVIDER_MODEL_MAP.fast;
+      const model = tierMap[config.provider];
+      if (model) return model;
 
       throw new Error(
-        `No AI model available for the requested preferences. Available providers: [${[...this.availableProviders].join(", ")}]`
+        `No AI model available for provider '${config.provider}' at tier '${tier}'`
       );
     }
 
-    // Standard model selection matrix (no BYOK)
-    // Fast tier: Optimized for low latency
+    // Plot AI mode: standard model selection matrix
     if (speed === "fast") {
-      if (cost === "low") {
-        // Workers AI: Free, very fast, 1B model
-        return AIModel.LLAMA_32_1B;
-      } else if (cost === "medium") {
-        // Anthropic: Extremely fast with excellent quality
-        // Alternatives: GPT_4O_MINI, GEMINI_25_FLASH_LITE
-        return AIModel.CLAUDE_HAIKU_45;
-      } else {
-        // Anthropic: Premium fast model with best quality
-        // Alternatives: GPT_4O_MINI, GEMINI_25_FLASH
-        return AIModel.CLAUDE_HAIKU_45;
-      }
+      if (cost === "low") return AIModel.LLAMA_32_1B;
+      if (cost === "medium") return AIModel.CLAUDE_HAIKU_45;
+      return AIModel.CLAUDE_HAIKU_45;
     }
 
-    // Balanced tier: Good mix of capability and speed
     if (speed === "balanced") {
-      if (cost === "low") {
-        // Workers AI: Free, 17B reasoning model
-        return AIModel.LLAMA_4_SCOUT_17B;
-      } else if (cost === "medium") {
-        // Workers AI: Free, capable 70B model
-        // Alternatives: GPT_5_MINI, GEMINI_25_FLASH
-        return AIModel.LLAMA_33_70B;
-      } else {
-        // Anthropic: Hybrid reasoning model with fast responses and deeper thinking
-        // Alternatives: GPT_5, GEMINI_25_FLASH
-        return AIModel.CLAUDE_SONNET_46;
-      }
+      if (cost === "low") return AIModel.LLAMA_4_SCOUT_17B;
+      if (cost === "medium") return AIModel.LLAMA_33_70B;
+      return AIModel.CLAUDE_SONNET_46;
     }
 
-    // Capable tier: Maximum reasoning and problem-solving
     if (speed === "capable") {
-      if (cost === "low") {
-        // Workers AI: Free, 32B reasoning model (DeepSeek R1)
-        return AIModel.DEEPSEEK_R1_32B;
-      } else if (cost === "medium") {
-        // Anthropic: Advanced reasoning with thinking mode
-        // Alternatives: GEMINI_25_PRO, GPT_5_PRO
-        return AIModel.CLAUDE_SONNET_46;
-      } else {
-        // Anthropic: Best-in-class reasoning and problem-solving
-        // Alternatives: GPT_5_PRO, GEMINI_25_PRO
-        return AIModel.CLAUDE_SONNET_46;
-      }
+      if (cost === "low") return AIModel.DEEPSEEK_R1_32B;
+      if (cost === "medium") return AIModel.CLAUDE_SONNET_46;
+      return AIModel.CLAUDE_SONNET_46;
     }
 
-    // Default fallback: Fast, reliable, good quality
-    // Alternatives: GPT_5_MINI, GEMINI_25_FLASH, LLAMA_33_70B
     return AIModel.CLAUDE_HAIKU_45;
   }
 
@@ -245,30 +237,29 @@ export class AI extends Tool implements IAI {
     } = request;
 
     // Determine the actual model to use from preferences
-    const modelEnum = this.selectModel(modelInput);
+    const modelStr = this.selectModel(modelInput);
 
-    // Determine which provider to use based on the model enum value
+    // Determine which provider to use based on the model string
     let model: any;
-    const modelStr = modelEnum as string;
 
-    if (modelStr.startsWith("openai/")) {
-      // OpenAI models
+    if (modelStr.startsWith(CUSTOM_MODEL_PREFIX)) {
+      // Custom provider: use the openai instance with user's model name
+      const customModelName = modelStr.slice(CUSTOM_MODEL_PREFIX.length);
+      model = this.openai(customModelName);
+    } else if (modelStr.startsWith("openai/")) {
       const modelName = modelStr.replace("openai/", "");
       model = this.openai(modelName);
     } else if (modelStr.startsWith("anthropic/")) {
-      // Anthropic models
       const modelName = modelStr.replace("anthropic/", "");
       model = this.anthropic(modelName);
     } else if (modelStr.startsWith("google/")) {
-      // Google models
       const modelName = modelStr.replace("google/", "");
       model = this.google(modelName);
     } else {
-      // Workers AI models — disallowed when BYOK is active
-      if (this.availableProviders) {
+      // Workers AI models — disallowed when a provider is configured
+      if (this.providerConfig) {
         throw new Error(
-          `BYOK is active but model resolved to Workers AI (${modelStr}). ` +
-            `Available providers: [${[...this.availableProviders].join(", ")}]`
+          `Provider '${this.providerConfig.provider}' is configured but model resolved to Workers AI (${modelStr}).`
         );
       }
       model = this.cloudflare(`@cf/${modelStr}` as any);
@@ -311,7 +302,7 @@ export class AI extends Tool implements IAI {
       toolChoice,
     });
 
-    await this.trackUsage(modelEnum, result.usage);
+    await this.trackUsage(modelStr, result.usage);
 
     return {
       text: result.text,
@@ -400,7 +391,7 @@ export class AI extends Tool implements IAI {
   /**
    * Track AI usage by recording token consumption
    */
-  private async trackUsage(model: AIModel, usage: AIUsage) {
+  private async trackUsage(model: string, usage: AIUsage) {
     if (!this.usage) return;
 
     if (usage.inputTokens) {

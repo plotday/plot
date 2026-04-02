@@ -2,7 +2,7 @@
  * Validates AI provider API keys with a lightweight API call.
  */
 
-type AiProvider = "openai" | "anthropic" | "google";
+type AiProvider = "openai" | "anthropic" | "google" | "custom";
 
 type ValidationResult = {
   valid: boolean;
@@ -12,13 +12,16 @@ type ValidationResult = {
 /**
  * Validate an AI API key by making a lightweight request to the provider.
  * 200 = valid, 401/403 = invalid key, other = validation error (key still saved with warning).
+ *
+ * @param baseUrl - Required for custom providers. The base URL of the OpenAI-compatible endpoint.
  */
 export async function validateAiKey(
   provider: AiProvider,
-  key: string
+  key: string,
+  baseUrl?: string
 ): Promise<ValidationResult> {
   try {
-    const response = await fetchProvider(provider, key);
+    const response = await fetchProvider(provider, key, baseUrl);
 
     if (response.ok) {
       return { valid: true };
@@ -44,7 +47,8 @@ export async function validateAiKey(
 
 async function fetchProvider(
   provider: AiProvider,
-  key: string
+  key: string,
+  baseUrl?: string
 ): Promise<Response> {
   switch (provider) {
     case "openai":
@@ -67,5 +71,17 @@ async function fetchProvider(
         `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
         { method: "GET" }
       );
+
+    case "custom": {
+      if (!baseUrl) {
+        throw new Error("Base URL is required for custom provider validation");
+      }
+      // Normalize: strip trailing slash
+      const url = baseUrl.replace(/\/+$/, "");
+      return fetch(`${url}/models`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${key}` },
+      });
+    }
   }
 }
