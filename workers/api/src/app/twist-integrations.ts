@@ -34,6 +34,7 @@ async function resolveTwistInfo(db: Kysely<DB>, priorityTwistId: string) {
       "priority_twist.priority_id as priorityId",
       "twist.version",
       "twist.environment",
+      "twist.options as twistOptions",
       "twist_admin.twist_package_id as twistPackageId",
     ])
     .where("priority_twist.id", "=", priorityTwistId)
@@ -54,6 +55,8 @@ async function loadTwistConfig(
   providers: ProviderDeclaration[];
   integrationsMap: Record<string, string>;
   toolPermissions: Record<string, any>;
+  optionsSchema: OptionsSchema | null;
+  singleChannel: boolean;
 } | null> {
   const config = await env.TWIST_CONFIG.get(`${twistPackageId}:${version}`);
   if (!config) return null;
@@ -63,6 +66,8 @@ async function loadTwistConfig(
     providers: parsed.providers ?? [],
     integrationsMap: parsed.integrationsMap ?? {},
     toolPermissions: parsed.toolPermissions ?? {},
+    optionsSchema: parsed.optionsSchema ?? null,
+    singleChannel: parsed.sourceProvider?.singleChannel === true,
   };
 }
 
@@ -147,9 +152,117 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
   }
 
   if (config.providers.length === 0) {
-    // Check if this is a no-provider connector (has isConnector but no OAuth providers)
-    // For these, channels can only be fetched via the /connect endpoint after options are saved
-    return c.json({ providers: [], accounts: [], syncables: [] });
+    // No-provider connector: check if options have been configured (via /connect)
+    const pt = await c.var.db
+      .selectFrom("priority_twist")
+      .select("config")
+      .where("id", "=", priorityTwistId)
+      .executeTakeFirst();
+    const ptConfig = pt?.config
+      ? typeof pt.config === "string"
+        ? JSON.parse(pt.config)
+        : pt.config
+      : {};
+    const hasConfig = Object.keys(ptConfig).length > 0;
+
+    if (!hasConfig) {
+      return c.json({ providers: [], accounts: [], syncables: [] });
+    }
+
+    // Connected — call getChannels to fetch available channels
+    const logger = createLogger({ priority_twist_id: priorityTwistId });
+    let twistWrapper;
+    try {
+      const factory = twistFactory({
+        env: c.env,
+        ctx: c.executionCtx as ExecutionContext,
+        db: c.var.db,
+      });
+      twistWrapper = await factory({
+        priorityId: twistInfo.priorityId ?? priorityTwistId,
+        priorityTwistId,
+      });
+    } catch (error) {
+      logger.error("Failed to create twist factory for no-provider connector", error as Error);
+      return c.json({ providers: [], accounts: [], syncables: [] });
+    }
+
+    // Get account name (non-fatal — failure doesn't block channel fetch)
+    let accountName: string | null = null;
+    try {
+      const accountNameResult = await twistWrapper.callCallback(
+        [], "getAccountName", null, null
+      );
+      disposeRpc(accountNameResult);
+      accountName = typeof accountNameResult === "string" ? accountNameResult : null;
+    } catch (error) {
+      logger.warn("getAccountName failed for no-provider connector", error as Error);
+    }
+
+    // Get channels (independent of account name)
+    let syncables: any[] = [];
+    try {
+      const result = await twistWrapper.callCallback(
+        [], "getChannels", null, null
+      );
+      disposeRpc(result);
+
+      // Query source_channel to merge enabled state
+      const enabledChannels = await c.var.db
+        .selectFrom("source_channel")
+        .select(["channel_id", "enabled", "priority_id", "create_threads"])
+        .where("priority_twist_id", "=", priorityTwistId)
+        .execute();
+      const enabledMap = new Map(
+        enabledChannels.map((ch) => [ch.channel_id, ch])
+      );
+
+      const rawChannels = Array.isArray(result) ? result : [];
+      syncables = rawChannels.map((ch: any) => {
+        const stored = enabledMap.get(ch.id);
+        return {
+          ...ch,
+          provider: "_options",
+          enabled: stored?.enabled ?? false,
+          enabledBy: null,
+          priorityId: stored?.priority_id ?? null,
+          createThreads: stored?.create_threads ?? ch.createThreads ?? "all",
+          currentUserHasAccess: true,
+        };
+      });
+    } catch (error) {
+      logger.error("getChannels failed for no-provider connector", error as Error);
+    }
+
+    const accounts = accountName
+      ? [{ provider: "_options", actorId: priorityTwistId, name: accountName, email: null }]
+      : [];
+
+    // Include options schema and current config for editing.
+    // Fall back to twist.options column for twists deployed before KV included optionsSchema.
+    let optionsSchema = config.optionsSchema ?? null;
+    if (!optionsSchema && twistInfo.twistOptions) {
+      try {
+        optionsSchema = typeof twistInfo.twistOptions === "string"
+          ? JSON.parse(twistInfo.twistOptions)
+          : twistInfo.twistOptions;
+      } catch { /* ignore parse errors */ }
+    }
+    // Mask secure values in config (replace with true sentinel)
+    let optionsConfig: Record<string, unknown> | null = null;
+    if (optionsSchema && hasConfig) {
+      const masked = { ...ptConfig };
+      for (const [key, def] of Object.entries(optionsSchema)) {
+        if (def.type === "text" && "secure" in def && (def as any).secure) {
+          if (key in masked) {
+            masked[key] = true; // Sentinel: "value exists but is hidden"
+          }
+        }
+      }
+      optionsConfig = masked;
+    }
+
+    return c.json({ providers: [], accounts, syncables, optionsSchema, optionsConfig, singleChannel: config.singleChannel });
   }
 
   // Get current user's actor ID
@@ -197,6 +310,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     providers: allProviders,
     accounts: allAccounts,
     syncables: allChannels,
+    singleChannel: config.singleChannel,
   });
 });
 
@@ -344,7 +458,7 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
 
     // Process secure options and save config
     let cleanedConfig = options;
-    if (optSchema) {
+    if (optSchema && c.env.AI_KEY_ENCRYPTION_KEY) {
       cleanedConfig = await saveSecureOptions(
         c.var.db,
         c.env.AI_KEY_ENCRYPTION_KEY,
@@ -369,7 +483,7 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
     });
 
     const twistWrapper = await factory({
-      priorityId: twistInfo.priorityId!,
+      priorityId: twistInfo.priorityId ?? priorityTwistId,
       priorityTwistId,
     });
 
@@ -387,7 +501,7 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
     const rawChannels = Array.isArray(result) ? result : [];
     const syncables = rawChannels.map((ch: any) => ({
       ...ch,
-      provider: "other",
+      provider: "_options",
       enabled: false,
       enabledBy: null,
       priorityId: null,
@@ -395,11 +509,34 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
       currentUserHasAccess: true,
     }));
 
+    // Get account name (non-fatal)
+    let accountName: string | null = null;
+    try {
+      const nameResult = await twistWrapper.callCallback(
+        [], "getAccountName", null, null
+      );
+      disposeRpc(nameResult);
+      accountName = typeof nameResult === "string" ? nameResult : null;
+    } catch (error) {
+      logger.warn("getAccountName failed during connect", error as Error);
+    }
+
+    // Persist account name in config so sources/summary can show it
+    if (accountName) {
+      const updatedConfig = { ...cleanedConfig, _accountName: accountName };
+      await c.var.db
+        .updateTable("priority_twist")
+        .set({ config: JSON.stringify(updatedConfig) })
+        .where("id", "=", priorityTwistId)
+        .execute();
+    }
+
     logger.info("No-provider connect successful", {
       channel_count: syncables.length,
+      account_name: accountName,
     });
 
-    return c.json({ syncables });
+    return c.json({ syncables, accountName });
   } catch (error) {
     logger.error("Error connecting no-provider connector", error as Error);
     return c.json(

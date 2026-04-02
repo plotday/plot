@@ -62,6 +62,8 @@ const ActivateDraftSchema = z.object({
       z.object({
         provider: z.string(),
         syncableId: z.string(),
+        priorityId: z.string().optional(),
+        createThreads: z.string().optional(),
       })
     )
     .optional(),
@@ -130,6 +132,7 @@ twists.get("/sources/summary", async (c) => {
       .select([
         "priority_twist.id",
         "priority_twist.name",
+        "priority_twist.config",
         "twist.logo_url",
         "twist.logo_url_dark",
       ])
@@ -187,12 +190,22 @@ twists.get("/sources/summary", async (c) => {
 
     const result = sources.map((source) => {
       const account = accountMap.get(source.id);
+      // For no-provider connectors, fall back to _accountName stored in config
+      let accountName = account?.name ?? null;
+      if (!accountName && source.config) {
+        try {
+          const cfg = typeof source.config === "string"
+            ? JSON.parse(source.config)
+            : source.config;
+          if (cfg?._accountName) accountName = cfg._accountName;
+        } catch { /* ignore parse errors */ }
+      }
       return {
         id: source.id,
         name: source.name,
         logo_url: source.logo_url,
         logo_url_dark: source.logo_url_dark,
-        account_name: account?.name ?? null,
+        account_name: accountName,
         account_email: account?.email ?? null,
         provider: account?.provider ?? null,
         enabled_count: countMap.get(source.id) ?? 0,
@@ -418,7 +431,7 @@ twists.patch("/twist/:id", async (c) => {
         .where("priority_twist.id", "=", twistId)
         .executeTakeFirst();
 
-      if (twistRecord0?.options) {
+      if (twistRecord0?.options && c.env.AI_KEY_ENCRYPTION_KEY) {
         const optSchema = (typeof twistRecord0.options === "string"
           ? JSON.parse(twistRecord0.options)
           : twistRecord0.options) as OptionsSchema;

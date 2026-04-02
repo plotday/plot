@@ -183,7 +183,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
   void _collectEnabledChannels(List<TwistChannel> channels) {
     for (final channel in channels) {
-      final key = '${channel.provider.name}:${channel.id}';
+      final key = '${channel.providerKey}:${channel.id}';
       if (channel.enabled) {
         _localSelectedChannels.add(key);
       }
@@ -199,7 +199,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   Set<String> _flattenChannelKeys(List<TwistChannel> channels) {
     final keys = <String>{};
     for (final s in channels) {
-      keys.add('${s.provider.name}:${s.id}');
+      keys.add('${s.providerKey}:${s.id}');
       keys.addAll(_flattenChannelKeys(s.children));
     }
     return keys;
@@ -313,10 +313,11 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   }
 
   void _handleChannelTap(TwistChannel channel) async {
-    final key = '${channel.provider.name}:${channel.id}';
+    final key = '${channel.providerKey}:${channel.id}';
     final isEnabled = _localSelectedChannels.contains(key);
+    final isSingleChannel = _data?.singleChannel == true;
 
-    if (widget.isAccountBased) {
+    if (widget.isAccountBased || isSingleChannel) {
       // Resolve current priority for initial value
       final currentPriorityId = _channelPriorities[key];
       final currentCreateThreads = _channelCreateThreads[key] ?? 'all';
@@ -479,7 +480,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   }) {
     final result = <TwistChannel>[];
     for (final channel in channels) {
-      final key = '${channel.provider.name}:${channel.id}';
+      final key = '${channel.providerKey}:${channel.id}';
       final isForceEnabled = ancestorEnabled;
       final isOn = _localSelectedChannels.contains(key) || isForceEnabled;
       final canToggle =
@@ -508,7 +509,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     final widgets = <Widget>[];
     final controller = widget.channelListController;
     for (final channel in channels) {
-      final key = '${channel.provider.name}:${channel.id}';
+      final key = '${channel.providerKey}:${channel.id}';
       final isExplicitlyEnabled = _localSelectedChannels.contains(key);
       final isForceEnabled = ancestorEnabled;
       final isOn = isExplicitlyEnabled || isForceEnabled;
@@ -608,6 +609,11 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       return const SizedBox.shrink();
     }
 
+    // Single-channel mode: show inline config instead of channel list
+    if (data.singleChannel && data.channels.length == 1) {
+      return _buildSingleChannelConfig(context, data);
+    }
+
     // Compute providers where ALL accounts are soft-removed
     final accountsByProvider = <AuthProvider, List<TwistAccount>>{};
     for (final account in data.accounts) {
@@ -690,6 +696,140 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           SizedBox(height: context.theme.spacing.md),
       ],
     );
+  }
+
+  /// Builds inline priority + create threads config for single-channel connectors.
+  Widget _buildSingleChannelConfig(
+    BuildContext context,
+    TwistIntegrations data,
+  ) {
+    final theme = context.theme;
+    final channel = data.channels.first;
+    final key = '${channel.providerKey}:${channel.id}';
+    final isEnabled = _localSelectedChannels.contains(key);
+    final priorityId = _channelPriorities[key];
+    final priorityName = priorityId != null ? _priorityNames[priorityId] : null;
+    final isTeamPriority =
+        priorityId != null && _priorityOrgIds[priorityId] != null;
+    final createThreads = _channelCreateThreads[key] ?? 'all';
+
+    // Build account rows
+    final accountRows = <Widget>[];
+    for (final account in data.accounts) {
+      accountRows.add(
+        _AccountRow(account: account),
+      );
+    }
+
+    // Notify controller: single-channel has 0 toggleable rows
+    // (config is managed via the inline selectors, not channel taps)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.channelListController?.update(0, (context, subIndex) async {});
+    });
+
+    final createThreadsLabel = switch (createThreads) {
+      'all' => 'For everything',
+      'actionable' => 'For anything requiring action',
+      'manual' => 'Add links manually',
+      _ => createThreads,
+    };
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...accountRows,
+        // Priority selector row
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _handleSingleChannelConfig(channel),
+          child: Padding(
+            padding: theme.spacing.paddingSm,
+            child: Row(
+              children: [
+                SizedBox(width: 12.0 + theme.iconSizes.base + 12.0),
+                Icon(
+                  FontAwesomeIcons.folderOpen,
+                  size: 14,
+                  color: theme.colors.mutedForeground,
+                ),
+                SizedBox(width: theme.spacing.md),
+                Expanded(
+                  child: Text(
+                    isEnabled && priorityName != null
+                        ? priorityName
+                        : 'Select a priority',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: theme.typography.sm.fontSize,
+                      color: isEnabled && priorityName != null
+                          ? theme.colors.foreground
+                          : theme.colors.mutedForeground,
+                    ),
+                  ),
+                ),
+                if (isEnabled && priorityName != null)
+                  Icon(
+                    isTeamPriority
+                        ? FontAwesomeIcons.building
+                        : FontAwesomeIcons.lock,
+                    size: 10,
+                    color: theme.colors.mutedForeground,
+                  ),
+                SizedBox(width: theme.spacing.sm),
+                Icon(
+                  FontAwesomeIcons.chevronRight,
+                  size: 10,
+                  color: theme.colors.mutedForeground,
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Create threads row
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _handleSingleChannelConfig(channel),
+          child: Padding(
+            padding: theme.spacing.paddingSm,
+            child: Row(
+              children: [
+                SizedBox(width: 12.0 + theme.iconSizes.base + 12.0),
+                Icon(
+                  FontAwesomeIcons.listCheck,
+                  size: 14,
+                  color: theme.colors.mutedForeground,
+                ),
+                SizedBox(width: theme.spacing.md),
+                Expanded(
+                  child: Text(
+                    createThreadsLabel,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: theme.typography.sm.fontSize,
+                      color: theme.colors.mutedForeground,
+                    ),
+                  ),
+                ),
+                Icon(
+                  FontAwesomeIcons.chevronRight,
+                  size: 10,
+                  color: theme.colors.mutedForeground,
+                ),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: theme.spacing.md),
+      ],
+    );
+  }
+
+  /// Opens the priority + create threads modal for a single-channel connector.
+  void _handleSingleChannelConfig(TwistChannel channel) {
+    // Reuse the existing account-based channel tap handler
+    _handleChannelTap(channel);
   }
 }
 

@@ -246,26 +246,44 @@ export function twistFactory({
     // Resolve secure options at runtime (decrypt secure values from secure_option table)
     let resolvedSecureOptions: Record<string, string> | undefined;
     if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
-      // Get the options schema from the stored config to check for secure fields
+      // Get the options schema from KV config (or fall back to DB twist.options)
+      let optSchema: OptionsSchema | undefined;
       const storedConfig = await env.TWIST_CONFIG.get(`${id}:${version}`);
       if (storedConfig) {
         const parsedStored = JSON.parse(storedConfig);
-        const optSchema = parsedStored.optionsSchema as OptionsSchema | undefined;
-        if (optSchema) {
-          const hasSecure = Object.values(optSchema).some(
-            (def) => def.type === "text" && "secure" in def && (def as any).secure
+        optSchema = parsedStored.optionsSchema as OptionsSchema | undefined;
+      }
+      // Fallback: load from twist.options column (for twists deployed before
+      // optionsSchema was added to KV config)
+      if (!optSchema) {
+        const twistRow = await db
+          .selectFrom("priority_twist")
+          .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+          .select("twist.options")
+          .where("priority_twist.id", "=", priorityTwistId)
+          .executeTakeFirst();
+        if (twistRow?.options) {
+          optSchema = (
+            typeof twistRow.options === "string"
+              ? JSON.parse(twistRow.options)
+              : twistRow.options
+          ) as OptionsSchema;
+        }
+      }
+      if (optSchema) {
+        const hasSecure = Object.values(optSchema).some(
+          (def) => def.type === "text" && "secure" in def && (def as any).secure
+        );
+        if (hasSecure && env.AI_KEY_ENCRYPTION_KEY) {
+          const resolved = await resolveSecureOptions(
+            db,
+            env.AI_KEY_ENCRYPTION_KEY,
+            priorityTwistId,
+            optSchema,
+            {}
           );
-          if (hasSecure) {
-            const resolved = await resolveSecureOptions(
-              db,
-              env.AI_KEY_ENCRYPTION_KEY,
-              priorityTwistId,
-              optSchema,
-              {}
-            );
-            if (Object.keys(resolved).length > 0) {
-              resolvedSecureOptions = resolved as Record<string, string>;
-            }
+          if (Object.keys(resolved).length > 0) {
+            resolvedSecureOptions = resolved as Record<string, string>;
           }
         }
       }

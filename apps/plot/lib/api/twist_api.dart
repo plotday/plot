@@ -336,8 +336,9 @@ class TwistApi {
       '/twist/$priorityTwistId/link-channels',
     );
     return response
-        .map((json) =>
-            ConnectedLinkChannel.fromJson(json as Map<String, dynamic>))
+        .map(
+          (json) => ConnectedLinkChannel.fromJson(json as Map<String, dynamic>),
+        )
         .toList();
   }
 
@@ -382,14 +383,17 @@ class TwistApi {
   }
 
   /// Get upcoming connections with vote counts
-  static Future<({List<UpcomingConnection> connections, Set<String> votedByUser})>
-      getUpcomingConnections() async {
+  static Future<
+    ({List<UpcomingConnection> connections, Set<String> votedByUser})
+  >
+  getUpcomingConnections() async {
     final response = await api.get<Map<String, dynamic>>(
       '/connections/upcoming',
     );
     final connections = (response['connections'] as List<dynamic>)
-        .map((json) =>
-            UpcomingConnection.fromJson(json as Map<String, dynamic>))
+        .map(
+          (json) => UpcomingConnection.fromJson(json as Map<String, dynamic>),
+        )
         .toList();
     final votedByUser = (response['votedByUser'] as List<dynamic>)
         .cast<String>()
@@ -423,7 +427,11 @@ class TwistApi {
     final syncables = (response['syncables'] as List<dynamic>)
         .map((s) => TwistChannel.fromJson(s as Map<String, dynamic>))
         .toList();
-    return TwistConnectResult(syncables: syncables);
+    final accountName = response['accountName'] as String?;
+    return TwistConnectResult(
+      syncables: syncables,
+      accountName: accountName,
+    );
   }
 
   /// Re-fetch the channel list from the external service for a provider.
@@ -638,9 +646,10 @@ class OptionalScopeGroup extends Equatable {
 /// Result from connecting a no-provider connector
 class TwistConnectResult {
   final List<TwistChannel>? syncables;
+  final String? accountName;
   final String? error;
 
-  const TwistConnectResult({this.syncables, this.error});
+  const TwistConnectResult({this.syncables, this.accountName, this.error});
 
   bool get isError => error != null;
 }
@@ -651,10 +660,23 @@ class TwistIntegrations {
   final List<TwistAccount> accounts;
   final List<TwistChannel> channels;
 
+  /// Options schema for no-provider connectors (null for OAuth connectors).
+  final Map<String, dynamic>? optionsSchema;
+
+  /// Current option values for no-provider connectors (secure values masked).
+  final Map<String, dynamic>? optionsConfig;
+
+  /// When true, this connector has a single implicit channel.
+  /// The UI shows channel config inline instead of a channel list.
+  final bool singleChannel;
+
   const TwistIntegrations({
     required this.providers,
     required this.accounts,
     required this.channels,
+    this.optionsSchema,
+    this.optionsConfig,
+    this.singleChannel = false,
   });
 
   factory TwistIntegrations.fromJson(Map<String, dynamic> json) {
@@ -668,10 +690,13 @@ class TwistIntegrations {
       channels: (json['syncables'] as List<dynamic>)
           .map((s) => TwistChannel.fromJson(s as Map<String, dynamic>))
           .toList(),
+      optionsSchema: json['optionsSchema'] as Map<String, dynamic>?,
+      optionsConfig: json['optionsConfig'] as Map<String, dynamic>?,
+      singleChannel: json['singleChannel'] as bool? ?? false,
     );
   }
 
-  bool get isEmpty => providers.isEmpty;
+  bool get isEmpty => providers.isEmpty && channels.isEmpty;
 }
 
 /// A provider configuration for a twist
@@ -738,6 +763,11 @@ class TwistAccount extends Equatable {
 /// A channel resource for a twist integration
 class TwistChannel extends Equatable {
   final AuthProvider provider;
+
+  /// Raw provider string from the API (e.g., "_options" for no-provider connectors).
+  /// Use this for API calls instead of provider.name.
+  final String providerKey;
+
   final String id;
   final String title;
   final bool enabled;
@@ -749,6 +779,7 @@ class TwistChannel extends Equatable {
 
   const TwistChannel({
     required this.provider,
+    required this.providerKey,
     required this.id,
     required this.title,
     required this.enabled,
@@ -760,11 +791,13 @@ class TwistChannel extends Equatable {
   });
 
   factory TwistChannel.fromJson(Map<String, dynamic> json) {
+    final providerStr = json['provider'] as String? ?? 'other';
     return TwistChannel(
       provider: AuthProvider.values.firstWhere(
-        (v) => v.name == json['provider'],
+        (v) => v.name == providerStr,
         orElse: () => AuthProvider.other,
       ),
+      providerKey: providerStr,
       id: json['id'] as String,
       title: json['title'] as String,
       enabled: json['enabled'] as bool? ?? false,
@@ -785,6 +818,7 @@ class TwistChannel extends Equatable {
   @override
   List<Object?> get props => [
     provider,
+    providerKey,
     id,
     title,
     enabled,

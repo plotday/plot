@@ -153,9 +153,12 @@ class ManageConnections extends Command {
             final activatedId = AddSourceDetail.lastActivatedSourceId;
             AddSourceDetail.lastActivatedSourceId = null;
             if (activatedId != null) {
-              // Close SelectModal first, then open EditSource from outer context
-              activatedSourceId = activatedId;
-              activatedSourceName = item.twist.name;
+              if (item.twist.providers.isNotEmpty) {
+                // OAuth: open EditSource to configure channels
+                activatedSourceId = activatedId;
+                activatedSourceName = item.twist.name;
+              }
+              // Non-OAuth: channels configured during setup, skip EditSource
               return true; // Close SelectModal
             }
           } else if (item is _UpcomingConnection) {
@@ -807,7 +810,7 @@ class EditSource extends ShowForm {
     Set<String> collectEnabled(List<TwistChannel> channels) {
       final result = <String>{};
       for (final s in channels) {
-        if (s.enabled) result.add('${s.provider.name}:${s.id}');
+        if (s.enabled) result.add('${s.providerKey}:${s.id}');
         result.addAll(collectEnabled(s.children));
       }
       return result;
@@ -817,7 +820,7 @@ class EditSource extends ShowForm {
       final result = <String, String>{};
       for (final s in channels) {
         if (s.priorityId != null) {
-          result['${s.provider.name}:${s.id}'] = s.priorityId!;
+          result['${s.providerKey}:${s.id}'] = s.priorityId!;
         }
         result.addAll(collectPriorities(s.children));
       }
@@ -831,11 +834,22 @@ class EditSource extends ShowForm {
       channelPriorities: Map.of(initialPriorities),
     );
 
+    // Build option form items for no-provider connectors
+    final hasOptions = integrations.optionsSchema != null &&
+        integrations.optionsSchema!.isNotEmpty;
+    final optionItems = hasOptions
+        ? TwistOptionItems(
+            options: integrations.optionsSchema!,
+            initialConfig: integrations.optionsConfig,
+          )
+        : null;
+
     return FormData(
       title: name,
       groups: [
         StaticFormGroup(
           items: [
+            if (optionItems != null) ...optionItems.items,
             FormChannelList(
               key: 'integrations',
               controller: sourceChannelListController,
@@ -866,6 +880,7 @@ class EditSource extends ShowForm {
                   initialEnabled: initialEnabled,
                   initialPriorities: initialPriorities,
                   changes: integrationChanges,
+                  optionItems: optionItems,
                 );
               },
             ),
@@ -1030,8 +1045,13 @@ class AddSourceDetail extends ShowForm {
     _currentDraftId = draftId;
     lastActivatedSourceId = null;
 
-    if (!context.mounted) return const CommandSkipped();
-    final result = await super.run(context);
+    // Re-run the form when a CommandRefresh is returned (e.g. after connecting
+    // a no-provider connector — the form rebuilds to show channels).
+    CommandReturn result = const CommandSkipped();
+    while (context.mounted) {
+      result = await super.run(context);
+      if (result is! CommandRefresh) break;
+    }
 
     // If the form was dismissed without activation, delete the draft
     if (_currentDraftId != null) {
@@ -1051,8 +1071,14 @@ class AddSourceDetail extends ShowForm {
   /// Set after activation so ManageConnections can open EditSource.
   static String? lastActivatedSourceId;
 
+  /// Cached connect result from ConnectNoProviderCommand, used when the form
+  /// rebuilds after CommandRefresh so we don't depend on getAccountName
+  /// succeeding again in GET /integrations.
+  static TwistConnectResult? _lastConnectResult;
+
   static void clearDraft() {
     _currentDraftId = null;
+    _lastConnectResult = null;
   }
 
   static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
@@ -1074,7 +1100,26 @@ class AddSourceDetail extends ShowForm {
     }
 
     // Pre-fetch integrations for the draft
-    final integrations = await TwistApi.getIntegrations(draftId);
+    var integrations = await TwistApi.getIntegrations(draftId);
+
+    // If we have a cached connect result with an account name but the API
+    // didn't return accounts (getAccountName may have failed), inject it.
+    final cachedResult = _lastConnectResult;
+    if (cachedResult?.accountName != null && integrations.accounts.isEmpty) {
+      integrations = TwistIntegrations(
+        providers: integrations.providers,
+        accounts: [
+          TwistAccount(
+            provider: AuthProvider.other,
+            actorId: draftId,
+            name: cachedResult!.accountName,
+          ),
+        ],
+        channels: integrations.channels,
+        optionsSchema: integrations.optionsSchema,
+        optionsConfig: integrations.optionsConfig,
+      );
+    }
 
     // Track enabled scope groups per provider (for providers with optional scopes)
     final scopeGroupSelections = <String, Set<String>>{};
@@ -1092,6 +1137,11 @@ class AddSourceDetail extends ShowForm {
     final optionItems = hasOptions
         ? TwistOptionItems(options: twist.options!)
         : null;
+
+    // State for no-provider connector channel selection (captured by closures)
+    // ignore: prefer_final_locals
+    var noProviderChanges = const IntegrationChanges();
+    final noProviderChannelController = FormChannelListController();
 
     return FormData(
       title: 'Set up ${twist.name}',
@@ -1121,16 +1171,48 @@ class AddSourceDetail extends ShowForm {
                 ),
               ),
             ),
-            if (optionItems != null) ...optionItems.items,
-            if (integrations.providers.isEmpty && optionItems != null)
+            if (optionItems != null &&
+                (integrations.providers.isNotEmpty || integrations.isEmpty))
+              ...optionItems.items,
+            if (integrations.providers.isEmpty &&
+                optionItems != null &&
+                integrations.isEmpty)
+              // Not yet connected: show Connect button
               FormButton(
                 key: 'connect',
                 buildCommand: (_) => ConnectNoProviderCommand(
                   priorityTwistId: draftId,
                   optionItems: optionItems,
-                  activateAs: twist.name,
                 ),
               ),
+            if (integrations.providers.isEmpty && !integrations.isEmpty) ...[
+              // Already connected: show channels + Add connection
+              FormChannelList(
+                key: 'channels',
+                controller: noProviderChannelController,
+                validator: () =>
+                    noProviderChanges.selectedChannels.isNotEmpty,
+                builder: (context) => SetupSourceWidget(
+                  priorityTwistId: draftId,
+                  setupMode: true,
+                  isAccountBased: true,
+                  sourceName: twist.name,
+                  initialData: integrations,
+                  channelListController: noProviderChannelController,
+                  onChanged: (changes) {
+                    noProviderChanges = changes;
+                  },
+                ),
+              ),
+              FormButton(
+                key: 'add_connection',
+                buildCommand: (_) => _ActivateNoProviderSource(
+                  draftId: draftId,
+                  twistName: twist.name,
+                  getChanges: () => noProviderChanges,
+                ),
+              ),
+            ],
           ],
         ),
       ],
@@ -2070,6 +2152,13 @@ class ConnectNoProviderCommand extends Command {
         );
         AddSourceDetail.lastActivatedSourceId = priorityTwistId;
         AddSourceDetail.clearDraft();
+        return const CommandDone(message: 'Connected');
+      }
+
+      // If no activation and no callback, refresh form to show channels
+      if (onConnected == null) {
+        AddSourceDetail._lastConnectResult = result;
+        return const CommandRefresh();
       }
 
       return const CommandDone(message: 'Connected');
@@ -2082,6 +2171,74 @@ class ConnectNoProviderCommand extends Command {
       Tracker.captureException(e, t);
       return const CommandMessage(
         'Failed to connect. Please try again.',
+        isError: true,
+      );
+    }
+  }
+}
+
+/// Activates a no-provider connector draft with selected channels.
+class _ActivateNoProviderSource extends Command {
+  _ActivateNoProviderSource({
+    required this.draftId,
+    required this.twistName,
+    required this.getChanges,
+  }) : super(
+         title: 'Add connection',
+         icon: PlotIcon.add,
+         eventObject: EventObject.twist,
+         eventAction: EventAction.added,
+       );
+
+  final String draftId;
+  final String twistName;
+  final IntegrationChanges Function() getChanges;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final changes = getChanges();
+      final channels = changes.selectedChannels
+          .map((key) {
+            final parts = key.split(':');
+            return {
+              'provider': parts.first,
+              'syncableId': parts.skip(1).join(':'),
+              if (changes.channelPriorities.containsKey(key))
+                'priorityId': changes.channelPriorities[key]!,
+              if (changes.channelCreateThreads.containsKey(key))
+                'createThreads': changes.channelCreateThreads[key]!,
+            };
+          })
+          .toList();
+
+      await TwistApi.activateDraft(
+        draftId: draftId,
+        name: twistName,
+        channels: channels,
+      );
+
+      AddSourceDetail.lastActivatedSourceId = draftId;
+      AddSourceDetail.clearDraft();
+
+      return const CommandDone();
+    } on ApiException catch (e) {
+      if (e.isPlanLimitExceeded) {
+        final message = e.isOrg == true
+            ? (e.isAdmin == true
+                  ? 'Your organization has reached its connection limit. Upgrade your plan to add more.'
+                  : 'Your organization has reached its connection limit. Contact an admin to upgrade.')
+            : 'You\'ve reached your connection limit. Upgrade for unlimited connections.';
+        return CommandMessage(message, isError: true);
+      }
+      return CommandMessage(e.description, title: e.title, isError: true);
+    } on NetworkException catch (e) {
+      return CommandMessage(e.message, isError: true);
+    } catch (e, t) {
+      log.warning('Failed to activate source', e, t);
+      Tracker.captureException(e, t);
+      return const CommandMessage(
+        'Failed to add connection. Please try again.',
         isError: true,
       );
     }
@@ -2469,6 +2626,7 @@ class SaveSource extends Command {
     required this.initialEnabled,
     this.initialPriorities = const {},
     required this.changes,
+    this.optionItems,
   }) : super(
          title: 'Save',
          icon: FontAwesomeIcons.check,
@@ -2482,9 +2640,23 @@ class SaveSource extends Command {
   final Map<String, String> initialPriorities;
   final IntegrationChanges changes;
 
+  /// Option items for no-provider connectors (API key, etc.).
+  final TwistOptionItems? optionItems;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
+      // 0. Save updated options if present (no-provider connectors)
+      if (optionItems != null) {
+        final result = await TwistApi.connectNoProvider(
+          priorityTwistId: priorityTwistId,
+          options: optionItems!.values,
+        );
+        if (result.isError) {
+          return CommandMessage(result.error!, isError: true);
+        }
+      }
+
       // 1. Compute providers being removed (skip their channel changes)
       final removedProviders = changes.removedAccounts
           .map((k) => k.split(':').first)
