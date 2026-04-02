@@ -84,13 +84,9 @@ class _InputTileState extends State<InputTile> {
   Widget build(BuildContext context) {
     final isActive = _focusNode.hasFocus || widget.highlighted;
 
-    return FormTileLayout(
-      label: widget.label,
-      rightBackgroundColor: isActive || _isHovered
-          ? context.theme.plotColors.editableBackground
-          : null,
-      isActive: isActive,
-      content: MouseRegion(
+    return GestureDetector(
+      onTap: () => _focusNode.requestFocus(),
+      child: MouseRegion(
         cursor: SystemMouseCursors.text,
         onEnter: (_) {
           setState(() {
@@ -102,18 +98,25 @@ class _InputTileState extends State<InputTile> {
             _isHovered = false;
           });
         },
-        child: Transform.translate(
-          offset: const Offset(-4, 0),
-          child: TextField(
-            controller: widget.controller,
-            label: widget.placeholder ?? '',
-            style: TextFieldStyle.ghost,
-            maxLines: 1,
-            onChanged: widget.onChanged,
-            onSubmitted: widget.onSubmitted,
-            autofocus: widget.autofocus,
-            focusNode: _focusNode,
-            obscureText: widget.obscureText,
+        child: FormTileLayout(
+          label: widget.label,
+          rightBackgroundColor: isActive || _isHovered
+              ? context.theme.plotColors.editableBackground
+              : null,
+          isActive: isActive || _isHovered,
+          content: Transform.translate(
+            offset: const Offset(-4, 0),
+            child: TextField(
+              controller: widget.controller,
+              label: widget.placeholder ?? '',
+              style: TextFieldStyle.ghost,
+              maxLines: 1,
+              onChanged: widget.onChanged,
+              onSubmitted: widget.onSubmitted,
+              autofocus: widget.autofocus,
+              focusNode: _focusNode,
+              obscureText: widget.obscureText,
+            ),
           ),
         ),
       ),

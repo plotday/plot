@@ -116,31 +116,31 @@ class _SelectTileState extends State<SelectTile> {
     return FocusableActionDetector(
       focusNode: _focusNode,
       enabled: isInteractive,
-      child: FormTileLayout(
-        label: widget.label,
-        rightBackgroundColor: isHighlighted
-            ? context.theme.colors.secondary
-            : null,
-        isActive: isHighlighted,
-        content: GestureDetector(
-          onTap: isInteractive ? _handleActivate : null,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.basic,
-            onEnter: isInteractive
-                ? (_) {
-                    setState(() {
-                      _isHovered = true;
-                    });
-                  }
+      child: GestureDetector(
+        onTap: isInteractive ? _handleActivate : null,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.basic,
+          onEnter: isInteractive
+              ? (_) {
+                  setState(() {
+                    _isHovered = true;
+                  });
+                }
+              : null,
+          onExit: isInteractive
+              ? (_) {
+                  setState(() {
+                    _isHovered = false;
+                  });
+                }
+              : null,
+          child: FormTileLayout(
+            label: widget.label,
+            rightBackgroundColor: isHighlighted
+                ? context.theme.colors.secondary
                 : null,
-            onExit: isInteractive
-                ? (_) {
-                    setState(() {
-                      _isHovered = false;
-                    });
-                  }
-                : null,
-            child: Row(
+            isActive: isHighlighted,
+            content: Row(
               children: [
                 if (widget.leading != null) ...[
                   widget.leading!,

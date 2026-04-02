@@ -863,23 +863,23 @@ class _FormToggleWidgetState extends State<_FormToggleWidget> {
     return FocusableActionDetector(
       focusNode: _focusNode,
       enabled: widget.enabled,
-      child: FormTileLayout(
-        label: '',
-        rightBackgroundColor: isHighlighted
-            ? context.theme.colors.secondary
-            : null,
-        isActive: isHighlighted,
-        content: GestureDetector(
-          onTap: widget.enabled ? widget.onToggle : null,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.basic,
-            onEnter: widget.enabled
-                ? (_) => setState(() => _isHovered = true)
+      child: GestureDetector(
+        onTap: widget.enabled ? widget.onToggle : null,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.basic,
+          onEnter: widget.enabled
+              ? (_) => setState(() => _isHovered = true)
+              : null,
+          onExit: widget.enabled
+              ? (_) => setState(() => _isHovered = false)
+              : null,
+          child: FormTileLayout(
+            label: '',
+            rightBackgroundColor: isHighlighted
+                ? context.theme.colors.secondary
                 : null,
-            onExit: widget.enabled
-                ? (_) => setState(() => _isHovered = false)
-                : null,
-            child: Column(
+            isActive: isHighlighted,
+            content: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
