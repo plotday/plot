@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { type Kysely, sql } from "kysely";
 import { PostHog } from "posthog-node";
 
 import type { DB } from "../db";
@@ -598,6 +598,7 @@ async function maybeUnarchiveActionableThread(
   db: Kysely<DB>,
   threadId: string
 ): Promise<void> {
+  // Check if thread should be unarchived based on per-type or global actionable setting
   const result = await db
     .selectFrom("thread as t")
     .innerJoin("link as l", "l.thread_id", "t.id")
@@ -609,7 +610,27 @@ async function maybeUnarchiveActionableThread(
     .select("t.id")
     .where("t.id", "=", threadId)
     .where("t.archived_at", "is not", null)
-    .where("sc.create_threads", "=", "actionable")
+    .$call((qb) =>
+      qb.where(({ or, and, eb }) =>
+        or([
+          // Per-type setting takes precedence
+          and([
+            eb("sc.create_threads_by_type", "is not", null),
+            eb("l.type", "is not", null),
+            sql<boolean>`sc.create_threads_by_type ->> l.type = 'actionable'`,
+          ]),
+          // Global fallback when no per-type override exists
+          and([
+            eb("sc.create_threads", "=", "actionable"),
+            or([
+              eb("sc.create_threads_by_type", "is", null),
+              eb("l.type", "is", null),
+              sql<boolean>`NOT (sc.create_threads_by_type ? l.type)`,
+            ]),
+          ]),
+        ])
+      )
+    )
     .executeTakeFirst();
 
   if (result) {

@@ -64,6 +64,7 @@ const ActivateDraftSchema = z.object({
         syncableId: z.string(),
         priorityId: z.string().optional(),
         createThreads: z.string().optional(),
+        createThreadsByType: z.record(z.string(), z.enum(["all", "actionable", "manual"])).optional(),
       })
     )
     .optional(),

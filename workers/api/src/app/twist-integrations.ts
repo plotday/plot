@@ -59,6 +59,7 @@ async function loadTwistConfig(
   toolPermissions: Record<string, any>;
   optionsSchema: OptionsSchema | null;
   singleChannel: boolean;
+  connectorLinkTypes?: any[];
 } | null> {
   const config = await env.TWIST_CONFIG.get(`${twistPackageId}:${version}`);
   if (!config) return null;
@@ -70,6 +71,7 @@ async function loadTwistConfig(
     toolPermissions: parsed.toolPermissions ?? {},
     optionsSchema: parsed.optionsSchema ?? null,
     singleChannel: parsed.sourceProvider?.singleChannel === true,
+    connectorLinkTypes: parsed.sourceProvider?.linkTypes ?? undefined,
   };
 }
 
@@ -224,7 +226,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       // Query source_channel to merge enabled state
       const enabledChannels = await c.var.db
         .selectFrom("source_channel")
-        .select(["channel_id", "enabled", "priority_id", "create_threads"])
+        .select(["channel_id", "enabled", "priority_id", "create_threads", "create_threads_by_type"])
         .where("priority_twist_id", "=", priorityTwistId)
         .execute();
       const enabledMap = new Map(
@@ -232,15 +234,19 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       );
 
       const rawChannels = Array.isArray(result) ? result : [];
+
       syncables = rawChannels.map((ch: any) => {
         const stored = enabledMap.get(ch.id);
         return {
-          ...ch,
+          ...ch, // includes linkTypes from getChannels() if present
           provider: "_options",
           enabled: stored?.enabled ?? false,
           enabledBy: null,
           priorityId: stored?.priority_id ?? null,
           createThreads: stored?.create_threads ?? ch.createThreads ?? "all",
+          createThreadsByType: stored?.create_threads_by_type ?? undefined,
+          // Fall back to connector-level linkTypes when channel doesn't specify its own
+          linkTypes: ch.linkTypes ?? config.connectorLinkTypes ?? undefined,
           currentUserHasAccess: true,
         };
       });
@@ -587,6 +593,7 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
       enabledBy: null,
       priorityId: null,
       createThreads: ch.createThreads ?? "all",
+      linkTypes: ch.linkTypes ?? kvConfig.connectorLinkTypes ?? undefined,
       currentUserHasAccess: true,
     }));
 
@@ -663,15 +670,23 @@ twistIntegrations.post(
     const provider = c.req.param("provider");
     const channelId = c.req.param("syncableId");
 
-    // Parse optional body for priorityId and createThreads
+    // Parse optional body for priorityId, createThreads, and createThreadsByType
     let priorityId: string | undefined;
     let createThreads: string | undefined;
+    let createThreadsByType: Record<string, string> | undefined;
     try {
       const body = await c.req.json();
       priorityId = body?.priorityId;
       if (typeof body?.createThreads === "string" &&
           ["all", "actionable", "manual"].includes(body.createThreads)) {
         createThreads = body.createThreads;
+      }
+      if (body?.createThreadsByType && typeof body.createThreadsByType === "object" && !Array.isArray(body.createThreadsByType)) {
+        const validModes = ["all", "actionable", "manual"];
+        const entries = Object.entries(body.createThreadsByType);
+        if (entries.every(([, v]) => typeof v === "string" && validModes.includes(v as string))) {
+          createThreadsByType = body.createThreadsByType;
+        }
       }
     } catch {
       // No body or invalid JSON — fine, fields stay undefined
@@ -739,7 +754,8 @@ twistIntegrations.post(
         currentActorId,
         undefined, // title
         priorityId,
-        createThreads
+        createThreads,
+        createThreadsByType
       );
       disposeRpc(result);
 
@@ -848,9 +864,11 @@ twistIntegrations.post(
 );
 
 // PATCH /twist/:id/syncables/:provider/:syncableId
-// Update the priority routing for an already-enabled channel.
-const ChannelPrioritySchema = z.object({
-  priorityId: z.string().nullable(),
+// Update config for an already-enabled channel (priority, createThreads, createThreadsByType).
+const ChannelUpdateSchema = z.object({
+  priorityId: z.string().nullable().optional(),
+  createThreads: z.enum(["all", "actionable", "manual"]).optional(),
+  createThreadsByType: z.record(z.string(), z.enum(["all", "actionable", "manual"])).optional(),
 });
 
 twistIntegrations.patch(
@@ -861,11 +879,11 @@ twistIntegrations.patch(
     const channelId = c.req.param("syncableId");
 
     const rawBody = await c.req.json();
-    const parseResult = ChannelPrioritySchema.safeParse(rawBody);
+    const parseResult = ChannelUpdateSchema.safeParse(rawBody);
     if (!parseResult.success) {
       return handleValidationError(parseResult.error);
     }
-    const { priorityId } = parseResult.data;
+    const { priorityId, createThreads, createThreadsByType } = parseResult.data;
 
     const logger = createLogger({ priority_twist_id: priorityTwistId });
 
@@ -904,13 +922,17 @@ twistIntegrations.patch(
         twistInfo.environment
       );
 
-      await integrations.setChannelPriority(
+      await integrations.updateChannelConfig(
         provider as any,
         channelId,
-        priorityId
+        {
+          ...(priorityId !== undefined ? { priorityId } : {}),
+          ...(createThreads !== undefined ? { createThreads } : {}),
+          ...(createThreadsByType !== undefined ? { createThreadsByType } : {}),
+        }
       );
 
-      logger.info("Channel priority updated", {
+      logger.info("Channel config updated", {
         provider,
         channel_id: channelId,
         priority_id: priorityId ?? undefined,
@@ -918,13 +940,13 @@ twistIntegrations.patch(
 
       return c.json({ success: true });
     } catch (error) {
-      logger.error("Error updating channel priority", error as Error, {
+      logger.error("Error updating channel config", error as Error, {
         provider,
         channel_id: channelId,
       });
       return c.json(
         {
-          message: `Failed to update channel priority: ${
+          message: `Failed to update channel config: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },

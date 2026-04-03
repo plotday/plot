@@ -633,7 +633,7 @@ export async function activateDraft(
   priorityId: string | undefined,
   name: string,
   config: Record<string, any> | undefined,
-  syncables: Array<{ provider: string; syncableId: string; priorityId?: string; createThreads?: string }> | undefined,
+  syncables: Array<{ provider: string; syncableId: string; priorityId?: string; createThreads?: string; createThreadsByType?: Record<string, string> }> | undefined,
   activate: {
     twistFactory: ReturnType<typeof twistFactory>;
   }
@@ -834,7 +834,7 @@ export async function activateDraft(
         priorityTwistId: draftId,
       });
 
-      for (const { provider, syncableId, priorityId: channelPriorityId, createThreads } of syncables) {
+      for (const { provider, syncableId, priorityId: channelPriorityId, createThreads, createThreadsByType } of syncables) {
         const integrationsPath = integrationsMap[provider];
         if (!integrationsPath) {
           logger.warn("No integrations path found for provider during activation", {
@@ -863,7 +863,8 @@ export async function activateDraft(
             contact.id,
             undefined, // title
             channelPriorityId,
-            createThreads
+            createThreads,
+            createThreadsByType
           );
           logger.info("activateDraft: enableSync result", {
             provider,

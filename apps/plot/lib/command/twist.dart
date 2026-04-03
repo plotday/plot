@@ -837,8 +837,30 @@ class EditSource extends ShowForm {
       return result;
     }
 
+    Map<String, String> collectCreateThreads(List<TwistChannel> channels) {
+      final result = <String, String>{};
+      for (final s in channels) {
+        result['${s.providerKey}:${s.id}'] = s.createThreads;
+        result.addAll(collectCreateThreads(s.children));
+      }
+      return result;
+    }
+
+    Map<String, Map<String, String>> collectCreateThreadsByType(List<TwistChannel> channels) {
+      final result = <String, Map<String, String>>{};
+      for (final s in channels) {
+        if (s.createThreadsByType.isNotEmpty) {
+          result['${s.providerKey}:${s.id}'] = s.createThreadsByType;
+        }
+        result.addAll(collectCreateThreadsByType(s.children));
+      }
+      return result;
+    }
+
     final initialEnabled = collectEnabled(integrations.channels);
     final initialPriorities = collectPriorities(integrations.channels);
+    final initialCreateThreads = collectCreateThreads(integrations.channels);
+    final initialCreateThreadsByType = collectCreateThreadsByType(integrations.channels);
     var integrationChanges = IntegrationChanges(
       selectedChannels: Set.of(initialEnabled),
       channelPriorities: Map.of(initialPriorities),
@@ -892,6 +914,8 @@ class EditSource extends ShowForm {
                   name: name,
                   initialEnabled: initialEnabled,
                   initialPriorities: initialPriorities,
+                  initialCreateThreads: initialCreateThreads,
+                  initialCreateThreadsByType: initialCreateThreadsByType,
                   changes: integrationChanges,
                   optionItems: optionItems,
                 );
@@ -2365,6 +2389,8 @@ class _ActivateNoProviderSource extends Command {
             'priorityId': changes.channelPriorities[key]!,
           if (changes.channelCreateThreads.containsKey(key))
             'createThreads': changes.channelCreateThreads[key]!,
+          if (changes.channelCreateThreadsByType.containsKey(key))
+            'createThreadsByType': changes.channelCreateThreadsByType[key]!,
         };
       }).toList();
 
@@ -2781,6 +2807,8 @@ class SaveSource extends Command {
     required this.name,
     required this.initialEnabled,
     this.initialPriorities = const {},
+    this.initialCreateThreads = const {},
+    this.initialCreateThreadsByType = const {},
     required this.changes,
     this.optionItems,
   }) : super(
@@ -2794,6 +2822,8 @@ class SaveSource extends Command {
   final String name;
   final Set<String> initialEnabled;
   final Map<String, String> initialPriorities;
+  final Map<String, String> initialCreateThreads;
+  final Map<String, Map<String, String>> initialCreateThreadsByType;
   final IntegrationChanges changes;
 
   /// Option items for no-provider connectors (API key, etc.).
@@ -2832,6 +2862,8 @@ class SaveSource extends Command {
           provider: provider,
           channelId: channelId,
           priorityId: changes.channelPriorities[key],
+          createThreads: changes.channelCreateThreads[key],
+          createThreadsByType: changes.channelCreateThreadsByType[key],
         );
       }
 
@@ -2847,7 +2879,7 @@ class SaveSource extends Command {
         );
       }
 
-      // 2b. Update priority for channels that stayed enabled but changed priority
+      // 2b. Update config for channels that stayed enabled but changed settings
       final stayEnabled = changes.selectedChannels.intersection(initialEnabled);
       for (final key in stayEnabled) {
         final parts = key.split(':');
@@ -2855,13 +2887,25 @@ class SaveSource extends Command {
         if (removedProviders.contains(provider)) continue;
         final newPriority = changes.channelPriorities[key];
         final oldPriority = initialPriorities[key];
-        if (newPriority != null && newPriority != oldPriority) {
+        final newCreateThreads = changes.channelCreateThreads[key];
+        final oldCreateThreads = initialCreateThreads[key];
+        final newByType = changes.channelCreateThreadsByType[key];
+        final oldByType = initialCreateThreadsByType[key];
+
+        final priorityChanged = newPriority != null && newPriority != oldPriority;
+        final createThreadsChanged = newCreateThreads != null && newCreateThreads != oldCreateThreads;
+        final byTypeChanged = newByType != null &&
+            !const MapEquality<String, String>().equals(newByType, oldByType ?? const {});
+
+        if (priorityChanged || createThreadsChanged || byTypeChanged) {
           final channelId = parts.sublist(1).join(':');
-          await TwistApi.setChannelPriority(
+          await TwistApi.updateChannel(
             priorityTwistId: priorityTwistId,
             provider: provider,
             channelId: channelId,
-            priorityId: newPriority,
+            priorityId: priorityChanged ? newPriority : null,
+            createThreads: createThreadsChanged ? newCreateThreads : null,
+            createThreadsByType: byTypeChanged ? newByType : null,
           );
         }
       }
