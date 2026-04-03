@@ -20,6 +20,7 @@ import { Options } from "@plotday/twister/options";
 
 import {
   AttioAPI,
+  type AttioNote,
   type AttioRecord,
   type AttioTask,
   type AttioWebhookEvent,
@@ -30,7 +31,15 @@ import {
   extractPhone,
   extractDealStage,
   extractCurrencyValue,
+  extractDomain,
 } from "./attio-api";
+
+/** Maps Attio object slugs to connector link type identifiers. */
+const OBJECT_TO_LINK_TYPE: Record<string, string> = {
+  deals: "deal",
+  people: "person",
+  companies: "company",
+};
 
 type SyncState = {
   cursor: string | null;
@@ -40,7 +49,8 @@ type SyncState = {
 };
 
 /**
- * Attio CRM connector — syncs deals, people, and tasks from Attio.
+ * Attio CRM connector — syncs deals, people, and companies from Attio.
+ * Tasks and notes are synced as notes on their parent records.
  *
  * Uses API key authentication via Options.
  */
@@ -48,8 +58,8 @@ export class Attio extends Connector<Attio> {
   static readonly handleReplies = true;
   readonly singleChannel = true;
 
-  /** Entity types synced under the single channel. */
-  private static readonly ENTITY_TYPES = ["deals", "people", "tasks"] as const;
+  /** Record types synced under the single channel. */
+  private static readonly ENTITY_TYPES = ["deals", "people", "companies"] as const;
 
   readonly linkTypes = [
     {
@@ -73,19 +83,11 @@ export class Attio extends Connector<Attio> {
       statuses: [],
     },
     {
-      type: "task",
-      label: "Task",
+      type: "company",
+      label: "Company",
       logo: "https://plot.day/assets/logo-attio.svg",
       logoDark: "https://plot.day/assets/logo-attio-dark.svg",
-      statuses: [
-        { status: "open", label: "Open" },
-        {
-          status: "completed",
-          label: "Completed",
-          tag: Tag.Done,
-          done: true as const,
-        },
-      ],
+      statuses: [],
     },
   ];
 
@@ -132,7 +134,7 @@ export class Attio extends Connector<Attio> {
   // ---- Channel Lifecycle ----
 
   /**
-   * Returns a single channel with all link types (deals, people, tasks).
+   * Returns a single channel with all link types (deals, people, companies).
    * Fetches deal pipeline stages dynamically for linkTypes.
    */
   async getChannels(
@@ -185,19 +187,11 @@ export class Attio extends Connector<Attio> {
             statuses: [],
           },
           {
-            type: "task",
-            label: "Task",
+            type: "company",
+            label: "Company",
             logo: "https://plot.day/assets/logo-attio.svg",
             logoDark: "https://plot.day/assets/logo-attio-dark.svg",
-            statuses: [
-              { status: "open", label: "Open" },
-              {
-                status: "completed",
-                label: "Completed",
-                tag: Tag.Done,
-                done: true as const,
-              },
-            ],
+            statuses: [],
           },
         ],
       },
@@ -210,6 +204,9 @@ export class Attio extends Connector<Attio> {
     for (const entityType of Attio.ENTITY_TYPES) {
       await this.startBatchSync(entityType);
     }
+    // Tasks and notes are items on records — sync them as notes on parent threads
+    await this.startBatchSync("tasks");
+    await this.startBatchSync("notes");
   }
 
   async onChannelDisabled(_channel: Channel): Promise<void> {
@@ -229,6 +226,8 @@ export class Attio extends Connector<Attio> {
     for (const entityType of Attio.ENTITY_TYPES) {
       await this.clear(`sync_state_${entityType}`);
     }
+    await this.clear("sync_state_tasks");
+    await this.clear("sync_state_notes");
     await this.clear("sync_enabled");
   }
 
@@ -254,6 +253,8 @@ export class Attio extends Connector<Attio> {
 
     if (entityType === "tasks") {
       await this.syncTaskBatch(api, state, entityType);
+    } else if (entityType === "notes") {
+      await this.syncNoteBatch(api, state, entityType);
     } else {
       await this.syncRecordBatch(api, entityType, state);
     }
@@ -270,11 +271,14 @@ export class Attio extends Connector<Attio> {
     });
 
     for (const record of result.data) {
-      const link =
-        entityType === "deals"
-          ? await this.convertDealToLink(record, state.initialSync)
-          : await this.convertPersonToLink(record, state.initialSync);
-
+      let link: NewLinkWithNotes;
+      if (entityType === "deals") {
+        link = await this.convertDealToLink(record, state.initialSync);
+      } else if (entityType === "companies") {
+        link = await this.convertCompanyToLink(record, state.initialSync);
+      } else {
+        link = await this.convertPersonToLink(record, state.initialSync);
+      }
       await this.tools.integrations.saveLink(link);
     }
 
@@ -304,8 +308,36 @@ export class Attio extends Connector<Attio> {
     });
 
     for (const task of result.data) {
-      const link = await this.convertTaskToLink(task, state.initialSync);
-      await this.tools.integrations.saveLink(link);
+      await this.saveTaskAsNotes(task);
+    }
+
+    if (result.next_cursor) {
+      await this.set(`sync_state_${entityType}`, {
+        cursor: result.next_cursor,
+        batchNumber: state.batchNumber + 1,
+        recordsProcessed: state.recordsProcessed + result.data.length,
+        initialSync: state.initialSync,
+      } satisfies SyncState);
+
+      const nextBatch = await this.callback(this.syncBatch, entityType);
+      await this.tools.tasks.runTask(nextBatch);
+    } else {
+      await this.clear(`sync_state_${entityType}`);
+    }
+  }
+
+  private async syncNoteBatch(
+    api: AttioAPI,
+    state: SyncState,
+    entityType: string
+  ): Promise<void> {
+    const result = await api.queryNotes({
+      cursor: state.cursor ?? undefined,
+      limit: 50,
+    });
+
+    for (const note of result.data) {
+      await this.saveNoteOnParent(note);
     }
 
     if (result.next_cursor) {
@@ -424,29 +456,101 @@ export class Attio extends Connector<Attio> {
     };
   }
 
-  private async convertTaskToLink(
-    task: AttioTask,
+  private async convertCompanyToLink(
+    record: AttioRecord,
     initialSync: boolean
   ): Promise<NewLinkWithNotes> {
-    const taskId = task.id.task_id;
+    const v = record.values;
+    const name = extractName(v) || "Untitled Company";
+    const domain = extractDomain(v);
+    const recordId = record.id.record_id;
 
     return {
-      source: `attio:task:${taskId}`,
-      type: "task",
-      title: task.content_plaintext || "Untitled Task",
-      created: new Date(task.created_at),
-      status: task.is_completed ? "completed" : "open",
+      source: `attio:company:${recordId}`,
+      type: "company",
+      title: name,
+      created: new Date(record.created_at),
       channelId: "attio",
       meta: {
-        attioTaskId: taskId,
+        attioRecordId: recordId,
+        attioObjectSlug: "companies",
         syncProvider: "attio",
         channelId: "attio",
       },
-      sourceUrl: await this.buildRecordUrl("tasks", taskId),
+      sourceUrl: await this.buildRecordUrl("companies", recordId),
+      preview: domain || null,
       notes: [],
       ...(initialSync ? { unread: false } : {}),
       ...(initialSync ? { archived: false } : {}),
     };
+  }
+
+  /**
+   * Save an Attio task as a note on each of its linked parent records.
+   * Tasks without linked_records are skipped.
+   */
+  private async saveTaskAsNotes(task: AttioTask): Promise<void> {
+    const taskId = task.id.task_id;
+    if (!task.linked_records?.length) return;
+
+    const statusSuffix = task.is_completed ? " ✅" : "";
+    const content =
+      (task.content_plaintext || "Untitled Task") + statusSuffix;
+
+    for (const linked of task.linked_records) {
+      const linkType = OBJECT_TO_LINK_TYPE[linked.target_object];
+      if (!linkType) continue;
+
+      await this.tools.integrations.saveLink({
+        source: `attio:${linkType}:${linked.target_record_id}`,
+        type: linkType,
+        channelId: "attio",
+        meta: {
+          attioRecordId: linked.target_record_id,
+          attioObjectSlug: linked.target_object,
+          syncProvider: "attio",
+          channelId: "attio",
+        },
+        notes: [
+          {
+            key: `task-${taskId}`,
+            content,
+            created: new Date(task.created_at),
+          } as any,
+        ],
+      });
+    }
+  }
+
+  /**
+   * Save an Attio note as a Plot note on its parent record.
+   */
+  private async saveNoteOnParent(note: AttioNote): Promise<void> {
+    const noteId = note.id.note_id;
+    const linkType = OBJECT_TO_LINK_TYPE[note.parent_object];
+    if (!linkType) return;
+
+    const content = note.content_plaintext || note.title || "";
+    if (!content) return;
+
+    await this.tools.integrations.saveLink({
+      source: `attio:${linkType}:${note.parent_record_id}`,
+      type: linkType,
+      channelId: "attio",
+      meta: {
+        attioRecordId: note.parent_record_id,
+        attioObjectSlug: note.parent_object,
+        syncProvider: "attio",
+        channelId: "attio",
+      },
+      notes: [
+        {
+          key: `note-${noteId}`,
+          content: note.title ? `**${note.title}**\n\n${note.content_plaintext}` : content,
+          created: new Date(note.created_at),
+        } as any,
+      ],
+    });
   }
 
   // ---- Webhooks ----
@@ -501,6 +605,8 @@ export class Attio extends Connector<Attio> {
         link = await this.convertDealToLink(record, false);
       } else if (objectSlug === "people") {
         link = await this.convertPersonToLink(record, false);
+      } else if (objectSlug === "companies") {
+        link = await this.convertCompanyToLink(record, false);
       } else {
         return;
       }
@@ -518,10 +624,9 @@ export class Attio extends Connector<Attio> {
       });
     }
 
-    // Handle task webhooks
+    // Handle task webhooks — save as notes on parent records
     if (payload.task) {
-      const link = await this.convertTaskToLink(payload.task, false);
-      await this.tools.integrations.saveLink(link);
+      await this.saveTaskAsNotes(payload.task);
     }
   }
 

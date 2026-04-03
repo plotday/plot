@@ -60,6 +60,19 @@ export type AttioTask = {
   }>;
 };
 
+export type AttioNote = {
+  id: { note_id: string; workspace_id: string };
+  parent_object: string;
+  parent_record_id: string;
+  title: string;
+  content_plaintext: string;
+  created_by_actor: {
+    type: string;
+    id: string;
+  };
+  created_at: string;
+};
+
 export type AttioPaginatedResponse<T> = {
   data: T[];
   next_cursor: string | null;
@@ -286,6 +299,18 @@ export class AttioAPI {
     if (options?.cursor) params.set("offset", options.cursor);
     const qs = params.toString();
     return this.request("GET", `/tasks${qs ? `?${qs}` : ""}`);
+  }
+
+  /** List notes. */
+  async queryNotes(options?: {
+    cursor?: string;
+    limit?: number;
+  }): Promise<AttioPaginatedResponse<AttioNote>> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.cursor) params.set("offset", options.cursor);
+    const qs = params.toString();
+    return this.request("GET", `/notes${qs ? `?${qs}` : ""}`);
   }
 
   /** Create a note on a record. */
