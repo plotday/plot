@@ -55,6 +55,8 @@ export type LinkTypeConfig = {
   }>;
   /** Whether this link type supports displaying and changing the assignee */
   supportsAssignee?: boolean;
+  /** Default thread creation mode for this link type: 'all' | 'actionable' | 'manual' */
+  defaultCreateThreads?: string;
 };
 
 /**

@@ -155,6 +155,7 @@ export class Attio extends Connector<Attio> {
             logo: "https://plot.day/assets/logo-attio.svg",
             logoDark: "https://plot.day/assets/logo-attio-dark.svg",
             statuses: [],
+            defaultCreateThreads: "actionable",
           },
           {
             type: "company",
@@ -162,6 +163,7 @@ export class Attio extends Connector<Attio> {
             logo: "https://plot.day/assets/logo-attio.svg",
             logoDark: "https://plot.day/assets/logo-attio-dark.svg",
             statuses: [],
+            defaultCreateThreads: "actionable",
           },
         ],
       },
