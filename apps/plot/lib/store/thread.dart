@@ -2200,6 +2200,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         final pt = PriorityTwist.findByTwistId(twistId);
         if (pt != null) {
           if (type != null) {
+            // Check twist-level linkTypes first
             final config = pt.parsedLinkTypes
                 ?.where((c) => c.type == type)
                 .firstOrNull;
@@ -2207,6 +2208,19 @@ class Thread extends Equatable implements Comparable<Thread> {
               return (
                 logoUrl: config!.logo,
                 logoDarkUrl: config.logoDark,
+                fallbackIcon: PlotIcon.link,
+              );
+            }
+            // Fall back to source_channel linkTypes (for no-provider connectors
+            // like Attio where linkTypes are only stored per-channel)
+            final channelConfig = SourceChannel.findBySource(pt.id)
+                ?.parsedLinkTypes
+                ?.where((c) => c.type == type)
+                .firstOrNull;
+            if (channelConfig?.logo != null) {
+              return (
+                logoUrl: channelConfig!.logo,
+                logoDarkUrl: channelConfig.logoDark,
                 fallbackIcon: PlotIcon.link,
               );
             }

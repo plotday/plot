@@ -90,6 +90,8 @@ class NoteEditorState extends State<NoteEditor> {
       if (twist.isSource && !twist.defaultMentionCreated) continue;
       final isAuthor = threadState.notes.any(
         (n) => n.authorId.toUuid() == twist.id,
+      ) || threadState.links.any(
+        (l) => l.createdBy == twist.id,
       );
       final shouldDefault =
           (isAuthor && twist.defaultMentionCreated) ||
