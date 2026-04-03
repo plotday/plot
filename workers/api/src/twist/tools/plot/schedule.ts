@@ -7,6 +7,7 @@ import type {
 } from "@plotday/twister/schedule";
 import type { ActorId } from "@plotday/twister/plot";
 
+import { sql } from "kysely";
 import { rpcUser } from "../../../rpc";
 import { calculateDbEndFromRecurrenceUntil, formatInterval } from "./datetime";
 import { processScheduleContacts } from "./schedule-contacts";
@@ -161,6 +162,13 @@ function convertOccurrenceToDb(
  * Calls upsert_schedule for each schedule and occurrence, then processes
  * contacts for schedules that have them.
  *
+ * Occurrence schedule rows are for overrides (time changes, RSVP differences)
+ * to specific instances of a recurring event. Deleted/cancelled occurrences
+ * should NOT have separate schedule rows — they are represented solely via
+ * recurrence_exdates on the base schedule. When an occurrence with
+ * `archived: true` is passed, it is converted to an exdate addition instead
+ * of creating a schedule row.
+ *
  * @param plot - The Plot instance
  * @param linkId - The link ID to attach schedules to
  * @param priorityId - The priority ID for contact resolution
@@ -206,7 +214,32 @@ export async function createLinkSchedules(
 
   // Create occurrence overrides
   if (scheduleOccurrences?.length) {
+    // Collect exdates to add/remove on the base schedule
+    const exdatesToAdd: string[] = [];
+    const exdatesToRemove: string[] = [];
+
     for (const occ of scheduleOccurrences) {
+      // Archived occurrences are deletions — add an exdate to the base schedule.
+      // Archive any existing occurrence row (e.g. RSVP override) but don't create one.
+      if (occ.archived) {
+        const occDate =
+          occ.occurrence instanceof Date
+            ? occ.occurrence.toISOString()
+            : occ.occurrence;
+        exdatesToAdd.push(occDate);
+
+        // Archive existing occurrence schedule row if one exists
+        await plot.db
+          .updateTable("schedule")
+          .set({ archived_at: new Date().toISOString() })
+          .where("occurrence", "=", occDate)
+          .where("archived_at", "is", null)
+          .where("link_id", "=", linkId)
+          .execute();
+
+        continue;
+      }
+
       const dbSchedule = convertOccurrenceToDb(occ, target);
       const result = await rpcUser(plot.db, "upsert_schedule", {
         user_id: userId,
@@ -215,6 +248,15 @@ export async function createLinkSchedules(
 
       if (result?.id) {
         scheduleIds.push(result.id);
+
+        // Explicitly unarchived occurrence — remove from exdates
+        if (occ.archived === false) {
+          const occDate =
+            occ.occurrence instanceof Date
+              ? occ.occurrence.toISOString()
+              : occ.occurrence;
+          exdatesToRemove.push(occDate);
+        }
 
         // Process contacts if present
         if (occ.contacts?.length) {
@@ -226,6 +268,35 @@ export async function createLinkSchedules(
           );
         }
       }
+    }
+
+    // Sync exdates on the base (shared, non-occurrence) schedule so recurrence
+    // expansion correctly skips cancelled dates (and restores uncancelled ones).
+    // We UPDATE directly instead of using upsert_schedule because the upsert
+    // function's INSERT path fails CHECK constraints when only exdate fields
+    // are provided (no at/on).
+    if (exdatesToAdd.length > 0 || exdatesToRemove.length > 0) {
+      const addArray = exdatesToAdd.length > 0 ? exdatesToAdd : null;
+      const removeArray = exdatesToRemove.length > 0 ? exdatesToRemove : null;
+
+      await sql`
+        UPDATE schedule SET recurrence_exdates = (
+          SELECT ARRAY(
+            SELECT DISTINCT unnest
+            FROM unnest(
+              COALESCE(schedule.recurrence_exdates, ARRAY[]::timestamptz[])
+              || COALESCE(${addArray}::timestamptz[], ARRAY[]::timestamptz[])
+            )
+            WHERE unnest IS NOT NULL
+              AND (${removeArray}::timestamptz[] IS NULL
+                   OR unnest != ALL(${removeArray}::timestamptz[]))
+            ORDER BY 1
+          )
+        )
+        WHERE link_id = ${linkId}
+          AND user_id IS NULL
+          AND occurrence IS NULL
+      `.execute(plot.db);
     }
   }
 

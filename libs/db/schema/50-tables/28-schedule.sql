@@ -17,6 +17,13 @@ CREATE TABLE "public"."schedule" (
     "outstanding_tasks" boolean NOT NULL DEFAULT FALSE
 );
 
+-- Recurring schedules:
+--   recurrence_rule + duration define the pattern.
+--   recurrence_exdates lists dates excluded from expansion (cancelled/deleted occurrences).
+--   Occurrence schedule rows (occurrence IS NOT NULL) are for overrides only
+--   (time changes, RSVP differences). Deleted occurrences do NOT get a schedule row —
+--   they are represented solely via recurrence_exdates on the base schedule.
+
 -- Exactly one of at/on must be set, or both null for per-user undated schedules
 ALTER TABLE "public"."schedule"
     ADD CONSTRAINT schedule_at_xor_on CHECK (

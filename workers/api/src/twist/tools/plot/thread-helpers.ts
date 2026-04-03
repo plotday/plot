@@ -765,10 +765,12 @@ export async function prepareThreadForDb(
     };
 
     if (activity.title !== undefined) {
-      upsertFields.title =
-        activity.title && activity.title.trim() !== ""
-          ? cleanTitle(activity.title)
-          : null;
+      // Only include title in upsert if it's non-empty.
+      // Cancelled/deleted events (e.g. Google Calendar) send title: null,
+      // which would violate thread_title_required_when_not_draft constraint.
+      if (activity.title && activity.title.trim() !== "") {
+        upsertFields.title = cleanTitle(activity.title);
+      }
     }
     if ("preview" in activity && activity.preview !== undefined) {
       upsertFields.preview = previewText;

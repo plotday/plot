@@ -3438,10 +3438,14 @@ class Thread extends Equatable implements Comparable<Thread> {
       instances.map((dt) => dt.copyWith(isUtc: false)),
     );
 
-    // Apply recurrenceExdates (dates to exclude)
+    // Apply recurrenceExdates (dates to exclude).
+    // Exdates are UTC; instances are local. Use toLocal() to convert the
+    // actual point-in-time, not just strip the UTC flag.
     if (recurrenceExdates?.isNotEmpty == true) {
       instanceSet.removeAll(
-        recurrenceExdates!.where((dt) => range.includes(dt.toDate())),
+        recurrenceExdates!
+            .where((dt) => range.includes(dt.toDate()))
+            .map((dt) => dt.toLocal()),
       );
     }
 
@@ -3526,10 +3530,14 @@ class Thread extends Equatable implements Comparable<Thread> {
       instances.map((dt) => dt.copyWith(isUtc: false)),
     );
 
-    // Apply recurrenceExdates (dates to exclude)
+    // Apply recurrenceExdates (dates to exclude).
+    // Exdates are UTC; instances are local. Use toLocal() to convert the
+    // actual point-in-time, not just strip the UTC flag.
     if (recurrenceExdates?.isNotEmpty == true) {
       instanceSet.removeAll(
-        recurrenceExdates!.where((dt) => range.includes(dt.toDate())),
+        recurrenceExdates!
+            .where((dt) => range.includes(dt.toDate()))
+            .map((dt) => dt.toLocal()),
       );
     }
 

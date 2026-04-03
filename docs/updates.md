@@ -1,3 +1,5 @@
+- Deleted occurrences of recurring calendar events now properly disappear from the agenda
+- Declined calendar events no longer appear in your agenda — they still show in the activity feed, just not at the scheduled time
 - Fixed confirmation messages appearing twice when using form actions like archiving a connection
 - Fixed archiving a connection not archiving the threads it created — threads from connectors like Attio now properly archive when you remove the connection
 - Fixed replies to connector threads (like Attio) not syncing back to the external service, and the processing indicator staying stuck on the note
