@@ -1,23 +1,36 @@
 import { Hono } from "hono";
 import { PostHog } from "posthog-node";
 
-import { sql, withUserDb, createDb, type DB, type Kysely } from "../../db";
+import { createLogger } from "@plotday/worker-util";
+
+import { type DB, type Kysely, createDb, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
+import { analyzeNote } from "../../queue/note-analysis";
+import { rpc, rpcUser } from "../../rpc";
+import {
+  checkAiLimitForPriority,
+  isAiEnabled,
+  recordAiUsage,
+} from "../../utils/ai-limits";
 import { assertThreadAccess } from "./authorize";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
-import { rpc, rpcUser } from "../../rpc";
-import { notifySync, getPriorityForThread } from "./notify";
-import { analyzeNote } from "../../queue/note-analysis";
-import { checkAiLimitForPriority, recordAiUsage, isAiEnabled } from "../../utils/ai-limits";
-import { createLogger } from "@plotday/worker-util";
+import { getPriorityForThread, notifySync } from "./notify";
 
 const notes = new Hono<{ Bindings: Bindings }>();
 
 // GET /sync/notes
 notes.get("/sync/notes", async (c) => {
   const userId = c.var.user.id;
-  const { updatedSince, cursorId, archived, limit, threadId, id, sortBy, sortDir } =
-    parseReadParams(c);
+  const {
+    updatedSince,
+    cursorId,
+    archived,
+    limit,
+    threadId,
+    id,
+    sortBy,
+    sortDir,
+  } = parseReadParams(c);
 
   const rows = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
@@ -28,7 +41,9 @@ notes.get("/sync/notes", async (c) => {
 
     // Apply sort
     if (updatedSince) {
-      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
+      query = query
+        .orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc")
+        .orderBy("id", "asc");
     } else {
       query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
     }
@@ -43,7 +58,9 @@ notes.get("/sync/notes", async (c) => {
       query = query.where("archived_at", "is", null);
     }
 
-    if (id) { query = query.where("id", "=", id); }
+    if (id) {
+      query = query.where("id", "=", id);
+    }
     if (threadId) {
       query = query.where("thread_id", "=", threadId);
     }
@@ -121,7 +138,9 @@ notes.post("/sync/notes", async (c) => {
       p_private: body.private || false,
       p_content: body.content || null,
       p_actions: body.actions || null,
-      p_mentions: (Array.isArray(body.mentions) ? `{${body.mentions.join(",")}}` : null) as any,
+      p_mentions: (Array.isArray(body.mentions)
+        ? `{${body.mentions.join(",")}}`
+        : null) as any,
       p_re_note_id: body.re_note_id || null,
       p_source_created_at: body.source_created_at || null,
       p_key: body.key || null,
@@ -143,50 +162,75 @@ notes.post("/sync/notes", async (c) => {
         const db = createDb(c.env);
         try {
           // 1. Generate embedding (independent of notification pipeline)
-          let aiAllowed: { allowed: boolean; chargeUserId: string | null } | null = null;
+          let aiAllowed: {
+            allowed: boolean;
+            chargeUserId: string | null;
+          } | null = null;
           if (content && content.trim().length > 0) {
             const [aiEnabled, aiLimit] = await Promise.all([
               isAiEnabled(db, c.var.user.id),
-              checkAiLimitForPriority(c.env, db, priorityId, c.var.user.id, "note_processing"),
+              checkAiLimitForPriority(
+                c.env,
+                db,
+                priorityId,
+                c.var.user.id,
+                "note_processing"
+              ),
             ]);
 
             if (aiEnabled && aiLimit.allowed) {
               aiAllowed = aiLimit;
 
               try {
-                console.log("[embedding:sync] Generating embedding for note", noteId, "content length:", content.length);
-                const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
-                  text: content,
-                })) as { data: number[][] };
-                console.log("[embedding:sync] Got embedding response", noteId, "dimensions:", response?.data?.[0]?.length);
+                const response = (await c.env.AI.run(
+                  "@cf/baai/bge-small-en-v1.5",
+                  {
+                    text: content,
+                  }
+                )) as { data: number[][] };
                 const embedding = response.data[0];
                 await db
                   .updateTable("note")
                   .set({ embedding: JSON.stringify(embedding) })
                   .where("id", "=", noteId)
                   .execute();
-                console.log("[embedding:sync] Stored embedding for note", noteId);
               } catch (error) {
-                console.error("[embedding:sync] Failed to generate embedding for note", noteId, error);
+                console.error(
+                  "[embedding:sync] Failed to generate embedding for note",
+                  noteId,
+                  error
+                );
               }
-            } else if (!aiEnabled) {
-              console.log("[embedding:sync] AI disabled for user, skipping", noteId);
             } else {
-              console.log("[embedding:sync] AI limit reached for all priority members, skipping", noteId);
+              console.log(
+                "[embedding:sync] AI limit reached for all priority members, skipping",
+                noteId
+              );
             }
           }
 
           // 2. Try AI analysis first — creates targeted unread rows respecting ignore/passive
           let analysisHandledUnread = false;
           if (aiAllowed) {
-            const isRecent = !body.source_created_at ||
-              (Date.now() - new Date(body.source_created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
+            const isRecent =
+              !body.source_created_at ||
+              Date.now() - new Date(body.source_created_at).getTime() <
+                7 * 24 * 60 * 60 * 1000;
             if (isRecent) {
               try {
-                analysisHandledUnread = await analyzeNote(c.env, noteId, body.thread_id, c.var.user.id);
+                analysisHandledUnread = await analyzeNote(
+                  c.env,
+                  noteId,
+                  body.thread_id,
+                  c.var.user.id
+                );
               } catch (error) {
-                const logger = createLogger({ operation: "sync:notes:analyzeNote" });
-                logger.error("Failed to analyze note", error as Error, { note_id: noteId });
+                const logger = createLogger({
+                  operation: "sync:notes:analyzeNote",
+                });
+                logger.error("Failed to analyze note", error as Error, {
+                  note_id: noteId,
+                });
                 c.var.tracker.captureException(error as Error);
               }
             }
@@ -200,23 +244,46 @@ notes.post("/sync/notes", async (c) => {
           let affectedUserIds: string[] = [];
           if (!analysisHandledUnread) {
             try {
-              affectedUserIds = await markThreadUnreadForOthers(c.env, db, priorityId, body.thread_id, c.var.user.id, new Date().toISOString());
+              affectedUserIds = await markThreadUnreadForOthers(
+                c.env,
+                db,
+                priorityId,
+                body.thread_id,
+                c.var.user.id,
+                new Date().toISOString()
+              );
             } catch (error) {
-              const logger = createLogger({ operation: "sync:notes:markUnread" });
-              logger.error("Failed to mark thread unread for others", error as Error);
+              const logger = createLogger({
+                operation: "sync:notes:markUnread",
+              });
+              logger.error(
+                "Failed to mark thread unread for others",
+                error as Error
+              );
               c.var.tracker.captureException(error as Error);
             }
           } else {
             // Analysis handled unread — still need to collect user IDs for DO notification
             try {
-              const usersData = await rpc(db, "get_users_with_priority_access", {
-                target_priority_id: priorityId,
-              });
-              const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
-              affectedUserIds = userIds.filter(id => id !== c.var.user.id);
+              const usersData = await rpc(
+                db,
+                "get_users_with_priority_access",
+                {
+                  target_priority_id: priorityId,
+                }
+              );
+              const userIds = (!usersData
+                ? []
+                : Array.isArray(usersData)
+                ? usersData
+                : [usersData]) as unknown as string[];
+              affectedUserIds = userIds.filter((id) => id !== c.var.user.id);
             } catch (error) {
               const logger = createLogger({ operation: "sync:notes:getUsers" });
-              logger.error("Failed to get priority users for DO notification", error as Error);
+              logger.error(
+                "Failed to get priority users for DO notification",
+                error as Error
+              );
               c.var.tracker.captureException(error as Error);
             }
           }
@@ -233,8 +300,13 @@ notes.post("/sync/notes", async (c) => {
                 })
               );
             } catch (error) {
-              const logger = createLogger({ operation: "sync:notes:notifyUserSync" });
-              logger.error(`Failed to notify UserSync for user ${userId}`, error as Error);
+              const logger = createLogger({
+                operation: "sync:notes:notifyUserSync",
+              });
+              logger.error(
+                `Failed to notify UserSync for user ${userId}`,
+                error as Error
+              );
               c.var.tracker.captureException(error as Error);
             }
           }
@@ -244,7 +316,13 @@ notes.post("/sync/notes", async (c) => {
       })()
     );
   } else if (noteId) {
-    console.log("[embedding:sync] Skipping background processing", { noteId, hasContent: !!content, contentLength: content?.trim().length, draft: body.draft, archived: !!body.archived_at });
+    console.log("[embedding:sync] Skipping background processing", {
+      noteId,
+      hasContent: !!content,
+      contentLength: content?.trim().length,
+      draft: body.draft,
+      archived: !!body.archived_at,
+    });
   }
 
   return c.json(result as any);
@@ -269,7 +347,11 @@ export async function markThreadUnreadForOthers(
   const usersData = await rpc(db, "get_users_with_priority_access", {
     target_priority_id: priorityId,
   });
-  const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
+  const userIds = (!usersData
+    ? []
+    : Array.isArray(usersData)
+    ? usersData
+    : [usersData]) as unknown as string[];
 
   const markedUserIds: string[] = [];
   for (const userId of userIds) {
@@ -287,9 +369,20 @@ export async function markThreadUnreadForOthers(
       markedUserIds.push(userId);
     } catch (error) {
       const logger = createLogger({ operation: "markThreadUnreadForOthers" });
-      logger.error(`Failed to mark thread unread for user ${userId}`, error as Error);
-      const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-      postHog.captureException(error as Error, undefined, { context: "markThreadUnreadForOthers", user_id: userId, thread_id: threadId });
+      logger.error(
+        `Failed to mark thread unread for user ${userId}`,
+        error as Error
+      );
+      const postHog = new PostHog(env.POSTHOG_API_KEY, {
+        host: env.POSTHOG_HOST,
+        flushAt: 1,
+        flushInterval: 0,
+      });
+      postHog.captureException(error as Error, undefined, {
+        context: "markThreadUnreadForOthers",
+        user_id: userId,
+        thread_id: threadId,
+      });
       await postHog.shutdown();
     }
   }

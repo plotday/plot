@@ -1,4 +1,4 @@
-h1:gmJ1YgTcovz+TdOAlrQzhv0tNVwa8GZT9pY4B4XQMh4=
+h1:UnSK9yDNPosvFm4qQlhYLUXjYWVaFcWCBO5MwySVgpI=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -158,3 +158,5 @@ h1:gmJ1YgTcovz+TdOAlrQzhv0tNVwa8GZT9pY4B4XQMh4=
 20260402145334_add_custom_ai_provider.sql h1:GzVfEtBouKv8AhBloiTRDLsrBJPjrygocZ9pKoutDgg=
 20260402145335_flexible_ai_providers.sql h1:jBROrUIvT6HImCopLgjIR5OQuQF0o925tpXVPrnB6iM=
 20260402164045_add_builtin_ai_disabled.sql h1:BNglavxLAzK88zhVhIFkn09YTq9xqHPinCGXU4ii9s0=
+20260402212149_add_connector_auth_model.sql h1:+Msgni/KNHGRjj+X7PvFcF+TJ0ddl49Z2v9c2Qu7Ka8=
+20260403010542_remove_twist_tag_constraint.sql h1:00D3mc69G150/AeZGwATE4xrgifpY2rsXckbRkd9q+4=

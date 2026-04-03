@@ -75,12 +75,25 @@ export async function summarizeWithProvider(
       break;
   }
 
-  const result = await generateText({
-    model: provider(modelName),
-    system: "You name items in a productivity app. Create a short title for the user-provided action or note. Do not wrap the title in quotes. Respond only with the title.",
-    prompt: body,
-    maxOutputTokens: 64,
-  });
+  const model = config.provider === "custom" ? provider.chat(modelName) : provider(modelName);
 
-  return result.text?.replace(/^"(.*)"$/, "$1")?.trim() || null;
+  try {
+    const result = await generateText({
+      model,
+      system: "You name items in a productivity app. Create a short title for the user-provided action or note. Do not wrap the title in quotes. Respond only with the title.",
+      prompt: body,
+      maxOutputTokens: 64,
+    });
+
+    return result.text?.replace(/^"(.*)"$/, "$1")?.trim() || null;
+  } catch (error: any) {
+    console.error("[summary] Provider error details", {
+      provider: config.provider,
+      baseUrl: config.baseUrl,
+      model: modelName,
+      responseBody: error.responseBody ?? error.data ?? error.cause,
+      statusCode: error.statusCode,
+    });
+    throw error;
+  }
 }

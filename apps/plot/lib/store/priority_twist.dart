@@ -11,6 +11,8 @@ class PriorityTwists extends Table
   TextColumn get twistEnvironment =>
       text()(); // Read from user_twist view (JOIN with twist table)
   BoolColumn get isSource => boolean().withDefault(const Constant(false))();
+  BoolColumn get shared => boolean().withDefault(const Constant(false))();
+  TextColumn get keyOption => text().nullable()();
   TextColumn get name => text()();
   TextColumn get config => text().map(const JsonConverter())();
   TextColumn get linkTypes => text().nullable()();
@@ -227,6 +229,8 @@ class PriorityTwist extends PriorityTwistRow {
         twistId: row.twistId,
         twistEnvironment: row.twistEnvironment,
         isSource: row.isSource,
+        shared: row.shared,
+        keyOption: row.keyOption,
         name: row.name,
         config: row.config,
         linkTypes: row.linkTypes,

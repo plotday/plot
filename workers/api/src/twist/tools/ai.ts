@@ -243,9 +243,9 @@ export class AI extends Tool implements IAI {
     let model: any;
 
     if (modelStr.startsWith(CUSTOM_MODEL_PREFIX)) {
-      // Custom provider: use the openai instance with user's model name
+      // Custom provider: use chat API (Responses API not supported by most compatible endpoints)
       const customModelName = modelStr.slice(CUSTOM_MODEL_PREFIX.length);
-      model = this.openai(customModelName);
+      model = this.openai.chat(customModelName);
     } else if (modelStr.startsWith("openai/")) {
       const modelName = modelStr.replace("openai/", "");
       model = this.openai(modelName);

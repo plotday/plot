@@ -670,6 +670,12 @@ class TwistIntegrations {
   /// The UI shows channel config inline instead of a channel list.
   final bool singleChannel;
 
+  /// When true, this connector uses a shared credential for all users.
+  final bool shared;
+
+  /// The Options field name containing the auth key (for key-based connectors).
+  final String? keyOption;
+
   const TwistIntegrations({
     required this.providers,
     required this.accounts,
@@ -677,6 +683,8 @@ class TwistIntegrations {
     this.optionsSchema,
     this.optionsConfig,
     this.singleChannel = false,
+    this.shared = false,
+    this.keyOption,
   });
 
   factory TwistIntegrations.fromJson(Map<String, dynamic> json) {
@@ -693,6 +701,8 @@ class TwistIntegrations {
       optionsSchema: json['optionsSchema'] as Map<String, dynamic>?,
       optionsConfig: json['optionsConfig'] as Map<String, dynamic>?,
       singleChannel: json['singleChannel'] as bool? ?? false,
+      shared: json['shared'] as bool? ?? false,
+      keyOption: json['keyOption'] as String?,
     );
   }
 

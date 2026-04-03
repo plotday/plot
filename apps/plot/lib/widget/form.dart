@@ -42,12 +42,17 @@ class FormScope extends InheritedWidget {
   const FormScope({
     required this.values,
     required this.validate,
+    this.refresh,
     required super.child,
     super.key,
   });
 
   final Map<String, dynamic> values;
   final bool Function() validate;
+
+  /// Triggers a form data refresh (re-fetches and rebuilds groups).
+  /// Only available when the form's [FormData.onRefresh] is set.
+  final Future<void> Function()? refresh;
 
   static FormScope? of(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<FormScope>();
@@ -287,6 +292,11 @@ class FormSelect<T> extends FormItem {
 
   T? _value;
   bool _hasValue;
+
+  /// Whether the user explicitly changed the value (via activate/modal).
+  /// Used by form refresh to decide whether to restore saved values.
+  bool userModified = false;
+
   final List<VoidCallback> _listeners = [];
 
   @override
@@ -420,6 +430,7 @@ class FormSelect<T> extends FormItem {
     if (result.present) {
       _value = result.value;
       _hasValue = true;
+      userModified = true;
       onChanged?.call();
       _notifyListeners();
     }
@@ -595,8 +606,13 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
             isError: true,
           );
         } else if (result is CommandRefresh) {
-          // Pop modal with refresh result so parent can handle it
-          Modal.pop<CommandReturn>(context, Value(result));
+          // Refresh in-place if the form supports it, otherwise pop
+          final refresh = FormScope.of(context)?.refresh;
+          if (refresh != null) {
+            await refresh();
+          } else {
+            Modal.pop<CommandReturn>(context, Value(result));
+          }
         } else if (result is CommandRoute) {
           await Modal.popAll(context);
           if (context.mounted) {
@@ -1276,10 +1292,14 @@ class StaticFormGroup extends FormGroup {
 
 /// Form data structure
 class FormData {
-  const FormData({required this.title, required this.groups});
+  const FormData({required this.title, required this.groups, this.onRefresh});
 
   final String title;
   final List<FormGroup> groups;
+
+  /// Optional callback to rebuild form groups (e.g. after a child modal adds data).
+  /// Called when a child modal is popped. Returns new resolved groups.
+  final Future<List<StaticFormGroup>> Function()? onRefresh;
 
   Future<List<StaticFormGroup>> list() async {
     List<StaticFormGroup> staticGroups = [];

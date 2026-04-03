@@ -131,9 +131,13 @@ class FormModalState extends State<_FormModal> {
 
     // Capture current values before tearing down old items so user edits
     // aren't lost when the form rebuilds with server-fetched defaults.
+    // For FormSelect items, only save if the user explicitly changed the value
+    // (not just initialized from server data) to avoid restoring stale
+    // references (e.g. a deleted provider ID).
     final savedValues = <String, (dynamic,)>{};
     for (var group in _formGroups) {
       for (var item in group.items) {
+        if (item is FormSelect && !item.userModified) continue;
         savedValues[item.key] = (item.getValue(),);
       }
     }
@@ -151,6 +155,10 @@ class FormModalState extends State<_FormModal> {
         final saved = savedValues[item.key];
         if (saved != null) {
           item.setValue(saved.$1);
+          // Carry over userModified so subsequent refreshes preserve this value
+          if (item is FormSelect) {
+            item.userModified = true;
+          }
         }
       }
     }

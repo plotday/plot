@@ -35,6 +35,8 @@ async function resolveTwistInfo(db: Kysely<DB>, priorityTwistId: string) {
       "twist.version",
       "twist.environment",
       "twist.options as twistOptions",
+      "twist.shared",
+      "twist.key_option as keyOption",
       "twist_admin.twist_package_id as twistPackageId",
     ])
     .where("priority_twist.id", "=", priorityTwistId)
@@ -166,7 +168,19 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     const hasConfig = Object.keys(ptConfig).length > 0;
 
     if (!hasConfig) {
-      return c.json({ providers: [], accounts: [], syncables: [] });
+      // Include options schema and twist metadata for the connect form
+      let optionsSchema = config.optionsSchema ?? null;
+      if (!optionsSchema && twistInfo.twistOptions) {
+        try {
+          optionsSchema = typeof twistInfo.twistOptions === "string"
+            ? JSON.parse(twistInfo.twistOptions)
+            : twistInfo.twistOptions;
+        } catch { /* ignore parse errors */ }
+      }
+      return c.json({
+        providers: [], accounts: [], syncables: [], optionsSchema,
+        shared: twistInfo.shared, keyOption: twistInfo.keyOption,
+      });
     }
 
     // Connected — call getChannels to fetch available channels
@@ -262,7 +276,12 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       optionsConfig = masked;
     }
 
-    return c.json({ providers: [], accounts, syncables, optionsSchema, optionsConfig, singleChannel: config.singleChannel });
+    return c.json({
+      providers: [], accounts, syncables, optionsSchema, optionsConfig,
+      singleChannel: config.singleChannel,
+      shared: twistInfo.shared,
+      keyOption: twistInfo.keyOption,
+    });
   }
 
   // Get current user's actor ID
@@ -311,6 +330,8 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     accounts: allAccounts,
     syncables: allChannels,
     singleChannel: config.singleChannel,
+    shared: twistInfo.shared,
+    keyOption: twistInfo.keyOption,
   });
 });
 
@@ -456,16 +477,56 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
       optSchema = parsed.optionsSchema as OptionsSchema | undefined;
     }
 
+    // Determine auth model from twist metadata
+    const isIndividualKey = !twistInfo.shared && !!twistInfo.keyOption;
+
     // Process secure options and save config
     let cleanedConfig = options;
     if (optSchema && c.env.AI_KEY_ENCRYPTION_KEY) {
-      cleanedConfig = await saveSecureOptions(
-        c.var.db,
-        c.env.AI_KEY_ENCRYPTION_KEY,
-        priorityTwistId,
-        optSchema,
-        options
-      );
+      if (isIndividualKey && twistInfo.keyOption) {
+        // Individual key: store the key option per-user, rest shared
+        const keyOptionField = twistInfo.keyOption;
+        const keyValue = options[keyOptionField];
+
+        // Save key option per-user
+        if (typeof keyValue === "string" && keyValue.length > 0) {
+          const keySchema: OptionsSchema = { [keyOptionField]: optSchema[keyOptionField] };
+          await saveSecureOptions(
+            c.var.db,
+            c.env.AI_KEY_ENCRYPTION_KEY,
+            priorityTwistId,
+            keySchema,
+            { [keyOptionField]: keyValue },
+            c.var.user.id
+          );
+        }
+
+        // Save remaining options as shared (without the key field)
+        const sharedOptions = { ...options };
+        delete sharedOptions[keyOptionField];
+        const sharedSchema = { ...optSchema };
+        delete sharedSchema[keyOptionField];
+        cleanedConfig = Object.keys(sharedSchema).length > 0
+          ? await saveSecureOptions(
+              c.var.db,
+              c.env.AI_KEY_ENCRYPTION_KEY,
+              priorityTwistId,
+              sharedSchema,
+              sharedOptions
+            )
+          : sharedOptions;
+        // Remove key field from config (it's stored per-user)
+        delete cleanedConfig[keyOptionField];
+      } else {
+        // Shared key: save all options as shared (existing behavior)
+        cleanedConfig = await saveSecureOptions(
+          c.var.db,
+          c.env.AI_KEY_ENCRYPTION_KEY,
+          priorityTwistId,
+          optSchema,
+          options
+        );
+      }
     }
 
     // Save config to priority_twist
@@ -499,6 +560,26 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
     // Result should be the channel list — annotate with defaults since
     // getChannels() returns raw channels without enabled/access metadata
     const rawChannels = Array.isArray(result) ? result : [];
+
+    // Store channels so enableSync can find linkTypes (matches OAuth flow's setChannels)
+    if (kvConfig && rawChannels.length > 0) {
+      const integrationsPath = kvConfig.integrationsMap["_options"];
+      if (integrationsPath) {
+        try {
+          const storeResult = await twistWrapper.callCallback(
+            integrationsPath.split(":"),
+            "setChannels",
+            "_options",
+            c.var.user.id,
+            rawChannels
+          );
+          disposeRpc(storeResult);
+        } catch (error) {
+          logger.warn("Failed to store channel access", error as Error);
+        }
+      }
+    }
+
     const syncables = rawChannels.map((ch: any) => ({
       ...ch,
       provider: "_options",
@@ -529,6 +610,29 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
         .set({ config: JSON.stringify(updatedConfig) })
         .where("id", "=", priorityTwistId)
         .execute();
+    }
+
+    // Record connection for user_connected tracking
+    try {
+      await c.var.db
+        .insertInto("priority_twist_connection")
+        .values({
+          priority_twist_id: priorityTwistId,
+          user_id: c.var.user.id,
+          provider: "_key",
+          actor_id: c.var.user.id,
+          connected_at: new Date().toISOString(),
+        })
+        .onConflict((oc) =>
+          oc
+            .columns(["priority_twist_id", "user_id", "provider"])
+            .doUpdateSet({
+              connected_at: new Date().toISOString(),
+            })
+        )
+        .execute();
+    } catch (error) {
+      logger.error("Failed to record priority_twist_connection for key connector", error as Error);
     }
 
     logger.info("No-provider connect successful", {

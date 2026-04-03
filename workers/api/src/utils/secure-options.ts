@@ -25,6 +25,7 @@ function isSecureText(def: OptionDef): boolean {
  * - `null` → delete from `secure_option`, keep `null` in config
  * - `true` (sentinel, unchanged) → remove from config update (no-op)
  *
+ * @param userId - When provided, stores per-user (individual key). When null, stores shared.
  * Returns cleaned config without secure plaintext values.
  */
 export async function saveSecureOptions(
@@ -32,7 +33,8 @@ export async function saveSecureOptions(
   encryptionKey: string,
   priorityTwistId: string,
   schema: OptionsSchema,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  userId?: string | null
 ): Promise<Record<string, unknown>> {
   const cleaned = { ...config };
 
@@ -42,8 +44,22 @@ export async function saveSecureOptions(
     const value = config[key];
 
     if (typeof value === "string" && value.length > 0) {
-      // Encrypt and upsert
+      // Encrypt and upsert (delete + insert to work with partial unique indexes)
       const { ciphertext, iv } = await encrypt(value, encryptionKey);
+
+      // Delete existing row first
+      let deleteQuery = (db as any)
+        .deleteFrom("secure_option")
+        .where("priority_twist_id", "=", priorityTwistId)
+        .where("key", "=", key);
+      if (userId) {
+        deleteQuery = deleteQuery.where("user_id", "=", userId);
+      } else {
+        deleteQuery = deleteQuery.where("user_id", "is", null);
+      }
+      await deleteQuery.execute();
+
+      // Insert new row
       await db
         .insertInto("secure_option" as any)
         .values({
@@ -51,26 +67,24 @@ export async function saveSecureOptions(
           key,
           encrypted_value: ciphertext,
           iv,
+          ...(userId ? { user_id: userId } : {}),
         })
-        .onConflict((oc) =>
-          oc
-            .columns(["priority_twist_id", "key"] as any)
-            .doUpdateSet({
-              encrypted_value: ciphertext,
-              iv,
-            } as any)
-        )
         .execute();
 
       // Replace plaintext with sentinel in config
       cleaned[key] = true;
     } else if (value === null) {
       // Delete the stored secret
-      await (db as any)
+      let query = (db as any)
         .deleteFrom("secure_option")
         .where("priority_twist_id", "=", priorityTwistId)
-        .where("key", "=", key)
-        .execute();
+        .where("key", "=", key);
+      if (userId) {
+        query = query.where("user_id", "=", userId);
+      } else {
+        query = query.where("user_id", "is", null);
+      }
+      await query.execute();
       // Keep null in config (clears the value)
     } else if (value === true) {
       // Sentinel from client — unchanged, remove from config update
@@ -84,13 +98,17 @@ export async function saveSecureOptions(
 /**
  * Resolve secure options at runtime by decrypting stored values.
  * Merges decrypted secure values into the resolved options object.
+ *
+ * @param userId - When provided, resolves per-user values first, falling back to shared.
+ *                 When null/undefined, resolves shared values only.
  */
 export async function resolveSecureOptions(
   db: Kysely<DB>,
   encryptionKey: string,
   priorityTwistId: string,
   schema: OptionsSchema,
-  resolved: Record<string, unknown>
+  resolved: Record<string, unknown>,
+  userId?: string | null
 ): Promise<Record<string, unknown>> {
   // Find which keys are secure
   const secureKeys = Object.entries(schema)
@@ -99,18 +117,35 @@ export async function resolveSecureOptions(
 
   if (secureKeys.length === 0) return resolved;
 
-  // Query all secure_option rows for this priorityTwistId
-  const rows = await (db as any)
+  // Query shared secure_option rows (user_id IS NULL)
+  const sharedRows = await (db as any)
     .selectFrom("secure_option")
     .select(["key", "encrypted_value", "iv"])
     .where("priority_twist_id", "=", priorityTwistId)
+    .where("user_id", "is", null)
     .execute() as Array<{ key: string; encrypted_value: string; iv: string }>;
 
-  // Decrypt and merge
+  // Decrypt shared values
   const merged = { ...resolved };
-  for (const row of rows) {
+  for (const row of sharedRows) {
     if (secureKeys.includes(row.key)) {
       merged[row.key] = await decrypt(row.encrypted_value, row.iv, encryptionKey);
+    }
+  }
+
+  // If userId provided, overlay per-user values (takes precedence over shared)
+  if (userId) {
+    const userRows = await (db as any)
+      .selectFrom("secure_option")
+      .select(["key", "encrypted_value", "iv"])
+      .where("priority_twist_id", "=", priorityTwistId)
+      .where("user_id", "=", userId)
+      .execute() as Array<{ key: string; encrypted_value: string; iv: string }>;
+
+    for (const row of userRows) {
+      if (secureKeys.includes(row.key)) {
+        merged[row.key] = await decrypt(row.encrypted_value, row.iv, encryptionKey);
+      }
     }
   }
 

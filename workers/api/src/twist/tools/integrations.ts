@@ -108,7 +108,7 @@ export class Integrations extends Tool implements IAuth {
   private path: string[];
   private providerConfigs: IntegrationProviderConfig[];
   /** Source metadata passed from factory when the twist is a Source. */
-  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[] } | null = null;
+  private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string } | null = null;
   /**
    * Extract provider metadata from integration options during deployment.
    * Returns provider/scopes pairs without lifecycle callbacks.
@@ -142,8 +142,8 @@ export class Integrations extends Tool implements IAuth {
     environment: TwistEnvironment;
     path: string[];
     integrationOptions?: IntegrationOptions;
-    /** Source metadata (provider, scopes, linkTypes) from the Source class. Set by factory for sources. */
-    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[] } | null;
+    /** Source metadata (provider, scopes, linkTypes, auth model) from the Source class. Set by factory for sources. */
+    sourceProvider?: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string } | null;
   }) {
     super();
     this.store = options.store;
@@ -201,6 +201,10 @@ export class Integrations extends Tool implements IAuth {
       // Single-arg form: use the first provider from config
       provider = this.providerConfigs[0]?.provider;
       resolvedChannelId = channelIdOrProvider;
+      // For key-based connectors with no OAuth providers, resolve the key
+      if (!provider && this.sourceProvider?.keyOption) {
+        return this.getKeyToken(resolvedChannelId);
+      }
       if (!provider) return null;
     }
 
@@ -226,6 +230,51 @@ export class Integrations extends Tool implements IAuth {
         return token;
       }
     }
+    return null;
+  }
+
+  /**
+   * Resolve an API key for key-based connectors.
+   * For individual keys, looks up the channel enabler's per-user key from secure_option.
+   * For shared keys, resolves from the shared config (Options tool).
+   */
+  private async getKeyToken(channelId: string): Promise<AuthToken | null> {
+    const keyOption = this.sourceProvider?.keyOption;
+    if (!keyOption) return null;
+
+    // Look up who enabled this channel
+    const config = await this.getChannelConfig("_options" as AuthProvider, channelId);
+    const enabledByUserId = config?.enabledBy;
+
+    if (!this.sourceProvider?.shared && enabledByUserId) {
+      // Individual key: look up per-user encrypted key
+      const { resolveSecureOptions } = await import("../../utils/secure-options");
+      const twist = await this.db
+        .selectFrom("twist")
+        .select("options")
+        .where("id", "=", this._twistId)
+        .executeTakeFirst();
+      const optSchema = twist?.options as Record<string, unknown> | null;
+      if (!optSchema || !this.env.AI_KEY_ENCRYPTION_KEY) return null;
+
+      // Resolve the user who enabled the channel (enabledBy is actorId = userId for key connectors)
+      const resolved = await resolveSecureOptions(
+        this.db,
+        this.env.AI_KEY_ENCRYPTION_KEY,
+        this.priorityTwistId,
+        { [keyOption]: optSchema[keyOption] } as any,
+        {},
+        enabledByUserId as string
+      );
+
+      const key = resolved[keyOption];
+      if (typeof key === "string" && key.length > 0) {
+        return { token: key, scopes: [] };
+      }
+    }
+
+    // Shared key or fallback: the key is in the shared Options (resolved by the factory at runtime)
+    // The connector should read it via this.tools.options directly
     return null;
   }
 

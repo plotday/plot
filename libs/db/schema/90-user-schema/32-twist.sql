@@ -17,6 +17,8 @@ SELECT
     pt.twist_id,
     t.environment AS twist_environment,
     t.is_source,
+    t.shared,
+    t.key_option,
     pt.owner_id,
     pt.name,
     pt.config,
@@ -31,12 +33,21 @@ SELECT
     ) AS link_types,
     COALESCE((t.permissions ->> '_default_mention_created')::boolean, false) AS default_mention_created,
     COALESCE((t.permissions ->> '_default_mention_mentioned')::boolean, false) AS default_mention_mentioned,
-    EXISTS (
-        SELECT 1
-        FROM priority_twist_connection ptc
-        WHERE ptc.priority_twist_id = pt.id
-          AND ptc.user_id = upe.user_id
-    ) AS user_connected
+    CASE
+        WHEN t.shared THEN
+            EXISTS (
+                SELECT 1
+                FROM priority_twist_connection ptc
+                WHERE ptc.priority_twist_id = pt.id
+            )
+        ELSE
+            EXISTS (
+                SELECT 1
+                FROM priority_twist_connection ptc
+                WHERE ptc.priority_twist_id = pt.id
+                  AND ptc.user_id = upe.user_id
+            )
+    END AS user_connected
 FROM
     priority_twist pt
     JOIN "user".priority_expanded upe ON upe.priority_id = pt.priority_id
@@ -60,6 +71,8 @@ SELECT
     pt.twist_id,
     t.environment AS twist_environment,
     t.is_source,
+    t.shared,
+    t.key_option,
     pt.owner_id,
     pt.name,
     pt.config,
@@ -74,12 +87,21 @@ SELECT
     ) AS link_types,
     COALESCE((t.permissions ->> '_default_mention_created')::boolean, false) AS default_mention_created,
     COALESCE((t.permissions ->> '_default_mention_mentioned')::boolean, false) AS default_mention_mentioned,
-    EXISTS (
-        SELECT 1
-        FROM priority_twist_connection ptc
-        WHERE ptc.priority_twist_id = pt.id
-          AND ptc.user_id = pt.owner_id
-    ) AS user_connected
+    CASE
+        WHEN t.shared THEN
+            EXISTS (
+                SELECT 1
+                FROM priority_twist_connection ptc
+                WHERE ptc.priority_twist_id = pt.id
+            )
+        ELSE
+            EXISTS (
+                SELECT 1
+                FROM priority_twist_connection ptc
+                WHERE ptc.priority_twist_id = pt.id
+                  AND ptc.user_id = pt.owner_id
+            )
+    END AS user_connected
 FROM
     priority_twist pt
     JOIN twist t ON pt.twist_id = t.id

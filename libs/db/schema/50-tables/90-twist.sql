@@ -55,6 +55,8 @@ CREATE TABLE "public"."twist" (
     "permissions" jsonb,
     "options" jsonb,
     "is_source" boolean NOT NULL DEFAULT false,
+    "shared" boolean NOT NULL DEFAULT false,
+    "key_option" text,
     "logo_url" text,
     "logo_url_dark" text,
     "execution_limit" integer

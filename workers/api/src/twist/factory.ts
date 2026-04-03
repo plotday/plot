@@ -85,8 +85,8 @@ export function twistFactory({
     // Track options schema captured during deployment introspection
     let optionsSchema: Record<string, unknown> | undefined;
 
-    // Source metadata (provider, scopes, linkTypes) — set during deployment, loaded at runtime
-    let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean } | null = null;
+    // Source metadata (provider, scopes, linkTypes, auth model) — set during deployment, loaded at runtime
+    let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string } | null = null;
 
     // Load priority_twist config for Options resolution at runtime
     let priorityTwistConfig: Record<string, unknown> | undefined;
@@ -398,6 +398,21 @@ export function twistFactory({
 
       // Collect source metadata if this is a Source
       sourceProvider = await twist.getSourceMetadata(twistInit) ?? null;
+
+      // Backwards-compat inference for auth model:
+      // No provider + no keyOption = shared key connector (infer keyOption from first secure option)
+      if (sourceProvider && !sourceProvider.provider && !sourceProvider.keyOption) {
+        sourceProvider.shared = true;
+        // Infer keyOption from first secure Options field if present
+        if (optionsSchema) {
+          for (const [key, def] of Object.entries(optionsSchema)) {
+            if ((def as any)?.type === "text" && (def as any)?.secure) {
+              sourceProvider.keyOption = key;
+              break;
+            }
+          }
+        }
+      }
 
       // Collect and merge provider declarations from all Integrations instances
       const allProviders: ProviderDeclaration[] = [];

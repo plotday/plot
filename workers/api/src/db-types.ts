@@ -877,6 +877,7 @@ export interface SecureOption {
   key: string;
   priority_twist_id: string;
   updated_at: Generated<Timestamp>;
+  user_id: string | null;
 }
 
 export interface Series {
@@ -1046,11 +1047,13 @@ export interface Twist {
   execution_limit: number | null;
   id: Generated<Int8>;
   is_source: Generated<boolean>;
+  key_option: string | null;
   logo_url: string | null;
   logo_url_dark: string | null;
   name: string;
   options: Json | null;
   permissions: Json | null;
+  shared: Generated<boolean>;
   twist_admin_id: Int8;
   updated_at: Generated<Timestamp>;
   version: string;
@@ -1339,12 +1342,14 @@ export interface UserTwist {
   default_mention_mentioned: boolean | null;
   id: string | null;
   is_source: boolean | null;
+  key_option: string | null;
   link_types: Json | null;
   logo_url: string | null;
   logo_url_dark: string | null;
   name: string | null;
   owner_id: string | null;
   priority_id: string | null;
+  shared: boolean | null;
   twist_environment: TwistEnvironment | null;
   twist_id: Int8 | null;
   updated_at: Timestamp | null;

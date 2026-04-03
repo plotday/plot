@@ -147,6 +147,8 @@ class ManageConnections extends Command {
             await EditSource(
               priorityTwistId: item.id,
               name: item.name,
+              logoUrl: item.logoUrl,
+              logoUrlDark: item.logoUrlDark,
             ).run(ctx);
           } else if (item is _AvailableSource) {
             await AddSourceDetail(item.twist).run(ctx);
@@ -773,6 +775,8 @@ class EditSource extends ShowForm {
     required this.name,
     this.isAccountBased = true,
     this.isNewlyActivated = false,
+    this.logoUrl,
+    this.logoUrlDark,
     super.subtitle,
   }) : super(
          title: name,
@@ -782,12 +786,16 @@ class EditSource extends ShowForm {
            name,
            isAccountBased,
            isNewlyActivated,
+           logoUrl: logoUrl,
+           logoUrlDark: logoUrlDark,
          ),
        );
 
   final String priorityTwistId;
   final String name;
   final bool isAccountBased;
+  final String? logoUrl;
+  final String? logoUrlDark;
 
   /// When true, hides the Archive button (source was just set up).
   final bool isNewlyActivated;
@@ -796,8 +804,10 @@ class EditSource extends ShowForm {
     String priorityTwistId,
     String name,
     bool isAccountBased,
-    bool isNewlyActivated,
-  ) async {
+    bool isNewlyActivated, {
+    String? logoUrl,
+    String? logoUrlDark,
+  }) async {
     final results = await Future.wait([
       TwistApi.getIntegrations(priorityTwistId),
       UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
@@ -835,7 +845,8 @@ class EditSource extends ShowForm {
     );
 
     // Build option form items for no-provider connectors
-    final hasOptions = integrations.optionsSchema != null &&
+    final hasOptions =
+        integrations.optionsSchema != null &&
         integrations.optionsSchema!.isNotEmpty;
     final optionItems = hasOptions
         ? TwistOptionItems(
@@ -858,6 +869,8 @@ class EditSource extends ShowForm {
                 priorityTwistId: priorityTwistId,
                 isAccountBased: isAccountBased,
                 sourceName: name,
+                logoUrl: logoUrl,
+                logoUrlDark: logoUrlDark,
                 initialData: integrations,
                 refreshNotifier: refreshNotifier,
                 channelListController: sourceChannelListController,
@@ -987,7 +1000,7 @@ class AddSource extends ShowCommands {
   AddSource()
     : super(
         title: 'Add connection',
-        icon: PlotIcon.add,
+        icon: PlotIcon.save,
         commandsBuilder: (context) => _getSourceCommands(),
       );
 
@@ -1049,6 +1062,7 @@ class AddSourceDetail extends ShowForm {
     // a no-provider connector — the form rebuilds to show channels).
     CommandReturn result = const CommandSkipped();
     while (context.mounted) {
+      // ignore: use_build_context_synchronously — checked by while condition
       result = await super.run(context);
       if (result is! CommandRefresh) break;
     }
@@ -1143,8 +1157,106 @@ class AddSourceDetail extends ShowForm {
     var noProviderChanges = const IntegrationChanges();
     final noProviderChannelController = FormChannelListController();
 
+    Future<List<StaticFormGroup>> buildGroups() async {
+      // Re-fetch integrations on refresh
+      var refreshed = await TwistApi.getIntegrations(draftId);
+      final cached = _lastConnectResult;
+      if (cached?.accountName != null && refreshed.accounts.isEmpty) {
+        refreshed = TwistIntegrations(
+          providers: refreshed.providers,
+          accounts: [
+            TwistAccount(
+              provider: AuthProvider.other,
+              actorId: draftId,
+              name: cached!.accountName,
+            ),
+          ],
+          channels: refreshed.channels,
+          optionsSchema: refreshed.optionsSchema,
+          optionsConfig: refreshed.optionsConfig,
+        );
+      }
+
+      final refreshChannelController = FormChannelListController();
+      // ignore: prefer_final_locals
+      var refreshChanges = const IntegrationChanges();
+
+      return [
+        StaticFormGroup(
+          items: [
+            if (twist.description != null)
+              FormInfo(key: 'description', text: twist.description!),
+            ...refreshed.providers.map(
+              (provider) => FormInfo(
+                key: 'auth_${provider.provider.name}',
+                divider: false,
+                builder: (formContext) => Padding(
+                  padding: formContext.theme.spacing.padding.copyWith(top: 0),
+                  child: _AuthWithScopeToggles(
+                    provider: provider,
+                    priorityTwistId: draftId,
+                    initialEnabledGroups:
+                        scopeGroupSelections[provider.provider.name],
+                    onScopeGroupsChanged: (groups) {
+                      scopeGroupSelections[provider.provider.name] = groups;
+                    },
+                    onSuccess: () {
+                      _activateSource(formContext, draftId, twist.name);
+                    },
+                  ),
+                ),
+              ),
+            ),
+            if (optionItems != null &&
+                (refreshed.providers.isNotEmpty || refreshed.isEmpty))
+              ...optionItems.items,
+            if (refreshed.providers.isEmpty &&
+                optionItems != null &&
+                refreshed.isEmpty)
+              FormButton(
+                key: 'connect',
+                buildCommand: (_) => ConnectNoProviderCommand(
+                  priorityTwistId: draftId,
+                  optionItems: optionItems,
+                ),
+              ),
+            if (refreshed.providers.isEmpty && !refreshed.isEmpty) ...[
+              FormChannelList(
+                key: 'channels',
+                controller: refreshChannelController,
+                validator: () =>
+                    refreshChanges.selectedChannels.isNotEmpty,
+                builder: (context) => SetupSourceWidget(
+                  priorityTwistId: draftId,
+                  setupMode: true,
+                  isAccountBased: true,
+                  sourceName: twist.name,
+                  logoUrl: twist.logoUrl,
+                  logoUrlDark: twist.logoUrlDark,
+                  initialData: refreshed,
+                  channelListController: refreshChannelController,
+                  onChanged: (changes) {
+                    refreshChanges = changes;
+                  },
+                ),
+              ),
+              FormButton(
+                key: 'add_connection',
+                buildCommand: (_) => _ActivateNoProviderSource(
+                  draftId: draftId,
+                  twistName: twist.name,
+                  getChanges: () => refreshChanges,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ];
+    }
+
     return FormData(
       title: 'Set up ${twist.name}',
+      onRefresh: buildGroups,
       groups: [
         StaticFormGroup(
           items: [
@@ -1190,13 +1302,14 @@ class AddSourceDetail extends ShowForm {
               FormChannelList(
                 key: 'channels',
                 controller: noProviderChannelController,
-                validator: () =>
-                    noProviderChanges.selectedChannels.isNotEmpty,
+                validator: () => noProviderChanges.selectedChannels.isNotEmpty,
                 builder: (context) => SetupSourceWidget(
                   priorityTwistId: draftId,
                   setupMode: true,
                   isAccountBased: true,
                   sourceName: twist.name,
+                  logoUrl: twist.logoUrl,
+                  logoUrlDark: twist.logoUrlDark,
                   initialData: integrations,
                   channelListController: noProviderChannelController,
                   onChanged: (changes) {
@@ -1859,6 +1972,8 @@ class SetupTwist extends ShowForm {
                 priorityTwistId: draftId,
                 setupMode: true,
                 sourceName: twist.name,
+                logoUrl: twist.logoUrl,
+                logoUrlDark: twist.logoUrlDark,
                 initialData: integrations,
                 refreshNotifier: refreshNotifier,
                 channelListController: setupSourceController,
@@ -2052,9 +2167,15 @@ class ConnectConnectorAccount extends ShowForm {
 
   static Future<FormData> _buildForm(PriorityTwist twist) async {
     final integrations = await TwistApi.getIntegrations(twist.id.toString());
-    // Show providers the user hasn't connected to yet, or all providers
-    // if none are unconnected (handles backfill gap where DO storage has
-    // tokens but priority_twist_connection is missing).
+
+    // Individual key connector: show key entry form
+    if (!integrations.shared &&
+        integrations.keyOption != null &&
+        integrations.providers.isEmpty) {
+      return _buildKeyConnectForm(twist, integrations);
+    }
+
+    // OAuth connector: show providers the user hasn't connected to yet
     var providers = integrations.providers
         .where(
           (p) => !integrations.accounts.any((a) => a.provider == p.provider),
@@ -2094,6 +2215,43 @@ class ConnectConnectorAccount extends ShowForm {
                 ),
               )
               .toList(),
+        ),
+      ],
+    );
+  }
+
+  /// Build a form for individual key entry (e.g. Fellow API key).
+  static FormData _buildKeyConnectForm(
+    PriorityTwist twist,
+    TwistIntegrations integrations,
+  ) {
+    final keyOption = integrations.keyOption!;
+    final schema = integrations.optionsSchema;
+    final keyDef = schema?[keyOption] as Map<String, dynamic>?;
+
+    // Build TwistOptionItems from just the key field
+    final keySchema = <String, dynamic>{
+      keyOption:
+          keyDef ??
+          {'type': 'text', 'secure': true, 'label': 'API key', 'default': ''},
+    };
+    final optionItems = TwistOptionItems(options: keySchema);
+
+    return FormData(
+      title: 'Connect ${twist.name}',
+      groups: [
+        StaticFormGroup(
+          items: [
+            ...optionItems.items,
+            FormButton(
+              key: 'connect',
+              skipValidation: true,
+              buildCommand: (_) => ConnectNoProviderCommand(
+                priorityTwistId: twist.id.toString(),
+                optionItems: optionItems,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -2185,7 +2343,7 @@ class _ActivateNoProviderSource extends Command {
     required this.getChanges,
   }) : super(
          title: 'Add connection',
-         icon: PlotIcon.add,
+         icon: PlotIcon.save,
          eventObject: EventObject.twist,
          eventAction: EventAction.added,
        );
@@ -2198,19 +2356,17 @@ class _ActivateNoProviderSource extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final changes = getChanges();
-      final channels = changes.selectedChannels
-          .map((key) {
-            final parts = key.split(':');
-            return {
-              'provider': parts.first,
-              'syncableId': parts.skip(1).join(':'),
-              if (changes.channelPriorities.containsKey(key))
-                'priorityId': changes.channelPriorities[key]!,
-              if (changes.channelCreateThreads.containsKey(key))
-                'createThreads': changes.channelCreateThreads[key]!,
-            };
-          })
-          .toList();
+      final channels = changes.selectedChannels.map((key) {
+        final parts = key.split(':');
+        return {
+          'provider': parts.first,
+          'syncableId': parts.skip(1).join(':'),
+          if (changes.channelPriorities.containsKey(key))
+            'priorityId': changes.channelPriorities[key]!,
+          if (changes.channelCreateThreads.containsKey(key))
+            'createThreads': changes.channelCreateThreads[key]!,
+        };
+      }).toList();
 
       await TwistApi.activateDraft(
         draftId: draftId,

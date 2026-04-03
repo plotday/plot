@@ -1,3 +1,5 @@
+- Fixed Attio deal stages showing as cryptic IDs instead of their names (like "Won" or "Qualified") — reconnecting your Attio account will fix existing deals too
+- Fixed links from API key connections (like Attio) incorrectly showing "Connect your account" — these now display and open correctly for all users
 - Connections that use API keys (like Attio) now show channels during setup so you can choose what to sync before adding — editing also shows the access token and account name
 - AI preferences now let you disable built-in AI features and twist AI independently using the provider dropdowns, replacing the previous all-or-nothing toggle
 - You can now configure your own AI providers in AI preferences — choose from OpenAI, Anthropic, Google, or any custom OpenAI-compatible endpoint, and select which provider to use for built-in features and twist AI separately

@@ -1521,6 +1521,7 @@ export type Database = {
           key: string
           priority_twist_id: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -1530,6 +1531,7 @@ export type Database = {
           key: string
           priority_twist_id: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -1539,6 +1541,7 @@ export type Database = {
           key?: string
           priority_twist_id?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1558,6 +1561,12 @@ export type Database = {
             columns: ["priority_twist_id"]
             referencedRelation: "priority_twist_note_create"
             referencedColumns: ["priority_twist_id"]
+          },
+          {
+            foreignKeyName: "secure_option_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2122,11 +2131,13 @@ export type Database = {
           execution_limit: number | null
           id: number
           is_source: boolean
+          key_option: string | null
           logo_url: string | null
           logo_url_dark: string | null
           name: string
           options: Json | null
           permissions: Json | null
+          shared: boolean
           twist_admin_id: number
           updated_at: string
           version: string
@@ -2139,11 +2150,13 @@ export type Database = {
           execution_limit?: number | null
           id?: never
           is_source?: boolean
+          key_option?: string | null
           logo_url?: string | null
           logo_url_dark?: string | null
           name: string
           options?: Json | null
           permissions?: Json | null
+          shared?: boolean
           twist_admin_id: number
           updated_at?: string
           version: string
@@ -2156,11 +2169,13 @@ export type Database = {
           execution_limit?: number | null
           id?: never
           is_source?: boolean
+          key_option?: string | null
           logo_url?: string | null
           logo_url_dark?: string | null
           name?: string
           options?: Json | null
           permissions?: Json | null
+          shared?: boolean
           twist_admin_id?: number
           updated_at?: string
           version?: string
@@ -3660,11 +3675,13 @@ export type Database = {
           execution_limit: number | null
           id: number
           is_source: boolean
+          key_option: string | null
           logo_url: string | null
           logo_url_dark: string | null
           name: string
           options: Json | null
           permissions: Json | null
+          shared: boolean
           twist_admin_id: number
           updated_at: string
           version: string
@@ -4118,12 +4135,14 @@ export type Database = {
           default_mention_mentioned: boolean | null
           id: string | null
           is_source: boolean | null
+          key_option: string | null
           link_types: Json | null
           logo_url: string | null
           logo_url_dark: string | null
           name: string | null
           owner_id: string | null
           priority_id: string | null
+          shared: boolean | null
           twist_environment:
             | Database["public"]["Enums"]["twist_environment"]
             | null
