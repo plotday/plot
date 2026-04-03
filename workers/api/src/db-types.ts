@@ -911,6 +911,7 @@ export interface SourceChannel {
    */
   channel_id: string;
   create_threads: Generated<string>;
+  create_threads_by_type: Json | null;
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
   id: Generated<Int8>;
@@ -1256,6 +1257,7 @@ export interface UserSettings {
 export interface UserSourceChannel {
   channel_id: string | null;
   create_threads: string | null;
+  create_threads_by_type: Json | null;
   created_at: Timestamp | null;
   enabled: boolean | null;
   id: Int8 | null;

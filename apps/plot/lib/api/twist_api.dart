@@ -226,7 +226,7 @@ class TwistApi {
     String? priorityId,
     required String name,
     Map<String, dynamic>? config,
-    List<Map<String, String>>? channels,
+    List<Map<String, Object>>? channels,
   }) async {
     await api.post<Map<String, dynamic>>(
       '/twist/draft/$draftId/activate',
