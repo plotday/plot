@@ -271,22 +271,21 @@ export class AttioAPI {
     recordId: string,
     values: Record<string, unknown>
   ): Promise<{ data: AttioRecord }> {
-    return this.request(
-      "PATCH",
-      `/objects/${objectSlug}/records/${recordId}`,
-      { data: { values } }
-    );
+    return this.request("PATCH", `/objects/${objectSlug}/records/${recordId}`, {
+      data: { values },
+    });
   }
 
-  /** Query tasks. */
+  /** List tasks. */
   async queryTasks(options?: {
     cursor?: string;
     limit?: number;
   }): Promise<AttioPaginatedResponse<AttioTask>> {
-    const body: Record<string, unknown> = {};
-    if (options?.limit) body.limit = options.limit;
-    if (options?.cursor) body.offset = options.cursor;
-    return this.request("POST", "/tasks/query", body);
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.cursor) params.set("offset", options.cursor);
+    const qs = params.toString();
+    return this.request("GET", `/tasks${qs ? `?${qs}` : ""}`);
   }
 
   /** Create a note on a record. */
@@ -300,8 +299,9 @@ export class AttioAPI {
       data: {
         parent_object: parentObject,
         parent_record_id: parentRecordId,
-        title: title || undefined,
-        content_plaintext: content,
+        title: title || "Comment from Plot",
+        format: "plaintext",
+        content,
       },
     });
   }
@@ -328,10 +328,7 @@ export class AttioAPI {
   ): Promise<AttioSelectOption[]> {
     const result = await this.request<{
       data: Array<{ id: { option_id: string }; title: string }>;
-    }>(
-      "GET",
-      `/objects/${objectSlug}/attributes/${attributeSlug}/options`
-    );
+    }>("GET", `/objects/${objectSlug}/attributes/${attributeSlug}/options`);
     return result.data ?? [];
   }
 
@@ -342,10 +339,7 @@ export class AttioAPI {
   ): Promise<AttioStatusOption[]> {
     const result = await this.request<{
       data: AttioStatusOption[];
-    }>(
-      "GET",
-      `/objects/${objectSlug}/attributes/${attributeSlug}/statuses`
-    );
+    }>("GET", `/objects/${objectSlug}/attributes/${attributeSlug}/statuses`);
     return result.data ?? [];
   }
 }

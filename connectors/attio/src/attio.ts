@@ -55,8 +55,8 @@ export class Attio extends Connector<Attio> {
     {
       type: "deal",
       label: "Deal",
-      logo: "/assets/logo-attio.svg",
-      logoDark: "/assets/logo-attio-dark.svg",
+      logo: "https://plot.day/assets/logo-attio.svg",
+      logoDark: "https://plot.day/assets/logo-attio-dark.svg",
       statuses: [] as Array<{
         status: string;
         label: string;
@@ -68,15 +68,15 @@ export class Attio extends Connector<Attio> {
     {
       type: "person",
       label: "Person",
-      logo: "/assets/logo-attio.svg",
-      logoDark: "/assets/logo-attio-dark.svg",
+      logo: "https://plot.day/assets/logo-attio.svg",
+      logoDark: "https://plot.day/assets/logo-attio-dark.svg",
       statuses: [],
     },
     {
       type: "task",
       label: "Task",
-      logo: "/assets/logo-attio.svg",
-      logoDark: "/assets/logo-attio-dark.svg",
+      logo: "https://plot.day/assets/logo-attio.svg",
+      logoDark: "https://plot.day/assets/logo-attio-dark.svg",
       statuses: [
         { status: "open", label: "Open" },
         {
@@ -153,7 +153,7 @@ export class Attio extends Connector<Attio> {
       dealStatuses = stages
         .filter((s) => !s.is_archived)
         .map((stage) => ({
-          status: stage.id.status_id,
+          status: stage.title,
           label: stage.title,
           ...(isWonStage(stage.title)
             ? { tag: Tag.Done, done: true as const }
@@ -172,23 +172,23 @@ export class Attio extends Connector<Attio> {
           {
             type: "deal",
             label: "Deal",
-            logo: "/assets/logo-attio.svg",
-            logoDark: "/assets/logo-attio-dark.svg",
+            logo: "https://plot.day/assets/logo-attio.svg",
+            logoDark: "https://plot.day/assets/logo-attio-dark.svg",
             statuses: dealStatuses,
             supportsAssignee: true,
           },
           {
             type: "person",
             label: "Person",
-            logo: "/assets/logo-attio.svg",
-            logoDark: "/assets/logo-attio-dark.svg",
+            logo: "https://plot.day/assets/logo-attio.svg",
+            logoDark: "https://plot.day/assets/logo-attio-dark.svg",
             statuses: [],
           },
           {
             type: "task",
             label: "Task",
-            logo: "/assets/logo-attio.svg",
-            logoDark: "/assets/logo-attio-dark.svg",
+            logo: "https://plot.day/assets/logo-attio.svg",
+            logoDark: "https://plot.day/assets/logo-attio-dark.svg",
             statuses: [
               { status: "open", label: "Open" },
               {
@@ -371,7 +371,7 @@ export class Attio extends Connector<Attio> {
       type: "deal",
       title: name,
       created: new Date(record.created_at),
-      status: stage?.id ?? null,
+      status: stage?.title ?? null,
       channelId: "attio",
       meta: {
         attioRecordId: recordId,
