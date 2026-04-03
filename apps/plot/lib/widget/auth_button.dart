@@ -719,8 +719,8 @@ AuthProviderConfig getAuthProviderConfig(AuthProvider provider) {
     case AuthProvider.google:
       return AuthProviderConfig(
         backgroundColor: Colors.white,
-        textColor: const Color(0xFF3C4043),
-        borderColor: const Color(0xFFDADBDD),
+        textColor: const Color(0xFF1F1F1F),
+        borderColor: const Color(0xFF747775),
         horizontalPadding: horizontalPadding,
         hoverColor: const Color(0xFFF8F9FA),
         focusColor: const Color(0xFF4285F4),
