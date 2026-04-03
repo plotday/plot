@@ -156,12 +156,12 @@ class ManageConnections extends Command {
             AddSourceDetail.lastActivatedSourceId = null;
             if (activatedId != null) {
               if (item.twist.providers.isNotEmpty) {
-                // OAuth: open EditSource to configure channels
+                // OAuth: close SelectModal so EditSource opens after
                 activatedSourceId = activatedId;
                 activatedSourceName = item.twist.name;
+                return true;
               }
-              // Non-OAuth: channels configured during setup, skip EditSource
-              return true; // Close SelectModal
+              // Non-OAuth: channels configured during setup, refresh and stay
             }
           } else if (item is _UpcomingConnection) {
             await _NotifyUpcomingConnection(item).run(ctx);

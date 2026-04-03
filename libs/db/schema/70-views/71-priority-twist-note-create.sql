@@ -46,5 +46,47 @@ WHERE
     AND updated_by_uuid (pt.id) != n.updated_by
     AND pt.archived_at IS NULL
     AND n.created_at > pt.created_at
+UNION ALL
+-- Account-level connectors (priority_id IS NULL) — match by mention only
+SELECT
+    pt.id AS priority_twist_id,
+    n.id,
+    n.created_at,
+    n.updated_at,
+    n.source_created_at,
+    n.author_id,
+    n.created_by,
+    n.updated_by,
+    n.sync_depth,
+    n.archived_at,
+    n.thread_id,
+    n.draft,
+    n.private,
+    n.content,
+    n.actions,
+    n.key,
+    n.mentions,
+    n.re_note_id,
+    a.priority_id,
+    a.title AS thread_title,
+    a.created_by AS thread_created_by,
+    NULL::jsonb AS thread_meta,
+    author.name AS author_name,
+    author.type AS author_type,
+    nt.tags
+FROM
+    priority_twist pt
+    JOIN note n ON pt.id = ANY (n.mentions)
+    JOIN thread a ON a.id = n.thread_id
+        AND a.archived_at IS NULL
+    LEFT JOIN actor author ON author.id = n.author_id
+    LEFT JOIN note_tags nt ON nt.note_id = n.id
+WHERE
+    pt.priority_id IS NULL
+    AND n.draft = FALSE
+    AND n.created_by != pt.id
+    AND updated_by_uuid (pt.id) != n.updated_by
+    AND pt.archived_at IS NULL
+    AND n.created_at > pt.created_at
 ORDER BY
-    n.created_at ASC;
+    created_at ASC;

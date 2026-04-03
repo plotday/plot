@@ -13,6 +13,7 @@ import {
   type ThreadMeta,
 } from "@plotday/twister/plot";
 import { type Callback } from "@plotday/twister/tools/callbacks";
+import { Tag } from "@plotday/twister/tag";
 import {
   type ArchiveLinkFilter,
   type AuthProvider,
@@ -784,7 +785,94 @@ export class Integrations extends Tool implements IAuth {
    */
   async dispatch(
     dispatchItem: any
-  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[] }>> {
+  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; deferredTagRemoval?: { noteId: string; actorId: string } }>> {
+    // Handle note dispatch for connectors with handleReplies — when a user
+    // replies to a thread the connector created, the connector is auto-mentioned
+    // but there's no Plot tool to handle intent matching or tag removal.
+    // Route directly to onNoteCreated and defer tag removal.
+    if (dispatchItem?.itemType === "note" && this.sourceProvider) {
+      const { item, isCreate = true } = dispatchItem;
+      if (!isCreate || !item) return [];
+
+      // Skip notes created by this twist (prevent loops)
+      if (item.created_by === this.priorityTwistId) return [];
+
+      const isMentioned = (item.mentions ?? []).includes(this.priorityTwistId);
+      const threadCreatedByThis = item.thread_created_by === this.priorityTwistId;
+
+      if (isMentioned && threadCreatedByThis) {
+        // Look up the link for this thread to get metadata
+        const link = await this.db
+          .selectFrom("link")
+          .select(["meta", "channel_id", "source"])
+          .where("thread_id", "=", item.thread_id!)
+          .where("created_by", "=", this.priorityTwistId)
+          .executeTakeFirst();
+
+        const note: Note = {
+          id: item.id,
+          created: item.created_at ? new Date(item.created_at) : new Date(),
+          thread: {
+            id: item.thread_id,
+            title: item.thread_title,
+            priority: { id: item.priority_id },
+          } as any,
+          author: {
+            id: item.author_id ?? item.created_by,
+            name: item.author_name,
+            type:
+              item.author_type === "user"
+                ? ActorType.User
+                : item.author_type === "priority_twist"
+                ? ActorType.Twist
+                : ActorType.Contact,
+          },
+          content: item.content,
+          key: item.key || null,
+          reNote: item.re_note_id ? { id: item.re_note_id } : null,
+          mentions: item.mentions || [],
+          tags: item.tags || {},
+          private: item.private ?? false,
+          archived: item.archived_at !== null,
+          actions: item.actions,
+        };
+
+        const meta: ThreadMeta = { ...(link?.meta as any ?? {}) };
+        meta.channelId = link?.channel_id ?? null;
+        meta.linkSource = link?.source ?? null;
+
+        // Resolve reNote key for reply targeting
+        if (item.re_note_id) {
+          const reNote = await this.db
+            .selectFrom("note")
+            .select("key")
+            .where("id", "=", item.re_note_id)
+            .executeTakeFirst();
+          if (reNote?.key) {
+            meta.reNoteKey = reNote.key;
+          }
+        }
+
+        const thread = {
+          id: item.thread_id,
+          title: item.thread_title,
+          priority: { id: item.priority_id },
+          meta,
+        };
+
+        return [{
+          sourceMethod: "onNoteCreated",
+          args: [note, thread],
+          deferredTagRemoval: {
+            noteId: item.id as string,
+            actorId: (item.author_id ?? item.created_by) as string,
+          },
+        }];
+      }
+
+      return [];
+    }
+
     // Handle channel_note dispatch — route to source's onNoteCreated
     if (dispatchItem?.itemType === "channel_note" && this.sourceProvider) {
       const { item, isCreate = true } = dispatchItem;
@@ -2503,5 +2591,31 @@ export class Integrations extends Tool implements IAuth {
     return prefix
       ? (env[`${prefix}_SECRET` as keyof Bindings] as string | undefined)
       : undefined;
+  }
+
+  /** Remove the Twisting tag from a note. Called by entrypoint for deferred tag removal. */
+  async removeTagFromNote(noteId: string, actorId: string): Promise<void> {
+    try {
+      const pt = await this.db
+        .selectFrom("priority_twist")
+        .select("owner_id")
+        .where("id", "=", this.priorityTwistId)
+        .executeTakeFirst();
+
+      if (pt?.owner_id) {
+        await rpcUser(this.db, "update_note_tags", {
+          user_id: pt.owner_id,
+          p_note_id: noteId,
+          p_actor_id: actorId,
+          p_client_id: 0,
+          p_tag_updates: { [Tag.Twist]: false },
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to remove deferred Twisting tag from note", {
+        note_id: noteId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

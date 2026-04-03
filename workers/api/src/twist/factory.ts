@@ -150,11 +150,12 @@ export function twistFactory({
     let providerConfig: AiProviderConfig | undefined;
     if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
       // Determine scope: org priority → org preference, else → user preference
-      const priorityOrg = await db
+      // Account-level connectors have no priority_id, skip org lookup
+      const priorityOrg = priorityId ? await db
         .selectFrom("priority")
         .select("organization_id")
         .where("id", "=", priorityId)
-        .executeTakeFirst();
+        .executeTakeFirst() : undefined;
 
       let aiPref;
       let scopeFilter: { column: "user_id" | "organization_id"; value: any };

@@ -1,3 +1,7 @@
+- Fixed confirmation messages appearing twice when using form actions like archiving a connection
+- Fixed archiving a connection not archiving the threads it created — threads from connectors like Attio now properly archive when you remove the connection
+- Fixed replies to connector threads (like Attio) not syncing back to the external service, and the processing indicator staying stuck on the note
+- Fixed Attio links showing a generic icon instead of the Attio logo
 - Fixed Attio deal stages showing as cryptic IDs instead of their names (like "Won" or "Qualified") — reconnecting your Attio account will fix existing deals too
 - Fixed links from API key connections (like Attio) incorrectly showing "Connect your account" — these now display and open correctly for all users
 - Connections that use API keys (like Attio) now show channels during setup so you can choose what to sync before adding — editing also shows the access token and account name

@@ -623,6 +623,13 @@ class _FormButtonWidgetState extends State<_FormButtonWidget> {
         }
       }
 
+      // Prevent double-toast: CommandMessage results are already handled above
+      // (error toast shown, or success result passed via Modal.pop for the
+      // parent modal to handle). Return CommandDone so context.run() in
+      // base.dart doesn't show a duplicate toast.
+      if (result is CommandMessage) {
+        return const CommandDone();
+      }
       return result;
     }
 

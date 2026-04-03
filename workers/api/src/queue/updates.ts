@@ -197,7 +197,7 @@ async function processTwistBatch(
       return;
     }
 
-    const priorityId = String(pt.priority_id);
+    const priorityId = pt.priority_id ? String(pt.priority_id) : "";
 
     const twistWrapper = await factory({
       version,

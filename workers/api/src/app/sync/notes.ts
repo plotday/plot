@@ -151,6 +151,39 @@ notes.post("/sync/notes", async (c) => {
   const priorityId = await getPriorityForThread(c.var.db, body.thread_id);
   notifySync(c, priorityId);
 
+  // Notify account-level connectors (priority_id IS NULL) that are mentioned
+  // in this note. SyncNotify.notifyTwists() only finds priority-bound twists,
+  // so account-level connectors would never be woken up without this.
+  if (Array.isArray(body.mentions) && body.mentions.length > 0 && !body.draft) {
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const accountTwists = await c.var.db
+            .selectFrom("priority_twist")
+            .select("id")
+            .where("id", "in", body.mentions)
+            .where("priority_id", "is", null)
+            .where("archived_at", "is", null)
+            .execute();
+
+          for (const twist of accountTwists) {
+            const twistSyncId = c.env.TWIST_SYNC.idFromName(twist.id);
+            const twistSyncDO = c.env.TWIST_SYNC.get(twistSyncId);
+            await twistSyncDO.fetch(
+              new Request("http://do/notify", {
+                method: "POST",
+                body: JSON.stringify({ id: twist.id }),
+              })
+            );
+          }
+        } catch (error) {
+          const logger = createLogger({ operation: "notifyAccountTwists" });
+          logger.error("Error notifying account-level twist DOs", error as Error);
+        }
+      })()
+    );
+  }
+
   // Background processing: AI analysis + unread marking (best-effort, don't block the response)
   // Uses its own DB connection since the request-scoped one is destroyed after the response
   // Only run for new notes — re-analyzing on edits causes the AI to re-apply removed tags
