@@ -87,6 +87,7 @@ type ChannelConfig = {
   title?: string | null;
   priorityId?: string | null;
   createThreads?: string; // 'all' | 'actionable' | 'manual'
+  createThreadsByType?: Record<string, string>; // { linkType: 'all'|'actionable'|'manual' }
 };
 
 type PendingActAs = {
@@ -440,12 +441,20 @@ export class Integrations extends Tool implements IAuth {
     if (!targetPriorityId && link.channelId) {
       const channel = await this.db
         .selectFrom("source_channel")
-        .select(["priority_id", "create_threads"])
+        .select(["priority_id", "create_threads", "create_threads_by_type"])
         .where("priority_twist_id", "=", this.priorityTwistId)
         .where("channel_id", "=", link.channelId)
         .executeTakeFirst();
       targetPriorityId = channel?.priority_id ?? "";
-      createThreads = channel?.create_threads ?? "all";
+
+      // Resolve per-type createThreads, falling back to global default
+      const byType = channel?.create_threads_by_type as Record<string, string> | null;
+      const linkType = link.type ?? null;
+      if (byType && linkType && byType[linkType]) {
+        createThreads = byType[linkType];
+      } else {
+        createThreads = channel?.create_threads ?? "all";
+      }
     }
 
     if (!targetPriorityId) {
@@ -1375,7 +1384,8 @@ export class Integrations extends Tool implements IAuth {
     actorId: ActorId,
     title?: string,
     priorityId?: string,
-    createThreads?: string
+    createThreads?: string,
+    createThreadsByType?: Record<string, string>
   ): Promise<void> {
     // Find the channel from the actor's channel access list
     const channels = await this.getChannelAccess(provider, actorId);
@@ -1393,6 +1403,7 @@ export class Integrations extends Tool implements IAuth {
       title: title ?? null,
       ...(priorityId !== undefined ? { priorityId } : {}),
       ...(createThreads !== undefined ? { createThreads } : {}),
+      ...(createThreadsByType !== undefined ? { createThreadsByType } : {}),
     } satisfies ChannelConfig);
 
     // Write to source_channel DB table (dual-write with KV)
@@ -1406,6 +1417,7 @@ export class Integrations extends Tool implements IAuth {
         enabled: true,
         create_threads: createThreads ?? "all",
         link_types: linkTypes ? JSON.stringify(linkTypes) : null,
+        create_threads_by_type: createThreadsByType ? JSON.stringify(createThreadsByType) as any : null,
       })
       .onConflict((oc) =>
         oc.columns(["priority_twist_id", "channel_id"]).doUpdateSet({
@@ -1414,6 +1426,7 @@ export class Integrations extends Tool implements IAuth {
           priority_id: priorityId ?? null,
           create_threads: createThreads ?? "all",
           link_types: linkTypes ? JSON.stringify(linkTypes) : null,
+          create_threads_by_type: createThreadsByType ? JSON.stringify(createThreadsByType) as any : null,
           updated_at: new Date(),
         })
       )
@@ -1572,6 +1585,8 @@ export class Integrations extends Tool implements IAuth {
       enabledBy: ActorId | undefined;
       priorityId: string | null | undefined;
       createThreads: string;
+      createThreadsByType?: Record<string, string>;
+      linkTypes?: LinkTypeConfig[];
       currentUserHasAccess: boolean;
       children?: AnnotatedChannel[];
     };
@@ -1672,6 +1687,12 @@ export class Integrations extends Tool implements IAuth {
         const channelConfig = await this.getChannelConfig(provider, channel.id);
         const mapKey = `${provider}:${channel.id}`;
 
+        // Resolve linkTypes: channel-level > connector-level
+        const effectiveLinkTypes = channel.linkTypes
+          ?? this.sourceProvider?.linkTypes as LinkTypeConfig[] | undefined
+          ?? this.providerConfigs.find(p => p.provider === provider)?.linkTypes
+          ?? undefined;
+
         const annotated: AnnotatedChannel = {
           provider,
           id: channel.id,
@@ -1680,6 +1701,8 @@ export class Integrations extends Tool implements IAuth {
           enabledBy: channelConfig?.enabledBy,
           priorityId: channelConfig?.priorityId ?? null,
           createThreads: channelConfig?.createThreads ?? "all",
+          createThreadsByType: channelConfig?.createThreadsByType ?? undefined,
+          linkTypes: effectiveLinkTypes,
           currentUserHasAccess: channelAccessByCurrentUser.has(mapKey),
         };
 
@@ -1862,18 +1885,35 @@ export class Integrations extends Tool implements IAuth {
    * Update the priority routing for an already-enabled channel.
    */
   async setChannelPriority(provider: AuthProvider, channelId: string, priorityId: string | null): Promise<void> {
+    await this.updateChannelConfig(provider, channelId, { priorityId });
+  }
+
+  /**
+   * Update config fields for an already-enabled channel.
+   * Supports updating priority, createThreads, and createThreadsByType.
+   */
+  async updateChannelConfig(
+    provider: AuthProvider,
+    channelId: string,
+    update: { priorityId?: string | null; createThreads?: string; createThreadsByType?: Record<string, string> }
+  ): Promise<void> {
     const existing = await this.getChannelConfig(provider, channelId);
     if (!existing) return;
 
     await this.store.set(`channel_config:${provider}:${channelId}`, {
       ...existing,
-      priorityId,
+      ...update,
     } satisfies ChannelConfig);
 
     // Write to source_channel DB table (dual-write with KV)
+    const dbUpdate: Record<string, any> = { updated_at: new Date() };
+    if (update.priorityId !== undefined) dbUpdate.priority_id = update.priorityId;
+    if (update.createThreads !== undefined) dbUpdate.create_threads = update.createThreads;
+    if (update.createThreadsByType !== undefined) dbUpdate.create_threads_by_type = JSON.stringify(update.createThreadsByType);
+
     await this.db
       .updateTable("source_channel")
-      .set({ priority_id: priorityId, updated_at: new Date() })
+      .set(dbUpdate)
       .where("priority_twist_id", "=", this.priorityTwistId)
       .where("channel_id", "=", channelId)
       .execute();
@@ -1883,7 +1923,7 @@ export class Integrations extends Tool implements IAuth {
     // Try source_channel DB table first
     const dbRow = await this.db
       .selectFrom("source_channel")
-      .select(["enabled", "title", "priority_id", "create_threads"])
+      .select(["enabled", "title", "priority_id", "create_threads", "create_threads_by_type"])
       .where("priority_twist_id", "=", this.priorityTwistId)
       .where("channel_id", "=", channelId)
       .executeTakeFirst();
@@ -1897,6 +1937,7 @@ export class Integrations extends Tool implements IAuth {
         title: dbRow.title,
         priorityId: dbRow.priority_id,
         createThreads: dbRow.create_threads,
+        createThreadsByType: dbRow.create_threads_by_type as Record<string, string> | undefined,
       };
     }
 

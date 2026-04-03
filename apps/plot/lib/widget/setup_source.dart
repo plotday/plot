@@ -44,12 +44,15 @@ class IntegrationChanges {
   channelPriorities; // "provider:channelId" → priorityId
   final Map<String, String>
   channelCreateThreads; // "provider:channelId" → createThreads ('all'|'actionable'|'manual')
+  final Map<String, Map<String, String>>
+  channelCreateThreadsByType; // "provider:channelId" → {linkType: mode}
 
   const IntegrationChanges({
     this.selectedChannels = const {},
     this.removedAccounts = const {},
     this.channelPriorities = const {},
     this.channelCreateThreads = const {},
+    this.channelCreateThreadsByType = const {},
   });
 }
 
@@ -127,6 +130,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
   /// Locally tracked createThreads per channel key ("provider:channelId" → 'all'|'actionable'|'manual').
   final Map<String, String> _channelCreateThreads = {};
+
+  /// Locally tracked per-type createThreads ("provider:channelId" → {linkType: mode}).
+  final Map<String, Map<String, String>> _channelCreateThreadsByType = {};
 
   /// Cached priority names for display (priorityId → title).
   final Map<String, String> _priorityNames = {};
@@ -215,6 +221,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         _channelPriorities[key] = channel.priorityId!;
       }
       _channelCreateThreads[key] = channel.createThreads;
+      if (channel.createThreadsByType.isNotEmpty) {
+        _channelCreateThreadsByType[key] = Map.of(channel.createThreadsByType);
+      }
       _collectEnabledChannels(channel.children);
     }
   }
@@ -357,6 +366,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       currentPriority ??= await Priority.getDefault();
       if (!mounted) return;
 
+      final hasLinkTypes = channel.linkTypes.isNotEmpty;
+      final currentByType = _channelCreateThreadsByType[key] ?? {};
+
       final items = <FormItem>[
         FormSelect<Priority>(
           key: 'priority',
@@ -372,19 +384,27 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           initialValue: currentPriority,
           placeholder: 'Select a priority',
         ),
-        FormSelect<String>(
-          key: 'createThreads',
-          label: 'Create threads',
-          items: (_) async => ['all', 'actionable', 'manual'],
-          titleBuilder: (v) => switch (v) {
-            'all' => 'For everything',
-            'actionable' => 'For anything requiring action',
-            'manual' => 'Add links manually',
-            _ => v,
-          },
-          initialValue: currentCreateThreads,
-          hasInitialValue: true,
-        ),
+        if (hasLinkTypes)
+          for (final lt in channel.linkTypes)
+            FormSelect<String>(
+              key: 'createThreads_${lt.type}',
+              label: 'Create threads for each ${lt.label.toLowerCase()}',
+              items: (_) async => ['all', 'actionable', 'manual'],
+              titleBuilder: _createThreadsLabel,
+              initialValue: currentByType[lt.type]
+                  ?? lt.defaultCreateThreads
+                  ?? currentCreateThreads,
+              hasInitialValue: true,
+            )
+        else
+          FormSelect<String>(
+            key: 'createThreads',
+            label: 'Create threads',
+            items: (_) async => ['all', 'actionable', 'manual'],
+            titleBuilder: _createThreadsLabel,
+            initialValue: currentCreateThreads,
+            hasInitialValue: true,
+          ),
         FormButton(
           key: 'save',
           buildCommand: (values) {
@@ -400,13 +420,23 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
               title: 'Save',
               icon: FontAwesomeIcons.check,
               onRun: () async {
-                final createThreads =
-                    values['createThreads'] as String? ?? 'all';
                 if (priority != null) {
                   setState(() {
                     _localSelectedChannels.add(key);
                     _channelPriorities[key] = priority.id.toString();
-                    _channelCreateThreads[key] = createThreads;
+                    if (hasLinkTypes) {
+                      final byType = <String, String>{};
+                      for (final lt in channel.linkTypes) {
+                        final mode = values['createThreads_${lt.type}']
+                            as String? ?? 'all';
+                        byType[lt.type] = mode;
+                      }
+                      _channelCreateThreadsByType[key] = byType;
+                    } else {
+                      final createThreads =
+                          values['createThreads'] as String? ?? 'all';
+                      _channelCreateThreads[key] = createThreads;
+                    }
                     _priorityNames[priority.id.toString()] = priority.title;
                     _priorityOrgIds[priority.id.toString()] =
                         priority.organizationId;
@@ -433,6 +463,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
                   _localSelectedChannels.remove(key);
                   _channelPriorities.remove(key);
                   _channelCreateThreads.remove(key);
+                  _channelCreateThreadsByType.remove(key);
                 });
                 _notifyChanged();
                 return const CommandDone();
@@ -491,6 +522,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         removedAccounts: Set.of(_removedAccounts),
         channelPriorities: Map.of(_channelPriorities),
         channelCreateThreads: Map.of(_channelCreateThreads),
+        channelCreateThreadsByType: _channelCreateThreadsByType.map(
+          (k, v) => MapEntry(k, Map.of(v)),
+        ),
       ),
     );
     // Notify form that validation state may have changed
@@ -750,34 +784,73 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     }
 
     final controller = widget.channelListController;
+    final hasLinkTypes = channel.linkTypes.isNotEmpty;
+    // Focusable items: 1 (Sync to) + N (one per link type or 1 for single select)
+    final createThreadsCount = hasLinkTypes ? channel.linkTypes.length : 1;
+    final totalFocusable = 1 + createThreadsCount;
 
-    // Report 2 focusable items (Sync to + Create threads)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      controller?.update(2, (context, subIndex) async {
+      controller?.update(totalFocusable, (context, subIndex) async {
         if (subIndex == 0) {
           await _openPriorityPicker(channel);
+        } else if (hasLinkTypes) {
+          final typeIndex = subIndex - 1;
+          if (typeIndex < channel.linkTypes.length) {
+            await _openCreateThreadsPickerForType(
+              channel,
+              channel.linkTypes[typeIndex],
+            );
+          }
         } else if (subIndex == 1) {
           await _openCreateThreadsPicker(channel);
         }
       });
     });
 
-    final createThreadsLabel = switch (createThreads) {
-      'all' => 'For everything',
-      'actionable' => 'For anything requiring action',
-      'manual' => 'Add links manually',
-      _ => createThreads,
-    };
-
     final priorityHighlighted = controller != null && controller.highlightedSubIndex == 0;
     final priorityFocusNode = controller != null && controller.focusNodes.isNotEmpty
         ? controller.focusNodes[0]
         : null;
-    final createThreadsHighlighted = controller != null && controller.highlightedSubIndex == 1;
-    final createThreadsFocusNode = controller != null && controller.focusNodes.length > 1
-        ? controller.focusNodes[1]
-        : null;
+
+    // Build create threads tiles
+    final createThreadsTiles = <Widget>[];
+    if (hasLinkTypes) {
+      for (var i = 0; i < channel.linkTypes.length; i++) {
+        final lt = channel.linkTypes[i];
+        final mode = _channelCreateThreadsByType[key]?[lt.type]
+            ?? lt.defaultCreateThreads
+            ?? _channelCreateThreads[key]
+            ?? 'all';
+        final highlighted = controller != null && controller.highlightedSubIndex == i + 1;
+        final focusNode = controller != null && controller.focusNodes.length > i + 1
+            ? controller.focusNodes[i + 1]
+            : null;
+        createThreadsTiles.add(
+          SelectTile(
+            label: 'Create threads for each ${lt.label.toLowerCase()}',
+            value: _createThreadsLabel(mode),
+            onSelect: () => _openCreateThreadsPickerForType(channel, lt),
+            highlighted: highlighted,
+            focusNode: focusNode,
+          ),
+        );
+      }
+    } else {
+      final createThreadsHighlighted = controller != null && controller.highlightedSubIndex == 1;
+      final createThreadsFocusNode = controller != null && controller.focusNodes.length > 1
+          ? controller.focusNodes[1]
+          : null;
+      createThreadsTiles.add(
+        SelectTile(
+          label: 'Create threads',
+          value: _createThreadsLabel(createThreads),
+          onSelect: () => _openCreateThreadsPicker(channel),
+          highlighted: createThreadsHighlighted,
+          focusNode: createThreadsFocusNode,
+        ),
+      );
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -792,13 +865,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           highlighted: priorityHighlighted,
           focusNode: priorityFocusNode,
         ),
-        SelectTile(
-          label: 'Create threads',
-          value: createThreadsLabel,
-          onSelect: () => _openCreateThreadsPicker(channel),
-          highlighted: createThreadsHighlighted,
-          focusNode: createThreadsFocusNode,
-        ),
+        ...createThreadsTiles,
         SizedBox(height: theme.spacing.md),
       ],
     );
@@ -898,6 +965,49 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     });
     _notifyChanged();
   }
+
+  /// Opens the create threads picker for a specific link type.
+  Future<void> _openCreateThreadsPickerForType(
+    TwistChannel channel,
+    TwistLinkType linkType,
+  ) async {
+    final key = '${channel.providerKey}:${channel.id}';
+    final currentMode = _channelCreateThreadsByType[key]?[linkType.type]
+        ?? linkType.defaultCreateThreads
+        ?? _channelCreateThreads[key]
+        ?? 'all';
+
+    final result = await SelectModal.open<String>(
+      context,
+      items: (_) async => [
+        SelectGroup(title: null, items: ['all', 'actionable', 'manual']),
+      ],
+      itemBuilder: (v, _) => Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.theme.spacing.lg,
+          vertical: context.theme.spacing.md,
+        ),
+        child: Text(_createThreadsLabel(v)),
+      ),
+      selectedValue: currentMode,
+      prompt: 'Create threads for each ${linkType.label.toLowerCase()}',
+    );
+
+    if (!result.present || !mounted) return;
+    setState(() {
+      _channelCreateThreadsByType
+          .putIfAbsent(key, () => {})
+          [linkType.type] = result.value;
+    });
+    _notifyChanged();
+  }
+
+  static String _createThreadsLabel(String mode) => switch (mode) {
+    'all' => 'For everything',
+    'actionable' => 'For anything requiring action',
+    'manual' => 'Add links manually',
+    _ => mode,
+  };
 }
 
 class _AccountRow extends StatelessWidget {

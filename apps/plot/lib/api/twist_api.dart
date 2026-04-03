@@ -293,12 +293,15 @@ class TwistApi {
     required String channelId,
     String? priorityId,
     String? createThreads,
+    Map<String, String>? createThreadsByType,
   }) async {
     await api.post<Map<String, dynamic>>(
       '/twist/$priorityTwistId/syncables/$provider/$channelId/enable',
       body: {
         if (priorityId != null) 'priorityId': priorityId,
         if (createThreads != null) 'createThreads': createThreads,
+        if (createThreadsByType != null)
+          'createThreadsByType': createThreadsByType,
       },
     );
   }
@@ -370,15 +373,23 @@ class TwistApi {
   }
 
   /// Update the priority routing for a channel
-  static Future<void> setChannelPriority({
+  /// Update channel config (priority, createThreads, createThreadsByType).
+  static Future<void> updateChannel({
     required String priorityTwistId,
     required String provider,
     required String channelId,
-    required String? priorityId,
+    String? priorityId,
+    String? createThreads,
+    Map<String, String>? createThreadsByType,
   }) async {
     await api.patch<Map<String, dynamic>>(
       '/twist/$priorityTwistId/syncables/$provider/$channelId',
-      body: {'priorityId': priorityId},
+      body: {
+        if (priorityId != null) 'priorityId': priorityId,
+        if (createThreads != null) 'createThreads': createThreads,
+        if (createThreadsByType != null)
+          'createThreadsByType': createThreadsByType,
+      },
     );
   }
 
@@ -771,6 +782,30 @@ class TwistAccount extends Equatable {
 }
 
 /// A channel resource for a twist integration
+/// Describes a link type that a connector creates (e.g., "Issue", "Pull Request").
+class TwistLinkType extends Equatable {
+  final String type;
+  final String label;
+  final String? defaultCreateThreads;
+
+  const TwistLinkType({
+    required this.type,
+    required this.label,
+    this.defaultCreateThreads,
+  });
+
+  factory TwistLinkType.fromJson(Map<String, dynamic> json) {
+    return TwistLinkType(
+      type: json['type'] as String,
+      label: json['label'] as String,
+      defaultCreateThreads: json['defaultCreateThreads'] as String?,
+    );
+  }
+
+  @override
+  List<Object?> get props => [type, label, defaultCreateThreads];
+}
+
 class TwistChannel extends Equatable {
   final AuthProvider provider;
 
@@ -784,6 +819,8 @@ class TwistChannel extends Equatable {
   final String? enabledBy;
   final String? priorityId;
   final String createThreads;
+  final Map<String, String> createThreadsByType;
+  final List<TwistLinkType> linkTypes;
   final bool currentUserHasAccess;
   final List<TwistChannel> children;
 
@@ -796,6 +833,8 @@ class TwistChannel extends Equatable {
     this.enabledBy,
     this.priorityId,
     this.createThreads = 'all',
+    this.createThreadsByType = const {},
+    this.linkTypes = const [],
     required this.currentUserHasAccess,
     this.children = const [],
   });
@@ -814,6 +853,15 @@ class TwistChannel extends Equatable {
       enabledBy: json['enabledBy'] as String?,
       priorityId: json['priorityId'] as String?,
       createThreads: json['createThreads'] as String? ?? 'all',
+      createThreadsByType: (json['createThreadsByType'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(k, v as String)) ??
+          const {},
+      linkTypes: (json['linkTypes'] as List<dynamic>?)
+              ?.map(
+                (lt) => TwistLinkType.fromJson(lt as Map<String, dynamic>),
+              )
+              .toList() ??
+          const [],
       currentUserHasAccess: json['currentUserHasAccess'] as bool? ?? true,
       children:
           (json['children'] as List<dynamic>?)
@@ -835,6 +883,8 @@ class TwistChannel extends Equatable {
     enabledBy,
     priorityId,
     createThreads,
+    createThreadsByType,
+    linkTypes,
     currentUserHasAccess,
     children,
   ];

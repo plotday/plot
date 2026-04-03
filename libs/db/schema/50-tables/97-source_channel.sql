@@ -7,6 +7,7 @@ CREATE TABLE "public"."source_channel" (
     "enabled" boolean NOT NULL DEFAULT false,
     "create_threads" text NOT NULL DEFAULT 'all',
     "link_types" jsonb,
+    "create_threads_by_type" jsonb,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     UNIQUE (priority_twist_id, channel_id)
