@@ -20,7 +20,11 @@ import 'package:plot/widget/form_modal.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/logo_image.dart';
+import 'package:plot/widget/select_modal.dart';
+import 'package:plot/widget/select_tile.dart';
 import 'logging.dart';
 
 /// Selected channel for the setup flow.
@@ -57,6 +61,8 @@ class SetupSourceWidget extends StatefulWidget {
     this.setupMode = false,
     this.isAccountBased = false,
     this.sourceName,
+    this.logoUrl,
+    this.logoUrlDark,
     this.initialData,
     this.refreshNotifier,
     this.onChanged,
@@ -76,6 +82,12 @@ class SetupSourceWidget extends StatefulWidget {
 
   /// Display name of the source/connector, used in channel config modal titles.
   final String? sourceName;
+
+  /// Logo URL for the source, used as fallback when provider icon is unavailable.
+  final String? logoUrl;
+
+  /// Dark mode logo URL for the source.
+  final String? logoUrlDark;
 
   /// Pre-loaded integrations data to avoid a loading spinner on open.
   final TwistIntegrations? initialData;
@@ -139,6 +151,18 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       _loadIntegrations();
     }
     widget.refreshNotifier?.addListener(_loadIntegrations);
+  }
+
+  @override
+  void didUpdateWidget(SetupSourceWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // After a form refresh, the parent's onChanged callback captures a new
+    // variable. Re-notify so the new callback receives our current state.
+    if (widget.onChanged != oldWidget.onChanged) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _notifyChanged();
+      });
+    }
   }
 
   @override
@@ -644,6 +668,8 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           isRemoved: isRemoved,
           onRefresh: () => _refreshChannels(account.provider),
           isRefreshing: _refreshingProviders.contains(account.provider),
+          logoUrl: widget.logoUrl,
+          logoUrlDark: widget.logoUrlDark,
         ),
       );
     }
@@ -709,23 +735,32 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     final isEnabled = _localSelectedChannels.contains(key);
     final priorityId = _channelPriorities[key];
     final priorityName = priorityId != null ? _priorityNames[priorityId] : null;
-    final isTeamPriority =
-        priorityId != null && _priorityOrgIds[priorityId] != null;
     final createThreads = _channelCreateThreads[key] ?? 'all';
 
     // Build account rows
     final accountRows = <Widget>[];
     for (final account in data.accounts) {
       accountRows.add(
-        _AccountRow(account: account),
+        _AccountRow(
+          account: account,
+          logoUrl: widget.logoUrl,
+          logoUrlDark: widget.logoUrlDark,
+        ),
       );
     }
 
-    // Notify controller: single-channel has 0 toggleable rows
-    // (config is managed via the inline selectors, not channel taps)
+    final controller = widget.channelListController;
+
+    // Report 2 focusable items (Sync to + Create threads)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      widget.channelListController?.update(0, (context, subIndex) async {});
+      controller?.update(2, (context, subIndex) async {
+        if (subIndex == 0) {
+          await _openPriorityPicker(channel);
+        } else if (subIndex == 1) {
+          await _openCreateThreadsPicker(channel);
+        }
+      });
     });
 
     final createThreadsLabel = switch (createThreads) {
@@ -735,101 +770,133 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       _ => createThreads,
     };
 
+    final priorityHighlighted = controller != null && controller.highlightedSubIndex == 0;
+    final priorityFocusNode = controller != null && controller.focusNodes.isNotEmpty
+        ? controller.focusNodes[0]
+        : null;
+    final createThreadsHighlighted = controller != null && controller.highlightedSubIndex == 1;
+    final createThreadsFocusNode = controller != null && controller.focusNodes.length > 1
+        ? controller.focusNodes[1]
+        : null;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ...accountRows,
-        // Priority selector row
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _handleSingleChannelConfig(channel),
-          child: Padding(
-            padding: theme.spacing.paddingSm,
-            child: Row(
-              children: [
-                SizedBox(width: 12.0 + theme.iconSizes.base + 12.0),
-                Icon(
-                  FontAwesomeIcons.folderOpen,
-                  size: 14,
-                  color: theme.colors.mutedForeground,
-                ),
-                SizedBox(width: theme.spacing.md),
-                Expanded(
-                  child: Text(
-                    isEnabled && priorityName != null
-                        ? priorityName
-                        : 'Select a priority',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: theme.typography.sm.fontSize,
-                      color: isEnabled && priorityName != null
-                          ? theme.colors.foreground
-                          : theme.colors.mutedForeground,
-                    ),
-                  ),
-                ),
-                if (isEnabled && priorityName != null)
-                  Icon(
-                    isTeamPriority
-                        ? FontAwesomeIcons.building
-                        : FontAwesomeIcons.lock,
-                    size: 10,
-                    color: theme.colors.mutedForeground,
-                  ),
-                SizedBox(width: theme.spacing.sm),
-                Icon(
-                  FontAwesomeIcons.chevronRight,
-                  size: 10,
-                  color: theme.colors.mutedForeground,
-                ),
-              ],
-            ),
-          ),
+        SelectTile(
+          label: 'Sync to',
+          value: isEnabled && priorityName != null ? priorityName : null,
+          placeholder: 'Select a priority',
+          onSelect: () => _openPriorityPicker(channel),
+          highlighted: priorityHighlighted,
+          focusNode: priorityFocusNode,
         ),
-        // Create threads row
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _handleSingleChannelConfig(channel),
-          child: Padding(
-            padding: theme.spacing.paddingSm,
-            child: Row(
-              children: [
-                SizedBox(width: 12.0 + theme.iconSizes.base + 12.0),
-                Icon(
-                  FontAwesomeIcons.listCheck,
-                  size: 14,
-                  color: theme.colors.mutedForeground,
-                ),
-                SizedBox(width: theme.spacing.md),
-                Expanded(
-                  child: Text(
-                    createThreadsLabel,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: theme.typography.sm.fontSize,
-                      color: theme.colors.mutedForeground,
-                    ),
-                  ),
-                ),
-                Icon(
-                  FontAwesomeIcons.chevronRight,
-                  size: 10,
-                  color: theme.colors.mutedForeground,
-                ),
-              ],
-            ),
-          ),
+        SelectTile(
+          label: 'Create threads',
+          value: createThreadsLabel,
+          onSelect: () => _openCreateThreadsPicker(channel),
+          highlighted: createThreadsHighlighted,
+          focusNode: createThreadsFocusNode,
         ),
         SizedBox(height: theme.spacing.md),
       ],
     );
   }
 
-  /// Opens the priority + create threads modal for a single-channel connector.
-  void _handleSingleChannelConfig(TwistChannel channel) {
-    // Reuse the existing account-based channel tap handler
-    _handleChannelTap(channel);
+  /// Opens the priority picker for a single-channel connector.
+  Future<void> _openPriorityPicker(TwistChannel channel) async {
+    final key = '${channel.providerKey}:${channel.id}';
+    final currentPriorityId = _channelPriorities[key];
+
+    Priority? currentPriority;
+    if (currentPriorityId != null) {
+      try {
+        currentPriority = await Priority.getOne(
+          Uuid.fromString(currentPriorityId),
+        );
+      } catch (_) {}
+    }
+    if (!mounted) return;
+
+    final result = await SelectModal.open<Priority>(
+      context,
+      items: (search) async => [
+        SelectGroup(
+          title: null,
+          items: Priority.excludePlot(
+            await Priority.get(order: PriorityOrder.nested, search: search),
+          ),
+        ),
+      ],
+      itemBuilder: (p, _) => Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.theme.spacing.lg,
+          vertical: context.theme.spacing.md,
+        ),
+        child: PriorityLabel(priority: p),
+      ),
+      selectedValue: currentPriority,
+      prompt: 'Select a priority',
+    );
+
+    if (!result.present || !mounted) return;
+    final priority = result.value;
+
+    // Check connection limit
+    final isEnabled = _localSelectedChannels.contains(key);
+    if (!isEnabled) {
+      final limitMessage = _checkConnectionLimitSync(key, priority);
+      if (limitMessage != null) {
+        if (mounted) context.showToast(message: limitMessage, isError: true);
+        return;
+      }
+    }
+
+    setState(() {
+      _localSelectedChannels.add(key);
+      _channelPriorities[key] = priority.id.toString();
+      _priorityNames[priority.id.toString()] = priority.ancestorsLabel() != null
+          ? '${priority.ancestorsLabel()}${Priority.separator}${priority.title}'
+          : priority.title;
+      _priorityOrgIds[priority.id.toString()] = priority.organizationId;
+      // Default createThreads if not already set
+      _channelCreateThreads.putIfAbsent(key, () => 'all');
+    });
+    _notifyChanged();
+  }
+
+  /// Opens the create threads picker for a single-channel connector.
+  Future<void> _openCreateThreadsPicker(TwistChannel channel) async {
+    final key = '${channel.providerKey}:${channel.id}';
+    final currentCreateThreads = _channelCreateThreads[key] ?? 'all';
+
+    final result = await SelectModal.open<String>(
+      context,
+      items: (_) async => [
+        SelectGroup(title: null, items: ['all', 'actionable', 'manual']),
+      ],
+      itemBuilder: (v, _) => Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: context.theme.spacing.lg,
+          vertical: context.theme.spacing.md,
+        ),
+        child: Text(switch (v) {
+          'all' => 'For everything',
+          'actionable' => 'For anything requiring action',
+          'manual' => 'Add links manually',
+          _ => v,
+        }),
+      ),
+      selectedValue: currentCreateThreads,
+      prompt: 'Create threads',
+    );
+
+    if (!result.present || !mounted) return;
+    setState(() {
+      _channelCreateThreads[key] = result.value;
+    });
+    _notifyChanged();
   }
 }
 
@@ -839,12 +906,16 @@ class _AccountRow extends StatelessWidget {
     this.isRemoved = false,
     this.onRefresh,
     this.isRefreshing = false,
+    this.logoUrl,
+    this.logoUrlDark,
   });
 
   final TwistAccount account;
   final bool isRemoved;
   final VoidCallback? onRefresh;
   final bool isRefreshing;
+  final String? logoUrl;
+  final String? logoUrlDark;
 
   @override
   Widget build(BuildContext context) {
@@ -857,10 +928,13 @@ class _AccountRow extends StatelessWidget {
     return Opacity(
       opacity: isRemoved ? 0.4 : 1.0,
       child: Padding(
-        padding: context.theme.spacing.paddingSm,
+        padding: EdgeInsets.symmetric(
+          horizontal: context.theme.spacing.xl,
+          vertical: context.theme.spacing.sm,
+        ),
         child: Row(
           children: [
-            ProviderIcon(provider: account.provider, size: iconSize),
+            _buildProviderIcon(context, iconSize),
             const SizedBox(width: 12),
             Expanded(
               child: Row(
@@ -907,6 +981,24 @@ class _AccountRow extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildProviderIcon(BuildContext context, double size) {
+    final providerIcon = ProviderIcon(provider: account.provider, size: size);
+    // If the provider has a known icon, use it
+    if (providerIcon.hasIcon) return providerIcon;
+
+    // Fall back to the source's logo URL
+    final isDark = context.colour.brightness == Brightness.dark;
+    final url = isDark && logoUrlDark != null ? logoUrlDark : logoUrl;
+    if (url != null) {
+      return LogoImage(
+        url: url,
+        size: size,
+        fallback: providerIcon,
+      );
+    }
+    return providerIcon;
   }
 }
 
@@ -1111,6 +1203,8 @@ class ProviderIcon extends StatelessWidget {
 
   const ProviderIcon({required this.provider, required this.size, super.key});
 
+  bool get hasIcon => _getIcon() != null;
+
   @override
   Widget build(BuildContext context) {
     final icon = _getIcon();
@@ -1139,6 +1233,14 @@ class ProviderIcon extends StatelessWidget {
         return 'assets/linear.svg';
       case AuthProvider.asana:
         return 'assets/asana.svg';
+      case AuthProvider.hubspot:
+        return 'assets/hubspot.svg';
+      case AuthProvider.monday:
+        return 'assets/monday.svg';
+      case AuthProvider.notion:
+        return 'assets/notion.svg';
+      case AuthProvider.discord:
+        return 'assets/discord.svg';
       default:
         return null;
     }
