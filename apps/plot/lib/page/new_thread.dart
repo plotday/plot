@@ -127,8 +127,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       } else {
         _selectedType = _loadDefaultType();
       }
-      _applyQueryParametersToDraft();
-      _applyDefaultType();
+      _initializeDraft();
     }
   }
 
@@ -184,9 +183,18 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
+  /// Sequences query parameter application and default type initialization.
+  /// Must be async because _applyQueryParametersToDraft awaits DB lookups;
+  /// _applyDefaultType must run AFTER those complete so its draft changes
+  /// (icon, todo) aren't overwritten by the stale copyWith in the query method.
+  Future<void> _initializeDraft() async {
+    await _applyQueryParametersToDraft();
+    if (!mounted) return;
+    _applyDefaultType();
+  }
+
   Future<void> _applyQueryParametersToDraft() async {
     final bloc = context.read<PriorityBloc>();
-    final currentDraft = bloc.state.draft;
 
     // Parse query parameters
     DateTime? queryStartTime;
@@ -227,24 +235,27 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Apply remembered default priority if no query priority was provided
     if (queryPriority == null && bloc.newThreadDefaultPriority != null) {
       final remembered = bloc.newThreadDefaultPriority!;
-      if (remembered.id != currentDraft.priority.id) {
+      if (remembered.id != bloc.state.draft.priority.id) {
         queryPriority = remembered;
       }
     }
 
+    if (!mounted) return;
+
     // Apply to draft if any query parameters were provided
+    // Re-read bloc.state.draft after awaits to avoid overwriting concurrent changes
     if (queryStartTime != null || queryPriority != null) {
       Thread updatedDraft;
       if (queryStartTime != null && queryEndTime != null) {
         // StartTime takes precedence - create a scheduled activity
-        updatedDraft = currentDraft.copyWith(
+        updatedDraft = bloc.state.draft.copyWith(
           at: Value(DateTimeRange(queryStartTime, queryEndTime)),
-          priority: queryPriority ?? currentDraft.priority,
+          priority: queryPriority ?? bloc.state.draft.priority,
           draft: true,
         );
         await bloc.updateDraft(updatedDraft);
       } else if (queryPriority != null) {
-        updatedDraft = currentDraft.copyWith(
+        updatedDraft = bloc.state.draft.copyWith(
           priority: queryPriority,
           draft: true,
         );

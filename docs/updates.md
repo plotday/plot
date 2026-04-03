@@ -1,3 +1,4 @@
+- Fixed new tasks sometimes being created as discussions with no one assigned — this happened when using a remembered default priority or navigating with query parameters
 - Deleted occurrences of recurring calendar events now properly disappear from the agenda
 - Declined calendar events no longer appear in your agenda — they still show in the activity feed, just not at the scheduled time
 - Fixed confirmation messages appearing twice when using form actions like archiving a connection
