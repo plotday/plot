@@ -113,6 +113,7 @@ class NoteEditorState extends State<NoteEditor> {
     super.initState();
     _lastSavedContent = widget.draft.content ?? '';
     _lastDraftNoteId = widget.draft.id;
+    _resetDisabledTwists();
   }
 
   @override
@@ -123,7 +124,6 @@ class NoteEditorState extends State<NoteEditor> {
 
     // Reset editor and twist toggles if draft note ID changed
     if (newDraftNoteId != _lastDraftNoteId) {
-      _resetDisabledTwists();
       if (widget.isNewThreadMode &&
           _lastDraftNoteId != null &&
           newDraftNoteId == null) {
