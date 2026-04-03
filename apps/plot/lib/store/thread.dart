@@ -407,11 +407,20 @@ class SchedulesBase extends BaseTable {
     if (contacts is List && contacts.isNotEmpty) {
       json['contacts'] = jsonEncode(contacts);
       final userId = Base.userId.toString();
+      String? bestStatus;
       for (final contact in contacts) {
         if (contact is Map && contact['contact_user_id'] == userId) {
-          json['current_user_status'] = contact['status'];
-          break;
+          final status = contact['status'] as String?;
+          if (status == 'attend') {
+            bestStatus = 'attend';
+            break; // attend is highest priority
+          } else if (status == 'skip' && bestStatus == null) {
+            bestStatus = 'skip';
+          }
         }
+      }
+      if (bestStatus != null) {
+        json['current_user_status'] = bestStatus;
       }
     }
 
@@ -1893,7 +1902,8 @@ class Thread extends Equatable implements Comparable<Thread> {
                 );
               }
             }
-            threadList.addAll(occurrences.values);
+            threadList.addAll(
+                occurrences.values.where((occ) => !occ.isDeclinedByUser));
           } else {
             // Non-recurring link schedules: range-check and add individually.
             for (final linkScheduleRow in linkGroup) {
@@ -1909,6 +1919,7 @@ class Thread extends Equatable implements Comparable<Thread> {
                 isLinkScheduleInstance: true,
                 linkSourceCreatedAt: linkSourceCreatedAt,
               );
+              if (linkThread.isDeclinedByUser) continue;
               if (range.bounded == true) {
                 final r = range.toBounded();
                 final linkStart =
@@ -2449,6 +2460,22 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// The current user's RSVP status on this schedule ('attend', 'skip', or null).
   String? get currentUserRsvp => _schedule?.currentUserStatus;
 
+  /// Whether the current user has effectively declined this schedule.
+  /// True when at least one of the user's contacts has 'skip' and none have 'attend'.
+  bool get isDeclinedByUser {
+    final contacts = scheduleContacts;
+    if (contacts.isEmpty) return false;
+    final userId = Base.userId.toString();
+    String? best;
+    for (final c in contacts) {
+      if (c.contactUserId == userId) {
+        if (c.status == 'attend') return false;
+        if (c.status == 'skip') best = 'skip';
+      }
+    }
+    return best == 'skip';
+  }
+
   /// Parsed schedule contacts, excluding archived contacts.
   List<ScheduleContact> get scheduleContacts {
     final contactsJson = _schedule?.contacts;
@@ -2500,14 +2527,13 @@ class Thread extends Equatable implements Comparable<Thread> {
       contacts = [];
     }
 
-    // Find current user's entry and update status
+    // Find current user's entries and update status (all contacts for this user)
     final userId = Base.userId.toString();
     bool found = false;
     for (int i = 0; i < contacts.length; i++) {
       if (contacts[i]['contact_user_id'] == userId) {
         contacts[i] = {...contacts[i], 'status': newStatus};
         found = true;
-        break;
       }
     }
     if (!found) {
