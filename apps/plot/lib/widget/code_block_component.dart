@@ -136,9 +136,14 @@ class PlotCodeBlockComponent extends StatefulWidget {
   State<PlotCodeBlockComponent> createState() => _PlotCodeBlockComponentState();
 }
 
-class _PlotCodeBlockComponentState extends State<PlotCodeBlockComponent> {
+class _PlotCodeBlockComponentState extends State<PlotCodeBlockComponent>
+    with ProxyDocumentComponent<PlotCodeBlockComponent> {
+  final _boxKey = GlobalKey();
   bool _copied = false;
   Timer? _copiedTimer;
+
+  @override
+  GlobalKey<State<StatefulWidget>> get childDocumentComponentKey => _boxKey;
 
   @override
   void dispose() {
@@ -202,56 +207,60 @@ class _PlotCodeBlockComponentState extends State<PlotCodeBlockComponent> {
     final bgColor =
         isDark ? const Color(0xFF161B22) : const Color(0xFFF6F8FA);
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Stack(
-        children: [
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: spacing.lg,
-              vertical: spacing.md,
+    return BoxComponent(
+      key: _boxKey,
+      isVisuallySelectable: false,
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Stack(
+          children: [
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: spacing.lg,
+                vertical: spacing.md,
+              ),
+              child: RichText(text: highlightedSpan),
             ),
-            child: RichText(text: highlightedSpan),
-          ),
-          Positioned(
-            top: spacing.xs,
-            right: spacing.xs,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.viewModel.language != null)
-                  Padding(
-                    padding: EdgeInsets.only(right: spacing.xs),
-                    child: Text(
-                      widget.viewModel.language!,
-                      style: context.theme.typography.xs.copyWith(
-                        color: colors.mutedForeground,
+            Positioned(
+              top: spacing.xs,
+              right: spacing.xs,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.viewModel.language != null)
+                    Padding(
+                      padding: EdgeInsets.only(right: spacing.xs),
+                      child: Text(
+                        widget.viewModel.language!,
+                        style: context.theme.typography.xs.copyWith(
+                          color: colors.mutedForeground,
+                        ),
+                      ),
+                    ),
+                  GestureDetector(
+                    onTap: _copyToClipboard,
+                    child: Padding(
+                      padding: EdgeInsets.all(spacing.sm),
+                      child: Icon(
+                        _copied
+                            ? FontAwesomeIcons.check
+                            : FontAwesomeIcons.clipboard,
+                        size: 12,
+                        color: _copied
+                            ? colors.primary
+                            : colors.mutedForeground,
                       ),
                     ),
                   ),
-                GestureDetector(
-                  onTap: _copyToClipboard,
-                  child: Padding(
-                    padding: EdgeInsets.all(spacing.sm),
-                    child: Icon(
-                      _copied
-                          ? FontAwesomeIcons.check
-                          : FontAwesomeIcons.clipboard,
-                      size: 12,
-                      color: _copied
-                          ? colors.primary
-                          : colors.mutedForeground,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
