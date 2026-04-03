@@ -61,36 +61,6 @@ export class Attio extends Connector<Attio> {
   /** Record types synced under the single channel. */
   private static readonly ENTITY_TYPES = ["deals", "people", "companies"] as const;
 
-  readonly linkTypes = [
-    {
-      type: "deal",
-      label: "Deal",
-      logo: "https://plot.day/assets/logo-attio.svg",
-      logoDark: "https://plot.day/assets/logo-attio-dark.svg",
-      statuses: [] as Array<{
-        status: string;
-        label: string;
-        tag?: Tag;
-        done?: true;
-      }>,
-      supportsAssignee: true,
-    },
-    {
-      type: "person",
-      label: "Person",
-      logo: "https://plot.day/assets/logo-attio.svg",
-      logoDark: "https://plot.day/assets/logo-attio-dark.svg",
-      statuses: [],
-    },
-    {
-      type: "company",
-      label: "Company",
-      logo: "https://plot.day/assets/logo-attio.svg",
-      logoDark: "https://plot.day/assets/logo-attio-dark.svg",
-      statuses: [],
-    },
-  ];
-
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
