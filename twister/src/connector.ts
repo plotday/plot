@@ -69,6 +69,31 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   /** OAuth scopes to request for this connector. */
   readonly scopes?: string[];
 
+  // ---- Auth model ----
+
+  /**
+   * When true, one credential is shared across all users in the workspace,
+   * entered once by the installer. When false (default), each user provides
+   * their own credential.
+   *
+   * Applies to both OAuth and key-based connectors:
+   * - Shared OAuth: e.g. Slack bot token (workspace-level)
+   * - Shared key: e.g. Attio workspace API key
+   * - Individual OAuth: e.g. Google Calendar (per-user)
+   * - Individual key: e.g. Fellow (per-user API key)
+   */
+  readonly shared?: boolean;
+
+  /**
+   * The Options field name that contains the authentication key (e.g. "apiKey").
+   * Must reference a `secure: true` field in the Options schema.
+   *
+   * When set, this connector uses key-based auth instead of OAuth.
+   * For individual connectors (`shared` is false), this field is stored
+   * per-user rather than in shared config.
+   */
+  readonly keyOption?: string;
+
   // ---- Optional metadata ----
 
   /**

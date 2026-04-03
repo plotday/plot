@@ -46,6 +46,10 @@ type SyncState = {
  */
 export class Attio extends Connector<Attio> {
   static readonly handleReplies = true;
+  readonly singleChannel = true;
+
+  /** Entity types synced under the single channel. */
+  private static readonly ENTITY_TYPES = ["deals", "people", "tasks"] as const;
 
   readonly linkTypes = [
     {
@@ -121,14 +125,15 @@ export class Attio extends Connector<Attio> {
   ): Promise<string> {
     const api = this.getAPI();
     const workspace = await api.getWorkspace();
+    await this.set("workspace_slug", workspace.slug);
     return workspace.name;
   }
 
   // ---- Channel Lifecycle ----
 
   /**
-   * Returns channels for deals, people, and tasks.
-   * Fetches deal pipeline stages dynamically for per-channel linkTypes.
+   * Returns a single channel with all link types (deals, people, tasks).
+   * Fetches deal pipeline stages dynamically for linkTypes.
    */
   async getChannels(
     _auth: Authorization | null,
@@ -161,8 +166,8 @@ export class Attio extends Connector<Attio> {
 
     return [
       {
-        id: "deals",
-        title: "Deals",
+        id: "attio",
+        title: "Attio",
         linkTypes: [
           {
             type: "deal",
@@ -172,12 +177,6 @@ export class Attio extends Connector<Attio> {
             statuses: dealStatuses,
             supportsAssignee: true,
           },
-        ],
-      },
-      {
-        id: "people",
-        title: "People",
-        linkTypes: [
           {
             type: "person",
             label: "Person",
@@ -185,12 +184,6 @@ export class Attio extends Connector<Attio> {
             logoDark: "/assets/logo-attio-dark.svg",
             statuses: [],
           },
-        ],
-      },
-      {
-        id: "tasks",
-        title: "Tasks",
-        linkTypes: [
           {
             type: "task",
             label: "Task",
@@ -211,83 +204,99 @@ export class Attio extends Connector<Attio> {
     ];
   }
 
-  async onChannelEnabled(channel: Channel): Promise<void> {
-    await this.set(`sync_enabled_${channel.id}`, true);
-    await this.setupAttioWebhook(channel.id);
-    await this.startBatchSync(channel.id);
+  async onChannelEnabled(_channel: Channel): Promise<void> {
+    await this.set("sync_enabled", true);
+    await this.setupAttioWebhook();
+    for (const entityType of Attio.ENTITY_TYPES) {
+      await this.startBatchSync(entityType);
+    }
   }
 
-  async onChannelDisabled(channel: Channel): Promise<void> {
-    await this.stopSync(channel.id);
-    await this.clear(`sync_enabled_${channel.id}`);
+  async onChannelDisabled(_channel: Channel): Promise<void> {
+    // Remove the shared webhook
+    const webhookId = await this.get<string>("webhook_id");
+    if (webhookId) {
+      try {
+        const api = this.getAPI();
+        await api.deleteWebhook(webhookId);
+      } catch (error) {
+        console.warn("Failed to delete Attio webhook:", error);
+      }
+      await this.clear("webhook_id");
+    }
+
+    // Clean up per-entity sync state
+    for (const entityType of Attio.ENTITY_TYPES) {
+      await this.clear(`sync_state_${entityType}`);
+    }
+    await this.clear("sync_enabled");
   }
 
   // ---- Batch Sync ----
 
-  private async startBatchSync(channelId: string): Promise<void> {
-    await this.set(`sync_state_${channelId}`, {
+  private async startBatchSync(entityType: string): Promise<void> {
+    await this.set(`sync_state_${entityType}`, {
       cursor: null,
       batchNumber: 1,
       recordsProcessed: 0,
       initialSync: true,
     } satisfies SyncState);
 
-    const batchCallback = await this.callback(this.syncBatch, channelId);
+    const batchCallback = await this.callback(this.syncBatch, entityType);
     await this.tools.tasks.runTask(batchCallback);
   }
 
-  private async syncBatch(channelId: string): Promise<void> {
-    const state = await this.get<SyncState>(`sync_state_${channelId}`);
-    if (!state) throw new Error(`Sync state not found for ${channelId}`);
+  private async syncBatch(entityType: string): Promise<void> {
+    const state = await this.get<SyncState>(`sync_state_${entityType}`);
+    if (!state) throw new Error(`Sync state not found for ${entityType}`);
 
     const api = this.getAPI();
 
-    if (channelId === "tasks") {
-      await this.syncTaskBatch(api, state, channelId);
+    if (entityType === "tasks") {
+      await this.syncTaskBatch(api, state, entityType);
     } else {
-      await this.syncRecordBatch(api, channelId, state);
+      await this.syncRecordBatch(api, entityType, state);
     }
   }
 
   private async syncRecordBatch(
     api: AttioAPI,
-    channelId: string,
+    entityType: string,
     state: SyncState
   ): Promise<void> {
-    const objectSlug = channelId; // "deals" or "people"
-    const result = await api.queryRecords(objectSlug, {
+    const result = await api.queryRecords(entityType, {
       cursor: state.cursor ?? undefined,
       limit: 50,
     });
 
     for (const record of result.data) {
       const link =
-        channelId === "deals"
-          ? this.convertDealToLink(record, channelId, state.initialSync)
-          : this.convertPersonToLink(record, channelId, state.initialSync);
+        entityType === "deals"
+          ? await this.convertDealToLink(record, state.initialSync)
+          : await this.convertPersonToLink(record, state.initialSync);
 
       await this.tools.integrations.saveLink(link);
     }
 
     if (result.next_cursor) {
-      await this.set(`sync_state_${channelId}`, {
+      await this.set(`sync_state_${entityType}`, {
         cursor: result.next_cursor,
         batchNumber: state.batchNumber + 1,
         recordsProcessed: state.recordsProcessed + result.data.length,
         initialSync: state.initialSync,
       } satisfies SyncState);
 
-      const nextBatch = await this.callback(this.syncBatch, channelId);
+      const nextBatch = await this.callback(this.syncBatch, entityType);
       await this.tools.tasks.runTask(nextBatch);
     } else {
-      await this.clear(`sync_state_${channelId}`);
+      await this.clear(`sync_state_${entityType}`);
     }
   }
 
   private async syncTaskBatch(
     api: AttioAPI,
     state: SyncState,
-    channelId: string
+    entityType: string
   ): Promise<void> {
     const result = await api.queryTasks({
       cursor: state.cursor ?? undefined,
@@ -295,32 +304,58 @@ export class Attio extends Connector<Attio> {
     });
 
     for (const task of result.data) {
-      const link = this.convertTaskToLink(task, channelId, state.initialSync);
+      const link = await this.convertTaskToLink(task, state.initialSync);
       await this.tools.integrations.saveLink(link);
     }
 
     if (result.next_cursor) {
-      await this.set(`sync_state_${channelId}`, {
+      await this.set(`sync_state_${entityType}`, {
         cursor: result.next_cursor,
         batchNumber: state.batchNumber + 1,
         recordsProcessed: state.recordsProcessed + result.data.length,
         initialSync: state.initialSync,
       } satisfies SyncState);
 
-      const nextBatch = await this.callback(this.syncBatch, channelId);
+      const nextBatch = await this.callback(this.syncBatch, entityType);
       await this.tools.tasks.runTask(nextBatch);
     } else {
-      await this.clear(`sync_state_${channelId}`);
+      await this.clear(`sync_state_${entityType}`);
     }
+  }
+
+  /** Build an Attio web app URL for a record. */
+  private async getWorkspaceSlug(): Promise<string | null> {
+    let slug = await this.get<string>("workspace_slug");
+    if (!slug) {
+      try {
+        const api = this.getAPI();
+        const workspace = await api.getWorkspace();
+        slug = workspace.slug;
+        if (slug) await this.set("workspace_slug", slug);
+      } catch {
+        // Fall through — return null
+      }
+    }
+    return slug || null;
+  }
+
+  private async buildRecordUrl(
+    objectSlug: string,
+    recordId: string
+  ): Promise<string> {
+    const workspace = await this.getWorkspaceSlug();
+    if (workspace) {
+      return `https://app.attio.com/${workspace}/${objectSlug}/record/${recordId}/overview`;
+    }
+    return `https://app.attio.com/${objectSlug}/record/${recordId}/overview`;
   }
 
   // ---- Data Transformation ----
 
-  private convertDealToLink(
+  private async convertDealToLink(
     record: AttioRecord,
-    channelId: string,
     initialSync: boolean
-  ): NewLinkWithNotes {
+  ): Promise<NewLinkWithNotes> {
     const v = record.values;
     const name = extractName(v) || "Untitled Deal";
     const stage = extractDealStage(v);
@@ -337,14 +372,14 @@ export class Attio extends Connector<Attio> {
       title: name,
       created: new Date(record.created_at),
       status: stage?.id ?? null,
-      channelId,
+      channelId: "attio",
       meta: {
         attioRecordId: recordId,
         attioObjectSlug: "deals",
         syncProvider: "attio",
-        channelId,
+        channelId: "attio",
       },
-      sourceUrl: `https://app.attio.com/deals/${recordId}`,
+      sourceUrl: await this.buildRecordUrl("deals", recordId),
       preview,
       notes: [],
       ...(initialSync ? { unread: false } : {}),
@@ -352,11 +387,10 @@ export class Attio extends Connector<Attio> {
     };
   }
 
-  private convertPersonToLink(
+  private async convertPersonToLink(
     record: AttioRecord,
-    channelId: string,
     initialSync: boolean
-  ): NewLinkWithNotes {
+  ): Promise<NewLinkWithNotes> {
     const v = record.values;
     const name = extractPersonName(v);
     const email = extractEmail(v);
@@ -375,14 +409,14 @@ export class Attio extends Connector<Attio> {
       title: name || email || "Unknown Person",
       created: new Date(record.created_at),
       author,
-      channelId,
+      channelId: "attio",
       meta: {
         attioRecordId: recordId,
         attioObjectSlug: "people",
         syncProvider: "attio",
-        channelId,
+        channelId: "attio",
       },
-      sourceUrl: `https://app.attio.com/people/${recordId}`,
+      sourceUrl: await this.buildRecordUrl("person", recordId),
       preview: [email, phone].filter(Boolean).join(" | ") || null,
       notes: [],
       ...(initialSync ? { unread: false } : {}),
@@ -390,11 +424,10 @@ export class Attio extends Connector<Attio> {
     };
   }
 
-  private convertTaskToLink(
+  private async convertTaskToLink(
     task: AttioTask,
-    channelId: string,
     initialSync: boolean
-  ): NewLinkWithNotes {
+  ): Promise<NewLinkWithNotes> {
     const taskId = task.id.task_id;
 
     return {
@@ -403,13 +436,13 @@ export class Attio extends Connector<Attio> {
       title: task.content_plaintext || "Untitled Task",
       created: new Date(task.created_at),
       status: task.is_completed ? "completed" : "open",
-      channelId,
+      channelId: "attio",
       meta: {
         attioTaskId: taskId,
         syncProvider: "attio",
-        channelId,
+        channelId: "attio",
       },
-      sourceUrl: `https://app.attio.com/tasks/${taskId}`,
+      sourceUrl: await this.buildRecordUrl("tasks", taskId),
       notes: [],
       ...(initialSync ? { unread: false } : {}),
       ...(initialSync ? { archived: false } : {}),
@@ -418,12 +451,11 @@ export class Attio extends Connector<Attio> {
 
   // ---- Webhooks ----
 
-  private async setupAttioWebhook(channelId: string): Promise<void> {
+  private async setupAttioWebhook(): Promise<void> {
     try {
       const webhookUrl = await this.tools.network.createWebhook(
         {},
-        this.onWebhook,
-        channelId
+        this.onWebhook
       );
 
       // Skip webhook registration in development
@@ -435,48 +467,23 @@ export class Attio extends Connector<Attio> {
       }
 
       const api = this.getAPI();
-      const subscriptions = this.getWebhookSubscriptions(channelId);
+      const subscriptions: AttioWebhookSubscription[] = [
+        { event_type: "record.created", filter: null },
+        { event_type: "record.updated", filter: null },
+        { event_type: "record.deleted", filter: null },
+      ];
       const result = await api.createWebhook(webhookUrl, subscriptions);
 
       const webhookId = result?.data?.id?.webhook_id;
       if (webhookId) {
-        await this.set(`webhook_id_${channelId}`, webhookId);
+        await this.set("webhook_id", webhookId);
       }
     } catch (error) {
       console.error("Failed to set up Attio webhook:", error);
     }
   }
 
-  private getWebhookSubscriptions(
-    channelId: string
-  ): AttioWebhookSubscription[] {
-    // Attio webhook event types use the object slug to filter
-    switch (channelId) {
-      case "deals":
-        return [
-          { event_type: "record.created", filter: null },
-          { event_type: "record.updated", filter: null },
-          { event_type: "record.deleted", filter: null },
-        ];
-      case "people":
-        return [
-          { event_type: "record.created", filter: null },
-          { event_type: "record.updated", filter: null },
-        ];
-      case "tasks":
-        return [
-          { event_type: "record.created", filter: null },
-          { event_type: "record.updated", filter: null },
-        ];
-      default:
-        return [];
-    }
-  }
-
-  private async onWebhook(
-    request: WebhookRequest,
-    channelId: string
-  ): Promise<void> {
+  private async onWebhook(request: WebhookRequest): Promise<void> {
     const payload = request.body as AttioWebhookEvent | undefined;
     if (!payload?.event_type) return;
 
@@ -487,11 +494,13 @@ export class Attio extends Connector<Attio> {
       const record = payload.record;
       if (!record) return;
 
+      // Determine entity type from the webhook event's object slug
+      const objectSlug = payload.object?.slug;
       let link: NewLinkWithNotes;
-      if (channelId === "deals") {
-        link = this.convertDealToLink(record, channelId, false);
-      } else if (channelId === "people") {
-        link = this.convertPersonToLink(record, channelId, false);
+      if (objectSlug === "deals") {
+        link = await this.convertDealToLink(record, false);
+      } else if (objectSlug === "people") {
+        link = await this.convertPersonToLink(record, false);
       } else {
         return;
       }
@@ -501,7 +510,6 @@ export class Attio extends Connector<Attio> {
       const recordId = payload.record?.id?.record_id;
       if (!recordId) return;
 
-      const entityType = channelId === "deals" ? "deal" : "person";
       await this.tools.integrations.archiveLinks({
         meta: {
           attioRecordId: recordId,
@@ -511,8 +519,8 @@ export class Attio extends Connector<Attio> {
     }
 
     // Handle task webhooks
-    if (channelId === "tasks" && payload.task) {
-      const link = this.convertTaskToLink(payload.task, channelId, false);
+    if (payload.task) {
+      const link = await this.convertTaskToLink(payload.task, false);
       await this.tools.integrations.saveLink(link);
     }
   }
@@ -546,24 +554,6 @@ export class Attio extends Connector<Attio> {
     await api.createNote(objectSlug, recordId, "", note.content ?? "");
   }
 
-  // ---- Cleanup ----
-
-  private async stopSync(channelId: string): Promise<void> {
-    // Remove webhook
-    const webhookId = await this.get<string>(`webhook_id_${channelId}`);
-    if (webhookId) {
-      try {
-        const api = this.getAPI();
-        await api.deleteWebhook(webhookId);
-      } catch (error) {
-        console.warn("Failed to delete Attio webhook:", error);
-      }
-      await this.clear(`webhook_id_${channelId}`);
-    }
-
-    // Cleanup sync state
-    await this.clear(`sync_state_${channelId}`);
-  }
 }
 
 // ---- Helpers ----

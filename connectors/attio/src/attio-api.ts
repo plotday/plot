@@ -226,34 +226,17 @@ export class AttioAPI {
   }
 
   /** Get the current workspace info via /v2/self. */
-  async getWorkspace(): Promise<{ name: string }> {
-    // /v2/self returns { workspace_id, token_id } — no workspace name.
+  async getWorkspace(): Promise<{ name: string; slug: string }> {
     const self = await this.request<{
       workspace_id: string;
-      token_id: string;
+      workspace_name: string;
+      workspace_slug: string;
     }>("GET", "/self");
 
-    // Try to get a friendly name from workspace members (requires user_management:read)
-    try {
-      const members = await this.request<{
-        data: Array<{
-          first_name: string;
-          last_name: string;
-          email_address: string;
-        }>;
-      }>("GET", "/workspace_members");
-      const first = members?.data?.[0];
-      if (first) {
-        const name = [first.first_name, first.last_name]
-          .filter(Boolean)
-          .join(" ");
-        if (name) return { name };
-      }
-    } catch {
-      // Missing scope or other error — fall through
-    }
-
-    return { name: self.workspace_id };
+    return {
+      name: self.workspace_name || self.workspace_id,
+      slug: self.workspace_slug,
+    };
   }
 
   /** Query records for a given object type (deals, people, companies). */
