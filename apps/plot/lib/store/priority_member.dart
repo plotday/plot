@@ -82,6 +82,36 @@ class PriorityMember extends PriorityMemberRow {
         .get();
   }
 
+  /// Get accepted members with 'member' role only
+  static Future<List<PriorityMemberRow>> getAcceptedMembersForPriority(
+    Uuid priorityId,
+  ) async {
+    final db = Store.get;
+    return await (db.select(db.priorityMembers)..where(
+          (pm) =>
+              pm.priorityId.equalsValue(priorityId) &
+              pm.status.equals('accepted') &
+              pm.role.equals('member') &
+              pm.archivedAt.isNull(),
+        ))
+        .get();
+  }
+
+  /// Get accepted members with 'viewer' role only
+  static Future<List<PriorityMemberRow>> getAcceptedViewersForPriority(
+    Uuid priorityId,
+  ) async {
+    final db = Store.get;
+    return await (db.select(db.priorityMembers)..where(
+          (pm) =>
+              pm.priorityId.equalsValue(priorityId) &
+              pm.status.equals('accepted') &
+              pm.role.equals('viewer') &
+              pm.archivedAt.isNull(),
+        ))
+        .get();
+  }
+
   /// Get invited members only
   static Future<List<PriorityMemberRow>> getInvitedForPriority(
     Uuid priorityId,

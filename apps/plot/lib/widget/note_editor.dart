@@ -570,7 +570,8 @@ class NoteEditorState extends State<NoteEditor> {
 
   Widget _buildNoteBottomBar(BuildContext context) {
     return BlocBuilder<ThreadBloc, ThreadState>(
-      buildWhen: (prev, curr) => prev.editingNote != curr.editingNote,
+      buildWhen: (prev, curr) =>
+          prev.editingNote != curr.editingNote || prev.draft != curr.draft,
       builder: (context, activityState) {
         final isCurrentlyEditing = activityState.editingNote != null;
         return Row(
@@ -890,15 +891,23 @@ class NoteEditorState extends State<NoteEditor> {
     final activityBloc = context.read<ThreadBloc>();
     final replyTo = activityBloc.state.replyTo;
 
+    // When replying to a private note, auto-private the reply and carry over
+    // the original note's author + mentions so they can see it.
+    final replyPrivate = replyTo != null && replyTo.private;
+    final replyMentions = replyPrivate
+        ? <ActorId>{replyTo.authorId, ...?replyTo.mentions}.toList()
+        : <ActorId>[];
+
     // Merge active twist mentions into the note
     final activeTwistMentions = _getActiveTwistMentions();
+    final allAddMentions = [...activeTwistMentions, ...replyMentions];
 
     Note note = widget.draft.copyWith(
       content: body.isEmpty ? null : body,
       draft: false,
       reNoteId: replyTo?.id,
-      addMentions: activeTwistMentions.isNotEmpty ? activeTwistMentions : null,
-      private: widget.viewerMode ? true : null,
+      addMentions: allAddMentions.isNotEmpty ? allAddMentions : null,
+      private: (widget.viewerMode || replyPrivate) ? true : null,
     );
 
     // If Cmd-Enter was pressed, assign the note to current user

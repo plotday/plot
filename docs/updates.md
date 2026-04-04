@@ -1,3 +1,4 @@
+- Notes and new threads now default to private in priorities that have viewers — this prevents accidentally posting public messages that viewers can see, and you can still toggle private off when you want to post publicly
 - Thread titles now reliably get AI-generated summaries — previously some threads would only show a truncated version of the note content instead of a proper title
 - Fixed new tasks sometimes being created as discussions with no one assigned — this happened when using a remembered default priority or navigating with query parameters
 - Deleted occurrences of recurring calendar events now properly disappear from the agenda

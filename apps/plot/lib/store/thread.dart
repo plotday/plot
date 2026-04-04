@@ -2053,6 +2053,7 @@ class Thread extends Equatable implements Comparable<Thread> {
        _unreadComputed = null,
        _linkSourceCreatedAt = null,
        _activityDirty = true,
+       _activityRemoteDirty = true,
        _scheduleDirty = true,
        isLinkScheduleInstance = false;
 
@@ -2068,6 +2069,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     this.isLinkScheduleInstance = false,
     DateTime? linkSourceCreatedAt,
     bool activityDirty = false,
+    bool activityRemoteDirty = false,
     bool scheduleDirty = false,
   }) : _thread = activity,
        _schedule = schedule,
@@ -2078,6 +2080,7 @@ class Thread extends Equatable implements Comparable<Thread> {
        _unreadComputed = unreadComputed,
        _linkSourceCreatedAt = linkSourceCreatedAt,
        _activityDirty = activityDirty,
+       _activityRemoteDirty = activityRemoteDirty,
        _scheduleDirty = scheduleDirty {
     assert(
       priority.id == activity.priorityId,
@@ -2094,6 +2097,8 @@ class Thread extends Equatable implements Comparable<Thread> {
   final bool? _unreadComputed;
   final DateTime? _linkSourceCreatedAt;
   final bool _activityDirty;
+  /// Whether the activity row needs a remote push (vs local-only read-state update).
+  final bool _activityRemoteDirty;
   final bool _scheduleDirty;
 
   /// Whether this instance represents a link schedule (event from a linked item).
@@ -2940,6 +2945,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     // Update root activity if any thread-specific fields are changing
     var activity = _thread;
     var activityDirty = false;
+    // Whether changes require a remote push (vs local-only read-state update)
+    var activityRemoteDirty = false;
     if (priority != null ||
         draft != null ||
         private != null ||
@@ -2952,6 +2959,17 @@ class Thread extends Equatable implements Comparable<Thread> {
         readAt.present ||
         title.present) {
       activityDirty = true;
+      // Read-state fields (unread, readAt, bumpedAt) sync via
+      // /sync/thread-unread, not the regular thread push. Only mark remote
+      // dirty when non-read-state fields change.
+      activityRemoteDirty = priority != null ||
+          draft != null ||
+          private != null ||
+          mentions.present ||
+          preview.present ||
+          icon.present ||
+          archivedAt.present ||
+          title.present;
       activity = _thread.copyWith(
         priorityId: priority?.id,
         draft: draft,
@@ -3195,6 +3213,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       isLinkScheduleInstance: isLinkScheduleInstance,
       unreadComputed: unread != null ? null : _unreadComputed,
       activityDirty: activityDirty,
+      activityRemoteDirty: activityRemoteDirty,
       scheduleDirty: scheduleDirty,
     );
   }
@@ -3344,11 +3363,29 @@ class Thread extends Equatable implements Comparable<Thread> {
   Future<void> save() async {
     if (!Store.isAvailable) return;
     if (_activityDirty) {
-      await Store.get.save(
-        Store.get.threads,
-        _thread.toCompanion(false),
-        ThreadsBase(),
-      );
+      if (_activityRemoteDirty) {
+        // Full save: marks row pending for remote sync
+        await Store.get.save(
+          Store.get.threads,
+          _thread.toCompanion(false),
+          ThreadsBase(),
+        );
+      } else {
+        // Local-only update for read-state fields (unread, readAt, etc.).
+        // These sync via /sync/thread-unread, not the regular thread push.
+        // Use update().write() to avoid setting pending (which would trigger
+        // a full thread sync that fails for viewer members).
+        await (Store.get.update(Store.get.threads)
+              ..where((a) => a.id.equalsValue(id)))
+            .write(ThreadsCompanion(
+              unread: Value(_thread.unread),
+              importance: Value(_thread.importance),
+              urgency: Value(_thread.urgency),
+              readAt: Value(_thread.readAt),
+              bumpedAt: Value(_thread.bumpedAt),
+              updatedAt: Value(_thread.updatedAt),
+            ));
+      }
     }
     if (_scheduleDirty && _schedule != null && _schedule.linkId == null) {
       await Store.get.save(

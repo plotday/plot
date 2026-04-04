@@ -1,3 +1,5 @@
+import { Type } from "typebox";
+
 import {
   type Action,
   ActionType,
@@ -15,7 +17,6 @@ import {
   PriorityAccess,
   ThreadAccess,
 } from "@plotday/twister/tools/plot";
-import { Type } from "typebox";
 
 class PlotTwist extends Twist<PlotTwist> {
   build(build: ToolBuilder) {
@@ -58,65 +59,13 @@ class PlotTwist extends Twist<PlotTwist> {
     };
   }
 
-  async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
-    // Look up the Plot App priority (created by DB migration/setup function)
-    const plotApp = await this.tools.plot.createPriority({
-      title: "Plot App",
-      key: "@plot.app",
-    });
-
-    // If the priority was just created (first user), we don't have onboarding
-    // threads yet — they'll be created by the data migration or staff.
-    if (plotApp.created) {
-      return;
-    }
-
-    // Get owner contact for per-user schedules
-    const owner = context?.actor ? await this.tools.plot.getOwner() : null;
-    if (!owner) return;
-
-    // Get threads in the Plot App priority
-    const threads = await this.tools.plot.getThreads({
-      priorityId: plotApp.id,
-      includeDescendants: false,
-      limit: 20,
-    });
-
-    // Compute staggered schedule dates
-    const today = new Date();
-    const dates = [0, 0, 0, 0, 1, 2, 3].map((offset) => {
-      const d = new Date(today);
-      d.setDate(d.getDate() + offset);
-      return d.toISOString().slice(0, 10);
-    });
-
-    // Define expected onboarding thread titles and their schedule order
-    const onboardingOrder = [
-      { title: "Welcome to Plot!", date: dates[0], order: 100 },
-      { title: "Create your initial Priorities", date: dates[1], order: 200 },
-      { title: "Add your Connections", date: dates[2], order: 300 },
-      { title: "Getting Around", date: dates[3], order: 400 },
-      { title: "Explore Twists", date: dates[4], order: 100 },
-      { title: "Set up Notifications", date: dates[5], order: 100 },
-      { title: "Clean up without losing anything", date: dates[6], order: 100 },
-    ];
-
-    // Match threads by title and add to agenda
-    for (const config of onboardingOrder) {
-      const thread = threads.find((t) => t.title === config.title);
-      if (thread) {
-        try {
-          await this.tools.plot.createSchedule({
-            threadId: thread.id,
-            start: config.date === dates[0] ? "1970-01-01" : config.date,
-            userId: owner.id,
-            order: config.order,
-          });
-        } catch {
-          // Schedule may already exist — ignore
-        }
-      }
-    }
+  async activate(
+    _priority: Pick<Priority, "id">,
+    _context?: { actor: Actor }
+  ) {
+    // Onboarding (joining @plot.app, scheduling threads) is handled by
+    // the activate endpoint in account.ts and the setup_plot_app_priority
+    // SQL function.
   }
 
   async onSearchQuery(note: Note): Promise<void> {
@@ -270,7 +219,9 @@ class PlotTwist extends Twist<PlotTwist> {
     const threadsContext = threads
       .map(
         (t) =>
-          `${t.id} | ${t.title} | Priority: ${t.priority.title} (${t.priority.id}) | Archived: ${t.archived ? "yes" : "no"}`
+          `${t.id} | ${t.title} | Priority: ${t.priority.title} (${
+            t.priority.id
+          }) | Archived: ${t.archived ? "yes" : "no"}`
       )
       .join("\n");
 
@@ -341,11 +292,11 @@ class PlotTwist extends Twist<PlotTwist> {
         "You are an organizational assistant for a workspace. The user wants to reorganize their content.\n\n" +
         "Given the user's request and the available data, produce a JSON array of operations.\n\n" +
         "Available operation types:\n" +
-        '- updateThread: Change a thread\'s title, archived status, or move it to a different priority. Use changes.priority with {id, title} to move. Set changes.archived to true to archive.\n' +
+        "- updateThread: Change a thread's title, archived status, or move it to a different priority. Use changes.priority with {id, title} to move. Set changes.archived to true to archive.\n" +
         "- createThread: Create a new thread in a specific priority.\n" +
         "- createNote: Add a note to an existing thread.\n" +
         "- updatePriority: Rename a priority, archive it, or move it under a different parent.\n" +
-        '- _createPriority: Signal that a new priority should be created. Use this when the user asks to move threads to a priority that doesn\'t exist yet. Include parentId/parentTitle for where to create it.\n\n' +
+        "- _createPriority: Signal that a new priority should be created. Use this when the user asks to move threads to a priority that doesn't exist yet. Include parentId/parentTitle for where to create it.\n\n" +
         "Rules:\n" +
         "- Only reference thread IDs and priority IDs from the provided data (except for _createPriority).\n" +
         "- Include the current title in threadTitle/priorityTitle fields for display purposes.\n" +
@@ -402,16 +353,17 @@ class PlotTwist extends Twist<PlotTwist> {
             op.changes.priority.title.toLowerCase()
           );
           if (newPriority) {
-            op.changes.priority = { id: newPriority.id, title: newPriority.title };
+            op.changes.priority = {
+              id: newPriority.id,
+              title: newPriority.title,
+            };
           } else if (!priorityIds.has(op.changes.priority.id)) {
             continue;
           }
         }
         validOperations.push(op as PlanOperation);
       } else if (op.type === "createThread") {
-        const newPriority = newPriorityMap.get(
-          op.priorityTitle.toLowerCase()
-        );
+        const newPriority = newPriorityMap.get(op.priorityTitle.toLowerCase());
         if (newPriority) {
           op.priorityId = newPriority.id;
           op.priorityTitle = newPriority.title;
@@ -450,8 +402,7 @@ class PlotTwist extends Twist<PlotTwist> {
           case "updateThread":
             if (op.changes.priority)
               return `- Move **${op.threadTitle}** to **${op.changes.priority.title}**`;
-            if (op.changes.archived)
-              return `- Archive **${op.threadTitle}**`;
+            if (op.changes.archived) return `- Archive **${op.threadTitle}**`;
             if (op.changes.title)
               return `- Rename **${op.threadTitle}** to **${op.changes.title}**`;
             return `- Update **${op.threadTitle}**`;
@@ -485,15 +436,14 @@ class PlotTwist extends Twist<PlotTwist> {
 
     await this.tools.plot.createNote({
       thread: { id: note.thread.id },
-      content: `Here's my plan (${operations.length} operation${operations.length === 1 ? "" : "s"}):\n\n${summary}`,
+      content: `Here's my plan (${operations.length} operation${
+        operations.length === 1 ? "" : "s"
+      }):\n\n${summary}`,
       actions: [planAction],
     });
   }
 
-  async onPlanResponse(
-    _action: Action,
-    threadId: string
-  ): Promise<void> {
+  async onPlanResponse(_action: Action, threadId: string): Promise<void> {
     // The API executes operations on approval and calls back with the action.
     // We just post a confirmation note in the original thread.
     await this.tools.plot.createNote({

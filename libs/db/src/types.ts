@@ -854,6 +854,7 @@ export type Database = {
           color: number | null
           created_at: string
           created_by: string
+          default_thread_icon: string | null
           id: string
           inherit_members: boolean
           key: string | null
@@ -869,6 +870,7 @@ export type Database = {
           color?: number | null
           created_at?: string
           created_by: string
+          default_thread_icon?: string | null
           id?: string
           inherit_members?: boolean
           key?: string | null
@@ -884,6 +886,7 @@ export type Database = {
           color?: number | null
           created_at?: string
           created_by?: string
+          default_thread_icon?: string | null
           id?: string
           inherit_members?: boolean
           key?: string | null

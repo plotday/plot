@@ -61,9 +61,9 @@ class ChangeCurrentPriority extends PriorityCommand {
 class OpenPlotApp extends Command {
   OpenPlotApp(this.priority)
     : super(
-        title: 'Plot App',
-        subtitle: 'Updates, support, and suggestions',
-        icon: PlotIcon.sparkles,
+        title: 'Using Plot',
+        subtitle: 'Updates, help, and your feedback',
+        icon: PlotIcon.help,
         eventObject: EventObject.priority,
         eventAction: EventAction.viewed,
       );
@@ -261,10 +261,7 @@ class NewPriority extends ShowForm {
             label: 'Parent',
             initialValue: defaultParent,
             items: (search) async => Priority.excludePlot(
-              await Priority.get(
-                order: PriorityOrder.nested,
-                search: search,
-              ),
+              await Priority.get(order: PriorityOrder.nested, search: search),
             ),
             labelBuilder: (p) => PriorityLabel(priority: p),
             titleBuilder: (p) => p.ancestorsLabel() != null
@@ -422,19 +419,14 @@ class EditPriorityCommand extends ShowForm {
             placeholder: 'None',
             items: (search) async {
               final priorities = Priority.excludePlot(
-                await Priority.get(
-                  order: PriorityOrder.nested,
-                  search: search,
-                ),
+                await Priority.get(order: PriorityOrder.nested, search: search),
               );
               return priorities.where((candidate) {
                 if (candidate.id == p.id) return false;
                 if (p.path.isParent(candidate.path)) return false;
                 if (p.personal && !candidate.personal) return false;
                 // Team roots can only be placed under personal priorities
-                if (isRoot &&
-                    p.organizationId != null &&
-                    !candidate.personal) {
+                if (isRoot && p.organizationId != null && !candidate.personal) {
                   return false;
                 }
                 // Team descendants can only move within the same team
@@ -463,7 +455,8 @@ class EditPriorityCommand extends ShowForm {
                   readonlyMessage: isTeamDescendant
                       ? 'Team is inherited from parent priority'
                       : null,
-                  enabled: isTeamDescendant ||
+                  enabled:
+                      isTeamDescendant ||
                       p.organizationId == null ||
                       isTeamAdmin,
                   items: (search) async =>
@@ -779,7 +772,16 @@ class ManagePrioritySharing extends ShowCommands {
           title: 'Settings',
           commands: [ToggleInheritMembers(current)],
         ),
-      AcceptedMembersGroup(title: 'Members', priority: sourcePriority),
+      AcceptedMembersGroup(
+        title: 'Members',
+        priority: sourcePriority,
+        role: 'member',
+      ),
+      AcceptedMembersGroup(
+        title: 'Viewers',
+        priority: sourcePriority,
+        role: 'viewer',
+      ),
       InvitedMembersGroup(title: 'Invited', priority: sourcePriority),
       ContactGroup(
         title: 'Share',
@@ -859,14 +861,26 @@ class ContactGroup extends CommandGroup {
 }
 
 class AcceptedMembersGroup extends CommandGroup {
-  AcceptedMembersGroup({required super.title, required this.priority});
+  AcceptedMembersGroup({
+    required super.title,
+    required this.priority,
+    this.role,
+  });
 
   final Priority priority;
+  final String? role;
 
   @override
   Future<List<Command>> list({String? search}) async {
-    // Get only accepted members
-    final members = await PriorityMember.getAcceptedForPriority(priority.id);
+    // Get accepted members filtered by role
+    final List<PriorityMemberRow> members;
+    if (role == 'viewer') {
+      members = await PriorityMember.getAcceptedViewersForPriority(priority.id);
+    } else if (role == 'member') {
+      members = await PriorityMember.getAcceptedMembersForPriority(priority.id);
+    } else {
+      members = await PriorityMember.getAcceptedForPriority(priority.id);
+    }
 
     final commands = <Command>[];
     for (final member in members) {

@@ -29,7 +29,7 @@ WHERE
     (n.draft = FALSE OR n.created_by = upe.user_id)
     AND (n.private = FALSE
         OR n.created_by = upe.user_id
-        OR upe.user_id = ANY(n.mentions)
+        OR "user".user_contact_id(upe.user_id) = ANY(n.mentions)
         OR upe.role = 'member')
     -- Thread-level filtering (thread draft/private affects note visibility)
     AND (a.draft = FALSE OR a.created_by = upe.user_id)
@@ -71,7 +71,7 @@ WHERE
         -- Note is private and user can't see it
         (n.private = TRUE
             AND n.created_by != upe.user_id
-            AND NOT (upe.user_id = ANY(COALESCE(n.mentions, CAST('{}' AS uuid[])))))
+            AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(n.mentions, CAST('{}' AS uuid[])))))
         OR
         -- Thread is private and user can't see it
         (a.private = TRUE
@@ -101,6 +101,6 @@ WHERE
     (n.draft = FALSE OR n.created_by = ua.user_id)
     AND (n.private = FALSE
         OR n.created_by = ua.user_id
-        OR ua.user_id = ANY(n.mentions));
+        OR "user".user_contact_id(ua.user_id) = ANY(n.mentions));
 
 ALTER VIEW "user"."note_tags" OWNER TO postgres;

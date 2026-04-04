@@ -69,11 +69,25 @@ class ThreadBloc extends Cubit<ThreadState> {
 
   /// Sets the note being replied to. Pass null to clear.
   /// Clears editing state when replying (mutual exclusion).
+  /// When replying to a private note, auto-marks the draft as private and
+  /// carries over the original note's author + mentions.
   void setReplyTo(Note? note) {
+    var draft = state.draft;
+    if (note != null && note.private) {
+      final replyMentions = <ActorId>{
+        note.authorId,
+        ...?note.mentions,
+      }.toList();
+      draft = draft.copyWith(private: true, addMentions: replyMentions);
+    } else if (note == null && state.replyTo != null && state.replyTo!.private) {
+      // Clearing reply to a private note — reset draft private and mentions
+      draft = draft.copyWith(private: false, mentions: []);
+    }
     emit(state.copyWith(
       replyTo: note,
       clearReplyTo: note == null,
       clearEditingNote: note != null,
+      draft: draft,
     ));
   }
 
@@ -105,8 +119,13 @@ class ThreadBloc extends Cubit<ThreadState> {
   /// Creates a fresh draft note for the thread afterward.
   /// Note: Twisting tag for twist mentions is added in Note.save()
   Future<void> add(Note note) async {
-    // Convert the draft to a non-draft
-    note = note.copyWith(draft: false);
+    // Convert the draft to a non-draft.
+    // Viewer members' notes are always private (enforced by DB), so set it
+    // locally for immediate UI feedback instead of waiting for sync.
+    note = note.copyWith(
+      draft: false,
+      private: state.thread.priority.isViewer ? true : null,
+    );
 
     // Show all notes after submitting so the new note is visible
     final showAll = state.search.isNotEmpty ? true : null;
@@ -122,6 +141,9 @@ class ThreadBloc extends Cubit<ThreadState> {
         showAllNotes: showAll,
       ),
     );
+
+    // Default fresh draft to private if priority has viewers
+    _defaultDraftToPrivateIfViewers();
 
     // Async
     note.save();
@@ -191,6 +213,23 @@ class ThreadBloc extends Cubit<ThreadState> {
     final existingDraft = await Note.getDraftByActivity(state.thread.id);
     if (existingDraft != null) {
       emit(state.copyWith(draft: existingDraft));
+    } else {
+      await _defaultDraftToPrivateIfViewers();
+    }
+  }
+
+  /// Defaults the current draft to private if the priority has viewer members.
+  /// Safety measure so members don't accidentally post public messages.
+  Future<void> _defaultDraftToPrivateIfViewers() async {
+    final priority = state.thread.priority;
+    if (priority.sharing && !priority.isViewer && !state.thread.private) {
+      final viewers =
+          await PriorityMember.getAcceptedViewersForPriority(priority.id);
+      if (viewers.isNotEmpty) {
+        emit(state.copyWith(
+          draft: state.draft.copyWith(private: true),
+        ));
+      }
     }
   }
 

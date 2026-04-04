@@ -459,11 +459,149 @@ account.post("/activate", async (c) => {
     }
   }
 
-  // Step 9: Set up Plot App priority
+  // Step 9: Set up Plot App priority and onboarding
   try {
-    await rpc(c.var.db, "setup_plot_app_priority", {
-      p_user_id: user.id,
-    });
+    // 9a: Find @plot.app priority (global, unscoped)
+    let plotAppPriority = await c.var.db
+      .selectFrom("priority")
+      .select(["id", "path"])
+      .where("key", "=", "@plot.app")
+      .executeTakeFirst();
+
+    if (plotAppPriority) {
+      // Unarchive if it was previously archived (e.g. from a twist cleanup)
+      await c.var.db
+        .updateTable("priority")
+        .set({ archived_at: null })
+        .where("id", "=", plotAppPriority.id)
+        .where("archived_at", "is not", null)
+        .execute();
+    } else {
+      // Bootstrap: create @plot.app priority and onboarding threads
+      await rpc(c.var.db, "setup_plot_app_priority", {
+        p_user_id: user.id,
+      });
+      plotAppPriority = await c.var.db
+        .selectFrom("priority")
+        .select(["id", "path"])
+        .where("key", "=", "@plot.app")
+        .executeTakeFirst();
+    }
+
+    if (plotAppPriority) {
+      // 9b: Add user as viewer (idempotent)
+      const userContact = await c.var.db
+        .selectFrom("contact")
+        .select("id")
+        .where("user_id", "=", user.id)
+        .where("primary", "=", true)
+        .executeTakeFirst();
+
+      if (userContact) {
+        await c.var.db
+          .insertInto("priority_contact")
+          .values({ priority_id: plotAppPriority.id, contact_id: userContact.id })
+          .onConflict((oc) => oc.columns(["priority_id", "contact_id"]).doNothing())
+          .execute();
+      }
+
+      await c.var.db
+        .insertInto("priority_user")
+        .values({
+          user_id: user.id,
+          priority_id: plotAppPriority.id,
+          personal: false,
+          role: "viewer",
+        })
+        .onConflict((oc) =>
+          oc.columns(["user_id", "priority_id"]).doUpdateSet({
+            archived_at: null,
+          })
+        )
+        .execute();
+
+      // 9c: Position @plot.app under user's root via priority_setting
+      const rootPriority = await c.var.db
+        .selectFrom("priority")
+        .select("path")
+        .where("id", "=", priority.id)
+        .executeTakeFirst();
+
+      if (rootPriority?.path) {
+        const overridePath = generatePath(rootPriority.path as string);
+        await sql`
+          INSERT INTO priority_setting (user_id, priority_id, key, value)
+          VALUES
+            (${user.id}::uuid, ${plotAppPriority.id}::uuid, 'path', to_jsonb(${overridePath}::text)),
+            (${user.id}::uuid, ${plotAppPriority.id}::uuid, 'title', to_jsonb('Using Plot'::text))
+          ON CONFLICT (user_id, priority_id, key)
+          DO UPDATE SET value = EXCLUDED.value
+        `.execute(c.var.db);
+      }
+
+      // 9d: Query onboarding threads by key
+      const onboardingThreads = await c.var.db
+        .selectFrom("thread")
+        .select(["id", "key"])
+        .where("priority_id", "=", plotAppPriority.id)
+        .where("key", "in", [
+          "welcome", "priorities", "connections", "getting-around",
+          "twists", "notifications", "clean-up",
+        ])
+        .where("archived_at", "is", null)
+        .execute();
+
+      // 9e: Create per-user schedules with staggered dates
+      if (onboardingThreads.length > 0) {
+        const threadByKey = new Map(onboardingThreads.map((t) => [t.key, t.id]));
+        const today = new Date();
+
+        const onboardingSchedule = [
+          { key: "welcome",        dateOffset: 0, order: 100 },
+          { key: "priorities",     dateOffset: 0, order: 200 },
+          { key: "connections",    dateOffset: 0, order: 300 },
+          { key: "getting-around", dateOffset: 0, order: 400 },
+          { key: "twists",         dateOffset: 1, order: 100 },
+          { key: "notifications",  dateOffset: 2, order: 100 },
+          { key: "clean-up",       dateOffset: 3, order: 100 },
+        ];
+
+        for (const item of onboardingSchedule) {
+          const threadId = threadByKey.get(item.key);
+          if (!threadId) continue;
+
+          if (item.dateOffset === 0) {
+            // "Started" — per-user schedule with epoch sentinel date (matches Flutter app's Start behavior)
+            await sql`
+              INSERT INTO schedule (thread_id, user_id, "order", reason, "on")
+              VALUES (${threadId}::uuid, ${user.id}::uuid, ${item.order}, 'add', daterange('1970-01-01', NULL))
+              ON CONFLICT (thread_id, user_id) WHERE user_id IS NOT NULL AND occurrence IS NULL
+              DO NOTHING
+            `.execute(c.var.db);
+          } else {
+            // Scheduled for a future date
+            const futureDate = new Date(today);
+            futureDate.setDate(futureDate.getDate() + item.dateOffset);
+            const dateStr = futureDate.toISOString().slice(0, 10);
+            await sql`
+              INSERT INTO schedule (thread_id, user_id, "order", "on", reason)
+              VALUES (${threadId}::uuid, ${user.id}::uuid, ${item.order}, daterange(${dateStr}::date, NULL), 'add')
+              ON CONFLICT (thread_id, user_id) WHERE user_id IS NOT NULL AND occurrence IS NULL
+              DO NOTHING
+            `.execute(c.var.db);
+          }
+        }
+      }
+
+      // 9f: Notify sync for the Plot App priority
+      notifySync(c, plotAppPriority.id);
+    } else {
+      const context = extractRequestContext(c);
+      const logger = createLogger(context);
+      logger.warn("@plot.app priority not found after setup attempt", {
+        user_id: user.id,
+      });
+    }
   } catch (error) {
     // Fail open - log but don't block activation
     const context = extractRequestContext(c);

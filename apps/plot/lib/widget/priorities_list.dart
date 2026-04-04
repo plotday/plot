@@ -12,14 +12,12 @@ class PrioritiesList extends StatefulWidget {
   final List<Priority> topPriorities;
   final Priority root;
   final Priority? selected;
-  final bool showPlotSection;
 
   PrioritiesList({
     super.key,
     required this.root,
     required List<Priority> priorities,
     this.selected,
-    this.showPlotSection = true,
   }) : topPriorities = priorities.where((p) => p.topOrder != null).toList()
          ..sort(
            (a, b) => (a.topOrder?.value ?? 0).compareTo(b.topOrder?.value ?? 0),
@@ -435,7 +433,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                 textStyle: itemStyle.copyWith(
                   color: context.colour.colours.fromTheme(
                     widget.root.displayColor,
-                    muted: !_hasDescendantActive(widget.root) && !_hasDescendantUnread(widget.root),
+                    muted:
+                        !_hasDescendantActive(widget.root) &&
+                        !_hasDescendantUnread(widget.root),
                   ),
                 ),
                 trailingBuilder: (isHovered, hasFocus) {
@@ -514,10 +514,6 @@ class _PrioritiesListState extends State<PrioritiesList>
 
               // Third group: All Priorities (excluding system priorities)
               ...() {
-                final plotApp = widget.root.children.firstWhereOrNull(
-                  (p) => p.key == '@plot.app',
-                );
-
                 final allPriorities = Priority.excludePlot(
                   widget.root.children,
                 );
@@ -564,23 +560,6 @@ class _PrioritiesListState extends State<PrioritiesList>
                         ),
                       ),
                     ),
-
-                  // Fourth group: Plot App
-                  if (widget.showPlotSection && plotApp != null) ...[
-                    SizedBox(height: 16),
-                    ListTile(
-                      title: 'Plot',
-                      style: ListTileStyle.header,
-                      textStyle: headerStyle,
-                      noHoverHighlight: true,
-                      centered: true,
-                    ),
-                    ...buildReorderablePriorityItems(
-                      context,
-                      [plotApp],
-                      textStyle: itemStyle,
-                    ),
-                  ],
                 ];
               }(),
             ],

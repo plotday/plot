@@ -623,10 +623,7 @@ class _SaveThreadEdit extends _UpdateThreadCommand {
   Future<CommandReturn> run(BuildContext context) async {
     await saveOptimistically(
       context,
-      thread.copyWith(
-        title: Value(newTitle),
-        icon: Value(newType?.value),
-      ),
+      thread.copyWith(title: Value(newTitle), icon: Value(newType?.value)),
     );
     return const CommandDone();
   }
@@ -743,9 +740,7 @@ class DisassociateThread extends Command {
       // Just disassociate: remove only the associated copies
       priorityBloc?.optimisticallyDisassociate(thread.id);
     }
-    await thread.disassociate(
-      order: Order.first(),
-    );
+    await thread.disassociate(order: Order.first());
     return const CommandDone();
   }
 }
@@ -828,10 +823,7 @@ class FinishThread extends _UpdateThreadCommand {
     } else {
       // No animation: remove the base todo and update remaining link schedule
       // instances to todo=false so the icon reflects the finished state.
-      priorityBloc?.optimisticallyRemoveThread(
-        thread.id,
-        finishTodo: true,
-      );
+      priorityBloc?.optimisticallyRemoveThread(thread.id, finishTodo: true);
     }
     await onUpdate(thread.copyWith(todo: false, bump: bump));
 
@@ -1654,9 +1646,8 @@ class ShowThreadCommands extends ShowCommands {
     : super(
         title: 'More commands',
         icon: PlotIcon.menu,
-        commandsBuilder: (context) async => Commands(
-          groups: await threadCommandGroups(thread, open: open),
-        ),
+        commandsBuilder: (context) async =>
+            Commands(groups: await threadCommandGroups(thread, open: open)),
       );
 }
 
@@ -1812,6 +1803,7 @@ class OpenFocusedItemActions extends ShowCommands {
   ) : _controller = controller,
       super(
         title: 'Open actions for focused item',
+        showFilter: true,
         commandsBuilder: (context) async {
           final focusedIndex = controller.focusedIndex;
           if (focusedIndex == null) {
@@ -1832,16 +1824,11 @@ class OpenFocusedItemActions extends ShowCommands {
       return const CommandSkipped();
     }
 
-    // Store the focused node for restoration after menu closes
-    final focusedNode = _controller.getFocusNode(focusedIndex);
-
     // Call parent to show actions
     final result = await super.run(context);
 
-    // Restore focus after menu closes
-    if (context.mounted) {
-      focusedNode.requestFocus();
-    }
+    // Clear list focus so the editor regains focus naturally
+    _controller.clearFocus();
 
     return result;
   }
@@ -1933,7 +1920,7 @@ List<StaticCommandGroup> threadCommandGroupsSync(
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Thread: ${thread.title}', commands: commands),
     StaticCommandGroup(
-      title: null,
+      title: 'Thread: ${thread.title}',
       commands: [],
       infoBuilder: (context, search) {
         final hasSearch = search != null && search.isNotEmpty;

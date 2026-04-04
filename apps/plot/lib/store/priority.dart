@@ -11,7 +11,11 @@ class Priorities extends Table
   RealColumn get topOrder => real().nullable().map(const OrderConverter())();
   RealColumn get order => real()
       .map(const OrderConverter())
-      .clientDefault(() => DateTime.now().millisecondsSinceEpoch.toDouble() + Random().nextDouble())();
+      .clientDefault(
+        () =>
+            DateTime.now().millisecondsSinceEpoch.toDouble() +
+            Random().nextDouble(),
+      )();
   IntColumn get pomodoro => integer()
       .nullable()
       .withDefault(const Constant(25 * 60))
@@ -27,10 +31,14 @@ class Priorities extends Table
   TextColumn get attentionWindow => text().nullable()();
   TextColumn get seeWithinRequests => text().nullable()();
   TextColumn get seeWithinUpdates => text().nullable()();
-  BoolColumn get attentionWindowSet => boolean().withDefault(const Constant(false))();
-  BoolColumn get seeWithinRequestsSet => boolean().withDefault(const Constant(false))();
-  BoolColumn get seeWithinUpdatesSet => boolean().withDefault(const Constant(false))();
-  BoolColumn get inheritMembers => boolean().withDefault(const Constant(true))();
+  BoolColumn get attentionWindowSet =>
+      boolean().withDefault(const Constant(false))();
+  BoolColumn get seeWithinRequestsSet =>
+      boolean().withDefault(const Constant(false))();
+  BoolColumn get seeWithinUpdatesSet =>
+      boolean().withDefault(const Constant(false))();
+  BoolColumn get inheritMembers =>
+      boolean().withDefault(const Constant(true))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -74,9 +82,9 @@ class PrioritiesBase extends BaseTable {
     }
     // Ensure order is never null — the server COALESCE should prevent this,
     // but a null here causes a native SIGSEGV at sqlite3_bind_double
-    json['order'] ??= DateTime.parse(json['created_at'] as String)
-        .millisecondsSinceEpoch
-        .toDouble();
+    json['order'] ??= DateTime.parse(
+      json['created_at'] as String,
+    ).millisecondsSinceEpoch.toDouble();
     json['inherit_members'] ??= true;
     // organization_id comes as a string from the API (PostgreSQL bigint → JSON string)
     if (json['organization_id'] is String) {
@@ -444,8 +452,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       a.priorityId.isIn(idBytes) &
           a.archivedAt.isNull() &
           a.draft.equals(false) &
-          (
-          (s.startOn.isSmallerOrEqualValue(today) & s.startAt.isNull()) |
+          ((s.startOn.isSmallerOrEqualValue(today) & s.startAt.isNull()) |
               (s.startAt.isSmallerOrEqualValue(now) &
                   (s.endAt.isNull() | s.endAt.isBiggerOrEqualValue(now)))),
     );
@@ -466,8 +473,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       a.priorityId.isIn(idBytes) &
           a.archivedAt.isNull() &
           a.draft.equals(false) &
-          (
-          (us.startOn.isSmallerOrEqualValue(today) & us.startAt.isNull()) |
+          ((us.startOn.isSmallerOrEqualValue(today) & us.startAt.isNull()) |
               (us.startAt.isSmallerOrEqualValue(now))),
     );
 
@@ -558,8 +564,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
               return startOn.compareTo(today) <= 0 && end.compareTo(today) >= 0;
             }
             if (startAt != null) {
-              final started = startAt.isBefore(now) || startAt.isAtSameMomentAs(now);
-              final notEnded = endAt == null || endAt.isAfter(now) || endAt.isAtSameMomentAs(now);
+              final started =
+                  startAt.isBefore(now) || startAt.isAtSameMomentAs(now);
+              final notEnded =
+                  endAt == null ||
+                  endAt.isAfter(now) ||
+                  endAt.isAtSameMomentAs(now);
               return started && notEnded;
             }
             return false;
@@ -634,9 +644,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
     final query = db.selectOnly(pm, distinct: true)
       ..addColumns([pm.priorityId])
-      ..where(pm.priorityId.isIn(idBytes) &
-          pm.archivedAt.isNull() &
-          pm.contactId.isNotIn(userActorIds));
+      ..where(
+        pm.priorityId.isIn(idBytes) &
+            pm.archivedAt.isNull() &
+            pm.contactId.isNotIn(userActorIds),
+      );
 
     final results = await query.get();
     return results
@@ -735,11 +747,16 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         query.where(p.archivedAt.isNull());
 
         // Join ancestry to check for archived ancestors
-        final paForFilter = Store.get.alias(Store.get.priorityAncestry, 'pa_filter');
-        query = query.join([leftOuterJoin(paForFilter, paForFilter.priorityId.equalsExp(p.id))]);
+        final paForFilter = Store.get.alias(
+          Store.get.priorityAncestry,
+          'pa_filter',
+        );
+        query = query.join([
+          leftOuterJoin(paForFilter, paForFilter.priorityId.equalsExp(p.id)),
+        ]);
         query.where(
           paForFilter.hasArchivedAncestor.isNull() |
-          paForFilter.hasArchivedAncestor.equals(0)
+              paForFilter.hasArchivedAncestor.equals(0),
         );
       }
     }
@@ -1107,7 +1124,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   bool get isPlot =>
       key == '@plot.app' || key == '@plot.twist-dev' || key == '@plot';
 
-  /// Whether this is the Plot App priority.
+  /// Whether this is the Using Plot priority.
   bool get isPlotApp => key == '@plot.app';
 
   /// Parsed attention window settings (inherited from this priority or ancestors).
@@ -1147,13 +1164,13 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   @override
   int get hashCode => Object.hash(
-        super.hashCode,
-        _activeComputed,
-        _unreadComputed,
-        _sharingComputed,
-        sharingAncestorId,
-        displayColor,
-      );
+    super.hashCode,
+    _activeComputed,
+    _unreadComputed,
+    _sharingComputed,
+    sharingAncestorId,
+    displayColor,
+  );
 
   List<Priority> descendants() {
     List<Priority> result = [];
@@ -1361,10 +1378,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     }
 
     // Update this priority's path
-    final updatedPriority = copyWith(
-      path: newPath,
-      pending: const Value(2),
-    );
+    final updatedPriority = copyWith(path: newPath, pending: const Value(2));
     await Store.get.save(
       table,
       updatedPriority.toCompanion(false),

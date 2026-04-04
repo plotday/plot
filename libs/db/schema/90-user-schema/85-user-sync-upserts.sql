@@ -183,6 +183,16 @@ BEGIN
     END IF;
     PERFORM "user".assert_priority_access(user_id, v_priority_id);
 
+    -- Block writes to private threads the user cannot see
+    IF (SELECT private FROM thread WHERE id = p_thread_id) = TRUE THEN
+        IF "user".get_effective_role(user_id, v_priority_id) != 'member'
+           AND (SELECT created_by FROM thread WHERE id = p_thread_id) != upsert_note.user_id
+           AND NOT "user".mentioned_in_thread(upsert_note.user_id, p_thread_id)
+        THEN
+            RAISE EXCEPTION 'Access denied to private thread';
+        END IF;
+    END IF;
+
     -- Viewer enforcement: force private, auto-mention thread author
     IF "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
         p_private := TRUE;

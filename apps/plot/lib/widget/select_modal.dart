@@ -787,39 +787,100 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                           if (infoWidget == null) {
                             return const SizedBox.shrink();
                           }
-                          final isHighlighted = index == _highlightedIndex;
-                          return MouseRegion(
-                            onEnter: (_) {
-                              if (!_mouseHasMoved) return;
-                              listController.setHovered(index);
-                              setState(() => _highlightedIndex = index);
-                            },
-                            onExit: (_) {
-                              if (!_mouseHasMoved) return;
-                              listController.setHovered(null);
-                              setState(() => _highlightedIndex = -1);
-                            },
-                            onHover: (_) {
-                              if (!_mouseHasMoved) {
-                                setState(() => _mouseHasMoved = true);
-                                listController.setHovered(index);
-                                setState(() => _highlightedIndex = index);
-                              }
-                            },
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: group.onActivate != null
-                                  ? () => group.onActivate!(context)
-                                  : null,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: isHighlighted
-                                      ? context.theme.colors.secondary
-                                      : null,
-                                ),
-                                child: infoWidget,
+
+                          // Show group header for info-only groups,
+                          // but skip if the preceding group has the same title
+                          Widget? infoHeader;
+                          final prevTitle = index > 0
+                              ? _getGroupAtIndex(index - 1)?.title
+                              : null;
+                          if (group.title != null && prevTitle != group.title) {
+                            infoHeader = Padding(
+                              padding: context.theme.spacing.paddingSm.copyWith(
+                                right: context.theme.spacing.xxl,
                               ),
-                            ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      group.title!,
+                                      style: TextStyle(
+                                        color: context
+                                            .theme
+                                            .colors
+                                            .mutedForeground,
+                                        fontSize: context
+                                            .theme
+                                            .typography
+                                            .sm
+                                            .fontSize,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (group.hint != null &&
+                                      hasPhysicalKeyboard())
+                                    Text(
+                                      group.hint!,
+                                      style: TextStyle(
+                                        color: context
+                                            .theme
+                                            .colors
+                                            .mutedForeground,
+                                        fontSize: context
+                                            .theme
+                                            .typography
+                                            .xs
+                                            .fontSize,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final isHighlighted = index == _highlightedIndex;
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (infoHeader != null) infoHeader,
+                              MouseRegion(
+                                onEnter: (_) {
+                                  if (!_mouseHasMoved) return;
+                                  listController.setHovered(index);
+                                  setState(() => _highlightedIndex = index);
+                                },
+                                onExit: (_) {
+                                  if (!_mouseHasMoved) return;
+                                  listController.setHovered(null);
+                                  setState(() => _highlightedIndex = -1);
+                                },
+                                onHover: (_) {
+                                  if (!_mouseHasMoved) {
+                                    setState(() => _mouseHasMoved = true);
+                                    listController.setHovered(index);
+                                    setState(() => _highlightedIndex = index);
+                                  }
+                                },
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: group.onActivate != null
+                                      ? () => group.onActivate!(context)
+                                      : null,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: isHighlighted
+                                          ? context.theme.colors.secondary
+                                          : null,
+                                    ),
+                                    child: infoWidget,
+                                  ),
+                                ),
+                              ),
+                            ],
                           );
                         }
 

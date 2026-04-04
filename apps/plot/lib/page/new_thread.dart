@@ -192,13 +192,25 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!mounted) return;
     _applyDefaultType();
 
-    // In viewer priorities, threads are always private
+    // Default to private in priorities with viewers (safety measure)
     if (mounted) {
       final priority = context.read<PriorityBloc>().state.draft.priority;
       if (priority.isViewer) {
+        // Viewers: always private
         final bloc = context.read<PriorityBloc>();
         if (!bloc.state.draft.private) {
           await bloc.updateDraft(bloc.state.draft.copyWith(private: true));
+        }
+      } else if (priority.sharing) {
+        // Members: default to private if priority has viewers
+        final viewers = await PriorityMember.getAcceptedViewersForPriority(
+          priority.id,
+        );
+        if (viewers.isNotEmpty && mounted) {
+          final bloc = context.read<PriorityBloc>();
+          if (!bloc.state.draft.private) {
+            await bloc.updateDraft(bloc.state.draft.copyWith(private: true));
+          }
         }
       }
     }

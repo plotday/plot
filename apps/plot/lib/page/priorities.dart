@@ -92,7 +92,6 @@ class PrioritiesPage extends StatelessWidget {
                               root: root,
                               priorities: state.priorities,
                               selected: selected,
-                              showPlotSection: false,
                             ),
                           ),
                           if (layoutState.multiPanel)
@@ -151,24 +150,26 @@ class PrioritiesPage extends StatelessWidget {
                                                     icon: Value(null),
                                                   ),
                                                   leadingBuilder: hasUnread
-                                                      ? (isHovered, hasFocus) =>
-                                                          SizedBox(
-                                                            width: 20,
-                                                            child: Center(
-                                                              child: Container(
-                                                                width: 6.0,
-                                                                height: 6.0,
-                                                                decoration: BoxDecoration(
-                                                                  color: context
-                                                                      .theme
-                                                                      .colors
-                                                                      .foreground,
-                                                                  shape: BoxShape
-                                                                      .circle,
-                                                                ),
+                                                      ? (
+                                                          isHovered,
+                                                          hasFocus,
+                                                        ) => SizedBox(
+                                                          width: 20,
+                                                          child: Center(
+                                                            child: Container(
+                                                              width: 6.0,
+                                                              height: 6.0,
+                                                              decoration: BoxDecoration(
+                                                                color: context
+                                                                    .theme
+                                                                    .colors
+                                                                    .foreground,
+                                                                shape: BoxShape
+                                                                    .circle,
                                                               ),
                                                             ),
-                                                          )
+                                                          ),
+                                                        )
                                                       : null,
                                                 );
                                               }

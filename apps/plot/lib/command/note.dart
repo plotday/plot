@@ -223,8 +223,7 @@ class ToggleNoteTag extends NoteCommand {
   final bool isViewer;
 
   @override
-  bool enabled(BuildContext context) =>
-      !(tag == Tag.private && isViewer);
+  bool enabled(BuildContext context) => !(tag == Tag.private && isViewer);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -447,10 +446,7 @@ class PickNoteAssignee extends ShowCommands {
         .toList();
 
     // Exclude both assigned and member actors from Contacts
-    final excludeFromContacts = <ActorId>[
-      ...assigneeIds,
-      ...memberActorIds,
-    ];
+    final excludeFromContacts = <ActorId>[...assigneeIds, ...memberActorIds];
 
     return Commands(
       prompt: 'Assign to',
@@ -617,10 +613,7 @@ List<StaticCommandGroup> noteCommandGroups(
       return Commands(
         groups: [
           if (freshRemove.isNotEmpty)
-            StaticCommandGroup(
-              title: 'Remove tag',
-              commands: freshRemove,
-            ),
+            StaticCommandGroup(title: 'Remove tag', commands: freshRemove),
           if (freshAdd.isNotEmpty)
             StaticCommandGroup(title: 'Add tag', commands: freshAdd),
         ],
@@ -634,7 +627,7 @@ List<StaticCommandGroup> noteCommandGroups(
     if (commands.isNotEmpty)
       StaticCommandGroup(title: 'Note', commands: commands),
     StaticCommandGroup(
-      title: null,
+      title: 'Note',
       commands: [],
       infoBuilder: (context, search) {
         final hasSearch = search != null && search.isNotEmpty;
@@ -695,7 +688,10 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
       CopyNoteContent(note),
     if ((activityBloc?.state.thread.priority.personal != true || note.draft) &&
         (!note.private || note.authorId.isCurrentUser))
-      ToggleNotePrivate(note, isViewer: activityBloc?.state.thread.priority.isViewer ?? false),
+      ToggleNotePrivate(
+        note,
+        isViewer: activityBloc?.state.thread.priority.isViewer ?? false,
+      ),
   ];
 }
 
@@ -756,10 +752,7 @@ class ShowNoteCommands extends ShowCommands {
         title: 'More commands',
         icon: PlotIcon.menu,
         commandsBuilder: (context) async => Commands(
-          groups: noteCommandGroups(
-            note,
-            activityBloc: activityBloc,
-          ),
+          groups: noteCommandGroups(note, activityBloc: activityBloc),
         ),
       );
 }
@@ -831,8 +824,7 @@ class PickDraftNoteAssignee extends ShowCommands {
         : <Actor>[];
 
     // Resolve members for the "Members" section
-    final memberActors =
-        await PickNoteAssignee._getMemberActors(priorityId);
+    final memberActors = await PickNoteAssignee._getMemberActors(priorityId);
     final memberActorIds = memberActors.map((a) => a.id).toSet();
 
     // Exclude already-assigned members from the Members section
@@ -841,10 +833,7 @@ class PickDraftNoteAssignee extends ShowCommands {
         .toList();
 
     // Exclude both assigned and member actors from Contacts
-    final excludeFromContacts = <ActorId>[
-      ...assigneeIds,
-      ...memberActorIds,
-    ];
+    final excludeFromContacts = <ActorId>[...assigneeIds, ...memberActorIds];
 
     return Commands(
       prompt: 'Assign to',

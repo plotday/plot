@@ -12,7 +12,8 @@ CREATE TABLE "public"."priority" (
     "sync_depth" integer,
     "key" text,
     "organization_id" bigint REFERENCES public."organization" ON DELETE SET NULL,
-    "inherit_members" boolean NOT NULL DEFAULT TRUE
+    "inherit_members" boolean NOT NULL DEFAULT TRUE,
+    "default_thread_icon" text
 );
 
 -- Index for priority path ltree queries (supports <@ operator)

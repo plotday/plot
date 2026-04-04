@@ -13,6 +13,7 @@
 ### Task 1: Update DB visibility — `user.thread` view
 
 **Files:**
+
 - Modify: `libs/db/schema/90-user-schema/30-thread.sql:146-184`
 
 - [ ] **Step 1: Add member visibility to the visible union**
@@ -56,6 +57,7 @@ git commit -m "feat: members see all private threads in their priorities"
 ### Task 2: Update DB visibility — `user.note` view
 
 **Files:**
+
 - Modify: `libs/db/schema/90-user-schema/31-note.sql:1-79`
 
 - [ ] **Step 1: Add member visibility to note-level conditions in visible union**
@@ -116,6 +118,7 @@ git commit -m "feat: members see all private notes in their priorities"
 ### Task 3: Create `setup_plot_app_priority` DB function
 
 **Files:**
+
 - Create: `libs/db/schema/60-functions/setup_plot_app.sql`
 
 - [ ] **Step 1: Write the function**
@@ -150,7 +153,7 @@ BEGIN
     IF v_priority_id IS NULL THEN
         v_priority_path := generate_path (NULL);
         INSERT INTO priority (created_by, title, path, color, key, updated_by)
-            VALUES (p_user_id, 'Plot App', v_priority_path, 7, '@plot.app', 0)
+            VALUES (p_user_id, 'Using Plot', v_priority_path, 7, '@plot.app', 0)
         RETURNING
             id INTO v_priority_id;
         -- Clean up any auto-created personal entry
@@ -222,6 +225,7 @@ git commit -m "feat: add setup_plot_app_priority DB function"
 ### Task 4: Remove old DB functions and generate migration
 
 **Files:**
+
 - Remove: `libs/db/schema/60-functions/setup_whats_new.sql`
 - Remove: `libs/db/schema/60-functions/help_feedback.sql`
 
@@ -270,6 +274,7 @@ git commit -m "feat: migration for Plot App priority and readonly visibility"
 ### Task 5: Add data migration for existing users
 
 **Files:**
+
 - Modify: the migration file created in Task 4 (append data migration SQL)
 
 - [ ] **Step 1: Add data migration SQL to the generated migration file**
@@ -354,6 +359,7 @@ git commit -m "feat: data migration for existing users to Plot App"
 ### Task 6: Update API account activation
 
 **Files:**
+
 - Modify: `workers/api/src/app/account.ts:541-671`
 
 - [ ] **Step 1: Replace setup_help_feedback_priority and setup_whats_new_priority calls**
@@ -361,19 +367,19 @@ git commit -m "feat: data migration for existing users to Plot App"
 Replace the Help & Feedback setup block (lines ~541-561) and What's New setup block (lines ~658-671) with a single Plot App setup call. Remove both old blocks and add:
 
 ```typescript
-  // Step 9: Set up Plot App priority
-  try {
-    await rpc(c.var.db, "setup_plot_app_priority", {
-      p_user_id: user.id,
-    });
-  } catch (error) {
-    // Fail open - log but don't block activation
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.error("Failed to setup Plot App priority", error as Error, {
-      user_id: user.id,
-    });
-  }
+// Step 9: Set up Plot App priority
+try {
+  await rpc(c.var.db, "setup_plot_app_priority", {
+    p_user_id: user.id,
+  });
+} catch (error) {
+  // Fail open - log but don't block activation
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
+  logger.error("Failed to setup Plot App priority", error as Error, {
+    user_id: user.id,
+  });
+}
 ```
 
 Remove the `if (isNewUser)` block around What's New (lines ~658-671) since Plot App is set up for all new users in the step above.
@@ -396,6 +402,7 @@ git commit -m "feat: use setup_plot_app_priority in account activation"
 ### Task 7: Move Twist Development to top-level
 
 **Files:**
+
 - Modify: `workers/api/src/twist/priority-management.ts:77-141`
 
 - [ ] **Step 1: Update getOrCreateTwistDevelopmentPriority**
@@ -490,6 +497,7 @@ git commit -m "feat: create Twist Development as top-level priority"
 ### Task 8: Update Plot twist activate()
 
 **Files:**
+
 - Modify: `twists/plot/src/index.ts:63-363`
 
 - [ ] **Step 1: Replace the activate() method**
@@ -581,6 +589,7 @@ git commit -m "feat: Plot twist activate() adds shared onboarding threads to age
 ### Task 9: Flutter — Update Priority model (isPlot)
 
 **Files:**
+
 - Modify: `apps/plot/lib/store/priority.dart:812-819,1098-1103`
 
 - [ ] **Step 1: Update `excludePlot` to filter `@plot.app` and `@plot.twist-dev`**
@@ -622,6 +631,7 @@ git commit -m "feat: update Priority.isPlot and excludePlot for new system prior
 ### Task 10: Flutter — NewThreadPage viewer mode
 
 **Files:**
+
 - Modify: `apps/plot/lib/page/new_thread.dart:950-1104`
 
 - [ ] **Step 1: Set draft to private when viewer**
@@ -710,6 +720,7 @@ git commit -m "feat: simplified NewThreadPage for viewer priorities"
 ### Task 11: Flutter — NoteEditor viewer mode
 
 **Files:**
+
 - Modify: `apps/plot/lib/widget/note_editor.dart`
 
 - [ ] **Step 1: Add `viewerMode` parameter to NoteEditor**
@@ -761,6 +772,7 @@ git commit -m "feat: NoteEditor viewerMode hides toolbar controls"
 ### Task 12: Flutter — Activity feed default for viewer priorities
 
 **Files:**
+
 - Modify: `apps/plot/lib/page/priority.dart:690,1088-1106,1831-1890`
 
 - [ ] **Step 1: Default to activity feed when viewer**
@@ -840,6 +852,7 @@ git commit -m "feat: default to activity feed for viewer priorities"
 ### Task 13: Flutter — Update priorities list and shell
 
 **Files:**
+
 - Modify: `apps/plot/lib/widget/priorities_list.dart:515-588`
 - Modify: `apps/plot/lib/widget/priorities_shell.dart:306-348`
 - Modify: `apps/plot/lib/page/priorities.dart:84-138`
@@ -934,6 +947,7 @@ git commit -m "feat: update priorities list and shell for Plot App"
 ### Task 14: Flutter — Update settings commands
 
 **Files:**
+
 - Modify: `apps/plot/lib/command/settings.dart:69-90`
 
 - [ ] **Step 1: Replace @plot children lookup with @plot.app**
@@ -977,6 +991,7 @@ git commit -m "feat: update settings commands for Plot App"
 ### Task 15: Flutter — Add hardcoded subtitle for Plot App
 
 **Files:**
+
 - Modify: `apps/plot/lib/widget/priorities_list.dart` (where priority items are rendered)
 
 - [ ] **Step 1: Add subtitle display for @plot.app**
