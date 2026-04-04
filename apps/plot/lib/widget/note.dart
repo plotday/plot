@@ -331,6 +331,7 @@ class NoteCommands extends StatelessWidget {
         : Future.value('');
 
     // Build generic tag widgets (excluding todo/done which are handled above)
+    final isViewerPriority = context.read<ThreadBloc>().state.thread.priority.isViewer;
     final tagFutures = Tag.getAll()
         .where((tag) {
           if (tag == Tag.todo || tag == Tag.done) return false;
@@ -345,7 +346,7 @@ class NoteCommands extends StatelessWidget {
 
           final command = ToggleNoteTag(
             note, tag, actorId,
-            isViewer: activityState.thread.priority.isViewer,
+            isViewer: isViewerPriority,
           );
 
           // Get actor names for tooltip
@@ -496,7 +497,7 @@ class NoteCommands extends StatelessWidget {
                     final key = ValueKey(Object.hash(note.id, tag.id));
                     final command = ToggleNoteTag(
                       note, tag, actorId,
-                      isViewer: activityState.thread.priority.isViewer,
+                      isViewer: isViewerPriority,
                     );
                     final count = tag == Tag.reply ? 1 : (note.tags[tag]?.length ?? 0);
                     // Twist tags are display-only (not interactive)
