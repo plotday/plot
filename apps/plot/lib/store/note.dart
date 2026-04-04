@@ -628,11 +628,16 @@ class Note extends Equatable implements Comparable<Note> {
       }
     }
 
-    // Update thread's lastNoteCreatedAt to this note's createdAt (only for non-draft notes)
+    // Update thread's lastNoteCreatedAt/lastNoteSourceCreatedAt locally
+    // (only for non-draft notes). Uses update().write() so the thread row is
+    // NOT marked pending for remote sync — the server trigger handles that.
     if (!draft && archivedAt == null) {
       await (Store.get.update(Store.get.threads)
             ..where((a) => a.id.equalsValue(threadId)))
-          .write(ThreadsCompanion(lastNoteCreatedAt: Value(createdAt)));
+          .write(ThreadsCompanion(
+            lastNoteCreatedAt: Value(createdAt),
+            lastNoteSourceCreatedAt: Value(sourceCreatedAt),
+          ));
     }
 
     // Push to remote (fire-and-forget, like Store.save)
