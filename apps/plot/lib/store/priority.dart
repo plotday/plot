@@ -809,12 +809,17 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .map(Priority.fromStore);
   }
 
-  /// Filters out the @plot system priority and all its descendants.
+  /// Filters out system priorities (@plot.app, @plot.twist-dev, @plot) from the
+  /// main priority list. These are shown in their own section.
   static List<Priority> excludePlot(List<Priority> priorities) {
-    final plot = priorities.firstWhereOrNull((p) => p.key == '@plot');
-    if (plot == null) return priorities;
     return priorities
-        .where((p) => p.id != plot.id && !plot.path.isParent(p.path))
+        .where(
+          (p) =>
+              p.key != '@plot.app' &&
+              p.key != '@plot.twist-dev' &&
+              p.key != '@plot' &&
+              p.key?.startsWith('@plot.') != true,
+        )
         .toList();
   }
 
@@ -1098,9 +1103,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Returns true if this priority has a viewer role (read-only).
   bool get isViewer => role == 'viewer';
 
-  /// Whether this priority is the @plot system priority or a descendant of it.
-  /// All @plot children must have keys starting with '@plot'.
-  bool get isPlot => key == '@plot' || key?.startsWith('@plot.') == true;
+  /// Whether this is a system priority that shouldn't be edited/archived by users.
+  bool get isPlot =>
+      key == '@plot.app' || key == '@plot.twist-dev' || key == '@plot';
+
+  /// Whether this is the Plot App priority.
+  bool get isPlotApp => key == '@plot.app';
 
   /// Parsed attention window settings (inherited from this priority or ancestors).
   List<AttentionWindow>? get attentionWindows =>

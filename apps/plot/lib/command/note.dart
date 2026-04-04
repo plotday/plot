@@ -345,31 +345,17 @@ class SplitNoteToNewThread extends NoteCommand {
       // Look up parent thread to get its priority
       final parentThread = await Thread.getOne(note.threadId);
 
-      // Create a new thread in the same priority with preview from note content
+      // Create a new thread — title null signals AI generation in save() and sync.
+      // Preview stores the note content for client-side display.
       final newThread = Thread(
         priority: parentThread.priority,
         draft: false,
         preview: note.content,
-        title: note.content,
       );
       await newThread.save();
 
       // Move the note to the new thread and unarchive it
       await note.copyWith(threadId: newThread.id, clearArchivedAt: true).save();
-
-      // Fire-and-forget AI title generation
-      if (note.content != null && note.content!.trim().isNotEmpty) {
-        newThread
-            .generateTitle(note.content!)
-            .then((title) async {
-              if (title != newThread.title) {
-                await newThread.copyWith(title: Value(title)).save();
-              }
-            })
-            .catchError((Object e) {
-              // Error already logged by generateTitle(), just ignore here
-            });
-      }
 
       // Navigate to the new thread in the current priority context
       var routePriority = newThread.priority;

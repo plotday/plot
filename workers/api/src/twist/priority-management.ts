@@ -75,25 +75,28 @@ export async function getOrCreatePlotPriority(
 
 /**
  * Gets or creates the "Twist Development" priority for a user.
- * This priority is created as a direct child of the Plot priority
+ * This priority is created as a top-level child of the user's root priority
  * and marked with key = '@plot.twist-dev' for easy identification.
  */
 export async function getOrCreateTwistDevelopmentPriority(
   userId: string,
   db: Kysely<DB>
 ): Promise<string> {
-  // First ensure the Plot priority exists and get its path
-  const plotPriorityId = await getOrCreatePlotPriority(userId, db);
+  // Get user's root priority path
+  const rootResult = await db
+    .selectFrom("priority_user")
+    .innerJoin("priority", "priority.id", "priority_user.priority_id")
+    .select(["priority.path"])
+    .where("priority_user.user_id", "=", userId)
+    .where("priority_user.personal", "=", true)
+    .executeTakeFirst();
 
-  // Get the Plot priority path to scope the key lookup
-  const plotResult = await db
-    .selectFrom("priority")
-    .select(["path"])
-    .where("id", "=", plotPriorityId)
-    .executeTakeFirstOrThrow();
+  if (!rootResult) {
+    throw new Error("User has no root priority");
+  }
 
-  const plotPath = plotResult.path as string;
-  const rootPathPart = plotPath.split(".")[0];
+  const rootPath = rootResult.path as string;
+  const rootPathPart = rootPath.split(".")[0];
 
   // Try to find existing Twist Development priority by key, scoped to root
   const existingResult = await db
@@ -107,10 +110,8 @@ export async function getOrCreateTwistDevelopmentPriority(
     return existingResult.id;
   }
 
-  // Not found, need to create it
-
-  // Generate child path using no-cache DB
-  const path = generatePath(plotResult.path as string);
+  // Generate child path under user root
+  const path = generatePath(rootPath);
 
   // Create the Twist Development priority — handle race condition
   try {

@@ -29,11 +29,13 @@ WHERE
     (n.draft = FALSE OR n.created_by = upe.user_id)
     AND (n.private = FALSE
         OR n.created_by = upe.user_id
-        OR upe.user_id = ANY(n.mentions))
+        OR upe.user_id = ANY(n.mentions)
+        OR upe.role = 'member')
     -- Thread-level filtering (thread draft/private affects note visibility)
     AND (a.draft = FALSE OR a.created_by = upe.user_id)
     AND (CASE WHEN a.private = FALSE THEN TRUE
         WHEN a.created_by = upe.user_id THEN TRUE
+        WHEN upe.role = 'member' THEN TRUE
         ELSE "user".mentioned_in_thread(upe.user_id, a.id)
     END)
 UNION ALL
@@ -63,6 +65,7 @@ FROM
 WHERE
     (n.draft = FALSE OR n.created_by = upe.user_id)
     AND (a.draft = FALSE OR a.created_by = upe.user_id)
+    AND upe.role != 'member'
     -- Hidden by note-level OR thread-level privacy
     AND (
         -- Note is private and user can't see it

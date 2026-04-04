@@ -25,6 +25,7 @@ class NoteEditor extends StatefulWidget {
     this.additionalMentions,
     this.onSubmitted,
     this.assignNote = true,
+    this.viewerMode = false,
     super.key,
   });
 
@@ -55,6 +56,10 @@ class NoteEditor extends StatefulWidget {
   /// Whether to assign the note to the current user when the thread is a todo.
   /// True for task-type threads, false for note/link/chat types with todo.
   final bool assignNote;
+
+  /// When true, hides all toolbar controls for viewer-created content in
+  /// readonly priorities. Notes are auto-private.
+  final bool viewerMode;
 
   bool get isNewThreadMode => thread != null;
 
@@ -694,7 +699,8 @@ class NoteEditorState extends State<NoteEditor> {
             opacity: _saving ? 0.6 : 1.0,
             child: Row(
               children: [
-                if (widget.showScheduleActions &&
+                if (!widget.viewerMode &&
+                    widget.showScheduleActions &&
                     !thread.priority.isViewer) ...[
                   // Left side: Todo toggle (on == today)
                   Button.icon(
@@ -726,7 +732,9 @@ class NoteEditorState extends State<NoteEditor> {
                     },
                   ),
                 ],
-                if (thread.priority.sharing && !thread.priority.isViewer)
+                if (!widget.viewerMode &&
+                    thread.priority.sharing &&
+                    !thread.priority.isViewer)
                   Button.icon(
                     PickDraftNoteAssignee(
                       note: draftNote,
@@ -878,6 +886,7 @@ class NoteEditorState extends State<NoteEditor> {
       draft: false,
       reNoteId: replyTo?.id,
       addMentions: activeTwistMentions.isNotEmpty ? activeTwistMentions : null,
+      private: widget.viewerMode ? true : null,
     );
 
     // If Cmd-Enter was pressed, assign the note to current user
@@ -899,26 +908,21 @@ class NoteEditorState extends State<NoteEditor> {
   }) async {
     _finalized = true;
 
-    // Generate title from body (first line or first ~50 chars)
-    String title = body
-        .trim()
-        .split('\n')
-        .first
-        .trim()
-        .removeMarkdown(replaceLinksWithURL: false);
-    if (title.isEmpty) {
-      title = 'Untitled';
-    }
-    log.info('Finalizing draft with title: $title');
+    // Store generous preview from body content for client-side display
+    // and server-side AI title generation. Title is left null — the client
+    // derives displayTitle from preview, and the server generates an AI
+    // title on sync.
+    final previewContent = body.trim().isEmpty ? null : body.trim();
+    log.info('Finalizing draft with preview-based title');
 
     // Apply "Do Now" scheduling only if Cmd-Enter (alt) was used
     final shouldSchedule = alt;
     final hasDateTime = widget.thread!.at != null;
 
-    // Create Thread with title based on "Do Now" toggle
+    // Create Thread — title null signals server to generate AI title
     final thread = widget.thread!.copyWith(
-      title: Value(title),
-      preview: const Value(null),
+      title: const Value(null),
+      preview: Value(previewContent),
       draft: false,
       on: shouldSchedule && !hasDateTime
           ? Value(CustomDateRange(Date.today(), null))

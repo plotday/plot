@@ -191,6 +191,17 @@ class NewThreadPageState extends State<NewThreadPage> {
     await _applyQueryParametersToDraft();
     if (!mounted) return;
     _applyDefaultType();
+
+    // In viewer priorities, threads are always private
+    if (mounted) {
+      final priority = context.read<PriorityBloc>().state.draft.priority;
+      if (priority.isViewer) {
+        final bloc = context.read<PriorityBloc>();
+        if (!bloc.state.draft.private) {
+          await bloc.updateDraft(bloc.state.draft.copyWith(private: true));
+        }
+      }
+    }
   }
 
   Future<void> _applyQueryParametersToDraft() async {
@@ -971,6 +982,56 @@ class NewThreadPageState extends State<NewThreadPage> {
             },
             builder: (context, state) {
               final priorityBloc = context.read<PriorityBloc>();
+
+              // Viewer mode: simplified new thread creation
+              if (state.draft.priority.isViewer) {
+                return PopScope(
+                  canPop: false,
+                  onPopInvokedWithResult: (didPop, result) {
+                    if (!didPop) {
+                      if (ModalProvider.tryDismissTopModal(context)) return;
+                      if (!context.isMultiPanel) {
+                        context.run(ChangeCurrentThread(null));
+                      }
+                    }
+                  },
+                  child: Scaffold(
+                    translucent: true,
+                    scrollable: false,
+                    childPad: false,
+                    body: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Spacer(),
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: context.contentPaddingH,
+                          ),
+                          child: NoteEditor(
+                            key: _threadEditorKey,
+                            draft: state.draftNote,
+                            thread: state.draft,
+                            twists: _draftTwists ?? state.twists,
+                            actors: state.actors,
+                            onDraftChanged: (thread, {note}) async {
+                              if (!context.mounted) return;
+                              await priorityBloc.updateDraft(
+                                thread,
+                                note: note,
+                              );
+                            },
+                            flushToBottom: !layoutState.multiPanel,
+                            showScheduleActions: false,
+                            hint: 'Ask for help or share a suggestion',
+                            viewerMode: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
               return PopScope(
                 canPop: false,
                 onPopInvokedWithResult: (didPop, result) {

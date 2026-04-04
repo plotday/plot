@@ -3,7 +3,11 @@ import { Hono } from "hono";
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
+import { checkAiLimit, recordAiUsage } from "../../utils/ai-limits";
+import { loadBuiltinProviderConfig, summarizeWithProvider } from "../../utils/ai-provider";
 import { cleanTitle } from "../../twist/tools/plot/thread";
+import { titleFromContent, createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
+import { summarize } from "../summary";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { notifySync } from "./notify";
 
@@ -115,6 +119,51 @@ threads.post("/sync/threads", async (c) => {
   const threadData = body.thread || body;
   if (threadData.title && typeof threadData.title === "string") {
     threadData.title = cleanTitle(threadData.title);
+  }
+
+  // Generate AI title when client sends title=null with preview content
+  if (
+    !threadData.title &&
+    threadData.preview &&
+    typeof threadData.preview === "string" &&
+    threadData.draft !== true
+  ) {
+    try {
+      const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
+      if (aiAllowed.allowed) {
+        const providerConfig = await loadBuiltinProviderConfig(c.var.db, c.var.user.id, c.env);
+        let aiTitle: string | null = null;
+
+        if (providerConfig) {
+          aiTitle = await summarizeWithProvider(providerConfig, threadData.preview);
+        }
+        if (!aiTitle) {
+          const result = await summarize(c.env.AI, threadData.preview);
+          aiTitle = result.title;
+        }
+
+        if (aiTitle) {
+          recordAiUsage(c.env, c.var.user.id, "note_processing");
+          threadData.title = aiTitle;
+        }
+      }
+    } catch (error) {
+      console.error("[sync/threads] AI title generation failed:", error);
+      c.var.tracker.captureException(error as Error);
+    }
+
+    // Fallback: derive title from content if AI didn't produce one
+    if (!threadData.title) {
+      threadData.title = titleFromContent(threadData.preview) ?? "Untitled";
+    }
+
+    // Truncate preview for storage now that title is set
+    threadData.preview = createPreviewFromMarkdown(threadData.preview);
+  }
+
+  // Always truncate oversized preview (e.g. client set title via /summary but preview is still full content)
+  if (threadData.preview && typeof threadData.preview === "string" && threadData.preview.length > 200) {
+    threadData.preview = createPreviewFromMarkdown(threadData.preview);
   }
 
   const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {

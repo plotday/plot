@@ -745,6 +745,13 @@ class _PriorityPageState extends State<PriorityPage> {
         } else {
           _currentTab = _tabNotifier!.value;
         }
+        // Force activity feed for viewer priorities
+        final priorityBloc = context.read<PriorityBloc>();
+        if (priorityBloc.state.context.isViewer &&
+            _currentTab == PriorityTab.agenda) {
+          _currentTab = PriorityTab.activityFeed;
+          _tabNotifier!.value = PriorityTab.activityFeed;
+        }
       }
     }
   }
@@ -1085,25 +1092,24 @@ class _PriorityPageState extends State<PriorityPage> {
 
     return Column(
       children: [
-        BlocSelector<PrioritiesBloc, PrioritiesState, bool>(
-          selector: (prioritiesState) {
-            final p = prioritiesState.priorities.firstWhereOrNull(
-              (p) => p.id == state.context.id,
-            );
-            if (p == null) return false;
-            // Use path-based matching on flat list since priorities
-            // here don't have children populated (only asNested does that)
-            return prioritiesState.priorities.any(
-              (d) => (d.id == p.id || p.path.isParent(d.path)) && d.unread,
-            );
-          },
-          builder: (context, hasUnread) => _DesktopTabBar(
-            currentTab: _currentTab,
-            onTabChanged: _onDesktopTabChanged,
-            hasUnreadActivity: hasUnread,
-            priority: state.context,
+        if (!state.context.isViewer)
+          BlocSelector<PrioritiesBloc, PrioritiesState, bool>(
+            selector: (prioritiesState) {
+              final p = prioritiesState.priorities.firstWhereOrNull(
+                (p) => p.id == state.context.id,
+              );
+              if (p == null) return false;
+              return prioritiesState.priorities.any(
+                (d) => (d.id == p.id || p.path.isParent(d.path)) && d.unread,
+              );
+            },
+            builder: (context, hasUnread) => _DesktopTabBar(
+              currentTab: _currentTab,
+              onTabChanged: _onDesktopTabChanged,
+              hasUnreadActivity: hasUnread,
+              priority: state.context,
+            ),
           ),
-        ),
         Expanded(
           child: isNowTab
               ? ThreadListSourceProvider(

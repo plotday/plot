@@ -147,6 +147,7 @@ WHERE
     (a.draft = FALSE OR a.created_by = upe.user_id)
     AND (CASE WHEN a.private = FALSE THEN TRUE
         WHEN a.created_by = upe.user_id THEN TRUE
+        WHEN upe.role = 'member' THEN TRUE
         ELSE "user".mentioned_in_thread(upe.user_id, a.id)
     END)
 UNION ALL
@@ -181,6 +182,7 @@ WHERE
     (a.draft = FALSE OR a.created_by = upe.user_id)
     AND a.private = TRUE
     AND a.created_by != upe.user_id
+    AND upe.role != 'member'
     AND NOT "user".mentioned_in_thread(upe.user_id, a.id);
 
 ALTER VIEW "user"."thread" OWNER TO postgres;

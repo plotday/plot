@@ -7,6 +7,7 @@ import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
 import { checkAiLimit, recordAiUsage } from "../utils/ai-limits";
 import { cleanTitle } from "../twist/tools/plot/thread";
+import { titleFromContent } from "../twist/tools/plot/thread-helpers";
 import { loadBuiltinProviderConfig, summarizeWithProvider } from "../utils/ai-provider";
 
 const summary = new Hono<{ Bindings: Bindings }>();
@@ -29,7 +30,7 @@ summary.post("/summary", async (c) => {
     // Check free-tier AI limit
     const aiAllowed = await checkAiLimit(c.env, c.var.db, c.var.user.id, "note_processing");
     if (!aiAllowed.allowed) {
-      return c.json({ title: cleanTitle(body.body).slice(0, 60) });
+      return c.json({ title: titleFromContent(body.body) ?? cleanTitle(body.body).slice(0, 60) });
     }
 
     // Check if user has a custom builtin AI provider configured
@@ -53,7 +54,7 @@ summary.post("/summary", async (c) => {
   }
 });
 
-async function summarize(ai: Ai, body: string) {
+export async function summarize(ai: Ai, body: string) {
   body = body.trim().slice(0, 2000);
   if (body.length === 0) {
     return {
@@ -85,7 +86,7 @@ async function summarize(ai: Ai, body: string) {
       throw new Error("Response is a stream");
     }
     const json = {
-      title: response.response?.replace(/^"(.*)"$/, "$1")?.trim() || cleanTitle(body).slice(0, 60),
+      title: response.response?.replace(/^"(.*)"$/, "$1")?.trim() || (titleFromContent(body) ?? cleanTitle(body).slice(0, 60)),
     };
     return json;
   } catch (e) {

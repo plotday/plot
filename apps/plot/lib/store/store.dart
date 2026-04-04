@@ -22,6 +22,7 @@ import 'package:synchronized/synchronized.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:change_case/change_case.dart';
 
+import 'package:plot/util/string.dart';
 import 'package:plot/util/uuid.dart';
 import 'package:plot/util/time.dart';
 import 'package:plot/util/theme_color.dart';

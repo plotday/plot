@@ -305,17 +305,11 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                             FBottomNavigationBarItem(
                               icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
                                 builder: (context, state) {
-                                  final plotPriority = state.root?.children
-                                      .firstWhereOrNull((p) => p.key == '@plot');
-                                  final whatsNew = plotPriority?.children
-                                      .firstWhereOrNull((c) => c.key == '@plot.whats-new');
-                                  final helpFeedback = plotPriority?.children
+                                  final plotApp = state.root?.children
                                       .firstWhereOrNull(
-                                        (c) => c.key?.startsWith('@plot.help-feedback') == true,
+                                        (p) => p.key == '@plot.app',
                                       );
-                                  final hasUnread =
-                                      (whatsNew?.unread ?? false) ||
-                                      (helpFeedback?.unread ?? false);
+                                  final hasUnread = plotApp?.unread ?? false;
 
                                   return Stack(
                                     clipBehavior: Clip.none,

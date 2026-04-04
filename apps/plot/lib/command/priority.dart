@@ -58,51 +58,10 @@ class ChangeCurrentPriority extends PriorityCommand {
   }
 }
 
-class OpenGettingStarted extends Command {
-  OpenGettingStarted(this.priority)
+class OpenPlotApp extends Command {
+  OpenPlotApp(this.priority)
     : super(
-        title: 'Getting started',
-        icon: PlotIcon.gettingStarted,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.viewed,
-      );
-
-  final Priority priority;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(
-      PriorityRoute(priorityIdString: priority.id.toShortString()),
-    );
-  }
-}
-
-class OpenHelpFeedback extends Command {
-  OpenHelpFeedback(this.priority)
-    : super(
-        title: 'Help + feedback',
-        icon: PlotIcon.help,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.viewed,
-      );
-
-  final Priority priority;
-
-  @override
-  bool get unread => priority.unread;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(
-      PriorityRoute(priorityIdString: priority.id.toShortString()),
-    );
-  }
-}
-
-class OpenWhatsNew extends Command {
-  OpenWhatsNew(this.priority)
-    : super(
-        title: "What's new",
+        title: 'Plot App',
         icon: PlotIcon.sparkles,
         eventObject: EventObject.priority,
         eventAction: EventAction.viewed,

@@ -1168,7 +1168,8 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   /// Adds a thread by converting the current draft to a non-draft.
   /// Creates a fresh draft for the priority afterward.
-  /// If note is provided, converts it from draft to published and asynchronously generates a title.
+  /// If note is provided, converts it from draft to published.
+  /// AI title generation is handled by Thread.save().
   /// Returns the saved thread.
   Future<Thread> add(
     Thread thread, {
@@ -1193,20 +1194,6 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
 
       await publishedNote.save();
-
-      // Asynchronously generate a better title using AI (fire and forget)
-      // The thread is already saved with a fallback title, so this update
-      // will happen in the background without blocking the UI
-      savedThread
-          .generateTitle(note.content!)
-          .then((title) async {
-            if (title != savedThread.title) {
-              await savedThread.copyWith(title: Value(title)).save();
-            }
-          })
-          .catchError((Object e) {
-            // Error already logged by generateTitle(), just ignore here
-          });
     }
 
     // Create fresh draft for the priority (use remembered default if set)

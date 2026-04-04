@@ -239,7 +239,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       longPressCommand: isTouchDevice ? ShowThreadCommands(activity) : null,
       crossAxisAlignment: CrossAxisAlignment.start,
       title: activity.displayTitle,
-      subtitle: activity.preview,
+      subtitle: activity.displayPreview,
       padding: EdgeInsets.only(
         right: buildContext.isMultiPanel
             ? buildContext.theme.spacing.lg
@@ -671,11 +671,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                           )
                                         : null,
                                   ),
-                                  if (activity.preview != null &&
-                                      activity.preview!.isNotEmpty &&
-                                      activity.preview != activity.displayTitle)
+                                  if (activity.displayPreview != null &&
+                                      activity.displayPreview!.isNotEmpty &&
+                                      activity.displayPreview != activity.displayTitle)
                                     TextSpan(
-                                      text: '  ${activity.preview}',
+                                      text: '  ${activity.displayPreview}',
                                       style: TextStyle(
                                         color: buildContext.colour.muted,
                                       ),

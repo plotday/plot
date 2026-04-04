@@ -623,12 +623,6 @@ export type Database = {
           {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
             referencedRelation: "priority_twist_note_update"
             referencedColumns: ["id"]
           },
@@ -694,12 +688,6 @@ export type Database = {
             foreignKeyName: "note_tag_note_id_fkey"
             columns: ["note_id"]
             referencedRelation: "priority_twist_channel_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_tag_note_id_fkey"
-            columns: ["note_id"]
-            referencedRelation: "priority_twist_note_create"
             referencedColumns: ["id"]
           },
           {
@@ -1143,12 +1131,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "priority_twist_channel_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
-          },
-          {
             foreignKeyName: "priority_twist_channel_source_priority_twist_id_fkey"
             columns: ["source_priority_twist_id"]
             referencedRelation: "priority_child_twist"
@@ -1159,12 +1141,6 @@ export type Database = {
             columns: ["source_priority_twist_id"]
             referencedRelation: "priority_twist"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_twist_channel_source_priority_twist_id_fkey"
-            columns: ["source_priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
           },
         ]
       }
@@ -1202,12 +1178,6 @@ export type Database = {
             columns: ["priority_twist_id"]
             referencedRelation: "priority_twist"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_twist_connection_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
           },
           {
             foreignKeyName: "priority_twist_connection_user_id_fkey"
@@ -1251,12 +1221,6 @@ export type Database = {
             columns: ["priority_twist_id"]
             referencedRelation: "priority_twist"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_twist_sync_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
           },
         ]
       }
@@ -1557,12 +1521,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "secure_option_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
-          },
-          {
             foreignKeyName: "secure_option_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
@@ -1699,6 +1657,7 @@ export type Database = {
         Row: {
           channel_id: string
           create_threads: string
+          create_threads_by_type: Json | null
           created_at: string
           enabled: boolean
           id: number
@@ -1711,6 +1670,7 @@ export type Database = {
         Insert: {
           channel_id: string
           create_threads?: string
+          create_threads_by_type?: Json | null
           created_at?: string
           enabled?: boolean
           id?: never
@@ -1723,6 +1683,7 @@ export type Database = {
         Update: {
           channel_id?: string
           create_threads?: string
+          create_threads_by_type?: Json | null
           created_at?: string
           enabled?: boolean
           id?: never
@@ -1762,12 +1723,6 @@ export type Database = {
             columns: ["priority_twist_id"]
             referencedRelation: "priority_twist"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "source_channel_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
           },
         ]
       }
@@ -2322,12 +2277,6 @@ export type Database = {
             referencedRelation: "priority_twist"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "usage_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
-          },
         ]
       }
       user: {
@@ -2364,18 +2313,21 @@ export type Database = {
         Row: {
           ai_enabled: boolean | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed: boolean | null
           updated_at: string
           user_id: string
         }
         Insert: {
           ai_enabled?: boolean | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed?: boolean | null
           updated_at?: string
           user_id: string
         }
         Update: {
           ai_enabled?: boolean | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed?: boolean | null
           updated_at?: string
           user_id?: string
         }
@@ -2564,12 +2516,6 @@ export type Database = {
             foreignKeyName: "note_tag_note_id_fkey"
             columns: ["note_id"]
             referencedRelation: "priority_twist_channel_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_tag_note_id_fkey"
-            columns: ["note_id"]
-            referencedRelation: "priority_twist_note_create"
             referencedColumns: ["id"]
           },
           {
@@ -2787,12 +2733,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "priority_twist_channel_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
-          },
-          {
             foreignKeyName: "thread_priority_id_fkey"
             columns: ["priority_id"]
             referencedRelation: "priority"
@@ -2872,12 +2812,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "priority_twist_channel_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
-          },
-          {
             foreignKeyName: "thread_priority_id_fkey"
             columns: ["priority_id"]
             referencedRelation: "priority"
@@ -2947,12 +2881,6 @@ export type Database = {
           {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
             referencedRelation: "priority_twist_note_update"
             referencedColumns: ["id"]
           },
@@ -2985,12 +2913,6 @@ export type Database = {
             columns: ["priority_twist_id"]
             referencedRelation: "priority_twist"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_twist_channel_priority_twist_id_fkey"
-            columns: ["priority_twist_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["priority_twist_id"]
           },
           {
             foreignKeyName: "thread_priority_id_fkey"
@@ -3113,68 +3035,7 @@ export type Database = {
           updated_at: string | null
           updated_by: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "note"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "priority_twist_channel_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_thread_id_fkey"
-            columns: ["thread_id"]
-            referencedRelation: "priority_twist_thread_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_thread_id_fkey"
-            columns: ["thread_id"]
-            referencedRelation: "thread"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_thread_id_fkey"
-            columns: ["thread_id"]
-            referencedRelation: "thread_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "thread_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-        ]
+        Relationships: []
       }
       priority_twist_note_update: {
         Row: {
@@ -3215,12 +3076,6 @@ export type Database = {
             foreignKeyName: "note_re_note_id_fkey"
             columns: ["re_note_id"]
             referencedRelation: "priority_twist_channel_note_create"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_re_note_id_fkey"
-            columns: ["re_note_id"]
-            referencedRelation: "priority_twist_note_create"
             referencedColumns: ["id"]
           },
           {
@@ -3786,11 +3641,7 @@ export type Database = {
           title: string
         }[]
       }
-      setup_help_feedback_priority: {
-        Args: { p_user_id?: string; p_user_name?: string }
-        Returns: Json
-      }
-      setup_whats_new_priority: { Args: { p_user_id: string }; Returns: Json }
+      setup_plot_app_priority: { Args: { p_user_id: string }; Returns: Json }
       share_priority: {
         Args: {
           p_add_actor_ids: string[]
@@ -4042,6 +3893,7 @@ export type Database = {
         Row: {
           channel_id: string | null
           create_threads: string | null
+          create_threads_by_type: Json | null
           created_at: string | null
           enabled: boolean | null
           id: number | null

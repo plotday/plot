@@ -66,25 +66,15 @@ List<StaticCommandGroup> settingsCommandsFromState(
       prioritiesState != null &&
       prioritiesState.priorities.any((p) => p.organizationId != null);
 
-  Command? gettingStartedCmd;
-  Command? helpFeedbackCmd;
-  Command? whatsNewCmd;
+  Command? plotAppCmd;
   if (prioritiesState != null) {
-    final plotPriority = prioritiesState.root?.children.firstWhereOrNull(
-      (p) => p.key == '@plot',
+    final plotApp = prioritiesState.priorities.firstWhereOrNull(
+      (p) => p.key == '@plot.app',
     );
-    if (plotPriority != null) {
-      for (final child in plotPriority.children) {
-        final isArchived = child.archivedAt != null;
-        if (isArchived && !showAllPriorities) continue;
-
-        if (child.key == '@plot.getting-started') {
-          gettingStartedCmd = OpenGettingStarted(child);
-        } else if (child.key?.startsWith('@plot.help-feedback') == true) {
-          helpFeedbackCmd = OpenHelpFeedback(child);
-        } else if (child.key == '@plot.whats-new') {
-          whatsNewCmd = OpenWhatsNew(child);
-        }
+    if (plotApp != null) {
+      final isArchived = plotApp.archivedAt != null;
+      if (!isArchived || showAllPriorities) {
+        plotAppCmd = OpenPlotApp(plotApp);
       }
     }
   }
@@ -94,9 +84,7 @@ List<StaticCommandGroup> settingsCommandsFromState(
   return settingsCommands(
     hasOrganizations: hasOrganizations,
     rootPriority: rootPriority,
-    gettingStartedCmd: gettingStartedCmd,
-    whatsNewCmd: whatsNewCmd,
-    helpFeedbackCmd: helpFeedbackCmd,
+    plotAppCmd: plotAppCmd,
     email: email,
     adminOrgs: adminOrgs,
     subscription: subscription,
@@ -106,9 +94,7 @@ List<StaticCommandGroup> settingsCommandsFromState(
 List<StaticCommandGroup> settingsCommands({
   bool hasOrganizations = false,
   Priority? rootPriority,
-  Command? gettingStartedCmd,
-  Command? whatsNewCmd,
-  Command? helpFeedbackCmd,
+  Command? plotAppCmd,
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
@@ -142,9 +128,7 @@ List<StaticCommandGroup> settingsCommands({
   StaticCommandGroup(
     title: 'App',
     commands: [
-      if (gettingStartedCmd != null) gettingStartedCmd,
-      if (whatsNewCmd != null) whatsNewCmd,
-      if (helpFeedbackCmd != null) helpFeedbackCmd,
+      if (plotAppCmd != null) plotAppCmd,
       if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
       CopyPageLink(),
       OpenCopiedPageLink(),

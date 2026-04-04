@@ -229,6 +229,23 @@ export function cleanTitle(title: string): string {
   return stripMarkdown(title).replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Derives a display title from content. Strips markdown, takes the first line,
+ * truncates at word boundary if > 60 chars.
+ */
+export function titleFromContent(content: string | null | undefined): string | null {
+  if (!content?.trim()) return null;
+  const stripped = stripMarkdown(content).replace(/\s+/g, " ").trim();
+  const firstLine = stripped.split("\n")[0].trim();
+  if (!firstLine) return null;
+  if (firstLine.length <= 60) return firstLine;
+  const lastSpace = firstLine.lastIndexOf(" ", 60);
+  if (lastSpace > 0) {
+    return firstLine.substring(0, lastSpace) + "\u2026";
+  }
+  return firstLine.substring(0, 59) + "\u2026";
+}
+
 export function createPreviewFromMarkdown(
   markdown: string | null | undefined
 ): string | null {

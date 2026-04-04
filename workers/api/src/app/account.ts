@@ -375,81 +375,7 @@ account.post("/activate", async (c) => {
     );
   }
 
-  // Step 7: Create Plot priority if it doesn't exist
-  // Get root priority path to search for @plot priority
-  let rootPriorityData: { path: unknown } | undefined;
-  try {
-    rootPriorityData = await c.var.db
-      .selectFrom("priority")
-      .select("path")
-      .where("id", "=", priority.id)
-      .executeTakeFirstOrThrow();
-  } catch (err) {
-    return captureServerError(c, err as Error, `Failed to get root priority path: ${(err as Error).message}`, {
-      user_id: user.id,
-      priority_id: priority.id,
-    });
-  }
-
-  const rootPath = rootPriorityData.path as string;
-  const rootPathPart = rootPath.split(".")[0];
-
-  // Check if @plot priority already exists
-  let existingPlotPriority: { id: string } | undefined;
-  try {
-    existingPlotPriority = await c.var.db
-      .selectFrom("priority")
-      .select("id")
-      .where("key", "=", "@plot")
-      .where(sql<boolean>`path <@ ${rootPathPart}::ltree`)
-      .executeTakeFirst();
-  } catch (err) {
-    return captureServerError(c, err as Error, `Failed to check for existing Plot priority: ${(err as Error).message}`, {
-      user_id: user.id,
-    });
-  }
-
-  let _plotPriorityId: string;
-
-  if (existingPlotPriority) {
-    // Plot priority already exists
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.info("Plot priority already exists, skipping creation", {
-      user_id: user.id,
-      plot_priority_id: existingPlotPriority.id,
-    });
-    _plotPriorityId = existingPlotPriority.id;
-  } else {
-    // Create Plot priority
-    // Generate path for Plot priority as child of root (TypeScript, not DB — see utils/path.ts)
-    const plotPath = generatePath(rootPath);
-
-    // Create Plot priority
-    let newPlotPriority: { id: string };
-    try {
-      newPlotPriority = await c.var.db
-        .insertInto("priority")
-        .values({
-          created_by: user.id,
-          title: "Plot",
-          path: plotPath,
-          color: 7, // Resolution color (blue-gray)
-          key: "@plot",
-          updated_by: 0,
-        })
-        .returning("id")
-        .executeTakeFirstOrThrow();
-    } catch (err) {
-      return captureServerError(c, err as Error, `Failed to create Plot priority: ${(err as Error).message}`, {
-        user_id: user.id,
-      });
-    }
-
-    _plotPriorityId = newPlotPriority.id;
-  }
-
-  // Step 8: Install and activate Plot twist on root priority if not already installed
+  // Step 7: Install and activate Plot twist on root priority if not already installed
   // First, look up the Plot twist
   let plotTwist: { id: number; version: string } | undefined;
   try {
@@ -533,24 +459,16 @@ account.post("/activate", async (c) => {
     }
   }
 
-  // Step 9: Set up Help & Feedback priority using database function
+  // Step 9: Set up Plot App priority
   try {
-    const helpFeedbackResult = await rpc(c.var.db, "setup_help_feedback_priority", {
-      p_user_name: user.name ?? undefined,
+    await rpc(c.var.db, "setup_plot_app_priority", {
       p_user_id: user.id,
-    });
-
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.info("Successfully set up Help & Feedback priority", {
-      user_id: user.id,
-      result: helpFeedbackResult,
     });
   } catch (error) {
     // Fail open - log but don't block activation
     const context = extractRequestContext(c);
     const logger = createLogger(context);
-    logger.error("Exception setting up Help & Feedback priority", error as Error, {
+    logger.error("Failed to setup Plot App priority", error as Error, {
       user_id: user.id,
     });
   }
@@ -644,19 +562,6 @@ account.post("/activate", async (c) => {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
     logger.error("Failed to auto-join org via domain (non-blocking)", err as Error, {
-      user_id: user.id,
-    });
-  }
-
-  // Set up What's New priority (viewer role)
-  try {
-    await rpc(c.var.db, "setup_whats_new_priority", {
-      p_user_id: user.id,
-    });
-  } catch (error) {
-    const context = extractRequestContext(c);
-    const logger = createLogger(context);
-    logger.error("Failed to setup What's New priority", error as Error, {
       user_id: user.id,
     });
   }

@@ -23,6 +23,7 @@ class PriorityWidget extends StatelessWidget {
     this.active,
     this.reorderableIndex,
     this.onTap,
+    this.subtitle,
     super.key,
   });
 
@@ -59,6 +60,9 @@ class PriorityWidget extends StatelessWidget {
 
   /// Optional tap callback that overrides the default navigation behavior.
   final VoidCallback? onTap;
+
+  /// Optional subtitle text shown below the priority title.
+  final String? subtitle;
 
   @override
   Widget build(BuildContext buildContext) {
@@ -103,6 +107,10 @@ class PriorityWidget extends StatelessWidget {
         );
       },
       title: showAncestry ? null : priority.title,
+      subtitle: subtitle ??
+          (priority.isPlotApp
+              ? 'Updates, support, and suggestions'
+              : null),
       body: showAncestry
           ? PriorityLabel(
               priority: priority,

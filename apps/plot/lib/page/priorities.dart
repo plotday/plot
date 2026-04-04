@@ -81,9 +81,6 @@ class PrioritiesPage extends StatelessWidget {
                       if (root == null) {
                         return const SizedBox.shrink();
                       }
-                      final plotPriority = root.children
-                          .firstWhereOrNull((p) => p.key == '@plot');
-
                       return Column(
                         children: [
                           if (!layoutState.multiPanel)
@@ -119,23 +116,12 @@ class PrioritiesPage extends StatelessWidget {
                                   ),
                                   child: Builder(
                                     builder: (context) {
-                                      // Check unread state for What's New and Help+Feedback
-                                      final whatsNew = plotPriority?.children
+                                      final plotApp = root.children
                                           .firstWhereOrNull(
-                                            (c) => c.key == '@plot.whats-new',
-                                          );
-                                      final helpFeedback = plotPriority
-                                          ?.children
-                                          .firstWhereOrNull(
-                                            (c) =>
-                                                c.key?.startsWith(
-                                                  '@plot.help-feedback',
-                                                ) ==
-                                                true,
+                                            (p) => p.key == '@plot.app',
                                           );
                                       final hasUnread =
-                                          (whatsNew?.unread ?? false) ||
-                                          (helpFeedback?.unread ?? false);
+                                          plotApp?.unread ?? false;
 
                                       return Column(
                                         children: [

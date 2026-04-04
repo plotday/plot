@@ -2258,8 +2258,46 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   String get displayTitle {
     if (title != null) return title!;
-    if (preview != null) return preview!;
+    final derived = _titleFromContent(preview);
+    if (derived != null) return derived;
     return draft ? '🤷' : 'Untitled';
+  }
+
+  String? get displayPreview {
+    if (title != null) return preview; // AI/user title: preview from beginning
+    if (preview == null) return null;
+    final derivedTitle = _titleFromContent(preview);
+    if (derivedTitle == null) return null;
+    return _remainderPreview(preview!, derivedTitle);
+  }
+
+  /// Derives a display title from content (preview or note body).
+  /// Strips markdown, takes the first line, truncates at word boundary if > 60 chars.
+  static String? _titleFromContent(String? content) {
+    if (content == null || content.trim().isEmpty) return null;
+    final stripped = content.removeMarkdown(replaceLinksWithURL: false);
+    final firstLine = stripped.split('\n').first.trim();
+    if (firstLine.isEmpty) return null;
+    if (firstLine.length <= 60) return firstLine;
+    final lastSpace = firstLine.lastIndexOf(' ', 60);
+    if (lastSpace > 0) {
+      return '${firstLine.substring(0, lastSpace)}\u2026';
+    }
+    return '${firstLine.substring(0, 59)}\u2026';
+  }
+
+  /// Returns the portion of preview after the derived title.
+  static String? _remainderPreview(String preview, String derivedTitle) {
+    String prefix = derivedTitle;
+    if (prefix.endsWith('\u2026')) {
+      prefix = prefix.substring(0, prefix.length - 1);
+    }
+    final stripped = preview.removeMarkdown(replaceLinksWithURL: false);
+    final idx = stripped.indexOf(prefix);
+    if (idx < 0) return null;
+    var remainder = stripped.substring(idx + prefix.length).trim();
+    remainder = remainder.replaceAll(RegExp(r'^[\s/]+'), '').trim();
+    return remainder.isEmpty ? null : remainder;
   }
 
   DateTimeRange? get at {
@@ -3338,37 +3376,30 @@ class Thread extends Equatable implements Comparable<Thread> {
     // This ensures activity_read is synced immediately, not just during sync cycles
     Thread.push();
 
-    // Generate a title on the first non-draft save
+    // Generate AI title on first non-draft save.
+    // If online, calls /summary API and sets title.
+    // If offline/error, leaves title null — displayTitle derives from preview,
+    // and the server will generate an AI title when the thread syncs.
     if (title == null && !draft) {
-      final generatedTitle = await generateTitle();
-      log.info("Generated title: $generatedTitle");
-      await copyWith(title: Value(generatedTitle)).save();
-    }
-  }
-
-  Future<String> generateTitle([String noteContent = '']) async {
-    // If no note content provided, return displayTitle as fallback
-    if (noteContent.isEmpty) {
-      return displayTitle;
-    }
-
-    try {
-      final response = await api.post<Map<String, dynamic>>(
-        '/summary',
-        body: {'body': noteContent},
-      );
-      final generatedTitle = response['title'] as String?;
-
-      if (generatedTitle != null && generatedTitle.isNotEmpty) {
-        log.info("Generated title for activity $id: $generatedTitle");
-        return generatedTitle;
-      } else {
-        log.info("API returned empty title for activity $id, using fallback");
-        return displayTitle;
+      final content = preview;
+      if (content != null && content.trim().isNotEmpty) {
+        try {
+          final response = await api.post<Map<String, dynamic>>(
+            '/summary',
+            body: {'body': content},
+          );
+          final generatedTitle = response['title'] as String?;
+          if (generatedTitle != null && generatedTitle.isNotEmpty) {
+            log.info("Generated AI title for thread $id: $generatedTitle");
+            await copyWith(title: Value(generatedTitle)).save();
+          }
+        } catch (e, t) {
+          log.warning(
+            "AI title generation failed for thread $id "
+            "(will retry on sync): $e\n$t",
+          );
+        }
       }
-    } catch (e, t) {
-      log.warning("Error generating title for activity $id: $e\n$t");
-      return displayTitle;
     }
   }
 

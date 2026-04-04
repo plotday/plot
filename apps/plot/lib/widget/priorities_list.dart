@@ -512,16 +512,15 @@ class _PrioritiesListState extends State<PrioritiesList>
                 ),
               ],
 
-              // Third group: All Priorities (excluding @plot)
-              // Filter out the @plot priority
+              // Third group: All Priorities (excluding system priorities)
               ...() {
-                final plotPriority = widget.root.children.firstWhereOrNull(
-                  (p) => p.key == '@plot',
+                final plotApp = widget.root.children.firstWhereOrNull(
+                  (p) => p.key == '@plot.app',
                 );
 
-                final allPriorities = widget.root.children
-                    .where((p) => p.key != '@plot')
-                    .toList();
+                final allPriorities = Priority.excludePlot(
+                  widget.root.children,
+                );
 
                 return [
                   SizedBox(height: 16),
@@ -566,10 +565,8 @@ class _PrioritiesListState extends State<PrioritiesList>
                       ),
                     ),
 
-                  // Fourth group: Plot section (children of @plot priority)
-                  if (widget.showPlotSection &&
-                      plotPriority != null &&
-                      plotPriority.children.isNotEmpty) ...[
+                  // Fourth group: Plot App
+                  if (widget.showPlotSection && plotApp != null) ...[
                     SizedBox(height: 16),
                     ListTile(
                       title: 'Plot',
@@ -580,7 +577,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                     ),
                     ...buildReorderablePriorityItems(
                       context,
-                      plotPriority.children,
+                      [plotApp],
                       textStyle: itemStyle,
                     ),
                   ],
