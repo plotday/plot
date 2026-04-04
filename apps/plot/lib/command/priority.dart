@@ -62,6 +62,7 @@ class OpenPlotApp extends Command {
   OpenPlotApp(this.priority)
     : super(
         title: 'Plot App',
+        subtitle: 'Updates, support, and suggestions',
         icon: PlotIcon.sparkles,
         eventObject: EventObject.priority,
         eventAction: EventAction.viewed,
