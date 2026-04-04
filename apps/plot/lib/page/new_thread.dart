@@ -986,53 +986,7 @@ class NewThreadPageState extends State<NewThreadPage> {
             builder: (context, state) {
               final priorityBloc = context.read<PriorityBloc>();
 
-              // Viewer mode: simplified new thread creation
-              if (state.draft.priority.isViewer) {
-                return PopScope(
-                  canPop: false,
-                  onPopInvokedWithResult: (didPop, result) {
-                    if (!didPop) {
-                      if (ModalProvider.tryDismissTopModal(context)) return;
-                      if (!context.isMultiPanel) {
-                        context.run(ChangeCurrentThread(null));
-                      }
-                    }
-                  },
-                  child: Scaffold(
-                    translucent: true,
-                    scrollable: false,
-                    childPad: false,
-                    body: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Spacer(),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: context.contentPaddingH,
-                          ),
-                          child: NoteEditor(
-                            draft: state.draftNote,
-                            thread: state.draft,
-                            twists: _draftTwists ?? state.twists,
-                            actors: state.actors,
-                            onDraftChanged: (thread, {note}) async {
-                              if (!context.mounted) return;
-                              await priorityBloc.updateDraft(
-                                thread,
-                                note: note,
-                              );
-                            },
-                            flushToBottom: !layoutState.multiPanel,
-                            showScheduleActions: false,
-                            hint: 'Ask for help or share feedback',
-                            viewerMode: true,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
+              final isViewerMode = state.draft.priority.isViewer;
 
               return PopScope(
                 canPop: false,
@@ -1061,22 +1015,25 @@ class NewThreadPageState extends State<NewThreadPage> {
                           children: [
                             Spacer(),
 
-                            Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: context.contentPaddingH,
-                              ),
-                              child: _buildThreadTypeSelector(context, state),
-                            ),
-                            if (_selectedType == NewThreadType.chat)
+                            if (!isViewerMode) ...[
                               Padding(
                                 padding: EdgeInsets.symmetric(
                                   horizontal: context.contentPaddingH,
                                 ),
-                                child: _buildTwistSelector(context),
+                                child: _buildThreadTypeSelector(context, state),
                               ),
-                            const SizedBox(height: 16),
+                              if (_selectedType == NewThreadType.chat)
+                                Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: context.contentPaddingH,
+                                  ),
+                                  child: _buildTwistSelector(context),
+                                ),
+                              const SizedBox(height: 16),
+                            ],
 
-                            if (_selectedType == NewThreadType.link)
+                            if (!isViewerMode &&
+                                _selectedType == NewThreadType.link)
                               _buildLinkInput(
                                 context,
                                 state,
@@ -1098,10 +1055,15 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 },
                                 flushToBottom: true,
                                 showScheduleActions: false,
-                                hint: _editorHint,
+                                hint: isViewerMode
+                                    ? 'Ask for help or share feedback'
+                                    : _editorHint,
                                 additionalMentions: _chatMentions,
                                 onSubmitted: _onChatSubmitted,
-                                assignNote: _selectedType == NewThreadType.task,
+                                assignNote:
+                                    !isViewerMode &&
+                                    _selectedType == NewThreadType.task,
+                                viewerMode: isViewerMode,
                               ),
                           ],
                         );
@@ -1119,12 +1081,14 @@ class NewThreadPageState extends State<NewThreadPage> {
                               ),
                             ),
 
-                            _buildThreadTypeSelector(context, state),
+                            if (!isViewerMode) ...[
+                              _buildThreadTypeSelector(context, state),
 
-                            if (_selectedType == NewThreadType.chat)
-                              _buildTwistSelector(context),
+                              if (_selectedType == NewThreadType.chat)
+                                _buildTwistSelector(context),
 
-                            SizedBox(height: 16),
+                              SizedBox(height: 16),
+                            ],
 
                             Flexible(
                               flex: 2,
@@ -1132,7 +1096,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 constraints: BoxConstraints(
                                   maxHeight: constraints.maxHeight * 0.5,
                                 ),
-                                child: _selectedType == NewThreadType.link
+                                child: !isViewerMode &&
+                                        _selectedType == NewThreadType.link
                                     ? _buildLinkInput(context, state)
                                     : NoteEditor(
                                         key: _threadEditorKey,
@@ -1148,11 +1113,15 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         },
                                         flushToBottom: false,
                                         showScheduleActions: false,
-                                        hint: _editorHint,
+                                        hint: isViewerMode
+                                            ? 'Ask for help or share feedback'
+                                            : _editorHint,
                                         additionalMentions: _chatMentions,
                                         onSubmitted: _onChatSubmitted,
                                         assignNote:
+                                            !isViewerMode &&
                                             _selectedType == NewThreadType.task,
+                                        viewerMode: isViewerMode,
                                       ),
                               ),
                             ),
