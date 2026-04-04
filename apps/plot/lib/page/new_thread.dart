@@ -409,7 +409,10 @@ class NewThreadPageState extends State<NewThreadPage> {
                 color: context.theme.colors.mutedForeground,
               ),
               child: Flexible(
-                child: PriorityLabel(priority: state.draft.priority, muted: true),
+                child: PriorityLabel(
+                  priority: state.draft.priority,
+                  muted: true,
+                ),
               ),
             ),
           ),
@@ -1008,7 +1011,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                             horizontal: context.contentPaddingH,
                           ),
                           child: NoteEditor(
-                            key: _threadEditorKey,
                             draft: state.draftNote,
                             thread: state.draft,
                             twists: _draftTwists ?? state.twists,
@@ -1022,7 +1024,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                             },
                             flushToBottom: !layoutState.multiPanel,
                             showScheduleActions: false,
-                            hint: 'Ask for help or share a suggestion',
+                            hint: 'Ask for help or share feedback',
                             viewerMode: true,
                           ),
                         ),
