@@ -150,6 +150,9 @@ class CommandWrapper extends Command {
   bool get unread => command.unread;
 
   @override
+  bool enabled(BuildContext context) => command.enabled(context);
+
+  @override
   Future<CommandReturn> run(BuildContext context) {
     if (_run != null) {
       return _run(command, context);

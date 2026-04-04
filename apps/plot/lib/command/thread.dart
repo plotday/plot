@@ -1212,7 +1212,12 @@ class ToggleThreadTag extends _UpdateThreadCommand {
   final Tag tag;
 
   @override
+  bool enabled(BuildContext context) =>
+      !(tag == Tag.private && thread.priority.isViewer);
+
+  @override
   Future<CommandReturn> run(BuildContext context) async {
+    if (!enabled(context)) return const CommandDone();
     final isRemovingReply = tag == Tag.reply && thread.hasTag(tag);
     await saveOptimistically(context, thread.toggleTag(tag));
     if (isRemovingReply) {

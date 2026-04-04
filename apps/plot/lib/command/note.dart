@@ -208,7 +208,7 @@ class ToggleSelfTask extends NoteCommand {
 }
 
 class ToggleNoteTag extends NoteCommand {
-  ToggleNoteTag(super.note, this.tag, this.actorId)
+  ToggleNoteTag(super.note, this.tag, this.actorId, {this.isViewer = false})
     : super(
         title: tag.name,
         eventObject: EventObject.note,
@@ -220,9 +220,15 @@ class ToggleNoteTag extends NoteCommand {
 
   final Tag tag;
   final ActorId actorId;
+  final bool isViewer;
+
+  @override
+  bool enabled(BuildContext context) =>
+      !(tag == Tag.private && isViewer);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    if (!enabled(context)) return const CommandDone();
     try {
       ThreadBloc? activityBloc;
       try {

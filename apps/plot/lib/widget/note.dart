@@ -343,7 +343,10 @@ class NoteCommands extends StatelessWidget {
         .map((tag) async {
           final key = ValueKey(Object.hash(note.id, tag.id));
 
-          final command = ToggleNoteTag(note, tag, actorId);
+          final command = ToggleNoteTag(
+            note, tag, actorId,
+            isViewer: activityState.thread.priority.isViewer,
+          );
 
           // Get actor names for tooltip
           final actorNames = await note.getTagActorNames(tag);
@@ -491,7 +494,10 @@ class NoteCommands extends StatelessWidget {
                   })
                   .map((tag) {
                     final key = ValueKey(Object.hash(note.id, tag.id));
-                    final command = ToggleNoteTag(note, tag, actorId);
+                    final command = ToggleNoteTag(
+                      note, tag, actorId,
+                      isViewer: activityState.thread.priority.isViewer,
+                    );
                     final count = tag == Tag.reply ? 1 : (note.tags[tag]?.length ?? 0);
                     // Twist tags are display-only (not interactive)
                     if (tag == Tag.twist) {

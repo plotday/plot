@@ -80,10 +80,13 @@ class CommandModal {
                     cmd.run(rootContext.mounted ? rootContext : ctx),
               );
 
+        final isDisabled = !command.enabled(rootContext);
+
         return ListTile(
           controller: controller,
           command: wrappedCommand,
           showShortcut: true,
+          onTap: isDisabled ? () {} : null,
           leadingBuilder: command.unread
               ? (isHovered, hasFocus) => SizedBox(
                     width: 20,
