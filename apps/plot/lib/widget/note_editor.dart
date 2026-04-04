@@ -587,21 +587,33 @@ class NoteEditorState extends State<NoteEditor> {
                         ToggleSelfTask(widget.draft),
                         selected: widget.draft.isAssignedTo(Base.actorId),
                       ),
-                      // Assign (only for shared priorities)
-                      if (context
-                          .read<ThreadBloc>()
-                          .state
-                          .thread
-                          .priority
-                          .sharing)
-                        Button.icon(PickNoteAssignee(widget.draft)),
-                      // Private toggle (only for shared priorities)
+                      // Assign (only for shared, non-viewer priorities)
                       if (context
                               .read<ThreadBloc>()
                               .state
                               .thread
                               .priority
                               .sharing &&
+                          !context
+                              .read<ThreadBloc>()
+                              .state
+                              .thread
+                              .priority
+                              .isViewer)
+                        Button.icon(PickNoteAssignee(widget.draft)),
+                      // Private toggle (only for shared, non-viewer priorities)
+                      if (context
+                              .read<ThreadBloc>()
+                              .state
+                              .thread
+                              .priority
+                              .sharing &&
+                          !context
+                              .read<ThreadBloc>()
+                              .state
+                              .thread
+                              .priority
+                              .isViewer &&
                           (!widget.draft.private ||
                               widget.draft.authorId.isCurrentUser))
                         Button.icon(

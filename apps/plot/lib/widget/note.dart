@@ -449,10 +449,12 @@ class NoteCommands extends StatelessWidget {
         ];
 
         // Build command buttons (only if showCommands is true)
+        final isViewer = activityState.thread.priority.isViewer;
         final commandButtons = showCommands
             ? [
-                if (!selfTodo && !selfDone) Button.icon(SelfTaskAction(note)),
-                if (othersTodo.isEmpty)
+                if (!selfTodo && !selfDone && !isViewer)
+                  Button.icon(SelfTaskAction(note)),
+                if (othersTodo.isEmpty && !isViewer)
                   Button.icon(
                     CommandWrapper(
                       PickNoteAssignee(note),
