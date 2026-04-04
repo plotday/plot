@@ -88,7 +88,10 @@ BEGIN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
     IF v_role = 'viewer' THEN
-        RAISE EXCEPTION 'Viewer members cannot create or modify schedules';
+        -- Viewers can only create/modify per-user schedules for themselves
+        IF v_schedule_user_id IS NULL OR v_schedule_user_id != upsert_schedule.user_id THEN
+            RAISE EXCEPTION 'Viewer members can only create per-user schedules for themselves';
+        END IF;
     END IF;
 
     -- Per-user schedules can only be created/modified by the owning user
