@@ -138,6 +138,29 @@ class ClerkDartAuthService implements AuthService {
     await _auth.initialize().timeout(const Duration(seconds: 10));
   }
 
+  /// Re-initialise Clerk WITHOUT deleting the cache file.
+  ///
+  /// When the app has been suspended by macOS for a long time, the in-memory
+  /// client token can go stale while the persisted session is still valid on
+  /// Clerk's backend. Terminating and re-initialising forces the SDK to go
+  /// through its normal startup flow (read cache → createClient → POST if GET
+  /// fails), which obtains a fresh client token and rediscovers the session.
+  Future<void> _softReinitialize() async {
+    _auth.terminate();
+
+    final cacheDir = await _getClerkCacheDirectory(_profile);
+    final persistor = clerk.DefaultPersistor(
+      getCacheDirectory: () async => cacheDir,
+    );
+    _auth = clerk.Auth(
+      config: clerk.AuthConfig(
+        publishableKey: _publishableKey,
+        persistor: persistor,
+      ),
+    );
+    await _auth.initialize().timeout(const Duration(seconds: 10));
+  }
+
   @override
   bool get isSignedIn => _auth.isSignedIn;
 
@@ -181,6 +204,26 @@ class ClerkDartAuthService implements AuthService {
         if (recoveryError.code == clerk.ClerkErrorCode.serverErrorResponse) {
           return (token: null, failure: TokenFailureReason.networkError);
         }
+
+        // refreshClient uses the same (possibly stale) client token, so it
+        // can silently fail when macOS has suspended the app for a long time.
+        // Re-initialise Clerk from scratch: this creates a fresh client token
+        // and re-reads the persisted session, recovering the session if it is
+        // still valid on Clerk's backend.
+        try {
+          log.info(
+            'refreshClient failed, attempting full re-initialisation',
+          );
+          await _softReinitialize();
+          if (_auth.isSignedIn) {
+            final token = await _auth.sessionToken();
+            log.info('Session recovery via re-initialisation succeeded');
+            return (token: token.jwt, failure: null);
+          }
+        } catch (reinitError) {
+          log.warning('Re-initialisation recovery failed: $reinitError');
+        }
+
         log.warning('Session recovery failed (ClerkError): $recoveryError');
         return (token: null, failure: TokenFailureReason.sessionInvalid);
       } catch (recoveryError) {
