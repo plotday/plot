@@ -783,7 +783,8 @@ class _PriorityPageState extends State<PriorityPage> {
       builder: (context, state) {
         return BlocBuilder<LayoutBloc, LayoutState>(
           builder: (context, layoutState) {
-            final isUpNext = _currentTab == PriorityTab.agenda;
+            final isUpNext =
+                _currentTab == PriorityTab.agenda && !state.context.isViewer;
             var items = isUpNext
                 ? state.agendaViewItems
                 : state.activityFeedItems;
@@ -1088,7 +1089,8 @@ class _PriorityPageState extends State<PriorityPage> {
         ? allAgendaItems.sublist(1)
         : allAgendaItems;
 
-    final isNowTab = _currentTab == PriorityTab.agenda;
+    final isNowTab =
+        _currentTab == PriorityTab.agenda && !state.context.isViewer;
 
     return Column(
       children: [
