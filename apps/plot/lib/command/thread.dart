@@ -643,6 +643,7 @@ abstract class _UpdateThreadCommand extends Command {
     super.icon,
     super.hoverIcon,
     super.shortcut,
+    super.on,
   }) : onUpdate = onUpdate ?? ((thread) => thread.save());
 
   final Thread thread;
@@ -1230,15 +1231,25 @@ class ToggleThreadTag extends _UpdateThreadCommand {
 
 class ToggleThreadPrivate extends _UpdateThreadCommand {
   ToggleThreadPrivate(super.thread, {super.onUpdate})
-    : super(
-        title: thread.private ? 'Make Public' : 'Make Private',
+    : _readOnly = thread.priority.isViewer,
+      super(
+        title: thread.priority.isViewer
+            ? (thread.private ? 'Private' : 'Public')
+            : (thread.private ? 'Make public' : 'Make private'),
         eventObject: EventObject.activity,
         eventAction: thread.private ? EventAction.untagged : EventAction.tagged,
         icon: PlotIcon.private,
+        on: thread.priority.isViewer ? thread.private : null,
       );
+
+  final bool _readOnly;
+
+  @override
+  bool enabled(BuildContext context) => !_readOnly;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    if (_readOnly) return const CommandDone();
     await saveOptimistically(
       context,
       thread.copyWith(private: !thread.private),
@@ -1982,9 +1993,7 @@ List<Command> threadCommands(
     MoveThreadToPriority(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent &&
-        !thread.priority.personal &&
-        !thread.priority.isViewer)
+    if (!skipInfrequent && !thread.priority.personal)
       ToggleThreadPrivate(thread),
     if (!hideArchive) ArchiveThread(thread),
   ];
