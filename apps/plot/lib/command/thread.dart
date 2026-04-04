@@ -1982,7 +1982,9 @@ List<Command> threadCommands(
     MoveThreadToPriority(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent && !thread.priority.personal)
+    if (!skipInfrequent &&
+        !thread.priority.personal &&
+        !thread.priority.isViewer)
       ToggleThreadPrivate(thread),
     if (!hideArchive) ArchiveThread(thread),
   ];
