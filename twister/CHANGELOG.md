@@ -1,5 +1,38 @@
 # @plotday/twister
 
+## 0.44.0
+
+### Added
+
+- "action" thread type for task threads ([`d7d5336`](https://github.com/plotday/plot/commit/d7d533625bb148c2b895994d682cae167d1e8522))
+- `pubsub` option to `Network.createWebhook()` for creating Google Pub/Sub-backed webhooks. When `pubsub: true`, returns a Pub/Sub topic name instead of a webhook URL, enabling connectors to integrate with services that deliver events via Pub/Sub (e.g., Google Workspace Events API). ([`e2ea4f1`](https://github.com/plotday/plot/commit/e2ea4f1ad24e0d22578ffe4f55e3143d23cb101f))
+- `relatedSource` field on `Link` type for cross-connector thread bundling. Links whose `source` matches another link's `relatedSource` automatically share the same thread, regardless of creation order. ([`b854bdd`](https://github.com/plotday/plot/commit/b854bddc8f7b4c67f01f1a14f6f33deba82332f1))
+- Todoist auth provider ([`855f2d4`](https://github.com/plotday/plot/commit/855f2d445237c0a9e766f5a087dbbbfd2343b947))
+- `ThreadAccess.Full` permission level for listing, updating, and moving any thread in the twist's priority scope, and creating notes on any thread.
+- optional `linkTypes` field to `Channel` type for per-channel link type configs (e.g., dynamic issue statuses per Linear team) ([`94aaa03`](https://github.com/plotday/plot/commit/94aaa03b7cd4f6388f5f836b9b0ac266f2098abd))
+- `shared` and `keyOption` properties on Connector for declaring auth model (individual/shared, OAuth/key) ([`6fb33c2`](https://github.com/plotday/plot/commit/6fb33c2f48219e813510c0c665b528c215ff6bed))
+- Imap built-in tool for high-level IMAP email access (connect, list mailboxes, search, fetch messages, set flags) ([`d977bc9`](https://github.com/plotday/plot/commit/d977bc9df21bc8494d7f9843e1b4a81ac8f50e63))
+- `private` field on `NewLink` type for creating private threads via `saveLink()` ([`be8ff14`](https://github.com/plotday/plot/commit/be8ff140550c348d59bfe44da44442c5c8a7a071))
+- `secure` property on TextDef for encrypted option values (API keys, secrets)
+- `singleChannel` property on `Connector` for connectors with a single implicit channel ([`6fb33c2`](https://github.com/plotday/plot/commit/6fb33c2f48219e813510c0c665b528c215ff6bed))
+- SMTP built-in tool for email sending with connect, send, and disconnect operations ([`07b2d1d`](https://github.com/plotday/plot/commit/07b2d1d07eb07a442b78ce1fc3ed6f0edc27b0cd))
+- `defaultCreateThreads` field to `LinkTypeConfig` for connectors to specify the default thread creation mode per link type ([`9f3e7c0`](https://github.com/plotday/plot/commit/9f3e7c0ab4ba367184287f111068231bab4e1dea))
+- `helpText` and `helpUrl` optional fields to `TextDef` for displaying help instructions below text input options ([`8b1b81e`](https://github.com/plotday/plot/commit/8b1b81e02487f93283d41490d8f7af4881422bd8))
+
+### Changed
+
+- `NewContact` type now requires at least `name` or `email` to prevent "Unknown" contacts in the UI ([`f827e57`](https://github.com/plotday/plot/commit/f827e5718e537ab50cff8159f6d6fa704a197221))
+- `NewLinkWithNotes.title` is now optional — omit to preserve existing title on upsert ([`bf3992a`](https://github.com/plotday/plot/commit/bf3992aefdae844ca7c00b9044ef81f7f2513947))
+
+### Removed
+
+- `id` field from `Link` type and `{ id: Uuid }` variant from `NewLink` union. Use `source` for link identification. ([`02e701d`](https://github.com/plotday/plot/commit/02e701d9ce9942848debfef84a52831db353e205))
+
+### Fixed
+
+- `plot deploy` now reads `publisher` and `publisherUrl` from package.json to auto-resolve the publisher for non-personal deployments, and fails with exit code 1 in non-interactive environments instead of silently succeeding. ([`e155366`](https://github.com/plotday/plot/commit/e1553663b7b9958d727492f02fbf36b551d84824))
+- CLI deploy command now retries on 429 (rate-limited) and 503 (service unavailable) responses with Retry-After support ([`2a511b7`](https://github.com/plotday/plot/commit/2a511b7ae1306a734634a130f904963170584051))
+
 ## 0.43.0
 
 ### Added
