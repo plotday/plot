@@ -4,6 +4,7 @@
   "displayName": "Fellow",
   "description": "Sync Fellow meeting notes and action items",
   "logoUrl": "https://plot.day/assets/logo-fellow.svg",
+  "logoUrlDark": "https://plot.day/assets/logo-fellow-dark.svg",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
