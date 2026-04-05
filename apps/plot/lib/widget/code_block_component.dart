@@ -65,6 +65,15 @@ final Highlight _highlighter = Highlight()
     'yml': langYaml,
   });
 
+final _logLinePattern = RegExp(r'^\[(INFO|WARN|ERROR|DEBUG|TRACE)\] ');
+
+/// Returns true when the code block looks like structured log output,
+/// so we can skip auto-detection which highlights random English words.
+bool _looksLikeLogs(String code) {
+  final lines = code.split('\n').where((l) => l.isNotEmpty);
+  return lines.isNotEmpty && lines.every((l) => _logLinePattern.hasMatch(l));
+}
+
 /// Component builder for code blocks with syntax highlighting and copy button.
 class PlotCodeBlockComponentBuilder implements ComponentBuilder {
   const PlotCodeBlockComponentBuilder();
@@ -173,6 +182,8 @@ class _PlotCodeBlockComponentState extends State<PlotCodeBlockComponent>
       final HighlightResult result;
       if (language != null && _highlighter.getLanguage(language) != null) {
         result = _highlighter.highlight(code: code, language: language);
+      } else if (_looksLikeLogs(code)) {
+        return TextSpan(text: code, style: baseStyle);
       } else {
         result = _highlighter.highlightAuto(code);
       }
@@ -204,8 +215,7 @@ class _PlotCodeBlockComponentState extends State<PlotCodeBlockComponent>
     final highlightedSpan =
         _buildHighlightedSpan(code, widget.viewModel.language, baseStyle, isDark);
 
-    final bgColor =
-        isDark ? const Color(0xFF161B22) : const Color(0xFFF6F8FA);
+    final bgColor = context.colour.highlight;
 
     return BoxComponent(
       key: _boxKey,
