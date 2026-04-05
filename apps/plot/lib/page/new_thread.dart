@@ -354,6 +354,8 @@ class NewThreadPageState extends State<NewThreadPage> {
           ListTile(body: PriorityLabel(priority: priority)),
       selectedValue: state.draft.priority,
       prompt: 'Select Priority',
+      onAdd: (ctx) =>
+          createPriorityInline(ctx, parent: state.draft.priority),
     );
 
     if (result.present && result.value.id != state.draft.priority.id) {

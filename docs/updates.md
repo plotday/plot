@@ -1,3 +1,4 @@
+- You can now create a new priority directly from any priority picker — just tap the + button next to the search field
 - Improved the connector setup experience — clearer titles and button labels guide you through each step, and you now return to the connections list after adding a new connection instead of going all the way back to settings
 - Fixed Google Chat messages showing "Unknown author" for your own messages — the connector now properly resolves your Google account to your Plot identity
 - Fixed replies to Google Chat threads appearing twice in Google Chat

@@ -250,6 +250,7 @@ class FormSelect<T> extends FormItem {
     this.readonlyMessage,
     T? initialValue,
     this.onChanged,
+    this.onAdd,
     bool hasInitialValue = false,
   }) : assert(
          labelBuilder != null || titleBuilder != null,
@@ -289,6 +290,10 @@ class FormSelect<T> extends FormItem {
 
   /// Callback when value changes.
   final VoidCallback? onChanged;
+
+  /// Optional callback to create a new item inline.
+  /// When provided, a "+" button is shown in the selection modal.
+  final Future<T?> Function(BuildContext context)? onAdd;
 
   T? _value;
   bool _hasValue;
@@ -426,6 +431,7 @@ class FormSelect<T> extends FormItem {
       },
       selectedValue: _value,
       prompt: label ?? key,
+      onAdd: onAdd,
     );
     if (result.present) {
       _value = result.value;

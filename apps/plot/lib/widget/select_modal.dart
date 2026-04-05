@@ -56,6 +56,7 @@ class SelectModal<T> extends Modal {
     this.emptyMessage,
     this.onRefreshNeeded,
     this.showFilter,
+    this.onAdd,
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
@@ -70,6 +71,7 @@ class SelectModal<T> extends Modal {
            emptyMessage: emptyMessage,
            onRefreshNeeded: onRefreshNeeded,
            showFilter: showFilter,
+           onAdd: onAdd,
          ),
        );
 
@@ -113,6 +115,11 @@ class SelectModal<T> extends Modal {
   /// `true` = always show, `false` = never show.
   final bool? showFilter;
 
+  /// Optional callback to create a new item inline.
+  /// When provided, a "+" button is shown next to the search field.
+  /// If the callback returns a non-null value, the modal closes with that value selected.
+  final Future<T?> Function(BuildContext context)? onAdd;
+
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
@@ -127,6 +134,7 @@ class SelectModal<T> extends Modal {
     String? emptyMessage,
     void Function(Future<void> Function() refresh)? onRefreshNeeded,
     bool? showFilter,
+    Future<T?> Function(BuildContext context)? onAdd,
   }) async {
     // Pre-fetch items for empty search to avoid empty list on first build
     List<SelectGroup<T>>? initialItems;
@@ -152,6 +160,7 @@ class SelectModal<T> extends Modal {
       emptyMessage: emptyMessage,
       onRefreshNeeded: onRefreshNeeded,
       showFilter: showFilter,
+      onAdd: onAdd,
     ).show<T>(context);
 
     return result;
@@ -170,6 +179,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.emptyMessage,
     this.onRefreshNeeded,
     this.showFilter,
+    this.onAdd,
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
@@ -183,6 +193,7 @@ class _SelectModal<T> extends StatefulWidget {
   final String? emptyMessage;
   final void Function(Future<void> Function() refresh)? onRefreshNeeded;
   final bool? showFilter;
+  final Future<T?> Function(BuildContext context)? onAdd;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
@@ -395,6 +406,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   }
 
   bool get _shouldShowFilter {
+    // Always show filter when onAdd is set so the + button is accessible
+    if (widget.onAdd != null) return true;
     if (widget.showFilter == false) return false;
     if (widget.showFilter == true) return true;
     if (_isLoading) return false;
@@ -564,6 +577,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     }
   }
 
+  Future<void> _handleAdd(BuildContext context) async {
+    final result = await widget.onAdd!(context);
+    if (result != null && mounted) {
+      Modal.pop<T>(this.context, Value(result));
+    }
+  }
+
   void _cancel() {
     Modal.pop<T>(context, Value.absent());
   }
@@ -709,6 +729,15 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                   ],
                                 ),
                               ),
+                              if (widget.onAdd != null)
+                                FButton.icon(
+                                  variant: FButtonVariant.ghost,
+                                  onPress: () => _handleAdd(context),
+                                  child: Icon(
+                                    PlotIcon.add,
+                                    size: context.theme.iconSizes.sm,
+                                  ),
+                                ),
                             ],
                           ),
                         ),

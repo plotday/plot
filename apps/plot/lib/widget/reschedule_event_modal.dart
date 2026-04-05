@@ -1,3 +1,4 @@
+import 'package:plot/command/priority.dart' show createPriorityInline;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/scheduler.dart';
@@ -77,6 +78,7 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
           ListTile(body: PriorityLabel(priority: priority)),
       selectedValue: _selectedPriority,
       prompt: 'Priority',
+      onAdd: (ctx) => createPriorityInline(ctx, parent: _selectedPriority),
     );
 
     if (result.present) {
