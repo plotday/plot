@@ -10,6 +10,7 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/command/base.dart';
+import 'package:plot/command/priority.dart' show createPriorityInline;
 import 'package:plot/env.dart';
 import 'package:plot/store/store.dart' show Priority, PriorityOrder;
 import 'package:plot/util/uuid.dart';
@@ -25,6 +26,7 @@ import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/select_modal.dart';
 import 'package:plot/widget/select_tile.dart';
+import 'package:plot/util/channel_defaults.dart';
 import 'logging.dart';
 
 /// Selected channel for the setup flow.
@@ -177,16 +179,45 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     super.dispose();
   }
 
-  /// Seed local selected channels from server enabled state (edit mode only).
+  /// Seed local selected channels from server enabled state or smart defaults.
   void _seedLocalState(TwistIntegrations data) {
-    if (!widget.setupMode && !_initializedFromServer) {
+    if (_initializedFromServer) return;
+
+    if (!widget.setupMode) {
+      // Edit mode: seed from server state
       _collectEnabledChannels(data.channels);
       _initializedFromServer = true;
-      // Resolve priority names for existing channel assignments
       if (widget.isAccountBased) {
         _resolvePriorityNames();
       }
+    } else {
+      // Setup mode: compute smart defaults
+      _initializedFromServer = true;
+      _applySuggestedDefaults(data);
     }
+  }
+
+  /// Compute and apply smart default channel selections for setup mode.
+  Future<void> _applySuggestedDefaults(TwistIntegrations data) async {
+    final suggestion = await ChannelDefaultSuggester.suggest(
+      channels: data.channels,
+      accounts: data.accounts,
+      organizationDomains: data.organizationDomains,
+      isAccountBased: widget.isAccountBased || data.singleChannel,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _localSelectedChannels.addAll(suggestion.enabledChannels);
+      _channelPriorities.addAll(suggestion.channelPriorities);
+    });
+
+    if (suggestion.channelPriorities.isNotEmpty) {
+      await _resolvePriorityNames();
+    }
+
+    _notifyChanged();
   }
 
   /// Resolve priority names for all channel priority assignments.
@@ -345,6 +376,29 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     return null;
   }
 
+  /// Returns the best default priority for a new channel.
+  /// If the personal connection limit is reached but a team has available
+  /// connections, returns a root priority for that team instead.
+  Future<Priority> _getDefaultPriority() async {
+    final usage = widget.usage;
+    if (usage != null && usage.personal.connections.isAtLimit) {
+      // Find an org with available connections
+      final availableOrg = usage.organizations
+          .firstWhereOrNull((o) => !o.connections.isAtLimit);
+      if (availableOrg != null) {
+        final orgId = int.tryParse(availableOrg.id);
+        if (orgId != null) {
+          final rootPriorities = await Priority.getRoot();
+          final teamRoot = rootPriorities.firstWhereOrNull(
+            (p) => p.organizationId == orgId,
+          );
+          if (teamRoot != null) return teamRoot;
+        }
+      }
+    }
+    return Priority.getDefault();
+  }
+
   void _handleChannelTap(TwistChannel channel) async {
     final key = '${channel.providerKey}:${channel.id}';
     final isEnabled = _localSelectedChannels.contains(key);
@@ -363,7 +417,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           );
         } catch (_) {}
       }
-      currentPriority ??= await Priority.getDefault();
+      currentPriority ??= await _getDefaultPriority();
       if (!mounted) return;
 
       final hasLinkTypes = channel.linkTypes.isNotEmpty;
@@ -383,6 +437,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
               : p.title,
           initialValue: currentPriority,
           placeholder: 'Select a priority',
+          onAdd: (ctx) => createPriorityInline(ctx),
         ),
         if (hasLinkTypes)
           for (final lt in channel.linkTypes)
@@ -417,7 +472,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
               }
             }
             return _CallbackCommand(
-              title: 'Save',
+              title: isEnabled ? 'Save' : 'Enable sync',
               icon: FontAwesomeIcons.check,
               onRun: () async {
                 if (priority != null) {
@@ -437,7 +492,10 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
                           values['createThreads'] as String? ?? 'all';
                       _channelCreateThreads[key] = createThreads;
                     }
-                    _priorityNames[priority.id.toString()] = priority.title;
+                    _priorityNames[priority.id.toString()] =
+                        priority.ancestorsLabel() != null
+                            ? '${priority.ancestorsLabel()}${Priority.separator}${priority.title}'
+                            : priority.title;
                     _priorityOrgIds[priority.id.toString()] =
                         priority.organizationId;
                   });
@@ -905,6 +963,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       ),
       selectedValue: currentPriority,
       prompt: 'Select a priority',
+      onAdd: (ctx) => createPriorityInline(ctx),
     );
 
     if (!result.present || !mounted) return;

@@ -14,6 +14,7 @@ import {
   createTopic,
   deleteSubscription,
   deleteTopic,
+  grantTopicPublisher,
 } from "../../utils/pubsub";
 import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { type ToolPermission } from "../permissions";
@@ -451,6 +452,15 @@ export class Network extends Tool implements INetwork {
 
       const topicId = `ps-${callbackToken}`;
       const topicName = await createTopic(pubsubConfig, topicId);
+
+      // Grant the Google Workspace Events service agent publish access.
+      // All Pub/Sub webhooks are for Google Workspace services (Chat, etc.)
+      // that need to publish events to the topic.
+      await grantTopicPublisher(
+        pubsubConfig,
+        topicName,
+        "chat-api-push@system.gserviceaccount.com"
+      );
 
       const pushEndpoint = `${this.baseUrl}/hook/pubsub/${topicId}`;
       await createPushSubscription(pubsubConfig, {

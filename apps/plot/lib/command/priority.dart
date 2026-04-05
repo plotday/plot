@@ -81,6 +81,25 @@ class OpenPlotApp extends Command {
   }
 }
 
+class OpenTwistDev extends Command {
+  OpenTwistDev(this.priority)
+    : super(
+        title: 'Twist Development',
+        icon: PlotIcon.twist,
+        eventObject: EventObject.priority,
+        eventAction: EventAction.viewed,
+      );
+
+  final Priority priority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandRoute(
+      PriorityRoute(priorityIdString: priority.id.toShortString()),
+    );
+  }
+}
+
 class PriorityGroup extends CommandGroup {
   PriorityGroup({required super.title, required this.builder});
 

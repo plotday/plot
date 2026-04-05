@@ -130,7 +130,7 @@ class ChangeCurrentThread extends ThreadCommand {
 class NewThread extends Command {
   NewThread()
     : super(
-        title: "New Thread",
+        title: "New thread",
         eventObject: EventObject.activity,
         eventAction: EventAction.opened,
         icon: PlotIcon.addNote,

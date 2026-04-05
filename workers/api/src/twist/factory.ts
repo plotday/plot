@@ -1,13 +1,14 @@
 import type { Kysely } from "kysely";
 
+import type { OptionsSchema } from "@plotday/twister/options";
 import { type Priority } from "@plotday/twister/plot";
+import { createLogger } from "@plotday/worker-util";
 
 import type { DB } from "../db-types";
 import { type Bindings, type TwistEnvironment } from "../env";
 import { decrypt } from "../utils/encryption";
-import type { AiProviderConfig } from "./tools/ai";
-import { createLogger } from "@plotday/worker-util";
 import { getEffectivePlan } from "../utils/plan";
+import { resolveSecureOptions } from "../utils/secure-options";
 import { handleTwistOperation } from "./error-handling";
 import { getTwist } from "./loader";
 import {
@@ -16,6 +17,7 @@ import {
   comparePermissions,
   mergeToolPermissions,
 } from "./permissions";
+import type { AiProviderConfig } from "./tools/ai";
 import {
   type ProviderDeclaration,
   collectToolPermissions,
@@ -24,8 +26,6 @@ import {
   mergeProviderDeclarations,
 } from "./tools/factory";
 import { type Tool } from "./tools/tool";
-import { resolveSecureOptions } from "../utils/secure-options";
-import type { OptionsSchema } from "@plotday/twister/options";
 
 export function twistFactory({
   env,
@@ -86,7 +86,14 @@ export function twistFactory({
     let optionsSchema: Record<string, unknown> | undefined;
 
     // Source metadata (provider, scopes, linkTypes, auth model) — set during deployment, loaded at runtime
-    let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string } | null = null;
+    let sourceProvider: {
+      provider?: string;
+      scopes?: string[];
+      linkTypes?: any[];
+      handleReplies?: boolean;
+      shared?: boolean;
+      keyOption?: string;
+    } | null = null;
 
     // Load priority_twist config for Options resolution at runtime
     let priorityTwistConfig: Record<string, unknown> | undefined;
@@ -121,10 +128,18 @@ export function twistFactory({
 
     // Query user's twist AI preference at runtime (not during deployment)
     let aiEnabled: boolean | undefined;
-    if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
+    if (
+      checkPermissions &&
+      priorityTwistId &&
+      priorityTwistId !== "__deployment__"
+    ) {
       const ownerPref = await db
         .selectFrom("priority_twist")
-        .innerJoin("ai_preference", "ai_preference.user_id", "priority_twist.owner_id")
+        .innerJoin(
+          "ai_preference",
+          "ai_preference.user_id",
+          "priority_twist.owner_id"
+        )
         .select("ai_preference.twist_ai_disabled")
         .where("priority_twist.id", "=", priorityTwistId)
         .executeTakeFirst();
@@ -133,7 +148,11 @@ export function twistFactory({
 
     // Resolve effective plan at runtime (not during deployment)
     let effectivePlan: string | undefined;
-    if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
+    if (
+      checkPermissions &&
+      priorityTwistId &&
+      priorityTwistId !== "__deployment__"
+    ) {
       // Get owner_id from priority_twist
       const ptOwner = await db
         .selectFrom("priority_twist")
@@ -148,14 +167,20 @@ export function twistFactory({
 
     // Resolve AI provider config at runtime (not during deployment)
     let providerConfig: AiProviderConfig | undefined;
-    if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
+    if (
+      checkPermissions &&
+      priorityTwistId &&
+      priorityTwistId !== "__deployment__"
+    ) {
       // Determine scope: org priority → org preference, else → user preference
       // Account-level connectors have no priority_id, skip org lookup
-      const priorityOrg = priorityId ? await db
-        .selectFrom("priority")
-        .select("organization_id")
-        .where("id", "=", priorityId)
-        .executeTakeFirst() : undefined;
+      const priorityOrg = priorityId
+        ? await db
+            .selectFrom("priority")
+            .select("organization_id")
+            .where("id", "=", priorityId)
+            .executeTakeFirst()
+        : undefined;
 
       let aiPref;
       let scopeFilter: { column: "user_id" | "organization_id"; value: any };
@@ -166,7 +191,10 @@ export function twistFactory({
           .select(["twist_ai_key_id", "twist_ai_disabled"])
           .where("organization_id", "=", priorityOrg.organization_id)
           .executeTakeFirst();
-        scopeFilter = { column: "organization_id", value: priorityOrg.organization_id };
+        scopeFilter = {
+          column: "organization_id",
+          value: priorityOrg.organization_id,
+        };
       } else {
         const pt = await db
           .selectFrom("priority_twist")
@@ -193,7 +221,14 @@ export function twistFactory({
         // Load the specific ai_key row for the selected provider
         const aiKeyRow = await db
           .selectFrom("ai_key")
-          .select(["provider", "encrypted_key", "iv", "custom_base_url", "fast_model", "thinking_model"])
+          .select([
+            "provider",
+            "encrypted_key",
+            "iv",
+            "custom_base_url",
+            "fast_model",
+            "thinking_model",
+          ])
           .where("id", "=", aiPref.twist_ai_key_id)
           .executeTakeFirst();
 
@@ -206,9 +241,13 @@ export function twistFactory({
           providerConfig = {
             provider: aiKeyRow.provider as AiProviderConfig["provider"],
             apiKey: plainKey,
-            ...(aiKeyRow.custom_base_url ? { baseUrl: aiKeyRow.custom_base_url } : {}),
+            ...(aiKeyRow.custom_base_url
+              ? { baseUrl: aiKeyRow.custom_base_url }
+              : {}),
             ...(aiKeyRow.fast_model ? { fastModel: aiKeyRow.fast_model } : {}),
-            ...(aiKeyRow.thinking_model ? { thinkingModel: aiKeyRow.thinking_model } : {}),
+            ...(aiKeyRow.thinking_model
+              ? { thinkingModel: aiKeyRow.thinking_model }
+              : {}),
           };
         }
       } else if (!aiPref) {
@@ -218,7 +257,14 @@ export function twistFactory({
         if (scopeFilter.value) {
           aiKeyRows = await db
             .selectFrom("ai_key")
-            .select(["provider", "encrypted_key", "iv", "custom_base_url", "fast_model", "thinking_model"])
+            .select([
+              "provider",
+              "encrypted_key",
+              "iv",
+              "custom_base_url",
+              "fast_model",
+              "thinking_model",
+            ])
             .where(scopeFilter.column, "=", scopeFilter.value)
             .orderBy("updated_at", "desc")
             .limit(1)
@@ -237,7 +283,9 @@ export function twistFactory({
             apiKey: plainKey,
             ...(row.custom_base_url ? { baseUrl: row.custom_base_url } : {}),
             ...(row.fast_model ? { fastModel: row.fast_model } : {}),
-            ...(row.thinking_model ? { thinkingModel: row.thinking_model } : {}),
+            ...(row.thinking_model
+              ? { thinkingModel: row.thinking_model }
+              : {}),
           };
         }
       }
@@ -246,7 +294,11 @@ export function twistFactory({
 
     // Resolve secure options at runtime (decrypt secure values from secure_option table)
     let resolvedSecureOptions: Record<string, string> | undefined;
-    if (checkPermissions && priorityTwistId && priorityTwistId !== "__deployment__") {
+    if (
+      checkPermissions &&
+      priorityTwistId &&
+      priorityTwistId !== "__deployment__"
+    ) {
       // Get the options schema from KV config (or fall back to DB twist.options)
       let optSchema: OptionsSchema | undefined;
       const storedConfig = await env.TWIST_CONFIG.get(`${id}:${version}`);
@@ -398,11 +450,15 @@ export function twistFactory({
       }
 
       // Collect source metadata if this is a Source
-      sourceProvider = await twist.getSourceMetadata(twistInit) ?? null;
+      sourceProvider = (await twist.getSourceMetadata(twistInit)) ?? null;
 
       // Backwards-compat inference for auth model:
       // No provider + no keyOption = shared key connector (infer keyOption from first secure option)
-      if (sourceProvider && !sourceProvider.provider && !sourceProvider.keyOption) {
+      if (
+        sourceProvider &&
+        !sourceProvider.provider &&
+        !sourceProvider.keyOption
+      ) {
         sourceProvider.shared = true;
         // Infer keyOption from first secure Options field if present
         if (optionsSchema) {
@@ -472,7 +528,11 @@ export function twistFactory({
           }
         }
         // For no-provider connectors: map synthetic "_options" provider to the Integrations path
-        if (toolId === "Integrations" && sourceProvider && !sourceProvider.provider) {
+        if (
+          toolId === "Integrations" &&
+          sourceProvider &&
+          !sourceProvider.provider
+        ) {
           const pathString = path.join(":");
           integrationsMap["_options"] = pathString;
         }
@@ -481,13 +541,15 @@ export function twistFactory({
       // Compute whether this twist requires AI
       // AI is required if any tool is "AI" and its options don't set required: false
       const aiTool = toolInstances.find(({ id: toolId }) => toolId === "AI");
-      aiRequired = aiTool ? (aiTool.options?.required !== false) : false;
+      aiRequired = aiTool ? aiTool.options?.required !== false : false;
 
       // Compute default mention flags from Plot tool options
       for (const { id: toolId, options } of toolInstances) {
         if (toolId === "Plot") {
-          if ((options as any)?.thread?.defaultMention) defaultMentionCreated = true;
-          if ((options as any)?.note?.defaultMention) defaultMentionMentioned = true;
+          if ((options as any)?.thread?.defaultMention)
+            defaultMentionCreated = true;
+          if ((options as any)?.note?.defaultMention)
+            defaultMentionMentioned = true;
         }
       }
 
@@ -516,17 +578,18 @@ export function twistFactory({
         context?: {
           actor: { id: string; type: number };
           /** Authorization for source activation (Sources only). */
-          auth?: { provider: string; scopes: string[]; actor: { id: string; type: number; email?: string | null; name?: string | null } };
+          auth?: {
+            provider: string;
+            scopes: string[];
+            actor: {
+              id: string;
+              type: number;
+              email?: string | null;
+              name?: string | null;
+            };
+          };
         }
       ) => {
-        await env.TWIST_LOGS_QUEUE.send({
-          twistRootId: id,
-          environment,
-          severity: "info",
-          message: `Activating in ${environment} for priority ${priorityId}`,
-          timestamp: Date.now(),
-        });
-
         await handleTwistOperation(
           "activate",
           () => twist.activate(twistInit, priority, context),
@@ -535,14 +598,6 @@ export function twistFactory({
       },
 
       upgrade: async () => {
-        await env.TWIST_LOGS_QUEUE.send({
-          twistRootId: id,
-          environment,
-          severity: "info",
-          message: `Upgrading in ${environment} for priority ${priorityId}`,
-          timestamp: Date.now(),
-        });
-
         await handleTwistOperation("upgrade", () => twist.upgrade(twistInit), {
           env,
           id,

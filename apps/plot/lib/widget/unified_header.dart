@@ -264,7 +264,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (thread != null) _buildTodoToggle(context, thread),
 
       // New Thread button (multiPanel only, since bottom nav has it otherwise)
-      if (layoutState.multiPanel) Button.icon(NewThread()),
+      if (layoutState.multiPanel && !state.context.isTwistDev)
+        Button.icon(NewThread()),
 
       // Menu button (desktop only — mobile uses title tap target)
       if (layoutState.multiPanel)

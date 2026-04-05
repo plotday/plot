@@ -687,6 +687,10 @@ class TwistIntegrations {
   /// The Options field name containing the auth key (for key-based connectors).
   final String? keyOption;
 
+  /// Maps organizationId → list of email domains for that org.
+  /// Used for smart channel default suggestions.
+  final Map<int, List<String>>? organizationDomains;
+
   const TwistIntegrations({
     required this.providers,
     required this.accounts,
@@ -696,6 +700,7 @@ class TwistIntegrations {
     this.singleChannel = false,
     this.shared = false,
     this.keyOption,
+    this.organizationDomains,
   });
 
   factory TwistIntegrations.fromJson(Map<String, dynamic> json) {
@@ -714,10 +719,25 @@ class TwistIntegrations {
       singleChannel: json['singleChannel'] as bool? ?? false,
       shared: json['shared'] as bool? ?? false,
       keyOption: json['keyOption'] as String?,
+      organizationDomains: _parseOrganizationDomains(
+        json['organizationDomains'],
+      ),
     );
   }
 
   bool get isEmpty => providers.isEmpty && channels.isEmpty;
+
+  static Map<int, List<String>>? _parseOrganizationDomains(dynamic raw) {
+    if (raw is! Map) return null;
+    final result = <int, List<String>>{};
+    for (final entry in raw.entries) {
+      final orgId = int.tryParse(entry.key.toString());
+      if (orgId == null) continue;
+      final domains = (entry.value as List<dynamic>).cast<String>();
+      result[orgId] = domains;
+    }
+    return result.isEmpty ? null : result;
+  }
 }
 
 /// A provider configuration for a twist

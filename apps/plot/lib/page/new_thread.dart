@@ -1000,6 +1000,17 @@ class NewThreadPageState extends State<NewThreadPage> {
 
               final isViewerMode = state.draft.priority.isViewer;
 
+              if (state.draft.priority.isTwistDev) {
+                return Center(
+                  child: Text(
+                    'Select a thread',
+                    style: context.theme.typography.sm.copyWith(
+                      color: context.theme.plotColors.muted,
+                    ),
+                  ),
+                );
+              }
+
               return PopScope(
                 canPop: false,
                 onPopInvokedWithResult: (didPop, result) {
@@ -1067,7 +1078,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 },
                                 flushToBottom: true,
                                 showScheduleActions: false,
-                                hint: isViewerMode
+                                hint: state.draft.priority.isPlotApp
                                     ? 'Ask for help or share feedback'
                                     : _editorHint,
                                 additionalMentions: _chatMentions,
@@ -1125,7 +1136,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         },
                                         flushToBottom: false,
                                         showScheduleActions: false,
-                                        hint: isViewerMode
+                                        hint: state.draft.priority.isPlotApp
                                             ? 'Ask for help or share feedback'
                                             : _editorHint,
                                         additionalMentions: _chatMentions,

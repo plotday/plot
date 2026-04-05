@@ -4,163 +4,41 @@ import type { DB } from "../db-types";
 import { withDb } from "../db";
 import type { Bindings, LogMessage, TwistEnvironment } from "../env";
 import { createLogger } from "@plotday/worker-util";
-import { rpc, rpcUser } from "../rpc";
 
 const PLOT_TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
 
-interface DeploymentInfo {
-  userName?: string;
-  userEmail?: string;
-  userId?: string;
-  environment: TwistEnvironment;
-  version: string;
-  autoApproveToPublic: boolean;
-}
-
-/**
- * Ensures the Releases activity exists for a twist.
- * Creates it with source key if it doesn't exist.
- */
-async function ensureReleasesActivity(
-  db: Kysely<DB>,
-  twistPackageId: string,
-  priorityId: string,
-  createdBy: string,
-  authorId: string
-): Promise<string> {
-  const key = `releases:${twistPackageId}`;
-
-  const data = await rpcUser(db, "upsert_thread", {
-    user_id: createdBy,
-    p_thread: {
-      key,
-      title: "Releases",
-      priority_id: priorityId,
-    },
-    p_defaults: {
-      updated_by: 0,
-      created_by: createdBy,
-      author_id: authorId,
-    },
-  });
-
-  return data.id;
-}
-
-/**
- * Adds a release note to the Releases activity.
- */
-export async function addReleaseNote(
-  db: Kysely<DB>,
-  twistPackageId: string,
-  priorityId: string,
-  info: DeploymentInfo
-): Promise<void> {
-  const logger = createLogger({
-    twist_package_id: twistPackageId,
-    environment: info.environment,
-  });
-
-  try {
-    // Get the priority owner for created_by
-    const priorityData = await db
-      .selectFrom("priority")
-      .select("created_by")
-      .where("id", "=", priorityId)
-      .executeTakeFirst();
-
-    if (!priorityData?.created_by) {
-      logger.warn("Could not get priority owner for release note");
-      return;
-    }
-
-    const createdBy = priorityData.created_by;
-
-    // Get author_id - use deploying user's contact if available, otherwise priority owner's contact
-    let authorId: string;
-    if (info.userId) {
-      const contactId = await rpc(db, "get_primary_contact_id", {
-        p_user_id: info.userId,
-      });
-      if (contactId) {
-        authorId = contactId;
-      } else {
-        // Fall back to priority owner's contact
-        const ownerContactId = await rpc(db, "get_primary_contact_id", {
-          p_user_id: createdBy,
-        });
-        authorId = ownerContactId || createdBy;
-      }
-    } else {
-      // No user info, use priority owner's contact
-      const ownerContactId = await rpc(db, "get_primary_contact_id", {
-        p_user_id: createdBy,
-      });
-      authorId = ownerContactId || createdBy;
-    }
-
-    const activityId = await ensureReleasesActivity(
-      db,
-      twistPackageId,
-      priorityId,
-      createdBy,
-      authorId
-    );
-
-    const envDisplay = info.autoApproveToPublic
-      ? `${info.environment} (+ public)`
-      : info.environment;
-
-    const content = [
-      `## v${info.version} - ${envDisplay}`,
-      info.autoApproveToPublic ? "\n_Auto-approved to public_" : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    await db.insertInto("note").values({
-      thread_id: activityId,
-      author_id: authorId,
-      created_by: info.userId || createdBy,
-      content,
-      updated_by: 0,
-      sync_depth: 1,
-    }).execute();
-  } catch (error) {
-    // Log but don't fail the deployment
-    logger.error("Failed to add release note", error as Error);
-  }
-}
-
 /**
  * Ensures the Logs activity exists for a twist and environment.
+ * Uses direct insert to bypass user-level permission checks (the twist dev
+ * priority owner is a viewer who can't create non-private threads via upsert_thread).
  */
 async function ensureLogsActivity(
   db: Kysely<DB>,
   twistPackageId: string,
   priorityId: string,
   environment: string,
-  createdBy: string,
-  authorId: string,
-  userId: string
+  createdBy: string
 ): Promise<string> {
   const key = `logs:${twistPackageId}:${environment}`;
 
-  const data = await rpcUser(db, "upsert_thread", {
-    user_id: userId,
-    p_thread: {
+  const result = await db
+    .insertInto("thread")
+    .values({
       key,
       title: `Logs (${environment})`,
       priority_id: priorityId,
-    },
-    p_defaults: {
-      updated_by: 0,
       created_by: createdBy,
-      author_id: authorId,
-    },
-  });
+      updated_by: 0,
+    })
+    .onConflict((oc) =>
+      oc.columns(["priority_id", "key"]).doUpdateSet({
+        updated_by: 0,
+      })
+    )
+    .returning("id")
+    .executeTakeFirstOrThrow();
 
-  return data.id;
+  return result.id;
 }
 
 /**
@@ -197,7 +75,7 @@ export async function addLogsNote(
         .selectFrom("priority_child_twist")
         .innerJoin("twist", "twist.id", "priority_child_twist.twist_id")
         .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-        .select(["priority_child_twist.id", "priority_child_twist.owner_id"])
+        .select(["priority_child_twist.id"])
         .where("priority_child_twist.priority_child_id", "=", adminData.priority_id)
         .where("twist_admin.twist_package_id", "=", PLOT_TWIST_PACKAGE_ID)
         .executeTakeFirst();
@@ -210,12 +88,6 @@ export async function addLogsNote(
       // Use the Plot twist's priority_twist.id as both created_by and author_id
       const createdBy = plotPriorityTwist.id;
       const authorId = plotPriorityTwist.id;
-      const userId = plotPriorityTwist.owner_id;
-
-      if (!userId) {
-        logger.warn("Plot twist owner not found for log activity");
-        return;
-      }
 
       // Format logs
       const environment = logs[0]?.environment || "unknown";
@@ -225,9 +97,7 @@ export async function addLogsNote(
         twistPackageId,
         adminData.priority_id,
         environment,
-        createdBy,
-        authorId,
-        userId
+        createdBy
       );
 
       const formattedLogs = logs
@@ -248,5 +118,70 @@ export async function addLogsNote(
   } catch (error) {
     // Log but don't fail the queue processing
     logger.error("Failed to add logs note", error as Error);
+  }
+}
+
+/**
+ * Adds an upgrade note to the Logs activity for a twist deployment.
+ */
+export async function addUpgradeNote(
+  env: Bindings,
+  twistPackageId: string,
+  environment: TwistEnvironment,
+  version: string
+): Promise<void> {
+  const logger = createLogger({
+    twist_package_id: twistPackageId,
+    environment,
+  });
+
+  try {
+    await withDb(env, async (db) => {
+      const adminData = await db
+        .selectFrom("twist_admin")
+        .select("priority_id")
+        .where("twist_package_id", "=", twistPackageId)
+        .where("priority_id", "is not", null)
+        .limit(1)
+        .executeTakeFirst();
+
+      if (!adminData?.priority_id) {
+        return;
+      }
+
+      const plotPriorityTwist = await db
+        .selectFrom("priority_child_twist")
+        .innerJoin("twist", "twist.id", "priority_child_twist.twist_id")
+        .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+        .select(["priority_child_twist.id"])
+        .where("priority_child_twist.priority_child_id", "=", adminData.priority_id)
+        .where("twist_admin.twist_package_id", "=", PLOT_TWIST_PACKAGE_ID)
+        .executeTakeFirst();
+
+      if (!plotPriorityTwist?.id) {
+        return;
+      }
+
+      const createdBy = plotPriorityTwist.id;
+
+      const activityId = await ensureLogsActivity(
+        db,
+        twistPackageId,
+        adminData.priority_id,
+        environment,
+        createdBy
+      );
+
+      await db.insertInto("note").values({
+        thread_id: activityId,
+        author_id: createdBy,
+        created_by: createdBy,
+        content: `Upgraded to v${version}`,
+        updated_by: 0,
+        sync_depth: 1,
+      }).execute();
+    });
+  } catch (error) {
+    logger.error("Failed to add upgrade note", error as Error);
   }
 }

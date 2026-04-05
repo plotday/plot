@@ -890,6 +890,12 @@ export class Integrations extends Tool implements IAuth {
       // Skip notes created by this twist (prevent loops)
       if (item.created_by === this.priorityTwistId) return [];
 
+      // Skip notes that mention this twist on threads it created —
+      // these are already dispatched via the "note" (mention) path
+      const isMentioned = (item.mentions ?? []).includes(this.priorityTwistId);
+      const threadCreatedByThis = item.thread_created_by === this.priorityTwistId;
+      if (isMentioned && threadCreatedByThis) return [];
+
       const note: Note = {
         id: item.id,
         created: item.created_at ? new Date(item.created_at) : new Date(),

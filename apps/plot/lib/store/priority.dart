@@ -826,16 +826,29 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .map(Priority.fromStore);
   }
 
-  /// Filters out system priorities (@plot.app, @plot.twist-dev, @plot) from the
-  /// main priority list. These are shown in their own section.
+  /// Filters out system priorities (@plot.app, @plot.twist-dev, @plot) and
+  /// their descendants from the priority list.
   static List<Priority> excludePlot(List<Priority> priorities) {
+    // Collect paths of system priorities to also filter their descendants
+    final systemPaths = priorities
+        .where(
+          (p) =>
+              p.key == '@plot.app' ||
+              p.key == '@plot.twist-dev' ||
+              p.key == '@plot' ||
+              (p.key?.startsWith('@plot.') ?? false),
+        )
+        .map((p) => p.path)
+        .toSet();
+
     return priorities
         .where(
           (p) =>
               p.key != '@plot.app' &&
               p.key != '@plot.twist-dev' &&
               p.key != '@plot' &&
-              p.key?.startsWith('@plot.') != true,
+              p.key?.startsWith('@plot.') != true &&
+              !systemPaths.any((sp) => sp.isParent(p.path)),
         )
         .toList();
   }
@@ -1126,6 +1139,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
 
   /// Whether this is the Using Plot priority.
   bool get isPlotApp => key == '@plot.app';
+
+  /// Whether this is the Twist Development priority.
+  bool get isTwistDev => key == '@plot.twist-dev';
 
   /// Parsed attention window settings (inherited from this priority or ancestors).
   List<AttentionWindow>? get attentionWindows =>

@@ -93,6 +93,9 @@ class NoteEditorState extends State<NoteEditor> {
       }
       // Connectors that don't handle replies are never mentionable
       if (twist.isSource && !twist.defaultMentionCreated) continue;
+      // Sources with defaultMentionCreated always default ON —
+      // they appear in threadTwists because they created this thread
+      if (twist.isSource && twist.defaultMentionCreated) continue;
       final isAuthor = threadState.notes.any(
         (n) => n.authorId.toUuid() == twist.id,
       ) || threadState.links.any(

@@ -127,9 +127,19 @@ class ManageConnections extends Command {
   static ({List<UpcomingConnection> connections, Set<String> votedByUser})?
   _upcomingCache;
 
+  /// Cached pre-built item lists, populated on first fetch and reused for
+  /// client-side filtering on subsequent keystrokes.
+  static ({
+    List<_ActiveSource> active,
+    List<_AvailableSource> available,
+    List<_UpcomingConnection> upcoming,
+    UsageData? usage,
+  })? _dataCache;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
     _upcomingCache = null; // Reset cache for each new session
+    _dataCache = null;
     try {
       // Track newly activated source so we can open EditSource after
       // SelectModal closes (avoids a flash of the list between modals).
@@ -167,6 +177,7 @@ class ManageConnections extends Command {
             await _NotifyUpcomingConnection(item).run(ctx);
           }
           // Refresh items after returning from child command
+          _dataCache = null;
           await refreshFn?.call();
           return false; // Keep SelectModal open
         },
@@ -179,6 +190,10 @@ class ManageConnections extends Command {
           name: activatedSourceName!,
           isNewlyActivated: true,
         ).run(context);
+        // Re-open ManageConnections so user lands back on connections list
+        if (context.mounted) {
+          return run(context);
+        }
       }
 
       return const CommandSkipped();
@@ -200,9 +215,48 @@ class ManageConnections extends Command {
   static Future<List<SelectGroup<_ConnectionItem>>> _fetchItems(
     String? search,
   ) async {
-    // Fetch source summaries, available twists, usage, and upcoming connections
-    // in parallel. Source summaries include account info and enabled counts,
-    // eliminating N separate /integrations calls.
+    // Use cached data for filtered searches; only hit the network on the
+    // initial load (search == null) or when the cache is empty (refresh).
+    if (_dataCache == null) {
+      await _loadData();
+    }
+    final cache = _dataCache!;
+
+    // Filter by search
+    List<_ConnectionItem> filteredActive = cache.active;
+    List<_ConnectionItem> filteredAvailable = cache.available;
+    List<_ConnectionItem> filteredUpcoming = cache.upcoming;
+    if (search != null && search.isNotEmpty) {
+      final words = search.toLowerCase().trim().split(RegExp(r'\s+'));
+      bool matches(_ConnectionItem item) {
+        final text = item.filterText.toLowerCase();
+        return words.every(
+          (w) => text.split(RegExp(r'[\s/]+')).any((fw) => fw.startsWith(w)),
+        );
+      }
+
+      filteredActive = cache.active.where(matches).toList();
+      filteredAvailable = cache.available.where(matches).toList();
+      filteredUpcoming = cache.upcoming.where(matches).toList();
+    }
+
+    final usage = cache.usage;
+    final activeTitle = usage != null
+        ? 'Active connections ${_usageSuffix(usage, _ResourceType.connections)}'
+        : 'Active connections';
+
+    return [
+      if (filteredActive.isNotEmpty || usage != null)
+        SelectGroup(title: activeTitle, items: filteredActive),
+      if (filteredAvailable.isNotEmpty)
+        SelectGroup(title: 'Available connections', items: filteredAvailable),
+      if (filteredUpcoming.isNotEmpty)
+        SelectGroup(title: 'Upcoming connections', items: filteredUpcoming),
+    ];
+  }
+
+  /// Fetches data from the network and populates [_dataCache].
+  static Future<void> _loadData() async {
     final defaultPriority = await Priority.getDefault();
     final futures = <Future<dynamic>>[
       TwistApi.getSourcesSummary(),
@@ -292,36 +346,12 @@ class ManageConnections extends Command {
       }
     }
 
-    // Filter by search
-    List<_ConnectionItem> filteredActive = activeItems;
-    List<_ConnectionItem> filteredAvailable = availableItems;
-    List<_ConnectionItem> filteredUpcoming = upcomingItems;
-    if (search != null && search.isNotEmpty) {
-      final words = search.toLowerCase().trim().split(RegExp(r'\s+'));
-      bool matches(_ConnectionItem item) {
-        final text = item.filterText.toLowerCase();
-        return words.every(
-          (w) => text.split(RegExp(r'[\s/]+')).any((fw) => fw.startsWith(w)),
-        );
-      }
-
-      filteredActive = activeItems.where(matches).toList();
-      filteredAvailable = availableItems.where(matches).toList();
-      filteredUpcoming = upcomingItems.where(matches).toList();
-    }
-
-    final activeTitle = usage != null
-        ? 'Active connections ${_usageSuffix(usage, _ResourceType.connections)}'
-        : 'Active connections';
-
-    return [
-      if (filteredActive.isNotEmpty || usage != null)
-        SelectGroup(title: activeTitle, items: filteredActive),
-      if (filteredAvailable.isNotEmpty)
-        SelectGroup(title: 'Available connections', items: filteredAvailable),
-      if (filteredUpcoming.isNotEmpty)
-        SelectGroup(title: 'Upcoming connections', items: filteredUpcoming),
-    ];
+    _dataCache = (
+      active: activeItems,
+      available: availableItems,
+      upcoming: upcomingItems,
+      usage: usage,
+    );
   }
 
   static Widget _buildItem(_ConnectionItem item, bool isLoading) {
@@ -779,7 +809,7 @@ class EditSource extends ShowForm {
     this.logoUrlDark,
     super.subtitle,
   }) : super(
-         title: name,
+         title: isNewlyActivated ? 'Set up $name' : name,
          icon: PlotIcon.settings,
          form: (context) => _buildForm(
            priorityTwistId,
@@ -878,17 +908,23 @@ class EditSource extends ShowForm {
         : null;
 
     return FormData(
-      title: name,
+      title: isNewlyActivated ? 'Set up $name' : name,
       groups: [
         StaticFormGroup(
           items: [
             if (optionItems != null) ...optionItems.items,
+            if (isNewlyActivated && (integrations.accounts.isNotEmpty || integrations.channels.isNotEmpty))
+              FormInfo(
+                key: 'sync_message',
+                text: 'Select what you\'d like to sync.',
+              ),
             FormChannelList(
               key: 'integrations',
               controller: sourceChannelListController,
               validator: () => integrationChanges.selectedChannels.isNotEmpty,
               builder: (context) => SetupSourceWidget(
                 priorityTwistId: priorityTwistId,
+                setupMode: isNewlyActivated,
                 isAccountBased: isAccountBased,
                 sourceName: name,
                 logoUrl: logoUrl,
@@ -918,6 +954,7 @@ class EditSource extends ShowForm {
                   initialCreateThreadsByType: initialCreateThreadsByType,
                   changes: integrationChanges,
                   optionItems: optionItems,
+                  isNewlyActivated: isNewlyActivated,
                 );
               },
             ),
@@ -1156,6 +1193,7 @@ class AddSourceDetail extends ShowForm {
         channels: integrations.channels,
         optionsSchema: integrations.optionsSchema,
         optionsConfig: integrations.optionsConfig,
+        organizationDomains: integrations.organizationDomains,
       );
     }
 
@@ -1198,6 +1236,7 @@ class AddSourceDetail extends ShowForm {
           channels: refreshed.channels,
           optionsSchema: refreshed.optionsSchema,
           optionsConfig: refreshed.optionsConfig,
+          organizationDomains: refreshed.organizationDomains,
         );
       }
 
@@ -1896,11 +1935,6 @@ class SetupTwist extends ShowForm {
     _currentDraftId = null;
   }
 
-  static bool _isUnderPlot(Priority priority, Priority plotPriority) {
-    return priority.id == plotPriority.id ||
-        plotPriority.path.isParent(priority.path);
-  }
-
   static Future<FormData> _buildForm(BuildContext context, Twist twist) async {
     final draftId = _currentDraftId;
     if (draftId == null) {
@@ -1952,19 +1986,14 @@ class SetupTwist extends ShowForm {
       key: 'priority',
       label: 'Add to Priority',
       initialValue: initialPriority,
-      items: (search) async {
-        final priorities = await Priority.get(
-          order: PriorityOrder.nested,
-          search: search,
-        );
-        final plot = priorities.firstWhereOrNull((p) => p.key == '@plot');
-        if (plot == null) return priorities;
-        return priorities.where((p) => !_isUnderPlot(p, plot)).toList();
-      },
+      items: (search) async => Priority.excludePlot(
+        await Priority.get(order: PriorityOrder.nested, search: search),
+      ),
       labelBuilder: (p) => PriorityLabel(priority: p),
       titleBuilder: (p) => p.ancestorsLabel() != null
           ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
           : p.title,
+      onAdd: (ctx) => createPriorityInline(ctx),
     );
 
     // Update priority notifier when selection changes
@@ -2811,8 +2840,9 @@ class SaveSource extends Command {
     this.initialCreateThreadsByType = const {},
     required this.changes,
     this.optionItems,
+    this.isNewlyActivated = false,
   }) : super(
-         title: 'Save',
+         title: isNewlyActivated ? 'Add connection' : 'Save',
          icon: FontAwesomeIcons.check,
          eventObject: EventObject.twist,
          eventAction: EventAction.updated,
@@ -2828,6 +2858,9 @@ class SaveSource extends Command {
 
   /// Option items for no-provider connectors (API key, etc.).
   final TwistOptionItems? optionItems;
+
+  /// When true, the button shows "Add connection" instead of "Save".
+  final bool isNewlyActivated;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

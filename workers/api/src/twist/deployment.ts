@@ -4,7 +4,7 @@ import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { buildTwist } from "./builder";
-import { addReleaseNote } from "./dev-activities";
+import { addUpgradeNote } from "./dev-activities";
 import { type TwistPermissions, storeTwistModule } from "./index";
 import type { TwistSource } from "./types";
 import { getPersonalPlan } from "../utils/limits";
@@ -60,8 +60,6 @@ export async function deployTwist({
   logoUrl,
   logoUrlDark,
   userId,
-  userName,
-  userEmail,
   dryRun = false,
   onProgress,
 }: DeployTwistOptions): Promise<DeployTwistResult> {
@@ -125,6 +123,7 @@ export async function deployTwist({
   let optionsSchema: Record<string, unknown> | undefined;
   let isNoProviderConnector = false;
   let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string } | null = null;
+  let twistPackageId: string;
   try {
     if (dryRun) {
       onProgress?.("Analyzing permissions");
@@ -138,11 +137,12 @@ export async function deployTwist({
       .select("twist_package_id")
       .where("id", "=", String(twistAdminId))
       .executeTakeFirstOrThrow();
+    twistPackageId = adminData.twist_package_id;
 
     const storeResult = await storeTwistModule({
       env,
       ctx,
-      id: adminData.twist_package_id,
+      id: twistPackageId,
       module: moduleCode,
       sourcemap: sourcemapCode,
       environment,
@@ -354,7 +354,6 @@ export async function deployTwist({
   }
 
   // If deploying to review and auto_approve is true, also deploy to public
-  let autoApproved = false;
   if (environment === "review") {
     const twistAdmin = await db
       .selectFrom("twist_admin")
@@ -404,7 +403,6 @@ export async function deployTwist({
           .executeTakeFirstOrThrow();
 
         logger.info("Successfully auto-deployed twist to public environment");
-        autoApproved = true;
 
         // Upgrade callbacks for PUBLIC priority_twists too
         // This ensures webhooks execute with the new twist version
@@ -453,27 +451,11 @@ export async function deployTwist({
     }
   }
 
-  // Add release note for successful deployment
+  // Add upgrade note to the Logs thread
   try {
-    const adminForRelease = await db
-      .selectFrom("twist_admin")
-      .select(["twist_package_id", "priority_id"])
-      .where("id", "=", String(twistAdminId))
-      .executeTakeFirst();
-
-    if (adminForRelease?.priority_id) {
-      await addReleaseNote(db, adminForRelease.twist_package_id, adminForRelease.priority_id, {
-        userName,
-        userEmail,
-        userId: userId || undefined,
-        environment,
-        version,
-        autoApproveToPublic: environment === "review" && autoApproved,
-      });
-    }
-  } catch (releaseNoteError) {
-    // Log but don't fail the deployment
-    logger.error("Failed to add release note (deployment succeeded)", releaseNoteError as Error);
+    await addUpgradeNote(env, twistPackageId, environment, version);
+  } catch (upgradeNoteError) {
+    logger.error("Failed to add upgrade note (deployment succeeded)", upgradeNoteError as Error);
   }
 
   return {

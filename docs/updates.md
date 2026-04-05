@@ -1,3 +1,8 @@
+- Improved the connector setup experience — clearer titles and button labels guide you through each step, and you now return to the connections list after adding a new connection instead of going all the way back to settings
+- Fixed Google Chat messages showing "Unknown author" for your own messages — the connector now properly resolves your Google account to your Plot identity
+- Fixed replies to Google Chat threads appearing twice in Google Chat
+- The reply chip for Google Chat threads now defaults to on, so your replies are sent to Google Chat automatically
+- Jira now automatically receives real-time updates via webhooks — previously you had to manually configure webhooks in Jira's admin panel
 - Adding a note to a thread now immediately moves it to the top of the activity feed instead of waiting for a sync
 - Notes and new threads now default to private in priorities that have viewers — this prevents accidentally posting public messages that viewers can see, and you can still toggle private off when you want to post publicly
 - Thread titles now reliably get AI-generated summaries — previously some threads would only show a truncated version of the note content instead of a proper title

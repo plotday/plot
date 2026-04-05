@@ -123,9 +123,22 @@ export async function getOrCreateTwistDevelopmentPriority(
         path: path as string,
         updated_by: 0,
         key: "@plot.twist-dev",
+        inherit_members: false,
       })
       .returning(["id"])
       .executeTakeFirstOrThrow();
+
+    // Add user as viewer (inherit_members=false blocks root member role)
+    await db
+      .insertInto("priority_user")
+      .values({
+        user_id: userId,
+        priority_id: createResult.id,
+        role: "viewer",
+        personal: false,
+      })
+      .onConflict((oc) => oc.doNothing())
+      .execute();
 
     return createResult.id;
   } catch (insertError) {

@@ -168,6 +168,76 @@ export async function deleteSubscription(
 }
 
 /**
+ * Grants a service account the `roles/pubsub.publisher` role on a topic.
+ *
+ * Required for services like Google Workspace Events that need to publish
+ * to the topic but don't automatically grant themselves access (unlike Gmail's
+ * `users.watch()` which handles this internally).
+ *
+ * @param config - Pub/Sub configuration
+ * @param topicName - Full topic name (e.g., "projects/plot-core/topics/ps-abc123")
+ * @param serviceAccount - Service account email to grant publish access
+ */
+export async function grantTopicPublisher(
+  config: PubSubConfig,
+  topicName: string,
+  serviceAccount: string
+): Promise<void> {
+  const accessToken = await getAccessToken(
+    config.serviceAccountEmail,
+    config.serviceAccountKey
+  );
+
+  const url = `https://pubsub.googleapis.com/v1/${topicName}:getIamPolicy`;
+  const policyResponse = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  let policy: { bindings?: Array<{ role: string; members: string[] }>; etag?: string } = {};
+  if (policyResponse.ok) {
+    policy = await policyResponse.json() as typeof policy;
+  }
+
+  const member = serviceAccount.startsWith("serviceAccount:")
+    ? serviceAccount
+    : `serviceAccount:${serviceAccount}`;
+
+  // Check if binding already exists
+  const bindings = policy.bindings ?? [];
+  const publisherBinding = bindings.find(
+    (b) => b.role === "roles/pubsub.publisher"
+  );
+  if (publisherBinding?.members.includes(member)) {
+    return; // Already granted
+  }
+
+  // Add publisher binding
+  if (publisherBinding) {
+    publisherBinding.members.push(member);
+  } else {
+    bindings.push({ role: "roles/pubsub.publisher", members: [member] });
+  }
+
+  const setUrl = `https://pubsub.googleapis.com/v1/${topicName}:setIamPolicy`;
+  const setResponse = await fetch(setUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      policy: { bindings, etag: policy.etag },
+    }),
+  });
+
+  if (!setResponse.ok) {
+    const error = await setResponse.text();
+    throw new Error(`Failed to grant publisher on topic: ${error}`);
+  }
+}
+
+/**
  * Generates a unique topic ID for a Gmail webhook.
  */
 export function generateTopicId(): string {

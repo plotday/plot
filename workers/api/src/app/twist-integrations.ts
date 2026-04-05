@@ -17,6 +17,25 @@ import { saveSecureOptions } from "../utils/secure-options";
 
 const twistIntegrations = new Hono<{ Bindings: Bindings }>();
 
+/** Query organization domains for smart channel default suggestions. */
+async function getOrganizationDomains(
+  db: Kysely<DB>
+): Promise<Record<string, string[]>> {
+  const rows = await db
+    .selectFrom("domain")
+    .select(["organization_id", "name"])
+    .where("organization_id", "is not", null)
+    .execute();
+
+  const result: Record<string, string[]> = {};
+  for (const row of rows) {
+    const orgId = String(row.organization_id);
+    if (!result[orgId]) result[orgId] = [];
+    result[orgId].push(row.name);
+  }
+  return result;
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -282,11 +301,14 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       optionsConfig = masked;
     }
 
+    const organizationDomains = await getOrganizationDomains(c.var.db);
+
     return c.json({
       providers: [], accounts, syncables, optionsSchema, optionsConfig,
       singleChannel: config.singleChannel,
       shared: twistInfo.shared,
       keyOption: twistInfo.keyOption,
+      organizationDomains,
     });
   }
 
@@ -331,6 +353,8 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     allChannels.push(...data.syncables);
   }
 
+  const organizationDomains = await getOrganizationDomains(c.var.db);
+
   return c.json({
     providers: allProviders,
     accounts: allAccounts,
@@ -338,6 +362,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     singleChannel: config.singleChannel,
     shared: twistInfo.shared,
     keyOption: twistInfo.keyOption,
+    organizationDomains,
   });
 });
 
