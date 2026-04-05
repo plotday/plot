@@ -47,7 +47,7 @@ type SyncState = {
  */
 export class Jira extends Connector<Jira> {
   static readonly PROVIDER = AuthProvider.Atlassian;
-  static readonly SCOPES = ["read:jira-work", "write:jira-work", "read:jira-user"];
+  static readonly SCOPES = ["read:jira-work", "write:jira-work", "read:jira-user", "manage:jira-webhook"];
   static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Atlassian;
@@ -173,33 +173,143 @@ export class Jira extends Connector<Jira> {
   }
 
   /**
-   * Setup Jira webhook for real-time updates
-   *
-   * Note: Jira webhooks need to be configured manually in Jira's administration panel.
-   * This method creates the webhook URL that should be used in Jira's webhook settings.
-   *
-   * To configure manually in Jira:
-   * 1. Go to Settings > System > WebHooks
-   * 2. Create a new webhook
-   * 3. Use the webhook URL created by this method
-   * 4. Select events: issue_created, issue_updated, issue_deleted, comment_created, comment_updated, comment_deleted
-   * 5. Set JQL filter: project = {projectId}
+   * Setup Jira webhook for real-time updates.
+   * Registers a dynamic webhook via the Jira REST API (expires after 30 days, auto-renewed).
    */
   private async setupJiraWebhook(
     projectId: string
   ): Promise<void> {
     try {
-      // Create webhook URL - this can be used for manual webhook configuration
       const webhookUrl = await this.tools.network.createWebhook(
         {},
         this.onWebhook,
         projectId
       );
 
-      // Store webhook URL for reference
+      // Skip webhook registration in development
+      if (
+        webhookUrl.includes("localhost") ||
+        webhookUrl.includes("127.0.0.1")
+      ) {
+        return;
+      }
+
       await this.set(`webhook_url_${projectId}`, webhookUrl);
+
+      // Skip if already registered (both onChannelEnabled and startSync call this)
+      const existingId = await this.get<number>(`webhook_id_${projectId}`);
+      if (existingId) {
+        return;
+      }
+
+      const client = await this.getClient(projectId);
+
+      const result = await client.webhooks.registerDynamicWebhooks({
+        url: webhookUrl,
+        webhooks: [
+          {
+            jqlFilter: `project = ${projectId}`,
+            events: [
+              "jira:issue_created",
+              "jira:issue_updated",
+              "jira:issue_deleted",
+              "comment_created",
+              "comment_updated",
+              "comment_deleted",
+            ],
+          },
+        ],
+      });
+
+      const registration = result.webhookRegistrationResult?.[0];
+      if (registration?.createdWebhookId) {
+        await this.set(
+          `webhook_id_${projectId}`,
+          registration.createdWebhookId
+        );
+        await this.scheduleWebhookRenewal(projectId);
+      } else if (registration?.errors?.length) {
+        console.error(
+          "Jira webhook registration errors:",
+          registration.errors
+        );
+      }
     } catch (error) {
-      console.error("Failed to create webhook URL:", error);
+      console.error(
+        "Failed to register Jira webhook - real-time updates will not work:",
+        error
+      );
+    }
+  }
+
+  /**
+   * Schedule proactive renewal of a Jira webhook 24 hours before its 30-day expiry.
+   */
+  private async scheduleWebhookRenewal(projectId: string): Promise<void> {
+    // Jira dynamic webhooks expire after 30 days; renew 24h before
+    const renewalTime = new Date(
+      Date.now() + 29 * 24 * 60 * 60 * 1000
+    );
+
+    const renewalCallback = await this.callback(
+      this.renewJiraWebhook,
+      projectId
+    );
+
+    const taskToken = await this.runTask(renewalCallback, {
+      runAt: renewalTime,
+    });
+
+    if (taskToken) {
+      await this.set(`webhook_renewal_task_${projectId}`, taskToken);
+    }
+  }
+
+  /**
+   * Renew a Jira webhook by refreshing its expiry, or re-registering if refresh fails.
+   */
+  private async renewJiraWebhook(projectId: string): Promise<void> {
+    try {
+      const webhookId = await this.get<number>(`webhook_id_${projectId}`);
+      if (!webhookId) {
+        // No webhook to renew — re-register from scratch
+        await this.setupJiraWebhook(projectId);
+        return;
+      }
+
+      const client = await this.getClient(projectId);
+
+      try {
+        await client.webhooks.refreshWebhooks({
+          webhookIds: [webhookId],
+        });
+      } catch (refreshError) {
+        console.warn(
+          `Failed to refresh Jira webhook ${webhookId}, re-registering:`,
+          refreshError
+        );
+        // Delete old webhook (best effort)
+        try {
+          await client.webhooks.deleteWebhookById({
+            webhookIds: [webhookId],
+          });
+        } catch {
+          // ignore deletion errors
+        }
+        await this.clear(`webhook_id_${projectId}`);
+
+        // Re-register from scratch
+        await this.setupJiraWebhook(projectId);
+        return;
+      }
+
+      // Refresh succeeded — schedule next renewal
+      await this.scheduleWebhookRenewal(projectId);
+    } catch (error) {
+      console.error(
+        `Failed to renew Jira webhook for project ${projectId}:`,
+        error
+      );
     }
   }
 
@@ -798,11 +908,35 @@ export class Jira extends Connector<Jira> {
    * Stop syncing a Jira project
    */
   async stopSync(projectId: string): Promise<void> {
-    // Cleanup webhook URL
-    await this.clear(`webhook_url_${projectId}`);
-    await this.clear(`webhook_id_${projectId}`);
+    // Cancel pending webhook renewal task
+    const renewalTaskToken = await this.get<string>(
+      `webhook_renewal_task_${projectId}`
+    );
+    if (renewalTaskToken) {
+      try {
+        await this.cancelTask(renewalTaskToken);
+      } catch (error) {
+        console.warn("Failed to cancel webhook renewal task:", error);
+      }
+      await this.clear(`webhook_renewal_task_${projectId}`);
+    }
 
-    // Cleanup sync state
+    // Delete webhook from Jira
+    const webhookId = await this.get<number>(`webhook_id_${projectId}`);
+    if (webhookId) {
+      try {
+        const client = await this.getClient(projectId);
+        await client.webhooks.deleteWebhookById({
+          webhookIds: [webhookId],
+        });
+      } catch (error) {
+        console.warn("Failed to delete Jira webhook:", error);
+      }
+    }
+
+    // Cleanup stored state
+    await this.clear(`webhook_id_${projectId}`);
+    await this.clear(`webhook_url_${projectId}`);
     await this.clear(`sync_state_${projectId}`);
   }
 }
