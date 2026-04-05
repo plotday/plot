@@ -588,6 +588,7 @@ export const CONNECTIONS: Connection[] = [
   {
     name: "Fellow",
     logo: "/assets/logo-fellow.svg",
+    logoDark: "/assets/logo-fellow-dark.svg",
     category: "Productivity",
     entities: ["Meeting Notes", "Action Items"],
     available: false,
