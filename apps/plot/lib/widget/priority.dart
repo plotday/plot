@@ -81,29 +81,53 @@ class PriorityWidget extends StatelessWidget {
       trailingBuilder: (isHovered, hasFocus) {
         final hovered = isHovered || hasFocus;
         final canShare = !(priority.root && priority.personal);
+        final showDragHandle =
+            !hasPhysicalKeyboard() && reorderableIndex != null;
 
-        return Padding(
-          padding: EdgeInsets.only(right: leadingH),
-          child: Row(
-            children: [
-              // Hover commands appear to the left
-              if (hovered) ...[
-                Button.icon(
-                  SetTopPriority(priority, priority.topOrder == null),
+        return Row(
+          children: [
+            Padding(
+              padding: EdgeInsets.only(right: showDragHandle ? 0 : leadingH),
+              child: Row(
+                children: [
+                  // Hover commands appear to the left
+                  if (hovered) ...[
+                    Button.icon(
+                      SetTopPriority(priority, priority.topOrder == null),
+                    ),
+                    Button.icon(ShowPriorityCommands(priority)),
+                  ],
+                  // Persistent sharing/privacy icon (rightmost)
+                  if (canShare)
+                    Button.icon(
+                      ManagePrioritySharing(priority),
+                      color: hovered
+                          ? buildContext.theme.plotColors.muted
+                          : buildContext.theme.plotColors.veryMuted,
+                      hoverColor: buildContext.theme.colors.foreground,
+                    ),
+                ],
+              ),
+            ),
+            if (showDragHandle)
+              ReorderableDragStartListener(
+                index: reorderableIndex!,
+                child: Container(
+                  color: const Color(0x00000000),
+                  padding: EdgeInsets.only(
+                    left: canShare ? 0 : 8,
+                    right: leadingH,
+                    top: 8,
+                    bottom: 8,
+                  ),
+                  child: Icon(
+                    FontAwesomeIcons.gripDotsVertical,
+                    size: buildContext.theme.iconSizes.sm,
+                    color: buildContext.theme.plotColors.muted,
+                  ),
                 ),
-                Button.icon(ShowPriorityCommands(priority)),
-              ],
-              // Persistent sharing/privacy icon (rightmost)
-              if (canShare)
-                Button.icon(
-                  ManagePrioritySharing(priority),
-                  color: hovered
-                      ? buildContext.theme.plotColors.muted
-                      : buildContext.theme.plotColors.veryMuted,
-                  hoverColor: buildContext.theme.colors.foreground,
-                ),
-            ],
-          ),
+              ),
+          ],
         );
       },
       title: showAncestry ? null : priority.title,
@@ -137,26 +161,6 @@ class PriorityWidget extends StatelessWidget {
         ),
       ),
     );
-
-    if (!hasPhysicalKeyboard() && reorderableIndex != null) {
-      return Row(
-        children: [
-          Expanded(child: listTile),
-          ReorderableDragStartListener(
-            index: reorderableIndex!,
-            child: Container(
-              color: const Color(0x00000000),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Icon(
-                FontAwesomeIcons.gripDotsVertical,
-                size: buildContext.theme.iconSizes.sm,
-                color: buildContext.theme.plotColors.muted,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
 
     if (hasPhysicalKeyboard()) {
       return ContextMenu(
