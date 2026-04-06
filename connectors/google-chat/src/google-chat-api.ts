@@ -242,6 +242,45 @@ export class GoogleChatApi {
     });
   }
 
+  // ---- Reactions ----
+
+  /**
+   * Lists all reactions on a message, with per-user data.
+   */
+  async listReactions(messageName: string): Promise<EmojiReaction[]> {
+    const reactions: EmojiReaction[] = [];
+    let pageToken: string | undefined;
+
+    do {
+      const data = await this.call(`${this.chatBaseUrl}/${messageName}/reactions`, {
+        params: { pageToken, pageSize: 100 },
+      });
+      if (data.reactions) reactions.push(...data.reactions);
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+
+    return reactions;
+  }
+
+  /**
+   * Creates a reaction on a message as the authenticated user.
+   */
+  async createReaction(messageName: string, emoji: string): Promise<EmojiReaction> {
+    return await this.call(`${this.chatBaseUrl}/${messageName}/reactions`, {
+      method: "POST",
+      body: { emoji: { unicode: emoji } },
+    });
+  }
+
+  /**
+   * Deletes a reaction by its full resource name.
+   */
+  async deleteReaction(reactionName: string): Promise<void> {
+    await this.call(`${this.chatBaseUrl}/${reactionName}`, {
+      method: "DELETE",
+    });
+  }
+
   // ---- User Info ----
 
   /**
@@ -434,7 +473,7 @@ export function groupMessagesByThread(
 /**
  * Maps common Unicode emoji to Plot Count Tags.
  */
-const EMOJI_TO_TAG: Record<string, Tag> = {
+export const EMOJI_TO_TAG: Record<string, Tag> = {
   "👍": Tag.Yes,
   "👎": Tag.No,
   "🎉": Tag.Tada,
@@ -452,6 +491,15 @@ const EMOJI_TO_TAG: Record<string, Tag> = {
   "👀": Tag.Looking,
   "💯": Tag.Totally,
 };
+
+/**
+ * Reverse mapping: Plot Count Tag → Unicode emoji.
+ * Derived from EMOJI_TO_TAG, preferring the first match for duplicates.
+ */
+export const TAG_TO_EMOJI: Partial<Record<Tag, string>> = {};
+for (const [emoji, tag] of Object.entries(EMOJI_TO_TAG)) {
+  if (!TAG_TO_EMOJI[tag as Tag]) TAG_TO_EMOJI[tag as Tag] = emoji;
+}
 
 /**
  * Extracts @mentions from a message's annotations, falling back to
@@ -485,26 +533,48 @@ function extractMentions(
 }
 
 /**
- * Builds tags from emoji reaction summaries across all messages in a thread.
+ * Builds note-level tags for a single message from its reactions.
+ * When per-user reaction data is available (from listReactions API),
+ * uses that for accurate actor attribution. Otherwise falls back to
+ * emojiReactionSummaries and attributes to the message sender as a proxy.
  */
-function extractReactionTags(
-  messages: Message[],
+function extractMessageReactionTags(
+  msg: Message,
+  reactions?: EmojiReaction[],
+  memberInfo?: Map<string, MemberInfo>,
 ): NewTags | undefined {
   const tagActors = new Map<Tag, NewActor[]>();
 
-  for (const msg of messages) {
-    if (!msg.emojiReactionSummaries) continue;
+  if (reactions && reactions.length > 0) {
+    // Per-user reaction data available — filter to this message
+    const msgId = msg.name;
+    for (const reaction of reactions) {
+      // Reaction name: spaces/{spaceId}/messages/{messageId}/reactions/{reactionId}
+      // Check if this reaction belongs to this message
+      if (reaction.name && !reaction.name.startsWith(msgId + "/")) continue;
+
+      const unicode = reaction.emoji.unicode;
+      if (!unicode) continue;
+      const tag = EMOJI_TO_TAG[unicode];
+      if (!tag) continue;
+
+      const actor = reactionUserToNewActor(reaction.user, memberInfo);
+      const existing = tagActors.get(tag) ?? [];
+      existing.push(actor);
+      tagActors.set(tag, existing);
+    }
+  } else if (msg.emojiReactionSummaries) {
+    // Fall back to summary data — attribute to message sender as a proxy
     for (const summary of msg.emojiReactionSummaries) {
       const unicode = summary.emoji.unicode;
       if (!unicode) continue;
       const tag = EMOJI_TO_TAG[unicode];
       if (!tag) continue;
 
-      // We don't have per-user reaction data from summaries,
-      // so attribute to the message sender as a reasonable proxy
-      if (!tagActors.has(tag)) {
-        tagActors.set(tag, []);
-      }
+      const actor = senderToNewActor(msg.sender, memberInfo);
+      const existing = tagActors.get(tag) ?? [];
+      existing.push(actor);
+      tagActors.set(tag, existing);
     }
   }
 
@@ -512,9 +582,31 @@ function extractReactionTags(
 
   const tags: NewTags = {};
   for (const [tag, actors] of tagActors) {
-    tags[tag] = actors;
+    // Deduplicate actors by source accountId
+    const seen = new Set<string>();
+    tags[tag] = actors.filter((a) => {
+      const key = "source" in a && a.source ? a.source.accountId : "name" in a ? a.name : "";
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
   return tags;
+}
+
+/**
+ * Converts a reaction user reference to a NewActor.
+ */
+function reactionUserToNewActor(
+  user: EmojiReaction["user"],
+  memberInfo?: Map<string, MemberInfo>,
+): NewActor {
+  const info = memberInfo?.get(user.name);
+  return {
+    name: user.displayName || info?.displayName || user.name,
+    ...(info?.email ? { email: info.email } : {}),
+    source: { provider: AuthProvider.Google, accountId: user.name },
+  };
 }
 
 /**
@@ -544,7 +636,8 @@ export function transformChatThread(
   spaceId: string,
   initialSync: boolean,
   memberInfo?: Map<string, MemberInfo>,
-  members?: NewActor[]
+  members?: NewActor[],
+  reactions?: EmojiReaction[]
 ): NewLinkWithNotes {
   const firstMessage = messages[0];
   const threadKey = extractThreadKey(firstMessage.thread.name);
@@ -554,9 +647,6 @@ export function transformChatThread(
 
   // Plain-text preview from first message (never HTML)
   const preview = firstMessage.text?.substring(0, 200) ?? null;
-
-  // Aggregate reaction tags across all messages in the thread
-  const reactionTags = extractReactionTags(messages);
 
   return {
     source: `google-chat:${spaceId}:thread:${threadKey}`,
@@ -579,6 +669,7 @@ export function transformChatThread(
         ? baseContent + attachmentMarkdown
         : baseContent;
       const mentions = extractMentions(msg, memberInfo, members);
+      const reactionTags = extractMessageReactionTags(msg, reactions, memberInfo);
 
       return {
         key: `message-${extractMessageId(msg.name)}`,
@@ -587,9 +678,9 @@ export function transformChatThread(
         created: new Date(msg.createTime),
         author: senderToNewActor(msg.sender, memberInfo),
         ...(mentions.length > 0 ? { mentions } : {}),
+        ...(reactionTags ? { tags: reactionTags } : {}),
       };
     }),
-    ...(reactionTags ? { tags: reactionTags } : {}),
     preview,
     ...(initialSync ? { unread: false, archived: false } : {}),
   };

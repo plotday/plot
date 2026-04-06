@@ -4,6 +4,7 @@ import {
   type ToolBuilder,
 } from "@plotday/twister";
 import type { Actor, NewActor, Note, Thread } from "@plotday/twister/plot";
+import { Tag } from "@plotday/twister/tag";
 import {
   AuthProvider,
   type AuthToken,
@@ -15,6 +16,9 @@ import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
 import {
   GoogleChatApi,
+  EMOJI_TO_TAG,
+  TAG_TO_EMOJI,
+  type EmojiReaction,
   type Message,
   type MemberInfo,
   type Subscription,
@@ -29,11 +33,13 @@ import {
 const DM_CHANNEL_ID = "__direct_messages__";
 const MAX_SYNC_BATCHES = 50;
 
-/** Workspace Events event types for Google Chat messages. */
+/** Workspace Events event types for Google Chat messages and reactions. */
 const CHAT_EVENT_TYPES = [
   "google.workspace.chat.message.v1.created",
   "google.workspace.chat.message.v1.updated",
   "google.workspace.chat.message.v1.deleted",
+  "google.workspace.chat.reaction.v1.created",
+  "google.workspace.chat.reaction.v1.deleted",
 ];
 
 /**
@@ -584,6 +590,7 @@ export class GoogleChat extends Connector<GoogleChat> {
         subscriptionName: subscription.name,
         topicName,
         expireTime: subscription.expireTime,
+        eventTypes: CHAT_EVENT_TYPES,
         created: new Date().toISOString(),
       });
 
@@ -662,6 +669,8 @@ export class GoogleChat extends Connector<GoogleChat> {
         type?: string;
         // Workspace Events puts the resource directly (e.g. message.name)
         message?: Partial<Message> & { name: string };
+        // Reaction events include a reaction object with parent message name
+        reaction?: EmojiReaction & { message?: { name: string } };
         name?: string;
         // Legacy expected shape (data.message / data.name)
         data?: {
@@ -694,7 +703,13 @@ export class GoogleChat extends Connector<GoogleChat> {
 
     console.log(`[google-chat] Event type: ${eventType}`);
 
-    // Only handle message events
+    // Handle reaction events
+    if (eventType.startsWith("google.workspace.chat.reaction.v1.")) {
+      await this.handleReactionEvent(decodedData, channelId);
+      return;
+    }
+
+    // Only handle message events from here
     if (!eventType.startsWith("google.workspace.chat.message.v1.")) {
       return;
     }
@@ -781,6 +796,78 @@ export class GoogleChat extends Connector<GoogleChat> {
     }
   }
 
+  /**
+   * Handles a reaction created/deleted event by re-syncing the parent message
+   * with updated reaction data.
+   */
+  private async handleReactionEvent(
+    decodedData: {
+      type?: string;
+      reaction?: EmojiReaction & { message?: { name: string } };
+      name?: string;
+      data?: { name?: string };
+    },
+    channelId: string
+  ): Promise<void> {
+    // Extract the parent message name from the reaction event
+    const reaction = decodedData.reaction;
+    const reactionName = reaction?.name ?? decodedData.name ?? decodedData.data?.name;
+
+    // Reaction name format: spaces/{spaceId}/messages/{messageId}/reactions/{reactionId}
+    // Parent message name: spaces/{spaceId}/messages/{messageId}
+    let messageName = reaction?.message?.name;
+    if (!messageName && reactionName) {
+      const parts = (reactionName as string).split("/");
+      // Extract "spaces/{spaceId}/messages/{messageId}" from the reaction name
+      if (parts.length >= 4) {
+        messageName = parts.slice(0, 4).join("/");
+      }
+    }
+
+    if (!messageName) {
+      console.warn("[google-chat] Cannot extract message name from reaction event");
+      return;
+    }
+
+    try {
+      const api = await this.getApi(channelId);
+
+      // Fetch the parent message and its reactions
+      const [message, reactions] = await Promise.all([
+        api.getMessage(messageName),
+        api.listReactions(messageName),
+      ]);
+
+      // Re-process as a single-message thread with per-user reaction data
+      const memberInfo = await this.getMemberInfo(api, channelId);
+      const members: NewActor[] = [];
+      for (const [, info] of memberInfo) {
+        if (info.email) members.push({ email: info.email });
+      }
+      const spaceId = extractSpaceId(channelId);
+
+      const plotThread = transformChatThread(
+        [message],
+        spaceId,
+        false,
+        memberInfo,
+        members,
+        reactions
+      );
+
+      plotThread.channelId = channelId;
+      plotThread.meta = {
+        ...plotThread.meta,
+        syncProvider: "google-chat",
+        syncableId: channelId,
+      };
+
+      await this.tools.integrations.saveLink(plotThread);
+    } catch (error) {
+      console.error("[google-chat] Failed to handle reaction event:", error);
+    }
+  }
+
   // ---- Subscription renewal ----
 
   /**
@@ -819,7 +906,8 @@ export class GoogleChat extends Connector<GoogleChat> {
 
   /**
    * Renews the Workspace Events subscription before it expires.
-   * If renewal fails, falls back to recreating the entire setup.
+   * If the subscription was created with outdated event types (e.g. missing
+   * reaction events), recreates it from scratch. Otherwise extends the TTL.
    */
   async renewSubscription(channelId: string): Promise<void> {
     try {
@@ -827,11 +915,24 @@ export class GoogleChat extends Connector<GoogleChat> {
         subscriptionName: string;
         topicName: string;
         expireTime: string;
+        eventTypes?: string[];
       }>(`ws_subscription_${channelId}`);
 
       if (!subData?.subscriptionName) {
         console.warn(
           `No subscription found for channel ${channelId}, recreating`
+        );
+        await this.setupRealtimeSync(channelId);
+        return;
+      }
+
+      // If subscription was created without reaction events, recreate it
+      const hasAllEventTypes = CHAT_EVENT_TYPES.every(
+        (et) => subData.eventTypes?.includes(et)
+      );
+      if (!hasAllEventTypes) {
+        console.log(
+          `[google-chat] Subscription for ${channelId} missing event types, recreating`
         );
         await this.setupRealtimeSync(channelId);
         return;
@@ -889,9 +990,81 @@ export class GoogleChat extends Connector<GoogleChat> {
     }
   }
 
+  // ---- Write-back: reactions from Plot ----
+
+  async onNoteUpdated(note: Note, thread: Thread): Promise<void> {
+    const meta = thread.meta ?? {};
+    const channelId = (meta.channelId ?? meta.syncableId) as string;
+
+    // Extract message name from note key (format: "message-{messageId}")
+    const noteKey = note.key;
+    if (!noteKey?.startsWith("message-")) return;
+    const messageId = noteKey.substring("message-".length);
+    const spaceName = meta.spaceName as string;
+    if (!spaceName) return;
+    const messageName = `${spaceName}/messages/${messageId}`;
+
+    const api = await this.getApi(channelId ?? DM_CHANNEL_ID);
+
+    // Identify the authenticated user's Google user ID
+    const authUser = await this.get<{ googleUserId: string }>("auth_google_user");
+    if (!authUser?.googleUserId) return;
+
+    // Get current reactions from Google Chat for this message
+    let currentReactions: EmojiReaction[];
+    try {
+      currentReactions = await api.listReactions(messageName);
+    } catch {
+      return; // Message may not exist anymore
+    }
+
+    // Build set of Plot tags that have emoji mappings (any actor)
+    const plotTags = new Set<Tag>();
+    for (const [tagIdStr, actorIds] of Object.entries(note.tags)) {
+      const tagId = parseInt(tagIdStr) as Tag;
+      if (!TAG_TO_EMOJI[tagId]) continue;
+      if (actorIds && actorIds.length > 0) {
+        plotTags.add(tagId);
+      }
+    }
+
+    // Build set of the authenticated user's current reactions in Google Chat
+    const chatTags = new Map<Tag, string>(); // Tag → reaction resource name
+    for (const reaction of currentReactions) {
+      if (reaction.user.name !== authUser.googleUserId) continue;
+      const unicode = reaction.emoji.unicode;
+      if (!unicode) continue;
+      const tag = EMOJI_TO_TAG[unicode];
+      if (!tag) continue;
+      chatTags.set(tag, reaction.name);
+    }
+
+    // Add reactions present in Plot but not in Google Chat
+    for (const tag of plotTags) {
+      if (chatTags.has(tag)) continue;
+      const emoji = TAG_TO_EMOJI[tag];
+      if (!emoji) continue;
+      try {
+        await api.createReaction(messageName, emoji);
+      } catch (error) {
+        console.error(`[google-chat] Failed to create reaction ${emoji}:`, error);
+      }
+    }
+
+    // Remove reactions present in Google Chat but not in Plot
+    for (const [tag, reactionName] of chatTags) {
+      if (plotTags.has(tag)) continue;
+      try {
+        await api.deleteReaction(reactionName);
+      } catch (error) {
+        console.error("[google-chat] Failed to delete reaction:", error);
+      }
+    }
+  }
+
   // ---- Write-back: reply from Plot ----
 
-  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+  async onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
     const meta = thread.meta ?? {};
     const channelId = (meta.channelId ?? meta.syncableId) as string;
     const spaceName = meta.spaceName as string;
@@ -914,6 +1087,7 @@ export class GoogleChat extends Connector<GoogleChat> {
       // Store sent message ID for dedup when synced back
       const msgId = `message-${extractMessageId(result.name)}`;
       await this.set(`sent:${msgId}`, true);
+      return msgId;
     } catch (error) {
       console.error("Failed to send Google Chat reply:", error);
     }

@@ -341,10 +341,15 @@ export abstract class Twist<TSelf> {
    *
    * Notes created by the twist itself are filtered out to prevent loops.
    *
+   * Returning a string sets the note's `key` for future upsert matching,
+   * linking the Plot note to its external counterpart so that subsequent
+   * syncs (reactions, edits) update the existing note instead of creating duplicates.
+   *
    * @param note - The newly created note
+   * @returns Optional note key for external deduplication
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onNoteCreated(note: Note, ...args: any[]): Promise<void> {
+  onNoteCreated(note: Note, ...args: any[]): Promise<string | void> {
     return Promise.resolve();
   }
 

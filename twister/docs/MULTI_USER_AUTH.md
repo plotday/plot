@@ -4,11 +4,11 @@ Twists and connectors operating in shared priorities must handle authentication 
 
 ## Auth Models
 
-| Model | Use case | Example |
-|-------|----------|---------|
-| No auth | Twist doesn't need external credentials | Text-only twist |
-| Read-only single auth | Installer connects, synced data visible to all | Calendar sync (read) |
-| Two-way per-user auth | Write-backs use the acting user's credentials | Comments, RSVP responses |
+| Model                 | Use case                                       | Example                  |
+| --------------------- | ---------------------------------------------- | ------------------------ |
+| No auth               | Twist doesn't need external credentials        | Text-only twist          |
+| Read-only single auth | Installer connects, synced data visible to all | Calendar sync (read)     |
+| Two-way per-user auth | Write-backs use the acting user's credentials  | Comments, RSVP responses |
 
 ## Private Auth Activities
 
@@ -32,6 +32,7 @@ async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
 ```
 
 Key points:
+
 - `private: true` — only the author and mentioned users can see the activity
 - `context?.actor` — the user who installed the twist (available from the SDK)
 - Always guard with `?.` since `context` is optional for backward compatibility
@@ -73,7 +74,7 @@ private async onNoteCreated(note: Note): Promise<void> {
 
 ### When Actor ID Is Not Available
 
-For callbacks like `onActivityUpdated` where the acting user's ID is not included in the callback signature, continue using the installer's stored auth token. This is acceptable because:
+For callbacks like `onThreadUpdated` where the acting user's ID is not included in the callback signature, continue using the installer's stored auth token. This is acceptable because:
 
 - Activity field updates (title, assignee, done) are less user-specific
 - The change itself is the same regardless of who made it
@@ -100,11 +101,13 @@ await this.tools.plot.createActivity({
   title: "Connect to sync your changes",
   private: true,
   source: `auth:${actorId}`, // Dedup: one auth request per user
-  notes: [{
-    content: "Connect your account so your changes appear under your name.",
-    links: [authLink],
-    mentions: [{ id: actorId as ActorId }],
-  }],
+  notes: [
+    {
+      content: "Connect your account so your changes appear under your name.",
+      links: [authLink],
+      mentions: [{ id: actorId as ActorId }],
+    },
+  ],
 });
 ```
 

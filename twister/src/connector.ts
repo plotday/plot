@@ -193,11 +193,29 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * Override to write back comments to the external service
    * (e.g., adding a comment to a Linear issue).
    *
+   * Returning a string sets the note's `key` for future upsert matching,
+   * linking the Plot note to its external counterpart so that subsequent
+   * syncs (reactions, edits) update the existing note instead of creating duplicates.
+   *
    * @param note - The created note
+   * @param thread - The thread the note belongs to (includes thread.meta with connector-specific data)
+   * @returns Optional note key for external deduplication
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Called when a note on a thread owned by this connector is updated.
+   * Override to write back changes to the external service
+   * (e.g., syncing reaction tags as emoji reactions).
+   *
+   * @param note - The updated note (includes current tags)
    * @param thread - The thread the note belongs to (includes thread.meta with connector-specific data)
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onNoteCreated(note: Note, thread: Thread): Promise<void> {
+  onNoteUpdated(note: Note, thread: Thread): Promise<void> {
     return Promise.resolve();
   }
 
