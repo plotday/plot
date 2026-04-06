@@ -242,38 +242,50 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     await this.set(`sync_enabled_${channel.id}`, true);
     await this.set(`sync_lock_${channel.id}`, true);
 
-    const api = await this.getApi(channel.id);
+    // Queue all initialization work as a task to avoid blocking the HTTP response.
+    // initChannel makes multiple API calls (changes token, sub-channel discovery,
+    // webhook setup) that would cause the client to spin if run inline.
+    const initCallback = await this.callback(this.initChannel, channel.id);
+    await this.runTask(initCallback);
+  }
+
+  /**
+   * Initializes a channel: sets up sync state, webhook, and starts the first sync batch.
+   * Runs as a task to avoid blocking the HTTP response from onChannelEnabled.
+   */
+  async initChannel(channelId: string): Promise<void> {
+    const api = await this.getApi(channelId);
     const changesToken = await getChangesStartToken(api);
 
-    if (isVirtualChannel(channel.id) && channel.id !== VIRTUAL_SHARED_WITH_ME) {
+    if (isVirtualChannel(channelId) && channelId !== VIRTUAL_SHARED_WITH_ME) {
       // My Drive / Shared drives: discover sub-channels and iterate
-      const subChannelIds = await this.discoverSubChannels(api, channel.id);
+      const subChannelIds = await this.discoverSubChannels(api, channelId);
       const initialState: SyncState = {
-        folderId: channel.id,
+        folderId: channelId,
         changesToken,
         sequence: 1,
-        virtualChannelId: channel.id,
+        virtualChannelId: channelId,
         subChannelIds,
         currentSubChannelIndex: 0,
       };
-      await this.set(`sync_state_${channel.id}`, initialState);
+      await this.set(`sync_state_${channelId}`, initialState);
     } else {
       // Individual folder or Shared with me
       const initialState: SyncState = {
-        folderId: channel.id,
+        folderId: channelId,
         changesToken,
         sequence: 1,
-        ...(channel.id === VIRTUAL_SHARED_WITH_ME ? { virtualChannelId: channel.id } : {}),
+        ...(channelId === VIRTUAL_SHARED_WITH_ME ? { virtualChannelId: channelId } : {}),
       };
-      await this.set(`sync_state_${channel.id}`, initialState);
+      await this.set(`sync_state_${channelId}`, initialState);
     }
 
-    await this.setupDriveWatch(channel.id);
+    await this.setupDriveWatch(channelId);
 
     const syncCallback = await this.callback(
       this.syncBatch,
       1,
-      channel.id,
+      channelId,
       true // initialSync
     );
     await this.runTask(syncCallback);

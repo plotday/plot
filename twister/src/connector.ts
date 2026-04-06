@@ -160,7 +160,30 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
 
   /**
    * Called when a channel resource is enabled for syncing.
-   * Should set up webhooks and start initial sync.
+   *
+   * **IMPORTANT: This method runs inline in the HTTP request handler.**
+   * Any long-running work (webhook setup, API calls, sync) MUST be queued
+   * as a separate task via `this.runTask()`, not executed inline. Blocking
+   * here causes the client to spin waiting for the response.
+   *
+   * Only lightweight operations should appear directly in this method:
+   * `this.set()`, `this.get()`, `this.callback()`, and `this.runTask()`.
+   *
+   * @example
+   * ```typescript
+   * async onChannelEnabled(channel: Channel): Promise<void> {
+   *   await this.set(`sync_enabled_${channel.id}`, true);
+   *   await this.set(`sync_state_${channel.id}`, { channelId: channel.id });
+   *
+   *   // Queue sync as a task — do NOT use this.run() or call sync methods inline
+   *   const syncCallback = await this.callback(this.syncBatch, 1, "full", channel.id, true);
+   *   await this.runTask(syncCallback);
+   *
+   *   // Queue webhook setup as a task — do NOT call setupWebhook() inline
+   *   const webhookCallback = await this.callback(this.setupWebhook, channel.id);
+   *   await this.runTask(webhookCallback);
+   * }
+   * ```
    *
    * @param channel - The channel that was enabled
    */

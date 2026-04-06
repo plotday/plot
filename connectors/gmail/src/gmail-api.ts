@@ -322,8 +322,13 @@ export function getHeader(message: GmailMessage, name: string): string | null {
 function extractBody(part: GmailMessagePart): { content: string; contentType: "text" | "html" } {
   // If this part has a body with data, return it
   if (part.body?.data) {
-    // Gmail API returns base64url-encoded data
-    const decoded = atob(part.body.data.replace(/-/g, "+").replace(/_/g, "/"));
+    // Gmail API returns base64url-encoded data — decode as UTF-8
+    const binaryString = atob(part.body.data.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const decoded = new TextDecoder("utf-8").decode(bytes);
     const contentType = part.mimeType === "text/html" ? "html" as const : "text" as const;
     return { content: decoded, contentType };
   }

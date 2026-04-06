@@ -187,8 +187,13 @@ export class Linear extends Connector<Linear> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Auto-start sync: setup webhook and begin batch sync
-    await this.setupLinearWebhook(channel.id);
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    const webhookCallback = await this.callback(
+      this.setupLinearWebhook,
+      channel.id
+    );
+    await this.runTask(webhookCallback);
+
     await this.startBatchSync(channel.id);
   }
 
@@ -278,7 +283,7 @@ export class Linear extends Connector<Linear> {
   /**
    * Setup Linear webhook for real-time updates
    */
-  private async setupLinearWebhook(projectId: string): Promise<void> {
+  async setupLinearWebhook(projectId: string): Promise<void> {
     try {
       const client = await this.getClient(projectId);
 

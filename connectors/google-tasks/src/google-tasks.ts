@@ -14,6 +14,7 @@ import {
   Integrations,
   type Channel,
 } from "@plotday/twister/tools/integrations";
+import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 import {
@@ -65,6 +66,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
+      network: build(Network, { urls: ["https://tasks.googleapis.com/*"] }),
       tasks: build(Tasks),
     };
   }

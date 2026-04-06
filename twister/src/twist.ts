@@ -135,7 +135,16 @@ export abstract class Twist<TSelf> {
   }
 
   /**
-   * Executes a callback by its token.
+   * Executes a callback by its token inline in the current execution.
+   *
+   * **Use `this.runTask()` instead for batch continuations and long-running work.**
+   * `this.run()` executes inline, sharing the current request count (~1000 limit)
+   * and blocking the HTTP response. This causes timeouts when used in lifecycle
+   * methods like `onChannelEnabled` or `syncBatch` continuations.
+   *
+   * `this.run()` is appropriate when you need the callback's **return value** —
+   * e.g., running a parent callback token that returns data. For fire-and-forget
+   * work, always prefer `this.runTask()`.
    *
    * @param token - The callback token to execute
    * @param args - Optional arguments to pass to the callback

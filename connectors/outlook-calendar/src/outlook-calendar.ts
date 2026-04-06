@@ -143,9 +143,6 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Auto-start sync: setup watch and queue first batch
-    await this.setupOutlookWatch(channel.id);
-
     // Determine default sync range (2 years into the past)
     const now = new Date();
     const min = new Date(now.getFullYear() - 2, 0, 1);
@@ -163,6 +160,13 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       1 // batchNumber
     );
     await this.runTask(syncCallback);
+
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    const webhookCallback = await this.callback(
+      this.setupOutlookWatch,
+      channel.id
+    );
+    await this.runTask(webhookCallback);
   }
 
   /**
@@ -278,7 +282,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
     await this.clear(`outlook_sync_state_${calendarId}`);
   }
 
-  private async setupOutlookWatch(calendarId: string): Promise<void> {
+  async setupOutlookWatch(calendarId: string): Promise<void> {
     const api = await this.getApi(calendarId);
 
     const webhookUrl = await this.tools.network.createWebhook(

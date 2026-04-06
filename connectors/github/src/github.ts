@@ -291,8 +291,12 @@ export class GitHub extends Connector<GitHub> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Setup webhook subscribing to all event types
-    await this.setupWebhook(channel.id);
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    const webhookCallback = await this.callback(
+      this.setupWebhook,
+      channel.id
+    );
+    await this.runTask(webhookCallback);
 
     // Start initial sync for enabled types
     const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
@@ -371,7 +375,7 @@ export class GitHub extends Connector<GitHub> {
    * Subscribes to all event types regardless of options,
    * so toggling on later works without re-creating the webhook.
    */
-  private async setupWebhook(repositoryId: string): Promise<void> {
+  async setupWebhook(repositoryId: string): Promise<void> {
     try {
       const secret = crypto.randomUUID();
 

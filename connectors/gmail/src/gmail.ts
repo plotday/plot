@@ -95,15 +95,12 @@ export class Gmail extends Connector<Gmail> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Auto-start sync: setup webhook and queue first batch
-    await this.setupChannelWebhook(channel.id);
-
     const initialState: SyncState = {
       channelId: channel.id,
     };
-
     await this.set(`sync_state_${channel.id}`, initialState);
 
+    // Queue sync batch as a separate task so onChannelEnabled returns quickly
     const syncCallback = await this.callback(
       this.syncBatch,
       1,
@@ -112,6 +109,15 @@ export class Gmail extends Connector<Gmail> {
       true
     );
     await this.runTask(syncCallback);
+
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response.
+    // setupChannelWebhook makes multiple API calls (createWebhook, Gmail watch API,
+    // scheduleWatchRenewal) that would block the response if run inline.
+    const webhookCallback = await this.callback(
+      this.setupChannelWebhook,
+      channel.id
+    );
+    await this.runTask(webhookCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -171,9 +177,6 @@ export class Gmail extends Connector<Gmail> {
   ): Promise<void> {
     const { channelId, timeMin } = options;
 
-    // Setup webhook for this channel (Gmail Push Notifications)
-    await this.setupChannelWebhook(channelId);
-
     const initialState: SyncState = {
       channelId,
       lastSyncTime: timeMin
@@ -185,7 +188,7 @@ export class Gmail extends Connector<Gmail> {
 
     await this.set(`sync_state_${channelId}`, initialState);
 
-    // Start sync batch using run tool for long-running operation
+    // Queue sync and webhook setup as separate tasks
     const syncCallback = await this.callback(
       this.syncBatch,
       1,
@@ -193,7 +196,13 @@ export class Gmail extends Connector<Gmail> {
       channelId,
       true
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
+
+    const webhookCallback = await this.callback(
+      this.setupChannelWebhook,
+      channelId
+    );
+    await this.runTask(webhookCallback);
   }
 
   async stopSync(channelId: string): Promise<void> {
@@ -225,7 +234,7 @@ export class Gmail extends Connector<Gmail> {
     await this.clear(`sync_state_${channelId}`);
   }
 
-  private async setupChannelWebhook(channelId: string): Promise<void> {
+  async setupChannelWebhook(channelId: string): Promise<void> {
     // Create Gmail webhook (returns Pub/Sub topic name, not a URL)
     // When provider is Google with Gmail scopes, createWebhook returns a Pub/Sub topic name
     const topicName = await this.tools.network.createWebhook(
@@ -352,7 +361,13 @@ export class Gmail extends Connector<Gmail> {
     try {
       const state = await this.get<SyncState>(`sync_state_${channelId}`);
       if (!state) {
-        throw new Error("No sync state found");
+        // State was cleared by a concurrent operation (channel disabled,
+        // incremental sync race, etc.) — return gracefully instead of
+        // throwing to prevent infinite queue retries.
+        console.warn(
+          `Sync state missing for channel ${channelId} at batch ${batchNumber}, skipping`
+        );
+        return;
       }
 
       const api = await this.getApi(channelId);
@@ -374,7 +389,7 @@ export class Gmail extends Connector<Gmail> {
           channelId,
           isInitial
         );
-        await this.run(syncCallback);
+        await this.runTask(syncCallback);
       } else {
         if (mode === "full") {
           await this.clear(`sync_state_${channelId}`);
@@ -657,6 +672,13 @@ export class Gmail extends Connector<Gmail> {
       await this.setupChannelWebhook(channelId);
     }
 
+    // Don't interrupt an in-progress full sync (has pageToken for pagination).
+    // The full sync will pick up any new changes when it completes.
+    const existingState = await this.get<SyncState>(`sync_state_${channelId}`);
+    if (existingState?.pageToken) {
+      return;
+    }
+
     // For incremental sync, use the historyId from the notification
     const incrementalState: SyncState = {
       channelId,
@@ -672,7 +694,7 @@ export class Gmail extends Connector<Gmail> {
       channelId,
       false
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 }
 

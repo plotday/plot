@@ -325,7 +325,7 @@ export default class GoogleContacts
     await this.set(`sync_state:${syncableId}`, initialState);
 
     const syncCallback = await this.callback(this.syncBatch, 1, syncableId);
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async stopSync(syncableId: string): Promise<void> {
@@ -365,7 +365,7 @@ export default class GoogleContacts
           batchNumber + 1,
           syncableId
         );
-        await this.run(nextCallback);
+        await this.runTask(nextCallback);
       } else {
         await this.clear(`sync_state:${syncableId}`);
       }

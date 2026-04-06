@@ -177,8 +177,19 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
    * Auto-starts sync for the calendar.
    */
   async onChannelEnabled(channel: Channel): Promise<void> {
+    // Queue all initialization as a task to avoid blocking the HTTP response.
+    // initCalendar resolves the calendar ID, sets up the webhook, and starts sync.
+    const initCallback = await this.callback(this.initCalendar, channel.id);
+    await this.runTask(initCallback);
+  }
+
+  /**
+   * Initializes a calendar channel: resolves the calendar ID, sets up the webhook,
+   * and starts the initial sync. Runs as a task to avoid blocking the HTTP response.
+   */
+  async initCalendar(calendarId: string): Promise<void> {
     // Resolve "primary" to actual calendar ID for consistent storage keys
-    const resolvedCalendarId = await this.resolveCalendarId(channel.id);
+    const resolvedCalendarId = await this.resolveCalendarId(calendarId);
 
     // Check if sync is already in progress
     const syncInProgress = await this.get<boolean>(

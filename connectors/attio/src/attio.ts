@@ -172,7 +172,11 @@ export class Attio extends Connector<Attio> {
 
   async onChannelEnabled(_channel: Channel): Promise<void> {
     await this.set("sync_enabled", true);
-    await this.setupAttioWebhook();
+
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    const webhookCallback = await this.callback(this.setupAttioWebhook);
+    await this.runTask(webhookCallback);
+
     for (const entityType of Attio.ENTITY_TYPES) {
       await this.startBatchSync(entityType);
     }
@@ -527,7 +531,7 @@ export class Attio extends Connector<Attio> {
 
   // ---- Webhooks ----
 
-  private async setupAttioWebhook(): Promise<void> {
+  async setupAttioWebhook(): Promise<void> {
     try {
       const webhookUrl = await this.tools.network.createWebhook(
         {},

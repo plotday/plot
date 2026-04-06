@@ -106,8 +106,13 @@ export class Asana extends Connector<Asana> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Auto-start sync: setup webhook and begin batch sync
-    await this.setupAsanaWebhook(channel.id);
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    const webhookCallback = await this.callback(
+      this.setupAsanaWebhook,
+      channel.id
+    );
+    await this.runTask(webhookCallback);
+
     await this.startBatchSync(channel.id);
   }
 
@@ -170,7 +175,7 @@ export class Asana extends Connector<Asana> {
   /**
    * Setup Asana webhook for real-time updates
    */
-  private async setupAsanaWebhook(
+  async setupAsanaWebhook(
     projectId: string
   ): Promise<void> {
     try {

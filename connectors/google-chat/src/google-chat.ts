@@ -56,7 +56,7 @@ const CHAT_EVENT_TYPES = [
  * - `chat.spaces.readonly` — List spaces
  * - `chat.messages` — Read and send messages
  * - `chat.memberships.readonly` — List space members (for contact resolution)
- * - `chat.users.readstate.readonly` — Read state for initial sync
+ * - `chat.users.readstate` — Read and sync read/unread state
  */
 export class GoogleChat extends Connector<GoogleChat> {
   static readonly PROVIDER = AuthProvider.Google;
@@ -65,7 +65,7 @@ export class GoogleChat extends Connector<GoogleChat> {
     "https://www.googleapis.com/auth/chat.spaces.readonly",
     "https://www.googleapis.com/auth/chat.messages",
     "https://www.googleapis.com/auth/chat.memberships.readonly",
-    "https://www.googleapis.com/auth/chat.users.readstate.readonly",
+    "https://www.googleapis.com/auth/chat.users.readstate",
   ];
 
   readonly provider = AuthProvider.Google;
@@ -287,7 +287,7 @@ export class GoogleChat extends Connector<GoogleChat> {
           channelId,
           isInitial
         );
-        await this.run(syncCallback);
+        await this.runTask(syncCallback);
       } else {
         if (mode === "full") {
           await this.clear(`sync_state_${channelId}`);
@@ -450,7 +450,7 @@ export class GoogleChat extends Connector<GoogleChat> {
           space.name,
           isInitial
         );
-        await this.run(syncCallback);
+        await this.runTask(syncCallback);
       }
     } catch (error) {
       console.error("Failed to sync DM spaces:", error);
@@ -522,7 +522,7 @@ export class GoogleChat extends Connector<GoogleChat> {
           spaceName,
           isInitial
         );
-        await this.run(syncCallback);
+        await this.runTask(syncCallback);
       } else {
         await this.clear(`sync_state_${spaceName}`);
       }

@@ -103,7 +103,14 @@ export class Todoist extends Connector<Todoist> {
    */
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
-    await this.setupWebhook(channel.id);
+
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    const webhookCallback = await this.callback(
+      this.setupWebhook,
+      channel.id
+    );
+    await this.runTask(webhookCallback);
+
     await this.startBatchSync(channel.id);
   }
 
@@ -124,7 +131,7 @@ export class Todoist extends Connector<Todoist> {
   /**
    * Set up webhook for real-time updates from Todoist.
    */
-  private async setupWebhook(projectId: string): Promise<void> {
+  async setupWebhook(projectId: string): Promise<void> {
     try {
       const webhookUrl = await this.tools.network.createWebhook(
         {},

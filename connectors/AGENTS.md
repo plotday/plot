@@ -178,8 +178,10 @@ export class MyConnector extends Connector<MyConnector> {
       await this.set(`disable_callback_${channel.id}`, disableCallbackToken);
     }
 
-    // Setup webhook and start initial sync
-    await this.setupWebhook(channel.id);
+    // Queue webhook and sync as separate tasks — do NOT run inline,
+    // onChannelEnabled blocks the HTTP response until it returns
+    const webhookCallback = await this.callback(this.setupWebhook, channel.id);
+    await this.runTask(webhookCallback);
     await this.startBatchSync(channel.id);
   }
 
@@ -222,7 +224,8 @@ export class MyConnector extends Connector<MyConnector> {
   ): Promise<void> {
     const callbackToken = await this.tools.callbacks.createFromParent(callback, ...extraArgs);
     await this.set(`item_callback_${options.projectId}`, callbackToken);
-    await this.setupWebhook(options.projectId);
+    const webhookCallback = await this.callback(this.setupWebhook, options.projectId);
+    await this.runTask(webhookCallback);
     await this.startBatchSync(options.projectId);
   }
 
@@ -249,8 +252,8 @@ export class MyConnector extends Connector<MyConnector> {
     await this.clear(`sync_state_${projectId}`);
   }
 
-  // 8. Webhook setup
-  private async setupWebhook(resourceId: string): Promise<void> {
+  // 8. Webhook setup (non-private so it can be used with this.callback())
+  async setupWebhook(resourceId: string): Promise<void> {
     try {
       const webhookUrl = await this.tools.network.createWebhook(
         {},

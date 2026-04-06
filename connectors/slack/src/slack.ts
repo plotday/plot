@@ -100,9 +100,6 @@ export class Slack extends Connector<Slack> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Auto-start sync: setup webhook and queue first batch
-    await this.setupChannelWebhook(channel.id);
-
     // Default to 30 days of history
     const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const oldest = (timeMin.getTime() / 1000).toString();
@@ -122,6 +119,13 @@ export class Slack extends Connector<Slack> {
       true
     );
     await this.runTask(syncCallback);
+
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    const webhookCallback = await this.callback(
+      this.setupChannelWebhook,
+      channel.id
+    );
+    await this.runTask(webhookCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -188,7 +192,7 @@ export class Slack extends Connector<Slack> {
       channelId,
       true
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async stopSync(channelId: string): Promise<void> {
@@ -199,7 +203,7 @@ export class Slack extends Connector<Slack> {
     await this.clear(`sync_state_${channelId}`);
   }
 
-  private async setupChannelWebhook(channelId: string): Promise<void> {
+  async setupChannelWebhook(channelId: string): Promise<void> {
     const webhookUrl = await this.tools.network.createWebhook(
       {},
       this.onSlackWebhook,
@@ -251,7 +255,7 @@ export class Slack extends Connector<Slack> {
           channelId,
           isInitial
         );
-        await this.run(syncCallback);
+        await this.runTask(syncCallback);
       } else {
         if (mode === "full") {
           await this.clear(`sync_state_${channelId}`);
@@ -356,7 +360,7 @@ export class Slack extends Connector<Slack> {
       channelId,
       false
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   // ---- Write-back: reply from Plot ----

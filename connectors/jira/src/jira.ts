@@ -122,8 +122,13 @@ export class Jira extends Connector<Jira> {
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Auto-start sync: setup webhook and queue first batch
-    await this.setupJiraWebhook(channel.id);
+    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    const webhookCallback = await this.callback(
+      this.setupJiraWebhook,
+      channel.id
+    );
+    await this.runTask(webhookCallback);
+
     await this.startBatchSync(channel.id);
   }
 
@@ -176,7 +181,7 @@ export class Jira extends Connector<Jira> {
    * Setup Jira webhook for real-time updates.
    * Registers a dynamic webhook via the Jira REST API (expires after 30 days, auto-renewed).
    */
-  private async setupJiraWebhook(
+  async setupJiraWebhook(
     projectId: string
   ): Promise<void> {
     try {
