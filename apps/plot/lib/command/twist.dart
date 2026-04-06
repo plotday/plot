@@ -134,7 +134,8 @@ class ManageConnections extends Command {
     List<_AvailableSource> available,
     List<_UpcomingConnection> upcoming,
     UsageData? usage,
-  })? _dataCache;
+  })?
+  _dataCache;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -768,6 +769,63 @@ class _UpgradeCommand extends Command {
   }
 }
 
+/// Checks if any newly enabled channels would exceed connection limits.
+/// Returns an upgrade message if blocked, or null if allowed.
+String? _checkConnectionLimitsForSave({
+  required UsageData usage,
+  required Set<String> initialEnabled,
+  required IntegrationChanges changes,
+}) {
+  final newChannels = changes.selectedChannels.difference(initialEnabled);
+  if (newChannels.isEmpty) return null;
+
+  // Determine which connection types already exist among still-enabled initial channels
+  bool hasExistingPersonal = false;
+  final existingOrgIds = <String>{};
+
+  for (final key in initialEnabled) {
+    if (!changes.selectedChannels.contains(key)) continue; // was disabled
+    final pid = changes.channelPriorities[key];
+    if (pid == null) continue;
+    final orgId = changes.priorityOrgIds[pid];
+    if (orgId != null) {
+      existingOrgIds.add(orgId.toString());
+    } else {
+      hasExistingPersonal = true;
+    }
+  }
+
+  // Check if new channels introduce types that would exceed limits
+  bool checkedPersonal = false;
+  final checkedOrgs = <String>{};
+
+  for (final key in newChannels) {
+    final pid = changes.channelPriorities[key];
+    if (pid == null) continue;
+    final orgId = changes.priorityOrgIds[pid];
+    if (orgId != null) {
+      final orgIdStr = orgId.toString();
+      if (existingOrgIds.contains(orgIdStr) || checkedOrgs.contains(orgIdStr)) {
+        continue;
+      }
+      checkedOrgs.add(orgIdStr);
+      final org = usage.organizations.firstWhereOrNull((o) => o.id == orgIdStr);
+      if (org != null && org.connections.isAtLimit) {
+        return org.isAdmin
+            ? '${org.name} has reached its connection limit. Upgrade to add more.'
+            : '${org.name} has reached its connection limit. Contact an admin to upgrade.';
+      }
+    } else {
+      if (hasExistingPersonal || checkedPersonal) continue;
+      checkedPersonal = true;
+      if (usage.personal.connections.isAtLimit) {
+        return 'You\'ve reached your personal connection limit. Upgrade for more.';
+      }
+    }
+  }
+  return null;
+}
+
 /// Builds a usage suffix for group titles, e.g. "(1 of 2 personal, 40 Acme Co)".
 String _usageSuffix(UsageData usage, _ResourceType resourceType) {
   final parts = <String>[];
@@ -876,7 +934,9 @@ class EditSource extends ShowForm {
       return result;
     }
 
-    Map<String, Map<String, String>> collectCreateThreadsByType(List<TwistChannel> channels) {
+    Map<String, Map<String, String>> collectCreateThreadsByType(
+      List<TwistChannel> channels,
+    ) {
       final result = <String, Map<String, String>>{};
       for (final s in channels) {
         if (s.createThreadsByType.isNotEmpty) {
@@ -890,7 +950,9 @@ class EditSource extends ShowForm {
     final initialEnabled = collectEnabled(integrations.channels);
     final initialPriorities = collectPriorities(integrations.channels);
     final initialCreateThreads = collectCreateThreads(integrations.channels);
-    final initialCreateThreadsByType = collectCreateThreadsByType(integrations.channels);
+    final initialCreateThreadsByType = collectCreateThreadsByType(
+      integrations.channels,
+    );
     var integrationChanges = IntegrationChanges(
       selectedChannels: Set.of(initialEnabled),
       channelPriorities: Map.of(initialPriorities),
@@ -913,7 +975,9 @@ class EditSource extends ShowForm {
         StaticFormGroup(
           items: [
             if (optionItems != null) ...optionItems.items,
-            if (isNewlyActivated && (integrations.accounts.isNotEmpty || integrations.channels.isNotEmpty))
+            if (isNewlyActivated &&
+                (integrations.accounts.isNotEmpty ||
+                    integrations.channels.isNotEmpty))
               FormInfo(
                 key: 'sync_message',
                 text: 'Select what you\'d like to sync.',
@@ -945,6 +1009,16 @@ class EditSource extends ShowForm {
             FormButton(
               key: 'save',
               buildCommand: (values) {
+                if (usage != null) {
+                  final limitMsg = _checkConnectionLimitsForSave(
+                    usage: usage,
+                    initialEnabled: initialEnabled,
+                    changes: integrationChanges,
+                  );
+                  if (limitMsg != null) {
+                    return _UpgradeCommand(limitMsg);
+                  }
+                }
                 return SaveSource(
                   priorityTwistId: priorityTwistId,
                   name: name,
@@ -1287,8 +1361,7 @@ class AddSourceDetail extends ShowForm {
               FormChannelList(
                 key: 'channels',
                 controller: refreshChannelController,
-                validator: () =>
-                    refreshChanges.selectedChannels.isNotEmpty,
+                validator: () => refreshChanges.selectedChannels.isNotEmpty,
                 builder: (context) => SetupSourceWidget(
                   priorityTwistId: draftId,
                   setupMode: true,
@@ -2925,10 +2998,16 @@ class SaveSource extends Command {
         final newByType = changes.channelCreateThreadsByType[key];
         final oldByType = initialCreateThreadsByType[key];
 
-        final priorityChanged = newPriority != null && newPriority != oldPriority;
-        final createThreadsChanged = newCreateThreads != null && newCreateThreads != oldCreateThreads;
-        final byTypeChanged = newByType != null &&
-            !const MapEquality<String, String>().equals(newByType, oldByType ?? const {});
+        final priorityChanged =
+            newPriority != null && newPriority != oldPriority;
+        final createThreadsChanged =
+            newCreateThreads != null && newCreateThreads != oldCreateThreads;
+        final byTypeChanged =
+            newByType != null &&
+            !const MapEquality<String, String>().equals(
+              newByType,
+              oldByType ?? const {},
+            );
 
         if (priorityChanged || createThreadsChanged || byTypeChanged) {
           final channelId = parts.sublist(1).join(':');

@@ -48,6 +48,8 @@ class IntegrationChanges {
   channelCreateThreads; // "provider:channelId" → createThreads ('all'|'actionable'|'manual')
   final Map<String, Map<String, String>>
   channelCreateThreadsByType; // "provider:channelId" → {linkType: mode}
+  final Map<String, int?>
+  priorityOrgIds; // priorityId → organizationId (null = personal)
 
   const IntegrationChanges({
     this.selectedChannels = const {},
@@ -55,6 +57,7 @@ class IntegrationChanges {
     this.channelPriorities = const {},
     this.channelCreateThreads = const {},
     this.channelCreateThreadsByType = const {},
+    this.priorityOrgIds = const {},
   });
 }
 
@@ -142,6 +145,10 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   /// Cached priority organizationIds for limit checks (priorityId → orgId or null).
   final Map<String, int?> _priorityOrgIds = {};
 
+  /// The most recently manually selected priority ID (via FormModal or defaults).
+  /// Used for quick-toggle to avoid reopening the modal.
+  String? _lastSelectedPriorityId;
+
   /// Whether we've seeded _localSelectedChannels from server state (edit mode).
   bool _initializedFromServer = false;
 
@@ -211,6 +218,9 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     setState(() {
       _localSelectedChannels.addAll(suggestion.enabledChannels);
       _channelPriorities.addAll(suggestion.channelPriorities);
+      if (suggestion.channelPriorities.isNotEmpty) {
+        _lastSelectedPriorityId = suggestion.channelPriorities.values.first;
+      }
     });
 
     if (suggestion.channelPriorities.isNotEmpty) {
@@ -250,6 +260,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       }
       if (channel.priorityId != null) {
         _channelPriorities[key] = channel.priorityId!;
+        _lastSelectedPriorityId ??= channel.priorityId;
       }
       _channelCreateThreads[key] = channel.createThreads;
       if (channel.createThreadsByType.isNotEmpty) {
@@ -479,6 +490,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
                   setState(() {
                     _localSelectedChannels.add(key);
                     _channelPriorities[key] = priority.id.toString();
+                    _lastSelectedPriorityId = priority.id.toString();
                     if (hasLinkTypes) {
                       final byType = <String, String>{};
                       for (final lt in channel.linkTypes) {
@@ -573,6 +585,93 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     }
   }
 
+  /// Recursively collects all descendant channel keys from a parent channel.
+  Set<String> _collectDescendantKeys(TwistChannel channel) {
+    final keys = <String>{};
+    for (final child in channel.children) {
+      keys.add('${child.providerKey}:${child.id}');
+      keys.addAll(_collectDescendantKeys(child));
+    }
+    return keys;
+  }
+
+  /// Disables a channel. When [cascadeIfCollapsed] is true and the channel
+  /// is collapsed, also disables all descendant channels.
+  void _disableChannel(TwistChannel channel, {bool cascadeIfCollapsed = false}) {
+    final key = '${channel.providerKey}:${channel.id}';
+    final isCollapsed = !_expandedChannels.contains(key);
+
+    setState(() {
+      _localSelectedChannels.remove(key);
+      _channelPriorities.remove(key);
+      _channelCreateThreads.remove(key);
+      _channelCreateThreadsByType.remove(key);
+
+      if (cascadeIfCollapsed && isCollapsed && channel.hasChildren) {
+        final descendantKeys = _collectDescendantKeys(channel);
+        for (final dk in descendantKeys) {
+          _localSelectedChannels.remove(dk);
+          _channelPriorities.remove(dk);
+          _channelCreateThreads.remove(dk);
+          _channelCreateThreadsByType.remove(dk);
+        }
+      }
+    });
+    _notifyChanged();
+  }
+
+  /// Quick-toggle a channel via the switch. Uses the last selected priority
+  /// (or default) to enable without opening a modal.
+  Future<void> _quickToggleChannel(TwistChannel channel) async {
+    final key = '${channel.providerKey}:${channel.id}';
+    final isEnabled = _localSelectedChannels.contains(key);
+
+    if (isEnabled) {
+      _disableChannel(channel, cascadeIfCollapsed: true);
+      return;
+    }
+
+    // Toggle ON
+    if (widget.isAccountBased || _data?.singleChannel == true) {
+      // Find the best priority: last selected, or first from existing, or default
+      final priorityId = _lastSelectedPriorityId ??
+          _channelPriorities.values.firstOrNull;
+      Priority? priority;
+      if (priorityId != null) {
+        try {
+          priority = await Priority.getOne(Uuid.fromString(priorityId));
+        } catch (_) {}
+      }
+      priority ??= await _getDefaultPriority();
+      if (!mounted) return;
+
+      // Check connection limit
+      final limitMsg = _checkConnectionLimitSync(key, priority);
+      if (limitMsg != null) {
+        context.showToast(message: limitMsg, isError: true);
+        return;
+      }
+
+      setState(() {
+        _localSelectedChannels.add(key);
+        _channelPriorities[key] = priority!.id.toString();
+        _priorityNames[priority.id.toString()] =
+            priority.ancestorsLabel() != null
+                ? '${priority.ancestorsLabel()}${Priority.separator}${priority.title}'
+                : priority.title;
+        _priorityOrgIds[priority.id.toString()] = priority.organizationId;
+        _channelCreateThreads.putIfAbsent(key, () => 'all');
+      });
+      _notifyChanged();
+    } else {
+      // Non-account-based: simple toggle
+      setState(() {
+        _localSelectedChannels.add(key);
+      });
+      _notifyChanged();
+    }
+  }
+
   void _notifyChanged() {
     widget.onChanged?.call(
       IntegrationChanges(
@@ -583,6 +682,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
         channelCreateThreadsByType: _channelCreateThreadsByType.map(
           (k, v) => MapEntry(k, Map.of(v)),
         ),
+        priorityOrgIds: Map.of(_priorityOrgIds),
       ),
     );
     // Notify form that validation state may have changed
@@ -665,18 +765,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           isChecked: isOn,
           canToggle: canToggle,
           onToggle: () => _handleChannelTap(channel),
-          onDisable: (widget.isAccountBased || _data?.singleChannel == true) &&
-                  isOn
-              ? () {
-                  setState(() {
-                    _localSelectedChannels.remove(key);
-                    _channelPriorities.remove(key);
-                    _channelCreateThreads.remove(key);
-                    _channelCreateThreadsByType.remove(key);
-                  });
-                  _notifyChanged();
-                }
-              : null,
+          onQuickToggle: () => _quickToggleChannel(channel),
           depth: depth,
           hasChildren: channel.hasChildren,
           isExpanded: isExpanded,
@@ -994,6 +1083,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     setState(() {
       _localSelectedChannels.add(key);
       _channelPriorities[key] = priority.id.toString();
+      _lastSelectedPriorityId = priority.id.toString();
       _priorityNames[priority.id.toString()] = priority.ancestorsLabel() != null
           ? '${priority.ancestorsLabel()}${Priority.separator}${priority.title}'
           : priority.title;
@@ -1189,7 +1279,7 @@ class _ChannelRow extends StatefulWidget {
     required this.isChecked,
     required this.canToggle,
     required this.onToggle,
-    this.onDisable,
+    this.onQuickToggle,
     this.depth = 0,
     this.hasChildren = false,
     this.isExpanded = false,
@@ -1205,7 +1295,7 @@ class _ChannelRow extends StatefulWidget {
   final bool isChecked;
   final bool canToggle;
   final VoidCallback onToggle;
-  final VoidCallback? onDisable;
+  final VoidCallback? onQuickToggle;
   final int depth;
   final bool hasChildren;
   final bool isExpanded;
@@ -1237,11 +1327,7 @@ class _ChannelRowState extends State<_ChannelRow> {
         onExit: (_) => setState(() => _isHovered = false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: widget.hasChildren
-              ? widget.onExpandToggle
-              : widget.canToggle
-              ? widget.onToggle
-              : null,
+          onTap: widget.canToggle ? widget.onToggle : null,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: isHighlighted
@@ -1259,26 +1345,28 @@ class _ChannelRowState extends State<_ChannelRow> {
               ),
               child: Row(
                 children: [
-                  Padding(
-                    padding: EdgeInsets.only(right: theme.spacing.sm),
-                    child: SizedBox(
-                      width: 10,
-                      child: widget.hasChildren
-                          ? Icon(
-                              widget.isExpanded
-                                  ? FontAwesomeIcons.chevronDown
-                                  : FontAwesomeIcons.chevronRight,
-                              size: 10,
-                              color: theme.colors.mutedForeground,
-                            )
-                          : null,
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.hasChildren ? widget.onExpandToggle : null,
+                    child: Padding(
+                      padding: EdgeInsets.only(right: theme.spacing.sm),
+                      child: SizedBox(
+                        width: 10,
+                        child: widget.hasChildren
+                            ? Icon(
+                                widget.isExpanded
+                                    ? FontAwesomeIcons.chevronDown
+                                    : FontAwesomeIcons.chevronRight,
+                                size: 10,
+                                color: theme.colors.mutedForeground,
+                              )
+                            : null,
+                      ),
                     ),
                   ),
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: widget.isChecked && widget.onDisable != null
-                        ? widget.onDisable
-                        : null,
+                    onTap: widget.canToggle ? widget.onQuickToggle : null,
                     child: Opacity(
                       opacity: widget.isForceEnabled ? 0.5 : 1.0,
                       child: IgnorePointer(
