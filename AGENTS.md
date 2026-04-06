@@ -630,6 +630,41 @@ Once decoded, query the database:
 - **Local DB**: `psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "SELECT id, title FROM priority WHERE id = '<uuid>'"`
 - **Prod DB**: Use the `prod-db-investigate` skill (psql on port 5433)
 
+## Connector Icon Guidelines
+
+When adding or updating connector logos in `apps/site/app/data/connections.ts`:
+
+### Logo Source Priority
+
+1. **`logos/{name}-icon`** from Iconify -- preferred for multicolor icons that work at small sizes (check aspect ratio is near 1:1)
+2. **`si()` helper** with `simple-icons/{name}` -- for monochrome icon marks. Provide brand color for light mode and a lighter/white variant for dark mode
+3. **Local SVG** in `apps/site/public/assets/` -- when Iconify options are wordmarks or don't exist
+
+### Choosing the Right Logo
+
+- **Always verify the SVG** before using it. Fetch the URL and check:
+  - **Aspect ratio**: must be close to 1:1 (max ~1.5:1). Wide wordmarks (text logos) are unacceptable at 40x40px display size
+  - **Content**: must be an icon/mark, not rendered text. Some `simple-icons` entries render brand names as text (e.g. `caldotcom`, `gusto`, `typeform`)
+  - **Dark mode**: must be visible on dark backgrounds. Test both `logo` and `logoDark` values
+- **Iconify `logos/` collection**: Many entries are wordmarks. Always check for a `-icon` variant first (e.g. `logos/gitlab-icon` instead of `logos/gitlab`)
+- **Iconify `simple-icons/` collection**: Most are true icon marks, but some render as text wordmarks. Verify the SVG content before using
+- Quick check: fetch the SVG and look at the `width` attribute. If `width` is more than ~1.5em, it's likely a wordmark
+
+### Dark Mode Colors
+
+- When using `si()`, the dark color must have sufficient contrast on dark backgrounds (~#1a1a2e)
+- Medium blues like #2B88D8 can be hard to see -- prefer brighter variants (#47A5ED) or white (#ffffff)
+- Multicolor icons from `logos/` that include their own background (like Apple Calendar, Google Calendar) typically don't need a separate dark variant
+
+### Local SVG Conventions
+
+- Named: `logo-{service}.svg` and `logo-{service}-dark.svg`
+- Use a compact viewBox (e.g. `0 0 32 32`)
+- Simple path-based SVGs with brand colors
+- Dark variants use `#ffffff` fills (or inverted color scheme)
+- Remove unnecessary SVG metadata (Adobe/Inkscape attributes, XML declarations)
+- Source paths from official brand/press kits when available
+
 ## Hints
 
 - If you get the Typescript error "TS2589: Type instantiation is excessively deep and possibly infinite.", simply add @ts-ignore with a comment above the line causing the error.

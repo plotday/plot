@@ -238,7 +238,21 @@ export async function add(
           priorityId: priority_id,
           priorityTwistId: priorityTwist.id,
         });
-        await twistWrapper.activate({ id: priority_id as Uuid }, { actor: { id: userId, type: 0 /* ActorType.User */ } });
+        // Resolve user's contact ID — twists should always see contact IDs, never user IDs
+        const actorContact = await db
+          .selectFrom("contact")
+          .select(["id", "email", "name"])
+          .where("user_id", "=", userId)
+          .executeTakeFirst();
+
+        await twistWrapper.activate({ id: priority_id as Uuid }, {
+          actor: {
+            id: actorContact?.id ?? userId,
+            type: 0 /* ActorType.User */,
+            ...(actorContact?.email ? { email: actorContact.email } : {}),
+            ...(actorContact?.name ? { name: actorContact.name } : {}),
+          },
+        });
       } catch (activationError) {
         // Activation failed - rollback the installation
         const logger = createLogger({ priority_twist_id: String(priorityTwist.id), twist_id: String(twist_id), environment: twist_environment });
@@ -729,30 +743,34 @@ export async function activateDraft(
       priorityTwistId: draftId,
     });
 
+    // Resolve user's contact ID — twists should always see contact IDs, never user IDs
+    const ownerContact = await db
+      .selectFrom("contact")
+      .select(["id", "email", "name"])
+      .where("user_id", "=", draft.owner_id)
+      .executeTakeFirst();
+
     const actorContext: { actor: { id: string; type: number }; auth?: any } = {
-      actor: { id: draft.owner_id, type: 0 /* ActorType.User */ },
+      actor: {
+        id: ownerContact?.id ?? draft.owner_id,
+        type: 0 /* ActorType.User */,
+        ...(ownerContact?.email ? { email: ownerContact.email } : {}),
+        ...(ownerContact?.name ? { name: ownerContact.name } : {}),
+      },
     };
 
     // For sources, construct Authorization from sourceProvider metadata and owner contact
-    if (twistWrapper.sourceProvider) {
-      const ownerContact = await db
-        .selectFrom("contact")
-        .select(["id", "email", "name"])
-        .where("user_id", "=", draft.owner_id)
-        .executeTakeFirst();
-
-      if (ownerContact) {
-        actorContext.auth = {
-          provider: twistWrapper.sourceProvider.provider,
-          scopes: twistWrapper.sourceProvider.scopes,
-          actor: {
-            id: ownerContact.id,
-            type: 0 /* ActorType.User */,
-            email: ownerContact.email,
-            name: ownerContact.name,
-          },
-        };
-      }
+    if (twistWrapper.sourceProvider && ownerContact) {
+      actorContext.auth = {
+        provider: twistWrapper.sourceProvider.provider,
+        scopes: twistWrapper.sourceProvider.scopes,
+        actor: {
+          id: ownerContact.id,
+          type: 0 /* ActorType.User */,
+          email: ownerContact.email,
+          name: ownerContact.name,
+        },
+      };
     }
 
     await twistWrapper.activate(

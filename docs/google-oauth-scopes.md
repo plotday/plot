@@ -25,7 +25,7 @@ Preparation for requesting additional Google OAuth scopes. We currently have Cal
 | `chat.spaces.readonly` | Google Chat | **Sensitive** | List and read Chat spaces |
 | `chat.messages` | Google Chat | **Sensitive** | Read, create, update, delete messages and reactions |
 | `chat.memberships.readonly` | Google Chat | **Sensitive** | Read space membership info |
-| `chat.users.readstate.readonly` | Google Chat | **Sensitive** | Read unread state for spaces |
+| `chat.users.readstate` | Google Chat | **Sensitive** | Read and sync read/unread state for spaces |
 
 ### Backend Service Scopes (Not User-Facing)
 
@@ -140,7 +140,7 @@ Plot is a productivity app that helps teams organize tasks, messages, and docume
 
 **`chat.memberships.readonly`** — Read space membership information to match Chat participants to contacts and display member names/avatars in synced threads.
 
-**`chat.users.readstate.readonly`** — Read the user's read state for Chat spaces to accurately reflect which messages are unread in Plot, preventing duplicate unread indicators.
+**`chat.users.readstate`** — Read and update the user's read state for Chat spaces. Plot syncs read/unread status bidirectionally — when a user reads a Chat thread in Plot, we mark it as read in Google Chat (and vice versa), preventing duplicate unread indicators across both apps.
 
 ### How is the data accessed via these scopes used?
 
@@ -241,9 +241,158 @@ Yes. Our privacy policy (https://plot.day/privacy) explicitly states compliance 
   10. `chat.spaces.readonly`
   11. `chat.messages`
   12. `chat.memberships.readonly`
-  13. `chat.users.readstate.readonly`
+  13. `chat.users.readstate`
 - [ ] Google Chat app configured in Cloud Console for Workspace Events API
 - [ ] Video walkthrough recorded
 - [ ] CASA assessor engaged (App Defense Alliance approved)
 - [ ] Scope justifications submitted
 - [ ] Chat connector UI shows Workspace-only requirement
+
+## Video Walkthrough Script
+
+Target length: ~7 minutes. Record as a screencast with voiceover. The audience is Google's verification team — demonstrate that every requested scope maps to real, visible functionality.
+
+### Intro (30s)
+
+**Narration:** "Plot is a productivity app that helps teams organize tasks, messages, and documents from all their apps into a single prioritized workspace. Users connect their Google services so they can see and act on everything in one place — without switching between tabs. This video demonstrates how each requested OAuth scope is used."
+
+**On screen:** Plot app open, showing a priority with mixed content (tasks, events, messages).
+
+---
+
+### Section 1: OAuth Consent & Google Calendar (~90s)
+
+**Scopes demonstrated:** `calendar.calendarlist.readonly`, `calendar.events`
+
+**Narration:** "When a user connects their Google account, they see the standard OAuth consent screen listing the requested scopes. After granting access, Plot reads the user's calendar list so they can choose which calendars to sync."
+
+**On screen:**
+1. Open a priority → click to add a connection → select Google Calendar
+2. OAuth consent screen appears → grant access
+3. Calendar list loads — show the selection UI with multiple calendars
+4. Enable a calendar → events sync into Plot, appearing alongside tasks and messages
+
+**Narration:** "Users can RSVP to events directly from Plot. This requires the `calendar.events` write scope."
+
+**On screen:**
+5. Open a calendar event in Plot → click an RSVP button (Accept/Decline)
+6. Show the RSVP status update reflected in the event
+
+---
+
+### Section 2: Google Contacts (~30s)
+
+**Scopes demonstrated:** `contacts.readonly`, `contacts.other.readonly`
+
+**Narration:** "Contacts are synced alongside other Google connectors. Plot reads the user's Google Contacts and Other Contacts to match email addresses to real names and avatars across all synced services."
+
+**On screen:**
+1. Point to synced threads showing matched names and profile pictures
+2. Show an email thread where the sender's name and avatar were resolved from Contacts
+
+---
+
+### Section 3: Gmail (~90s)
+
+**Scopes demonstrated:** `gmail.readonly`, `gmail.modify`, `gmail.send`
+
+**Narration:** "The Gmail connector syncs emails from user-selected labels. Users choose which labels to sync — it's not all-or-nothing."
+
+**On screen:**
+1. Add Gmail connection → label selection UI appears
+2. Enable a label → email threads sync into Plot
+
+**Narration:** "Users can reply to emails directly from Plot, which requires the `gmail.send` scope."
+
+**On screen:**
+3. Open an email thread → type a reply → send it
+4. (Optional) Show the reply appearing in Gmail
+
+**Narration:** "When users archive a thread in Plot, the change syncs back to Gmail via the `gmail.modify` scope."
+
+**On screen:**
+5. Archive a thread in Plot → show it's archived in Gmail
+
+---
+
+### Section 4: Google Drive (~60s)
+
+**Scope demonstrated:** `drive`
+
+**Narration:** "The Drive connector syncs documents from user-selected folders. We need the broad `drive` scope because `drive.file` only covers files opened through a picker — it doesn't support folder enumeration or change watching, which are essential for continuous sync."
+
+**On screen:**
+1. Add Drive connection → folder selection UI appears (shows shared drives and folders)
+2. Enable a folder → documents appear with metadata
+
+**Narration:** "Users can view and reply to document comments directly from Plot."
+
+**On screen:**
+3. Open a synced document → show its comments
+4. Reply to a comment from Plot
+
+---
+
+### Section 5: Google Tasks (~60s)
+
+**Scope demonstrated:** `tasks`
+
+**Narration:** "The Tasks connector syncs Google Tasks alongside tasks from other services like Linear, Jira, and Asana."
+
+**On screen:**
+1. Add Tasks connection → task list selection UI appears
+2. Enable a task list → tasks sync into Plot
+
+**Narration:** "Users can complete tasks in Plot and the status syncs back to Google Tasks."
+
+**On screen:**
+3. Check off a task in Plot
+4. (Optional) Show it completed in Google Tasks
+5. Create a new task in Plot → show it appears in Google Tasks
+
+---
+
+### Section 6: Google Chat (~90s)
+
+**Scopes demonstrated:** `chat.spaces.readonly`, `chat.messages`, `chat.memberships.readonly`, `chat.users.readstate`
+
+**Note:** Google Chat requires a Google Workspace account. Mention this in the narration.
+
+**Narration:** "The Chat connector is available to Google Workspace users. It syncs messages from user-selected Chat spaces."
+
+**On screen:**
+1. Add Chat connection → spaces list loads (demonstrates `chat.spaces.readonly`)
+2. Select a space → messages sync in with member names and avatars resolved from membership data (demonstrates `chat.messages` read + `chat.memberships.readonly`)
+
+**Narration:** "Users can reply to Chat threads from Plot, and the message appears in Google Chat."
+
+**On screen:**
+3. Reply to a Chat thread from Plot (demonstrates `chat.messages` write)
+
+**Narration:** "Read state syncs bidirectionally. When a user reads a thread in Plot, it's marked as read in Google Chat — and vice versa."
+
+**On screen:**
+4. Mark a thread as read in Plot → note that read state syncs to Google Chat (demonstrates `chat.users.readstate`)
+
+---
+
+### Outro (~30s)
+
+**Narration:** "To summarize: all 13 requested scopes map to real functionality that users interact with daily. Data syncs bidirectionally — user actions in Plot are written back to Google services. All data is encrypted at rest, OAuth tokens are scoped per-user, and Plot complies with Google's Limited Use policy as stated in our privacy policy."
+
+**On screen:** Return to the priority view showing the unified workspace with events, emails, documents, tasks, and chat messages.
+
+---
+
+### Key Points to Emphasize Throughout
+
+| Point | Where to Mention |
+|-------|-----------------|
+| Every scope maps to visible functionality | Intro and Outro |
+| Bidirectional sync — not just reading | Calendar RSVP, Gmail reply/archive, Drive comments, Tasks completion, Chat reply |
+| User selects what to sync | Calendar list, Gmail labels, Drive folders, Chat spaces, Task lists |
+| Incremental auth — Chat scopes only when Chat is enabled | Section 6 intro |
+| Chat is Workspace-only | Section 6 intro |
+| Privacy and Limited Use compliance | Outro |
+| Contacts improve UX across all connectors | Section 2 |
+| `drive` scope justified over `drive.file` | Section 4 narration |

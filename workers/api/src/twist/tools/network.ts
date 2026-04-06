@@ -397,6 +397,14 @@ export class Network extends Tool implements INetwork {
       // Create Pub/Sub topic with the encoded token
       const topicName = await createTopic(pubsubConfig, topicId);
 
+      // Grant Gmail's push service account publish access to the topic.
+      // Gmail's users.watch() sends a test message to verify access.
+      await grantTopicPublisher(
+        pubsubConfig,
+        topicName,
+        "gmail-api-push@system.gserviceaccount.com"
+      );
+
       // Create Push subscription pointing to our webhook endpoint
       // The endpoint URL includes the topic ID (which contains the token)
       const pushEndpoint = `${this.baseUrl}/hook/gmail/${topicId}`;

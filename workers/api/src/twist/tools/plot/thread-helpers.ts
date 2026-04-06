@@ -71,6 +71,131 @@ export function actorTypeToString(type: ActorType): string {
 }
 
 /**
+ * Fallback HTML-to-text conversion when ai.toMarkdown() fails.
+ * Strips tags, decodes entities, and preserves readable text content.
+ */
+function stripHtmlToText(html: string): string {
+  let text = html;
+  // Remove doctype, head, style, script blocks entirely
+  text = text.replace(/<!DOCTYPE[^>]*>/gi, "");
+  text = text.replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "");
+  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+  text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  // Convert <br>, <p>, <div>, <tr>, <li> to newlines
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+  text = text.replace(/<\/(?:p|div|tr|li|h[1-6])>/gi, "\n");
+  // Convert <a href="url">text</a> to [text](url)
+  text = text.replace(/<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, "[$2]($1)");
+  // Remove all remaining HTML tags
+  text = text.replace(/<[^>]+>/g, "");
+  // Decode common HTML entities
+  text = text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)));
+  // Collapse whitespace within lines
+  text = text.replace(/[ \t]+/g, " ");
+  // Collapse 3+ blank lines to 2
+  text = text.replace(/\n{3,}/g, "\n\n");
+  return text.trim();
+}
+
+/**
+ * Cleans up Markdown produced by ai.toMarkdown() from HTML (especially email HTML).
+ * Removes layout table artifacts, excessive horizontal rules, empty blockquotes,
+ * and collapses excessive blank lines.
+ */
+function cleanConvertedMarkdown(markdown: string): string {
+  // ai.toMarkdown() sometimes joins paragraphs on one line with double spaces
+  // instead of proper newlines. Convert inline double-space separators to paragraph breaks.
+  markdown = markdown.replace(/(\S)  +(?=\S)/g, "$1\n\n");
+
+  const lines = markdown.split("\n");
+  const cleaned: string[] = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].replace(/^\s+/, ""); // trim leading whitespace
+
+    // Detect Markdown tables: a sequence starting with a |...| header row
+    // followed by a |---|...| separator row
+    if (
+      line.trimStart().startsWith("|") &&
+      i + 1 < lines.length &&
+      /^\s*\|[\s:-]+\|/.test(lines[i + 1])
+    ) {
+      // Collect all table lines
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trimStart().startsWith("|")) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+
+      // Count columns from the separator row (second line)
+      const separatorCells = tableLines[1]
+        .trim()
+        .replace(/^\||\|$/g, "")
+        .split("|").length;
+
+      if (separatorCells <= 1) {
+        // Single-column table = layout artifact. Extract cell text.
+        for (const tl of tableLines) {
+          // Skip separator rows
+          if (/^\s*\|[\s:-]+\|$/.test(tl)) continue;
+          const cellText = tl
+            .trim()
+            .replace(/^\||\|$/g, "")
+            .trim();
+          if (cellText) cleaned.push(cellText);
+        }
+      } else {
+        // Multi-column table — keep as-is (likely real data)
+        cleaned.push(...tableLines);
+      }
+      continue;
+    }
+
+    // Remove empty blockquote lines (just ">" with optional whitespace)
+    if (/^\s*>\s*$/.test(line)) {
+      i++;
+      continue;
+    }
+
+    // Collapse consecutive horizontal rules to at most one
+    if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
+      // Check if previous non-empty line was also a rule
+      let prevNonEmpty: string | undefined;
+      for (let j = cleaned.length - 1; j >= 0; j--) {
+        if (cleaned[j].trim() !== "") {
+          prevNonEmpty = cleaned[j];
+          break;
+        }
+      }
+      if (
+        prevNonEmpty &&
+        /^\s*(?:---+|\*\*\*+|___+)\s*$/.test(prevNonEmpty)
+      ) {
+        i++;
+        continue;
+      }
+    }
+
+    cleaned.push(line);
+    i++;
+  }
+
+  // Collapse consecutive blank lines to a single paragraph break
+  let result = cleaned.join("\n");
+  result = result.replace(/\n{3,}/g, "\n\n");
+
+  return result.trim();
+}
+
+/**
  * Converts note content to Markdown based on the specified contentType.
  *
  * @param ai - The Cloudflare Workers AI binding
@@ -99,7 +224,7 @@ export async function convertNoteToMarkdown(
 
         // Check if conversion was successful
         if (result.format === "markdown") {
-          return result.data;
+          return cleanConvertedMarkdown(result.data);
         }
 
         // Handle error case (format === "error")
@@ -109,18 +234,18 @@ export async function convertNoteToMarkdown(
             "Failed to convert HTML to Markdown",
             new Error(String(result.error))
           );
-          return note;
+          return stripHtmlToText(note);
         }
 
         // Fallback for unexpected format
         const logger = createLogger();
         logger.error("Unexpected toMarkdown response format", { result });
-        return note;
+        return stripHtmlToText(note);
       } catch (error) {
-        // If conversion fails, return original note
+        // If conversion fails, strip HTML tags as fallback
         const logger = createLogger();
         logger.error("Failed to convert HTML to Markdown", error as Error);
-        return note;
+        return stripHtmlToText(note);
       }
     }
 
@@ -333,26 +458,63 @@ export async function processNewActorArray(
     }
   }
 
-  // Batch upsert all new contacts at once
-  let createdActors: { id: ActorId }[] = [];
+  // Batch upsert all new contacts at once, building a lookup map
+  // addContacts may return fewer results than inputs due to email deduplication
+  // and dropped contacts (no email + no source), so we can't use positional indexing
+  const createdActorMap = new Map<number, ActorId>();
   if (newContacts.length > 0) {
     const actors = await addContacts(plot, newContacts);
-    createdActors = actors.map((a) => ({ id: a.id }));
+    // Build lookup by email and source accountId to map back to original indices
+    const actorByEmail = new Map<string, ActorId>();
+    const actorBySource = new Map<string, ActorId>();
+    for (const actor of actors) {
+      if (actor.email) actorByEmail.set(actor.email.toLowerCase(), actor.id);
+    }
+    // For source-only contacts, query their external account mapping
+    const sourceOnlyActorIds = actors
+      .filter((a) => !a.email)
+      .map((a) => a.id);
+    if (sourceOnlyActorIds.length > 0) {
+      const mappings = await plot.db
+        .selectFrom("contact_external_account")
+        .select(["contact_id", "provider", "account_id"])
+        .where("contact_id", "in", sourceOnlyActorIds)
+        .execute();
+      for (const m of mappings) {
+        actorBySource.set(
+          `${m.provider}:${m.account_id}`,
+          m.contact_id as ActorId
+        );
+      }
+    }
+    // Map each newContact index to its created actor
+    for (let i = 0; i < newContacts.length; i++) {
+      const contact = newContacts[i];
+      const byEmail =
+        contact.email && actorByEmail.get(contact.email.toLowerCase());
+      const bySource =
+        contact.source &&
+        actorBySource.get(`${contact.source.provider}:${contact.source.accountId}`);
+      const actorId = byEmail || bySource;
+      if (actorId) createdActorMap.set(i, actorId);
+    }
   }
 
-  // Build the final actor IDs array in original order
-  const actorIds: ActorId[] = actorOrder.map((order) => {
-    if (order.type === "existing") {
-      return existingActorIds[order.index];
-    } else {
-      return createdActors[order.index].id;
-    }
-  });
+  // Build the final actor IDs array in original order, skipping unresolved contacts
+  const actorIds: ActorId[] = actorOrder
+    .map((order) => {
+      if (order.type === "existing") {
+        return existingActorIds[order.index];
+      } else {
+        return createdActorMap.get(order.index) ?? null;
+      }
+    })
+    .filter((id): id is ActorId => id !== null);
 
   // Batch upsert priority_contact links for contacts only (not priority_twists)
   // New contacts from addContacts are always valid, but existing actor IDs
   // may reference priority_twists which aren't in the contact table.
-  const newContactIds = new Set(createdActors.map((a) => a.id));
+  const newContactIds = new Set(createdActorMap.values());
   let contactIds = actorIds.filter((id) => newContactIds.has(id));
 
   // For existing actor IDs, check which ones are actually contacts
