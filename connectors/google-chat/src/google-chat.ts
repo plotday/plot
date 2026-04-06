@@ -17,6 +17,7 @@ import {
   GoogleChatApi,
   type Message,
   type MemberInfo,
+  type Subscription,
   type SyncState,
   extractMessageId,
   extractSpaceId,
@@ -84,6 +85,7 @@ export class GoogleChat extends Connector<GoogleChat> {
         urls: [
           "https://chat.googleapis.com/*",
           "https://workspaceevents.googleapis.com/*",
+          "https://www.googleapis.com/*",
         ],
       }),
       googleContacts: build(GoogleContacts),
@@ -95,6 +97,15 @@ export class GoogleChat extends Connector<GoogleChat> {
     actor: Actor;
   }): Promise<void> {
     await this.set("auth_actor_id", context.actor.id);
+
+    // Store the auth actor's email for later use in resolving Google user profiles.
+    // The actual Google user ID mapping happens in getChannels when we have a token.
+    if (context.auth.actor.email) {
+      await this.set("auth_actor_email", context.auth.actor.email);
+    }
+    if (context.auth.actor.name) {
+      await this.set("auth_actor_name", context.auth.actor.name);
+    }
   }
 
   // ---- Channel lifecycle ----
@@ -104,6 +115,37 @@ export class GoogleChat extends Connector<GoogleChat> {
     token: AuthToken
   ): Promise<Channel[]> {
     const api = new GoogleChatApi(token.token);
+
+    // Capture the authenticated user's Google profile on every getChannels call.
+    // This maps the Google Chat user ID (users/{sub}) to the user's email,
+    // which is essential for resolving message authors to Plot users.
+    // getChannels is called after auth and on every channel refresh.
+    try {
+      const userInfo = await api.getUserInfo();
+      if (userInfo.sub) {
+        const authActorEmail = await this.get<string>("auth_actor_email");
+        const authActorName = await this.get<string>("auth_actor_name");
+        const authUser = {
+          googleUserId: `users/${userInfo.sub}`,
+          email: userInfo.email ?? authActorEmail ?? null,
+          name: userInfo.name ?? authActorName ?? null,
+        };
+        await this.set("auth_google_user", authUser);
+
+        // Save a contact with both email and source so the Google Chat
+        // user ID resolves to the user's Plot identity
+        if (authUser.email) {
+          await this.tools.integrations.saveContacts([{
+            email: authUser.email,
+            name: authUser.name ?? undefined,
+            source: { provider: AuthProvider.Google, accountId: authUser.googleUserId },
+          }]);
+        }
+      }
+    } catch {
+      // Non-fatal: user resolution will fall back to display names
+    }
+
     const channels: Channel[] = [];
 
     // Named spaces as individual channels
@@ -143,7 +185,7 @@ export class GoogleChat extends Connector<GoogleChat> {
     if (channel.id === DM_CHANNEL_ID) {
       // For DMs, list all DM spaces and sync each (batch only, no realtime)
       const syncCallback = await this.callback(this.syncDmSpaces, true);
-      await this.run(syncCallback);
+      await this.runTask(syncCallback);
     } else {
       // For named spaces, sync directly and setup realtime via Workspace Events
       const syncCallback = await this.callback(
@@ -153,10 +195,16 @@ export class GoogleChat extends Connector<GoogleChat> {
         channel.id,
         true
       );
-      await this.run(syncCallback);
+      await this.runTask(syncCallback);
 
       // Setup realtime incremental sync via Workspace Events API + Pub/Sub
-      await this.setupRealtimeSync(channel.id);
+      // Must run as a separate task — setupRealtimeSync makes multiple GCP/Google
+      // API calls that can exceed the CPU time limit if run inline in onChannelEnabled.
+      const realtimeCallback = await this.callback(
+        this.setupRealtimeSync,
+        channel.id
+      );
+      await this.runTask(realtimeCallback);
     }
   }
 
@@ -297,8 +345,31 @@ export class GoogleChat extends Connector<GoogleChat> {
   }
 
   /**
-   * Fetches and caches member info (email + displayName) for a space,
-   * used to resolve Google Chat user IDs to contact details.
+   * Ensures the stored auth user's info is injected into a memberInfo map.
+   * The Google Chat membership API doesn't reliably return email/name,
+   * so we supplement with the profile captured during getChannels.
+   */
+  private async injectAuthUser(info: Map<string, MemberInfo>): Promise<void> {
+    const authUser = await this.get<{
+      googleUserId: string;
+      email: string | null;
+      name: string | null;
+    }>("auth_google_user");
+    if (!authUser?.googleUserId) return;
+
+    const existing = info.get(authUser.googleUserId);
+    // Always inject auth user — they should always have the best data
+    if (!existing?.email && authUser.email) {
+      info.set(authUser.googleUserId, {
+        email: authUser.email ?? existing?.email,
+        displayName: existing?.displayName ?? authUser.name ?? undefined,
+      });
+    }
+  }
+
+  /**
+   * Fetches and caches member info (email + displayName) for a space.
+   * Injects the authenticated user's profile from stored data.
    */
   private async getMemberInfo(
     api: GoogleChatApi,
@@ -309,7 +380,11 @@ export class GoogleChat extends Connector<GoogleChat> {
       `member_info_${channelId}`
     );
     if (cached) {
-      return new Map(Object.entries(cached));
+      const info = new Map(Object.entries(cached));
+      // Always inject auth user even from cache — the cache may have been
+      // built before the user's profile was captured
+      await this.injectAuthUser(info);
+      return info;
     }
 
     try {
@@ -323,6 +398,9 @@ export class GoogleChat extends Connector<GoogleChat> {
           });
         }
       }
+
+      // Inject auth user's profile from stored data (captured during getChannels)
+      await this.injectAuthUser(info);
 
       // Cache for future batches
       await this.set(
@@ -458,25 +536,48 @@ export class GoogleChat extends Connector<GoogleChat> {
    * Creates a Pub/Sub topic (via createWebhook) and registers a subscription
    * that delivers Chat message events to the onChatWebhook handler.
    */
-  private async setupRealtimeSync(channelId: string): Promise<void> {
+  async setupRealtimeSync(channelId: string): Promise<void> {
     try {
+      // Tear down any existing realtime sync first (handles reconnect/retry)
+      await this.teardownRealtimeSync(channelId);
+
       // Request a Pub/Sub-backed webhook — returns a topic name instead of a URL
+      console.log(`[google-chat] Setting up realtime sync for ${channelId}`);
       const topicName = await this.tools.network.createWebhook(
         { pubsub: true },
         this.onChatWebhook,
         channelId
       );
-
-      // Skip if localhost (development environment)
-      if (topicName.includes("localhost") || topicName.includes("127.0.0.1")) {
-        return;
-      }
+      console.log(`[google-chat] Created Pub/Sub topic: ${topicName}`);
 
       const api = await this.getApi(channelId);
-      const subscription = await api.createSubscription(
-        toSpaceName(channelId),
-        topicName,
-        CHAT_EVENT_TYPES
+      let subscription: Subscription;
+      try {
+        subscription = await api.createSubscription(
+          toSpaceName(channelId),
+          topicName,
+          CHAT_EVENT_TYPES
+        );
+      } catch (error) {
+        // Handle 409: a stale subscription exists for this resource.
+        // Extract its name from the error, delete it, and retry.
+        const msg = error instanceof Error ? error.message : String(error);
+        const match = msg.match(/"current_subscription":\s*"([^"]+)"/);
+        if (match) {
+          console.log(`[google-chat] Deleting stale subscription: ${match[1]}`);
+          await api.deleteSubscription(match[1]);
+          subscription = await api.createSubscription(
+            toSpaceName(channelId),
+            topicName,
+            CHAT_EVENT_TYPES
+          );
+        } else {
+          throw error;
+        }
+      }
+      console.log(
+        `[google-chat] Created Workspace Events subscription: ${subscription.name}, ` +
+        `state: ${subscription.state ?? "unknown"}, expires: ${subscription.expireTime}`
       );
 
       await this.set(`ws_subscription_${channelId}`, {
@@ -488,9 +589,10 @@ export class GoogleChat extends Connector<GoogleChat> {
 
       // Schedule renewal before the 7-day TTL expires
       await this.scheduleSubscriptionRenewal(channelId);
+      console.log(`[google-chat] Realtime sync setup complete for ${channelId}`);
     } catch (error) {
       console.error(
-        `Failed to setup realtime sync for ${channelId}:`,
+        `[google-chat] Failed to setup realtime sync for ${channelId}:`,
         error
       );
       // Non-fatal: batch sync still works without realtime
@@ -558,6 +660,10 @@ export class GoogleChat extends Connector<GoogleChat> {
       message?: { data: string };
       decodedData?: {
         type?: string;
+        // Workspace Events puts the resource directly (e.g. message.name)
+        message?: Partial<Message> & { name: string };
+        name?: string;
+        // Legacy expected shape (data.message / data.name)
         data?: {
           message?: Message;
           name?: string;
@@ -565,35 +671,43 @@ export class GoogleChat extends Connector<GoogleChat> {
       };
     };
 
+    console.log(`[google-chat] Webhook received for channel ${channelId}`);
+
     const decodedData = body?.decodedData;
     if (!decodedData) {
       // Try decoding from raw Pub/Sub message
       const message = body?.message;
       if (!message?.data) {
-        console.warn("No data in Google Chat webhook");
+        console.warn("[google-chat] No data in webhook body");
         return;
       }
       // The webhook route already decodes this, but handle edge cases
-      console.warn("No decodedData in Google Chat webhook body");
+      console.warn("[google-chat] No decodedData in webhook body");
       return;
     }
 
     const eventType = decodedData.type;
     if (!eventType) {
-      console.warn("No event type in Workspace Events notification");
+      console.warn("[google-chat] No event type in Workspace Events notification");
       return;
     }
+
+    console.log(`[google-chat] Event type: ${eventType}`);
 
     // Only handle message events
     if (!eventType.startsWith("google.workspace.chat.message.v1.")) {
       return;
     }
 
+    // The Workspace Events payload puts the resource directly in decodedData
+    // (e.g. decodedData.message.name), not wrapped in a "data" field.
+    const eventMessage = decodedData.message ?? decodedData.data?.message;
+    const eventName = eventMessage?.name ?? decodedData.data?.name ?? decodedData.name;
+
     // Handle message deletion: archive the corresponding Plot thread
     if (eventType === "google.workspace.chat.message.v1.deleted") {
-      const messageName = decodedData.data?.name;
-      if (messageName) {
-        await this.handleMessageDeleted(messageName, channelId);
+      if (eventName) {
+        await this.handleMessageDeleted(eventName as string, channelId);
       }
       return;
     }
@@ -602,21 +716,15 @@ export class GoogleChat extends Connector<GoogleChat> {
     const api = await this.getApi(channelId);
     let message: Message | null = null;
 
-    if (decodedData.data?.message) {
-      message = decodedData.data.message;
-    } else if (decodedData.data?.name) {
-      // Event only includes resource name; fetch the message
+    if (eventMessage && eventMessage.text !== undefined) {
+      // Full message object included in the event
+      message = eventMessage as Message;
+    } else if (eventName) {
+      // Event only includes resource name; fetch the full message
       try {
-        const spaceName = toSpaceName(channelId);
-        const result = await api.listMessages(spaceName, {
-          pageSize: 1,
-          filter: `name = "${decodedData.data.name}"`,
-        });
-        if (result.messages.length > 0) {
-          message = result.messages[0];
-        }
+        message = await api.getMessage(eventName as string);
       } catch (error) {
-        console.error("Failed to fetch message for Chat event:", error);
+        console.error("[google-chat] Failed to fetch message for Chat event:", error);
         return;
       }
     }
@@ -752,6 +860,32 @@ export class GoogleChat extends Connector<GoogleChat> {
       } catch (retryError) {
         console.error("Failed to recreate realtime sync:", retryError);
       }
+    }
+  }
+
+  // ---- Write-back: read state ----
+
+  async onThreadRead(
+    thread: Thread,
+    _actor: Actor,
+    unread: boolean
+  ): Promise<void> {
+    const meta = thread.meta ?? {};
+    const channelId = (meta.channelId ?? meta.syncableId) as string;
+    const spaceName = meta.spaceName as string;
+    if (!spaceName) return;
+
+    try {
+      const api = await this.getApi(channelId ?? DM_CHANNEL_ID);
+      if (unread) {
+        // Set last read time to epoch to mark as unread
+        await api.updateSpaceReadState(spaceName, "1970-01-01T00:00:00Z");
+      } else {
+        // Mark as read by setting last read time to now
+        await api.updateSpaceReadState(spaceName, new Date().toISOString());
+      }
+    } catch (error) {
+      console.error("Failed to sync read state to Google Chat:", error);
     }
   }
 

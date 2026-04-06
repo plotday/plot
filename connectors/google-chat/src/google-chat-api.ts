@@ -1,7 +1,9 @@
 import type {
   NewLinkWithNotes,
   NewActor,
+  NewTags,
 } from "@plotday/twister/plot";
+import { Tag } from "@plotday/twister/tag";
 import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 // ---- Google Chat API types ----
@@ -16,6 +18,35 @@ export type Space = {
   spaceDetails?: {
     description?: string;
     guidelines?: string;
+  };
+};
+
+export type Annotation = {
+  type: "USER_MENTION" | "SLASH_COMMAND" | "RICH_LINK";
+  startIndex?: number;
+  length?: number;
+  userMention?: {
+    user: {
+      name: string;
+      displayName?: string;
+      type?: "HUMAN" | "BOT";
+    };
+    type: "ADD" | "MENTION";
+  };
+};
+
+export type EmojiReaction = {
+  name: string;
+  emoji: {
+    unicode?: string;
+    customEmoji?: {
+      uid: string;
+    };
+  };
+  user: {
+    name: string;
+    displayName?: string;
+    type?: "HUMAN" | "BOT";
   };
 };
 
@@ -35,6 +66,14 @@ export type Message = {
     name: string;
   };
   attachment?: Attachment[];
+  annotations?: Annotation[];
+  emojiReactionSummaries?: Array<{
+    emoji: {
+      unicode?: string;
+      customEmoji?: { uid: string };
+    };
+    reactionCount?: number;
+  }>;
   clientAssignedMessageId?: string;
 };
 
@@ -182,6 +221,10 @@ export class GoogleChatApi {
     };
   }
 
+  async getMessage(messageName: string): Promise<Message> {
+    return await this.call(`${this.chatBaseUrl}/${messageName}`);
+  }
+
   async createMessage(
     spaceName: string,
     text: string,
@@ -199,6 +242,23 @@ export class GoogleChatApi {
     });
   }
 
+  // ---- User Info ----
+
+  /**
+   * Fetches the authenticated user's profile via Google's userinfo endpoint.
+   * Returns the user's Google ID (sub), email, and display name.
+   */
+  async getUserInfo(): Promise<{ sub: string; email: string; name?: string }> {
+    const response = await fetch(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      { headers: { Authorization: `Bearer ${this.accessToken}` } }
+    );
+    if (!response.ok) {
+      throw new Error(`UserInfo error: ${response.status} ${response.statusText}`);
+    }
+    return response.json() as Promise<{ sub: string; email: string; name?: string }>;
+  }
+
   // ---- Members ----
 
   async listMembers(spaceName: string): Promise<Member[]> {
@@ -214,6 +274,27 @@ export class GoogleChatApi {
     } while (pageToken);
 
     return members;
+  }
+
+  // ---- Read State ----
+
+  /**
+   * Updates the calling user's read state for a space.
+   * Sets the last read time to now (marking all messages as read)
+   * or to a past time (effectively marking as unread).
+   */
+  async updateSpaceReadState(
+    spaceName: string,
+    lastReadTime: string
+  ): Promise<void> {
+    await this.call(
+      `${this.chatBaseUrl}/${spaceName}/spaceReadState`,
+      {
+        method: "PATCH",
+        params: { updateMask: "lastReadTime" },
+        body: { lastReadTime },
+      }
+    );
   }
 
   // ---- Workspace Events API — Subscriptions ----
@@ -351,6 +432,111 @@ export function groupMessagesByThread(
 }
 
 /**
+ * Maps common Unicode emoji to Plot Count Tags.
+ */
+const EMOJI_TO_TAG: Record<string, Tag> = {
+  "👍": Tag.Yes,
+  "👎": Tag.No,
+  "🎉": Tag.Tada,
+  "🔥": Tag.Fire,
+  "❤️": Tag.Love,
+  "❤": Tag.Love,
+  "🚀": Tag.Rocket,
+  "✨": Tag.Sparkles,
+  "🙏": Tag.Thanks,
+  "😊": Tag.Smile,
+  "👋": Tag.Wave,
+  "👏": Tag.Applause,
+  "😎": Tag.Cool,
+  "😢": Tag.Sad,
+  "👀": Tag.Looking,
+  "💯": Tag.Totally,
+};
+
+/**
+ * Extracts @mentions from a message's annotations, falling back to
+ * all space members for private thread visibility.
+ */
+function extractMentions(
+  msg: Message,
+  memberInfo?: Map<string, MemberInfo>,
+  members?: NewActor[]
+): NewActor[] {
+  const userMentions = msg.annotations?.filter(
+    (a) => a.type === "USER_MENTION" && a.userMention?.user
+  );
+
+  if (userMentions && userMentions.length > 0) {
+    const mentioned: NewActor[] = [];
+    for (const annotation of userMentions) {
+      const user = annotation.userMention!.user;
+      const info = memberInfo?.get(user.name);
+      mentioned.push({
+        name: user.displayName || info?.displayName || user.name,
+        ...(info?.email ? { email: info.email } : {}),
+        source: { provider: AuthProvider.Google, accountId: user.name },
+      });
+    }
+    return mentioned;
+  }
+
+  // Fall back to all members for private thread visibility
+  return members && members.length > 0 ? members : [];
+}
+
+/**
+ * Builds tags from emoji reaction summaries across all messages in a thread.
+ */
+function extractReactionTags(
+  messages: Message[],
+): NewTags | undefined {
+  const tagActors = new Map<Tag, NewActor[]>();
+
+  for (const msg of messages) {
+    if (!msg.emojiReactionSummaries) continue;
+    for (const summary of msg.emojiReactionSummaries) {
+      const unicode = summary.emoji.unicode;
+      if (!unicode) continue;
+      const tag = EMOJI_TO_TAG[unicode];
+      if (!tag) continue;
+
+      // We don't have per-user reaction data from summaries,
+      // so attribute to the message sender as a reasonable proxy
+      if (!tagActors.has(tag)) {
+        tagActors.set(tag, []);
+      }
+    }
+  }
+
+  if (tagActors.size === 0) return undefined;
+
+  const tags: NewTags = {};
+  for (const [tag, actors] of tagActors) {
+    tags[tag] = actors;
+  }
+  return tags;
+}
+
+/**
+ * Builds attachment link markdown for a message's attachments.
+ */
+function formatAttachments(attachments: Attachment[] | undefined): string {
+  if (!attachments || attachments.length === 0) return "";
+
+  const links = attachments.map((att) => {
+    if (att.driveDataRef?.driveFileId) {
+      return `[${att.contentName}](https://drive.google.com/file/d/${att.driveDataRef.driveFileId})`;
+    }
+    if (att.downloadUri) {
+      return `[${att.contentName}](${att.downloadUri})`;
+    }
+    return att.contentName;
+  });
+
+  return "\n\n" + links.join("\n");
+}
+
+/**
  * Transforms a group of Google Chat messages (one thread) into a NewLinkWithNotes.
  */
 export function transformChatThread(
@@ -369,6 +555,9 @@ export function transformChatThread(
   // Plain-text preview from first message (never HTML)
   const preview = firstMessage.text?.substring(0, 200) ?? null;
 
+  // Aggregate reaction tags across all messages in the thread
+  const reactionTags = extractReactionTags(messages);
+
   return {
     source: `google-chat:${spaceId}:thread:${threadKey}`,
     type: "message",
@@ -376,21 +565,31 @@ export function transformChatThread(
     private: true,
     created: new Date(firstMessage.createTime),
     author: senderToNewActor(firstMessage.sender, memberInfo),
-    sourceUrl: null,
+    sourceUrl: `https://chat.google.com/room/${spaceId}/${threadKey}`,
     meta: {
       spaceId,
       spaceName: firstMessage.space.name,
       threadName: firstMessage.thread.name,
       threadKey,
     },
-    notes: messages.map((msg) => ({
-      key: `message-${extractMessageId(msg.name)}`,
-      content: msg.formattedText ?? msg.text ?? null,
-      contentType: msg.formattedText ? ("html" as const) : ("text" as const),
-      created: new Date(msg.createTime),
-      author: senderToNewActor(msg.sender, memberInfo),
-      ...(members && members.length > 0 ? { mentions: members } : {}),
-    })),
+    notes: messages.map((msg) => {
+      const baseContent = msg.formattedText ?? msg.text ?? null;
+      const attachmentMarkdown = formatAttachments(msg.attachment);
+      const content = baseContent && attachmentMarkdown
+        ? baseContent + attachmentMarkdown
+        : baseContent;
+      const mentions = extractMentions(msg, memberInfo, members);
+
+      return {
+        key: `message-${extractMessageId(msg.name)}`,
+        content,
+        contentType: msg.formattedText ? ("html" as const) : ("text" as const),
+        created: new Date(msg.createTime),
+        author: senderToNewActor(msg.sender, memberInfo),
+        ...(mentions.length > 0 ? { mentions } : {}),
+      };
+    }),
+    ...(reactionTags ? { tags: reactionTags } : {}),
     preview,
     ...(initialSync ? { unread: false, archived: false } : {}),
   };
