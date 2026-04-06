@@ -389,8 +389,10 @@ export class Network extends Tool implements INetwork {
       });
 
       // Encode the callback token into the topic ID
-      // This allows us to decode the token when receiving Pub/Sub messages
-      const topicId = `gmail-${callbackToken}`;
+      // This allows us to decode the token when receiving Pub/Sub messages.
+      // Callback tokens use ":" as a separator (doId:token) which is invalid
+      // in Pub/Sub topic names. Replace with "." for topic name safety.
+      const topicId = `gmail-${callbackToken.replaceAll(":", ".")}`;
 
       // Create Pub/Sub topic with the encoded token
       const topicName = await createTopic(pubsubConfig, topicId);
@@ -402,6 +404,8 @@ export class Network extends Tool implements INetwork {
         topicName,
         subscriptionName: topicId, // Use same ID for subscription
         pushEndpoint,
+        oidcServiceAccountEmail: pubsubConfig.serviceAccountEmail,
+        audience: this.env!.GCP_PROJECT_ID,
       });
 
       // Return Pub/Sub topic name (NOT a webhook URL)
@@ -450,7 +454,10 @@ export class Network extends Tool implements INetwork {
         extraArgs,
       });
 
-      const topicId = `ps-${callbackToken}`;
+      // Callback tokens use ":" as a separator (doId:token) which is invalid
+      // in Pub/Sub topic names. Replace with "." which is valid in topic names
+      // but doesn't appear in callback tokens (hex DO ID + base64url token).
+      const topicId = `ps-${callbackToken.replaceAll(":", ".")}`;
       const topicName = await createTopic(pubsubConfig, topicId);
 
       // Grant the Google Workspace Events service agent publish access.
@@ -467,6 +474,8 @@ export class Network extends Tool implements INetwork {
         topicName,
         subscriptionName: topicId,
         pushEndpoint,
+        oidcServiceAccountEmail: pubsubConfig.serviceAccountEmail,
+        audience: this.env!.GCP_PROJECT_ID,
       });
 
       return topicName;
@@ -617,7 +626,9 @@ export class Network extends Tool implements INetwork {
       }
 
       const topicId = topicParts[1]; // e.g., "gmail-abc123" or "ps-abc123"
-      // Strip the provider prefix to get the callback token
+      // Strip the provider prefix to get the callback token.
+      // Callback tokens use ":" as a separator (doId:token) which was encoded
+      // as "." in the topic name because colons are invalid in Pub/Sub names.
       const prefixes = ["gmail-", "ps-"];
       let callbackToken = topicId;
       for (const prefix of prefixes) {
@@ -626,6 +637,7 @@ export class Network extends Tool implements INetwork {
           break;
         }
       }
+      callbackToken = callbackToken.replaceAll(".", ":");
 
       // Extract project ID from topic name
       const projectIdMatch = url.match(/projects\/([^/]+)/);

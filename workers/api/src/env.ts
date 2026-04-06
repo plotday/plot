@@ -136,6 +136,7 @@ export type Bindings = {
   readonly AUTH_HUBSPOT_SECRET: string;
 
   readonly GCP_PROJECT_ID: string;
+  readonly GCP_PROJECT_NUMBER: string;
   readonly GCP_SERVICE_ACCOUNT_EMAIL: string;
   readonly GCP_SERVICE_ACCOUNT_KEY: string;
 

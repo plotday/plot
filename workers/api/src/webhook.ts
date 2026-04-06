@@ -391,29 +391,30 @@ webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
   try {
     const authHeader = c.req.header("authorization");
 
-    // Verify Pub/Sub JWT token
+    // Verify Pub/Sub JWT token.
+    // Return 200 on auth failure to prevent Pub/Sub retry storm.
     const isValid = await verifyPubSubToken(authHeader, c.env.GCP_PROJECT_ID);
     if (!isValid) {
       logger.warn("Gmail webhook missing or invalid authorization");
-      return new Response("Unauthorized", { status: 401 });
+      return c.json({ ok: false, error: "unauthorized" });
     }
 
     // Get topic ID from URL (format: gmail-{callbackToken})
     const topicId = c.req.param("topicId");
     if (!topicId) {
-      return new Response("Bad request (missing topicId)", { status: 400 });
+      return c.json({ ok: false, error: "missing topicId" });
     }
 
     // Decode callback token from topic ID
-    // Topic ID format: "gmail-{callbackToken}"
-    const callbackToken = topicId.startsWith("gmail-")
+    // Topic ID format: "gmail-{callbackToken}" where ":" in the token is encoded as "."
+    // because colons are invalid in Pub/Sub topic names.
+    const rawToken = topicId.startsWith("gmail-")
       ? topicId.substring(6) // Remove "gmail-" prefix
       : topicId; // Fallback for backward compatibility
+    const callbackToken = rawToken.replaceAll(".", ":");
 
     if (!callbackToken) {
-      return new Response("Bad request (invalid topicId format)", {
-        status: 400,
-      });
+      return c.json({ ok: false, error: "invalid topicId format" });
     }
 
     // Parse Pub/Sub message
@@ -495,20 +496,25 @@ webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
   try {
     const authHeader = c.req.header("authorization");
 
-    // Verify Pub/Sub JWT token
+    // Verify Pub/Sub JWT token.
+    // Return 200 on auth failure to acknowledge the message and prevent
+    // Pub/Sub from retrying indefinitely — a retried invalid token won't
+    // become valid, so retries just create a storm.
     const isValid = await verifyPubSubToken(authHeader, c.env.GCP_PROJECT_ID);
     if (!isValid) {
       logger.warn("Pub/Sub webhook missing or invalid authorization");
-      return new Response("Unauthorized", { status: 401 });
+      return c.json({ ok: false, error: "unauthorized" });
     }
 
     // Get topic ID from URL (format: {prefix}-{callbackToken})
     const topicId = c.req.param("topicId");
     if (!topicId) {
-      return new Response("Bad request (missing topicId)", { status: 400 });
+      return c.json({ ok: false, error: "missing topicId" });
     }
 
-    // Extract callback token by stripping the provider prefix
+    // Extract callback token by stripping the provider prefix.
+    // Callback tokens use ":" as a separator (doId:token) which was encoded as "."
+    // in the topic name because colons are invalid in Pub/Sub topic names.
     const prefixes = ["ps-", "gmail-"];
     let callbackToken = topicId;
     for (const prefix of prefixes) {
@@ -517,11 +523,10 @@ webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
         break;
       }
     }
+    callbackToken = callbackToken.replaceAll(".", ":");
 
     if (!callbackToken) {
-      return new Response("Bad request (invalid topicId format)", {
-        status: 400,
-      });
+      return c.json({ ok: false, error: "invalid topicId format" });
     }
 
     // Parse Pub/Sub message
@@ -566,14 +571,22 @@ webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
       params[key] = value;
     });
 
-    // Construct callback request with decoded data
+    // Construct callback request with decoded data.
+    // Workspace Events delivers the CloudEvent type via Pub/Sub message
+    // attributes (e.g. "ce-type": "google.workspace.chat.message.v1.created"),
+    // so merge attributes into decodedData for the connector to access.
+    const attributes = message.attributes as Record<string, string> | undefined;
     const webhookRequest = {
       method: "POST",
       headers,
       params,
       body: {
         ...body,
-        decodedData,
+        decodedData: {
+          ...decodedData,
+          ...(attributes?.["ce-type"] ? { type: attributes["ce-type"] } : {}),
+          ...(attributes ? { attributes } : {}),
+        },
       },
     };
 

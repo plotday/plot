@@ -18,6 +18,8 @@ interface PushSubscriptionConfig {
   topicName: string;
   subscriptionName: string;
   pushEndpoint: string;
+  oidcServiceAccountEmail?: string;
+  audience?: string;
 }
 
 const PUBSUB_SCOPE = "https://www.googleapis.com/auth/pubsub";
@@ -96,6 +98,14 @@ export async function createPushSubscription(
       topic: subscriptionConfig.topicName,
       pushConfig: {
         pushEndpoint: subscriptionConfig.pushEndpoint,
+        ...(subscriptionConfig.oidcServiceAccountEmail
+          ? {
+              oidcToken: {
+                serviceAccountEmail: subscriptionConfig.oidcServiceAccountEmail,
+                audience: subscriptionConfig.audience ?? subscriptionConfig.pushEndpoint,
+              },
+            }
+          : {}),
       },
       ackDeadlineSeconds: 10,
     }),
@@ -247,31 +257,31 @@ export function generateTopicId(): string {
 /**
  * Google's public keys cache (refreshed periodically)
  */
-let googlePublicKeysCache: { keys: Record<string, string>; expires: number } | null = null;
+type JwkKey = { kid: string; kty: string; alg: string; use: string; n: string; e: string };
+let googleJwkCache: { keys: JwkKey[]; expires: number } | null = null;
 
 /**
- * Fetches Google's public keys for JWT verification.
+ * Fetches Google's public keys as JWKs for JWT verification.
+ * Uses the v3 endpoint which returns JWK format (easier to import than X.509 certs).
  * Caches the keys based on the Cache-Control header.
  */
-async function getGooglePublicKeys(): Promise<Record<string, string>> {
+async function getGoogleJwks(): Promise<JwkKey[]> {
   const now = Date.now();
 
-  // Return cached keys if still valid
-  if (googlePublicKeysCache && googlePublicKeysCache.expires > now) {
-    return googlePublicKeysCache.keys;
+  if (googleJwkCache && googleJwkCache.expires > now) {
+    return googleJwkCache.keys;
   }
 
-  const response = await fetch("https://www.googleapis.com/oauth2/v1/certs");
+  const response = await fetch("https://www.googleapis.com/oauth2/v3/certs");
 
   if (!response.ok) {
     throw new Error(`Failed to fetch Google public keys: ${response.statusText}`);
   }
 
-  const keys = await response.json() as Record<string, string>;
+  const data = await response.json() as { keys: JwkKey[] };
 
-  // Parse cache-control header to determine cache duration
   const cacheControl = response.headers.get("cache-control");
-  let maxAge = 3600; // Default 1 hour
+  let maxAge = 3600;
   if (cacheControl) {
     const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
     if (maxAgeMatch) {
@@ -279,12 +289,12 @@ async function getGooglePublicKeys(): Promise<Record<string, string>> {
     }
   }
 
-  googlePublicKeysCache = {
-    keys,
+  googleJwkCache = {
+    keys: data.keys,
     expires: now + maxAge * 1000,
   };
 
-  return keys;
+  return data.keys;
 }
 
 /**
@@ -389,28 +399,18 @@ export async function verifyPubSubToken(
       return false;
     }
 
-    // Get Google's public keys
-    const publicKeys = await getGooglePublicKeys();
-    const publicKeyPem = publicKeys[header.kid];
+    // Get Google's public keys (JWK format)
+    const jwks = await getGoogleJwks();
+    const jwk = jwks.find(k => k.kid === header.kid);
 
-    if (!publicKeyPem) {
+    if (!jwk) {
       logger.warn("Public key not found for kid", { kid: header.kid });
       return false;
     }
 
-    // Import the public key
-    const pemHeader = "-----BEGIN CERTIFICATE-----";
-    const pemFooter = "-----END CERTIFICATE-----";
-    const pemContents = publicKeyPem
-      .replace(pemHeader, "")
-      .replace(pemFooter, "")
-      .replace(/\s/g, "");
-
-    const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
-
     const publicKey = await crypto.subtle.importKey(
-      "spki",
-      binaryDer,
+      "jwk",
+      jwk,
       {
         name: "RSASSA-PKCS1-v1_5",
         hash: "SHA-256",
