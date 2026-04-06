@@ -136,10 +136,12 @@ Only publish after testing locally:
    ```
 
 2. **Version bump rules** (Twister is pre-1.0, so `major` is reserved for the 1.0 release):
+
    - `minor`: Breaking changes OR new features (removing/renaming exports, changing function signatures, adding types/fields/exports)
    - `patch`: Bug fixes, documentation, internal changes
 
 3. **Summary format**: The first line after the frontmatter MUST start with a category prefix:
+
    - `Added:` — new features or exports
    - `Changed:` — modifications to existing behavior
    - `Fixed:` — bug fixes
@@ -273,17 +275,17 @@ All sync-based sources should track whether they're performing an initial sync (
 const activity: NewActivity = {
   type: ActivityType.Event,
   title: event.title,
-  ...(initialSync ? { unread: false } : {}),   // false for initial, omit for incremental
-  ...(initialSync ? { archived: false } : {}),  // unarchive on initial only
+  ...(initialSync ? { unread: false } : {}), // false for initial, omit for incremental
+  ...(initialSync ? { archived: false } : {}), // unarchive on initial only
 };
 ```
 
 #### Field Behavior by Sync Type
 
-| Field | Initial Sync | Incremental Sync | Reason |
-|-------|--------------|------------------|---------|
-| `unread` | `false` | *omit* | Initial: mark read for all. Incremental: auto-mark read for author if they are the twist owner |
-| `archived` | `false` | *omit* | Unarchive on install, preserve user choice on updates |
+| Field      | Initial Sync | Incremental Sync | Reason                                                                                         |
+| ---------- | ------------ | ---------------- | ---------------------------------------------------------------------------------------------- |
+| `unread`   | `false`      | _omit_           | Initial: mark read for all. Incremental: auto-mark read for author if they are the twist owner |
+| `archived` | `false`      | _omit_           | Unarchive on install, preserve user choice on updates                                          |
 
 **Why this matters**:
 
@@ -339,7 +341,7 @@ for (const authToken of [actorId, installerAuthToken]) {
 }
 ```
 
-For `onActivityUpdated` where the acting user is not available in the callback signature, continue using the installer's auth token.
+For `onThreadUpdated` where the acting user is not available in the callback signature, continue using the installer's auth token.
 
 ### Google Source Integration Pattern
 
@@ -522,6 +524,7 @@ env file copying, and pnpm install.
 ### Conditional Setup (run when needed)
 
 **Submodule changes** (modifying `public/` — twister types, sources, twists):
+
 ```bash
 cd public && git checkout -b <branch-name>
 cd twister && pnpm build && cd ../..
@@ -529,17 +532,21 @@ pnpm install
 ```
 
 **Database schema changes:**
+
 ```bash
 bash scripts/worktree-db
 ```
+
 This starts an isolated PostgreSQL on a unique port with migrations applied.
 
 **Flutter app development:**
+
 ```bash
 cd apps/plot && flutter pub run build_runner build --delete-conflicting-outputs
 ```
 
 ### Manual env copy (outside worktree hooks)
+
 ```bash
 pnpm cp-env /path/to/main/repo
 ```

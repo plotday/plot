@@ -10,6 +10,7 @@ import {
   type NewContact,
   type NewLinkWithNotes,
   type Note,
+  type Thread,
   type ThreadMeta,
 } from "@plotday/twister/plot";
 import { type Callback } from "@plotday/twister/tools/callbacks";
@@ -792,82 +793,105 @@ export class Integrations extends Tool implements IAuth {
    * Dispatch method called by the entrypoint when synced data changes.
    * Routes link updates to the appropriate source callback.
    */
+  /**
+   * Builds Note and Thread SDK objects from a raw note dispatch item,
+   * looking up the connector's link metadata for thread context.
+   */
+  private async buildNoteAndThread(item: any): Promise<{ note: Note; thread: Thread }> {
+    const link = await this.db
+      .selectFrom("link")
+      .select(["meta", "channel_id", "source"])
+      .where("thread_id", "=", item.thread_id!)
+      .where("created_by", "=", this.priorityTwistId)
+      .executeTakeFirst();
+
+    const note: Note = {
+      id: item.id,
+      created: item.created_at ? new Date(item.created_at) : new Date(),
+      thread: {
+        id: item.thread_id,
+        title: item.thread_title,
+        priority: { id: item.priority_id },
+      } as any,
+      author: {
+        id: item.author_id ?? item.created_by,
+        name: item.author_name,
+        type:
+          item.author_type === "user"
+            ? ActorType.User
+            : item.author_type === "priority_twist"
+            ? ActorType.Twist
+            : ActorType.Contact,
+      },
+      content: item.content,
+      key: item.key || null,
+      reNote: item.re_note_id ? { id: item.re_note_id } : null,
+      mentions: item.mentions || [],
+      tags: item.tags || {},
+      private: item.private ?? false,
+      archived: item.archived_at !== null,
+      actions: item.actions,
+    };
+
+    const meta: ThreadMeta = { ...(link?.meta as any ?? {}) };
+    meta.channelId = link?.channel_id ?? null;
+    meta.linkSource = link?.source ?? null;
+
+    // Resolve reNote key for reply targeting
+    if (item.re_note_id) {
+      const reNote = await this.db
+        .selectFrom("note")
+        .select("key")
+        .where("id", "=", item.re_note_id)
+        .executeTakeFirst();
+      if (reNote?.key) {
+        meta.reNoteKey = reNote.key;
+      }
+    }
+
+    const thread: Thread = {
+      id: item.thread_id,
+      title: item.thread_title,
+      priority: { id: item.priority_id },
+      meta,
+    } as Thread;
+
+    return { note, thread };
+  }
+
   async dispatch(
     dispatchItem: any
-  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; deferredTagRemoval?: { noteId: string; actorId: string } }>> {
+  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; deferredTagRemoval?: { noteId: string; actorId: string }; deferredNoteKeyUpdate?: { noteId: string } }>> {
     // Handle note dispatch for connectors with handleReplies — when a user
     // replies to a thread the connector created, the connector is auto-mentioned
     // but there's no Plot tool to handle intent matching or tag removal.
     // Route directly to onNoteCreated and defer tag removal.
+    // Also handles note updates (tag changes) via onNoteUpdated.
     if (dispatchItem?.itemType === "note" && this.sourceProvider) {
       const { item, isCreate = true } = dispatchItem;
-      if (!isCreate || !item) return [];
+      if (!item) return [];
 
-      // Skip notes created by this twist (prevent loops)
+      const threadCreatedByThis = item.thread_created_by === this.priorityTwistId;
+
+      // Note updates (tag changes, etc.) — route to onNoteUpdated
+      // Unlike creates, updates to twist-created notes are expected (user adds tags
+      // to synced messages), so we don't skip on created_by === priorityTwistId.
+      if (!isCreate) {
+        if (!threadCreatedByThis) return [];
+        // Skip if the twist itself made the update (prevent loops)
+        if (item.updated_by === this.priorityTwistId) return [];
+
+        const { note, thread } = await this.buildNoteAndThread(item);
+        return [{ sourceMethod: "onNoteUpdated", args: [note, thread] }];
+      }
+
+      // Skip notes created by this twist (prevent loops for new notes only)
       if (item.created_by === this.priorityTwistId) return [];
 
       const isMentioned = (item.mentions ?? []).includes(this.priorityTwistId);
-      const threadCreatedByThis = item.thread_created_by === this.priorityTwistId;
 
       if (isMentioned && threadCreatedByThis) {
-        // Look up the link for this thread to get metadata
-        const link = await this.db
-          .selectFrom("link")
-          .select(["meta", "channel_id", "source"])
-          .where("thread_id", "=", item.thread_id!)
-          .where("created_by", "=", this.priorityTwistId)
-          .executeTakeFirst();
-
-        const note: Note = {
-          id: item.id,
-          created: item.created_at ? new Date(item.created_at) : new Date(),
-          thread: {
-            id: item.thread_id,
-            title: item.thread_title,
-            priority: { id: item.priority_id },
-          } as any,
-          author: {
-            id: item.author_id ?? item.created_by,
-            name: item.author_name,
-            type:
-              item.author_type === "user"
-                ? ActorType.User
-                : item.author_type === "priority_twist"
-                ? ActorType.Twist
-                : ActorType.Contact,
-          },
-          content: item.content,
-          key: item.key || null,
-          reNote: item.re_note_id ? { id: item.re_note_id } : null,
-          mentions: item.mentions || [],
-          tags: item.tags || {},
-          private: item.private ?? false,
-          archived: item.archived_at !== null,
-          actions: item.actions,
-        };
-
-        const meta: ThreadMeta = { ...(link?.meta as any ?? {}) };
-        meta.channelId = link?.channel_id ?? null;
-        meta.linkSource = link?.source ?? null;
-
-        // Resolve reNote key for reply targeting
-        if (item.re_note_id) {
-          const reNote = await this.db
-            .selectFrom("note")
-            .select("key")
-            .where("id", "=", item.re_note_id)
-            .executeTakeFirst();
-          if (reNote?.key) {
-            meta.reNoteKey = reNote.key;
-          }
-        }
-
-        const thread = {
-          id: item.thread_id,
-          title: item.thread_title,
-          priority: { id: item.priority_id },
-          meta,
-        };
+        const { note, thread } = await this.buildNoteAndThread(item);
 
         return [{
           sourceMethod: "onNoteCreated",
@@ -876,6 +900,7 @@ export class Integrations extends Tool implements IAuth {
             noteId: item.id as string,
             actorId: (item.author_id ?? item.created_by) as string,
           },
+          deferredNoteKeyUpdate: { noteId: item.id as string },
         }];
       }
 
@@ -949,7 +974,7 @@ export class Integrations extends Tool implements IAuth {
         meta,
       };
 
-      return [{ sourceMethod: "onNoteCreated", args: [note, thread] }];
+      return [{ sourceMethod: "onNoteCreated", args: [note, thread], deferredNoteKeyUpdate: { noteId: item.id as string } }];
     }
 
     if (dispatchItem?.itemType !== "link" && dispatchItem?.itemType !== "channel_link") return [];
@@ -2664,5 +2689,14 @@ export class Integrations extends Tool implements IAuth {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /** Update a note's key for external dedup. Called by entrypoint when onNoteCreated returns a key. */
+  async updateNoteKey(noteId: string, key: string): Promise<void> {
+    await this.db
+      .updateTable("note")
+      .set({ key })
+      .where("id", "=", noteId)
+      .execute();
   }
 }

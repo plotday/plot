@@ -270,7 +270,7 @@ BEGIN
                 mentions = EXCLUDED.mentions,
                 re_note_id = EXCLUDED.re_note_id,
                 source_created_at = EXCLUDED.source_created_at,
-                key = EXCLUDED.key,
+                key = COALESCE(EXCLUDED.key, note.key),
                 merged_from_thread_id = EXCLUDED.merged_from_thread_id,
                 updated_at = now()
         RETURNING * INTO v_row;

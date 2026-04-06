@@ -665,6 +665,18 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           isChecked: isOn,
           canToggle: canToggle,
           onToggle: () => _handleChannelTap(channel),
+          onDisable: (widget.isAccountBased || _data?.singleChannel == true) &&
+                  isOn
+              ? () {
+                  setState(() {
+                    _localSelectedChannels.remove(key);
+                    _channelPriorities.remove(key);
+                    _channelCreateThreads.remove(key);
+                    _channelCreateThreadsByType.remove(key);
+                  });
+                  _notifyChanged();
+                }
+              : null,
           depth: depth,
           hasChildren: channel.hasChildren,
           isExpanded: isExpanded,
@@ -1177,6 +1189,7 @@ class _ChannelRow extends StatefulWidget {
     required this.isChecked,
     required this.canToggle,
     required this.onToggle,
+    this.onDisable,
     this.depth = 0,
     this.hasChildren = false,
     this.isExpanded = false,
@@ -1192,6 +1205,7 @@ class _ChannelRow extends StatefulWidget {
   final bool isChecked;
   final bool canToggle;
   final VoidCallback onToggle;
+  final VoidCallback? onDisable;
   final int depth;
   final bool hasChildren;
   final bool isExpanded;
@@ -1260,18 +1274,24 @@ class _ChannelRowState extends State<_ChannelRow> {
                           : null,
                     ),
                   ),
-                  Opacity(
-                    opacity: widget.isForceEnabled ? 0.5 : 1.0,
-                    child: IgnorePointer(
-                      child: SizedBox(
-                        width: 32,
-                        height: 20,
-                        child: FittedBox(
-                          fit: BoxFit.contain,
-                          child: FSwitch(
-                            value: widget.isChecked,
-                            onChange: (_) {},
-                            enabled: widget.canToggle,
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.isChecked && widget.onDisable != null
+                        ? widget.onDisable
+                        : null,
+                    child: Opacity(
+                      opacity: widget.isForceEnabled ? 0.5 : 1.0,
+                      child: IgnorePointer(
+                        child: SizedBox(
+                          width: 32,
+                          height: 20,
+                          child: FittedBox(
+                            fit: BoxFit.contain,
+                            child: FSwitch(
+                              value: widget.isChecked,
+                              onChange: (_) {},
+                              enabled: widget.canToggle,
+                            ),
                           ),
                         ),
                       ),

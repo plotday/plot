@@ -641,7 +641,18 @@ export default class extends WorkerEntrypoint {
               const method = twist[callbackInfo.sourceMethod];
               if (typeof method === 'function') {
                 try {
-                  await method.call(twist, ...callbackInfo.args);
+                  const cbResult = await method.call(twist, ...callbackInfo.args);
+
+                  // If onNoteCreated returned a note key, update the note's key for future upsert matching
+                  if (callbackInfo.deferredNoteKeyUpdate && typeof cbResult === 'string') {
+                    try {
+                      if (typeof tool.updateNoteKey === 'function') {
+                        await tool.updateNoteKey(callbackInfo.deferredNoteKeyUpdate.noteId, cbResult);
+                      }
+                    } catch (keyError) {
+                      console.warn('Failed to update note key:', keyError);
+                    }
+                  }
                 } catch (error) {
                   const errorData = {
                     message: error instanceof Error ? error.message : String(error),

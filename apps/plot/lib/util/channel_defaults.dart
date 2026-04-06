@@ -41,6 +41,12 @@ final _negativePatterns = RegExp(
   caseSensitive: false,
 );
 
+/// Low-value email labels that are rarely useful to sync.
+final _lowValueEmailPatterns = RegExp(
+  r'^(SENT|DRAFT|UNREAD|SPAM|TRASH|CATEGORY_\w+)$|^\[.+\]|^receipt',
+  caseSensitive: false,
+);
+
 /// Informational/read-only channel patterns.
 final _informationalPatterns = RegExp(
   r'(holidays?\s+in\b|public\s+holidays?|national\s+holidays?|birthdays?|contacts?\b|^phases\s+of\s+the\s+moon)',
@@ -236,6 +242,11 @@ class ChannelDefaultSuggester {
     // Negative: informational channels
     if (_informationalPatterns.hasMatch(titleLower)) {
       score -= 3;
+    }
+
+    // Negative: low-value email labels (SENT, DRAFT, app-specific, etc.)
+    if (_lowValueEmailPatterns.hasMatch(titleLower)) {
+      score -= 5;
     }
 
     return _ScoredChannel(
