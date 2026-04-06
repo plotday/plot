@@ -41,7 +41,8 @@ type MessageSyncOptions = {
  *
  * **Required OAuth Scopes:**
  * - `https://www.googleapis.com/auth/gmail.readonly` - Read emails
- * - `https://www.googleapis.com/auth/gmail.modify` - Modify labels
+ * - `https://www.googleapis.com/auth/gmail.modify` - Modify labels, mark read/unread, star/unstar
+ * - `https://www.googleapis.com/auth/gmail.send` - Send reply emails from Plot
  */
 export class Gmail extends Connector<Gmail> {
   static readonly PROVIDER = AuthProvider.Google;
@@ -110,7 +111,7 @@ export class Gmail extends Connector<Gmail> {
       channel.id,
       true
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -196,6 +197,19 @@ export class Gmail extends Connector<Gmail> {
   }
 
   async stopSync(channelId: string): Promise<void> {
+    // Cancel scheduled watch renewal
+    const taskToken = await this.get<string>(
+      `watch_renewal_task_${channelId}`
+    );
+    if (taskToken) {
+      try {
+        await this.cancelTask(taskToken);
+      } catch {
+        // Task may have already executed
+      }
+      await this.clear(`watch_renewal_task_${channelId}`);
+    }
+
     // Stop watching for push notifications
     const api = await this.getApi(channelId);
     try {
@@ -227,16 +241,104 @@ export class Gmail extends Connector<Gmail> {
       // topicName format: projects/{project_id}/topics/{topic_name}
       const watchResult = await api.setupWatch(channelId, topicName);
 
+      const expiration = new Date(parseInt(watchResult.expiration));
+
       // Store webhook data including expiration
       await this.set(`channel_webhook_${channelId}`, {
         topicName,
         channelId,
         historyId: watchResult.historyId,
-        expiration: new Date(parseInt(watchResult.expiration)),
+        expiration,
         created: new Date().toISOString(),
       });
+
+      // Schedule watch renewal before the 7-day expiry
+      await this.scheduleWatchRenewal(channelId, expiration);
     } catch (error) {
       console.error("Failed to setup Gmail webhook:", error);
+    }
+  }
+
+  /**
+   * Schedules a task to renew the Gmail watch before its expiry.
+   * Renews 1 day before expiration.
+   */
+  private async scheduleWatchRenewal(
+    channelId: string,
+    expiration: Date
+  ): Promise<void> {
+    // Cancel any existing renewal task
+    const existingTask = await this.get<string>(
+      `watch_renewal_task_${channelId}`
+    );
+    if (existingTask) {
+      try {
+        await this.cancelTask(existingTask);
+      } catch {
+        // Task may have already executed
+      }
+      await this.clear(`watch_renewal_task_${channelId}`);
+    }
+
+    // Renew 1 day before expiry
+    const renewalTime = new Date(expiration.getTime() - 24 * 60 * 60 * 1000);
+
+    if (renewalTime <= new Date()) {
+      // Already past renewal window, renew immediately
+      await this.renewWatch(channelId);
+      return;
+    }
+
+    const renewalCallback = await this.callback(
+      this.renewWatch,
+      channelId
+    );
+    const taskToken = await this.runTask(renewalCallback, {
+      runAt: renewalTime,
+    });
+    if (taskToken) {
+      await this.set(`watch_renewal_task_${channelId}`, taskToken);
+    }
+  }
+
+  /**
+   * Renews the Gmail watch before it expires.
+   * If renewal fails, falls back to full webhook setup.
+   */
+  async renewWatch(channelId: string): Promise<void> {
+    try {
+      const api = await this.getApi(channelId);
+      const webhookData = await this.get<{
+        topicName: string;
+        channelId: string;
+      }>(`channel_webhook_${channelId}`);
+
+      if (!webhookData?.topicName) {
+        // No existing webhook data, do full setup
+        await this.setupChannelWebhook(channelId);
+        return;
+      }
+
+      // Re-call watch with the same topic
+      const watchResult = await api.setupWatch(channelId, webhookData.topicName);
+      const expiration = new Date(parseInt(watchResult.expiration));
+
+      await this.set(`channel_webhook_${channelId}`, {
+        ...webhookData,
+        historyId: watchResult.historyId,
+        expiration,
+      });
+
+      // Schedule next renewal
+      await this.scheduleWatchRenewal(channelId, expiration);
+    } catch (error) {
+      console.error(`Failed to renew Gmail watch for ${channelId}:`, error);
+      // Try full setup as fallback
+      try {
+        await this.setupChannelWebhook(channelId);
+      } catch (retryError) {
+        console.error("Failed to recreate Gmail webhook:", retryError);
+      }
     }
   }
 

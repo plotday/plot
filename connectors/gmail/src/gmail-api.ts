@@ -426,6 +426,16 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     if (!sender) continue; // Skip messages without sender
 
     const { content: body, contentType } = extractBody(message.payload);
+    const attachments = extractAttachments(message);
+
+    // Append attachment links to body
+    let content = body || message.snippet;
+    if (attachments.length > 0 && content) {
+      const attachmentLinks = attachments
+        .map((a) => `[${a.filename}](${a.url})`)
+        .join("\n");
+      content = content + "\n\n" + attachmentLinks;
+    }
 
     // Combine sender, to, and cc for mentions - convert to NewActor[]
     const senderActor: NewActor = {
@@ -442,7 +452,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const note = {
       key: message.id,
       author: senderActor,
-      content: body || message.snippet,
+      content,
       contentType,
       private: true,
       mentions: mentions.length > 0 ? mentions : undefined,

@@ -869,7 +869,7 @@ After creating a new connector, add it to `pnpm-workspace.yaml` if not already c
 - [ ] Declare `static readonly Options: SyncToolOptions` and `declare readonly Options: SyncToolOptions`
 - [ ] Declare all dependencies in `build()`: Integrations, Network, Callbacks, Tasks
 - [ ] Set `static readonly handleReplies = true` if the connector supports bidirectional sync
-- [ ] Implement `getChannels()`, `onChannelEnabled()`, `onChannelDisabled()`
+- [ ] Implement `getChannels()`, `onChannelEnabled()`, `onChannelDisabled()` — **use `runTask()` (not `run()`) in `onChannelEnabled` to avoid blocking the API response**
 - [ ] Convert parent callbacks to tokens with `createFromParent()` — **never pass functions to `this.callback()`**
 - [ ] Store callback tokens with `this.set()`, retrieve with `this.get<Callback>()`
 - [ ] Pass only serializable values (no functions, no undefined) to `this.callback()`
@@ -905,6 +905,7 @@ After creating a new connector, add it to `pnpm-workspace.yaml` if not already c
 14. **❌ Stripping HTML tags locally** — Pass raw HTML with `contentType: "html"` for server-side conversion. Local regex stripping breaks encoding and loses links
 15. **❌ Using placeholder titles in comment/update webhooks** — `title` always overwrites on upsert. Always use the real entity title (fetch from API if not in the webhook payload). Never use IDs or keys as placeholder titles
 16. **❌ Not setting `created` on notes from external data** — Always pass the external system's timestamp (e.g., `internalDate` from Gmail, `created_at` from an API) as the note's `created` field. Omitting it defaults to sync time, making all notes appear to have been created "just now"
+17. **❌ Using `this.run()` in `onChannelEnabled` to start sync** — `onChannelEnabled` runs synchronously inside the API request handler. Using `this.run()` (which executes inline) blocks the HTTP response until the entire sync completes, causing client timeouts. Always use `this.runTask()` to queue the initial sync as a separate execution so `onChannelEnabled` returns quickly
 
 ## Study These Examples
 

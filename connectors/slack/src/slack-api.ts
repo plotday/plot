@@ -1,7 +1,9 @@
 import type {
   NewLinkWithNotes,
   NewActor,
+  NewTags,
 } from "@plotday/twister/plot";
+import { Tag } from "@plotday/twister/tag";
 import { AuthProvider } from "@plotday/twister/tools/integrations";
 
 export type SlackChannel = {
@@ -171,6 +173,22 @@ export class SlackApi {
     // First message in replies is always the parent, so we skip it
     return (data.messages || []).slice(1);
   }
+
+  public async postMessage(
+    channelId: string,
+    text: string,
+    threadTs?: string
+  ): Promise<SlackMessage> {
+    const params: Record<string, string> = {
+      channel: channelId,
+      text,
+    };
+    if (threadTs) {
+      params.thread_ts = threadTs;
+    }
+    const data = await this.call("chat.postMessage", params);
+    return data.message;
+  }
 }
 
 /**
@@ -235,12 +253,75 @@ function formatSlackText(text: string): string {
 }
 
 /**
+ * Maps common Slack reaction names to Plot Count Tags.
+ */
+const SLACK_REACTION_TO_TAG: Record<string, Tag> = {
+  "+1": Tag.Yes,
+  thumbsup: Tag.Yes,
+  "-1": Tag.No,
+  thumbsdown: Tag.No,
+  tada: Tag.Tada,
+  fire: Tag.Fire,
+  heart: Tag.Love,
+  rocket: Tag.Rocket,
+  sparkles: Tag.Sparkles,
+  pray: Tag.Thanks,
+  raised_hands: Tag.Thanks,
+  smile: Tag.Smile,
+  grinning: Tag.Smile,
+  wave: Tag.Wave,
+  clap: Tag.Applause,
+  sunglasses: Tag.Cool,
+  cry: Tag.Sad,
+  sob: Tag.Sad,
+  eyes: Tag.Looking,
+  "100": Tag.Totally,
+  star: Tag.Star,
+  bulb: Tag.Idea,
+};
+
+/**
+ * Extracts reaction tags from all messages in a thread.
+ */
+function extractSlackReactionTags(messages: SlackMessage[]): NewTags | undefined {
+  const tagActors = new Map<Tag, NewActor[]>();
+
+  for (const msg of messages) {
+    if (!msg.reactions) continue;
+    for (const reaction of msg.reactions) {
+      const tag = SLACK_REACTION_TO_TAG[reaction.name];
+      if (!tag) continue;
+
+      const actors = reaction.users.map((userId) => slackUserToNewActor(userId));
+      const existing = tagActors.get(tag) ?? [];
+      tagActors.set(tag, [...existing, ...actors]);
+    }
+  }
+
+  if (tagActors.size === 0) return undefined;
+
+  const tags: NewTags = {};
+  for (const [tag, actors] of tagActors) {
+    // Deduplicate actors by source accountId
+    const seen = new Set<string>();
+    tags[tag] = actors.filter((a) => {
+      const key = "source" in a ? a.source?.accountId : "id" in a ? a.id : "";
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  return tags;
+}
+
+/**
  * Transforms a Slack message thread into a NewLinkWithNotes structure.
  * The first message snippet becomes the link title, and each message becomes a Note.
  */
 export function transformSlackThread(
   messages: SlackMessage[],
-  channelId: string
+  channelId: string,
+  initialSync?: boolean
 ): NewLinkWithNotes {
   const parentMessage = messages[0];
 
@@ -260,6 +341,9 @@ export function transformSlackThread(
   // Canonical URL using Slack's app_redirect (works across all workspaces)
   const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${threadTs}`;
 
+  // Extract reaction tags from all messages
+  const reactionTags = extractSlackReactionTags(messages);
+
   // Create link
   const thread: NewLinkWithNotes = {
     source: canonicalUrl,
@@ -272,7 +356,9 @@ export function transformSlackThread(
     },
     sourceUrl: canonicalUrl,
     notes: [],
+    ...(reactionTags ? { tags: reactionTags } : {}),
     preview: firstText || null,
+    ...(initialSync ? { unread: false, archived: false } : {}),
   };
 
   // Create Notes for all messages (including first)
@@ -288,6 +374,7 @@ export function transformSlackThread(
       key: message.ts,
       author: slackUserToNewActor(userId),
       content: text,
+      created: new Date(parseFloat(message.ts) * 1000),
       mentions: mentions.length > 0 ? mentions : undefined,
     };
 

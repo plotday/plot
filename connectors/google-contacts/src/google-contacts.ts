@@ -287,7 +287,7 @@ export default class GoogleContacts
     await this.set(`sync_state:${channel.id}`, initialState);
 
     const syncCallback = await this.callback(this.syncBatch, 1, channel.id);
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {

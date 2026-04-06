@@ -2,6 +2,7 @@ import {
   Connector,
   type ToolBuilder,
 } from "@plotday/twister";
+import type { Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -61,6 +62,7 @@ import {
  */
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
+  static readonly handleReplies = true;
   static readonly SCOPES = [
     "channels:history",
     "channels:read",
@@ -116,9 +118,10 @@ export class Slack extends Connector<Slack> {
       this.syncBatch,
       1,
       "full",
-      channel.id
+      channel.id,
+      true
     );
-    await this.run(syncCallback);
+    await this.runTask(syncCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -182,7 +185,8 @@ export class Slack extends Connector<Slack> {
       this.syncBatch,
       1,
       "full",
-      channelId
+      channelId,
+      true
     );
     await this.run(syncCallback);
   }
@@ -220,8 +224,10 @@ export class Slack extends Connector<Slack> {
   async syncBatch(
     batchNumber: number,
     mode: "full" | "incremental",
-    channelId: string
+    channelId: string,
+    initialSync?: boolean
   ): Promise<void> {
+    const isInitial = initialSync ?? mode === "full";
     try {
       const state = await this.get<SyncState>(`sync_state_${channelId}`);
       if (!state) {
@@ -232,7 +238,7 @@ export class Slack extends Connector<Slack> {
       const result = await syncSlackChannel(api, state);
 
       if (result.threads.length > 0) {
-        await this.processMessageThreads(result.threads, channelId);
+        await this.processMessageThreads(result.threads, channelId, isInitial);
       }
 
       await this.set(`sync_state_${channelId}`, result.state);
@@ -242,7 +248,8 @@ export class Slack extends Connector<Slack> {
           this.syncBatch,
           batchNumber + 1,
           mode,
-          channelId
+          channelId,
+          isInitial
         );
         await this.run(syncCallback);
       } else {
@@ -262,12 +269,13 @@ export class Slack extends Connector<Slack> {
 
   private async processMessageThreads(
     threads: SlackMessage[][],
-    channelId: string
+    channelId: string,
+    initialSync: boolean
   ): Promise<void> {
     for (const thread of threads) {
       try {
         // Transform Slack thread to NewLinkWithNotes
-        const activityThread = transformSlackThread(thread, channelId);
+        const activityThread = transformSlackThread(thread, channelId, initialSync);
 
         if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
@@ -345,9 +353,40 @@ export class Slack extends Connector<Slack> {
       this.syncBatch,
       1,
       "incremental",
-      channelId
+      channelId,
+      false
     );
     await this.run(syncCallback);
+  }
+
+  // ---- Write-back: reply from Plot ----
+
+  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+    const meta = thread.meta ?? {};
+    const channelId = meta.channelId as string;
+    const threadTs = meta.threadTs as string;
+
+    if (!channelId) {
+      console.error("No channelId in meta for Slack reply");
+      return;
+    }
+
+    const api = await this.getApi(channelId);
+
+    try {
+      const result = await api.postMessage(
+        channelId,
+        note.content ?? "",
+        threadTs
+      );
+
+      // Store sent message ts for dedup when synced back
+      if (result?.ts) {
+        await this.set(`sent:${result.ts}`, true);
+      }
+    } catch (error) {
+      console.error("Failed to send Slack reply:", error);
+    }
   }
 }
 
