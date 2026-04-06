@@ -85,7 +85,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Outlook Calendar",
-    ...si("microsoftoutlook", "0078D4", "2B88D8"),
+    ...si("microsoftoutlook", "0078D4", "47A5ED"),
     category: "Calendar",
     entities: ["Events", "RSVPs"],
     available: false,
@@ -96,7 +96,7 @@ export const CONNECTIONS: Connection[] = [
   // Calendar
   {
     name: "Apple Calendar",
-    ...si("apple", "000000", "ffffff"),
+    logo: "/assets/logo-apple-calendar.svg",
     category: "Calendar",
     entities: ["Events", "Reminders"],
     available: false,
@@ -164,7 +164,7 @@ export const CONNECTIONS: Connection[] = [
   // Email
   {
     name: "Outlook Mail",
-    ...si("microsoftoutlook", "0078D4", "2B88D8"),
+    ...si("microsoftoutlook", "0078D4", "47A5ED"),
     category: "Email",
     entities: ["Emails", "Threads"],
     available: false,
@@ -252,8 +252,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Webflow",
-    logo: "https://api.iconify.design/logos/webflow.svg",
-    logoDark: "https://api.iconify.design/simple-icons/webflow.svg?color=%23146EF5",
+    ...si("webflow", "146EF5", "146EF5"),
     category: "Design",
     entities: ["Forms", "CMS Items"],
     available: false,
@@ -314,7 +313,7 @@ export const CONNECTIONS: Connection[] = [
   // Development
   {
     name: "GitLab",
-    logo: "https://api.iconify.design/logos/gitlab.svg",
+    logo: "https://api.iconify.design/logos/gitlab-icon.svg",
     category: "Development",
     entities: ["Issues", "Merge Requests"],
     available: false,
@@ -372,7 +371,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Firebase",
-    logo: "https://api.iconify.design/logos/firebase.svg",
+    logo: "https://api.iconify.design/logos/firebase-icon.svg",
     category: "Development",
     entities: ["Alerts", "Analytics"],
     available: false,
@@ -388,7 +387,7 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "HubSpot",
-    logo: "https://api.iconify.design/logos/hubspot.svg",
+    ...si("hubspot", "FF7A59"),
     category: "CRM",
     entities: ["Contacts", "Deals", "Tasks"],
     available: false,
@@ -403,7 +402,8 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Pipedrive",
-    logo: "https://api.iconify.design/logos/pipedrive.svg",
+    logo: "/assets/logo-pipedrive.svg",
+    logoDark: "/assets/logo-pipedrive-dark.svg",
     category: "CRM",
     entities: ["Deals", "Activities"],
     available: false,
@@ -458,7 +458,7 @@ export const CONNECTIONS: Connection[] = [
   // Finance
   {
     name: "Stripe",
-    logo: "https://api.iconify.design/logos/stripe.svg",
+    ...si("stripe", "635BFF"),
     category: "Finance",
     entities: ["Payments", "Invoices"],
     available: false,
@@ -609,7 +609,8 @@ export const CONNECTIONS: Connection[] = [
   },
   {
     name: "Typeform",
-    ...si("typeform", "262627", "ffffff"),
+    logo: "/assets/logo-typeform.svg",
+    logoDark: "/assets/logo-typeform-dark.svg",
     category: "Productivity",
     entities: ["Responses", "Forms"],
     available: false,
