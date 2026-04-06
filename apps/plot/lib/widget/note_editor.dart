@@ -2,7 +2,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/store/store.dart';
-import 'package:plot/util/string.dart';
 
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/priority.dart';

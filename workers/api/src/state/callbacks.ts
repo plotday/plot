@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import superjson from "superjson";
 
+import { createLogger } from "@plotday/worker-util";
+
 import { withDb } from "../db";
 import { type Bindings } from "../env";
 import { CallbackError } from "../errors";
@@ -8,7 +10,6 @@ import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { handleTwistOperation } from "../twist/error-handling";
 import { validateSerializable } from "../twist/tools/validation";
-import { createLogger } from "@plotday/worker-util";
 
 export type CallbackData = {
   token: string;
@@ -269,7 +270,9 @@ export class CallbacksState extends DurableObject<Bindings> {
       callOnce: Boolean(rawCallback.call_once),
       expires: rawCallback.expires ? new Date(rawCallback.expires) : undefined,
       key: rawCallback.key ?? undefined,
-      meta: rawCallback.meta ? this.parseWithFallback(rawCallback.meta) : undefined,
+      meta: rawCallback.meta
+        ? this.parseWithFallback(rawCallback.meta)
+        : undefined,
     };
 
     // Check if callback has expired
@@ -363,7 +366,8 @@ export class CallbacksState extends DurableObject<Bindings> {
           context: {
             operation: "callCallback",
             priorityTwistId: callback.priorityTwistId,
-            reason: "Twist processing suspended due to execution quota exceeded",
+            reason:
+              "Twist processing suspended due to execution quota exceeded",
           },
         };
       }
@@ -481,9 +485,7 @@ export class CallbacksState extends DurableObject<Bindings> {
    * Does NOT handle callOnce deletion; the caller is responsible
    * for calling delete() after successful execution.
    */
-  resolve(
-    token: string
-  ): ResolvedCallback | null {
+  resolve(token: string): ResolvedCallback | null {
     if (!token) return null;
     [, token] = token.split(":");
     if (!token) return null;
@@ -562,7 +564,9 @@ export class CallbacksState extends DurableObject<Bindings> {
     this.sql.exec(
       "DELETE FROM callbacks WHERE priority_twist_id = ?" +
         (path ? " AND path = ?" : ""),
-      ...(path ? [priorityTwistId, superjson.stringify(path)] : [priorityTwistId])
+      ...(path
+        ? [priorityTwistId, superjson.stringify(path)]
+        : [priorityTwistId])
     );
   }
 
@@ -571,27 +575,12 @@ export class CallbacksState extends DurableObject<Bindings> {
    * This is called during twist deployment to ensure webhooks execute with the new version.
    */
   upgradeCallbacks(priorityTwistId: string, newVersion: string): void {
-    const logger = createLogger({
-      durable_object: "CallbacksState",
-      operation: "upgradeCallbacks",
-      priority_twist_id: priorityTwistId,
-    });
-
     // Update version for all callbacks belonging to this priority_twist
-    const result = this.sql.exec(
+    this.sql.exec(
       "UPDATE callbacks SET version = ? WHERE priority_twist_id = ?",
       newVersion,
       priorityTwistId
     );
-
-    // Get the number of updated rows
-    const updatedCount = result.rowsWritten || 0;
-
-    logger.info("Upgraded callbacks to new version", {
-      priority_twist_id: priorityTwistId,
-      new_version: newVersion,
-      updated_count: updatedCount,
-    });
   }
 
   private updateAlarm(): void {

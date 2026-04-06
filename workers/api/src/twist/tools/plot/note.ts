@@ -1,6 +1,5 @@
 import type { Database } from "@plotday/db";
 import {
-  type Thread,
   type Action,
   type ActorId,
   type ActorType,
@@ -8,12 +7,14 @@ import {
   type Note,
   type NoteUpdate,
   type Tag,
+  type Thread,
   type Uuid,
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
-
 import { createLogger } from "@plotday/worker-util";
+
 import { rpc } from "../../../rpc";
+import type { Plot } from "./index";
 import {
   convertNoteToMarkdown,
   handleDbOperationError,
@@ -21,7 +22,6 @@ import {
   processNewActor,
   processNewActorArray,
 } from "./thread-helpers";
-import type { Plot } from "./index";
 
 /**
  * Ensures notes have strictly increasing sourceCreatedAt timestamps.
@@ -165,11 +165,7 @@ export async function createNote(
     // Process mentions if provided - convert NewActor[] to ActorId[]
     let mentionIds: ActorId[] | null = null;
     if (note.mentions) {
-      mentionIds = await processNewActorArray(
-        plot,
-        note.mentions,
-        priorityId
-      );
+      mentionIds = await processNewActorArray(plot, note.mentions, priorityId);
     }
 
     // Auto-mention the calling twist so it stays routed for future notes
@@ -180,10 +176,7 @@ export async function createNote(
 
     // Auto-mention the thread-creating twist (if different from calling twist)
     // so the thread creator continues to receive notes
-    if (
-      threadCreatedBy &&
-      threadCreatedBy !== plot.priorityTwistId
-    ) {
+    if (threadCreatedBy && threadCreatedBy !== plot.priorityTwistId) {
       const isCreatorTwist = await plot.db
         .selectFrom("priority_twist")
         .select("id")
@@ -254,38 +247,25 @@ export async function createNote(
           .executeTakeFirstOrThrow();
 
     // Generate embedding (best-effort, don't fail the create)
-    if (contentToStore && contentToStore.trim().length > 0 && await plot.isAiEnabled()) {
+    if (
+      contentToStore &&
+      contentToStore.trim().length > 0 &&
+      (await plot.isAiEnabled())
+    ) {
       const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
       try {
-        logger.info("[embedding] Generating embedding for note", {
-          note_id: dbResult.id,
-          content_length: contentToStore.length,
-          content_preview: contentToStore.substring(0, 100),
-        });
         const embedding = await plot.ai.embed(contentToStore);
-        logger.info("[embedding] Generated embedding", {
-          note_id: dbResult.id,
-          embedding_length: embedding.length,
-          embedding_sample: embedding.slice(0, 5),
-        });
-        await plot.db.updateTable("note")
+        await plot.db
+          .updateTable("note")
           .set({ embedding: JSON.stringify(embedding) })
           .where("id", "=", dbResult.id)
           .execute();
-        logger.info("[embedding] Stored embedding for note", { note_id: dbResult.id });
       } catch (error) {
         logger.warn("Failed to generate note embedding", {
           note_id: dbResult.id,
           error: error instanceof Error ? error.message : String(error),
         });
       }
-    } else {
-      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
-      logger.info("[embedding] Skipping embedding for note (no content or AI disabled)", {
-        note_id: dbResult.id,
-        has_content: !!contentToStore,
-        content_trimmed_length: contentToStore?.trim().length ?? 0,
-      });
     }
 
     // Mark activity as read based on unread flag:
@@ -301,15 +281,17 @@ export async function createNote(
         target_priority_id: priorityId,
       });
 
-      const userIds = (Array.isArray(usersResult) ? usersResult : usersResult ? [usersResult] : []) as unknown as string[];
+      const userIds = (Array.isArray(usersResult)
+        ? usersResult
+        : usersResult
+        ? [usersResult]
+        : []) as unknown as string[];
       if (userIds.length > 0) {
-        const activityReadEntries = userIds.map(
-          (userId) => ({
-            thread_id: activityId,
-            user_id: userId,
-            read_at: dbResult.source_created_at,
-          })
-        );
+        const activityReadEntries = userIds.map((userId) => ({
+          thread_id: activityId,
+          user_id: userId,
+          read_at: dbResult.source_created_at,
+        }));
 
         try {
           await plot.db
@@ -475,14 +457,11 @@ export async function createNotes(
         .execute();
 
       if (keyNotes.length > 0) {
-        const keyToId = new Map(
-          keyNotes.map((n) => [n.key, n.id])
-        );
+        const keyToId = new Map(keyNotes.map((n) => [n.key, n.id]));
 
         for (const { note, index } of notesNeedingKeyResolution) {
           const parentId = keyToId.get((note.reNote as { key: string }).key);
-          const noteId = (results[index] as PromiseFulfilledResult<Uuid>)
-            .value;
+          const noteId = (results[index] as PromiseFulfilledResult<Uuid>).value;
           if (parentId && noteId) {
             await plot.db
               .updateTable("note")
@@ -523,9 +502,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
         .executeTakeFirst();
 
       if (!existingNote) {
-        throw new Error(
-          `Note not found with key "${note.key}": Not found`
-        );
+        throw new Error(`Note not found with key "${note.key}": Not found`);
       }
 
       noteId = existingNote.id;
@@ -561,7 +538,10 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     // after creation and the twist should still be able to update notes
 
     // Build update object (cast needed because @plotday/db types halfvec as unknown)
-    const dbUpdate: Omit<Database["public"]["Tables"]["note"]["Update"], "embedding"> = {
+    const dbUpdate: Omit<
+      Database["public"]["Tables"]["note"]["Update"],
+      "embedding"
+    > = {
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
     };
@@ -580,7 +560,9 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       }
     }
     if (note.actions !== undefined) {
-      dbUpdate.actions = note.actions ? JSON.stringify(note.actions) : note.actions;
+      dbUpdate.actions = note.actions
+        ? JSON.stringify(note.actions)
+        : note.actions;
     }
     if (note.private !== undefined) {
       dbUpdate.private = note.private;
@@ -589,7 +571,8 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       dbUpdate.archived_at = note.archived ? new Date().toISOString() : null;
     }
     if (note.reNote !== undefined) {
-      dbUpdate.re_note_id = note.reNote && "id" in note.reNote ? note.reNote.id : null;
+      dbUpdate.re_note_id =
+        note.reNote && "id" in note.reNote ? note.reNote.id : null;
     }
     if (note.mentions !== undefined) {
       // Process mentions - convert NewActor[] to ActorId[]
@@ -606,7 +589,10 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     }
 
     // When identified by id, key is an updatable field (sets the note's key for future upsert matching)
-    if ("id" in note && (note as { id: string; key?: string }).key !== undefined) {
+    if (
+      "id" in note &&
+      (note as { id: string; key?: string }).key !== undefined
+    ) {
       dbUpdate.key = (note as { id: string; key?: string }).key!;
     }
 
@@ -631,29 +617,27 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     }
 
     // Update embedding if content changed and AI is enabled
-    if (note.content !== undefined && hasMeaningfulUpdates && await plot.isAiEnabled()) {
+    if (
+      note.content !== undefined &&
+      hasMeaningfulUpdates &&
+      (await plot.isAiEnabled())
+    ) {
       const contentForEmbed = dbUpdate.content as string | null;
       const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
       if (contentForEmbed && contentForEmbed.trim().length > 0) {
         try {
-          logger.info("[embedding] Updating embedding for note", {
-            note_id: noteId,
-            content_length: contentForEmbed.length,
-          });
           const embedding = await plot.ai.embed(contentForEmbed);
-          await plot.db.updateTable("note")
+          await plot.db
+            .updateTable("note")
             .set({ embedding: JSON.stringify(embedding) })
             .where("id", "=", noteId)
             .execute();
-          logger.info("[embedding] Updated embedding for note", { note_id: noteId });
         } catch (error) {
           logger.warn("Failed to update note embedding", {
             note_id: noteId,
             error: error instanceof Error ? error.message : String(error),
           });
         }
-      } else {
-        logger.info("[embedding] Skipping embedding update (no content)", { note_id: noteId });
       }
     }
 
@@ -709,10 +693,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
   }
 }
 
-export async function getNotes(
-  plot: Plot,
-  activity: Thread
-): Promise<Note[]> {
+export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
   try {
     // Validate access to the priority
     await plot.validatePriorityAccess(activity.priority.id);

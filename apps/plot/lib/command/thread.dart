@@ -1322,7 +1322,7 @@ class MoveThreadToPriority extends ShowCommands {
         .toList();
 
     return Commands(
-      prompt: 'Move to Priority',
+      prompt: 'Move thread to priority',
       groups: [
         StaticCommandGroup(
           title: 'Priorities',

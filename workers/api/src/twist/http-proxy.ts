@@ -111,11 +111,15 @@ export class HttpProxy extends WorkerEntrypoint<
     const { allowedPatterns } = this.ctx.props;
 
     if (!this.isAllowed(url, allowedPatterns)) {
+      const message = `HTTP access to ${url} is not allowed. Allowed URL patterns: [${allowedPatterns.join(", ")}]. Add this URL to the Network tool's urls array in your build() method.`;
+      const logger = createLogger();
+      logger.error(message);
       return new Response(
         JSON.stringify({
           error: "Forbidden",
-          message: `HTTP access to ${url} is not allowed. Request access via tools.get(Network, { urls: [...] }) in your twist or tool constructor.`,
+          message,
           url,
+          allowedPatterns,
         }),
         {
           status: 403,

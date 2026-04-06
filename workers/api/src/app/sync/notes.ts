@@ -178,7 +178,10 @@ notes.post("/sync/notes", async (c) => {
           }
         } catch (error) {
           const logger = createLogger({ operation: "notifyAccountTwists" });
-          logger.error("Error notifying account-level twist DOs", error as Error);
+          logger.error(
+            "Error notifying account-level twist DOs",
+            error as Error
+          );
         }
       })()
     );
@@ -234,11 +237,6 @@ notes.post("/sync/notes", async (c) => {
                   error
                 );
               }
-            } else {
-              console.log(
-                "[embedding:sync] AI limit reached for all priority members, skipping",
-                noteId
-              );
             }
           }
 
@@ -348,14 +346,6 @@ notes.post("/sync/notes", async (c) => {
         }
       })()
     );
-  } else if (noteId) {
-    console.log("[embedding:sync] Skipping background processing", {
-      noteId,
-      hasContent: !!content,
-      contentLength: content?.trim().length,
-      draft: body.draft,
-      archived: !!body.archived_at,
-    });
   }
 
   return c.json(result as any);

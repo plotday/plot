@@ -1,4 +1,3 @@
-import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/store/store.dart';

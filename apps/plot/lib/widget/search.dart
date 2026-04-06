@@ -46,13 +46,14 @@ class _SearchWidgetState extends State<SearchWidget> {
   }
 
   void _onSearchChanged() {
-    // Cancel previous timer
+    // Leading-edge: fire immediately on the first change so the UI responds
+    // without waiting for the debounce window.
+    if (_debounceTimer == null || !_debounceTimer!.isActive) {
+      widget.onSearchChanged(_controller.text);
+    }
     _debounceTimer?.cancel();
-
-    // Create new timer with 250ms delay
     _debounceTimer = Timer(const Duration(milliseconds: 250), () {
-      final search = _controller.text;
-      widget.onSearchChanged(search);
+      widget.onSearchChanged(_controller.text);
     });
   }
 
@@ -73,7 +74,8 @@ class _SearchWidgetState extends State<SearchWidget> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
       _toggle();
       return KeyEventResult.handled;
     }
@@ -90,14 +92,12 @@ class _SearchWidgetState extends State<SearchWidget> {
               child: Focus(
                 onKeyEvent: _handleKeyEvent,
                 child: FTextField(
-                  control: .managed(controller: _controller), focusNode: _focusNode,
+                  control: .managed(controller: _controller),
+                  focusNode: _focusNode,
                   hint: 'Search...',
                   style: FTextFieldStyleDelta.delta(
                     contentPadding: EdgeInsetsGeometryDelta.value(
-                      const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     ),
                   ),
                 ),

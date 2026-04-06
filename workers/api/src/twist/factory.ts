@@ -624,12 +624,24 @@ export function twistFactory({
 
       dispatch: async (toolName: string, ...args: any[]) => {
         // Find all tool paths that include this tool type
-        const toolPaths = Object.keys(
+        let toolPaths = Object.keys(
           storedToolPermissions ?? toolPermissionsMap
         ).filter((path) => path.split(":").includes(toolName));
 
         if (toolPaths.length === 0) {
           return; // No instances of this tool
+        }
+
+        // When a connector includes sub-connectors that declare the same tool
+        // (e.g. GoogleChat includes GoogleContacts, both have Integrations),
+        // prefer the shortest paths to avoid duplicate dispatch.
+        if (toolPaths.length > 1) {
+          const minDepth = Math.min(
+            ...toolPaths.map((p) => p.split(":").length)
+          );
+          toolPaths = toolPaths.filter(
+            (p) => p.split(":").length === minDepth
+          );
         }
 
         const logger = createLogger({ twist_id: id, environment });

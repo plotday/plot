@@ -8,6 +8,26 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 
 import TwistConstructor from "twist.js";
 
+// Intercept fetch to detect and log HTTP proxy 403 violations.
+// The HttpProxy (globalOutbound) blocks requests to URLs not in the Network tool's
+// allowed list and returns a 403 JSON response. Since the proxy runs as a separate
+// entrypoint, its logs don't appear in twist logs. This wrapper ensures blocked
+// requests produce a clear console.error visible in the twist's log stream.
+const _originalFetch = globalThis.fetch;
+globalThis.fetch = async function(input, init) {
+  const response = await _originalFetch.call(globalThis, input, init);
+  if (response.status === 403) {
+    try {
+      const cloned = response.clone();
+      const body = await cloned.json();
+      if (body?.error === "Forbidden" && body?.allowedPatterns) {
+        console.error("[NETWORK VIOLATION]", body.message);
+      }
+    } catch {}
+  }
+  return response;
+};
+
 class ToolShed {
   constructor(path, priorityTwistId, builtInToolFactory, rootToolShed) {
     this.path = path || [];
