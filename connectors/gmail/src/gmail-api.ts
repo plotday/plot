@@ -462,6 +462,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       private: true,
       mentions: mentions.length > 0 ? mentions : undefined,
       created: new Date(parseInt(message.internalDate)),
+      checkForTasks: true,
     };
 
     plotThread.notes!.push(note);
