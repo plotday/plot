@@ -12,6 +12,7 @@ import {
 } from "@plotday/twister/plot";
 import { ContactAccess } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
+import { PostHog } from "posthog-node";
 
 import { detectTasks } from "../../../queue/note-analysis";
 import { rpc } from "../../../rpc";
@@ -523,6 +524,9 @@ export async function createNotes(
             logger.error("Failed to detect tasks for note", error as Error, {
               note_id: noteId,
             });
+            const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+            postHog.captureException(error as Error, undefined, { context: "detect-tasks:createNotes", note_id: noteId });
+            await postHog.shutdown();
           }
         }
         recordAiUsage(plot.env, ownerId, "note_processing");

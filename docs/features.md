@@ -231,9 +231,8 @@ Internal catalog of product features for marketing content generation. Direct an
 
 ### Automation (via Twists)
 - Calendar sync (Google/Outlook auto-import)
-- Email to tasks
+- AI task detection in emails and chat messages (Gmail, Slack, Google Chat) — automatically creates to-dos when someone asks you to do something
 - Project sync (Linear, Asana, etc.)
-- Message tasks (Slack to activities)
 - Custom workflows with Twister
 
 ## Unique/Differentiating Features
