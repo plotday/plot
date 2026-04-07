@@ -508,6 +508,8 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     if (!commentMatch) return;
 
     const commentId = commentMatch[1];
+    const fileId = thread.meta?.fileId as string | undefined;
+    console.log(`[google-drive] Write-back: replying to comment ${commentId} on file ${fileId}`);
     return this.addDocumentReply(
       thread.meta ?? {},
       commentId,
@@ -639,10 +641,12 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   }
 
   async onDriveWebhook(
-    _request: WebhookRequest,
+    request: WebhookRequest,
     folderId: string
   ): Promise<void> {
-    console.log(`[google-drive] onDriveWebhook called for ${folderId}`);
+    const resourceState = request.headers?.["x-goog-resource-state"] ?? "unknown";
+    const channelId = request.headers?.["x-goog-channel-id"] ?? "unknown";
+    console.log(`[google-drive] onDriveWebhook for ${folderId}: state=${resourceState} channel=${channelId}`);
     const watchData = await this.get<any>(`drive_watch_${folderId}`);
     if (!watchData) {
       console.log(`[google-drive] No watch data for ${folderId}, skipping`);
