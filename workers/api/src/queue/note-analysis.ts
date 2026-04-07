@@ -327,7 +327,8 @@ New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${aut
 
   const defaultClassification: UnreadClassification = { urgency: "inform-updates", importance: 50 };
 
-  const text = response.response?.trim();
+  const raw = response.response;
+  const text = (typeof raw === "string" ? raw : JSON.stringify(raw))?.trim();
   if (!text) {
     return { unread: { default: defaultClassification, overrides: {} } };
   }
@@ -592,7 +593,8 @@ New message by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${
     throw new Error("Unexpected stream response from AI");
   }
 
-  const text = response.response?.trim();
+  const raw = response.response;
+  const text = (typeof raw === "string" ? raw : JSON.stringify(raw))?.trim();
   if (!text) return [];
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);

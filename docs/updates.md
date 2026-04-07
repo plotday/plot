@@ -1,3 +1,4 @@
+- Replies to Google Doc comments now sync back to the document — when you reply to a comment in Plot, your reply appears in the Google Doc's comment thread
 - Plot now automatically detects tasks in your emails and chat messages — when someone asks you to do something in Gmail, Slack, or Google Chat, Plot creates a to-do for it so you don't lose track
 - Fixed completed connector issues (like Linear "Done" tasks) incorrectly appearing as to-dos in your agenda — completed items now skip scheduling, and existing to-dos are removed when their status changes to done
 - Fixed Google Chat not receiving new messages in real time — messages sent after the initial sync now appear automatically
