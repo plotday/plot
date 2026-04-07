@@ -210,21 +210,41 @@ class _NoteWidgetState extends State<NoteWidget> {
                   top: 0,
                   bottom: 0,
                   child: widget.showAuthor
-                      ? FutureBuilder<String>(
-                          future: widget.note.getAuthorName(),
+                      ? FutureBuilder<Actor?>(
+                          future: widget.note.getAuthor(),
                           builder: (context, snapshot) {
-                            final authorName = snapshot.data;
+                            final actor = snapshot.data;
+                            final authorName = actor == null
+                                ? null
+                                : (widget.note.authorId.isCurrentUser
+                                    ? 'You'
+                                    : actor.nameOrEmail);
                             return Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 if (authorName != null &&
                                     authorName.isNotEmpty) ...[
-                                  Text(
-                                    authorName,
-                                    style: context.theme.typography.xs.copyWith(
-                                      color: context.colour.muted,
+                                  if (actor?.email != null &&
+                                      actor!.email != authorName)
+                                    FTooltip(
+                                      tipBuilder: (context, controller) =>
+                                          Text(actor.email!),
+                                      child: Text(
+                                        authorName,
+                                        style: context.theme.typography.xs
+                                            .copyWith(
+                                          color: context.colour.muted,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Text(
+                                      authorName,
+                                      style: context.theme.typography.xs
+                                          .copyWith(
+                                        color: context.colour.muted,
+                                      ),
                                     ),
-                                  ),
                                   const SizedBox(width: 4),
                                   Text(
                                     '•',
@@ -234,20 +254,34 @@ class _NoteWidgetState extends State<NoteWidget> {
                                   ),
                                   const SizedBox(width: 4),
                                 ],
-                                Text(
-                                  widget.note.sourceCreatedAt.toTimeAgo(),
-                                  style: context.theme.typography.xs.copyWith(
-                                    color: context.colour.muted,
+                                FTooltip(
+                                  tipBuilder: (context, controller) => Text(
+                                    widget.note.sourceCreatedAt
+                                        .toLocal()
+                                        .format('MMM d, yyyy, h:mm a'),
+                                  ),
+                                  child: Text(
+                                    widget.note.sourceCreatedAt.toTimeAgo(),
+                                    style: context.theme.typography.xs.copyWith(
+                                      color: context.colour.muted,
+                                    ),
                                   ),
                                 ),
                               ],
                             );
                           },
                         )
-                      : Text(
-                          widget.note.sourceCreatedAt.toTimeAgo(),
-                          style: context.theme.typography.xs.copyWith(
-                            color: context.colour.muted,
+                      : FTooltip(
+                          tipBuilder: (context, controller) => Text(
+                            widget.note.sourceCreatedAt
+                                .toLocal()
+                                .format('MMM d, yyyy, h:mm a'),
+                          ),
+                          child: Text(
+                            widget.note.sourceCreatedAt.toTimeAgo(),
+                            style: context.theme.typography.xs.copyWith(
+                              color: context.colour.muted,
+                            ),
                           ),
                         ),
                 ),

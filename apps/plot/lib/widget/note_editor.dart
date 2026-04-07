@@ -603,7 +603,11 @@ class NoteEditorState extends State<NoteEditor> {
                               .thread
                               .priority
                               .isViewer)
-                        Button.icon(PickNoteAssignee(widget.draft)),
+                        Button.icon(
+                          PickNoteAssignee(widget.draft),
+                          selected: widget.draft.assignees
+                              .any((id) => id != Base.actorId),
+                        ),
                       // Private toggle (only for shared, non-viewer priorities)
                       if (context
                               .read<ThreadBloc>()
