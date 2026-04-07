@@ -192,10 +192,16 @@ class _NoteWidgetState extends State<NoteWidget> {
                   alignment: Alignment.centerLeft,
                   child: Transform.translate(
                     offset: Offset(
-                      6 - context.theme.buttonStyles.ghost.md
-                          .iconContentStyle.padding
-                          .resolve(TextDirection.ltr)
-                          .left,
+                      6 -
+                          context
+                              .theme
+                              .buttonStyles
+                              .ghost
+                              .md
+                              .iconContentStyle
+                              .padding
+                              .resolve(TextDirection.ltr)
+                              .left,
                       0,
                     ),
                     child: NoteCommands(
@@ -217,8 +223,8 @@ class _NoteWidgetState extends State<NoteWidget> {
                             final authorName = actor == null
                                 ? null
                                 : (widget.note.authorId.isCurrentUser
-                                    ? 'You'
-                                    : actor.nameOrEmail);
+                                      ? 'You'
+                                      : actor.nameOrEmail);
                             return Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -233,8 +239,8 @@ class _NoteWidgetState extends State<NoteWidget> {
                                         authorName,
                                         style: context.theme.typography.xs
                                             .copyWith(
-                                          color: context.colour.muted,
-                                        ),
+                                              color: context.colour.muted,
+                                            ),
                                       ),
                                     )
                                   else
@@ -242,8 +248,8 @@ class _NoteWidgetState extends State<NoteWidget> {
                                       authorName,
                                       style: context.theme.typography.xs
                                           .copyWith(
-                                        color: context.colour.muted,
-                                      ),
+                                            color: context.colour.muted,
+                                          ),
                                     ),
                                   const SizedBox(width: 4),
                                   Text(
@@ -273,9 +279,9 @@ class _NoteWidgetState extends State<NoteWidget> {
                         )
                       : FTooltip(
                           tipBuilder: (context, controller) => Text(
-                            widget.note.sourceCreatedAt
-                                .toLocal()
-                                .format('MMM d, yyyy, h:mm a'),
+                            widget.note.sourceCreatedAt.toLocal().format(
+                              'MMM d, yyyy, h:mm a',
+                            ),
                           ),
                           child: Text(
                             widget.note.sourceCreatedAt.toTimeAgo(),
@@ -365,7 +371,12 @@ class NoteCommands extends StatelessWidget {
         : Future.value('');
 
     // Build generic tag widgets (excluding todo/done which are handled above)
-    final isViewerPriority = context.read<ThreadBloc>().state.thread.priority.isViewer;
+    final isViewerPriority = context
+        .read<ThreadBloc>()
+        .state
+        .thread
+        .priority
+        .isViewer;
     final tagFutures = Tag.getAll()
         .where((tag) {
           if (tag == Tag.todo || tag == Tag.done) return false;
@@ -379,7 +390,9 @@ class NoteCommands extends StatelessWidget {
           final key = ValueKey(Object.hash(note.id, tag.id));
 
           final command = ToggleNoteTag(
-            note, tag, actorId,
+            note,
+            tag,
+            actorId,
             isViewer: isViewerPriority,
           );
 
@@ -397,10 +410,7 @@ class NoteCommands extends StatelessWidget {
           if (tag == Tag.twist) {
             return CountBadge(
               count: count,
-              child: PulsingColorButton(
-                key: key,
-                primaryColor: accentColor,
-              ),
+              child: PulsingColorButton(key: key, primaryColor: accentColor),
             );
           }
 
@@ -463,7 +473,10 @@ class NoteCommands extends StatelessWidget {
             Button.icon(
               CommandWrapper(
                 assigneeNames.isNotEmpty
-                    ? CommandWrapper(PickNoteAssignee(note), subtitle: Value(assigneeNames))
+                    ? CommandWrapper(
+                        PickNoteAssignee(note),
+                        subtitle: Value(assigneeNames),
+                      )
                     : PickNoteAssignee(note),
                 icon: const Value(PlotIcon.selfTaskDone),
               ),
@@ -476,7 +489,10 @@ class NoteCommands extends StatelessWidget {
               child: Button.icon(
                 CommandWrapper(
                   assigneeNames.isNotEmpty
-                      ? CommandWrapper(PickNoteAssignee(note), subtitle: Value(assigneeNames))
+                      ? CommandWrapper(
+                          PickNoteAssignee(note),
+                          subtitle: Value(assigneeNames),
+                        )
                       : PickNoteAssignee(note),
                   icon: const Value(PlotIcon.selfTaskDone),
                 ),
@@ -500,6 +516,13 @@ class NoteCommands extends StatelessWidget {
                       icon: const Value(PlotIcon.assignAdd),
                     ),
                   ),
+                if (!note.hasTag(Tag.todo, actorId) &&
+                    !note.hasTag(Tag.done, actorId))
+                  Button.icon(ToggleNoteTag(note, Tag.done, actorId)),
+
+                if (!note.draft && !isViewer)
+                  Button.icon(ReplyToNote(note, activityBloc: activityBloc)),
+
                 // Add top tag buttons
                 ...topNoteTags(
                   note,
@@ -530,10 +553,14 @@ class NoteCommands extends StatelessWidget {
                   .map((tag) {
                     final key = ValueKey(Object.hash(note.id, tag.id));
                     final command = ToggleNoteTag(
-                      note, tag, actorId,
+                      note,
+                      tag,
+                      actorId,
                       isViewer: isViewerPriority,
                     );
-                    final count = tag == Tag.reply ? 1 : (note.tags[tag]?.length ?? 0);
+                    final count = tag == Tag.reply
+                        ? 1
+                        : (note.tags[tag]?.length ?? 0);
                     // Twist tags are display-only (not interactive)
                     if (tag == Tag.twist) {
                       return CountBadge(
@@ -552,7 +579,11 @@ class NoteCommands extends StatelessWidget {
                   .toList();
 
         // Combine task tags, generic tags, and commands
-        final allButtons = [...taskTagWidgets, ...genericTagButtons, ...commandButtons];
+        final allButtons = [
+          ...taskTagWidgets,
+          ...genericTagButtons,
+          ...commandButtons,
+        ];
 
         // Use LayoutBuilder to dynamically truncate buttons based on available width
         return LayoutBuilder(

@@ -695,7 +695,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
   ];
 }
 
-/// Returns up to 3 tag suggestions for quick actions.
+/// Returns up to 6 tag suggestions for quick actions.
 /// The number shown is reduced by the count of non-hardcoded tags already on the note.
 /// Takes from tagSuggestions list which is pre-sorted (common tags first, then all others).
 List<Command> topNoteTags(
@@ -708,17 +708,18 @@ List<Command> topNoteTags(
       .where((tag) => note.hasTag(tag, actorId))
       .length;
 
-  // Calculate how many tags to show: 3 minus active non-hardcoded tags
-  final maxToShow = 3 - activeNonHardcodedCount;
+  // Calculate how many tags to show: 6 minus active non-hardcoded tags
+  final maxToShow = 4 - activeNonHardcodedCount;
   if (maxToShow <= 0) return [];
 
-  // Filter out tags already on note (and archived, which is menu-only) and take maxToShow
+  // Filter to count tags not already on note (excluding archived/done)
   return tagSuggestions
       .where(
         (tag) =>
+            tag.type == TagType.count &&
             tag != Tag.archived &&
-            !note.hasTag(tag, actorId) &&
-            !(tag == Tag.done && note.hasTag(Tag.todo, actorId)),
+            tag != Tag.done &&
+            !note.hasTag(tag, actorId),
       )
       .take(maxToShow)
       .map((tag) => ToggleNoteTag(note, tag, actorId))

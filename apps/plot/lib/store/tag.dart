@@ -39,13 +39,7 @@ enum Tag {
     type: TagType.compute,
     shortcodes: ['private', 'lock'],
   ),
-  unread(
-    9,
-    PlotIcon.unread,
-    'Unread',
-    type: TagType.compute,
-    addable: false,
-  ),
+  unread(9, PlotIcon.unread, 'Unread', type: TagType.compute, addable: false),
 
   // Toggle tags
   pinned(100, PlotIcon.pinned, 'Pinned', shortcodes: ['pushpin']),
@@ -56,7 +50,13 @@ enum Tag {
     shortcodes: ['decision', 'thinking_face'],
     addable: false,
   ),
-  goal(103, PlotIcon.goal, 'Goal', shortcodes: ['goal', 'dart'], addable: false),
+  goal(
+    103,
+    PlotIcon.goal,
+    'Goal',
+    shortcodes: ['goal', 'dart'],
+    addable: false,
+  ),
   urgent(101, PlotIcon.urgent, 'Urgent', shortcodes: ['rotating_light']),
   waiting(
     105,
@@ -66,10 +66,28 @@ enum Tag {
   ),
   blocked(106, PlotIcon.blocked, 'Blocked', shortcodes: ['blocked', 'x']),
   warning(107, PlotIcon.warning, 'Warning', shortcodes: ['warning']),
-  question(108, PlotIcon.question, 'Question', shortcodes: ['question'], addable: false),
-  twist(109, PlotIcon.twist, 'Twisting', shortcodes: ['twist', 'twisting'], addable: false),
+  question(
+    108,
+    PlotIcon.question,
+    'Question',
+    shortcodes: ['question'],
+    addable: false,
+  ),
+  twist(
+    109,
+    PlotIcon.twist,
+    'Twisting',
+    shortcodes: ['twist', 'twisting'],
+    addable: false,
+  ),
   star(110, PlotIcon.star, 'Star', shortcodes: ['star']),
-  idea(111, PlotIcon.idea, 'Idea', shortcodes: ['idea', 'bulb', 'lightbulb'], addable: false),
+  idea(
+    111,
+    PlotIcon.idea,
+    'Idea',
+    shortcodes: ['idea', 'bulb', 'lightbulb'],
+    addable: false,
+  ),
 
   // Count tags
   yes(
@@ -79,12 +97,12 @@ enum Tag {
     type: TagType.count,
     shortcodes: ['yes', '+1', 'thumbsup'],
   ),
-  no(
-    1001,
-    PlotIcon.no,
-    'No',
+  looking(
+    1006,
+    PlotIcon.looking,
+    'Looking',
     type: TagType.count,
-    shortcodes: ['no', '-1', 'thumbsdown'],
+    shortcodes: ['looking', 'eyes'],
   ),
   volunteer(
     1002,
@@ -92,6 +110,20 @@ enum Tag {
     'Volunteer',
     type: TagType.count,
     shortcodes: ['volunteer', 'raised_hand'],
+  ),
+  thanks(
+    1010,
+    PlotIcon.thanks,
+    'Thanks',
+    type: TagType.count,
+    shortcodes: ['thanks', 'pray'],
+  ),
+  no(
+    1001,
+    PlotIcon.no,
+    'No',
+    type: TagType.count,
+    shortcodes: ['no', '-1', 'thumbsdown'],
   ),
   tada(
     1003,
@@ -107,13 +139,6 @@ enum Tag {
     '100',
     type: TagType.count,
     shortcodes: ['totally', '100'],
-  ),
-  looking(
-    1006,
-    PlotIcon.looking,
-    'Looking',
-    type: TagType.count,
-    shortcodes: ['looking', 'eyes'],
   ),
   love(
     1007,
@@ -135,13 +160,6 @@ enum Tag {
     'Sparkles',
     type: TagType.count,
     shortcodes: ['sparkles'],
-  ),
-  thanks(
-    1010,
-    PlotIcon.thanks,
-    'Thanks',
-    type: TagType.count,
-    shortcodes: ['thanks', 'pray'],
   ),
   smile(
     1011,
@@ -220,9 +238,11 @@ enum Tag {
 
   bool matchesSearch(String search) {
     final words = search.toLowerCase().trim().split(RegExp(r'\s+'));
-    return words.every((word) =>
-        name.toLowerCase().startsWith(word) ||
-        shortcodes.any((sc) => sc.startsWith(word)));
+    return words.every(
+      (word) =>
+          name.toLowerCase().startsWith(word) ||
+          shortcodes.any((sc) => sc.startsWith(word)),
+    );
   }
 
   @override
@@ -323,9 +343,7 @@ class TagUpdatesConverter extends TypeConverter<Map<String, bool>?, String?>
       final decoded = jsonDecode(fromDb) as Map<String, dynamic>?;
       if (decoded == null) return null;
 
-      return decoded.map(
-        (key, value) => MapEntry(key, value as bool),
-      );
+      return decoded.map((key, value) => MapEntry(key, value as bool));
     } catch (e, t) {
       log.warning('Error decoding tagUpdates', e, t);
       return null;
