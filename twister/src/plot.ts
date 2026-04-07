@@ -706,6 +706,14 @@ export type NewNote = Partial<
     unread?: boolean;
 
     /**
+     * When true, the server will use AI to detect tasks in this note's content
+     * and create separate Plot-authored reply notes for each detected task.
+     * Use for messaging connectors (email, chat) where tasks are implicit
+     * in conversation rather than explicitly structured.
+     */
+    checkForTasks?: boolean;
+
+    /**
      * Reference to a parent note this note is a reply to.
      * - `{ id }`: reply by UUID
      * - `{ key }`: reply by key, resolved after creation (for batch ops)
