@@ -679,6 +679,7 @@ export function transformChatThread(
         author: senderToNewActor(msg.sender, memberInfo),
         ...(mentions.length > 0 ? { mentions } : {}),
         ...(reactionTags ? { tags: reactionTags } : {}),
+        checkForTasks: true,
       };
     }),
     preview,
