@@ -1,4 +1,4 @@
-import { type Kysely, sql } from "kysely";
+import { type Kysely } from "kysely";
 import { PostHog } from "posthog-node";
 
 import type { DB } from "../db";
@@ -23,29 +23,6 @@ export async function analyzeNote(
     if (!context) return false;
 
     const result = await classifyNote(env, context);
-
-    if (result.tags.length > 0) {
-      // Guard: if the LLM assigned more than 2 people, it's almost certainly wrong.
-      // A single note rarely clearly assigns tasks to more than 2 specific people.
-      const newAssignments = result.tags.filter(t => !t.done);
-      const uniqueAssignees = new Set(newAssignments.map(t => t.actorId));
-      if (uniqueAssignees.size > 2) {
-        console.warn(
-          `[note-analysis] Rejecting ${uniqueAssignees.size} assignments for note ${noteId} — LLM assigned too many people`
-        );
-        result.tags = result.tags.filter(t => t.done); // keep only completions
-      }
-
-      if (result.tags.length > 0) {
-        await applyTagChanges(env, db, result.tags, context.memberIds, userId);
-
-        // Unarchive thread if actionable tags found and channel uses 'actionable' mode
-        const actionableTags = result.tags.filter(t => !t.done);
-        if (actionableTags.length > 0) {
-          await maybeUnarchiveActionableThread(db, threadId);
-        }
-      }
-    }
 
     await applyUnreadStatus(
       env,
@@ -99,18 +76,10 @@ interface UnreadClassification {
 }
 
 interface AnalysisResult {
-  tags: TagAction[];
   unread: {
     default: UnreadClassification;
     overrides: Record<string, Partial<UnreadClassification>>;
   };
-}
-
-interface TagAction {
-  noteId: string;
-  actorId: string;
-  done: boolean;
-  tag: "todo" | "reply";
 }
 
 async function gatherContext(
@@ -279,21 +248,6 @@ async function classifyNote(
     memberIdToNum.set(m.id, num);
   });
 
-  // Note number 0 = the current note being analyzed
-  const noteNumToId = new Map<number, string>();
-  noteNumToId.set(0, context.noteId);
-  let nextNoteNum = 1;
-
-  // Collect all known note IDs from existing todos/replies/cleared
-  const allExistingNotes = [...context.existingTodos, ...context.clearedTodos, ...context.existingReplies];
-  for (const t of allExistingNotes) {
-    if (!Array.from(noteNumToId.values()).includes(t.noteId)) {
-      noteNumToId.set(nextNoteNum, t.noteId);
-      nextNoteNum++;
-    }
-  }
-  const noteIdToNum = new Map(Array.from(noteNumToId.entries()).map(([k, v]) => [v, k]));
-
   const membersStr = context.members
     .map((m) => `- #${memberIdToNum.get(m.id)}: ${m.name ?? "Unknown"}`)
     .join("\n");
@@ -305,39 +259,6 @@ async function classifyNote(
             (l) =>
               `- ${l.title ?? "Untitled"} (type: ${l.type ?? "unknown"}, assignee: ${l.assignee_name ?? "none"}, status: ${l.status ?? "none"})`
           )
-          .join("\n")
-      : "None";
-
-  const todosStr =
-    context.existingTodos.length > 0
-      ? context.existingTodos
-          .map((t) => {
-            const name =
-              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
-            return `- Note #${noteIdToNum.get(t.noteId)} assigned to ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"})`;
-          })
-          .join("\n")
-      : "None";
-
-  const clearedTodosStr =
-    context.clearedTodos.length > 0
-      ? context.clearedTodos
-          .map((t) => {
-            const name =
-              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
-            return `- Note #${noteIdToNum.get(t.noteId)} was assigned to ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"})`;
-          })
-          .join("\n")
-      : "None";
-
-  const repliesStr =
-    context.existingReplies.length > 0
-      ? context.existingReplies
-          .map((t) => {
-            const name =
-              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
-            return `- Note #${noteIdToNum.get(t.noteId)} flagged for ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"})`;
-          })
           .join("\n")
       : "None";
 
@@ -359,23 +280,9 @@ async function classifyNote(
   const messages = [
     {
       role: "system" as const,
-      content: `You analyze notes in a collaborative productivity app to determine three things:
-1. Does this note assign a task to someone? (tag: "todo")
-2. Does this note require a reply from someone? (tag: "reply")
-3. How urgently should each member be notified? (unread classification)
+      content: `You classify notes in a collaborative productivity app to determine notification urgency for each member.
 
-All members and notes are identified by sequential numbers (e.g. member #1, note #0).
-Note #0 is always the new note being analyzed.
-
-Tag rules:
-- Only assign tags to members in the priority members list (use member numbers).
-- If no specific person is identifiable, do not assign a tag.
-- For completions (done=true), reference the note number of the existing todo/reply being completed.
-- For new items (done=false), ONLY use note number 0 (the current note). Never retroactively add tags to previous notes.
-- Todo: Only mark as todo when the note contains an unambiguously concrete, completable task (not vague intentions, observations, or questions). The note must make it obvious what needs to be done. Only assign to a specific member when the note explicitly names or clearly implies that person (e.g. @mention, "can you…", direct assignment). If the assignee is ambiguous, do not assign. Do not duplicate tasks already covered by existing todos or links in the thread.
-- NEVER re-assign a todo that was manually cleared by a user. "Cleared tasks" lists assignments that a user intentionally removed — do not recreate them.
-- Reply: Only mark as reply when the note directly and clearly asks a specific person for a response (e.g. a direct question with @mention, or an obvious question in a two-person thread). Do not flag vague or rhetorical questions. Only add new reply tags on note #0.
-- When in doubt, do not tag. False negatives (missing a tag) are far less disruptive than false positives (incorrect tags).
+All members are identified by sequential numbers (e.g. member #1).
 
 Unread classification rules:
 - For each member, classify how urgently and importantly they should be notified.
@@ -392,12 +299,9 @@ Unread classification rules:
 Respond with JSON only. No explanation.
 
 Output schema:
-{
-  "tags": [{"note": 0, "member": 1, "done": false, "tag": "todo"}],
-  "unread": {"default": {"urgency": "inform-updates", "importance": 50}, "overrides": {"1": {"urgency": "inform-requests", "importance": 75}}}
-}
+{"unread": {"default": {"urgency": "inform-updates", "importance": 50}, "overrides": {"1": {"urgency": "inform-requests", "importance": 75}}}}
 
-Empty tags array and default {"urgency": "inform-updates", "importance": 50} if no special classification needed.`,
+Default {"urgency": "inform-updates", "importance": 50} if no special classification needed.`,
     },
     {
       role: "user" as const,
@@ -405,16 +309,10 @@ Empty tags array and default {"urgency": "inform-updates", "importance": 50} if 
 Links: ${linksStr}
 Priority members:
 ${membersStr}
-Existing tasks:
-${todosStr}
-Cleared tasks (manually removed by user — do NOT re-assign):
-${clearedTodosStr}
-Existing reply flags:
-${repliesStr}
 Recent notes:
 ${recentStr}
 
-New note #0 by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${authorNum})` : ""}: ${context.noteContent.slice(0, 1000)}`,
+New note by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${authorNum})` : ""}: ${context.noteContent.slice(0, 1000)}`,
     },
   ];
 
@@ -431,36 +329,17 @@ New note #0 by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${
 
   const text = response.response?.trim();
   if (!text) {
-    return { tags: [], unread: { default: defaultClassification, overrides: {} } };
+    return { unread: { default: defaultClassification, overrides: {} } };
   }
 
   // Extract JSON object from the response (handle potential markdown wrapping)
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    // Fallback: try array format for backward compatibility
-    const arrayMatch = text.match(/\[[\s\S]*\]/);
-    if (arrayMatch) {
-      try {
-        const parsed = JSON.parse(arrayMatch[0]);
-        if (Array.isArray(parsed)) {
-          const tags = resolveTagNumbers(parsed, noteNumToId, memberNumToId);
-          return { tags, unread: { default: defaultClassification, overrides: {} } };
-        }
-      } catch {
-        // Fall through
-      }
-    }
-    return { tags: [], unread: { default: defaultClassification, overrides: {} } };
+    return { unread: { default: defaultClassification, overrides: {} } };
   }
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
-
-    const tags = resolveTagNumbers(
-      Array.isArray(parsed.tags) ? parsed.tags : [],
-      noteNumToId,
-      memberNumToId
-    );
 
     const validUrgencies = new Set([
       "interrupt",
@@ -484,34 +363,11 @@ New note #0 by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${
       }
     }
 
-    return { tags, unread: { default: unreadDefault, overrides } };
+    return { unread: { default: unreadDefault, overrides } };
   } catch {
     console.error("[note-analysis] Failed to parse AI response:", text);
-    return { tags: [], unread: { default: defaultClassification, overrides: {} } };
+    return { unread: { default: defaultClassification, overrides: {} } };
   }
-}
-
-/** Map sequential numbers from AI response back to real UUIDs, dropping invalid entries. */
-function resolveTagNumbers(
-  raw: any[],
-  noteNumToId: Map<number, string>,
-  memberNumToId: Map<number, string>
-): TagAction[] {
-  return raw
-    .filter(
-      (item: any) =>
-        typeof item.note === "number" &&
-        typeof item.member === "number" &&
-        typeof item.done === "boolean" &&
-        (item.tag === "todo" || item.tag === "reply")
-    )
-    .map((item: any) => ({
-      noteId: noteNumToId.get(item.note),
-      actorId: memberNumToId.get(item.member),
-      done: item.done,
-      tag: item.tag as "todo" | "reply",
-    }))
-    .filter((t): t is TagAction => t.noteId !== undefined && t.actorId !== undefined);
 }
 
 function parseClassification(
@@ -591,139 +447,251 @@ async function applyUnreadStatus(
 }
 
 /**
- * Unarchive a thread if it's archived and linked to a channel with 'actionable' mode.
- * Called when note analysis finds actionable tags (todo/reply).
+ * Inline task detection for messaging notes with checkForTasks flag.
+ * Creates separate Plot-authored reply notes for each detected task.
+ * Called synchronously during note creation, not from the async queue.
  */
-async function maybeUnarchiveActionableThread(
-  db: Kysely<DB>,
-  threadId: string
+export async function detectTasks(
+  env: Bindings,
+  noteId: string,
+  threadId: string,
+  userId: string,
+  priorityTwistId: string
 ): Promise<void> {
-  // Check if thread should be unarchived based on per-type or global actionable setting
-  const result = await db
-    .selectFrom("thread as t")
-    .innerJoin("link as l", "l.thread_id", "t.id")
-    .innerJoin("source_channel as sc", (join) =>
-      join
-        .onRef("sc.priority_twist_id", "=", "l.created_by")
-        .onRef("sc.channel_id", "=", "l.channel_id")
-    )
-    .select("t.id")
-    .where("t.id", "=", threadId)
-    .where("t.archived_at", "is not", null)
-    .$call((qb) =>
-      qb.where(({ or, and, eb }) =>
-        or([
-          // Per-type setting takes precedence
-          and([
-            eb("sc.create_threads_by_type", "is not", null),
-            eb("l.type", "is not", null),
-            sql<boolean>`sc.create_threads_by_type ->> l.type = 'actionable'`,
-          ]),
-          // Global fallback when no per-type override exists
-          and([
-            eb("sc.create_threads", "=", "actionable"),
-            or([
-              eb("sc.create_threads_by_type", "is", null),
-              eb("l.type", "is", null),
-              sql<boolean>`NOT (sc.create_threads_by_type ? l.type)`,
-            ]),
-          ]),
-        ])
-      )
-    )
-    .executeTakeFirst();
+  const db = createDb(env);
+  try {
+    const context = await gatherContext(db, noteId, threadId);
+    if (!context) return;
 
-  if (result) {
-    await db
-      .updateTable("thread")
-      .set({ archived_at: null })
-      .where("id", "=", threadId)
-      .execute();
+    const tasks = await classifyTasks(env, context);
+    if (tasks.length === 0) return;
+
+    // Guard: reject if too many tasks detected (likely hallucination)
+    if (tasks.length > 3) {
+      console.warn(
+        `[detect-tasks] Rejecting ${tasks.length} tasks for note ${noteId} — too many detected`
+      );
+      return;
+    }
+
+    await createTaskNotes(env, db, tasks, context, threadId, userId, priorityTwistId);
+  } finally {
+    await db.destroy();
   }
 }
 
-async function applyTagChanges(
+interface DetectedTask {
+  actorId: string;
+  description: string;
+}
+
+async function classifyTasks(
+  env: Bindings,
+  context: NoteContext
+): Promise<DetectedTask[]> {
+  // Build member number mappings (same pattern as classifyNote)
+  const memberNumToId = new Map<number, string>();
+  const memberIdToNum = new Map<string, number>();
+  context.members.forEach((m, i) => {
+    const num = i + 1;
+    memberNumToId.set(num, m.id);
+    memberIdToNum.set(m.id, num);
+  });
+
+  const membersStr = context.members
+    .map((m) => `- #${memberIdToNum.get(m.id)}: ${m.name ?? "Unknown"}`)
+    .join("\n");
+
+  const todosStr =
+    context.existingTodos.length > 0
+      ? context.existingTodos
+          .map((t) => {
+            const name =
+              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
+            return `- ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"}): assigned a task`;
+          })
+          .join("\n")
+      : "None";
+
+  const clearedTodosStr =
+    context.clearedTodos.length > 0
+      ? context.clearedTodos
+          .map((t) => {
+            const name =
+              context.members.find((m) => m.id === t.actorId)?.name ?? "Unknown";
+            return `- ${name} (member #${memberIdToNum.get(t.actorId) ?? "?"}): had a task that was cleared`;
+          })
+          .join("\n")
+      : "None";
+
+  const recentStr =
+    context.recentNotes.length > 0
+      ? context.recentNotes
+          .map((n) => {
+            const memberNum = n.authorId ? memberIdToNum.get(n.authorId) : undefined;
+            const authorLabel = memberNum
+              ? `${n.authorName ?? "Unknown"} (member #${memberNum})`
+              : (n.authorName ?? "Unknown");
+            return `- ${authorLabel}: ${(n.content ?? "").slice(0, 300)}`;
+          })
+          .join("\n")
+      : "None";
+
+  const authorNum = memberIdToNum.get(context.noteAuthorId);
+
+  const messages = [
+    {
+      role: "system" as const,
+      content: `You detect actionable tasks in messaging conversations (email, chat). Analyze the new message and determine if it contains clear tasks for specific people.
+
+A task exists when:
+1. Someone asks someone specific to do something ("Can you update the docs?")
+2. Someone commits to doing something in the future ("I'll send the report tomorrow")
+3. Someone asks a specific person a question that needs a response
+4. Something clearly demands a reply or action from a specific person
+
+Rules:
+- Only assign tasks to members in the priority members list (use member numbers).
+- If no specific person is identifiable as the assignee, do not create a task.
+- The note author cannot be assigned a task they are giving to themselves (self-commitments ARE tasks — assign to the author).
+- Do not duplicate tasks already covered by existing todos.
+- NEVER re-create tasks that were manually cleared by a user. "Cleared tasks" lists assignments that a user intentionally removed.
+- Write each task description as a standalone imperative statement (e.g. "Update the API documentation" not "Alice asked Bob to update the docs").
+- Keep descriptions concise — one sentence, under 100 characters when possible.
+- When in doubt, do not create a task. False negatives are far less disruptive than false positives.
+
+Respond with JSON only. No explanation.
+
+Output schema:
+{"tasks": [{"member": 1, "description": "Update the API documentation"}]}
+
+Empty tasks array if no clear tasks detected.`,
+    },
+    {
+      role: "user" as const,
+      content: `Thread: "${context.threadTitle ?? "Untitled"}"
+Priority members:
+${membersStr}
+Existing tasks:
+${todosStr}
+Cleared tasks (manually removed by user — do NOT re-create):
+${clearedTodosStr}
+Recent messages:
+${recentStr}
+
+New message by ${context.noteAuthorName ?? "Unknown"}${authorNum ? ` (member #${authorNum})` : ""}: ${context.noteContent.slice(0, 1000)}`,
+    },
+  ];
+
+  const response = await env.AI.run(
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    { messages, max_tokens: 512 }
+  );
+
+  if (response instanceof ReadableStream) {
+    throw new Error("Unexpected stream response from AI");
+  }
+
+  const text = response.response?.trim();
+  if (!text) return [];
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return [];
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(parsed.tasks)) return [];
+
+    return parsed.tasks
+      .filter(
+        (t: any) =>
+          typeof t.member === "number" &&
+          typeof t.description === "string" &&
+          t.description.trim().length > 0
+      )
+      .map((t: any) => ({
+        actorId: memberNumToId.get(t.member),
+        description: t.description.trim(),
+      }))
+      .filter((t: DetectedTask): t is DetectedTask => t.actorId !== undefined)
+      // Filter out assignments to people not in the member list
+      .filter((t: DetectedTask) => context.memberIds.has(t.actorId))
+      // Filter out tasks that duplicate existing active todos for the same person
+      .filter(
+        (t: DetectedTask) =>
+          !context.existingTodos.some((et) => et.actorId === t.actorId)
+      )
+      // Filter out tasks for people whose todos were manually cleared
+      .filter(
+        (t: DetectedTask) =>
+          !context.clearedTodos.some((ct) => ct.actorId === t.actorId)
+      );
+  } catch {
+    console.error("[detect-tasks] Failed to parse AI response:", text);
+    return [];
+  }
+}
+
+async function createTaskNotes(
   env: Bindings,
   db: Kysely<DB>,
-  actions: TagAction[],
-  memberIds: Set<string>,
-  userId: string
+  tasks: DetectedTask[],
+  context: NoteContext,
+  threadId: string,
+  userId: string,
+  priorityTwistId: string
 ): Promise<void> {
-  for (const { noteId: targetNoteId, actorId, done, tag } of actions) {
-    // Validate actorId is in the priority members list
-    if (!memberIds.has(actorId)) continue;
-
+  for (const task of tasks) {
     try {
-      if (tag === "reply") {
-        // Reply is a count tag (1019) — insert directly into note_tag
-        // Count tags enforce ownership, but AI runs server-side with direct DB access
-        if (done) {
-          // Archive the reply tag for this actor
-          await db
-            .updateTable("note_tag")
-            .set({ archived_at: new Date(), updated_at: new Date() })
-            .where("note_id", "=", targetNoteId)
-            .where("actor_id", "=", actorId)
-            .where("tag_id", "=", 1019)
-            .where("archived_at", "is", null)
-            .execute();
-        } else {
-          // Insert reply tag for the target actor
-          await db
-            .insertInto("note_tag")
-            .values({
-              actor_id: actorId,
-              note_id: targetNoteId,
-              tag_id: 1019,
-              updated_by: 0,
-            })
-            .onConflict((oc) =>
-              oc
-                .columns(["actor_id", "note_id", "tag_id"])
-                .doUpdateSet({
-                  archived_at: null,
-                  updated_at: new Date(),
-                })
-            )
-            .execute();
-        }
-      } else {
-        // Todo tag — use RPC + createSchedule (existing logic)
-        const tagId = done ? 3 : 1; // Tag.Done or Tag.Todo
-        await rpcUser(db, "update_note_tags", {
-          user_id: userId,
-          p_note_id: targetNoteId,
-          p_actor_id: userId,
-          p_client_id: 0,
-          p_tag_updates: { [`${tagId}:${actorId}`]: true },
-        });
+      // Create a Plot-authored reply note with the task description
+      const noteResult = await db
+        .insertInto("note")
+        .values({
+          author_id: priorityTwistId,
+          created_by: priorityTwistId,
+          thread_id: threadId,
+          content: task.description,
+          re_note_id: context.noteId,
+          private: false,
+          draft: false,
+          updated_by: 0, // AI-generated
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
 
-        // Create task schedule when AI adds todo tag
-        if (!done) {
-          const contact = await db
-            .selectFrom("contact")
-            .select("user_id")
-            .where("id", "=", actorId)
-            .executeTakeFirst();
-          if (contact?.user_id) {
-            const note = await db
-              .selectFrom("note")
-              .select("thread_id")
-              .where("id", "=", targetNoteId)
-              .executeTakeFirst();
-            if (note?.thread_id) {
-              await createSchedule(db, contact.user_id, note.thread_id, "task");
-            }
-          }
-        }
+      // Apply the todo tag to the new task note for the assigned person
+      await rpcUser(db, "update_note_tags", {
+        user_id: userId,
+        p_note_id: noteResult.id,
+        p_actor_id: userId,
+        p_client_id: 0,
+        p_tag_updates: { [`1:${task.actorId}`]: true }, // Tag.Todo = 1
+      });
+
+      // Create task schedule for the assignee
+      const contact = await db
+        .selectFrom("contact")
+        .select("user_id")
+        .where("id", "=", task.actorId)
+        .executeTakeFirst();
+      if (contact?.user_id) {
+        await createSchedule(db, contact.user_id, threadId, "task");
       }
     } catch (error) {
       console.error(
-        `[note-analysis] Failed to apply ${tag} tag on note ${targetNoteId} for actor ${actorId}:`,
+        `[detect-tasks] Failed to create task note for actor ${task.actorId}:`,
         error
       );
-      const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-      postHog.captureException(error as Error, undefined, { context: "note-analysis:applyTagChanges", note_id: targetNoteId, actor_id: actorId, tag });
+      const postHog = new PostHog(env.POSTHOG_API_KEY, {
+        host: env.POSTHOG_HOST,
+        flushAt: 1,
+        flushInterval: 0,
+      });
+      postHog.captureException(error as Error, undefined, {
+        context: "detect-tasks:createTaskNotes",
+        note_id: context.noteId,
+        actor_id: task.actorId,
+      });
       await postHog.shutdown();
     }
   }
