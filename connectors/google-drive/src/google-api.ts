@@ -117,6 +117,18 @@ export class GoogleApi {
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 
 /**
+ * Resolve the "root" alias to the actual My Drive root folder ID.
+ * Google's API accepts "root" in queries, but file.parents always
+ * contains the real ID, so we need this for change filtering.
+ */
+export async function getRootFolderId(api: GoogleApi): Promise<string> {
+  const data = (await api.call("GET", `${DRIVE_API}/files/root`, {
+    fields: "id",
+  })) as { id: string };
+  return data.id;
+}
+
+/**
  * List folders accessible by the user, including those in shared drives.
  */
 export async function listFolders(api: GoogleApi): Promise<GoogleDriveFile[]> {

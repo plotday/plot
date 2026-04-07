@@ -5,6 +5,8 @@ import {
   type NewLinkWithNotes,
   type NewContact,
   type NewNote,
+  type Note,
+  type Thread,
   Connector,
   type ToolBuilder,
   Tag,
@@ -37,6 +39,7 @@ import {
   createComment,
   createReply,
   getChangesStartToken,
+  getRootFolderId,
   listChanges,
   listComments,
   listFilesInFolder,
@@ -80,6 +83,7 @@ const MIME_TO_LINK_TYPE: Record<string, string> = {
 export class GoogleDrive extends Connector<GoogleDrive> {
   static readonly PROVIDER = AuthProvider.Google;
   static readonly SCOPES = ["https://www.googleapis.com/auth/drive"];
+  static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Google;
   readonly scopes = Integrations.MergeScopes(GoogleDrive.SCOPES, GoogleContacts.SCOPES);
@@ -254,6 +258,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
    * Runs as a task to avoid blocking the HTTP response from onChannelEnabled.
    */
   async initChannel(channelId: string): Promise<void> {
+    console.log(`[google-drive] initChannel started for ${channelId}`);
     const api = await this.getApi(channelId);
     const changesToken = await getChangesStartToken(api);
 
@@ -280,15 +285,14 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       await this.set(`sync_state_${channelId}`, initialState);
     }
 
+    console.log(`[google-drive] Setting up drive watch for ${channelId}`);
     await this.setupDriveWatch(channelId);
 
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      channelId,
-      true // initialSync
-    );
-    await this.runTask(syncCallback);
+    // Run first batch inline (we're already in a task context) to avoid an
+    // extra queue cycle delay. Subsequent batches are queued as tasks.
+    console.log(`[google-drive] Starting initial sync for ${channelId}`);
+    await this.syncBatch(1, channelId, true);
+    console.log(`[google-drive] initChannel completed for ${channelId}`);
   }
 
   /**
@@ -318,21 +322,25 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       const drives = await listSharedDrives(api);
       return drives.map(d => d.id);
     }
-    // VIRTUAL_MY_DRIVE: root-level owned folders (no parent in folder set or shared drives)
-    const [folders, sharedDrives] = await Promise.all([
+    // VIRTUAL_MY_DRIVE: real root folder ID (for files at the top level) + root-level owned folders.
+    // We resolve "root" to the actual ID because file.parents in changes always uses the real ID.
+    const [folders, sharedDrives, rootId] = await Promise.all([
       listFolders(api),
       listSharedDrives(api),
+      getRootFolderId(api),
     ]);
     const sharedDriveIds = new Set(sharedDrives.map(d => d.id));
     const ownedFolders = folders.filter(f => f.ownedByMe === true);
     const folderIds = new Set(ownedFolders.map(f => f.id));
-    return ownedFolders
+    const rootLevelFolders = ownedFolders
       .filter(f => {
         const parentId = f.parents?.[0];
         if (!parentId) return true;
         return !folderIds.has(parentId) && !sharedDriveIds.has(parentId);
       })
       .map(f => f.id);
+    // Include the real root ID so files at the top level of My Drive are synced
+    return [rootId, ...rootLevelFolders];
   }
 
   /**
@@ -352,6 +360,9 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           api, file, subChannelId, false, virtualChannelId
         );
         await this.tools.integrations.saveLink(thread);
+        if (file.modifiedTime) {
+          await this.set(`last_modified_${file.id}`, file.modifiedTime);
+        }
       } catch (error) {
         console.error(`Failed to process file ${file.id}:`, error);
       }
@@ -483,6 +494,28 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     return `reply-${commentId}-${reply.id}`;
   }
 
+  /**
+   * Called when a user replies to a note on a thread owned by this connector.
+   * Routes the reply back to Google Docs as a comment reply.
+   * Only syncs replies to existing comments (identified via reNoteKey).
+   */
+  async onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
+    const reNoteKey = thread.meta?.reNoteKey as string | undefined;
+    if (!reNoteKey) return;
+
+    // Extract commentId from note keys: "comment-{commentId}" or "reply-{commentId}-{replyId}"
+    const commentMatch = reNoteKey.match(/^(?:comment-|reply-)([^-]+)/);
+    if (!commentMatch) return;
+
+    const commentId = commentMatch[1];
+    return this.addDocumentReply(
+      thread.meta ?? {},
+      commentId,
+      note.content ?? "",
+      note.id
+    );
+  }
+
   // --- Webhooks ---
 
   private async setupDriveWatch(folderId: string): Promise<void> {
@@ -591,6 +624,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   }
 
   private async renewDriveWatch(folderId: string): Promise<void> {
+    console.log(`[google-drive] renewDriveWatch called for ${folderId}`);
     try {
       try {
         await this.stopDriveWatch(folderId);
@@ -608,19 +642,17 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     _request: WebhookRequest,
     folderId: string
   ): Promise<void> {
+    console.log(`[google-drive] onDriveWebhook called for ${folderId}`);
     const watchData = await this.get<any>(`drive_watch_${folderId}`);
     if (!watchData) {
+      console.log(`[google-drive] No watch data for ${folderId}, skipping`);
       return;
     }
 
-    // Reactive expiry check - renew if watch expires within 1 hour
-    const expiry = new Date(watchData.expiry);
-    const hoursUntilExpiry = (expiry.getTime() - Date.now()) / (1000 * 60 * 60);
-    if (hoursUntilExpiry < 1) {
-      this.renewDriveWatch(folderId).catch((error) => {
-        console.error(`Failed to reactively renew watch for ${folderId}:`, error);
-      });
-    }
+    // Watch renewal is handled proactively by scheduleWatchRenewal (set up in
+    // setupDriveWatch). No reactive renewal here — Google's default watch expiry
+    // is ~1 hour in dev, so a reactive "<1 hour" check loops infinitely since
+    // each new watch fires an immediate sync notification.
 
     // Trigger incremental sync
     await this.startIncrementalSync(folderId);
@@ -630,6 +662,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     // Check if initial sync is still in progress
     const syncInProgress = await this.get<boolean>(`sync_lock_${folderId}`);
     if (syncInProgress) {
+      console.log(`[google-drive] Skipping incremental sync for ${folderId}: sync lock held`);
       return;
     }
 
@@ -643,6 +676,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       return;
     }
 
+    console.log(`[google-drive] Starting incremental sync for ${folderId}`);
     const syncCallback = await this.callback(
       this.incrementalSyncBatch,
       folderId,
@@ -681,6 +715,9 @@ export class GoogleDrive extends Connector<GoogleDrive> {
               api, file, file.parents?.[0] ?? folderId, initialSync, state.virtualChannelId
             );
             await this.tools.integrations.saveLink(thread);
+            if (file.modifiedTime) {
+              await this.set(`last_modified_${file.id}`, file.modifiedTime);
+            }
           } catch (error) {
             console.error(`Failed to process file ${file.id}:`, error);
           }
@@ -714,6 +751,9 @@ export class GoogleDrive extends Connector<GoogleDrive> {
               api, file, currentSubId, initialSync, state.virtualChannelId
             );
             await this.tools.integrations.saveLink(thread);
+            if (file.modifiedTime) {
+              await this.set(`last_modified_${file.id}`, file.modifiedTime);
+            }
           } catch (error) {
             console.error(`Failed to process file ${file.id}:`, error);
           }
@@ -738,6 +778,9 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           try {
             const thread = await this.buildThreadFromFile(api, file, folderId, initialSync);
             await this.tools.integrations.saveLink(thread);
+            if (file.modifiedTime) {
+              await this.set(`last_modified_${file.id}`, file.modifiedTime);
+            }
           } catch (error) {
             console.error(`Failed to process file ${file.id}:`, error);
           }
@@ -770,6 +813,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       const authChannelId = state?.virtualChannelId;
       const api = await this.getApi(folderId, authChannelId);
       const result = await listChanges(api, changesToken);
+      console.log(`[google-drive] incrementalSyncBatch for ${folderId}: ${result.changes.length} changes, hasMore=${!!result.nextPageToken}`);
 
       // Determine which files to accept based on channel type
       const isSharedWithMe = state?.virtualChannelId === VIRTUAL_SHARED_WITH_ME;
@@ -788,7 +832,18 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           if (change.file.ownedByMe !== false) continue;
         } else if (trackedFolderIds) {
           // Folder-based: check if file is in a tracked folder
-          if (!change.file.parents?.some(p => trackedFolderIds.has(p))) continue;
+          if (!change.file.parents?.some(p => trackedFolderIds.has(p))) {
+            console.log(`[google-drive] Skipping change ${change.fileId}: parents=${JSON.stringify(change.file.parents)}, tracked=${JSON.stringify([...trackedFolderIds])}`);
+            continue;
+          }
+        }
+
+        // Skip files whose modifiedTime hasn't changed since last sync.
+        // Reading comments updates viewedByMeTime which shows up as a change
+        // but doesn't change modifiedTime — without this check we'd loop.
+        const lastModified = await this.get<string>(`last_modified_${change.fileId}`);
+        if (lastModified && change.file.modifiedTime === lastModified) {
+          continue;
         }
 
         try {
@@ -799,6 +854,9 @@ export class GoogleDrive extends Connector<GoogleDrive> {
             api, change.file, fileFolderId, false, authChannelId
           );
           await this.tools.integrations.saveLink(thread);
+          if (change.file.modifiedTime) {
+            await this.set(`last_modified_${change.fileId}`, change.file.modifiedTime);
+          }
         } catch (error) {
           console.error(
             `Failed to process changed file ${change.fileId}:`,
