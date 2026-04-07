@@ -481,7 +481,15 @@ webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
     // Always return 200 OK to acknowledge message
     return c.json({ ok: true });
   } catch (error) {
-    // Return 500 to indicate failure, so Pub/Sub will retry
+    // Permanent callback failures — return 200 to stop Pub/Sub retries
+    if (isCallbackError(error)) {
+      const errorType = getCallbackErrorType(error as Error);
+      if (errorType === "NOT_FOUND" || errorType === "EXPIRED") {
+        logger.warn("Callback permanently unavailable", { errorType });
+        return c.json({ ok: false, error: errorType });
+      }
+    }
+    // Transient failures — return 500 so Pub/Sub retries
     return captureServerError(c, error, "Error processing Gmail webhook");
   }
 });
@@ -600,7 +608,15 @@ webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
     // Always return 200 OK to acknowledge message
     return c.json({ ok: true });
   } catch (error) {
-    // Return 500 to indicate failure, so Pub/Sub will retry
+    // Permanent callback failures — return 200 to stop Pub/Sub retries
+    if (isCallbackError(error)) {
+      const errorType = getCallbackErrorType(error as Error);
+      if (errorType === "NOT_FOUND" || errorType === "EXPIRED") {
+        logger.warn("Callback permanently unavailable", { errorType });
+        return c.json({ ok: false, error: errorType });
+      }
+    }
+    // Transient failures — return 500 so Pub/Sub retries
     return captureServerError(c, error, "Error processing Pub/Sub webhook");
   }
 });
