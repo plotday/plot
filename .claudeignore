@@ -1,5 +1,19 @@
 # .claudeignore — exclude large/generated tracked files from Claude context
-# Note: .gitignore entries (node_modules, build, dist, etc.) are already excluded
+# Note: node_modules, build, dist, etc. must be explicitly listed here because
+# Claude Code's search tools may bypass .gitignore when scanning for dotfiles
+
+# Heavy directories (gitignored but must be listed explicitly)
+node_modules/
+build/
+dist/
+.dart_tool/
+.gradle/
+Pods/
+.worktrees/
+.git/
+python_modules/
+.claude/worktrees/
+.nx/
 
 # Lock files (pnpm-lock.yaml is ~17k lines)
 pnpm-lock.yaml
