@@ -496,12 +496,19 @@ export class GoogleDrive extends Connector<GoogleDrive> {
 
   /**
    * Called when a user replies to a note on a thread owned by this connector.
-   * Routes the reply back to Google Docs as a comment reply.
-   * Only syncs replies to existing comments (identified via reNoteKey).
+   * Routes the reply back to Google Docs as a comment or comment reply.
    */
   async onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
     const reNoteKey = thread.meta?.reNoteKey as string | undefined;
-    if (!reNoteKey) return;
+
+    if (!reNoteKey) {
+      // New top-level comment — create as unanchored comment on the doc
+      return this.addDocumentComment(
+        thread.meta ?? {},
+        note.content ?? "",
+        note.id
+      );
+    }
 
     // Extract commentId from note keys: "comment-{commentId}" or "reply-{commentId}-{replyId}"
     const commentMatch = reNoteKey.match(/^(?:comment-|reply-)([^-]+)/);

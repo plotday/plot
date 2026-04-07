@@ -264,7 +264,7 @@ export async function createComment(
     "POST",
     `${DRIVE_API}/files/${fileId}/comments`,
     { fields: "id,content,author,createdTime,modifiedTime,resolved" },
-    { content }
+    { content, anchor: "" }
   )) as GoogleDriveComment;
 }
 
