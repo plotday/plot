@@ -7,6 +7,7 @@ type LinkTypeStatus = {
   status: string;
   label: string;
   tag?: number;
+  done?: boolean;
 };
 
 type LinkTypeConfig = {
@@ -125,7 +126,7 @@ export async function propagateLinkStatusTagsFromDb(
  * Look up channel-level linkTypes for a link.
  * Queries the link's channel_id, then looks up link_types from source_channel.
  */
-async function getChannelLinkTypes(
+export async function getChannelLinkTypes(
   db: Kysely<DB>,
   linkId: string,
   createdBy: string
@@ -153,4 +154,43 @@ async function getChannelLinkTypes(
   } catch {
     return [];
   }
+}
+
+/**
+ * Check if a link's current status represents completion ("done").
+ * Checks channel-level linkTypes first, falling back to twist-level.
+ */
+export async function isLinkStatusDone(
+  db: Kysely<DB>,
+  link: { id: string; created_by: string | null; type: string | null; status: string | null }
+): Promise<boolean> {
+  if (!link.type || !link.status || !link.created_by) return false;
+
+  // Try channel-level linkTypes first
+  let allLinkTypes: LinkTypeConfig[] = await getChannelLinkTypes(db, link.id, link.created_by);
+
+  // Fall back to twist-level linkTypes
+  if (allLinkTypes.length === 0) {
+    const twistRow = await db
+      .selectFrom("priority_twist")
+      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      .select("twist.permissions")
+      .where("priority_twist.id", "=", link.created_by)
+      .executeTakeFirst();
+
+    if (!twistRow?.permissions) return false;
+
+    const permissions = twistRow.permissions as any;
+    const providers = permissions._providers;
+    if (!Array.isArray(providers)) return false;
+
+    allLinkTypes = providers.flatMap(
+      (p: any) => (p.linkTypes ?? []) as LinkTypeConfig[]
+    );
+  }
+
+  const typeConfig = allLinkTypes.find((lt) => lt.type === link.type);
+  if (!typeConfig?.statuses) return false;
+  const statusDef = typeConfig.statuses.find((s) => s.status === link.status);
+  return statusDef?.done === true;
 }

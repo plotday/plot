@@ -1,3 +1,4 @@
+- Fixed completed connector issues (like Linear "Done" tasks) incorrectly appearing as to-dos in your agenda — completed items now skip scheduling, and existing to-dos are removed when their status changes to done
 - Fixed Google Chat not receiving new messages in real time — messages sent after the initial sync now appear automatically
 - Fixed adding a connection timing out for some connectors (Google Chat, Gmail, Slack) — the sync now starts in the background instead of blocking the save
 - You can now create a new priority directly from any priority picker — just tap the + button next to the search field

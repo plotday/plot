@@ -5,7 +5,7 @@ import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
-import { propagateLinkStatusTagsFromDb } from "./link-tags";
+import { isLinkStatusDone, propagateLinkStatusTagsFromDb } from "./link-tags";
 import { createSchedule } from "./smart-schedule";
 import { twistFactory } from "../../twist/factory";
 
@@ -115,8 +115,12 @@ links.post("/sync/links", async (c) => {
             .executeTakeFirst();
           if (!contact?.user_id) return;
 
-          await createSchedule(db, contact.user_id, linkThreadId, 'task');
-          // Recompute outstanding_tasks for the assignee
+          // Only create task schedule if the link's status is not "done"
+          const isDone = await isLinkStatusDone(db, result);
+          if (!isDone) {
+            await createSchedule(db, contact.user_id, linkThreadId, 'task');
+          }
+          // Always recompute outstanding_tasks (handles done→undone transitions)
           await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(db);
         } catch (error) {
           console.error("[schedule] Failed to create task schedule from link assignment:", error);
@@ -134,6 +138,8 @@ links.post("/sync/links", async (c) => {
       (async () => {
         const db = createDb(c.env);
         try {
+          const isDone = await isLinkStatusDone(db, result);
+
           if (assigneeId) {
             // Recompute for the assigned user
             const contact = await db
@@ -143,6 +149,17 @@ links.post("/sync/links", async (c) => {
               .executeTakeFirst();
             if (contact?.user_id) {
               await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${contact.user_id}::uuid)`.execute(db);
+              // Archive per-user schedule when status becomes done
+              if (isDone) {
+                await db
+                  .updateTable("schedule")
+                  .set({ archived_at: new Date() })
+                  .where("thread_id", "=", linkThreadId)
+                  .where("user_id", "=", contact.user_id)
+                  .where("occurrence", "is", null)
+                  .where("archived_at", "is", null)
+                  .execute();
+              }
             }
           } else {
             // Unassigned link: recompute for all users with a schedule on this thread
@@ -157,6 +174,17 @@ links.post("/sync/links", async (c) => {
               if (sched.user_id) {
                 await sql`SELECT recompute_outstanding_tasks(${linkThreadId}::uuid, ${sched.user_id}::uuid)`.execute(db);
               }
+            }
+            // Archive per-user schedules when status becomes done
+            if (isDone) {
+              await db
+                .updateTable("schedule")
+                .set({ archived_at: new Date() })
+                .where("thread_id", "=", linkThreadId)
+                .where("user_id", "is not", null)
+                .where("occurrence", "is", null)
+                .where("archived_at", "is", null)
+                .execute();
             }
           }
         } catch (error) {
