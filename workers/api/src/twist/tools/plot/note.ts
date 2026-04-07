@@ -13,7 +13,9 @@ import {
 import { ContactAccess } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 
+import { detectTasks } from "../../../queue/note-analysis";
 import { rpc } from "../../../rpc";
+import { checkAiLimit, recordAiUsage } from "../../../utils/ai-limits";
 import type { Plot } from "./index";
 import {
   convertNoteToMarkdown,
@@ -470,6 +472,60 @@ export async function createNotes(
               .execute();
           }
         }
+      }
+    }
+  }
+
+  // Inline task detection for notes with checkForTasks flag
+  const checkForTasksNotes = processedNotes
+    .map((note, index) => ({ note, index }))
+    .filter(
+      ({ note, index }) =>
+        note.checkForTasks === true &&
+        results[index].status === "fulfilled"
+    );
+
+  if (checkForTasksNotes.length > 0 && activityContext) {
+    // Resolve owner for AI limit check
+    const ownerRow = await plot.db
+      .selectFrom("priority_twist")
+      .select("owner_id")
+      .where("id", "=", plot.priorityTwistId)
+      .executeTakeFirst();
+    const ownerId = ownerRow?.owner_id;
+
+    if (ownerId) {
+      const aiAllowed = await checkAiLimit(plot.env, plot.db, ownerId, "note_processing");
+      if (aiAllowed.allowed) {
+        for (const { note, index } of checkForTasksNotes) {
+          const noteId = (results[index] as PromiseFulfilledResult<Uuid>).value;
+          // Only detect tasks on recent notes (< 7 days old)
+          const sourceCreatedAt = note.created
+            ? new Date(note.created instanceof Date ? note.created.getTime() : note.created).getTime()
+            : Date.now();
+          const isRecent = Date.now() - sourceCreatedAt < 7 * 24 * 60 * 60 * 1000;
+          if (!isRecent) continue;
+
+          // Resolve thread ID from the note
+          const threadId = "id" in note.thread ? note.thread.id : undefined;
+          if (!threadId) continue;
+
+          try {
+            await detectTasks(
+              plot.env,
+              noteId,
+              threadId,
+              ownerId,
+              plot.priorityTwistId
+            );
+          } catch (error) {
+            const logger = createLogger({ component: "plot_tool" });
+            logger.error("Failed to detect tasks for note", error as Error, {
+              note_id: noteId,
+            });
+          }
+        }
+        recordAiUsage(plot.env, ownerId, "note_processing");
       }
     }
   }
