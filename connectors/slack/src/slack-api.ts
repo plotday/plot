@@ -376,6 +376,7 @@ export function transformSlackThread(
       content: text,
       created: new Date(parseFloat(message.ts) * 1000),
       mentions: mentions.length > 0 ? mentions : undefined,
+      checkForTasks: true,
     };
 
     thread.notes!.push(note);
