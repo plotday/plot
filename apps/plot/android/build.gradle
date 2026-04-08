@@ -24,6 +24,13 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(':app')
+    afterEvaluate { project ->
+        if (project.plugins.hasPlugin('com.android.library')) {
+            project.android {
+                compileSdk = 36
+            }
+        }
+    }
 }
 
 tasks.register("clean", Delete) {
