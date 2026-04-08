@@ -467,11 +467,38 @@ class Commands {
 /// along with activating shortcuts for the commands.
 ///
 /// Provide either [commands] (static list) or [commandsBuilder] (lazy builder), not both.
+/// Propagates route-active state to descendant [CommandScope]s.
+///
+/// When a [CommandScope] detects its [ModalRoute] is no longer current (e.g. a
+/// new route was pushed on top), it provides `active: false` to descendants.
+/// Nested [CommandScope]s subscribe to this via [of] and clear their commands
+/// even though their own [ModalRoute] is still current within their local
+/// navigator.
+class _CommandScopeActive extends InheritedWidget {
+  const _CommandScopeActive({required this.active, required super.child});
+  final bool active;
+
+  static bool of(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<_CommandScopeActive>()
+            ?.active ??
+        true;
+  }
+
+  @override
+  bool updateShouldNotify(_CommandScopeActive oldWidget) =>
+      active != oldWidget.active;
+}
+
 /// When using [commandsBuilder], optionally provide a [listenable] to trigger rebuilds.
 ///
 /// Route-aware: automatically unregisters when the enclosing [ModalRoute] is no
 /// longer current and re-registers when it becomes current again. This prevents
 /// command accumulation when route pages are kept alive by the router.
+///
+/// Also propagates active state to descendant [CommandScope]s via
+/// [_CommandScopeActive], so nested scopes (e.g. ThreadRoute inside
+/// PriorityRoute) are deactivated when an ancestor route is pushed behind.
 class CommandScope extends StatefulWidget {
   const CommandScope({
     this.commands,
@@ -560,12 +587,18 @@ class CommandScopeState extends State<CommandScope> {
     // ModalRoute.of(context) subscribes via _ModalScopeStatus, so this fires
     // when route currentness changes — preventing command accumulation from
     // route pages kept alive by the router.
-    final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+    //
+    // _CommandScopeActive.of(context) catches the nested-navigator case: when
+    // a route is pushed at a *parent* navigator level, the child's ModalRoute
+    // stays current but the ancestor CommandScope propagates active: false.
+    final routeCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+    final ancestorActive = _CommandScopeActive.of(context);
+    final shouldBeActive = routeCurrent && ancestorActive;
 
-    if (isCurrent && !_routeActive) {
+    if (shouldBeActive && !_routeActive) {
       _routeActive = true;
       _doRegister();
-    } else if (!isCurrent && _routeActive) {
+    } else if (!shouldBeActive && _routeActive) {
       _routeActive = false;
       _register?.call([]); // Clear commands but preserve position in _commands
     }
@@ -632,15 +665,18 @@ class CommandScopeState extends State<CommandScope> {
                 },
         );
 
-    return CallbackShortcuts(
-      bindings: {
-        platformSingleActivator(LogicalKeyboardKey.keyK): () => Commands(
-          groups: CommandRegistry.of(context).commands,
-        ).show(context, showFilter: true),
-        ...commandBindings,
-        ...groupBindings,
-      },
-      child: widget.child,
+    return _CommandScopeActive(
+      active: _routeActive,
+      child: CallbackShortcuts(
+        bindings: {
+          platformSingleActivator(LogicalKeyboardKey.keyK): () => Commands(
+            groups: CommandRegistry.of(context).commands,
+          ).show(context, showFilter: true),
+          ...commandBindings,
+          ...groupBindings,
+        },
+        child: widget.child,
+      ),
     );
   }
 
