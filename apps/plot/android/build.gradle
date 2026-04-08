@@ -21,13 +21,13 @@ allprojects {
 rootProject.buildDir = '../build'
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
-}
-subprojects {
     project.evaluationDependsOn(':app')
-    afterEvaluate { project ->
-        if (project.plugins.hasPlugin('com.android.library')) {
-            project.android {
-                compileSdk = 36
+    if (project.name != 'app') {
+        afterEvaluate { project ->
+            if (project.plugins.hasPlugin('com.android.library')) {
+                project.android {
+                    compileSdk = 36
+                }
             }
         }
     }
