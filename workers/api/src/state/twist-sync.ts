@@ -28,11 +28,17 @@ interface TagChangeRow {
   change_type: string | null;
 }
 
+// Circuit breaker: if TwistSync fires this many consecutive alarms without
+// finding any items to process, stop scheduling new alarms. SyncRecovery
+// will re-trigger if genuine stale state appears later.
+const MAX_CONSECUTIVE_EMPTY_ALARMS = 5;
+
 export class TwistSync extends DurableObject<Bindings> {
   private priorityTwistId: string | null = null;
   private state: TwistSyncState;
   private lastFingerprint: string | null = null;
   private repeatCount: number = 0;
+  private consecutiveEmptyAlarms: number = 0;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -86,6 +92,10 @@ export class TwistSync extends DurableObject<Bindings> {
     const now = Date.now();
     this.state.lastNotifyTime = now;
 
+    // Reset circuit breaker on fresh notification — a new notify() means
+    // something changed externally and we should try processing again.
+    this.consecutiveEmptyAlarms = 0;
+
     // If we have a pending alarm, let it handle the sync
     if (this.state.pendingAlarm) {
       return;
@@ -126,6 +136,14 @@ export class TwistSync extends DurableObject<Bindings> {
     });
 
     this.state.pendingAlarm = false;
+
+    // Circuit breaker: stop processing if too many consecutive alarms found no items.
+    // This prevents runaway cost from feedback loops where triggers create stale
+    // priority_twist_sync state but views correctly filter out self-writes.
+    // Reset by a fresh notify() call (e.g., from SyncNotify for a real change).
+    if (this.consecutiveEmptyAlarms >= MAX_CONSECUTIVE_EMPTY_ALARMS) {
+      return;
+    }
 
     // Get priorityTwistId from storage
     if (!this.priorityTwistId) {
@@ -818,6 +836,7 @@ export class TwistSync extends DurableObject<Bindings> {
       }
 
       if (taggedItems.length > 0) {
+        this.consecutiveEmptyAlarms = 0;
         logger.info("Twist sync completed and queued", {
           priority_twist_id: priorityTwistId,
           twist_id: String(priorityTwist.twist_id),
@@ -832,6 +851,14 @@ export class TwistSync extends DurableObject<Bindings> {
           thread_schedule_count: threadSchedules.length,
           batch_count: batches.length,
         });
+      } else {
+        this.consecutiveEmptyAlarms++;
+        if (this.consecutiveEmptyAlarms >= MAX_CONSECUTIVE_EMPTY_ALARMS) {
+          logger.warn("TwistSync circuit breaker: too many consecutive empty alarms, stopping", {
+            priority_twist_id: priorityTwistId,
+            consecutive_empty: this.consecutiveEmptyAlarms,
+          });
+        }
       }
 
       this.state.lastSyncTime = now;

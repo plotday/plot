@@ -636,6 +636,7 @@ export default class extends WorkerEntrypoint {
 
           // Iterate over all callbacks returned by dispatch
           for (const callbackInfo of callbacks) {
+            try {
             // sourceMethod dispatch: call method directly on twist instance (Source pattern)
             if (callbackInfo?.sourceMethod && callbackInfo?.args) {
               const method = twist[callbackInfo.sourceMethod];
@@ -663,18 +664,6 @@ export default class extends WorkerEntrypoint {
                   const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
                   twistError.name = 'TwistError';
                   throw twistError;
-                } finally {
-                  // Always remove the Twisting tag, even if callback threw
-                  if (callbackInfo.deferredTagRemoval) {
-                    const { noteId, actorId } = callbackInfo.deferredTagRemoval;
-                    try {
-                      if (typeof tool.removeTagFromNote === 'function') {
-                        await tool.removeTagFromNote(noteId, actorId);
-                      }
-                    } catch (error) {
-                      console.warn('Failed to remove deferred Twisting tag:', error);
-                    }
-                  }
                 }
               }
             }
@@ -716,18 +705,21 @@ export default class extends WorkerEntrypoint {
                   const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
                   twistError.name = 'TwistError';
                   throw twistError;
-                } finally {
-                  // Always remove the Twisting tag, even if callback threw
-                  if (callbackInfo.deferredTagRemoval) {
-                    const { noteId, actorId } = callbackInfo.deferredTagRemoval;
-                    try {
-                      if (typeof tool.removeTagFromNote === 'function') {
-                        await tool.removeTagFromNote(noteId, actorId);
-                      }
-                    } catch (error) {
-                      console.warn('Failed to remove deferred Twisting tag:', error);
-                    }
+                }
+              }
+            }
+            } finally {
+              // Always remove the Twisting tag, even if callback was not found or threw.
+              // Previously this was inside the method/callback existence checks, so if the
+              // twist didn't implement the expected method the tag was never removed.
+              if (callbackInfo?.deferredTagRemoval) {
+                const { noteId, actorId } = callbackInfo.deferredTagRemoval;
+                try {
+                  if (typeof tool.removeTagFromNote === 'function') {
+                    await tool.removeTagFromNote(noteId, actorId);
                   }
+                } catch (error) {
+                  console.warn('Failed to remove deferred Twisting tag:', error);
                 }
               }
             }

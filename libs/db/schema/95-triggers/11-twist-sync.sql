@@ -48,7 +48,7 @@ CREATE TRIGGER twist_sync_note_tag_insert
 
 CREATE TRIGGER twist_sync_note_tag_update
   AFTER UPDATE ON note_tag
-  REFERENCING NEW TABLE AS new_table
+  REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_twist_for_note_tag();
 

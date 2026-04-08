@@ -74,6 +74,11 @@ class ChangeCurrentThread extends ThreadCommand {
     final nowBloc = context.read<NowBloc>();
     final layoutBloc = context.read<LayoutBloc>();
 
+    // No-op if the thread is already selected
+    if (thread != null && priorityBloc.state.thread?.id == thread!.id) {
+      return const CommandDone();
+    }
+
     // Get the currently viewed priority before making any changes
     final currentPriority = priorityBloc.state.context;
     final hadThread = priorityBloc.state.thread != null;
@@ -492,20 +497,26 @@ class ArchiveThread extends Command {
 
 class ToggleRsvp extends _UpdateThreadCommand {
   ToggleRsvp(super.thread)
-    : _targetStatus = thread.currentUserRsvp == 'attend' ? 'skip' : 'attend',
+    : _targetStatus = _effectiveRsvp(thread) == 'attend' ? 'skip' : 'attend',
       super(
-        title: thread.currentUserRsvp == 'attend' ? 'Decline' : 'Attend',
+        title: _effectiveRsvp(thread) == 'attend' ? 'Skip' : 'Attend',
         eventObject: EventObject.activity,
         eventAction: EventAction.updated,
-        icon: thread.currentUserRsvp == 'attend'
+        icon: _effectiveRsvp(thread) == 'attend'
             ? PlotIcon.calendarCheck
             : thread.currentUserRsvp == 'skip'
             ? PlotIcon.calendarXmark
             : PlotIcon.calendarPlus,
-        hoverIcon: thread.currentUserRsvp == 'attend'
+        hoverIcon: _effectiveRsvp(thread) == 'attend'
             ? PlotIcon.calendarXmark
             : PlotIcon.calendarCheck,
       );
+
+  /// For link schedule instances (calendar events), treat null RSVP as
+  /// implicitly attending — the user's own events default to "attend".
+  static String? _effectiveRsvp(Thread thread) =>
+      thread.currentUserRsvp ??
+      (thread.isLinkScheduleInstance ? 'attend' : null);
 
   final String _targetStatus;
 
@@ -538,7 +549,7 @@ class ToggleRsvp extends _UpdateThreadCommand {
 class SkipRsvpSeries extends _UpdateThreadCommand {
   SkipRsvpSeries(super.thread)
     : super(
-        title: 'Decline all',
+        title: 'Skip all',
         eventObject: EventObject.activity,
         eventAction: EventAction.updated,
         icon: PlotIcon.calendarXmark,
@@ -1975,7 +1986,7 @@ List<Command> threadCommands(
 
   // For PickScheduleThread inclusion check: is the thread's natural primary a schedule picker?
   final isPrimarySchedule = !thread.todo && thread.on != null;
-  final hideArchive = showEventTiming && thread.hasOtherAttendees;
+  final hideArchive = showEventTiming && thread.isLinkScheduleInstance;
   return [
     if (open) ChangeCurrentThread(thread),
     ?primary,

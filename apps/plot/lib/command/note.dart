@@ -1,9 +1,8 @@
-import 'package:flutter/services.dart';
-
 import 'command.dart';
 import 'package:plot/router.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
+import 'package:plot/widget/editor_clipboard.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
@@ -738,7 +737,12 @@ class CopyNoteContent extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await Clipboard.setData(ClipboardData(text: note.content!));
+      final content = note.content!;
+      await writeClipboard(
+        plotMarkdown: content,
+        plainText: markdownToPlainText(content),
+        html: markdownToHtml(content),
+      );
       return CommandMessage('Note copied to clipboard');
     } catch (e, stackTrace) {
       log.severe('Error in CopyNoteContent: $e', e, stackTrace);

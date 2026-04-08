@@ -82,6 +82,9 @@ jobs:
           flutter-version-file: .flutter-version
           cache: true
 
+      - name: Set up Rust (for super_clipboard native extensions)
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Get dependencies
         run: cd apps/plot && flutter pub get
 

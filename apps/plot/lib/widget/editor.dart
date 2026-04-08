@@ -1,8 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
+import 'package:super_clipboard/super_clipboard.dart';
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
 import 'package:flutter_debouncer/flutter_debouncer.dart';
@@ -25,6 +29,7 @@ import 'package:plot/command/page_link.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/url_title.dart';
 import 'sliver.dart';
+import 'editor_clipboard.dart';
 import 'editor_mention_plugin.dart';
 import 'editor_mention_detector.dart';
 import 'editor_mention_popover.dart';
@@ -244,6 +249,7 @@ class Editor extends StatefulWidget {
     this.onSubmitted,
     this.onChange,
     this.onIsEmptyChanged,
+    this.onImagePasted,
     this.focusNode,
     this.twists = const [],
     this.actors = const [],
@@ -257,6 +263,10 @@ class Editor extends StatefulWidget {
   final void Function(String value, {bool alt})? onSubmitted;
   final ValueChanged<String>? onChange;
   final ValueChanged<bool>? onIsEmptyChanged;
+
+  /// Called when an image is pasted from the clipboard.
+  /// The callback receives the raw image bytes (PNG format).
+  final void Function(Uint8List imageBytes)? onImagePasted;
   final FocusNode? focusNode;
   final List<PriorityTwist> twists;
   final List<Actor> actors;
@@ -868,18 +878,81 @@ class EditorState extends State<Editor> {
   );
 
   void performCut() {
-    _commonOps.cut();
+    _writeSelectionToClipboard();
+    _commonOps.deleteSelection(TextAffinity.downstream);
     _editorFocusNode.requestFocus();
   }
 
   void performCopy() {
-    _commonOps.copy();
+    _writeSelectionToClipboard();
     _editorFocusNode.requestFocus();
   }
 
   void performPaste() {
     _commonOps.paste();
     _editorFocusNode.requestFocus();
+  }
+
+  /// Serialize the current selection to multi-format clipboard data:
+  /// Plot markdown (lossless), HTML, and plain text.
+  void _writeSelectionToClipboard() {
+    final selection = _composer.selection;
+    if (selection == null) return;
+
+    // Get markdown for the selected range (with link attributions preserved)
+    final plotMarkdown = _serializeSelectionWithMentions(selection);
+
+    // Plain text: strip all markdown formatting
+    final plainText = markdownToPlainText(plotMarkdown);
+
+    // HTML: convert markdown to HTML (with mention syntax stripped)
+    final html = markdownToHtml(plotMarkdown);
+
+    writeClipboard(
+      plotMarkdown: plotMarkdown,
+      plainText: plainText,
+      html: html,
+    );
+  }
+
+  /// Serialize a document selection to markdown with mentions.
+  /// Like [_serializeWithMentions] but scoped to the given selection.
+  String _serializeSelectionWithMentions(DocumentSelection selection) {
+    String markdown =
+        serializeDocumentToMarkdown(_document, selection: selection);
+
+    // Get the selected nodes to find mention attributions
+    final normalizedSelection = selection.normalize(_document);
+    final selectedNodes = _document.getNodesInside(
+      normalizedSelection.start,
+      normalizedSelection.end,
+    );
+
+    for (final node in selectedNodes) {
+      if (node is! TextNode) continue;
+
+      final text = node.text;
+      if (text.length == 0) continue;
+
+      final spans = text.getAttributionSpansInRange(
+        attributionFilter: (attr) => attr is CommittedEditorMentionAttribution,
+        range: SpanRange(0, text.length - 1),
+      );
+
+      final spansList = spans.toList()
+        ..sort((a, b) => b.start.compareTo(a.start));
+
+      for (final span in spansList) {
+        final attribution =
+            span.attribution as CommittedEditorMentionAttribution;
+        final mentionText = text.substring(span.start, span.end + 1);
+        final name = attribution.username;
+        final replacement = '[$name](#@${attribution.actorId})';
+        markdown = markdown.replaceFirst(mentionText, replacement);
+      }
+    }
+
+    return markdown;
   }
 
   void performSelectAll() {
@@ -1368,8 +1441,8 @@ class EditorState extends State<Editor> {
     return ExecutionInstruction.haltExecution;
   }
 
-  /// Keyboard action: Smart paste - Cmd+V with selected text and a URL on
-  /// clipboard applies the URL as a link attribution to the selected text.
+  /// Keyboard action: Smart paste - reads multi-format clipboard via
+  /// super_clipboard with priority: image → Plot markdown → HTML → URL → text.
   ExecutionInstruction _handleSmartPaste({
     required SuperEditorContext editContext,
     required KeyEvent keyEvent,
@@ -1394,73 +1467,288 @@ class EditorState extends State<Editor> {
       return ExecutionInstruction.continueExecution;
     }
 
-    // For collapsed selections, only intercept for Plot URLs
-    if (selection.isCollapsed) {
-      return _handleCollapsedPaste();
-    }
-
-    // Halt execution and handle async clipboard read for selections
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-
-      final clipboardData = await Clipboard.getData('text/plain');
-      final text = clipboardData?.text?.trim();
-
-      if (text != null && text.isNotEmpty && _isUrl(text)) {
-        // Apply link attribution to selected text
-        final currentSelection = _composer.selection;
-        if (currentSelection != null && !currentSelection.isCollapsed) {
-          _editor.execute([
-            AddTextAttributionsRequest(
-              documentRange: currentSelection,
-              attributions: {LinkAttribution(text)},
-            ),
-          ]);
-        }
-      } else {
-        _normalPaste();
-      }
+      await _readClipboardAndPaste(selection);
     });
 
     return ExecutionInstruction.haltExecution;
   }
 
-  /// Handle paste when selection is collapsed — inserts the URL immediately,
-  /// then replaces it with the resolved page title once fetched.
-  ///
-  /// Both the URL insertion and the title replacement are grouped into a single
-  /// undo transaction. SuperEditor's replay-based undo resets the document and
-  /// replays all history; a separate title-replacement transaction would replay
-  /// the URL insertion on stale node state, causing crashes when node IDs don't
-  /// survive the replay (e.g. after Enter creates a new paragraph).
-  ExecutionInstruction _handleCollapsedPaste() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
+  /// Read clipboard using super_clipboard and paste with format priority.
+  Future<void> _readClipboardAndPaste(DocumentSelection selection) async {
+    final clipboard = SystemClipboard.instance;
+    if (clipboard == null) {
+      _normalPaste();
+      return;
+    }
+    final reader = await clipboard.read();
 
-      final clipboardData = await Clipboard.getData('text/plain');
-      final text = clipboardData?.text?.trim();
-
-      if (text == null || text.isEmpty || !_isUrl(text)) {
-        _normalPaste();
+    // 1. Check for image → upload as file attachment
+    if (widget.onImagePasted != null && reader.canProvide(Formats.png)) {
+      final imageBytes = await _readFileBytes(reader, Formats.png);
+      if (imageBytes != null && imageBytes.isNotEmpty) {
+        widget.onImagePasted!(imageBytes);
         return;
       }
+    }
 
-      // Insert the raw URL immediately so the user sees feedback
-      final insertPosition = _composer.selection;
-      if (insertPosition == null) return;
-      final nodeId = insertPosition.extent.nodeId;
-      final startOffset =
-          (insertPosition.extent.nodePosition as TextNodePosition).offset;
+    // 2. Check for Plot markdown → lossless intra-app paste
+    if (reader.canProvide(plotMarkdownFormat)) {
+      final bytes = await reader.readValue<Uint8List>(plotMarkdownFormat);
+      if (bytes != null) {
+        final markdown = utf8.decode(bytes);
+        if (markdown.isNotEmpty) {
+          _pasteMarkdownContent(markdown);
+          return;
+        }
+      }
+    }
+
+    // 3. Check for HTML → convert to markdown and paste as rich content
+    if (reader.canProvide(Formats.htmlText)) {
+      final html = await reader.readValue<String>(Formats.htmlText);
+      if (html != null && html.isNotEmpty) {
+        final markdown = htmlToMarkdown(html);
+        if (markdown.trim().isNotEmpty) {
+          _pasteMarkdownContent(markdown);
+          return;
+        }
+      }
+    }
+
+    // 4. Check for plain text
+    final plainText = await reader.readValue<String>(Formats.plainText);
+    final text = plainText?.trim();
+
+    if (text == null || text.isEmpty) return;
+
+    // 4a. If text is a URL and text is selected, apply as link attribution
+    if (!selection.isCollapsed && _isUrl(text)) {
+      final currentSelection = _composer.selection;
+      if (currentSelection != null && !currentSelection.isCollapsed) {
+        _editor.execute([
+          AddTextAttributionsRequest(
+            documentRange: currentSelection,
+            attributions: {LinkAttribution(text)},
+          ),
+        ]);
+        return;
+      }
+    }
+
+    // 4b. If text is a URL (collapsed cursor), insert with title resolution
+    if (selection.isCollapsed && _isUrl(text)) {
+      _pasteUrlWithTitleResolution(text);
+      return;
+    }
+
+    // 5. Fall through to normal plain text paste
+    _normalPaste();
+  }
+
+  /// Paste markdown content at the current cursor position.
+  /// Parses the markdown into a document, then inserts the nodes.
+  void _pasteMarkdownContent(String markdown) {
+    final parsedDoc = _deserializeMarkdownWithMentions(markdown);
+    final parsedNodes = parsedDoc.toList();
+    if (parsedNodes.isEmpty) return;
+
+    // Delete any selected content first
+    if (_composer.selection != null && !_composer.selection!.isCollapsed) {
+      final pastePosition =
+          CommonEditorOperations.getDocumentPositionAfterExpandedDeletion(
+        document: _document,
+        selection: _composer.selection!,
+      );
+      if (pastePosition == null) return;
 
       _editor.execute([
+        DeleteContentRequest(documentRange: _composer.selection!),
+        ChangeSelectionRequest(
+          DocumentSelection.collapsed(position: pastePosition),
+          SelectionChangeType.deleteContent,
+          SelectionReason.userInteraction,
+        ),
+      ]);
+    }
+
+    final insertPosition = _composer.selection?.extent;
+    if (insertPosition == null) return;
+
+    // Single paragraph: insert inline with attributions at cursor
+    if (parsedNodes.length == 1 && parsedNodes.first is TextNode) {
+      final sourceNode = parsedNodes.first as TextNode;
+      final sourceText = sourceNode.text;
+      final plainText = sourceText.toPlainText();
+      if (plainText.isEmpty) return;
+
+      // Insert the plain text
+      _editor.execute([
         InsertTextRequest(
-          documentPosition: insertPosition.extent,
-          textToInsert: text,
-          attributions: {LinkAttribution(text)},
+          documentPosition: insertPosition,
+          textToInsert: plainText,
+          attributions: {},
         ),
       ]);
 
-      // Resolve the title for the URL
+      // Apply attributions from the parsed text
+      final insertOffset =
+          (insertPosition.nodePosition as TextNodePosition).offset;
+      final allSpans = sourceText.getAttributionSpansInRange(
+        attributionFilter: (attr) => true,
+        range: SpanRange(0, sourceText.length - 1),
+      );
+      for (final span in allSpans) {
+        _editor.execute([
+          AddTextAttributionsRequest(
+            documentRange: DocumentRange(
+              start: DocumentPosition(
+                nodeId: insertPosition.nodeId,
+                nodePosition:
+                    TextNodePosition(offset: insertOffset + span.start),
+              ),
+              end: DocumentPosition(
+                nodeId: insertPosition.nodeId,
+                nodePosition:
+                    TextNodePosition(offset: insertOffset + span.end),
+              ),
+            ),
+            attributions: {span.attribution},
+          ),
+        ]);
+      }
+      return;
+    }
+
+    // Multi-paragraph: insert as new document nodes
+    // Split the current paragraph at cursor, then insert between
+    final cursorNode = _document.getNodeById(insertPosition.nodeId);
+    if (cursorNode == null) return;
+    final cursorNodeIndex = _document.getNodeIndexById(insertPosition.nodeId);
+
+    final requests = <EditRequest>[];
+
+    if (cursorNode is TextNode) {
+      final offset =
+          (insertPosition.nodePosition as TextNodePosition).offset;
+      final existingText = cursorNode.text;
+
+      // Text after cursor that will be moved to a new trailing paragraph
+      final afterText = existingText.length > offset
+          ? existingText.copyText(offset)
+          : AttributedText('');
+
+      // First parsed node merges with text before cursor
+      final firstParsed = parsedNodes.first;
+      if (firstParsed is TextNode) {
+        // Delete text after cursor from current node
+        if (existingText.length > offset) {
+          requests.add(DeleteContentRequest(
+            documentRange: DocumentRange(
+              start: DocumentPosition(
+                nodeId: cursorNode.id,
+                nodePosition: TextNodePosition(offset: offset),
+              ),
+              end: DocumentPosition(
+                nodeId: cursorNode.id,
+                nodePosition:
+                    TextNodePosition(offset: existingText.length),
+              ),
+            ),
+          ));
+        }
+
+        // Append the first parsed node's text to current node
+        final firstText = firstParsed.text;
+        if (firstText.toPlainText().isNotEmpty) {
+          requests.add(InsertTextRequest(
+            documentPosition: DocumentPosition(
+              nodeId: cursorNode.id,
+              nodePosition: TextNodePosition(offset: offset),
+            ),
+            textToInsert: firstText.toPlainText(),
+            attributions: {},
+          ));
+
+          // Apply attributions from the first parsed node
+          final firstSpans = firstText.getAttributionSpansInRange(
+            attributionFilter: (attr) => true,
+            range: SpanRange(0, firstText.length - 1),
+          );
+          for (final span in firstSpans) {
+            requests.add(AddTextAttributionsRequest(
+              documentRange: DocumentRange(
+                start: DocumentPosition(
+                  nodeId: cursorNode.id,
+                  nodePosition:
+                      TextNodePosition(offset: offset + span.start),
+                ),
+                end: DocumentPosition(
+                  nodeId: cursorNode.id,
+                  nodePosition:
+                      TextNodePosition(offset: offset + span.end),
+                ),
+              ),
+              attributions: {span.attribution},
+            ));
+          }
+        }
+      }
+
+      // Insert middle parsed nodes as new document nodes
+      var insertIndex = cursorNodeIndex + 1;
+      for (int i = 1; i < parsedNodes.length; i++) {
+        requests.add(InsertNodeAtIndexRequest(
+          nodeIndex: insertIndex++,
+          newNode: parsedNodes[i],
+        ));
+      }
+
+      // Add trailing paragraph with text after cursor (if any)
+      if (afterText.toPlainText().isNotEmpty) {
+        requests.add(InsertNodeAtIndexRequest(
+          nodeIndex: insertIndex,
+          newNode: ParagraphNode(
+            id: super_editor.Editor.createNodeId(),
+            text: afterText,
+          ),
+        ));
+      }
+    } else {
+      // Non-text node: just insert all parsed nodes after current
+      var insertIndex = cursorNodeIndex + 1;
+      for (final node in parsedNodes) {
+        requests.add(InsertNodeAtIndexRequest(
+          nodeIndex: insertIndex++,
+          newNode: node,
+        ));
+      }
+    }
+
+    if (requests.isNotEmpty) {
+      _editor.execute(requests);
+    }
+  }
+
+  /// Insert a URL at cursor and asynchronously resolve its page title.
+  void _pasteUrlWithTitleResolution(String text) {
+    final insertPosition = _composer.selection;
+    if (insertPosition == null) return;
+    final nodeId = insertPosition.extent.nodeId;
+    final startOffset =
+        (insertPosition.extent.nodePosition as TextNodePosition).offset;
+
+    _editor.execute([
+      InsertTextRequest(
+        documentPosition: insertPosition.extent,
+        textToInsert: text,
+        attributions: {LinkAttribution(text)},
+      ),
+    ]);
+
+    // Resolve the title for the URL
+    () async {
       String? title;
       final plotLink = OpenPageLink.parse(text);
       if (plotLink != null) {
@@ -1487,7 +1775,6 @@ class EditorState extends State<Editor> {
       }
 
       if (mounted && title != null) {
-        // Replace the raw URL text with the resolved title
         final endOffset = startOffset + text.length;
         _editor.execute([
           DeleteContentRequest(
@@ -1512,9 +1799,7 @@ class EditorState extends State<Editor> {
           ),
         ]);
       }
-    });
-
-    return ExecutionInstruction.haltExecution;
+    }();
   }
 
   void _normalPaste() {
@@ -1525,6 +1810,31 @@ class EditorState extends State<Editor> {
       documentLayoutResolver: () =>
           _docLayoutKey.currentState as DocumentLayout,
     ).paste();
+  }
+
+  /// Read binary file bytes from a clipboard reader for a given file format.
+  Future<Uint8List?> _readFileBytes(
+    ClipboardReader reader,
+    FileFormat format,
+  ) async {
+    final completer = Completer<Uint8List?>();
+    final progress = reader.getFile(
+      format,
+      (file) async {
+        try {
+          final allBytes = <int>[];
+          await for (final chunk in file.getStream()) {
+            allBytes.addAll(chunk);
+          }
+          completer.complete(Uint8List.fromList(allBytes));
+        } catch (_) {
+          completer.complete(null);
+        }
+      },
+      onError: (_) => completer.complete(null),
+    );
+    if (progress == null) return null;
+    return completer.future;
   }
 
   /// Check if text looks like a URL

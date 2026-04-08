@@ -10,6 +10,7 @@ import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { handleTwistOperation } from "../twist/error-handling";
 import { validateSerializable } from "../twist/tools/validation";
+import { disposeRpc } from "../utils/rpc";
 
 export type CallbackData = {
   token: string;
@@ -687,8 +688,8 @@ export class CallbacksState extends DurableObject<Bindings> {
     const callbacksStub = callbacks.get(callbacksId);
 
     // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
-    // Note: We don't dispose here as the caller (queue/logs.ts) will handle disposal
     const result = await callbacksStub.callCallback(token, ...args);
+    disposeRpc(callbacksStub);
 
     // Check if the result is an error object (returned instead of thrown to prevent "Uncaught" logs)
     if (

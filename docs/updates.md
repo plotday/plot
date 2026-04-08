@@ -1,3 +1,6 @@
+- Fixed the "Twisting" indicator sometimes staying on a note even after it was processed
+- Improved copy and paste in the note editor — copying a note now preserves links and formatting when pasting back into Plot or into other apps like Google Docs and Slack, pasting rich content from browsers preserves links, and you can paste images directly from the clipboard as file attachments
+- You can now add new comments to Google Docs directly from Plot — when you post a note mentioning the Google Drive connector on a doc thread, it creates an unanchored comment in the doc
 - Replies to Google Doc comments now sync back to the document — when you reply to a comment in Plot, your reply appears in the Google Doc's comment thread
 - Plot now automatically detects tasks in your emails and chat messages — when someone asks you to do something in Gmail, Slack, or Google Chat, Plot creates a to-do for it so you don't lose track
 - Fixed completed connector issues (like Linear "Done" tasks) incorrectly appearing as to-dos in your agenda — completed items now skip scheduling, and existing to-dos are removed when their status changes to done

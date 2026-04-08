@@ -60,8 +60,10 @@ export class PlanLimitError extends Error {
 }
 
 /**
- * Count personal connections: DISTINCT (provider, actor_id) pairs where the
- * connection has at least one enabled channel on a personal priority.
+ * Count personal connections: DISTINCT (priority_twist_id, provider, actor_id)
+ * tuples where the connection has at least one enabled channel on a personal
+ * priority. A "connection" is a connector + account pair, so the same account
+ * on two different connectors (e.g. Gmail + Google Drive) counts as two.
  */
 export async function getPersonalConnectionCount(
   db: Kysely<DB>,
@@ -69,7 +71,7 @@ export async function getPersonalConnectionCount(
 ): Promise<number> {
   const result = await db
     .selectFrom("priority_twist_connection as ptc")
-    .select(sql<string>`count(DISTINCT (ptc.provider, ptc.actor_id))`.as("count"))
+    .select(sql<string>`count(DISTINCT (ptc.priority_twist_id, ptc.provider, ptc.actor_id))`.as("count"))
     .where("ptc.user_id", "=", userId)
     .where(({ exists, selectFrom }) =>
       exists(
@@ -94,8 +96,9 @@ export async function getPersonalConnectionCount(
 }
 
 /**
- * Count org connections: DISTINCT (provider, actor_id) pairs where the
- * connection has at least one enabled channel on a priority in this org.
+ * Count org connections: DISTINCT (priority_twist_id, provider, actor_id)
+ * tuples where the connection has at least one enabled channel on a priority
+ * in this org.
  */
 export async function getOrgConnectionCount(
   db: Kysely<DB>,
@@ -103,7 +106,7 @@ export async function getOrgConnectionCount(
 ): Promise<number> {
   const result = await db
     .selectFrom("priority_twist_connection as ptc")
-    .select(sql<string>`count(DISTINCT (ptc.provider, ptc.actor_id))`.as("count"))
+    .select(sql<string>`count(DISTINCT (ptc.priority_twist_id, ptc.provider, ptc.actor_id))`.as("count"))
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("source_channel as sc")
@@ -203,8 +206,9 @@ async function isOrgAdmin(
 
 /**
  * Check if enabling a channel would exceed connection limits.
- * A connection slot is consumed the first time a (provider, actor_id) pair
- * has an enabled channel of a given type (personal or org).
+ * A connection is a connector + account pair (priority_twist + provider +
+ * actor_id). A slot is consumed the first time a connector has an enabled
+ * channel of a given type (personal or org).
  */
 export async function checkChannelConnectionLimit(
   db: Kysely<DB>,
@@ -238,17 +242,14 @@ export async function checkChannelConnectionLimit(
     return { allowed: true };
   }
 
-  // Check if this (provider, actor_id) already has an enabled channel of the same type
-  // across any of the user's priority_twists. If so, no new slot is consumed.
+  // Check if this connector+account already has an enabled channel of the same
+  // type (personal or org) on this priority_twist. If so, no new slot is consumed.
   if (organizationId) {
     const existingOrgChannel = await db
-      .selectFrom("priority_twist_connection as ptc")
-      .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
-      .innerJoin("source_channel as sc", "sc.priority_twist_id", "ptc.priority_twist_id")
+      .selectFrom("source_channel as sc")
+      .innerJoin("priority_twist as pt", "pt.id", "sc.priority_twist_id")
       .innerJoin("priority as p", "p.id", "sc.priority_id")
-      .where("ptc.user_id", "=", userId)
-      .where("ptc.provider", "=", connection.provider)
-      .where("ptc.actor_id", "=", connection.actor_id)
+      .where("sc.priority_twist_id", "=", priorityTwistId)
       .where("sc.enabled", "=", true)
       .where("pt.archived_at", "is", null)
       .where("p.organization_id", "=", organizationId)
@@ -312,15 +313,12 @@ export async function checkChannelConnectionLimit(
     return { allowed: true };
   }
 
-  // Personal channel — check if this connection already has a personal channel
+  // Personal channel — check if this connector already has a personal channel
   const existingPersonalChannel = await db
-    .selectFrom("priority_twist_connection as ptc")
-    .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
-    .innerJoin("source_channel as sc", "sc.priority_twist_id", "ptc.priority_twist_id")
+    .selectFrom("source_channel as sc")
+    .innerJoin("priority_twist as pt", "pt.id", "sc.priority_twist_id")
     .leftJoin("priority as p", "p.id", "sc.priority_id")
-    .where("ptc.user_id", "=", userId)
-    .where("ptc.provider", "=", connection.provider)
-    .where("ptc.actor_id", "=", connection.actor_id)
+    .where("sc.priority_twist_id", "=", priorityTwistId)
     .where("sc.enabled", "=", true)
     .where("pt.archived_at", "is", null)
     .where((eb) =>

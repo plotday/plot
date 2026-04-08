@@ -367,7 +367,7 @@ webhook.post("/hook/slack", webhookRateLimiter, async (c) => {
     });
 
     // Route to callbacks
-    using _slackResult = await Network.HandleSlackWebhook(c.env.CALLBACKS, {
+    const _slackResult = await Network.HandleSlackWebhook(c.env.CALLBACKS, {
       method: "POST",
       headers,
       params,
@@ -472,7 +472,7 @@ webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
 
     // Call the callback using the decoded token
     // The callback token encodes the DO shard and callback info
-    using _gmailResult = await Network.HandleGmailWebhook(
+    const _gmailResult = await Network.HandleGmailWebhook(
       c.env.CALLBACKS,
       callbackToken,
       webhookRequest
@@ -599,7 +599,7 @@ webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
     };
 
     // Call the callback using the decoded token
-    using _result = await Network.HandleGmailWebhook(
+    const _result = await Network.HandleGmailWebhook(
       c.env.CALLBACKS,
       callbackToken,
       webhookRequest
@@ -692,7 +692,7 @@ webhook.all(Network.PATH, webhookRateLimiter, async (c) => {
       const statusMap: Record<CallbackErrorType, number> = {
         INVALID_TOKEN_FORMAT: 400,
         INVALID_TOKEN: 400,
-        NOT_FOUND: 404,
+        NOT_FOUND: 410,  // 410 Gone — tells providers (Google, etc.) to stop retrying
         EXPIRED: 410,
         SUSPENDED: 503,
         UNINITIALIZED: 500,

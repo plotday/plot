@@ -10,6 +10,7 @@
 1. [Install pgFormatter](https://github.com/darold/pgFormatter): `brew install pgformatter`
 1. `brew install postgresql`
 1. `brew install cocoapods`
+1. Install [Rust](https://rustup.rs/) (required by `super_clipboard` native extensions): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 1. Install [Atlas](https://atlasgo.io/getting-started#installation) for database migrations: `brew install ariga/tap/atlas`
 1. Install [Cloud SQL Auth Proxy](https://cloud.google.com/sql/docs/postgres/sql-proxy) for connecting to the remote database: `brew install cloud-sql-proxy`
 1. Authenticate with Google Cloud: `gcloud auth login && gcloud auth application-default login`

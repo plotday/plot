@@ -673,7 +673,8 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                   ),
                                   if (activity.displayPreview != null &&
                                       activity.displayPreview!.isNotEmpty &&
-                                      activity.displayPreview != activity.displayTitle)
+                                      activity.displayPreview !=
+                                          activity.displayTitle)
                                     TextSpan(
                                       text: '  ${activity.displayPreview}',
                                       style: TextStyle(
@@ -785,7 +786,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             if (declined.isNotEmpty) ...[
               if (attending.isNotEmpty) const SizedBox(height: 4),
               Text(
-                'Declined',
+                'Skipping',
                 style: context.theme.typography.sm.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -1040,13 +1041,14 @@ class ThreadCommands extends HookWidget {
               .toList()
         : <ConferencingUserAction>[];
 
-    // RSVP buttons (always visible for multi-attendee events)
-    final rsvpButton = showEventButtons && activity.hasOtherAttendees
+    // RSVP buttons for calendar events (link schedule instances)
+    final rsvpButton = showEventButtons && activity.isLinkScheduleInstance
         ? Button.icon(ToggleRsvp(activity))
         : null;
     // Secondary skip button: appears on hover when no RSVP yet
     final skipSeriesButton =
         showEventButtons &&
+            activity.isLinkScheduleInstance &&
             activity.hasOtherAttendees &&
             activity.currentUserRsvp == null
         ? Button.icon(SkipRsvpSeries(activity))

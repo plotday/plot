@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show Uint8List;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -7,7 +8,11 @@ import 'package:plot/state/thread.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/image_utils.dart';
+import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/network_exception.dart';
 import 'logging.dart';
 
 class NoteEditor extends StatefulWidget {
@@ -188,6 +193,76 @@ class NoteEditorState extends State<NoteEditor> {
       !widget.isNewThreadMode &&
       context.read<ThreadBloc>().state.editingNote != null;
 
+  /// Handle an image pasted from clipboard: upload and add as file attachment.
+  Future<void> _handleImagePaste(Uint8List imageBytes) async {
+    final priorityId = widget.isNewThreadMode
+        ? widget.thread!.priority.id.toString()
+        : context.read<ThreadBloc>().state.thread.priority.id.toString();
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final fileName = 'pasted-image-$timestamp.png';
+
+    try {
+      final response = await api.uploadFile(
+        filePath: '',
+        fileName: fileName,
+        priorityId: priorityId,
+        bytes: imageBytes,
+      );
+
+      final mimeType = response['mimeType'] as String;
+      int? imageWidth;
+      int? imageHeight;
+      if (mimeType.startsWith('image/')) {
+        final dims = await getImageDimensions(imageBytes);
+        if (dims != null) {
+          imageWidth = dims.$1;
+          imageHeight = dims.$2;
+        }
+      }
+
+      final fileAction = FileUserAction(
+        fileId: response['fileId'] as String,
+        fileName: response['fileName'] as String,
+        fileSize: response['fileSize'] as int,
+        mimeType: mimeType,
+        imageWidth: imageWidth,
+        imageHeight: imageHeight,
+      );
+
+      if (!mounted) return;
+
+      final currentActions = widget.draft.actions ?? const [];
+      final updatedActions = [...currentActions, fileAction];
+
+      if (widget.isNewThreadMode) {
+        widget.onDraftChanged!(
+          widget.thread!,
+          note: widget.draft.copyWith(actions: updatedActions),
+        );
+      } else {
+        final updatedDraft = widget.draft.copyWith(actions: updatedActions);
+        context.read<ThreadBloc>().updateDraft(updatedDraft);
+      }
+    } on NetworkException {
+      if (mounted) {
+        context.showToast(
+          message: "You're offline. Please try again when connected.",
+          isError: true,
+        );
+      }
+    } catch (e, t) {
+      log.warning('Failed to upload pasted image', e, t);
+      Tracker.captureException(e, t);
+      if (mounted) {
+        context.showToast(
+          message: 'Failed to upload pasted image.',
+          isError: true,
+        );
+      }
+    }
+  }
+
   Future<void> _saveDraft(String content) async {
     if (_finalized) return;
     if (_isEditing) return;
@@ -310,6 +385,7 @@ class NoteEditorState extends State<NoteEditor> {
           onSubmitted: widget.isNewThreadMode
               ? _onNewThreadSubmitted
               : _onNoteSubmitted,
+          onImagePasted: (imageBytes) => _handleImagePaste(imageBytes),
         );
 
         return Padding(

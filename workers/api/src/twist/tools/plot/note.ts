@@ -220,34 +220,62 @@ export async function createNote(
     }
 
     // Insert or upsert note based on whether key is provided
-    // When key is provided, use upsert to handle duplicate keys within same activity
-    const dbResult = dbNote.key
+    // When key is provided, use upsert to handle duplicate keys within same activity.
+    // The WHERE clause ensures the UPDATE only fires when content actually changed,
+    // preventing unnecessary DB triggers (updated_at, sync_twist_for_note) that would
+    // wake TwistSync and cause feedback loops when connectors re-sync their own writes.
+    let dbResult = dbNote.key
       ? await plot.db
           .insertInto("note")
           .values(dbNote)
           .onConflict((oc) =>
-            oc.columns(["thread_id", "key"]).doUpdateSet((eb) => ({
-              author_id: eb.ref("excluded.author_id"),
-              created_by: eb.ref("excluded.created_by"),
-              source_created_at: eb.ref("excluded.source_created_at"),
-              draft: eb.ref("excluded.draft"),
-              private: eb.ref("excluded.private"),
-              content: eb.ref("excluded.content"),
-              actions: eb.ref("excluded.actions"),
-              mentions: eb.ref("excluded.mentions"),
-              updated_by: eb.ref("excluded.updated_by"),
-              sync_depth: eb.ref("excluded.sync_depth"),
-              archived_at: eb.ref("excluded.archived_at"),
-              re_note_id: eb.ref("excluded.re_note_id"),
-            }))
+            oc
+              .columns(["thread_id", "key"])
+              .doUpdateSet((eb) => ({
+                author_id: eb.ref("excluded.author_id"),
+                created_by: eb.ref("excluded.created_by"),
+                source_created_at: eb.ref("excluded.source_created_at"),
+                draft: eb.ref("excluded.draft"),
+                private: eb.ref("excluded.private"),
+                content: eb.ref("excluded.content"),
+                actions: eb.ref("excluded.actions"),
+                mentions: eb.ref("excluded.mentions"),
+                updated_by: eb.ref("excluded.updated_by"),
+                sync_depth: eb.ref("excluded.sync_depth"),
+                archived_at: eb.ref("excluded.archived_at"),
+                re_note_id: eb.ref("excluded.re_note_id"),
+              }))
+              .where((eb) =>
+                eb.or([
+                  eb("note.content", "is distinct from", eb.ref("excluded.content")),
+                  eb("note.author_id", "is distinct from", eb.ref("excluded.author_id")),
+                  eb("note.source_created_at", "is distinct from", eb.ref("excluded.source_created_at")),
+                  eb("note.archived_at", "is distinct from", eb.ref("excluded.archived_at")),
+                  eb("note.re_note_id", "is distinct from", eb.ref("excluded.re_note_id")),
+                  eb("note.mentions", "is distinct from", eb.ref("excluded.mentions")),
+                  eb("note.actions", "is distinct from", eb.ref("excluded.actions")),
+                  eb("note.draft", "is distinct from", eb.ref("excluded.draft")),
+                  eb("note.private", "is distinct from", eb.ref("excluded.private")),
+                ])
+              )
           )
           .returningAll()
-          .executeTakeFirstOrThrow()
+          .executeTakeFirst() ?? null
       : await plot.db
           .insertInto("note")
           .values(dbNote)
           .returningAll()
           .executeTakeFirstOrThrow();
+
+    // If upsert was a no-op (existing row with identical content), fetch the existing row
+    if (!dbResult) {
+      dbResult = await plot.db
+        .selectFrom("note")
+        .selectAll()
+        .where("thread_id", "=", dbNote.thread_id)
+        .where("key", "=", dbNote.key)
+        .executeTakeFirstOrThrow();
+    }
 
     // Generate embedding (best-effort, don't fail the create)
     if (

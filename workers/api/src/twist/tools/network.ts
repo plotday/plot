@@ -167,6 +167,7 @@ export class Network extends Tool implements INetwork {
     // Get callbacks for this team
     const callbacksStub = Network.GetCallbacksStub(callbacks, teamId);
     const teamCallbacksResult = await callbacksStub.get(teamId);
+    disposeRpc(callbacksStub);
     const teamCallbacks = teamCallbacksResult
       ? [...teamCallbacksResult]
       : teamCallbacksResult;

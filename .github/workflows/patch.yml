@@ -195,6 +195,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-flutter-deps-
 
+      - name: Set up Rust (for super_clipboard native extensions)
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         run: |
           cd apps/plot
@@ -342,6 +345,9 @@ jobs:
           key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-flutter-deps-
+
+      - name: Set up Rust (for super_clipboard native extensions)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
         run: |
@@ -500,6 +506,9 @@ jobs:
           key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-flutter-deps-
+
+      - name: Set up Rust (for super_clipboard native extensions)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
         run: |
@@ -663,6 +672,9 @@ jobs:
           key: ${{ runner.os }}-flutter-deps-${{ hashFiles('apps/plot/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-flutter-deps-
+
+      - name: Set up Rust (for super_clipboard native extensions)
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
         run: |

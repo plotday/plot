@@ -3,6 +3,7 @@
 ## Setup
 
 1. Install Flutter: [MacOS](https://docs.flutter.dev/get-started/install/macos/desktop#install-the-flutter-sdk) / [Windows](https://docs.flutter.dev/get-started/install/windows/desktop#install-the-flutter-sdk)
+2. Install [Rust](https://rustup.rs/) (required by `super_clipboard` native extensions): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 
 ## Installing on Windows (Local Testing)
 

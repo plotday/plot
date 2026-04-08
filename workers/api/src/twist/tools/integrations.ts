@@ -878,8 +878,11 @@ export class Integrations extends Tool implements IAuth {
       // to synced messages), so we don't skip on created_by === priorityTwistId.
       if (!isCreate) {
         if (!threadCreatedByThis) return [];
-        // Skip if the twist itself made the update (prevent loops)
-        if (item.updated_by === this.priorityTwistId) return [];
+        // Skip if any twist/connector made the update (prevent cross-connector loops).
+        // Negative updated_by values indicate twist/API-originated writes.
+        // Positive values indicate app client (user) writes.
+        // Only dispatch onNoteUpdated for genuine user edits.
+        if (typeof item.updated_by === "number" && item.updated_by <= 0) return [];
 
         const { note, thread } = await this.buildNoteAndThread(item);
         return [{ sourceMethod: "onNoteUpdated", args: [note, thread] }];
@@ -914,6 +917,12 @@ export class Integrations extends Tool implements IAuth {
 
       // Skip notes created by this twist (prevent loops)
       if (item.created_by === this.priorityTwistId) return [];
+
+      // Skip notes created by ANY twist/connector (prevent cross-connector loops).
+      // Negative updated_by indicates twist-originated writes. Channel note dispatch
+      // should only fire for user-created notes (replies typed in the app), not for
+      // notes created by other connectors during sync.
+      if (typeof item.updated_by === "number" && item.updated_by <= 0) return [];
 
       // Skip notes that mention this twist on threads it created —
       // these are already dispatched via the "note" (mention) path
@@ -2384,7 +2393,7 @@ export class Integrations extends Tool implements IAuth {
       // Call the wrapped callback (onAuth) with token info
       if (authState.callback) {
         try {
-          using _result = await CallbacksState.CallCallback(
+          const _result = await CallbacksState.CallCallback(
             callbacks,
             authState.callback,
             {

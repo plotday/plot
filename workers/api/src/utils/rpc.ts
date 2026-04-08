@@ -99,6 +99,7 @@ export type RpcImplementation<T> = {
  * ```
  */
 export async function getRpcFunctionName(
+  // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
   stub: RpcFunction<any> | Function
 ): Promise<string> {
   // RPC stubs require await to access properties
