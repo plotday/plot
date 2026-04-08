@@ -334,7 +334,7 @@ class ArchiveNote extends NoteCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await note.delete();
+      await note.archive();
       return const CommandDone();
     } catch (e, stackTrace) {
       log.severe('Error in ArchiveNote: $e', e, stackTrace);

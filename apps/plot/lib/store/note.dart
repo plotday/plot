@@ -744,13 +744,7 @@ class Note extends Equatable implements Comparable<Note> {
     return false;
   }
 
-  Future<void> delete() async {
-    await (Store.get.update(Store.get.notes)
-          ..where((t) => t.id.equalsValue(id)))
-        .write(NotesCompanion(archivedAt: Value(DateTime.now())));
-    // Push to remote (fire-and-forget, like Store.save)
-    unawaited(SyncOrchestrator.instance.push(SyncOrchestrator.note));
-  }
+  Future<void> archive() => copyWith(archivedAt: Value(DateTime.now())).save();
 
   // Tag-related getters
   Map<Tag, List<ActorId>> get tags => {
@@ -1007,6 +1001,7 @@ class Note extends Equatable implements Comparable<Note> {
     NoteId? reNoteId,
     bool clearReNoteId = false,
     NoteTagsRow? tags,
+    Value<DateTime?> archivedAt = const Value.absent(),
     bool clearArchivedAt = false,
     Value<ThreadId?> mergedFromThreadId = const Value.absent(),
   }) {
@@ -1080,7 +1075,7 @@ class Note extends Equatable implements Comparable<Note> {
         reNoteId: clearReNoteId ? null : (reNoteId ?? this.reNoteId),
         createdAt: isPublishing ? now : createdAt,
         updatedAt: DateTime.now(),
-        archivedAt: clearArchivedAt ? null : archivedAt,
+        archivedAt: archivedAt.present ? archivedAt.value : (clearArchivedAt ? null : this.archivedAt),
         mergedFromThreadId: mergedFromThreadId.present ? mergedFromThreadId.value : this.mergedFromThreadId,
       ),
       tags: effectiveTags,
