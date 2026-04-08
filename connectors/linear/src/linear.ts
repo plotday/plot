@@ -810,7 +810,16 @@ export class Linear extends Connector<Linear> {
         syncableId: projectId,
       },
       preview: issue.description || null,
-      notes: [],
+      notes: issue.description
+        ? [
+            {
+              key: "description",
+              content: issue.description,
+              created: new Date(issue.createdAt),
+              author: authorContact,
+            } as any,
+          ]
+        : [],
     };
 
     await this.tools.integrations.saveLink(newLink);
