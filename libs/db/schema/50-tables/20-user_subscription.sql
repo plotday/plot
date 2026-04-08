@@ -9,12 +9,14 @@ CREATE TABLE "public"."user_subscription" (
     "status" subscription_status NOT NULL DEFAULT 'active',
     "billing_cycle_start" timestamp with time zone NOT NULL,
     "billing_cycle_end" timestamp with time zone NOT NULL,
+    "trial_ends_at" timestamp with time zone,
     UNIQUE(user_id)
 );
 
 CREATE INDEX idx_user_subscription_user_id ON "public"."user_subscription" ("user_id");
 CREATE INDEX idx_user_subscription_stripe_customer_id ON "public"."user_subscription" ("stripe_customer_id");
 CREATE INDEX idx_user_subscription_stripe_subscription_id ON "public"."user_subscription" ("stripe_subscription_id") WHERE "stripe_subscription_id" IS NOT NULL;
+CREATE INDEX idx_user_subscription_trial_ends_at ON "public"."user_subscription" ("trial_ends_at") WHERE "trial_ends_at" IS NOT NULL;
 
 CREATE TRIGGER set_user_subscription_updated_at
     BEFORE INSERT OR UPDATE ON "public"."user_subscription"

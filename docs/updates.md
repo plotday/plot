@@ -1,3 +1,4 @@
+- New signups now get the Core plan free for 30 days — you can try up to 5 connections and 2 twists before deciding whether to upgrade
 - Fixed the "Twisting" indicator sometimes staying on a note even after it was processed
 - Improved copy and paste in the note editor — copying a note now preserves links and formatting when pasting back into Plot or into other apps like Google Docs and Slack, pasting rich content from browsers preserves links, and you can paste images directly from the clipboard as file attachments
 - You can now add new comments to Google Docs directly from Plot — when you post a note mentioning the Google Drive connector on a doc thread, it creates an unanchored comment in the doc

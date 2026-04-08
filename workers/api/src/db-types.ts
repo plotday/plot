@@ -362,7 +362,7 @@ export interface Note {
   actions: Json | null;
   archived_at: Timestamp | null;
   /**
-   * The actor to credit with creating this note. For notes created by twists on behalf of contacts or users, this is the contact/user. For notes created directly by users or twists, this is the user/twist ID.
+   * The actor to credit with creating this note. For notes created by users, this is the user's contact ID (never the user_id). For notes created by twists, this is the twist's priority_twist_id.
    */
   author_id: string;
   content: string | null;
@@ -379,7 +379,7 @@ export interface Note {
    */
   key: string | null;
   /**
-   * Array of actor IDs (user_id, contact_id, or priority_twist_id) that are mentioned in this note via @-mentions.
+   * Array of actor IDs (contact_id or priority_twist_id) mentioned in this note. For users, this stores their contact_id (not user_id).
    */
   mentions: string[] | null;
   merged_from_thread_id: string | null;
@@ -457,6 +457,7 @@ export interface Priority {
   color: number | null;
   created_at: Generated<Timestamp>;
   created_by: string;
+  default_thread_icon: string | null;
   id: Generated<string>;
   inherit_members: Generated<boolean>;
   key: string | null;
@@ -1250,6 +1251,7 @@ export interface UserSchedule {
 export interface UserSettings {
   ai_enabled: boolean | null;
   enter_behavior: EnterBehavior | null;
+  onboarding_completed: boolean | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -1278,6 +1280,7 @@ export interface UserSubscription {
   status: Generated<SubscriptionStatus>;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  trial_ends_at: Timestamp | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }

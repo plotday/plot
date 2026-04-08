@@ -28,7 +28,7 @@ upgrade.get("/upgrade", async (c) => {
 
   const subscription = await c.var.db
     .selectFrom("user_subscription")
-    .select(["plan", "status", "billing_cycle_end"])
+    .select(["plan", "status", "billing_cycle_end", "trial_ends_at"])
     .where("user_id", "=", user.id)
     .executeTakeFirst();
 
@@ -39,8 +39,9 @@ upgrade.get("/upgrade", async (c) => {
         plan: subscription.plan,
         status: subscription.status,
         billing_cycle_end: subscription.billing_cycle_end,
+        trial_ends_at: subscription.trial_ends_at,
       }
-    : { plan: "free", status: "active", billing_cycle_end: null };
+    : { plan: "free", status: "active", billing_cycle_end: null, trial_ends_at: null };
 
   // Fetch all orgs the user belongs to with subscription info
   const orgs = await c.var.db

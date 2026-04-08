@@ -338,6 +338,8 @@ account.post("/activate", async (c) => {
 
   // Step 6: Upsert user_subscription record with whatever Stripe data we have
   // Use upsert to make this idempotent in case of retries after failed activations
+  // New users get a 30-day Core trial (reverse trial)
+  const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   try {
     await c.var.db
       .insertInto("user_subscription")
@@ -345,17 +347,17 @@ account.post("/activate", async (c) => {
         user_id: user.id,
         stripe_customer_id: stripeCustomerId,
         stripe_subscription_id: stripeSubscriptionId,
-        plan: "free",
+        plan: "core",
         status: "active",
         billing_cycle_start: billingStart.toISOString(),
         billing_cycle_end: billingEnd.toISOString(),
+        trial_ends_at: trialEndsAt.toISOString(),
       })
       .onConflict((oc) =>
         oc.column("user_id").doUpdateSet({
           stripe_customer_id: stripeCustomerId,
           stripe_subscription_id: stripeSubscriptionId,
-          plan: "free",
-          status: "active",
+          // Don't overwrite plan/trial on re-activation — preserve existing state
           billing_cycle_start: billingStart.toISOString(),
           billing_cycle_end: billingEnd.toISOString(),
         })
@@ -593,7 +595,76 @@ account.post("/activate", async (c) => {
         }
       }
 
-      // 9f: Notify sync for the Plot App priority
+      // 9f: Create reverse trial thread
+      try {
+        const trialThread = await c.var.db
+          .insertInto("thread")
+          .values({
+            priority_id: plotAppPriority.id,
+            title: "Your Core plan trial",
+            created_by: user.id,
+            key: "core-trial",
+          })
+          .onConflict((oc) =>
+            oc.columns(["priority_id", "key"]).doNothing()
+          )
+          .returning("id")
+          .executeTakeFirst();
+
+        if (trialThread) {
+          // Welcome note explaining the trial
+          await c.var.db
+            .insertInto("note")
+            .values({
+              thread_id: trialThread.id,
+              content:
+                "Welcome to Plot! You have the **Core plan** free for 30 days — that's up to 5 connections and 2 twists. We'll let you know before your trial ends.",
+              created_by: user.id,
+              author_id: user.id,
+            })
+            .execute();
+
+          // Schedule thread as started (same pattern as onboarding)
+          await sql`
+            INSERT INTO schedule (thread_id, user_id, "order", reason, "on")
+            VALUES (${trialThread.id}::uuid, ${user.id}::uuid, 500, 'add', daterange('1970-01-01', NULL))
+            ON CONFLICT (thread_id, user_id) WHERE user_id IS NOT NULL AND occurrence IS NULL
+            DO NOTHING
+          `.execute(c.var.db);
+
+          // Start TrialReminder DO to schedule 7-day, 2-day, and expiry alarms
+          const trialReminderId = c.env.TRIAL_REMINDER.idFromName(user.id);
+          const trialReminderDO = c.env.TRIAL_REMINDER.get(trialReminderId);
+          c.executionCtx.waitUntil(
+            trialReminderDO
+              .fetch(
+                new Request("http://do/start", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    userId: user.id,
+                    trialThreadId: trialThread.id,
+                    trialEndsAt: trialEndsAt.getTime(),
+                  }),
+                })
+              )
+              .catch((err) => {
+                const ctx = extractRequestContext(c);
+                const l = createLogger(ctx);
+                l.error("Failed to start trial reminder DO", err as Error, {
+                  user_id: user.id,
+                });
+              })
+          );
+        }
+      } catch (trialError) {
+        const ctx = extractRequestContext(c);
+        const l = createLogger(ctx);
+        l.error("Failed to create trial thread (non-blocking)", trialError as Error, {
+          user_id: user.id,
+        });
+      }
+
+      // 9g: Notify sync for the Plot App priority
       notifySync(c, plotAppPriority.id);
     } else {
       const context = extractRequestContext(c);
