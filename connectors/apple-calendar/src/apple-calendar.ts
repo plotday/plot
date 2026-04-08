@@ -567,11 +567,12 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       }));
     }
 
-    // Build attendee contacts
-    const isRecurring = !!icsEvent.rrule;
+    // Build attendee contacts on the base schedule so client-generated
+    // recurring occurrences inherit attendee data (needed for RSVP buttons).
+    // Per-occurrence overrides with their own contacts take precedence.
     const validAttendees = icsEvent.attendees.filter((a) => a.email);
     let scheduleContacts: NewScheduleContact[] | undefined;
-    if (validAttendees.length > 0 && !isRecurring) {
+    if (validAttendees.length > 0) {
       scheduleContacts = validAttendees.map((att) => ({
         contact: { email: att.email, name: att.name ?? undefined },
         status:

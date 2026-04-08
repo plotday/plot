@@ -758,13 +758,11 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             continue;
           }
 
-          // For recurring events, DON'T add contacts at series level
-          // Contacts (RSVPs) should be per-occurrence via the scheduleOccurrences array
-          // For non-recurring events, add contacts to the schedule
-          const isRecurring = !!activityData.schedules?.[0]?.recurrenceRule;
+          // Add contacts to the base schedule so client-generated recurring
+          // occurrences inherit attendee data (needed for RSVP buttons).
+          // Per-occurrence overrides with their own contacts take precedence.
           if (
             validAttendees.length > 0 &&
-            !isRecurring &&
             activityData.schedules?.[0]
           ) {
             const contacts: NewScheduleContact[] = validAttendees.map(

@@ -490,11 +490,10 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           continue;
         }
 
-        // For recurring events, DON'T add contacts at series level
-        // Contacts (RSVPs) should be per-occurrence via the scheduleOccurrences array
-        // For non-recurring events, add contacts to the schedule
-        const hasRecurrence = !!threadData.schedules?.[0]?.recurrenceRule;
-        if (validAttendees.length > 0 && !hasRecurrence && threadData.schedules?.[0]) {
+        // Add contacts to the base schedule so client-generated recurring
+        // occurrences inherit attendee data (needed for RSVP buttons).
+        // Per-occurrence overrides with their own contacts take precedence.
+        if (validAttendees.length > 0 && threadData.schedules?.[0]) {
           const contacts: NewScheduleContact[] = validAttendees.map((attendee) => ({
             contact: {
               email: attendee.emailAddress!.address!,
