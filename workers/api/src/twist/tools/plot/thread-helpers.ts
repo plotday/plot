@@ -323,8 +323,12 @@ export function stripMarkdown(text: string): string {
   // Remove images (before links so ![alt](url) doesn't become [alt](url))
   result = result.replace(/!\[([^\]]*)\]\([^)]+\)/g, "");
 
-  // Remove links but keep link text
-  result = result.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  // Remove links: keep descriptive text, extract domain for URL-only or empty link text
+  result = result.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (_, text, url) => {
+    if (text && !/^https?:\/\//.test(text)) return text;
+    const domainMatch = url.match(/^https?:\/\/(?:www\.)?([^\/\s]+)/);
+    return domainMatch ? domainMatch[1] : text || '';
+  });
 
   // Remove bold/italic
   result = result.replace(/(\*\*|__)(.*?)\1/g, "$2");
