@@ -317,7 +317,7 @@ export class MsTeams extends Connector<MsTeams> {
       );
 
       // Localhost guard
-      if (URL.parse(webhookUrl)?.hostname === "localhost") {
+      if (webhookUrl.includes("localhost") || webhookUrl.includes("127.0.0.1")) {
         return;
       }
 
