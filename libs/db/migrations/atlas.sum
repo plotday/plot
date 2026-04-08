@@ -1,4 +1,4 @@
-h1:FK29jFbWGrLbKDyakMrZPWE4JVsJoNb6iXgWN/GjPFg=
+h1:xPGAOgg+fXocGhbqvhj3fghYob7i1pQ+N7dLXUvmL40=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -177,3 +177,5 @@ h1:FK29jFbWGrLbKDyakMrZPWE4JVsJoNb6iXgWN/GjPFg=
 20260406155803_preserve_note_key_on_sync.sql h1:umJGsWCZYkU/4e+szdzwwAz212vtSapGJchu40qUsKs=
 20260407213218_fix_connector_sync_triggers.sql h1:f+kvobeo0Wmje6i47fJk0CIOLyOekg6KGeQtV0j24Mo=
 20260408141906_add_trial_ends_at.sql h1:ie0xpbFf3n1Ee20I9F9wZpImhB8wMDIKSfmGb3yihh8=
+20260408233522_add_channel_id_to_upsert_link.sql h1:VXccWv56Oo4LNdsJPRdo59NWjO1mwk4QUM1duiaiTwY=
+20260408233750_fix_recompute_outstanding_tasks_channel_linkTypes.sql h1:FlVV9E1ysRfXOjToM5dTIuyTEiVBkyCK6xWYFulM8tc=

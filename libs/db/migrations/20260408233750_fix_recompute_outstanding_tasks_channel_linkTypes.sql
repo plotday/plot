@@ -1,9 +1,5 @@
--- Recompute outstanding_tasks on a per-user schedule.
--- Checks notes with active todo tags and links with non-done status.
-CREATE OR REPLACE FUNCTION recompute_outstanding_tasks(
-    p_thread_id uuid,
-    p_user_id uuid
-) RETURNS void LANGUAGE plpgsql AS $$
+-- Modify "recompute_outstanding_tasks" function
+CREATE OR REPLACE FUNCTION "public"."recompute_outstanding_tasks" ("p_thread_id" uuid, "p_user_id" uuid) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
     v_has_outstanding boolean;
 BEGIN

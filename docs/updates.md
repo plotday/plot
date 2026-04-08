@@ -1,3 +1,6 @@
+- Fixed completed connector issues (like Linear "Done" tickets) incorrectly appearing in the agenda — status was not being matched correctly, causing done items to show as active tasks
+- Fixed connector issue statuses showing as raw IDs instead of labels like "Done" or "In Progress"
+- Fixed clicking the "Open in Linear" link on webhook-synced issues doing nothing
 - Fixed Linear issue descriptions not appearing as notes in threads — descriptions are now synced for both new and updated issues
 - Fixed link previews showing "[]() " instead of the linked domain name when markdown links had no title text
 - New signups now get the Core plan free for 30 days — you can try up to 5 connections and 2 twists before deciding whether to upgrade
