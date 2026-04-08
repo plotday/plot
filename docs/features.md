@@ -292,6 +292,7 @@ Internal catalog of product features for marketing content generation. Direct an
 - Core: 5 connections, 2 twists ($15/mo or $12/mo annual)
 - Pro: Unlimited connections and twists, no-code Twist builder ($25/mo or $20/mo annual)
 - Team: Shared org connections (50 per group), unlimited twists, no-code Twist builder ($124/mo or $99/mo annual)
+- 30-day Core plan trial for new signups with automated reminders and downgrade
 - Connection-based pricing (no per-seat fees)
 - Monthly and annual billing options (20% annual discount)
 - Stripe Checkout integration for secure payments

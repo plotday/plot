@@ -16,6 +16,7 @@ import { sql } from "kysely";
 import { PLAN_LIMITS, TEAM_CONNECTIONS_PER_GROUP } from "../utils/limits";
 import { backfillEmbeddings } from "../queue/backfill-embeddings";
 import { notifyUserSync } from "../app/sync/notify";
+import { handleTrialUpgrade } from "../utils/trial";
 
 const stripe = new Hono<{ Bindings: Bindings }>();
 
@@ -259,6 +260,26 @@ async function handleSubscriptionUpdate(
           });
         })
       );
+    }
+  }
+
+  // Detect mid-trial upgrade: if user was on a reverse trial and just upgraded
+  if (plan !== "free") {
+    try {
+      const trialUser = await c.var.db
+        .selectFrom("user_subscription")
+        .select(["user_id", "trial_ends_at"])
+        .where("stripe_customer_id", "=", customerId)
+        .where("trial_ends_at", "is not", null)
+        .executeTakeFirst();
+
+      if (trialUser && new Date(trialUser.trial_ends_at!).getTime() > Date.now()) {
+        await handleTrialUpgrade(c.var.db, c.env, trialUser.user_id);
+      }
+    } catch (error) {
+      logger.error("Failed to handle trial upgrade", error as Error, {
+        customer_id: customerId,
+      });
     }
   }
 
