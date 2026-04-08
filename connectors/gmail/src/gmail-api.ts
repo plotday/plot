@@ -82,7 +82,13 @@ export class GmailApi {
     const url = new URL(`${this.baseUrl}${endpoint}`);
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
-        url.searchParams.append(key, String(value));
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            url.searchParams.append(key, String(item));
+          }
+        } else {
+          url.searchParams.append(key, String(value));
+        }
       }
     });
 
@@ -356,6 +362,76 @@ function extractBody(part: GmailMessagePart): { content: string; contentType: "t
 }
 
 /**
+ * Strips quoted reply content from an email body.
+ * Since Plot shows each message as a separate note in a thread,
+ * the quoted previous messages are redundant noise.
+ */
+function stripQuotedReply(
+  content: string,
+  contentType: "text" | "html"
+): string {
+  if (!content) return content;
+
+  if (contentType === "html") {
+    // Gmail wraps quoted replies in <div class="gmail_quote">
+    // Remove it and everything after it
+    const gmailQuoteIdx = content.search(
+      /<div[^>]*class\s*=\s*["'][^"']*gmail_quote[^"']*["'][^>]*>/i
+    );
+    if (gmailQuoteIdx !== -1) {
+      return content.substring(0, gmailQuoteIdx).trim();
+    }
+
+    // Some clients use <blockquote> with gmail_quote class
+    const blockquoteIdx = content.search(
+      /<blockquote[^>]*class\s*=\s*["'][^"']*gmail_quote[^"']*["'][^>]*>/i
+    );
+    if (blockquoteIdx !== -1) {
+      return content.substring(0, blockquoteIdx).trim();
+    }
+
+    // Microsoft Outlook-style: <div id="appendonsend"></div> followed by quoted content,
+    // or a <hr> divider followed by "From:" header pattern
+    const outlookDivIdx = content.search(
+      /<div[^>]*id\s*=\s*["'](?:appendonsend|divRplyFwdMsg)["'][^>]*>/i
+    );
+    if (outlookDivIdx !== -1) {
+      return content.substring(0, outlookDivIdx).trim();
+    }
+
+    return content;
+  }
+
+  // Plain text: look for "On ... wrote:" followed by quoted lines
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // "On [date], [name] wrote:" or "On [date], [name] <email> wrote:"
+    if (/^On .+ wrote:\s*$/.test(line)) {
+      // Verify next non-empty line starts with ">" (actual quoted content)
+      const nextContentLine = lines.slice(i + 1).find((l) => l.trim() !== "");
+      if (nextContentLine && nextContentLine.trim().startsWith(">")) {
+        return lines
+          .slice(0, i)
+          .join("\n")
+          .trim();
+      }
+    }
+
+    // Forwarded message separator
+    if (line === "---------- Forwarded message ----------") {
+      return lines
+        .slice(0, i)
+        .join("\n")
+        .trim();
+    }
+  }
+
+  return content;
+}
+
+/**
  * Extracts attachment information from a Gmail message
  */
 function extractAttachments(
@@ -430,7 +506,8 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const sender = from ? parseEmailAddress(from) : null;
     if (!sender) continue; // Skip messages without sender
 
-    const { content: body, contentType } = extractBody(message.payload);
+    const { content: rawBody, contentType } = extractBody(message.payload);
+    const body = stripQuotedReply(rawBody, contentType);
     const attachments = extractAttachments(message);
 
     // Append attachment links to body
@@ -484,6 +561,82 @@ export async function syncGmailChannel(
   state: SyncState;
   hasMore: boolean;
 }> {
+  // Incremental sync: use History API to fetch only changed threads since last historyId.
+  // This avoids re-listing all threads in the label on every webhook notification.
+  if (state.historyId && !state.pageToken) {
+    return syncGmailChannelIncremental(api, state);
+  }
+
+  // Full sync (initial or paginated): list all threads in the label
+  return syncGmailChannelFull(api, state, batchSize);
+}
+
+/**
+ * Incremental sync using Gmail History API.
+ * Fetches only threads that changed since the last historyId.
+ */
+async function syncGmailChannelIncremental(
+  api: GmailApi,
+  state: SyncState
+): Promise<{
+  threads: GmailThread[];
+  state: SyncState;
+  hasMore: boolean;
+}> {
+  let labelId = state.channelId;
+  if (state.channelId.startsWith("search:")) {
+    labelId = "INBOX";
+  }
+
+  // Fetch history entries since last sync
+  const historyResult = await api.getHistory(state.historyId!, labelId);
+
+  // Extract unique thread IDs from history entries
+  const changedThreadIds = new Set<string>();
+  for (const entry of historyResult.history) {
+    for (const added of entry.messagesAdded ?? []) {
+      changedThreadIds.add(added.message.threadId);
+    }
+    for (const deleted of entry.messagesDeleted ?? []) {
+      // Deleted messages only have id, not threadId — skip
+    }
+  }
+
+  // Fetch full thread details for changed threads
+  const threads: GmailThread[] = [];
+  for (const threadId of changedThreadIds) {
+    try {
+      const thread = await api.getThread(threadId);
+      threads.push(thread);
+    } catch (error) {
+      console.error(`Failed to fetch thread ${threadId}:`, error);
+    }
+  }
+
+  return {
+    threads,
+    state: {
+      channelId: state.channelId,
+      historyId: historyResult.historyId,
+      lastSyncTime: new Date(),
+    },
+    hasMore: false, // History API returns all changes in one call (with pagination handled internally)
+  };
+}
+
+/**
+ * Full sync: list all threads in the label, paginated.
+ * Used for initial sync and when no historyId is available.
+ */
+async function syncGmailChannelFull(
+  api: GmailApi,
+  state: SyncState,
+  batchSize: number
+): Promise<{
+  threads: GmailThread[];
+  state: SyncState;
+  hasMore: boolean;
+}> {
   // Extract query from channelId if it's a search filter
   let labelId = state.channelId;
   let query: string | undefined;
@@ -508,7 +661,6 @@ export async function syncGmailChannel(
       threads.push(thread);
     } catch (error) {
       console.error(`Failed to fetch thread ${threadRef.id}:`, error);
-      // Continue with other threads even if one fails
     }
   }
 

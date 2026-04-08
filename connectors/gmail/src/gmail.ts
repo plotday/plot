@@ -679,10 +679,15 @@ export class Gmail extends Connector<Gmail> {
       return;
     }
 
-    // For incremental sync, use the historyId from the notification
+    // Use the stored historyId from the last sync if available, falling back
+    // to the webhook's historyId. The stored ID is our last known position —
+    // querying from there catches all changes. The webhook's historyId may
+    // point past the actual change, causing getHistory() to miss it.
+    const startHistoryId = existingState?.historyId ?? historyId;
+
     const incrementalState: SyncState = {
       channelId,
-      historyId,
+      historyId: startHistoryId,
       lastSyncTime: new Date(),
     };
 
