@@ -792,7 +792,16 @@ export class Linear extends Connector<Linear> {
       };
     }
 
-    // Create partial link update (empty notes = doesn't touch existing notes)
+    // Build actions (same as batch sync path)
+    const threadActions: Action[] = [];
+    if (issue.url) {
+      threadActions.push({
+        type: ActionType.external,
+        title: "Open in Linear",
+        url: issue.url,
+      });
+    }
+
     // Note: webhook payload dates are JSON strings, must convert to Date
     const newLink: NewLinkWithNotes = {
       source: `linear:issue:${issue.id}`,
@@ -809,6 +818,8 @@ export class Linear extends Connector<Linear> {
         syncProvider: "linear",
         syncableId: projectId,
       },
+      actions: threadActions.length > 0 ? threadActions : undefined,
+      sourceUrl: issue.url ?? null,
       preview: issue.description || null,
       notes: issue.description
         ? [
