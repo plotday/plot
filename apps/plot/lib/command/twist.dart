@@ -1105,8 +1105,15 @@ class _ArchiveSourceCommand extends Command {
     try {
       await TwistApi.archiveAndRemoveTwist(priorityTwistId);
 
-      // Update local database to immediately reflect the archive
-      final twist = PriorityTwist.fromCache(Uuid.fromString(priorityTwistId));
+      // Update local database to immediately reflect the archive.
+      // Try cache first, fall back to DB query if cache misses.
+      final id = Uuid.fromString(priorityTwistId);
+      var twist = PriorityTwist.fromCache(id);
+      twist ??= await (Store.get.select(PriorityTwist.table)
+            ..where((t) => t.id.equals(id.toBytes())))
+          .getSingleOrNull()
+          .then((row) => row == null ? null : PriorityTwist(row));
+
       if (twist != null) {
         await Store.get.save(
           PriorityTwist.table,
@@ -1121,6 +1128,7 @@ class _ArchiveSourceCommand extends Command {
       return CommandMessage('Connection "$name" archived successfully');
     } catch (e, t) {
       log.warning('Failed to archive source', e, t);
+      Tracker.captureException(e, t);
       return CommandMessage('Failed to archive connection', isError: true);
     }
   }
@@ -3305,6 +3313,7 @@ class ArchiveTwist extends Command {
       );
     } catch (e, t) {
       log.warning('Failed to archive twist', e, t);
+      Tracker.captureException(e, t);
       return CommandMessage('Failed to archive twist', isError: true);
     }
   }
