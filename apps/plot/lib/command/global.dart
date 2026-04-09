@@ -93,6 +93,10 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
     // When signed in, show all commands
     final commands = [
       StaticCommandGroup(
+        title: 'Navigation',
+        commands: [PageBackCommand()],
+      ),
+      StaticCommandGroup(
         title: 'Priorities',
         commands: [PickCurrentPriority(), NewPriority()],
       ),

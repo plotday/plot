@@ -9,6 +9,23 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/util/shortcut.dart';
 import 'command.dart';
 
+class PageBackCommand extends Command {
+  PageBackCommand()
+    : super(
+        title: 'Page back',
+        eventObject: EventObject.navigation,
+        eventAction: EventAction.clicked,
+        icon: PlotIcon.back,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.bracketLeft),
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    context.router.back();
+    return const CommandDone();
+  }
+}
+
 class CloseModalCommand extends Command {
   CloseModalCommand()
     : super(
