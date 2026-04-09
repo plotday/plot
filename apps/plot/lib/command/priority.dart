@@ -398,7 +398,7 @@ Future<FormData> _buildNewPriorityForm(
 class NewPriority extends ShowForm {
   NewPriority({Priority? parent})
     : super(
-        title: parent == null || parent.root == true
+        title: parent == null || (parent.root == true && parent.personal == true)
             ? 'Add a priority'
             : 'Add a sub-priority',
         icon: PlotIcon.add,
@@ -668,9 +668,11 @@ List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.isViewer && !priority.isPlot) EditPriorityCommand(priority),
   if (!priority.isViewer) ManagePrioritySharing(priority),
   if (!priority.isViewer) ShowAttentionSettings(priority),
-  if (!priority.root) SetTopPriority(priority, priority.topOrder == null),
+  if (!(priority.root && priority.personal))
+    SetTopPriority(priority, priority.topOrder == null),
   if (!priority.isViewer) NewPriority(parent: priority),
-  if (!priority.root && !priority.isViewer && !priority.isPlot)
+  if (!(priority.root && priority.personal) && !priority.isViewer &&
+      !priority.isPlot)
     TogglePriorityArchived(priority),
 ];
 
