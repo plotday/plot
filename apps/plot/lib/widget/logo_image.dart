@@ -38,7 +38,13 @@ class LogoImage extends StatelessWidget {
     if (LogoCache.isSvg(url)) {
       image = SvgPicture.memory(data, width: size, height: size);
     } else {
-      image = Image.memory(data, width: size, height: size, fit: BoxFit.contain);
+      image = Image.memory(
+        data,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => fallback ?? const SizedBox.shrink(),
+      );
     }
 
     return SizedBox(

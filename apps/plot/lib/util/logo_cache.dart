@@ -66,7 +66,12 @@ class LogoCache {
       final response =
           await http.get(Uri.parse(fetchUrl), headers: headers);
       if (response.statusCode == 200) {
-        return response.bodyBytes;
+        final bytes = response.bodyBytes;
+        // ICO format (header: 00 00 01 00) is not supported by Flutter's
+        // image decoder — treat as a failed download so the fallback icon
+        // is shown instead of crashing.
+        if (_isIco(bytes)) return null;
+        return bytes;
       }
       return null;
     } catch (_) {
@@ -81,6 +86,14 @@ class LogoCache {
   /// Returns true if [url] looks like an SVG.
   static bool isSvg(String url) =>
       url.endsWith('.svg') || url.contains('.svg?');
+
+  /// ICO files start with a 4-byte header: 00 00 01 00.
+  static bool _isIco(Uint8List bytes) =>
+      bytes.length >= 4 &&
+      bytes[0] == 0x00 &&
+      bytes[1] == 0x00 &&
+      bytes[2] == 0x01 &&
+      bytes[3] == 0x00;
 
   // ---------------------------------------------------------------------------
   // Disk caching (non-web only)
@@ -109,7 +122,9 @@ class LogoCache {
       final dir = await _getDiskCacheDir();
       final file = File('${dir.path}/${_fileNameForUrl(url)}');
       if (file.existsSync()) {
-        return await file.readAsBytes();
+        final bytes = await file.readAsBytes();
+        if (_isIco(bytes)) return null;
+        return bytes;
       }
       return null;
     } catch (_) {
