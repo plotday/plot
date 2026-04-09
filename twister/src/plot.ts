@@ -386,9 +386,9 @@ export type NewTags = { [K in Tag]?: NewActor[] };
  * Thread access level determining visibility.
  * - "public": Visible to all users with priority access
  * - "members": Visible to priority members (default for shared priorities)
- * - "restricted": Visible only to creator and contacts listed in accessContacts
+ * - "private": Visible only to creator and contacts listed in accessContacts
  */
-export type ThreadAccessLevel = "public" | "members" | "restricted";
+export type ThreadAccessLevel = "public" | "members" | "private";
 
 /**
  * Common fields shared by both Thread and Note entities.
@@ -421,9 +421,9 @@ type ThreadFields = ThreadCommon & {
   priority: Priority;
   /** The thread's sub-type/category. Determines the displayed icon. */
   type: ThreadType | null;
-  /** Thread access level: "public", "members", or "restricted" */
+  /** Thread access level: "public", "members", or "private" */
   access: ThreadAccessLevel;
-  /** Contacts who can see a restricted thread (empty array for creator-only). Only meaningful when access is "restricted". */
+  /** Contacts who can see a private thread (empty array for creator-only). Only meaningful when access is "private". */
   accessContacts: ActorId[];
   /** The schedule associated with this thread, if any */
   schedule?: Schedule;
@@ -654,7 +654,7 @@ export type Note = ThreadCommon & {
   reNote: { id: Uuid } | null;
   /**
    * Contacts who can see this note, or null if the note inherits thread visibility.
-   * When set (even to []), the note is restricted to the listed contacts plus the creator.
+   * When set (even to []), the note is private to the listed contacts plus the creator.
    */
   accessContacts: ActorId[] | null;
   /** Priority twist IDs (twists/connectors) mentioned for dispatch routing. Does not include user contacts. */
@@ -958,13 +958,13 @@ export type NewLink = (
     /** The person assigned to the item. */
     assignee?: NewActor | null;
     /**
-     * Thread access level: "public", "members" (default), or "restricted".
-     * When "restricted", thread visibility is limited to the creator and contacts in accessContacts.
+     * Thread access level: "public", "members" (default), or "private".
+     * When "private", thread visibility is limited to the creator and contacts in accessContacts.
      */
     access?: ThreadAccessLevel;
     /**
-     * Contacts who can see a restricted thread (empty array for creator-only).
-     * Only meaningful when access is "restricted".
+     * Contacts who can see a private thread (empty array for creator-only).
+     * Only meaningful when access is "private".
      */
     accessContacts?: ActorId[];
     /**
