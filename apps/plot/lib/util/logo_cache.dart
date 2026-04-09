@@ -4,6 +4,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:plot/api/api.dart' show getHeaders;
+import 'package:plot/env.dart';
 
 /// In-memory cache for logo image bytes, keyed by URL.
 ///
@@ -50,7 +52,19 @@ class LogoCache {
 
   static Future<Uint8List?> _download(String url) async {
     try {
-      final response = await http.get(Uri.parse(url));
+      final String fetchUrl;
+      final Map<String, String> headers;
+      if (kIsWeb) {
+        // Proxy through our API to avoid CORS errors on external favicons.
+        fetchUrl =
+            '${Env.apiRoot}/favicon?url=${Uri.encodeComponent(url)}';
+        headers = await getHeaders();
+      } else {
+        fetchUrl = url;
+        headers = {};
+      }
+      final response =
+          await http.get(Uri.parse(fetchUrl), headers: headers);
       if (response.statusCode == 200) {
         return response.bodyBytes;
       }
