@@ -324,9 +324,12 @@ export class UserSync extends DurableObject<Bindings> {
     try {
       // Call database function to sync last_sync_at to match last_update_at
       // This ensures incremental updates work correctly after client reconnects
+      // Wrap in transaction so Hyperdrive sees the mutating RPC as a write
       await withDb(this.env, async (db) => {
-        await rpc(db, "sync_user_on_connect", {
-          p_user_id: userId,
+        await db.transaction().execute(async (trx) => {
+          await rpc(trx, "sync_user_on_connect", {
+            p_user_id: userId,
+          });
         });
       });
 

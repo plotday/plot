@@ -956,32 +956,37 @@ export async function archiveAndDeleteTwist(
       throw new Error("priority_twist_id is required and must be a string");
     }
 
-    // Check if this is a connector (source) or a twist
-    const pt = await db
-      .selectFrom("priority_twist")
-      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
-      .select("twist.is_source")
-      .where("priority_twist.id", "=", priority_twist_id)
-      .executeTakeFirst();
+    // Wrap in a transaction for atomicity and to ensure Hyperdrive sees all
+    // mutations (including the archive_links RPC which uses SELECT syntax)
+    // as a single write operation, preventing stale query cache responses.
+    return await db.transaction().execute(async (trx) => {
+      // Check if this is a connector (source) or a twist
+      const pt = await trx
+        .selectFrom("priority_twist")
+        .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+        .select("twist.is_source")
+        .where("priority_twist.id", "=", priority_twist_id)
+        .executeTakeFirst();
 
-    if (pt?.is_source) {
-      // Connector: archive links and threads with no remaining active links
-      await rpc(db, "archive_links", {
-        p_created_by: priority_twist_id,
-        p_filter: {},
-      });
-    } else {
-      // Twist: archive threads directly (twists create threads, not links)
-      await db
-        .updateTable("thread")
-        .set({ archived_at: new Date().toISOString() })
-        .where("created_by", "=", priority_twist_id)
-        .where("archived_at", "is", null)
-        .execute();
-    }
+      if (pt?.is_source) {
+        // Connector: archive links and threads with no remaining active links
+        await rpc(trx, "archive_links", {
+          p_created_by: priority_twist_id,
+          p_filter: {},
+        });
+      } else {
+        // Twist: archive threads directly (twists create threads, not links)
+        await trx
+          .updateTable("thread")
+          .set({ archived_at: new Date().toISOString() })
+          .where("created_by", "=", priority_twist_id)
+          .where("archived_at", "is", null)
+          .execute();
+      }
 
-    // Then delete the twist (which also calls deactivate if provided)
-    return await deleteTwist(db, priority_twist_id, deactivate);
+      // Then delete the twist (which also calls deactivate if provided)
+      return await deleteTwist(trx, priority_twist_id, deactivate);
+    });
   } catch (error) {
     const logger = createLogger({ priority_twist_id });
     logger.error("Error archiving and deleting twist", error as Error);

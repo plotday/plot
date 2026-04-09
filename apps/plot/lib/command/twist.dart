@@ -137,6 +137,11 @@ class ManageConnections extends Command {
   })?
   _dataCache;
 
+  /// IDs of connections archived during this app session. Used to filter out
+  /// stale results from the API when Hyperdrive query caching returns data
+  /// that hasn't yet reflected the archive mutation.
+  static final Set<String> _recentlyArchivedIds = {};
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
     _upcomingCache = null; // Reset cache for each new session
@@ -307,6 +312,12 @@ class ManageConnections extends Command {
 
     // Exclude sources with no enabled channels — they don't count as active
     activeItems.removeWhere((item) => item.enabledCount == 0);
+
+    // Filter out connections archived this session — the API may still return
+    // them due to Hyperdrive query caching on the server.
+    activeItems.removeWhere(
+      (item) => _recentlyArchivedIds.contains(item.id),
+    );
 
     // Build available connections (all source twists, including active ones
     // since additional accounts can be added)
@@ -1124,6 +1135,10 @@ class _ArchiveSourceCommand extends Command {
           PriorityTwistsBase(),
         );
       }
+
+      // Remember this ID so the connections modal filters it out even if
+      // the API returns stale cached data (Hyperdrive query caching).
+      ManageConnections._recentlyArchivedIds.add(priorityTwistId);
 
       return CommandMessage('Connection "$name" archived successfully');
     } catch (e, t) {

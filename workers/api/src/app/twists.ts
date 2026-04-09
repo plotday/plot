@@ -511,7 +511,9 @@ twists.patch("/twist/:id", async (c) => {
 // DELETE /twist/:id - Delete twist
 twists.delete("/twist/:id", async (c) => {
   const twistId = c.req.param("id");
-  await deleteTwist(c.var.db, twistId);
+  await c.var.db.transaction().execute(async (trx) => {
+    await deleteTwist(trx, twistId);
+  });
   return c.json({ success: true });
 });
 

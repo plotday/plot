@@ -511,11 +511,14 @@ export class Integrations extends Tool implements IAuth {
     if (filter.status !== undefined) filterJson.status = filter.status;
     if (filter.meta !== undefined) filterJson.meta = filter.meta;
 
-    const affectedPriorityIds = await rpc(this.db, "archive_links", {
-      p_created_by: this.priorityTwistId,
-      // @ts-ignore - filterJson is valid JSON but Record<string, unknown> doesn't satisfy the strict Json type
-      p_filter: filterJson,
-    }) as unknown as string[] | null;
+    // Wrap in transaction so Hyperdrive sees the mutating RPC as a write
+    const affectedPriorityIds = await this.db.transaction().execute(async (trx) => {
+      return await rpc(trx, "archive_links", {
+        p_created_by: this.priorityTwistId,
+        // @ts-ignore - filterJson is valid JSON but Record<string, unknown> doesn't satisfy the strict Json type
+        p_filter: filterJson,
+      }) as unknown as string[] | null;
+    });
 
     if (affectedPriorityIds && affectedPriorityIds.length > 0) {
       const plot = this.getPlot();

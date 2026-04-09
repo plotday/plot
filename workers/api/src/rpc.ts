@@ -75,6 +75,11 @@ async function rpcWithSchema(
  * - RETURNS uuid -> returns the uuid string directly
  * - RETURNS TABLE (user_id uuid) -> returns uuid strings (not {user_id} objects)
  * - Multi-column TABLE results are returned as-is
+ *
+ * **IMPORTANT**: RPC calls use `SELECT * FROM fn(...)` syntax. Hyperdrive treats
+ * SELECT queries as cacheable reads. If the database function performs mutations
+ * (INSERT/UPDATE/DELETE), callers MUST wrap the call in a transaction so that
+ * Hyperdrive recognizes the operation as a write and invalidates its query cache.
  */
 export async function rpc<K extends keyof PublicFns>(
   db: Kysely<DB>,
@@ -88,6 +93,7 @@ export async function rpc<K extends keyof PublicFns>(
 
 /**
  * Call a database function in the user schema with typed args and return.
+ * See {@link rpc} for Hyperdrive caching note on mutating functions.
  */
 export async function rpcUser<K extends keyof UserFns>(
   db: Kysely<DB>,

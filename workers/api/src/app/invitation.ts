@@ -203,9 +203,12 @@ export async function sendInvitation(
     };
   }
 
-  // Update sent_at so the 24-hour cooldown starts at queue-time
-  await rpc(db, "update_invitation_sent_at", {
-    p_contact_id: contactId,
+  // Update sent_at so the 24-hour cooldown starts at queue-time.
+  // Wrap in transaction so Hyperdrive sees the mutating RPC as a write.
+  await db.transaction().execute(async (trx) => {
+    await rpc(trx, "update_invitation_sent_at", {
+      p_contact_id: contactId,
+    });
   });
 
   return { success: true };
@@ -224,9 +227,12 @@ export async function redeemInvitation(
   userId: string,
   token: string
 ): Promise<RedeemInvitationResult> {
-  const data = await rpc(db, "redeem_invitation_token", {
-    p_user_id: userId,
-    p_token: token,
+  // Wrap in transaction so Hyperdrive sees the mutating RPC as a write
+  const data = await db.transaction().execute(async (trx) => {
+    return await rpc(trx, "redeem_invitation_token", {
+      p_user_id: userId,
+      p_token: token,
+    });
   });
 
   return data as unknown as RedeemInvitationResult;
