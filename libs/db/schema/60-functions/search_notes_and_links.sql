@@ -35,7 +35,7 @@ BEGIN
         WHERE n.embedding IS NOT NULL
           AND n.archived_at IS NULL AND n.draft = FALSE
           AND t.archived_at IS NULL
-          AND (t.private = FALSE AND n.private = FALSE OR n.created_by = requesting_user_id OR t.created_by = requesting_user_id)
+          AND (t.access = 'public' AND n.access_contacts IS NULL OR n.created_by = requesting_user_id OR t.created_by = requesting_user_id)
           AND (exclude_created_by IS NULL OR n.created_by != exclude_created_by)
           AND (1 - (n.embedding <=> query_embedding::halfvec)) >= similarity_threshold
 
@@ -52,7 +52,7 @@ BEGIN
                               AND pc.child_id = t.priority_id
         WHERE l.embedding IS NOT NULL AND l.thread_id IS NOT NULL
           AND t.archived_at IS NULL
-          AND (t.private = FALSE OR t.created_by = requesting_user_id)
+          AND (t.access = 'public' OR t.created_by = requesting_user_id)
           AND (1 - (l.embedding <=> query_embedding::halfvec)) >= similarity_threshold
     ) combined
     ORDER BY combined.similarity DESC

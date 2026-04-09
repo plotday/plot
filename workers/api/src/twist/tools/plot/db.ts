@@ -1,5 +1,6 @@
 import {
   type Thread,
+  type ThreadAccessLevel,
   type Action,
   type ActorId,
   ActorType,
@@ -74,10 +75,10 @@ export function buildThreadFromDbRecord(
     },
     type: null,
     title: threadRecord.title || "",
-    private: threadRecord.private ?? false,
+    access: (threadRecord.access as ThreadAccessLevel) ?? "members",
+    accessContacts: (threadRecord.access_contacts as ActorId[]) || [],
     archived: threadRecord.archived_at !== null,
     tags: (threadRecord.tags as Partial<Record<number, ActorId[]>>) || {},
-    mentions: (threadRecord.mentions as ActorId[]) || [],
   };
 }
 
@@ -118,7 +119,7 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
     reNote: noteRecord.re_note_id ? { id: noteRecord.re_note_id as Uuid } : null,
     mentions: (noteRecord.mentions as ActorId[]) || [],
     tags: (noteRecord.tags as Partial<Record<number, ActorId[]>>) || {},
-    private: noteRecord.private ?? false,
+    accessContacts: (noteRecord.access_contacts as ActorId[]) ?? null,
     archived: noteRecord.archived_at !== null,
     actions: noteRecord.actions as Array<Action> | null,
   };

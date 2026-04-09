@@ -2,6 +2,7 @@ import type { Database, Json } from "@plotday/db";
 import {
   type Thread,
   type ThreadType,
+  type ThreadAccessLevel,
   type Link,
   type ThreadMeta,
   type Actor,
@@ -16,7 +17,6 @@ import {
 export function fromDbThread(
   dbThread: Database["public"]["Tables"]["thread"]["Row"] & {
     tags?: Json | null;
-    mentions?: string[] | null;
   }
 ): Thread {
   return {
@@ -24,7 +24,8 @@ export function fromDbThread(
     id: dbThread.id as any,
     created: new Date(dbThread.created_at),
     title: dbThread.title || "",
-    private: dbThread.private ?? false,
+    access: (dbThread.access as ThreadAccessLevel) ?? "members",
+    accessContacts: (dbThread.access_contacts as ActorId[]) || [],
     archived: dbThread.archived_at !== null,
     type: (dbThread.icon as ThreadType) ?? null,
     priority: {
@@ -35,7 +36,6 @@ export function fromDbThread(
       color: null,
     },
     tags: (dbThread.tags as Tags) || {},
-    mentions: (dbThread.mentions as ActorId[]) || [],
   };
 }
 

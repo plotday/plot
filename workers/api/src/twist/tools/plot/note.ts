@@ -198,7 +198,7 @@ export async function createNote(
       source_created_at:
         note.created?.toISOString() ?? new Date().toISOString(),
       draft: false,
-      private: note.private ?? false,
+      access_contacts: note.accessContacts ?? null,
       content: contentToStore,
       actions: note.actions ? JSON.stringify(note.actions) : null,
       mentions: mentionIds,
@@ -236,7 +236,7 @@ export async function createNote(
                 created_by: eb.ref("excluded.created_by"),
                 source_created_at: eb.ref("excluded.source_created_at"),
                 draft: eb.ref("excluded.draft"),
-                private: eb.ref("excluded.private"),
+                access_contacts: eb.ref("excluded.access_contacts"),
                 content: eb.ref("excluded.content"),
                 actions: eb.ref("excluded.actions"),
                 mentions: eb.ref("excluded.mentions"),
@@ -255,7 +255,7 @@ export async function createNote(
                   eb("note.mentions", "is distinct from", eb.ref("excluded.mentions")),
                   eb("note.actions", "is distinct from", eb.ref("excluded.actions")),
                   eb("note.draft", "is distinct from", eb.ref("excluded.draft")),
-                  eb("note.private", "is distinct from", eb.ref("excluded.private")),
+                  eb("note.access_contacts", "is distinct from", eb.ref("excluded.access_contacts")),
                 ])
               )
           )
@@ -652,8 +652,8 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
         ? JSON.stringify(note.actions)
         : note.actions;
     }
-    if (note.private !== undefined) {
-      dbUpdate.private = note.private;
+    if (note.accessContacts !== undefined) {
+      dbUpdate.access_contacts = note.accessContacts;
     }
     if (note.archived !== undefined) {
       dbUpdate.archived_at = note.archived ? new Date().toISOString() : null;
@@ -800,7 +800,7 @@ export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
         "archived_at",
         "thread_id",
         "draft",
-        "private",
+        "access_contacts",
         "content",
         "key",
         "actions",
@@ -874,7 +874,7 @@ export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
           name: author.name ?? null,
           email: includeAuthorEmail ? author.email ?? undefined : undefined,
         },
-        private: row.private,
+        accessContacts: (row.access_contacts as ActorId[]) ?? null,
         archived: row.archived_at !== null,
         content: row.content,
         key: row.key || null,

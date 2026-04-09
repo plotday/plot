@@ -106,12 +106,71 @@ notes.get("/sync/notes", async (c) => {
     }
   }
 
+  const apiVersion = c.var.apiVersion ?? 0;
+
+  // For old clients (version < 1): translate access_contacts back to private/mentions
+  if (apiVersion < 1) {
+    for (const row of rows as any[]) {
+      row.private = row.access_contacts !== null;
+      // Merge access_contacts users into mentions for backwards compat
+      const existingMentions: string[] = row.mentions ?? [];
+      const accessUsers: string[] = row.access_contacts ?? [];
+      const mergedMentions = [...new Set([...existingMentions, ...accessUsers])];
+      row.mentions = mergedMentions;
+    }
+  }
+
   return c.json(rows as any);
 });
 
 // POST /sync/notes - Upsert into note table
 notes.post("/sync/notes", async (c) => {
   const body = await c.req.json();
+  const apiVersion = c.var.apiVersion ?? 0;
+
+  // For old clients (version < 1): translate private/mentions → access_contacts/mentions
+  if (apiVersion < 1) {
+    if ('private' in body) {
+      if (body.private === true) {
+        // Private note: set access_contacts (keep existing if already set, otherwise empty array)
+        if (!body.access_contacts) {
+          body.access_contacts = [];
+        }
+      } else {
+        // Not private: clear access_contacts
+        body.access_contacts = null;
+      }
+      delete body.private;
+    }
+
+    // Split mentions: twist IDs stay in mentions, user contact_ids go to access_contacts
+    if (Array.isArray(body.mentions) && body.mentions.length > 0 && body.thread_id) {
+      const twistIds = await c.var.db
+        .selectFrom("priority_twist")
+        .select("id")
+        .where("id", "in", body.mentions)
+        .execute();
+      const twistIdSet = new Set(twistIds.map((t) => t.id));
+
+      const userContactIds: string[] = [];
+      const remainingMentions: string[] = [];
+      for (const id of body.mentions) {
+        if (twistIdSet.has(id)) {
+          remainingMentions.push(id);
+        } else {
+          userContactIds.push(id);
+        }
+      }
+
+      body.mentions = remainingMentions;
+
+      // Merge user contact IDs into access_contacts if note is private
+      if (userContactIds.length > 0) {
+        const existing: string[] = Array.isArray(body.access_contacts) ? body.access_contacts : [];
+        body.access_contacts = [...new Set([...existing, ...userContactIds])];
+      }
+    }
+  }
 
   // Check if this is an update (note already exists) before upserting.
   // We only run AI analysis on new notes — re-analyzing on edits causes
@@ -135,7 +194,9 @@ notes.post("/sync/notes", async (c) => {
       p_archived_at: body.archived_at || null,
       p_thread_id: body.thread_id,
       p_draft: body.draft || false,
-      p_private: body.private || false,
+      p_access_contacts: (Array.isArray(body.access_contacts)
+        ? `{${body.access_contacts.join(",")}}`
+        : null) as any,
       p_content: body.content || null,
       p_actions: body.actions || null,
       p_mentions: (Array.isArray(body.mentions)

@@ -46,11 +46,18 @@ class ThreadState extends Equatable {
   final bool hasOtherAuthors;
 
   /// Twists mentioned across notes in this thread.
-  /// Uses the thread's aggregated mentions and filters to twist-type actors,
+  /// Collects mentions from all notes and filters to twist-type actors,
   /// resolving them to PriorityTwist objects via the global cache.
   List<PriorityTwist> get threadTwists {
-    final mentionIds = thread.mentions;
-    if (mentionIds == null || mentionIds.isEmpty) return const [];
+    final mentionIds = <Uuid>{};
+    for (final note in notes) {
+      if (note.mentions != null) {
+        for (final actorId in note.mentions!) {
+          mentionIds.add(actorId.toUuid());
+        }
+      }
+    }
+    if (mentionIds.isEmpty) return const [];
     final twists = <PriorityTwist>[];
     for (final id in mentionIds) {
       final actorId = ActorId.fromUuid(id);

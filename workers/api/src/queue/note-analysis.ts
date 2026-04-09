@@ -654,7 +654,7 @@ async function createTaskNotes(
           thread_id: threadId,
           content: task.description,
           re_note_id: context.noteId,
-          private: false,
+          access_contacts: null,
           draft: false,
           updated_by: 0, // AI-generated
         })

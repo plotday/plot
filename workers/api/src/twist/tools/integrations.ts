@@ -828,7 +828,7 @@ export class Integrations extends Tool implements IAuth {
       reNote: item.re_note_id ? { id: item.re_note_id } : null,
       mentions: item.mentions || [],
       tags: item.tags || {},
-      private: item.private ?? false,
+      accessContacts: (item.access_contacts as any) ?? null,
       archived: item.archived_at !== null,
       actions: item.actions,
     };
@@ -953,7 +953,7 @@ export class Integrations extends Tool implements IAuth {
         reNote: item.re_note_id ? { id: item.re_note_id } : null,
         mentions: item.mentions || [],
         tags: item.tags || {},
-        private: item.private ?? false,
+        accessContacts: (item.access_contacts as any) ?? null,
         archived: item.archived_at !== null,
         actions: item.actions,
       };

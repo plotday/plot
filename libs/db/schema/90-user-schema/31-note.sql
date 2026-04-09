@@ -14,7 +14,7 @@ SELECT
     n.archived_at,
     n.thread_id,
     n.draft,
-    n.private,
+    n.access_contacts,
     n.content,
     n.actions,
     n.mentions,
@@ -27,16 +27,17 @@ FROM
 WHERE
     -- Note-level filtering
     (n.draft = FALSE OR n.created_by = upe.user_id)
-    AND (n.private = FALSE
+    AND (n.access_contacts IS NULL
         OR n.created_by = upe.user_id
-        OR "user".user_contact_id(upe.user_id) = ANY(n.mentions)
-        OR upe.role = 'member')
+        OR "user".user_contact_id(upe.user_id) = ANY(n.access_contacts))
     -- Thread-level filtering (thread draft/private affects note visibility)
     AND (a.draft = FALSE OR a.created_by = upe.user_id)
-    AND (CASE WHEN a.private = FALSE THEN TRUE
+    AND (CASE
+        WHEN a.access = 'public' THEN TRUE
         WHEN a.created_by = upe.user_id THEN TRUE
-        WHEN upe.role = 'member' THEN TRUE
-        ELSE "user".mentioned_in_thread(upe.user_id, a.id)
+        WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
+        WHEN "user".user_contact_id(upe.user_id) = ANY(a.access_contacts) THEN TRUE
+        ELSE FALSE
     END)
 UNION ALL
 -- Redacted rows for private notes the user cannot see
@@ -52,7 +53,7 @@ SELECT
     COALESCE(n.archived_at, n.updated_at) AS archived_at,
     n.thread_id,
     n.draft,
-    n.private,
+    CAST(NULL AS uuid[]) AS access_contacts,
     NULL::text AS content,
     NULL::jsonb AS actions,
     CAST(NULL AS uuid[]) AS mentions,
@@ -65,18 +66,18 @@ FROM
 WHERE
     (n.draft = FALSE OR n.created_by = upe.user_id)
     AND (a.draft = FALSE OR a.created_by = upe.user_id)
-    AND upe.role != 'member'
-    -- Hidden by note-level OR thread-level privacy
+    -- Hidden by note-level OR thread-level access restriction
     AND (
-        -- Note is private and user can't see it
-        (n.private = TRUE
+        -- Note is restricted and user can't see it
+        (n.access_contacts IS NOT NULL
             AND n.created_by != upe.user_id
-            AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(n.mentions, CAST('{}' AS uuid[])))))
+            AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(n.access_contacts, ARRAY[]::uuid[]))))
         OR
-        -- Thread is private and user can't see it
-        (a.private = TRUE
+        -- Thread is restricted and user can't see it
+        (a.access != 'public'
             AND a.created_by != upe.user_id
-            AND NOT "user".mentioned_in_thread(upe.user_id, a.id))
+            AND NOT (a.access = 'members' AND upe.role = 'member')
+            AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(a.access_contacts, ARRAY[]::uuid[]))))
     );
 
 ALTER VIEW "user"."note" OWNER TO postgres;
@@ -99,8 +100,8 @@ FROM
     JOIN "user".thread ua ON ua.id = n.thread_id
 WHERE
     (n.draft = FALSE OR n.created_by = ua.user_id)
-    AND (n.private = FALSE
+    AND (n.access_contacts IS NULL
         OR n.created_by = ua.user_id
-        OR "user".user_contact_id(ua.user_id) = ANY(n.mentions));
+        OR "user".user_contact_id(ua.user_id) = ANY(n.access_contacts));
 
 ALTER VIEW "user"."note_tags" OWNER TO postgres;

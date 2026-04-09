@@ -1242,12 +1242,12 @@ class ToggleThreadPrivate extends _UpdateThreadCommand {
     : _readOnly = thread.priority.isViewer,
       super(
         title: thread.priority.isViewer
-            ? (thread.private ? 'Private' : 'Public')
-            : (thread.private ? 'Make public' : 'Make private'),
+            ? (thread.isPrivate ? 'Private' : 'Public')
+            : (thread.isPrivate ? 'Make public' : 'Make private'),
         eventObject: EventObject.activity,
-        eventAction: thread.private ? EventAction.untagged : EventAction.tagged,
+        eventAction: thread.isPrivate ? EventAction.untagged : EventAction.tagged,
         icon: PlotIcon.private,
-        on: thread.priority.isViewer ? thread.private : null,
+        on: thread.priority.isViewer ? thread.isPrivate : null,
       );
 
   final bool _readOnly;
@@ -1260,7 +1260,7 @@ class ToggleThreadPrivate extends _UpdateThreadCommand {
     if (_readOnly) return const CommandDone();
     await saveOptimistically(
       context,
-      thread.copyWith(private: !thread.private),
+      thread.copyWith(access: thread.isPrivate ? 'public' : 'restricted'),
     );
     return const CommandDone();
   }

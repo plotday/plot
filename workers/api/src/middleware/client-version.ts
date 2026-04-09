@@ -19,11 +19,13 @@ export type ClientInfo = {
   buildNumber: number;
   platform: string;
   raw: string;
+  apiVersion: number;
 };
 
 declare module "hono" {
   interface ContextVariableMap {
     clientInfo?: ClientInfo;
+    apiVersion: number;
   }
 }
 
@@ -42,6 +44,7 @@ export function parseClientHeader(header: string | undefined): ClientInfo | unde
     buildNumber: parseInt(match[2], 10),
     platform: match[3],
     raw: header,
+    apiVersion: 0,
   };
 }
 
@@ -84,7 +87,16 @@ export const clientVersionMiddleware: MiddlewareHandler<{ Bindings: Bindings }> 
 ) => {
   const header = c.req.header("X-Plot-Client");
   const clientInfo = parseClientHeader(header);
+
+  // Parse API version header (integer, default 0)
+  const apiVersionHeader = c.req.header("X-Plot-API-Version");
+  const apiVersion = apiVersionHeader ? parseInt(apiVersionHeader, 10) || 0 : 0;
+
+  // Always set apiVersion on context so it's available even without X-Plot-Client
+  c.set("apiVersion", apiVersion);
+
   if (clientInfo) {
+    clientInfo.apiVersion = apiVersion;
     c.set("clientInfo", clientInfo);
   }
   await next();

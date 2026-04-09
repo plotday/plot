@@ -21,13 +21,13 @@ SELECT
     a.priority_id,
     upe.path AS priority_path,
     a.draft,
-    a.private,
+    a.access,
+    a.access_contacts,
     a.title,
     a.preview,
     a.icon,
     a.last_note_created_at,
     a.last_note_source_created_at,
-    a.mentions,
     tu.bumped_at,
     -- Unread: TRUE when thread_unread row exists and read_at is NULL
     COALESCE(tu.read_at IS NULL AND tu.user_id IS NOT NULL, FALSE) AS unread,
@@ -145,10 +145,12 @@ FROM
     LEFT JOIN link_agg la ON la.thread_id = a.id
 WHERE
     (a.draft = FALSE OR a.created_by = upe.user_id)
-    AND (CASE WHEN a.private = FALSE THEN TRUE
+    AND (CASE
+        WHEN a.access = 'public' THEN TRUE
         WHEN a.created_by = upe.user_id THEN TRUE
-        WHEN upe.role = 'member' THEN TRUE
-        ELSE "user".mentioned_in_thread(upe.user_id, a.id)
+        WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
+        WHEN "user".user_contact_id(upe.user_id) = ANY(a.access_contacts) THEN TRUE
+        ELSE FALSE
     END)
 UNION ALL
 -- Redacted rows for private threads the user cannot see
@@ -162,13 +164,13 @@ SELECT
     a.priority_id,
     upe.path AS priority_path,
     a.draft,
-    a.private,
+    a.access,
+    CAST(NULL AS uuid[]) AS access_contacts,
     NULL::text AS title,
     NULL::text AS preview,
     a.icon,
     a.last_note_created_at,
     a.last_note_source_created_at,
-    CAST(NULL AS uuid[]) AS mentions,
     NULL::timestamptz AS bumped_at,
     FALSE AS unread,
     0::smallint AS importance,
@@ -180,10 +182,10 @@ FROM
     JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
 WHERE
     (a.draft = FALSE OR a.created_by = upe.user_id)
-    AND a.private = TRUE
+    AND a.access != 'public'
     AND a.created_by != upe.user_id
-    AND upe.role != 'member'
-    AND NOT "user".mentioned_in_thread(upe.user_id, a.id);
+    AND NOT (a.access = 'members' AND upe.role = 'member')
+    AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(a.access_contacts, ARRAY[]::uuid[])));
 
 ALTER VIEW "user"."thread" OWNER TO postgres;
 

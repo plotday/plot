@@ -44,9 +44,10 @@ notificationContent.get("/notification-content", async (c) => {
         AND t.archived_at IS NULL
         AND (t.draft = false OR t.created_by = ${userId}::uuid)
         AND (
-          t.private = false
+          t.access = 'public'
           OR t.created_by = ${userId}::uuid
-          OR "user".mentioned_in_thread(${userId}::uuid, t.id)
+          OR (t.access = 'members' AND "user".get_effective_role(${userId}::uuid, t.priority_id) = 'member')
+          OR "user".user_contact_id(${userId}::uuid) = ANY(t.access_contacts)
         )
       ORDER BY CASE tu.urgency
         WHEN 'interrupt' THEN 0

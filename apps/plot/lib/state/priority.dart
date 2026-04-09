@@ -706,7 +706,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             threadId: draftNotes.first.threadId,
             authorId: draftNotes.first.authorId,
             draft: draftNotes.first.draft,
-            private: draftNotes.first.private,
+            accessContacts: draftNotes.first.accessContacts,
             content: draftNotes.first.content,
             actions: draftNotes.first.actions,
             mentions: draftNotes.first.mentions,

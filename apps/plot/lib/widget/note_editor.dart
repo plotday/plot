@@ -458,7 +458,7 @@ class NoteEditorState extends State<NoteEditor> {
       buildWhen: (prev, curr) =>
           prev.replyTo != curr.replyTo ||
           prev.editingNote != curr.editingNote ||
-          prev.thread.mentions != curr.thread.mentions,
+          prev.threadTwists != curr.threadTwists,
       builder: (context, state) {
         final indicators = <Widget>[
           if (state.replyTo != null)
@@ -697,7 +697,7 @@ class NoteEditorState extends State<NoteEditor> {
                               .thread
                               .priority
                               .isViewer &&
-                          (!widget.draft.private ||
+                          (!widget.draft.isPrivate ||
                               widget.draft.authorId.isCurrentUser))
                         Button.icon(
                           ToggleNoteTag(
@@ -705,7 +705,7 @@ class NoteEditorState extends State<NoteEditor> {
                             Tag.private,
                             Base.actorId,
                           ),
-                          selected: widget.draft.private,
+                          selected: widget.draft.isPrivate,
                         ),
                       Button.icon(
                         AttachFile(
@@ -975,21 +975,23 @@ class NoteEditorState extends State<NoteEditor> {
 
     // When replying to a private note, auto-private the reply and carry over
     // the original note's author + mentions so they can see it.
-    final replyPrivate = replyTo != null && replyTo.private;
-    final replyMentions = replyPrivate
-        ? <ActorId>{replyTo.authorId, ...?replyTo.mentions}.toList()
+    final replyRestricted = replyTo != null && replyTo.isPrivate;
+    final replyAccessContacts = replyRestricted
+        ? <ActorId>{replyTo.authorId, ...?replyTo.accessContacts}.toList()
         : <ActorId>[];
 
     // Merge active twist mentions into the note
     final activeTwistMentions = _getActiveTwistMentions();
-    final allAddMentions = [...activeTwistMentions, ...replyMentions];
+    final allAddMentions = [...activeTwistMentions, ...replyAccessContacts];
 
     Note note = widget.draft.copyWith(
       content: body.isEmpty ? null : body,
       draft: false,
       reNoteId: replyTo?.id,
       addMentions: allAddMentions.isNotEmpty ? allAddMentions : null,
-      private: (widget.viewerMode || replyPrivate) ? true : null,
+      accessContacts: (widget.viewerMode || replyRestricted)
+          ? Value(<ActorId>[...replyAccessContacts])
+          : const Value.absent(),
     );
 
     // If Cmd-Enter was pressed, assign the note to current user

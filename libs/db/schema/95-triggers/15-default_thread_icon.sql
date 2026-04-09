@@ -6,7 +6,7 @@ DECLARE
     v_default_icon text;
 BEGIN
     -- Apply when icon is unset or is a default sub-type auto-assigned by the app
-    IF (NEW.icon IS NULL OR NEW.icon IN ('notes', 'discussion')) AND NEW.private = FALSE THEN
+    IF (NEW.icon IS NULL OR NEW.icon IN ('notes', 'discussion')) AND NEW.access != 'restricted' THEN
         SELECT
             default_thread_icon INTO v_default_icon
         FROM

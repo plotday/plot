@@ -73,15 +73,18 @@ class ThreadBloc extends Cubit<ThreadState> {
   /// carries over the original note's author + mentions.
   void setReplyTo(Note? note) {
     var draft = state.draft;
-    if (note != null && note.private) {
-      final replyMentions = <ActorId>{
+    if (note != null && note.isPrivate) {
+      final replyAccessContacts = <ActorId>{
         note.authorId,
-        ...?note.mentions,
+        ...?note.accessContacts,
       }.toList();
-      draft = draft.copyWith(private: true, addMentions: replyMentions);
-    } else if (note == null && state.replyTo != null && state.replyTo!.private) {
+      draft = draft.copyWith(
+        accessContacts: Value(replyAccessContacts),
+        addMentions: replyAccessContacts,
+      );
+    } else if (note == null && state.replyTo != null && state.replyTo!.isPrivate) {
       // Clearing reply to a private note — reset draft private and mentions
-      draft = draft.copyWith(private: false, mentions: []);
+      draft = draft.copyWith(accessContacts: const Value(null), mentions: []);
     }
     emit(state.copyWith(
       replyTo: note,
@@ -124,7 +127,9 @@ class ThreadBloc extends Cubit<ThreadState> {
     // locally for immediate UI feedback instead of waiting for sync.
     note = note.copyWith(
       draft: false,
-      private: state.thread.priority.isViewer ? true : null,
+      accessContacts: state.thread.priority.isViewer
+          ? const Value([])
+          : const Value.absent(),
     );
 
     // Show all notes after submitting so the new note is visible
@@ -222,12 +227,12 @@ class ThreadBloc extends Cubit<ThreadState> {
   /// Safety measure so members don't accidentally post public messages.
   Future<void> _defaultDraftToPrivateIfViewers() async {
     final priority = state.thread.priority;
-    if (priority.sharing && !priority.isViewer && !state.thread.private) {
+    if (priority.sharing && !priority.isViewer && !state.thread.isPrivate) {
       final viewers =
           await PriorityMember.getAcceptedViewersForPriority(priority.id);
       if (viewers.isNotEmpty) {
         emit(state.copyWith(
-          draft: state.draft.copyWith(private: true),
+          draft: state.draft.copyWith(accessContacts: const Value([])),
         ));
       }
     }

@@ -2021,7 +2021,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 291;
+  int get schemaVersion => 292;
 
   @override
   MigrationStrategy get migration {
@@ -2625,6 +2625,31 @@ class Store extends _$Store {
     if (from < 291) {
       await m.addColumn(priorityTwists, priorityTwists.shared);
       await m.addColumn(priorityTwists, priorityTwists.keyOption);
+    }
+    if (from < 292) {
+      // Thread: add access and access_contacts columns, migrate from private
+      await _safeAddColumn(m, threads, threads.access);
+      await _safeAddColumn(m, threads, threads.accessContacts);
+      await m.database.customStatement(
+        "UPDATE threads SET access = CASE WHEN private = 1 THEN 'restricted' ELSE 'members' END",
+      );
+      // Drop old private and mentions columns by rebuilding the table
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(threads));
+
+      // Note: add access_contacts column, migrate from private
+      await _safeAddColumn(m, notes, notes.accessContacts);
+      await m.database.customStatement(
+        "UPDATE notes SET access_contacts = CASE WHEN private = 1 THEN '[]' ELSE NULL END",
+      );
+      // Drop old private column by rebuilding the table
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(notes));
+
+      // Reset sync cursors so threads and notes re-pull with new fields
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity LIKE 'threads%' OR entity LIKE 'notes%'",
+      );
     }
   }
 

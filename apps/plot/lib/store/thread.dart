@@ -7,7 +7,8 @@ typedef ThreadWatchResult = ({List<Thread> threads, int rawRowCount});
 class Threads extends Table
     with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
   BlobColumn get priorityId => blob().map(const UuidConverter())();
-  BoolColumn get private => boolean().withDefault(const Constant(false))();
+  TextColumn get access => text().withDefault(const Constant('members'))();
+  TextColumn get accessContacts => text().nullable().map(const UuidListConverter())();
 
   TextColumn get title => text().nullable()();
   TextColumn get preview => text().nullable()();
@@ -16,8 +17,6 @@ class Threads extends Table
       dateTime().nullable().map(const LocalDateTimeConverter())();
   DateTimeColumn get lastNoteSourceCreatedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
-
-  TextColumn get mentions => text().nullable().map(const UuidListConverter())();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   IntColumn get importance => integer().withDefault(const Constant(0))();
   TextColumn get urgency => text().nullable()();
@@ -293,9 +292,6 @@ class ThreadsBase extends BaseTable {
     json.remove('importance');
     json.remove('urgency');
     json.remove('read_at');
-
-    // Remove mentions - it's a calculated field from notes
-    json.remove('mentions');
 
     // Remove last_note_created_at and last_note_source_created_at - they are calculated fields from notes
     json.remove('last_note_created_at');
@@ -2027,7 +2023,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     String? title,
     String? preview,
     bool draft = false,
-    bool private = false,
+    String access = 'public',
     DateTimeRange? at,
     DateRange? on,
     List<Note>? notes,
@@ -2037,7 +2033,7 @@ class Thread extends Equatable implements Comparable<Thread> {
          updatedAt: DateTime.now(),
          priorityId: priority.id,
          draft: draft,
-         private: private,
+         access: access,
          title: title,
          preview: preview,
          unread: false,
@@ -2116,7 +2112,11 @@ class Thread extends Equatable implements Comparable<Thread> {
   DateTime get updatedAt => _thread.updatedAt;
   DateTime? get archivedAt => _thread.archivedAt;
   bool get draft => _thread.draft;
-  bool get private => _thread.private;
+  String get access => _thread.access;
+  List<Uuid>? get accessContacts => _thread.accessContacts;
+  bool get isPublic => access == 'public';
+  bool get isRestricted => access == 'restricted';
+  bool get isPrivate => access != 'public';
   DateTime? get lastNoteCreatedAt => _thread.lastNoteCreatedAt;
   DateTime? get lastNoteSourceCreatedAt => _thread.lastNoteSourceCreatedAt;
   RecurrenceRule? get recurrenceRule =>
@@ -2252,7 +2252,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
-  List<Uuid>? get mentions => _thread.mentions;
   List<Note>? get notes => _notes;
 
   /// Returns the first note if notes are loaded
@@ -2904,9 +2903,9 @@ class Thread extends Equatable implements Comparable<Thread> {
     Priority? priority,
     Order? order,
     bool? draft,
-    bool? private,
+    String? access,
+    Value<List<Uuid>?> accessContacts = const Value.absent(),
     bool? unread,
-    Value<List<Uuid>?> mentions = const Value.absent(),
     Value<String?> preview = const Value.absent(),
     Value<String?> icon = const Value.absent(),
     Value<List<Note>?> notes = const Value.absent(),
@@ -2949,9 +2948,9 @@ class Thread extends Equatable implements Comparable<Thread> {
     var activityRemoteDirty = false;
     if (priority != null ||
         draft != null ||
-        private != null ||
+        access != null ||
+        accessContacts.present ||
         unread != null ||
-        mentions.present ||
         preview.present ||
         icon.present ||
         archivedAt.present ||
@@ -2964,8 +2963,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       // dirty when non-read-state fields change.
       activityRemoteDirty = priority != null ||
           draft != null ||
-          private != null ||
-          mentions.present ||
+          access != null ||
+          accessContacts.present ||
           preview.present ||
           icon.present ||
           archivedAt.present ||
@@ -2973,8 +2972,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       activity = _thread.copyWith(
         priorityId: priority?.id,
         draft: draft,
-        private: private,
-        mentions: mentions,
+        access: access,
+        accessContacts: accessContacts,
         preview: preview,
         icon: icon,
         createdAt: draft == false && _thread.draft ? now : null,
@@ -3226,7 +3225,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           archivedAt: Value(archivedAt == null ? DateTime.now() : null),
         );
       case Tag.private:
-        return copyWith(private: !private);
+        return copyWith(access: isPrivate ? 'public' : 'restricted');
       case Tag.todo:
         // Toggle per-user todo (star/unstar)
         if (todo) {
@@ -3449,7 +3448,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       case Tag.archived:
         return archivedAt != null;
       case Tag.private:
-        return private;
+        return isPrivate;
       default:
         final currentTags = tags;
         final users = currentTags[tag];

@@ -109,9 +109,10 @@ export class PushNotify extends DurableObject<Bindings> {
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${userId}::uuid)
             AND (
-              t.private = false
+              t.access = 'public'
               OR t.created_by = ${userId}::uuid
-              OR "user".mentioned_in_thread(${userId}::uuid, t.id)
+              OR (t.access = 'members' AND "user".get_effective_role(${userId}::uuid, t.priority_id) = 'member')
+              OR "user".user_contact_id(${userId}::uuid) = ANY(t.access_contacts)
             )
           GROUP BY tu.urgency, psi.see_within_requests, psi.see_within_updates
           ORDER BY CASE tu.urgency
@@ -276,9 +277,10 @@ export class PushNotify extends DurableObject<Bindings> {
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
             AND (
-              t.private = false
+              t.access = 'public'
               OR t.created_by = ${this.userId!}::uuid
-              OR "user".mentioned_in_thread(${this.userId!}::uuid, t.id)
+              OR (t.access = 'members' AND "user".get_effective_role(${this.userId!}::uuid, t.priority_id) = 'member')
+              OR "user".user_contact_id(${this.userId!}::uuid) = ANY(t.access_contacts)
             )
         `.execute(db);
         latestUnreadAt = result.rows[0]?.latest ?? null;

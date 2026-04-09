@@ -14,10 +14,10 @@ SELECT
     a.archived_at,
     a.priority_id,
     a.draft,
-    a.private,
+    a.access,
+    a.access_contacts,
     a.title,
     a.preview,
-    public.get_thread_mentions (a.id) AS mentions,
     -- Enriched fields
     pc.title AS priority_title,
     at.tags

@@ -10,7 +10,7 @@ CREATE TABLE "public"."note" (
     "archived_at" timestamp with time zone,
     "thread_id" uuid NOT NULL REFERENCES public.thread ON DELETE CASCADE,
     "draft" boolean NOT NULL DEFAULT FALSE,
-    "private" boolean NOT NULL DEFAULT FALSE,
+    "access_contacts" uuid[],
     "content" text, -- markdown
     "actions" jsonb,
     "key" text,
@@ -26,7 +26,13 @@ COMMENT ON COLUMN "public"."note"."author_id" IS 'The actor to credit with creat
 
 COMMENT ON COLUMN "public"."note"."created_by" IS 'The user_id or priority_twist_id that actually created this note. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
 
-COMMENT ON COLUMN "public"."note"."mentions" IS 'Array of actor IDs (contact_id or priority_twist_id) mentioned in this note. For users, this stores their contact_id (not user_id).';
+COMMENT ON COLUMN "public"."note"."mentions" IS 'Array of priority_twist_ids (twists and connectors) mentioned in this note. Used for dispatch routing only — user visibility is handled by access_contacts.';
+
+COMMENT ON COLUMN "public"."note"."access_contacts" IS 'Restricts note visibility within thread viewers. NULL = all thread viewers can see, empty array = author only, array of contact_ids = author + listed contacts.';
+
+CREATE INDEX idx_note_access_contacts ON "public"."note" USING gin ("access_contacts")
+WHERE
+    access_contacts IS NOT NULL;
 
 COMMENT ON COLUMN "public"."note"."key" IS 'External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).';
 

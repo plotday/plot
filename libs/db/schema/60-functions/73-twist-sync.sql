@@ -44,7 +44,8 @@ BEGIN
                 OR n.preview IS DISTINCT FROM o.preview
                 OR n.archived_at IS DISTINCT FROM o.archived_at
                 OR n.draft IS DISTINCT FROM o.draft
-                OR n.private IS DISTINCT FROM o.private
+                OR n.access IS DISTINCT FROM o.access
+                OR n.access_contacts IS DISTINCT FROM o.access_contacts
                 OR n.icon IS DISTINCT FROM o.icon
                 OR n.priority_id IS DISTINCT FROM o.priority_id
                 OR n.updated_by IS DISTINCT FROM o.updated_by);
@@ -297,7 +298,7 @@ BEGIN
                 OR n.mentions IS DISTINCT FROM o.mentions
                 OR n.actions IS DISTINCT FROM o.actions
                 OR n.draft IS DISTINCT FROM o.draft
-                OR n.private IS DISTINCT FROM o.private
+                OR n.access_contacts IS DISTINCT FROM o.access_contacts
                 OR n.updated_by IS DISTINCT FROM o.updated_by);
     END IF;
     -- Exit early if all changes were to draft notes or notes on draft threads

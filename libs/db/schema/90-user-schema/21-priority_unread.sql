@@ -10,11 +10,13 @@ FROM
     JOIN thread a ON a.priority_id = upe.priority_id
         AND a.archived_at IS NULL
         AND (a.draft = FALSE OR a.created_by = upe.user_id)
-        AND (
-            a.private = FALSE
-            OR a.created_by = upe.user_id
-            OR "user".mentioned_in_thread (upe.user_id, a.id)
-        )
+        AND (CASE
+            WHEN a.access = 'public' THEN TRUE
+            WHEN a.created_by = upe.user_id THEN TRUE
+            WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
+            WHEN "user".user_contact_id(upe.user_id) = ANY(a.access_contacts) THEN TRUE
+            ELSE FALSE
+        END)
     JOIN thread_unread tu ON tu.user_id = upe.user_id
         AND tu.thread_id = a.id
         AND tu.read_at IS NULL

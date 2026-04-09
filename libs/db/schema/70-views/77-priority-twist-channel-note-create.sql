@@ -16,7 +16,7 @@ SELECT DISTINCT ON (ptc.priority_twist_id, n.id)
     n.archived_at,
     n.thread_id,
     n.draft,
-    n.private,
+    n.access_contacts,
     n.content,
     n.actions,
     n.key,

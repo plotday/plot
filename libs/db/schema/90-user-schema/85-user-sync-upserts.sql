@@ -152,7 +152,7 @@ CREATE OR REPLACE FUNCTION "user".upsert_note (
     p_archived_at timestamptz,
     p_thread_id uuid,
     p_draft boolean,
-    p_private boolean,
+    p_access_contacts uuid[],
     p_content text,
     p_actions jsonb,
     p_mentions uuid[],
@@ -170,6 +170,9 @@ DECLARE
     v_created_by uuid;
     v_author_id uuid;
     v_thread_author_id uuid;
+    v_thread_access text;
+    v_thread_created_by uuid;
+    v_thread_access_contacts uuid[];
     v_row note;
 BEGIN
     SELECT
@@ -183,31 +186,26 @@ BEGIN
     END IF;
     PERFORM "user".assert_priority_access(user_id, v_priority_id);
 
-    -- Block writes to private threads the user cannot see
-    IF (SELECT private FROM thread WHERE id = p_thread_id) = TRUE THEN
-        IF "user".get_effective_role(user_id, v_priority_id) != 'member'
-           AND (SELECT created_by FROM thread WHERE id = p_thread_id) != upsert_note.user_id
-           AND NOT "user".mentioned_in_thread(upsert_note.user_id, p_thread_id)
+    -- Check thread access
+    SELECT access, created_by, access_contacts
+    INTO v_thread_access, v_thread_created_by, v_thread_access_contacts
+    FROM thread WHERE id = p_thread_id;
+
+    IF v_thread_access != 'public' THEN
+        IF v_thread_created_by != upsert_note.user_id
+           AND NOT (v_thread_access = 'members' AND "user".get_effective_role(user_id, v_priority_id) = 'member')
+           AND NOT ("user".user_contact_id(upsert_note.user_id) = ANY(COALESCE(v_thread_access_contacts, ARRAY[]::uuid[])))
         THEN
             RAISE EXCEPTION 'Access denied to private thread';
         END IF;
     END IF;
 
-    -- Viewer enforcement: force private, auto-mention thread author
+    -- Viewer enforcement: in public threads, force note to be author-only
     IF "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
-        p_private := TRUE;
-        SELECT n.author_id INTO v_thread_author_id
-        FROM note n
-        WHERE n.thread_id = p_thread_id
-        ORDER BY n.created_at ASC
-        LIMIT 1;
-        IF v_thread_author_id IS NOT NULL THEN
-            IF p_mentions IS NULL THEN
-                p_mentions := ARRAY[v_thread_author_id];
-            ELSIF NOT (v_thread_author_id = ANY(p_mentions)) THEN
-                p_mentions := p_mentions || v_thread_author_id;
-            END IF;
+        IF v_thread_access = 'public' THEN
+            p_access_contacts := ARRAY[]::uuid[];
         END IF;
+        -- In non-public threads: keep whatever access_contacts was passed (default NULL = all thread viewers)
     END IF;
 
     v_created_by := COALESCE(p_created_by, user_id);
@@ -234,8 +232,8 @@ BEGIN
     END IF;
 
     IF p_id IS NULL THEN
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
-            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
         ON CONFLICT (thread_id, key)
             DO UPDATE SET
                 author_id = note.author_id,
@@ -243,7 +241,7 @@ BEGIN
                 updated_by = EXCLUDED.updated_by,
                 archived_at = EXCLUDED.archived_at,
                 draft = EXCLUDED.draft,
-                private = EXCLUDED.private,
+                access_contacts = EXCLUDED.access_contacts,
                 content = EXCLUDED.content,
                 actions = EXCLUDED.actions,
                 mentions = EXCLUDED.mentions,
@@ -254,8 +252,8 @@ BEGIN
                 updated_at = now()
         RETURNING * INTO v_row;
     ELSE
-        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, private, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
-            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), COALESCE(p_private, FALSE), p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
         ON CONFLICT (id)
             DO UPDATE SET
                 author_id = note.author_id,
@@ -264,7 +262,7 @@ BEGIN
                 archived_at = EXCLUDED.archived_at,
                 thread_id = EXCLUDED.thread_id,
                 draft = EXCLUDED.draft,
-                private = EXCLUDED.private,
+                access_contacts = EXCLUDED.access_contacts,
                 content = EXCLUDED.content,
                 actions = EXCLUDED.actions,
                 mentions = EXCLUDED.mentions,

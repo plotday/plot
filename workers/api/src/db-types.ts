@@ -383,7 +383,7 @@ export interface Note {
    */
   mentions: string[] | null;
   merged_from_thread_id: string | null;
-  private: Generated<boolean>;
+  access_contacts: string[] | null;
   re_note_id: string | null;
   /**
    * When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot's database.
@@ -642,7 +642,7 @@ export interface PriorityTwistChannelNoteCreate {
   mentions: string[] | null;
   priority_id: string | null;
   priority_twist_id: string | null;
-  private: boolean | null;
+  access_contacts: string[] | null;
   re_note_id: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
@@ -695,6 +695,7 @@ export interface PriorityTwistLinkUpdate {
 }
 
 export interface PriorityTwistNoteCreate {
+  access_contacts: string[] | null;
   actions: Json | null;
   archived_at: Timestamp | null;
   author_id: string | null;
@@ -709,7 +710,6 @@ export interface PriorityTwistNoteCreate {
   mentions: string[] | null;
   priority_id: string | null;
   priority_twist_id: string | null;
-  private: boolean | null;
   re_note_id: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
@@ -723,6 +723,7 @@ export interface PriorityTwistNoteCreate {
 }
 
 export interface PriorityTwistNoteUpdate {
+  access_contacts: string[] | null;
   actions: Json | null;
   archived_at: Timestamp | null;
   author_id: string | null;
@@ -737,7 +738,6 @@ export interface PriorityTwistNoteUpdate {
   mentions: string[] | null;
   priority_id: string | null;
   priority_twist_id: string | null;
-  private: boolean | null;
   re_note_id: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
@@ -803,17 +803,17 @@ export interface PriorityTwistThreadTagChange {
 }
 
 export interface PriorityTwistThreadUpdate {
+  access: string | null;
+  access_contacts: string[] | null;
   archived_at: Timestamp | null;
   created_at: Timestamp | null;
   created_by: string | null;
   draft: boolean | null;
   id: string | null;
-  mentions: string[] | null;
   preview: string | null;
   priority_id: string | null;
   priority_title: string | null;
   priority_twist_id: string | null;
-  private: boolean | null;
   sync_depth: number | null;
   tags: Json | null;
   title: string | null;
@@ -950,7 +950,8 @@ export interface Thread {
   last_note_source_created_at: Timestamp | null;
   preview: string | null;
   priority_id: string;
-  private: Generated<boolean>;
+  access: Generated<string>;
+  access_contacts: string[] | null;
   sync_depth: number | null;
   title: string | null;
   updated_at: Generated<Timestamp>;
@@ -1009,6 +1010,8 @@ export interface ThreadUnread {
 }
 
 export interface ThreadX {
+  access: string | null;
+  access_contacts: string[] | null;
   archived_at: Timestamp | null;
   created_at: Timestamp | null;
   created_by: string | null;
@@ -1018,11 +1021,9 @@ export interface ThreadX {
   key: string | null;
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
-  mentions: string[] | null;
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
-  private: boolean | null;
   sync_depth: number | null;
   title: string | null;
   updated_at: Timestamp | null;
@@ -1149,7 +1150,7 @@ export interface UserNote {
   id: string | null;
   mentions: string[] | null;
   merged_from_thread_id: string | null;
-  private: boolean | null;
+  access_contacts: string[] | null;
   re_note_id: string | null;
   source_created_at: Timestamp | null;
   thread_id: string | null;
@@ -1304,11 +1305,11 @@ export interface UserThread {
   importance: number | null;
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
-  mentions: string[] | null;
+  access: string | null;
+  access_contacts: string[] | null;
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
-  private: boolean | null;
   title: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;

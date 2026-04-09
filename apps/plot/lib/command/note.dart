@@ -253,12 +253,12 @@ class ToggleNotePrivate extends NoteCommand {
   ToggleNotePrivate(super.note, {this.isViewer = false})
     : super(
         title: isViewer
-            ? (note.private ? 'Private' : 'Public')
-            : (note.private ? 'Make public' : 'Make private'),
+            ? (note.isPrivate ? 'Private' : 'Public')
+            : (note.isPrivate ? 'Make public' : 'Make private'),
         eventObject: EventObject.note,
-        eventAction: note.private ? EventAction.untagged : EventAction.tagged,
+        eventAction: note.isPrivate ? EventAction.untagged : EventAction.tagged,
         icon: PlotIcon.private,
-        on: isViewer ? note.private : null,
+        on: isViewer ? note.isPrivate : null,
       );
 
   final bool isViewer;
@@ -270,7 +270,9 @@ class ToggleNotePrivate extends NoteCommand {
   Future<CommandReturn> run(BuildContext context) async {
     if (isViewer) return const CommandDone();
     try {
-      final updatedNote = note.copyWith(private: !note.private);
+      final updatedNote = note.copyWith(
+        accessContacts: Value(note.isPrivate ? null : []),
+      );
       await updatedNote.save();
       return const CommandDone();
     } catch (e, stackTrace) {
@@ -686,7 +688,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
     if (note.content != null && note.content!.trim().isNotEmpty)
       CopyNoteContent(note),
     if ((activityBloc?.state.thread.priority.personal != true || note.draft) &&
-        (!note.private || note.authorId.isCurrentUser))
+        (!note.isPrivate || note.authorId.isCurrentUser))
       ToggleNotePrivate(
         note,
         isViewer: activityBloc?.state.thread.priority.isViewer ?? false,

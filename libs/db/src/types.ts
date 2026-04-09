@@ -527,6 +527,7 @@ export type Database = {
       }
       note: {
         Row: {
+          access_contacts: string[] | null
           actions: Json | null
           archived_at: string | null
           author_id: string
@@ -539,7 +540,6 @@ export type Database = {
           key: string | null
           mentions: string[] | null
           merged_from_thread_id: string | null
-          private: boolean
           re_note_id: string | null
           source_created_at: string
           sync_depth: number | null
@@ -548,6 +548,7 @@ export type Database = {
           updated_by: number
         }
         Insert: {
+          access_contacts?: string[] | null
           actions?: Json | null
           archived_at?: string | null
           author_id: string
@@ -560,7 +561,6 @@ export type Database = {
           key?: string | null
           mentions?: string[] | null
           merged_from_thread_id?: string | null
-          private?: boolean
           re_note_id?: string | null
           source_created_at?: string
           sync_depth?: number | null
@@ -569,6 +569,7 @@ export type Database = {
           updated_by?: number
         }
         Update: {
+          access_contacts?: string[] | null
           actions?: Json | null
           archived_at?: string | null
           author_id?: string
@@ -581,7 +582,6 @@ export type Database = {
           key?: string | null
           mentions?: string[] | null
           merged_from_thread_id?: string | null
-          private?: boolean
           re_note_id?: string | null
           source_created_at?: string
           sync_depth?: number | null
@@ -1731,6 +1731,8 @@ export type Database = {
       }
       thread: {
         Row: {
+          access: string
+          access_contacts: string[] | null
           archived_at: string | null
           created_at: string
           created_by: string
@@ -1742,13 +1744,14 @@ export type Database = {
           last_note_source_created_at: string | null
           preview: string | null
           priority_id: string
-          private: boolean
           sync_depth: number | null
           title: string | null
           updated_at: string
           updated_by: number
         }
         Insert: {
+          access?: string
+          access_contacts?: string[] | null
           archived_at?: string | null
           created_at?: string
           created_by: string
@@ -1760,13 +1763,14 @@ export type Database = {
           last_note_source_created_at?: string | null
           preview?: string | null
           priority_id: string
-          private?: boolean
           sync_depth?: number | null
           title?: string | null
           updated_at?: string
           updated_by?: number
         }
         Update: {
+          access?: string
+          access_contacts?: string[] | null
           archived_at?: string | null
           created_at?: string
           created_by?: string
@@ -1778,7 +1782,6 @@ export type Database = {
           last_note_source_created_at?: string | null
           preview?: string | null
           priority_id?: string
-          private?: boolean
           sync_depth?: number | null
           title?: string | null
           updated_at?: string
@@ -2839,6 +2842,7 @@ export type Database = {
       }
       priority_twist_channel_note_create: {
         Row: {
+          access_contacts: string[] | null
           actions: Json | null
           archived_at: string | null
           author_id: string | null
@@ -2860,7 +2864,6 @@ export type Database = {
           mentions: string[] | null
           priority_id: string | null
           priority_twist_id: string | null
-          private: boolean | null
           re_note_id: string | null
           source_created_at: string | null
           sync_depth: number | null
@@ -3015,6 +3018,7 @@ export type Database = {
       }
       priority_twist_note_create: {
         Row: {
+          access_contacts: string[] | null
           actions: Json | null
           archived_at: string | null
           author_id: string | null
@@ -3029,7 +3033,6 @@ export type Database = {
           mentions: string[] | null
           priority_id: string | null
           priority_twist_id: string | null
-          private: boolean | null
           re_note_id: string | null
           source_created_at: string | null
           sync_depth: number | null
@@ -3045,6 +3048,7 @@ export type Database = {
       }
       priority_twist_note_update: {
         Row: {
+          access_contacts: string[] | null
           actions: Json | null
           archived_at: string | null
           author_id: string | null
@@ -3059,7 +3063,6 @@ export type Database = {
           mentions: string[] | null
           priority_id: string | null
           priority_twist_id: string | null
-          private: boolean | null
           re_note_id: string | null
           source_created_at: string | null
           sync_depth: number | null
@@ -3378,17 +3381,17 @@ export type Database = {
       }
       priority_twist_thread_update: {
         Row: {
+          access: string | null
+          access_contacts: string[] | null
           archived_at: string | null
           created_at: string | null
           created_by: string | null
           draft: boolean | null
           id: string | null
-          mentions: string[] | null
           preview: string | null
           priority_id: string | null
           priority_title: string | null
           priority_twist_id: string | null
-          private: boolean | null
           sync_depth: number | null
           tags: Json | null
           title: string | null
@@ -3447,6 +3450,8 @@ export type Database = {
       }
       thread_x: {
         Row: {
+          access: string | null
+          access_contacts: string[] | null
           archived_at: string | null
           created_at: string | null
           created_by: string | null
@@ -3456,11 +3461,9 @@ export type Database = {
           key: string | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
-          mentions: string[] | null
           preview: string | null
           priority_id: string | null
           priority_path: unknown
-          private: boolean | null
           sync_depth: number | null
           title: string | null
           updated_at: string | null
@@ -3587,7 +3590,6 @@ export type Database = {
         Args: { tag_id: number }
         Returns: Database["public"]["Enums"]["tag_type"]
       }
-      get_thread_mentions: { Args: { p_thread_id: string }; Returns: string[] }
       get_users_with_priority_access: {
         Args: { target_priority_id: string }
         Returns: {
@@ -3766,6 +3768,7 @@ export type Database = {
       }
       note: {
         Row: {
+          access_contacts: string[] | null
           actions: Json | null
           archived_at: string | null
           author_id: string | null
@@ -3776,7 +3779,6 @@ export type Database = {
           id: string | null
           mentions: string[] | null
           merged_from_thread_id: string | null
-          private: boolean | null
           re_note_id: string | null
           source_created_at: string | null
           thread_id: string | null
@@ -3933,6 +3935,8 @@ export type Database = {
       }
       thread: {
         Row: {
+          access: string | null
+          access_contacts: string[] | null
           activity_at: string | null
           agenda_at: unknown
           archived_at: string | null
@@ -3944,11 +3948,9 @@ export type Database = {
           importance: number | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
-          mentions: string[] | null
           preview: string | null
           priority_id: string | null
           priority_path: unknown
-          private: boolean | null
           title: string | null
           unread: boolean | null
           updated_at: string | null
@@ -4038,10 +4040,6 @@ export type Database = {
         Args: { priority_id: string; user_id: string }
         Returns: boolean
       }
-      mentioned_in_thread: {
-        Args: { thread_id: string; user_id: string }
-        Returns: boolean
-      }
       update_note_tags: {
         Args: {
           p_actor_id: string
@@ -4079,6 +4077,7 @@ export type Database = {
       }
       upsert_note: {
         Args: {
+          p_access_contacts: string[]
           p_actions: Json
           p_archived_at: string
           p_author_id: string
@@ -4089,7 +4088,6 @@ export type Database = {
           p_key: string
           p_mentions: string[]
           p_merged_from_thread_id?: string
-          p_private: boolean
           p_re_note_id: string
           p_source_created_at: string
           p_thread_id: string

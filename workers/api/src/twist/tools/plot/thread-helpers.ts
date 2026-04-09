@@ -913,7 +913,8 @@ export async function prepareThreadForDb(
     title: cleanTitle(activity.title?.trim() || "Untitled"),
     preview: previewText,
     draft: false,
-    private: activity.private ?? false,
+    access: activity.access ?? "members",
+    access_contacts: activity.accessContacts ?? (activity.access === "restricted" ? [] : null),
     sync_depth: plot.syncDepth + 1,
     ...(activity.archived !== undefined
       ? { archived_at: activity.archived ? new Date().toISOString() : null }
@@ -958,8 +959,11 @@ export async function prepareThreadForDb(
     if ("preview" in activity && activity.preview !== undefined) {
       upsertFields.preview = previewText;
     }
-    if (activity.private !== undefined) {
-      upsertFields.private = activity.private;
+    if (activity.access !== undefined) {
+      upsertFields.access = activity.access;
+      upsertFields.access_contacts = activity.accessContacts ?? (activity.access === "restricted" ? [] : null);
+    } else if (activity.accessContacts !== undefined) {
+      upsertFields.access_contacts = activity.accessContacts;
     }
     if ("type" in activity && (activity as any).type !== undefined) {
       upsertFields.icon = (activity as any).type;

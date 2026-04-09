@@ -880,7 +880,7 @@ export class Plot extends Tool implements IPlot {
       reNote: item.re_note_id ? { id: item.re_note_id as Uuid } : null,
       mentions: (item.mentions as ActorId[]) || [],
       tags: (item.tags as Partial<Record<number, ActorId[]>>) || {},
-      private: item.private ?? false,
+      accessContacts: (item.access_contacts as ActorId[]) ?? null,
       archived: item.archived_at !== null,
       actions: item.actions as any,
     };
@@ -926,7 +926,7 @@ export class Plot extends Tool implements IPlot {
           "note.key",
           "note.re_note_id",
           "note.mentions",
-          "note.private",
+          "note.access_contacts",
           "note.archived_at",
           "note.actions",
           "actor.name as author_name",
@@ -958,7 +958,7 @@ export class Plot extends Tool implements IPlot {
         reNote: row.re_note_id ? { id: row.re_note_id as Uuid } : null,
         mentions: (row.mentions as ActorId[]) || [],
         tags: {},
-        private: row.private ?? false,
+        accessContacts: (row.access_contacts as ActorId[]) ?? null,
         archived: row.archived_at !== null,
         actions: row.actions as any,
       }));
@@ -1250,12 +1250,13 @@ export class Plot extends Tool implements IPlot {
       try {
         const activity = await this.db
           .selectFrom("thread_x")
-          .select(["id", "created_by", "mentions"])
+          .select(["id", "created_by"])
           .where("id", "=", activityId)
           .executeTakeFirstOrThrow();
 
         created_by = activity.created_by;
-        mentions = activity.mentions as string[] | null;
+        // Thread no longer stores mentions; note-level mentions are used for twist callbacks
+        mentions = null;
       } catch {
         throw new Error(`Activity not found: ${activityId}`);
       }
@@ -1314,16 +1315,17 @@ export class Plot extends Tool implements IPlot {
       mentions = activityMetadata.mentions;
       triggering_note_mentions = activityMetadata.triggering_note_mentions;
     } else {
-      // Fetch the activity to check author and mentions (fallback for calls from twist code)
+      // Fetch the activity to check author (fallback for calls from twist code)
       try {
         const activity = await this.db
           .selectFrom("thread_x")
-          .select(["id", "created_by", "mentions"])
+          .select(["id", "created_by"])
           .where("id", "=", activityId)
           .executeTakeFirstOrThrow();
 
         created_by = activity.created_by;
-        mentions = activity.mentions as string[] | null;
+        // Thread no longer stores mentions; note-level mentions are used for twist callbacks
+        mentions = null;
       } catch {
         throw new Error(`Activity not found: ${activityId}`);
       }

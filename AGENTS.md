@@ -305,17 +305,17 @@ Twists and sources that require authentication must handle multi-user priorities
 
 #### Private Auth Activities
 
-When a twist creates an auth activity in `activate()`, it should be `private: true` with `mentions` on the note targeting `context.actor` so only the installing user sees the auth prompt:
+When a twist creates an auth activity in `activate()`, it should use `access: "restricted"` with `accessContacts` targeting the installing user so only they see the auth prompt:
 
 ```typescript
 async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
   await this.tools.plot.createActivity({
     type: ActivityType.Action,
     title: "Connect your account",
-    private: true,
+    access: "restricted",
+    accessContacts: context?.actor ? [context.actor.id] : [],
     notes: [{
       links: [authLink],
-      ...(context?.actor ? { mentions: [{ id: context.actor.id }] } : {}),
     }],
   });
 }
@@ -571,11 +571,13 @@ The `user.thread` view is the canonical reference for visibility logic. When que
 -- Required visibility filters when joining thread_unread with thread:
 AND t.archived_at IS NULL                           -- exclude archived threads
 AND (t.draft = false OR t.created_by = :userId)     -- only show own drafts
-AND (
-  t.private = false                                  -- public threads: visible to all
-  OR t.created_by = :userId                          -- private threads: visible to creator
-  OR "user".mentioned_in_thread(:userId, t.id)       -- private threads: visible to mentioned users
-)
+AND (CASE
+  WHEN t.access = 'public' THEN true                -- public threads: visible to all
+  WHEN t.created_by = :userId THEN true             -- creator always has access
+  WHEN t.access = 'members' AND :userRole = 'member' THEN true  -- members see members-only threads
+  WHEN "user".user_contact_id(:userId) = ANY(t.access_contacts) THEN true  -- listed contacts
+  ELSE false
+END)
 ```
 
 ### When these filters are required
@@ -592,7 +594,7 @@ AND (
 
 ### Common mistake
 
-Querying `thread_unread` with only `read_at IS NULL` and `urgency != 'passive'` — this misses archived, draft, and private thread visibility, causing phantom notifications and incorrect unread counts.
+Querying `thread_unread` with only `read_at IS NULL` and `urgency != 'passive'` — this misses archived, draft, and access-restricted thread visibility, causing phantom notifications and incorrect unread counts.
 
 ## Plot App URLs
 

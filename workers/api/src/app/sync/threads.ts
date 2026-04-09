@@ -109,14 +109,63 @@ threads.get("/sync/threads", async (c) => {
     return query.execute();
   });
 
+  const apiVersion = c.var.apiVersion ?? 0;
+
+  // For old clients (version < 1): translate access/access_contacts back to private/mentions
+  if (apiVersion < 1) {
+    for (const row of rows as any[]) {
+      row.private = row.access !== 'public';
+      // Merge access_contacts into synthetic mentions field for backwards compat
+      row.mentions = row.access_contacts ?? [];
+    }
+  }
+
   return c.json(rows as any);
 });
 
 // POST /sync/threads - Upsert via upsert_thread() RPC
 threads.post("/sync/threads", async (c) => {
   const body = await c.req.json();
+  const apiVersion = c.var.apiVersion ?? 0;
 
   const threadData = body.thread || body;
+
+  // For old clients (version < 1): translate private → access/access_contacts
+  if (apiVersion < 1 && 'private' in threadData) {
+    if (threadData.private === true) {
+      // Private thread: check if priority has viewers to determine access level
+      // For priorities with viewers, use 'restricted'; otherwise use 'members'
+      if (threadData.priority_id) {
+        const hasViewers = await c.var.db
+          .selectFrom("priority_user")
+          .select("user_id")
+          .where("priority_id", "=", threadData.priority_id)
+          .where("role", "=", "viewer")
+          .where("archived_at", "is", null)
+          .executeTakeFirst();
+        threadData.access = hasViewers ? 'members' : 'members';
+      } else {
+        threadData.access = 'members';
+      }
+    } else {
+      // Public thread: check if priority has viewers
+      if (threadData.priority_id) {
+        const hasViewers = await c.var.db
+          .selectFrom("priority_user")
+          .select("user_id")
+          .where("priority_id", "=", threadData.priority_id)
+          .where("role", "=", "viewer")
+          .where("archived_at", "is", null)
+          .executeTakeFirst();
+        threadData.access = hasViewers ? 'public' : 'members';
+      } else {
+        threadData.access = 'members';
+      }
+    }
+    // Old clients don't send access_contacts, so leave it unset (existing value preserved by JSONB upsert)
+    delete threadData.private;
+  }
+
   if (threadData.title && typeof threadData.title === "string") {
     threadData.title = cleanTitle(threadData.title);
   }

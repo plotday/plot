@@ -25,14 +25,12 @@ GROUP BY
     sq.thread_id,
     sq.occurrence;
 
--- Add priority_path and mentions to thread view
--- Includes priority_path and mentions via get_thread_mentions()
+-- Add priority_path to thread view
 CREATE OR REPLACE VIEW "public"."thread_x" --
 AS
 SELECT
     a.*,
-    p.path AS priority_path,
-    public.get_thread_mentions (a.id) AS mentions
+    p.path AS priority_path
 FROM
     thread a
     JOIN priority p ON p.id = a.priority_id;

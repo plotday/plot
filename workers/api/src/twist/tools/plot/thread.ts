@@ -334,8 +334,11 @@ async function updateThreadsByMatch(
         ? cleanTitle(activity.title)
         : null;
   }
-  if (activity.private !== undefined) {
-    dbUpdate.private = activity.private;
+  if (activity.access !== undefined) {
+    dbUpdate.access = activity.access;
+    dbUpdate.access_contacts = activity.accessContacts ?? (activity.access === "restricted" ? [] : null);
+  } else if (activity.accessContacts !== undefined) {
+    dbUpdate.access_contacts = activity.accessContacts;
   }
 
   // Check if there are meaningful updates
@@ -403,8 +406,11 @@ export async function updateThread(
           ? cleanTitle(activity.title)
           : null;
     }
-    if (activity.private !== undefined) {
-      dbUpdate.private = activity.private;
+    if (activity.access !== undefined) {
+      dbUpdate.access = activity.access;
+      dbUpdate.access_contacts = activity.accessContacts ?? (activity.access === "restricted" ? [] : null);
+    } else if (activity.accessContacts !== undefined) {
+      dbUpdate.access_contacts = activity.accessContacts;
     }
     if (activity.archived !== undefined) {
       dbUpdate.archived_at = activity.archived
@@ -629,11 +635,11 @@ export async function getThread(
         created_by: (data as any).created_by ?? "",
         draft: data.draft ?? false,
         priority_id: data.priority_id ?? "",
-        private: data.private ?? false,
+        access: data.access ?? "members",
+        access_contacts: data.access_contacts ?? null,
         updated_by: data.updated_by ?? 0,
         sync_depth: null,
         tags: tagsData?.tags || null,
-        mentions: (data as any).mentions || [],
       }
     );
   } catch (err) {
@@ -662,7 +668,7 @@ export async function getNote(
         "archived_at",
         "thread_id",
         "draft",
-        "private",
+        "access_contacts",
         "content",
         "key",
         "actions",
@@ -749,7 +755,7 @@ export async function getNote(
         name: author.name ?? null,
         email: includeAuthorEmail ? author.email ?? undefined : undefined,
       },
-      private: data.private,
+      accessContacts: (data.access_contacts as ActorId[]) ?? null,
       archived: data.archived_at !== null,
       content: data.content,
       key: data.key || null,
@@ -1225,11 +1231,11 @@ export async function getThreads(
         created_by: (data as any).created_by ?? "",
         draft: data.draft ?? false,
         priority_id: data.priority_id ?? "",
-        private: data.private ?? false,
+        access: data.access ?? "members",
+        access_contacts: data.access_contacts ?? null,
         updated_by: data.updated_by ?? 0,
         sync_depth: null,
         tags: tagsMap.get(data.id as string) || null,
-        mentions: (data as any).mentions || [],
       }
     );
 

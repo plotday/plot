@@ -72,18 +72,16 @@ BEGIN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
     IF v_role = 'viewer' THEN
-        -- Viewers can only create private threads; they cannot modify existing
-        -- non-private threads or change a thread from private to non-private
         IF NOT EXISTS (SELECT 1 FROM thread WHERE id = v_id) THEN
-            -- New thread: must be private
-            IF COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, FALSE) IS NOT TRUE THEN
+            -- New thread: viewers cannot create public threads
+            IF COALESCE(p_thread ->> 'access', p_defaults ->> 'access', 'members') = 'public' THEN
                 RAISE EXCEPTION 'Viewer members can only create private threads';
             END IF;
         ELSE
-            -- Existing thread: viewers can only modify their own private threads
+            -- Existing thread: viewers can only modify their own non-public threads
             IF NOT EXISTS (
                 SELECT 1 FROM thread
-                WHERE id = v_id AND private = TRUE AND created_by = user_id
+                WHERE id = v_id AND access != 'public' AND created_by = user_id
             ) THEN
                 RAISE EXCEPTION 'Viewer members cannot modify threads they did not create';
             END IF;
@@ -123,8 +121,8 @@ BEGIN
     v_is_archived := COALESCE(v_is_archived, FALSE);
     -- Perform the upsert and return the full row
     -- On INSERT: Use COALESCE to fall back to p_defaults for fields not in p_thread
-    INSERT INTO thread (id, created_by, priority_id, title, preview, updated_by, sync_depth, private, draft, key, icon)
-        VALUES (v_id, v_created_by, v_priority_id, COALESCE(p_thread ->> 'title', p_defaults ->> 'title'), COALESCE(p_thread ->> 'preview', p_defaults ->> 'preview'), COALESCE((p_thread ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, 0), COALESCE((p_thread ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint), COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, FALSE), COALESCE((p_thread ->> 'draft')::boolean, (p_defaults ->> 'draft')::boolean, FALSE), COALESCE(p_thread ->> 'key', p_defaults ->> 'key'), COALESCE(p_thread ->> 'icon', p_defaults ->> 'icon'))
+    INSERT INTO thread (id, created_by, priority_id, title, preview, updated_by, sync_depth, access, access_contacts, draft, key, icon)
+        VALUES (v_id, v_created_by, v_priority_id, COALESCE(p_thread ->> 'title', p_defaults ->> 'title'), COALESCE(p_thread ->> 'preview', p_defaults ->> 'preview'), COALESCE((p_thread ->> 'updated_by')::integer, (p_defaults ->> 'updated_by')::integer, 0), COALESCE((p_thread ->> 'sync_depth')::smallint, (p_defaults ->> 'sync_depth')::smallint), COALESCE(p_thread ->> 'access', p_defaults ->> 'access', 'members'), CASE WHEN p_thread ? 'access_contacts' THEN (SELECT array_agg(elem::uuid) FROM jsonb_array_elements_text(p_thread -> 'access_contacts') elem) WHEN p_defaults ? 'access_contacts' THEN (SELECT array_agg(elem::uuid) FROM jsonb_array_elements_text(p_defaults -> 'access_contacts') elem) ELSE NULL END, COALESCE((p_thread ->> 'draft')::boolean, (p_defaults ->> 'draft')::boolean, FALSE), COALESCE(p_thread ->> 'key', p_defaults ->> 'key'), COALESCE(p_thread ->> 'icon', p_defaults ->> 'icon'))
     ON CONFLICT (id)
         DO UPDATE SET
             -- Update fields only if key is present in p_thread
@@ -176,13 +174,26 @@ BEGIN
                     thread.priority_id
                 END
             END,
-            private = CASE WHEN v_is_archived THEN
-                COALESCE((p_thread ->> 'private')::boolean, (p_defaults ->> 'private')::boolean, thread.private)
+            access = CASE WHEN v_is_archived THEN
+                COALESCE(p_thread ->> 'access', p_defaults ->> 'access', thread.access)
             ELSE
-                CASE WHEN p_thread ? 'private' THEN
-                    (p_thread ->> 'private')::boolean
+                CASE WHEN p_thread ? 'access' THEN
+                    p_thread ->> 'access'
                 ELSE
-                    thread.private
+                    thread.access
+                END
+            END,
+            access_contacts = CASE WHEN v_is_archived THEN
+                CASE WHEN p_thread ? 'access_contacts' THEN
+                    (SELECT array_agg(elem::uuid) FROM jsonb_array_elements_text(p_thread -> 'access_contacts') elem)
+                WHEN p_defaults ? 'access_contacts' THEN
+                    (SELECT array_agg(elem::uuid) FROM jsonb_array_elements_text(p_defaults -> 'access_contacts') elem)
+                ELSE thread.access_contacts END
+            ELSE
+                CASE WHEN p_thread ? 'access_contacts' THEN
+                    (SELECT array_agg(elem::uuid) FROM jsonb_array_elements_text(p_thread -> 'access_contacts') elem)
+                ELSE
+                    thread.access_contacts
                 END
             END,
             draft = CASE WHEN v_is_archived THEN

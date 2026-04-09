@@ -7,7 +7,7 @@ class Notes extends Table
     with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
   BlobColumn get threadId => blob().map(const UuidConverter())();
   BlobColumn get authorId => blob().map(const ActorIdConverter())();
-  BoolColumn get private => boolean().withDefault(const Constant(false))();
+  TextColumn get accessContacts => text().nullable().map(const ActorIdListConverter())();
 
   TextColumn get content => text().nullable()();
   DateTimeColumn get sourceCreatedAt =>
@@ -95,7 +95,7 @@ class Note extends Equatable implements Comparable<Note> {
     required ThreadId threadId,
     required ActorId authorId,
     required bool draft,
-    required bool private,
+    List<ActorId>? accessContacts,
     String? content,
     List<UserAction>? actions,
     List<ActorId>? mentions,
@@ -116,7 +116,7 @@ class Note extends Equatable implements Comparable<Note> {
       threadId: threadId,
       authorId: authorId,
       draft: draft,
-      private: private,
+      accessContacts: accessContacts,
       content: content,
       sourceCreatedAt: sourceCreatedAt,
       actions: actions,
@@ -132,7 +132,7 @@ class Note extends Equatable implements Comparable<Note> {
 
   Note.draft({required this.threadId})
     : draft = true,
-      private = false,
+      accessContacts = null,
       id = NoteId.generate(),
       authorId = Base.actorId,
       content = null,
@@ -151,7 +151,7 @@ class Note extends Equatable implements Comparable<Note> {
     required this.threadId,
     required this.authorId,
     required this.draft,
-    required this.private,
+    this.accessContacts,
     this.content,
     this.actions,
     this.mentions,
@@ -177,7 +177,7 @@ class Note extends Equatable implements Comparable<Note> {
       threadId: noteRow.threadId,
       authorId: noteRow.authorId,
       draft: noteRow.draft,
-      private: noteRow.private,
+      accessContacts: noteRow.accessContacts,
       content: noteRow.content,
       sourceCreatedAt: noteRow.sourceCreatedAt,
       actions: noteRow.actions,
@@ -195,7 +195,9 @@ class Note extends Equatable implements Comparable<Note> {
   final ThreadId threadId;
   final ActorId authorId;
   final bool draft;
-  final bool private;
+  final List<ActorId>? accessContacts;
+  bool get isPrivate => accessContacts != null;
+  bool get isAuthorOnly => accessContacts != null && accessContacts!.isEmpty;
   final String? content;
   final List<UserAction>? actions;
   final List<ActorId>? mentions;
@@ -570,7 +572,7 @@ class Note extends Equatable implements Comparable<Note> {
       threadId: threadId,
       authorId: authorId,
       draft: draft,
-      private: private,
+      accessContacts: accessContacts,
       content: content,
       sourceCreatedAt: sourceCreatedAt,
       actions: actions,
@@ -748,7 +750,7 @@ class Note extends Equatable implements Comparable<Note> {
 
   // Tag-related getters
   Map<Tag, List<ActorId>> get tags => {
-    if (private) Tag.private: [authorId],
+    if (isPrivate) Tag.private: [authorId],
     ...(_tags?.tags ?? const {}),
   };
 
@@ -780,7 +782,7 @@ class Note extends Equatable implements Comparable<Note> {
 
   /// Check if a specific actor has a given tag
   bool hasTag(Tag tag, [ActorId? actorId]) {
-    if (tag == Tag.private) return private;
+    if (tag == Tag.private) return isPrivate;
     final actors = tags[tag];
     if (actorId == null) {
       return actors?.isNotEmpty == true;
@@ -895,7 +897,7 @@ class Note extends Equatable implements Comparable<Note> {
   Note setTag(Tag tag, ActorId actorId, [bool value = true]) {
     // Handle compute tags that map to direct fields
     if (tag == Tag.private) {
-      return copyWith(private: value);
+      return copyWith(accessContacts: Value(value ? [] : null));
     }
 
     // Count tags can only be set for the current user
@@ -993,7 +995,7 @@ class Note extends Equatable implements Comparable<Note> {
   Note copyWith({
     ThreadId? threadId,
     bool? draft,
-    bool? private,
+    Value<List<ActorId>?> accessContacts = const Value.absent(),
     String? content,
     List<UserAction>? actions,
     List<ActorId>? mentions,
@@ -1067,7 +1069,7 @@ class Note extends Equatable implements Comparable<Note> {
         threadId: threadId ?? this.threadId,
         authorId: authorId,
         draft: draft ?? this.draft,
-        private: private ?? this.private,
+        accessContacts: accessContacts.present ? accessContacts.value : this.accessContacts,
         content: content ?? this.content,
         sourceCreatedAt: isPublishing ? now : sourceCreatedAt,
         actions: actions ?? this.actions,
@@ -1088,7 +1090,7 @@ class Note extends Equatable implements Comparable<Note> {
     threadId,
     authorId,
     draft,
-    private,
+    accessContacts,
     content,
     actions,
     mentions,

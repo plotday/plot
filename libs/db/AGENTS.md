@@ -104,11 +104,16 @@ Any view or query that joins `thread_unread` to determine what a user can see mu
 ```sql
 AND a.archived_at IS NULL
 AND (a.draft = FALSE OR a.created_by = user_id)
-AND (a.private = FALSE OR a.created_by = user_id
-     OR "user".mentioned_in_thread(user_id, a.id))
+AND (CASE
+    WHEN a.access = 'public' THEN TRUE
+    WHEN a.created_by = user_id THEN TRUE
+    WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
+    WHEN "user".user_contact_id(user_id) = ANY(a.access_contacts) THEN TRUE
+    ELSE FALSE
+END)
 ```
 
-Without these, views like `user.priority_unread` will show false unread indicators for threads the user can't actually see (private threads from other users, archived threads, other users' drafts).
+Without these, views like `user.priority_unread` will show false unread indicators for threads the user can't actually see (access-restricted threads from other users, archived threads, other users' drafts).
 
 **Exception**: Twist callback views (e.g. `priority_twist_thread_read`) are scoped to threads the twist created — the twist has inherent visibility.
 
@@ -120,6 +125,56 @@ The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `
 - **Schema management**: Atlas handles diffing, migration generation, and migration application
 - **Type generation**: Uses `@supabase/postgres-meta` as a library (via `pnpm types`)
 - **Atlas config**: `atlas.hcl` defines the local environment, schema sources, and migration directory
+
+## CRITICAL: When Modifying Synced Tables
+
+**When you modify columns in `activity`, `note`, `priority`, `session`, `priority_twist`, or `activity_read` tables, you MUST update TWO additional locations:**
+
+### 1. Database Notification Functions (`schema/60-functions/70-update.sql`)
+
+Each synced table has a corresponding `notify_internal_api_for_<table>()` function that builds JSON payloads. When adding/removing/renaming columns:
+
+- **For `activity` table**: Update `notify_internal_api_for_activity()`
+  - Add new fields to the `jsonb_build_object()` call on line ~59 (current item)
+  - Add new fields to the `jsonb_build_object()` call on line ~88 (previous item for updates)
+  - Example: `'sync_depth', current_item.sync_depth,`
+
+- **For `note` table**: Update `notify_internal_api_for_note()`
+  - Add new fields to the `jsonb_build_object()` call on line ~274 (current item)
+  - Add new fields to the `jsonb_build_object()` call on line ~295 (previous item for updates)
+  - Example: `'key', current_item.key,`
+
+- **For `priority` table**: Update `notify_internal_api_for_priority()`
+  - Add new fields to the `jsonb_build_object()` call on line ~160
+  - Example: `'sync_depth', current_item.sync_depth,`
+
+- **For `session` table**: Update `notify_internal_api_for_session()`
+  - Add new fields to the `jsonb_build_object()` call on line ~202
+
+- **For `priority_twist` table**: Update `notify_internal_api_for_priority_twist()`
+  - Add new fields to the `jsonb_build_object()` call on line ~371
+
+- **For `activity_read` table**: Update `notify_internal_api_for_activity_read()`
+  - Add new fields to the `jsonb_build_object()` call on line ~413
+
+### 2. API Zod Schemas (`workers/api/src/types.ts`)
+
+Update the corresponding Zod schema to match the database columns:
+
+- **ActivityItemSchema** (line ~3): For `activity` table changes
+- **NoteItemSchema** (line ~38): For `note` table changes
+- **PriorityItemSchema** (line ~63): For `priority` table changes
+- **SessionItemSchema** (line ~76): For `session` table changes
+- **PriorityTwistItemSchema** (line ~92): For `priority_twist` table changes
+- **ActivityReadItemSchema** (line ~106): For `activity_read` table changes
+
+**Field type mapping**:
+- Nullable database columns: Use `.nullable()` in Zod (NOT `.optional()`)
+- Non-null database columns: Don't use `.nullable()` or `.optional()`
+- Array columns: Use `z.array(...)` and add `.nullable()` if NULL is allowed
+- JSONB columns: Use `z.record(z.string(), z.any())` or specific schema
+
+**Why this matters**: The notification functions send database changes to the API, which validates them against these Zod schemas. Missing fields cause validation errors that break real-time sync.
 
 ## Available Commands
 
