@@ -323,10 +323,14 @@ export function stripMarkdown(text: string): string {
   // Remove images (before links so ![alt](url) doesn't become [alt](url))
   result = result.replace(/!\[([^\]]*)\]\([^)]+\)/g, "");
 
-  // Remove links: keep descriptive text, extract domain for URL-only or empty link text
-  result = result.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (_, text, url) => {
+  // Remove links: keep descriptive text, extract domain for URL-only or empty link text.
+  // Handles mentions [Name](#@UUID) and Linear-style autolinks [url](<url>).
+  // Keep in sync with displayPreview in apps/plot/lib/store/thread.dart.
+  result = result.replace(/\[([^\]]*)\]\(<?([^>)]+)>?\)/g, (_, text, url) => {
     if (text && !/^https?:\/\//.test(text)) return text;
-    const domainMatch = url.match(/^https?:\/\/(?:www\.)?([^\/\s]+)/);
+    // Extract domain from URL (try url first, fall back to text)
+    const source = url || text;
+    const domainMatch = source.match(/^https?:\/\/(?:www\.)?([^\/\s]+)/);
     return domainMatch ? domainMatch[1] : text || '';
   });
 

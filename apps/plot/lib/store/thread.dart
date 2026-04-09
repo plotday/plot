@@ -2268,7 +2268,11 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   String? get displayPreview {
-    if (title != null) return preview; // AI/user title: preview from beginning
+    if (title != null) {
+      // Strip markdown so mentions like [Name](#@UUID) display as plain text.
+      // Keep in sync with stripMarkdown() in workers/api thread-helpers.ts.
+      return preview?.removeMarkdown(replaceLinksWithURL: false);
+    }
     if (preview == null) return null;
     final derivedTitle = _titleFromContent(preview);
     if (derivedTitle == null) return null;
