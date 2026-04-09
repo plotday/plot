@@ -45,7 +45,7 @@ cd "$WORKTREE_PATH"
 
 # Initialize submodules
 echo "Initializing submodules..." >&2
-git submodule update --init --recursive >&2
+git submodule update --init --recursive --reference "$REPO_DIR/public" >&2
 
 # Copy environment files from the main repo
 echo "Copying environment files..." >&2

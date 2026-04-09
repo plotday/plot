@@ -519,7 +519,9 @@ When the tunnel is active, use these public URLs:
 
 Worktrees are automatically set up via WorktreeCreate/WorktreeRemove hooks in
 `.claude/settings.json`. The hooks handle: git worktree creation, submodule init,
-env file copying, and pnpm install.
+env file copying, and pnpm install. Submodule init uses `--reference` to borrow
+objects from the main repo's local `public/` directory, so worktrees work even
+when the submodule has unpushed local commits.
 
 ### Conditional Setup (run when needed)
 

@@ -129,7 +129,7 @@ echo "Location: $WORKTREE_DIR"
 echo "========================================="
 echo ""
 echo "Fetching submodules..."
-git submodule update --init --recursive
+git submodule update --init --recursive --reference "$REPO_DIR/public"
 echo ""
 echo "Running pnpm install..."
 pnpm install
