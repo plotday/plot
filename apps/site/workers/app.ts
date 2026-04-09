@@ -32,8 +32,18 @@ export default {
     (globalThis as Record<string, unknown>).CLERK_SECRET_KEY = env.CLERK_SECRET_KEY;
     (globalThis as Record<string, unknown>).CLERK_PUBLISHABLE_KEY = env.CLERK_PUBLISHABLE_KEY;
 
-    return requestHandler(request, {
+    const response = await requestHandler(request, {
       cloudflare: { env, ctx },
     });
+
+    // Add CORS headers for static assets so they can be loaded cross-origin
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/assets/")) {
+      const corsResponse = new Response(response.body, response);
+      corsResponse.headers.set("Access-Control-Allow-Origin", "*");
+      return corsResponse;
+    }
+
+    return response;
   },
 } satisfies ExportedHandler<CloudflareEnvironment>;
