@@ -727,7 +727,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               type: "event",
               title: activityData.title || undefined,
               status: "Cancelled",
-              private: true,
+              access: "restricted",
               preview: "Cancelled",
               meta: activityData.meta ?? null,
               notes: [cancelNote],
@@ -893,7 +893,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
                 ? "Tentative"
                 : undefined,
             title: activityData.title || "",
-            private: true,
+            access: "restricted",
             author: authorContact,
             meta: activityData.meta ?? null,
             actions: hasActions ? actions : undefined,

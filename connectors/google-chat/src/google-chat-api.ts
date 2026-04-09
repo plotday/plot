@@ -652,7 +652,7 @@ export function transformChatThread(
     source: `google-chat:${spaceId}:thread:${threadKey}`,
     type: "message",
     title,
-    private: true,
+    access: "restricted",
     created: new Date(firstMessage.createTime),
     author: senderToNewActor(firstMessage.sender, memberInfo),
     sourceUrl: `https://chat.google.com/room/${spaceId}/${threadKey}`,

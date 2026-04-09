@@ -424,7 +424,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           const link: NewLinkWithNotes = {
             type: "event",
             title: "Cancelled Event",
-            private: true,
+            access: "restricted",
             created: outlookEvent.createdDateTime
               ? new Date(outlookEvent.createdDateTime)
               : new Date(),
@@ -575,7 +575,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           source: `outlook-calendar:${outlookEvent.id}`,
           type: "event",
           title: threadData.title || "",
-          private: true,
+          access: "restricted",
           created: threadData.created,
           author: authorContact,
           channelId: calendarId,

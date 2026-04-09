@@ -487,7 +487,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     type: "email",
     title: subject || "Email",
     created: new Date(parseInt(parentMessage.internalDate)),
-    private: true,
+    access: "restricted",
     meta: {
       threadId: thread.id,
       historyId: thread.historyId,
@@ -536,7 +536,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       author: senderActor,
       content,
       contentType,
-      private: true,
+      accessContacts: [],
       mentions: mentions.length > 0 ? mentions : undefined,
       created: new Date(parseInt(message.internalDate)),
       checkForTasks: true,
