@@ -374,7 +374,7 @@ export class Integrations extends Tool implements IAuth {
   ): Promise<void> {
     await this.store.set(`channel_access:${provider}:${actorId}`, channels);
 
-    // Update link_types on existing enabled source_channels.
+    // Update link_types on existing source_channels (regardless of enabled state).
     // Offset updated_at by 1ms to ensure the change is picked up by the
     // next sync pull (the cursor uses millisecond-truncated timestamps).
     const flat = this.flattenChannels(channels);
@@ -389,7 +389,6 @@ export class Integrations extends Tool implements IAuth {
           })
           .where("priority_twist_id", "=", this.priorityTwistId)
           .where("channel_id", "=", channel.id)
-          .where("enabled", "=", true)
           .execute();
       }
     }
@@ -1437,8 +1436,26 @@ export class Integrations extends Tool implements IAuth {
       title = channelObj?.title;
     }
 
-    // Extract per-channel linkTypes if available
-    const linkTypes = channelObj?.linkTypes ?? null;
+    // Extract per-channel linkTypes if available.
+    // Fall back to existing source_channel rows for the same channel_id
+    // (handles re-add after archive, where KV may not have been populated yet).
+    let linkTypes = channelObj?.linkTypes ?? null;
+    if (!linkTypes) {
+      const existingChannel = await this.db
+        .selectFrom("source_channel")
+        .select("link_types")
+        .where("channel_id", "=", channelId)
+        .where("link_types", "is not", null)
+        .limit(1)
+        .executeTakeFirst();
+      if (existingChannel?.link_types) {
+        try {
+          linkTypes = typeof existingChannel.link_types === "string"
+            ? JSON.parse(existingChannel.link_types)
+            : existingChannel.link_types;
+        } catch { /* ignore parse errors */ }
+      }
+    }
 
     await this.store.set(`channel_config:${provider}:${channelId}`, {
       enabled: true,
