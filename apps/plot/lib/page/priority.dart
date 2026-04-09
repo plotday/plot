@@ -661,20 +661,26 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
-        final isTwistDev =
-            context.read<PriorityBloc>().state.context.isTwistDev;
-        if (layoutState.middlePanelVisible && !isTwistDev) {
-          // Trigger navigation after build completes if we're not already on the new route
-          if (!context.router.currentPath.endsWith('/new')) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && layoutState.middlePanelVisible) {
-                context.router.navigate(NewThreadRoute());
+        // Use BlocSelector so this rebuilds when isTwistDev changes —
+        // setPriority updates the bloc asynchronously, and context.read
+        // would miss the transition (causing a duplicate PriorityPage).
+        return BlocSelector<PriorityBloc, PriorityState, bool>(
+          selector: (state) => state.context.isTwistDev,
+          builder: (context, isTwistDev) {
+            if (layoutState.middlePanelVisible && !isTwistDev) {
+              // Trigger navigation after build completes if we're not already on the new route
+              if (!context.router.currentPath.endsWith('/new')) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && layoutState.middlePanelVisible) {
+                    context.router.navigate(NewThreadRoute());
+                  }
+                });
               }
-            });
-          }
-          return const LoadingPage();
-        }
-        return PriorityPage(priorityId: widget.priorityId);
+              return const LoadingPage();
+            }
+            return PriorityPage(priorityId: widget.priorityId);
+          },
+        );
       },
     );
   }
