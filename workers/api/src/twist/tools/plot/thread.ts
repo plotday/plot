@@ -1,4 +1,5 @@
 import pLimit from "p-limit";
+import { PostHog } from "posthog-node";
 
 import { type Database, type Json } from "@plotday/db";
 import {
@@ -142,6 +143,9 @@ export async function createThread(
           upsert: JSON.stringify(prep.upsert),
           defaults: JSON.stringify(prep.defaults),
         });
+        const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
+        postHog.captureException(error as Error, undefined, { context: "plot:upsertThread", priority_twist_id: plot.priorityTwistId });
+        await postHog.shutdown();
         throw error;
       }
     } else {
@@ -336,7 +340,7 @@ async function updateThreadsByMatch(
   }
   if (activity.access !== undefined) {
     dbUpdate.access = activity.access;
-    dbUpdate.access_contacts = activity.accessContacts ?? (activity.access === "restricted" ? [] : null);
+    dbUpdate.access_contacts = activity.accessContacts ?? (activity.access === "private" ? [] : null);
   } else if (activity.accessContacts !== undefined) {
     dbUpdate.access_contacts = activity.accessContacts;
   }
@@ -408,7 +412,7 @@ export async function updateThread(
     }
     if (activity.access !== undefined) {
       dbUpdate.access = activity.access;
-      dbUpdate.access_contacts = activity.accessContacts ?? (activity.access === "restricted" ? [] : null);
+      dbUpdate.access_contacts = activity.accessContacts ?? (activity.access === "private" ? [] : null);
     } else if (activity.accessContacts !== undefined) {
       dbUpdate.access_contacts = activity.accessContacts;
     }

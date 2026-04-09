@@ -8,10 +8,11 @@ SELECT
     p.name AS author_name,
     p.email AS author_email,
     p.url AS author_url,
-    pc.child_id AS priority_child_id
+    child_p.id AS priority_child_id
 FROM
     priority_twist pt
-    JOIN priority_child pc ON pt.priority_id = pc.priority_id
+    JOIN priority install_p ON pt.priority_id = install_p.id
+    JOIN priority child_p ON child_p.path <@ install_p.path
     JOIN twist t ON pt.twist_id = t.id
     JOIN twist_admin ta ON t.twist_admin_id = ta.id
     LEFT JOIN publisher p ON ta.publisher_id = p.id
