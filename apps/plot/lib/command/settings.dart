@@ -83,7 +83,10 @@ List<StaticCommandGroup> settingsCommandsFromState(
     );
     if (twistDev != null) {
       final isArchived = twistDev.archivedAt != null;
-      if (!isArchived || showAllPriorities) {
+      final hasChildren = prioritiesState.priorities.any(
+        (p) => p.parentId == twistDev.id,
+      );
+      if ((!isArchived || showAllPriorities) && hasChildren) {
         twistDevCmd = OpenTwistDev(twistDev);
       }
     }
