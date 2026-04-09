@@ -1889,7 +1889,7 @@ List<StaticCommandGroup> threadCommandGroupsSync(
   final activeTags = remove.map((cmd) => cmd.tag).toList();
   final suggestedTags = add.map((cmd) => cmd.tag).toList();
   final activeTagCounts = {
-    for (final tag in activeTags) tag: thread.tags[tag]?.length ?? 0,
+    for (final tag in activeTags) tag: TagActors.countOf(thread.tags[tag]),
   };
 
   ShowCommands makeShowAll() => ShowCommands(

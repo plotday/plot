@@ -805,7 +805,11 @@ class Note extends Equatable implements Comparable<Note> {
       return '';
     }
 
-    return Note._formatActorNames(actorIds);
+    final hiddenCount = actorIds is TagActors
+        ? actorIds.count - actorIds.length
+        : 0;
+
+    return Note._formatActorNames(actorIds, hiddenCount: hiddenCount);
   }
 
   /// Get the author name formatted for display
@@ -826,8 +830,11 @@ class Note extends Equatable implements Comparable<Note> {
   /// Helper to format a list of actorIds into a display string
   /// - Replaces current user with "You"
   /// - Shows first 3 names + count if more exist
-  static Future<String> _formatActorNames(List<ActorId> actorIds) async {
-    if (actorIds.isEmpty) return '';
+  static Future<String> _formatActorNames(
+    List<ActorId> actorIds, {
+    int hiddenCount = 0,
+  }) async {
+    if (actorIds.isEmpty && hiddenCount == 0) return '';
 
     // Fetch actor names from the database
     final actorRows =
@@ -856,9 +863,13 @@ class Note extends Equatable implements Comparable<Note> {
     }
 
     // Format the output
-    return displayNames.length <= 3
-        ? displayNames.join(', ')
-        : '${displayNames.take(3).join(', ')} + ${displayNames.length - 3} more';
+    final totalExtra = (displayNames.length > 3 ? displayNames.length - 3 : 0) + hiddenCount;
+    if (totalExtra == 0) {
+      return displayNames.join(', ');
+    } else {
+      final first3 = displayNames.take(3).join(', ');
+      return '$first3 + $totalExtra more';
+    }
   }
 
   // Tag manipulation methods

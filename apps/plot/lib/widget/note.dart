@@ -404,7 +404,9 @@ class NoteCommands extends StatelessWidget {
               ? CommandWrapper(command, subtitle: Value(actorNames))
               : command;
 
-          final count = tag == Tag.reply ? 1 : (note.tags[tag]?.length ?? 0);
+          final count = tag == Tag.reply
+              ? 1
+              : TagActors.countOf(note.tags[tag]);
 
           // Twist tags are display-only (not interactive)
           if (tag == Tag.twist) {
@@ -560,7 +562,7 @@ class NoteCommands extends StatelessWidget {
                     );
                     final count = tag == Tag.reply
                         ? 1
-                        : (note.tags[tag]?.length ?? 0);
+                        : TagActors.countOf(note.tags[tag]);
                     // Twist tags are display-only (not interactive)
                     if (tag == Tag.twist) {
                       return CountBadge(

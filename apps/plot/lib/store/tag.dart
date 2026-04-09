@@ -249,6 +249,29 @@ enum Tag {
   String toString() => name;
 }
 
+/// A list of actor IDs for a tag, with an optional total count that may differ
+/// from the list length when some actors are hidden (e.g. viewer privacy).
+/// Extends DelegatingList so it works as a drop-in List<ActorId> everywhere.
+class TagActors extends DelegatingList<ActorId> {
+  /// Total count of actors including hidden ones.
+  final int count;
+
+  TagActors(List<ActorId> actors, [int? count])
+      : count = count ?? actors.length,
+        super(actors);
+
+  /// Create a TagActors with no count override.
+  factory TagActors.from(List<ActorId> actors) => TagActors(actors);
+
+  /// Get total count from a tag actor list, using [TagActors.count] when
+  /// available (includes hidden voters), falling back to list length.
+  static int countOf(List<ActorId>? actors) {
+    if (actors == null) return 0;
+    if (actors is TagActors) return actors.count;
+    return actors.length;
+  }
+}
+
 class TagsConverter extends TypeConverter<Map<Tag, List<ActorId>>?, String?>
     with
         JsonTypeConverter2<
@@ -290,15 +313,28 @@ class TagsConverter extends TypeConverter<Map<Tag, List<ActorId>>?, String?>
     for (final entry in json.entries) {
       try {
         final id = int.parse(entry.key);
-        final userIds = (entry.value as List<dynamic>)
-            .map((dynamic id) => ActorId.fromString(id as String))
-            .toList();
-
         final tag = Tag.get(id: id);
-        if (tag != null) {
-          result[tag] = userIds;
-        } else {
+        if (tag == null) {
           log.warning('No tag found for id: $id');
+          continue;
+        }
+
+        final value = entry.value;
+        if (value is Map<String, dynamic>) {
+          // New format: { "c": totalCount, "a": [actorIds] }
+          final count = value['c'] as int;
+          final actors = (value['a'] as List<dynamic>)
+              .whereType<String>()
+              .map(ActorId.fromString)
+              .toList();
+          result[tag] = TagActors(actors, count);
+        } else if (value is List<dynamic>) {
+          // Standard format: [actorIds]
+          final actors = value
+              .whereType<String>()
+              .map(ActorId.fromString)
+              .toList();
+          result[tag] = TagActors(actors);
         }
       } catch (e, t) {
         log.warning('Error decoding tags from JSON', e, t);
@@ -313,14 +349,22 @@ class TagsConverter extends TypeConverter<Map<Tag, List<ActorId>>?, String?>
   Map<String, dynamic>? toJson(Map<Tag, List<ActorId>>? value) {
     if (value == null) return null;
     try {
-      final Map<String, List<String>> result = {};
+      final Map<String, dynamic> result = {};
 
       for (final entry in value.entries) {
         final tag = entry.key;
-        final uuids = entry.value;
-        result[tag.id.toString()] = uuids
-            .map((uuid) => uuid.toString())
-            .toList();
+        final actors = entry.value;
+        if (actors is TagActors && actors.count != actors.length) {
+          // Preserve count override for local storage round-trip
+          result[tag.id.toString()] = {
+            'c': actors.count,
+            'a': actors.map((uuid) => uuid.toString()).toList(),
+          };
+        } else {
+          result[tag.id.toString()] = actors
+              .map((uuid) => uuid.toString())
+              .toList();
+        }
       }
 
       return result;

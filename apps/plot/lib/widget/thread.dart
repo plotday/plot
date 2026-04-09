@@ -986,7 +986,7 @@ class ThreadCommands extends HookWidget {
             ? CommandWrapper(command, subtitle: Value(actorNames))
             : command;
 
-        final count = activity.tags[tag]?.length ?? 0;
+        final count = TagActors.countOf(activity.tags[tag]);
 
         // Twist tags are display-only (not interactive)
         if (tag == Tag.twist) {
@@ -1086,7 +1086,7 @@ class ThreadCommands extends HookWidget {
                                 : null,
                           )
                         : ToggleThreadTag(activity, tag);
-                    final count = activity.tags[tag]?.length ?? 0;
+                    final count = TagActors.countOf(activity.tags[tag]);
                     // Twist tags are display-only (not interactive)
                     if (tag == Tag.twist) {
                       return CountBadge(

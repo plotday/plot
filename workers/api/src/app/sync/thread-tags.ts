@@ -77,7 +77,7 @@ threadTags.get("/sync/thread-tags", async (c) => {
     return query.execute();
   });
 
-  await stripCountTagActors(c.var.db, userId, rows);
+  await stripCountTagActors(c.var.db, userId, rows, "thread", c.var.apiVersion ?? 0);
 
   return c.json(rows as any);
 });

@@ -3469,14 +3469,23 @@ class Thread extends Equatable implements Comparable<Thread> {
       return '';
     }
 
-    return Thread._formatActorNames(actorIds);
+    // Calculate hidden voters (total count minus visible actors)
+    final hiddenCount = actorIds is TagActors
+        ? actorIds.count - actorIds.length
+        : 0;
+
+    return Thread._formatActorNames(actorIds, hiddenCount: hiddenCount);
   }
 
   /// Helper to format a list of actorIds into a display string
   /// - Replaces current user with "You"
   /// - Shows first 3 names + count if more exist
-  static Future<String> _formatActorNames(List<ActorId> actorIds) async {
-    if (actorIds.isEmpty) return '';
+  /// - [hiddenCount] adds extra hidden voters to the "more" count
+  static Future<String> _formatActorNames(
+    List<ActorId> actorIds, {
+    int hiddenCount = 0,
+  }) async {
+    if (actorIds.isEmpty && hiddenCount == 0) return '';
 
     // Fetch actor names from the database
     final actorRows =
@@ -3503,12 +3512,12 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     // Format the output
-    if (displayNames.length <= 3) {
+    final totalExtra = (displayNames.length > 3 ? displayNames.length - 3 : 0) + hiddenCount;
+    if (totalExtra == 0) {
       return displayNames.join(', ');
     } else {
       final first3 = displayNames.take(3).join(', ');
-      final remaining = displayNames.length - 3;
-      return '$first3 + $remaining more';
+      return '$first3 + $totalExtra more';
     }
   }
 
