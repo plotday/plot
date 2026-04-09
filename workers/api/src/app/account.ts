@@ -21,6 +21,7 @@ import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync } from "./sync/notify";
 import { addUserToOrgPriorities } from "./organization";
+import { getPlotPriorityTwistId } from "../utils/trial";
 
 const account = new Hono<{ Bindings: Bindings }>();
 
@@ -597,13 +598,18 @@ account.post("/activate", async (c) => {
 
       // 9f: Create reverse trial thread
       try {
+        // Use the Plot twist as author so plan threads appear from Plot, not the user
+        const plotPriorityTwistId = await getPlotPriorityTwistId(c.var.db, plotAppPriority.id);
+
         const trialThread = await c.var.db
           .insertInto("thread")
           .values({
             priority_id: plotAppPriority.id,
             title: "Your Core plan trial",
-            created_by: user.id,
+            created_by: plotPriorityTwistId ?? user.id,
             key: "core-trial",
+            access: "private",
+            ...(userContact ? { access_contacts: [userContact.id] } : {}),
           })
           .onConflict((oc) =>
             oc.columns(["priority_id", "key"]).doNothing()
@@ -619,8 +625,8 @@ account.post("/activate", async (c) => {
               thread_id: trialThread.id,
               content:
                 "Welcome to Plot! You have the **Core plan** free for 30 days — that's up to 5 connections and 2 twists. We'll let you know before your trial ends.",
-              created_by: user.id,
-              author_id: user.id,
+              created_by: plotPriorityTwistId ?? user.id,
+              author_id: plotPriorityTwistId ?? user.id,
             })
             .execute();
 

@@ -7,6 +7,23 @@ import { PLAN_LIMITS } from "./limits";
 import { createLogger } from "@plotday/worker-util";
 
 /**
+ * Find the Plot twist's priority_twist ID that covers a given priority.
+ * Looks through the priority hierarchy via priority_child_twist.
+ */
+export async function getPlotPriorityTwistId(
+  db: Kysely<DB>,
+  priorityId: string
+): Promise<string | null> {
+  const row = await db
+    .selectFrom("priority_child_twist")
+    .select("id")
+    .where("priority_child_id", "=", priorityId)
+    .where("name", "=", "Plot")
+    .executeTakeFirst();
+  return row?.id ?? null;
+}
+
+/**
  * Get names of personal connections that exceed the free plan limit.
  * Ordered by connected_at desc (most recent first) — the ones that would be
  * removed on downgrade.
@@ -109,9 +126,10 @@ export async function addTrialNote(
   userId: string,
   content: string,
   key: string,
-  addTodo: boolean
+  addTodo: boolean,
+  plotPriorityTwistId?: string | null
 ): Promise<void> {
-  // Look up user's primary contact for author_id
+  // Look up user's primary contact for todo tags
   const contact = await db
     .selectFrom("contact")
     .select("id")
@@ -119,7 +137,9 @@ export async function addTrialNote(
     .where("primary", "=", true)
     .executeTakeFirst();
 
-  const authorId = contact?.id ?? userId;
+  // Use the Plot twist as author so the note appears from Plot, not the user
+  const createdBy = plotPriorityTwistId ?? userId;
+  const authorId = plotPriorityTwistId ?? contact?.id ?? userId;
 
   // Insert note with key for idempotency
   const note = await db
@@ -127,7 +147,7 @@ export async function addTrialNote(
     .values({
       thread_id: threadId,
       content,
-      created_by: userId,
+      created_by: createdBy,
       author_id: authorId,
       key,
     })
@@ -185,7 +205,7 @@ export async function completeTrialTodos(
  */
 async function findTrialThread(
   db: Kysely<DB>
-): Promise<{ threadId: string; priorityId: string } | null> {
+): Promise<{ threadId: string; priorityId: string; plotPriorityTwistId: string | null } | null> {
   const plotAppPriority = await db
     .selectFrom("priority")
     .select("id")
@@ -203,7 +223,9 @@ async function findTrialThread(
 
   if (!thread) return null;
 
-  return { threadId: thread.id, priorityId: plotAppPriority.id };
+  const plotPriorityTwistId = await getPlotPriorityTwistId(db, plotAppPriority.id);
+
+  return { threadId: thread.id, priorityId: plotAppPriority.id, plotPriorityTwistId };
 }
 
 /**
@@ -230,7 +252,8 @@ export async function handleTrialUpgrade(
     userId,
     "You upgraded! Thanks for choosing Plot. All your connections and twists are yours to keep.",
     "upgraded",
-    false
+    false,
+    trial.plotPriorityTwistId
   );
 
   // Complete outstanding todo tags
@@ -410,7 +433,7 @@ export async function expireTrial(
 
     content += `You can upgrade anytime to unlock more connections and twists. [Upgrade →](${siteRoot}/upgrade)`;
 
-    await addTrialNote(db, trial.threadId, userId, content, "expired", false);
+    await addTrialNote(db, trial.threadId, userId, content, "expired", false, trial.plotPriorityTwistId);
 
     // Complete any remaining todos
     await completeTrialTodos(db, trial.threadId);

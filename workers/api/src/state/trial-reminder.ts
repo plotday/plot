@@ -10,6 +10,7 @@ import {
   expireTrial,
   getExcessConnectionNames,
   getExcessTwistNames,
+  getPlotPriorityTwistId,
 } from "../utils/trial";
 
 type NextAction = "7day" | "2day" | "expire" | "done";
@@ -147,6 +148,16 @@ export class TrialReminder extends DurableObject<Bindings> {
 
         const siteRoot = this.env.SITE_ROOT || "https://plot.day";
 
+        // Look up the Plot twist covering the trial thread's priority
+        const plotApp = await db
+          .selectFrom("thread")
+          .select("priority_id")
+          .where("id", "=", this.trialThreadId!)
+          .executeTakeFirst();
+        const plotPriorityTwistId = plotApp
+          ? await getPlotPriorityTwistId(db, plotApp.priority_id)
+          : null;
+
         switch (this.nextAction) {
           case "7day": {
             const excessConnections = await getExcessConnectionNames(
@@ -167,7 +178,8 @@ export class TrialReminder extends DurableObject<Bindings> {
               this.userId!,
               content,
               "reminder-7day",
-              true
+              true,
+              plotPriorityTwistId
             );
 
             // Notify sync
@@ -203,7 +215,8 @@ export class TrialReminder extends DurableObject<Bindings> {
               this.userId!,
               content,
               "reminder-2day",
-              true
+              true,
+              plotPriorityTwistId
             );
 
             // Notify sync
