@@ -2115,8 +2115,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   String get access => _thread.access;
   List<Uuid>? get accessContacts => _thread.accessContacts;
   bool get isPublic => access == 'public';
-  bool get isRestricted => access == 'private';
-  bool get isPrivate => access != 'public';
+  bool get isPrivate => access == 'private';
   DateTime? get lastNoteCreatedAt => _thread.lastNoteCreatedAt;
   DateTime? get lastNoteSourceCreatedAt => _thread.lastNoteSourceCreatedAt;
   RecurrenceRule? get recurrenceRule =>
