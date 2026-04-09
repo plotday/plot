@@ -2631,7 +2631,7 @@ class Store extends _$Store {
       await _safeAddColumn(m, threads, threads.access);
       await _safeAddColumn(m, threads, threads.accessContacts);
       await m.database.customStatement(
-        "UPDATE threads SET access = CASE WHEN private = 1 THEN 'restricted' ELSE 'members' END",
+        "UPDATE threads SET access = CASE WHEN private = 1 THEN 'private' ELSE 'members' END",
       );
       // Drop old private and mentions columns by rebuilding the table
       // ignore: experimental_member_use

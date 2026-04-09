@@ -1260,7 +1260,7 @@ class ToggleThreadPrivate extends _UpdateThreadCommand {
     if (_readOnly) return const CommandDone();
     await saveOptimistically(
       context,
-      thread.copyWith(access: thread.isPrivate ? 'public' : 'restricted'),
+      thread.copyWith(access: thread.isPrivate ? 'public' : 'private'),
     );
     return const CommandDone();
   }

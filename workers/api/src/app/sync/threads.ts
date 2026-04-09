@@ -134,7 +134,7 @@ threads.post("/sync/threads", async (c) => {
   if (apiVersion < 1 && 'private' in threadData) {
     if (threadData.private === true) {
       // Private thread: check if priority has viewers to determine access level
-      // For priorities with viewers, use 'restricted'; otherwise use 'members'
+      // For priorities with viewers, use 'private'; otherwise use 'members'
       if (threadData.priority_id) {
         const hasViewers = await c.var.db
           .selectFrom("priority_user")

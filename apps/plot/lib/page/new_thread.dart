@@ -199,7 +199,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         // Viewers: always private
         final bloc = context.read<PriorityBloc>();
         if (!bloc.state.draft.isPrivate) {
-          await bloc.updateDraft(bloc.state.draft.copyWith(access: 'restricted'));
+          await bloc.updateDraft(bloc.state.draft.copyWith(access: 'private'));
         }
       } else if (priority.sharing) {
         // Members: default to private if priority has viewers
@@ -209,7 +209,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         if (viewers.isNotEmpty && mounted) {
           final bloc = context.read<PriorityBloc>();
           if (!bloc.state.draft.isPrivate) {
-            await bloc.updateDraft(bloc.state.draft.copyWith(access: 'restricted'));
+            await bloc.updateDraft(bloc.state.draft.copyWith(access: 'private'));
           }
         }
       }

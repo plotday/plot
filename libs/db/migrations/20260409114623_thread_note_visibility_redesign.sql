@@ -72,15 +72,15 @@ UPDATE "public"."thread" SET access = 'public'
 WHERE private = FALSE
   AND priority_id IN (SELECT priority_id FROM _priorities_with_viewers);
 
--- Other priorities: private=true → access='restricted'
-UPDATE "public"."thread" SET access = 'restricted'
+-- Other priorities: private=true → access='private'
+UPDATE "public"."thread" SET access = 'private'
 WHERE private = TRUE
   AND priority_id NOT IN (SELECT priority_id FROM _priorities_with_viewers);
 
 -- Priorities with viewers: private=true stays as access='members' (the default)
 -- Other priorities: private=false stays as access='members' (the default)
 
--- Thread access_contacts: for restricted threads, aggregate user contacts from note access_contacts
+-- Thread access_contacts: for private threads, aggregate user contacts from note access_contacts
 UPDATE "public"."thread" t SET
     access_contacts = sub.contacts
 FROM (
@@ -89,27 +89,27 @@ FROM (
     WHERE n.access_contacts IS NOT NULL AND array_length(n.access_contacts, 1) > 0
     GROUP BY n.thread_id
 ) sub
-WHERE t.id = sub.thread_id AND t.access = 'restricted';
+WHERE t.id = sub.thread_id AND t.access = 'private';
 
 DROP TABLE _priorities_with_viewers;
 
-ALTER TABLE "public"."thread" ADD CONSTRAINT "thread_access_valid" CHECK (access = ANY (ARRAY['public'::text, 'members'::text, 'restricted'::text]));
+ALTER TABLE "public"."thread" ADD CONSTRAINT "thread_access_valid" CHECK (access = ANY (ARRAY['public'::text, 'members'::text, 'private'::text]));
 -- NOTE: DROP COLUMN "private" moved to end of migration (after function recreation)
 -- Create index "idx_thread_access" to table: "thread"
 CREATE INDEX "idx_thread_access" ON "public"."thread" ("access") WHERE (access <> 'public'::text);
 -- Create index "idx_thread_access_contacts" to table: "thread"
 CREATE INDEX "idx_thread_access_contacts" ON "public"."thread" USING GIN ("access_contacts") WHERE (access_contacts IS NOT NULL);
 -- Set comment to column: "access" on table: "thread"
-COMMENT ON COLUMN "public"."thread"."access" IS 'Access level: public (everyone in priority), members (members only), restricted (author + access_contacts only). Default is members, which equals public in priorities without viewers.';
+COMMENT ON COLUMN "public"."thread"."access" IS 'Access level: public (everyone in priority), members (members only), private (author + access_contacts only). Default is members, which equals public in priorities without viewers.';
 -- Set comment to column: "access_contacts" on table: "thread"
-COMMENT ON COLUMN "public"."thread"."access_contacts" IS 'Array of contact_ids granted additional access beyond the base access level. For members access, these are viewer-role contacts. For restricted access, these are the only contacts who can see the thread (besides the author).';
+COMMENT ON COLUMN "public"."thread"."access_contacts" IS 'Array of contact_ids granted additional access beyond the base access level. For members access, these are viewer-role contacts. For private access, these are the only contacts who can see the thread (besides the author).';
 -- Modify "apply_default_thread_icon" function
 CREATE OR REPLACE FUNCTION "public"."apply_default_thread_icon" () RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     v_default_icon text;
 BEGIN
     -- Apply when icon is unset or is a default sub-type auto-assigned by the app
-    IF (NEW.icon IS NULL OR NEW.icon IN ('notes', 'discussion')) AND NEW.access != 'restricted' THEN
+    IF (NEW.icon IS NULL OR NEW.icon IN ('notes', 'discussion')) AND NEW.access != 'private' THEN
         SELECT
             default_thread_icon INTO v_default_icon
         FROM

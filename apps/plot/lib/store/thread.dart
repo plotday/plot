@@ -2115,7 +2115,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   String get access => _thread.access;
   List<Uuid>? get accessContacts => _thread.accessContacts;
   bool get isPublic => access == 'public';
-  bool get isRestricted => access == 'restricted';
+  bool get isRestricted => access == 'private';
   bool get isPrivate => access != 'public';
   DateTime? get lastNoteCreatedAt => _thread.lastNoteCreatedAt;
   DateTime? get lastNoteSourceCreatedAt => _thread.lastNoteSourceCreatedAt;
@@ -3225,7 +3225,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           archivedAt: Value(archivedAt == null ? DateTime.now() : null),
         );
       case Tag.private:
-        return copyWith(access: isPrivate ? 'public' : 'restricted');
+        return copyWith(access: isPrivate ? 'public' : 'private');
       case Tag.todo:
         // Toggle per-user todo (star/unstar)
         if (todo) {

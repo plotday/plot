@@ -68,12 +68,12 @@ WHERE
     AND (a.draft = FALSE OR a.created_by = upe.user_id)
     -- Hidden by note-level OR thread-level access restriction
     AND (
-        -- Note is restricted and user can't see it
+        -- Note is private and user can't see it
         (n.access_contacts IS NOT NULL
             AND n.created_by != upe.user_id
             AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(n.access_contacts, ARRAY[]::uuid[]))))
         OR
-        -- Thread is restricted and user can't see it
+        -- Thread is private and user can't see it
         (a.access != 'public'
             AND a.created_by != upe.user_id
             AND NOT (a.access = 'members' AND upe.role = 'member')

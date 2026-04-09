@@ -914,7 +914,7 @@ export async function prepareThreadForDb(
     preview: previewText,
     draft: false,
     access: activity.access ?? "members",
-    access_contacts: activity.accessContacts ?? (activity.access === "restricted" ? [] : null),
+    access_contacts: activity.accessContacts ?? (activity.access === "private" ? [] : null),
     sync_depth: plot.syncDepth + 1,
     ...(activity.archived !== undefined
       ? { archived_at: activity.archived ? new Date().toISOString() : null }
@@ -961,7 +961,7 @@ export async function prepareThreadForDb(
     }
     if (activity.access !== undefined) {
       upsertFields.access = activity.access;
-      upsertFields.access_contacts = activity.accessContacts ?? (activity.access === "restricted" ? [] : null);
+      upsertFields.access_contacts = activity.accessContacts ?? (activity.access === "private" ? [] : null);
     } else if (activity.accessContacts !== undefined) {
       upsertFields.access_contacts = activity.accessContacts;
     }

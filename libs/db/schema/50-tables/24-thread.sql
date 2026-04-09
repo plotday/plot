@@ -65,7 +65,7 @@ WHERE
     key IS NOT NULL;
 
 ALTER TABLE "public"."thread"
-    ADD CONSTRAINT thread_access_valid CHECK (access IN ('public', 'members', 'restricted'));
+    ADD CONSTRAINT thread_access_valid CHECK (access IN ('public', 'members', 'private'));
 
 CREATE INDEX idx_thread_access ON "public"."thread" ("access")
 WHERE
@@ -75,9 +75,9 @@ CREATE INDEX idx_thread_access_contacts ON "public"."thread" USING gin ("access_
 WHERE
     access_contacts IS NOT NULL;
 
-COMMENT ON COLUMN "public"."thread"."access" IS 'Access level: public (everyone in priority), members (members only), restricted (author + access_contacts only). Default is members, which equals public in priorities without viewers.';
+COMMENT ON COLUMN "public"."thread"."access" IS 'Access level: public (everyone in priority), members (members only), private (author + access_contacts only). Default is members, which equals public in priorities without viewers.';
 
-COMMENT ON COLUMN "public"."thread"."access_contacts" IS 'Array of contact_ids granted additional access beyond the base access level. For members access, these are viewer-role contacts. For restricted access, these are the only contacts who can see the thread (besides the author).';
+COMMENT ON COLUMN "public"."thread"."access_contacts" IS 'Array of contact_ids granted additional access beyond the base access level. For members access, these are viewer-role contacts. For private access, these are the only contacts who can see the thread (besides the author).';
 
 COMMENT ON COLUMN "public"."thread"."created_by" IS 'The user_id or priority_twist_id that actually created this thread. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
 

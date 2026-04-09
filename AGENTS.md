@@ -305,14 +305,14 @@ Twists and sources that require authentication must handle multi-user priorities
 
 #### Private Auth Activities
 
-When a twist creates an auth activity in `activate()`, it should use `access: "restricted"` with `accessContacts` targeting the installing user so only they see the auth prompt:
+When a twist creates an auth activity in `activate()`, it should use `access: "private"` with `accessContacts` targeting the installing user so only they see the auth prompt:
 
 ```typescript
 async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
   await this.tools.plot.createActivity({
     type: ActivityType.Action,
     title: "Connect your account",
-    access: "restricted",
+    access: "private",
     accessContacts: context?.actor ? [context.actor.id] : [],
     notes: [{
       links: [authLink],
