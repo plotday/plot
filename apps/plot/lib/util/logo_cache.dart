@@ -67,10 +67,10 @@ class LogoCache {
           await http.get(Uri.parse(fetchUrl), headers: headers);
       if (response.statusCode == 200) {
         final bytes = response.bodyBytes;
-        // ICO format (header: 00 00 01 00) is not supported by Flutter's
-        // image decoder — treat as a failed download so the fallback icon
-        // is shown instead of crashing.
-        if (_isIco(bytes)) return null;
+        // Flutter web's image decoder doesn't support ICO format. Try to
+        // extract an embedded PNG from the ICO; fall back to null if the
+        // ICO only contains BMP data. Native platforms handle ICO natively.
+        if (kIsWeb && _isIco(bytes)) return _extractPngFromIco(bytes);
         return bytes;
       }
       return null;
@@ -94,6 +94,54 @@ class LogoCache {
       bytes[1] == 0x00 &&
       bytes[2] == 0x01 &&
       bytes[3] == 0x00;
+
+  static const _pngSignature = [0x89, 0x50, 0x4E, 0x47];
+
+  /// Extracts the largest PNG image embedded in an ICO file.
+  ///
+  /// ICO format: 6-byte header (reserved, type, count) followed by 16-byte
+  /// directory entries (width, height, …, size[4], offset[4]). Each entry
+  /// points to image data that is either BMP or PNG. We pick the largest PNG.
+  /// Returns null if no PNG entry is found (BMP-only ICO).
+  static Uint8List? _extractPngFromIco(Uint8List ico) {
+    if (ico.length < 6) return null;
+    final count = ico[4] | (ico[5] << 8);
+
+    int bestSize = 0;
+    int bestOffset = 0;
+    int bestLength = 0;
+
+    for (int i = 0; i < count; i++) {
+      final dirStart = 6 + i * 16;
+      if (dirStart + 16 > ico.length) return null;
+      final dataSize = ico[dirStart + 8] |
+          (ico[dirStart + 9] << 8) |
+          (ico[dirStart + 10] << 16) |
+          (ico[dirStart + 11] << 24);
+      final dataOffset = ico[dirStart + 12] |
+          (ico[dirStart + 13] << 8) |
+          (ico[dirStart + 14] << 16) |
+          (ico[dirStart + 15] << 24);
+
+      if (dataOffset + dataSize > ico.length) continue;
+      if (dataSize < 4) continue;
+
+      // Check for PNG signature at the start of the image data.
+      if (ico[dataOffset] == _pngSignature[0] &&
+          ico[dataOffset + 1] == _pngSignature[1] &&
+          ico[dataOffset + 2] == _pngSignature[2] &&
+          ico[dataOffset + 3] == _pngSignature[3]) {
+        if (dataSize > bestSize) {
+          bestSize = dataSize;
+          bestOffset = dataOffset;
+          bestLength = dataSize;
+        }
+      }
+    }
+
+    if (bestLength == 0) return null;
+    return Uint8List.sublistView(ico, bestOffset, bestOffset + bestLength);
+  }
 
   // ---------------------------------------------------------------------------
   // Disk caching (non-web only)
@@ -122,9 +170,7 @@ class LogoCache {
       final dir = await _getDiskCacheDir();
       final file = File('${dir.path}/${_fileNameForUrl(url)}');
       if (file.existsSync()) {
-        final bytes = await file.readAsBytes();
-        if (_isIco(bytes)) return null;
-        return bytes;
+        return await file.readAsBytes();
       }
       return null;
     } catch (_) {
