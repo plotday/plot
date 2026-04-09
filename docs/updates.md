@@ -1,3 +1,4 @@
+- Fixed web links added to threads not appearing on other devices until a manual sync
 - Fixed a crash on web when scrolling to threads with certain website icons that use an unsupported image format
 - Fixed archived connections sometimes still appearing in the connections list until a new connection was added
 - Fixed completed connector issues (like Linear "Done" tickets) incorrectly appearing in the agenda — status was not being matched correctly, causing done items to show as active tasks

@@ -530,11 +530,13 @@ BEGIN
     FROM
         new_table;
     -- Get all users with access to the link's priority (including hierarchical access)
+    -- Use COALESCE to derive priority from thread when link has no direct priority_id
     FOR v_user_id IN SELECT DISTINCT
         upe.user_id
     FROM
         new_table n
-        JOIN "user".priority_expanded upe ON upe.priority_id = n.priority_id
+        LEFT JOIN thread t ON t.id = n.thread_id
+        JOIN "user".priority_expanded upe ON upe.priority_id = COALESCE(n.priority_id, t.priority_id)
     WHERE
         upe.archived_at IS NULL
     ORDER BY
