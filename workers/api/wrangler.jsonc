@@ -308,7 +308,10 @@
         {
           "binding": "HYPERDRIVE",
           "id": "831ea7d10ef54346b084baaa1a46dfa6",
-          "localConnectionString": "postgresql://postgres:postgres@localhost:54322/postgres"
+          "localConnectionString": "postgresql://postgres:postgres@localhost:54322/postgres",
+          "caching": {
+            "disabled": true
+          }
         }
       ],
       "kv_namespaces": [
