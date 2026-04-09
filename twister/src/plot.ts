@@ -383,6 +383,14 @@ export type Tags = { [K in Tag]?: ActorId[] };
 export type NewTags = { [K in Tag]?: NewActor[] };
 
 /**
+ * Thread access level determining visibility.
+ * - "public": Visible to all users with priority access
+ * - "members": Visible to priority members (default for shared priorities)
+ * - "private": Visible only to creator and contacts listed in accessContacts
+ */
+export type ThreadAccessLevel = "public" | "members" | "private";
+
+/**
  * Common fields shared by both Thread and Note entities.
  */
 export type ThreadCommon = {
@@ -396,14 +404,10 @@ export type ThreadCommon = {
    * to the current time, which is almost never correct for synced data.
    */
   created: Date;
-  /** Whether this thread is private (only visible to creator) */
-  private: boolean;
   /** Whether this thread has been archived */
   archived: boolean;
   /** Tags attached to this thread. Maps tag ID to array of actor IDs who added that tag. */
   tags: Tags;
-  /** Array of actor IDs (users, contacts, or twists) mentioned in this thread via @-mentions */
-  mentions: ActorId[];
 };
 
 /**
@@ -417,6 +421,10 @@ type ThreadFields = ThreadCommon & {
   priority: Priority;
   /** The thread's sub-type/category. Determines the displayed icon. */
   type: ThreadType | null;
+  /** Thread access level: "public", "members", or "private" */
+  access: ThreadAccessLevel;
+  /** Contacts who can see a private thread (empty array for creator-only). Only meaningful when access is "private". */
+  accessContacts: ActorId[];
   /** The schedule associated with this thread, if any */
   schedule?: Schedule;
   /** Source-specific metadata from the thread's link, populated on callbacks */
@@ -479,7 +487,7 @@ export type PickPriorityConfig = {
  * ```
  */
 export type NewThread = Partial<
-  Omit<ThreadFields, "priority" | "tags" | "mentions" | "id">
+  Omit<ThreadFields, "priority" | "tags" | "id">
 > &
   (
     | {
@@ -556,7 +564,7 @@ export type ThreadFilter = {
  * that can be applied uniformly across many threads are included.
  */
 type ThreadBulkUpdateFields = Partial<
-  Pick<ThreadFields, "title" | "private" | "archived">
+  Pick<ThreadFields, "title" | "access" | "accessContacts" | "archived">
 >;
 
 /**
@@ -644,6 +652,13 @@ export type Note = ThreadCommon & {
   actions: Array<Action> | null;
   /** The note this is a reply to, or null if not a reply */
   reNote: { id: Uuid } | null;
+  /**
+   * Contacts who can see this note, or null if the note inherits thread visibility.
+   * When set (even to []), the note is private to the listed contacts plus the creator.
+   */
+  accessContacts: ActorId[] | null;
+  /** Priority twist IDs (twists/connectors) mentioned for dispatch routing. Does not include user contacts. */
+  mentions: ActorId[];
 };
 
 /**
@@ -729,7 +744,7 @@ export type NewNote = Partial<
  */
 export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
   Partial<
-    Pick<Note, "private" | "archived" | "content" | "actions" | "reNote">
+    Pick<Note, "accessContacts" | "archived" | "content" | "actions" | "reNote">
   > & {
     /**
      * Format of the note content. Determines how the note is processed:
@@ -943,11 +958,15 @@ export type NewLink = (
     /** The person assigned to the item. */
     assignee?: NewActor | null;
     /**
-     * Whether the thread is private (only visible to creator and mentioned users).
-     * When true, thread visibility is restricted to the twist that created it
-     * and any users mentioned in the thread's notes.
+     * Thread access level: "public", "members" (default), or "private".
+     * When "private", thread visibility is limited to the creator and contacts in accessContacts.
      */
-    private?: boolean;
+    access?: ThreadAccessLevel;
+    /**
+     * Contacts who can see a private thread (empty array for creator-only).
+     * Only meaningful when access is "private".
+     */
+    accessContacts?: ActorId[];
     /**
      * Whether the thread should be marked as unread for users.
      * - undefined/omitted (default): Thread is unread for users, except auto-marked

@@ -509,7 +509,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         type: "event",
         title: icsEvent.summary || "Cancelled Event",
         status: "Cancelled",
-        private: true,
+        access: "private",
         preview: "Cancelled",
         channelId: calendarHref,
         meta: {
@@ -655,7 +655,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
           : icsEvent.status === "TENTATIVE"
             ? "Tentative"
             : "Confirmed",
-      private: true,
+      access: "private",
       created: icsEvent.created
         ? parseICSDateTimeToDate(icsEvent.created)
         : undefined,

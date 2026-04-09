@@ -1,5 +1,6 @@
 {
   "name": "@plotday/connector-posthog",
+  "private": true,
   "displayName": "PostHog",
   "description": "Sync PostHog events as person threads",
   "publisher": "Plot",
@@ -43,8 +44,5 @@
     "connector",
     "posthog",
     "analytics"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }
