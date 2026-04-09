@@ -504,7 +504,11 @@ class EditPriorityCommand extends ShowForm {
                 if (p.path.isParent(candidate.path)) return false;
                 if (p.personal && !candidate.personal) return false;
                 // Team roots can only be placed under personal priorities
-                if (isRoot && p.organizationId != null && !candidate.personal) {
+                // or other priorities in the same team
+                if (isRoot &&
+                    p.organizationId != null &&
+                    !candidate.personal &&
+                    candidate.organizationId != effectiveOrgId) {
                   return false;
                 }
                 // Team descendants can only move within the same team
