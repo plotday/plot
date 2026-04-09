@@ -27,6 +27,7 @@ connectors/<name>/
 ```json
 {
   "name": "@plotday/connector-<name>",
+  "private": true,
   "displayName": "Human Name",
   "description": "One-line purpose statement",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -60,7 +61,6 @@ connectors/<name>/
   },
   "homepage": "https://plot.day",
   "keywords": ["plot", "connector", "<name>"],
-  "publishConfig": { "access": "public" }
 }
 ```
 

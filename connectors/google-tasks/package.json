@@ -1,5 +1,6 @@
 {
   "name": "@plotday/connector-google-tasks",
+  "private": true,
   "plotTwistId": "019d4129-4aee-7629-9d7b-b9fdb87db532",
   "displayName": "Google Tasks",
   "description": "Tasks from Google Tasks",
@@ -47,7 +48,4 @@
     "connector",
     "google-tasks"
   ],
-  "publishConfig": {
-    "access": "public"
-  }
 }
