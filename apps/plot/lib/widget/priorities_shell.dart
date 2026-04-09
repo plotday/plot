@@ -32,7 +32,11 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
   }
 
   void _onTabChanged() {
-    setState(() {});
+    // Defer setState — the notifier may fire during a build frame
+    // (e.g. when PriorityPage.didChangeDependencies forces the viewer tab).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override

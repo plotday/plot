@@ -1003,11 +1003,16 @@ class NewThreadPageState extends State<NewThreadPage> {
               final isViewerMode = state.draft.priority.isViewer;
 
               if (state.draft.priority.isTwistDev) {
-                return Center(
-                  child: Text(
-                    'Select a thread',
-                    style: context.theme.typography.sm.copyWith(
-                      color: context.theme.plotColors.muted,
+                return Scaffold(
+                  translucent: true,
+                  scrollable: false,
+                  childPad: false,
+                  body: Center(
+                    child: Text(
+                      'Select a thread',
+                      style: context.theme.typography.sm.copyWith(
+                        color: context.theme.plotColors.muted,
+                      ),
                     ),
                   ),
                 );

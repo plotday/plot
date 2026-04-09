@@ -640,8 +640,7 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
       // Handles browser back / gesture back which bypass PopScope.
       context.read<PriorityBloc>().setThread(null);
       final layoutState = context.read<LayoutBloc>().state;
-      if (layoutState.middlePanelVisible &&
-          !context.read<PriorityBloc>().state.context.isTwistDev) {
+      if (layoutState.middlePanelVisible) {
         context.router.navigate(NewThreadRoute());
       }
     });
@@ -651,8 +650,7 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
   void didUpdateWidget(PriorityOnlyPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     final layoutState = context.read<LayoutBloc>().state;
-    if (layoutState.middlePanelVisible &&
-        !context.read<PriorityBloc>().state.context.isTwistDev) {
+    if (layoutState.middlePanelVisible) {
       context.router.navigate(NewThreadRoute());
     }
   }
@@ -661,26 +659,19 @@ class _PriorityOnlyPageState extends State<PriorityOnlyPage> {
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
-        // Use BlocSelector so this rebuilds when isTwistDev changes —
-        // setPriority updates the bloc asynchronously, and context.read
-        // would miss the transition (causing a duplicate PriorityPage).
-        return BlocSelector<PriorityBloc, PriorityState, bool>(
-          selector: (state) => state.context.isTwistDev,
-          builder: (context, isTwistDev) {
-            if (layoutState.middlePanelVisible && !isTwistDev) {
-              // Trigger navigation after build completes if we're not already on the new route
-              if (!context.router.currentPath.endsWith('/new')) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && layoutState.middlePanelVisible) {
-                    context.router.navigate(NewThreadRoute());
-                  }
-                });
+        if (layoutState.middlePanelVisible) {
+          // In multi-panel mode, always redirect to /new — NewThreadPage
+          // handles special cases (twist dev, viewer) itself.
+          if (!context.router.currentPath.endsWith('/new')) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && layoutState.middlePanelVisible) {
+                context.router.navigate(NewThreadRoute());
               }
-              return const LoadingPage();
-            }
-            return PriorityPage(priorityId: widget.priorityId);
-          },
-        );
+            });
+          }
+          return const LoadingPage();
+        }
+        return PriorityPage(priorityId: widget.priorityId);
       },
     );
   }
@@ -712,8 +703,14 @@ class _PriorityPageState extends State<PriorityPage> {
 
   void _onTabNotifierChanged() {
     if (_tabNotifier != null && _tabNotifier!.value != _currentTab) {
-      setState(() {
-        _currentTab = _tabNotifier!.value;
+      // Defer setState — the notifier may fire during a build frame
+      // (e.g. when didChangeDependencies forces the viewer tab).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _tabNotifier != null && _tabNotifier!.value != _currentTab) {
+          setState(() {
+            _currentTab = _tabNotifier!.value;
+          });
+        }
       });
     }
   }
@@ -760,7 +757,11 @@ class _PriorityPageState extends State<PriorityPage> {
         if (priorityBloc.state.context.isViewer &&
             _currentTab == PriorityTab.agenda) {
           _currentTab = PriorityTab.activityFeed;
-          _tabNotifier!.value = PriorityTab.activityFeed;
+          // Defer notifier update — setting it synchronously during
+          // didChangeDependencies triggers setState in ancestor listeners.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _tabNotifier?.value = PriorityTab.activityFeed;
+          });
         }
       }
     }
