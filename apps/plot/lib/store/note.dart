@@ -395,14 +395,10 @@ class Note extends Equatable implements Comparable<Note> {
           .split(RegExp(r'\s+'))
           .where((word) => word.isNotEmpty)
           .map(
-            (word) => word
-                .replaceAll("'", "''") // Escape single quotes for SQL
-                .replaceAll('"', '""') // Escape double quotes for FTS5
-                .replaceAll('*', '') // Remove asterisks
-                .replaceAll('(', '') // Remove parentheses
-                .replaceAll(')', ''),
+            // Remove FTS5 special characters to prevent syntax errors
+            (word) => word.replaceAll(RegExp(r'''['"*()/:+\-^~{}\[\]@#]'''), ''),
           )
-          .where((word) => word.isNotEmpty)
+          .where((word) => word.length >= 2)
           .map((word) => '$word*') // Add prefix matching to each word
           .join(' '); // AND multiple words together
       if (words.isNotEmpty) {

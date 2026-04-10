@@ -1262,14 +1262,10 @@ class Thread extends Equatable implements Comparable<Thread> {
           .split(RegExp(r'\s+'))
           .where((word) => word.isNotEmpty)
           .map(
-            (word) => word
-                .replaceAll("'", "''")
-                .replaceAll('"', '""')
-                .replaceAll('*', '')
-                .replaceAll('(', '')
-                .replaceAll(')', ''),
+            // Remove FTS5 special characters to prevent syntax errors
+            (word) => word.replaceAll(RegExp(r'''['"*()/:+\-^~{}\[\]@#]'''), ''),
           )
-          .where((word) => word.isNotEmpty)
+          .where((word) => word.length >= 2)
           .toList();
 
       final ftsWords = sanitizedWords.map((word) => '$word*').join(' ');

@@ -1,3 +1,5 @@
+- Fixed search being extremely slow — typing in the search field could take over a minute to show results
+- Fixed completed assigned issues from connectors like Linear staying in the to-do list after being marked done — the task was correctly shown as done but not removed from the agenda
 - Fixed tags from removed connections still appearing on threads — for example, a "Done" tag showing the same connector name multiple times
 - Fixed calendar events, emails, and chat messages not appearing after adding a connection — threads were being created as private without listing any contacts who could see them
 - Fixed web links added to threads not appearing on other devices until a manual sync

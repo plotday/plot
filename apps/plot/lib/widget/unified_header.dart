@@ -56,20 +56,21 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   }
 
   void _onSearchChanged() {
-    // Leading-edge: fire immediately on the first change so the UI responds
-    // without waiting for the debounce window. Subsequent rapid keystrokes
-    // are batched by the trailing-edge timer.
-    if (_debounceTimer == null || !_debounceTimer!.isActive) {
-      _dispatchSearch();
-    }
+    final search = _searchController.text;
+
+    // Immediately update search text in state and cancel stale subscriptions
+    // so old unfiltered results stop flowing while the user types.
+    // The actual query is deferred until the debounce fires.
+    context.read<PriorityBloc>().prepareSearch(search);
+
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 250), _dispatchSearch);
+    _debounceTimer = Timer(const Duration(milliseconds: 400), _dispatchSearch);
   }
 
   void _dispatchSearch() {
     final search = _searchController.text;
     final priorityBloc = context.read<PriorityBloc>();
-    priorityBloc.updateSearch(search);
+    priorityBloc.executeSearch(search);
     context.read<PrioritiesBloc>().updateSearch(search);
     final notifier = ThreadHeaderNotifierProvider.read(context);
     notifier?.onSearchChanged?.call(search);

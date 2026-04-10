@@ -96,25 +96,46 @@ class PriorityBloc extends Cubit<PriorityState> {
     _loadPriority();
   }
 
-  void updateSearch(String search) {
-    log.info('Updating search to "$search"');
+  /// Called immediately on every keystroke to update search text in state
+  /// and cancel stale subscriptions so old results stop flowing.
+  void prepareSearch(String search) {
+    if (state.search == search) return;
     emit(state.copyWith(search: search));
 
     // When searching, force navigation to use activityFeed (matches UI)
     if (search.isNotEmpty) {
       threadListSource = ThreadListSource.activityFeed;
+      // Cancel stale subscriptions so unfiltered results don't flash
+      _activityFeedSubscription?.cancel();
+      _agendaSubscription?.cancel();
     } else {
       threadListSource = null;
+    }
+  }
+
+  /// Called after debounce to actually run the search query.
+  void executeSearch(String search) {
+    // Ensure state is up to date (may already be set by prepareSearch)
+    if (state.search != search) {
+      emit(state.copyWith(search: search));
     }
 
     // Reset limits but preserve sync state - search filters local data only
     _agendaLimit = 50;
-    _loadAgenda(triggerSync: false);
+    if (search.isEmpty) {
+      _loadAgenda(triggerSync: false);
+    }
 
     _activityFeedLimit = 50;
     _activityFeedLastRawRowCount = 0;
     _activityFeedLimitIncreased = false;
     _loadActivityFeed(triggerSync: false);
+  }
+
+  /// Combined prepare + execute for callers that don't need debouncing.
+  void updateSearch(String search) {
+    prepareSearch(search);
+    executeSearch(search);
   }
 
   /// Whether the draft has been modified by user actions (e.g. type toggle).
