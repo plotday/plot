@@ -1779,6 +1779,16 @@ class Thread extends Equatable implements Comparable<Thread> {
           threadList.add(baseActivity);
         }
       } else {
+        // If the base recurring thread schedule is archived, the entire
+        // series was cancelled. Skip materialising instances for the agenda.
+        // The thread still appears in the activity feed via the no-range
+        // path below.
+        if (baseScheduleRow?.archivedAt != null) {
+          if (range?.bounded != true) {
+            threadList.add(baseActivity);
+          }
+          continue;
+        }
         // Generate occurrences for recurring activities and override with stored schedule occurrences
         final occurrences = <String, Thread>{};
         if (range?.bounded == true) {
@@ -1845,6 +1855,14 @@ class Thread extends Equatable implements Comparable<Thread> {
             } else {
               overrides.add(ls);
             }
+          }
+
+          // If the base recurring schedule is archived, the entire series
+          // was cancelled (e.g. a cancelled recurring Google Calendar event).
+          // Skip materialising any instances — the thread itself still
+          // appears in the activity feed via the non-range code path.
+          if (baseRecurring != null && baseRecurring.archivedAt != null) {
+            continue;
           }
 
           if (baseRecurring != null && range.bounded == true) {
@@ -2613,6 +2631,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       priority: priority,
       notes: _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
+      scheduleDirty: true,
     );
   }
 

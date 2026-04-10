@@ -1041,17 +1041,20 @@ class ThreadCommands extends HookWidget {
               .toList()
         : <ConferencingUserAction>[];
 
-    // RSVP buttons for calendar events (link schedule instances)
-    final rsvpButton = showEventButtons && activity.isLinkScheduleInstance
+    // RSVP buttons for calendar events (link schedule instances).
+    // When the user has been invited to an event and hasn't responded,
+    // show explicit Attend + Skip buttons side-by-side. Otherwise show
+    // the single ToggleRsvp button (solo events, or already-RSVP'd events).
+    final isCalendarEvent =
+        showEventButtons && activity.isLinkScheduleInstance;
+    final needsRsvp =
+        isCalendarEvent &&
+        activity.currentUserRsvp == null &&
+        activity.hasOtherAttendees;
+    final attendButton = needsRsvp ? Button.icon(AttendRsvp(activity)) : null;
+    final skipButton = needsRsvp ? Button.icon(SkipRsvp(activity)) : null;
+    final rsvpButton = isCalendarEvent && !needsRsvp
         ? Button.icon(ToggleRsvp(activity))
-        : null;
-    // Secondary skip button: appears on hover when no RSVP yet
-    final skipSeriesButton =
-        showEventButtons &&
-            activity.isLinkScheduleInstance &&
-            activity.hasOtherAttendees &&
-            activity.currentUserRsvp == null
-        ? Button.icon(SkipRsvpSeries(activity))
         : null;
 
     final tagSuggestionButtons = showCommands
@@ -1137,7 +1140,8 @@ class ThreadCommands extends HookWidget {
             ...allButtons,
             for (final action in conferencingActions)
               _ConferencingIconButton(action: action),
-            if (showCommands && skipSeriesButton != null) skipSeriesButton,
+            if (attendButton != null) attendButton,
+            if (skipButton != null) skipButton,
             if (rsvpButton != null) rsvpButton,
           ],
         );

@@ -546,10 +546,35 @@ class ToggleRsvp extends _UpdateThreadCommand {
   }
 }
 
-class SkipRsvpSeries extends _UpdateThreadCommand {
-  SkipRsvpSeries(super.thread)
+class AttendRsvp extends _UpdateThreadCommand {
+  AttendRsvp(super.thread)
     : super(
-        title: 'Skip all',
+        title: 'Attend',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.calendarCheck,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final updated = thread.withRsvpStatus('attend');
+    await saveOptimistically(context, updated);
+
+    api
+        .post<dynamic>(
+          '/sync/schedule/status',
+          body: {'thread_id': thread.id.toString(), 'status': 'attend'},
+        )
+        .catchError((_) {});
+
+    return const CommandDone();
+  }
+}
+
+class SkipRsvp extends _UpdateThreadCommand {
+  SkipRsvp(super.thread)
+    : super(
+        title: 'Skip',
         eventObject: EventObject.activity,
         eventAction: EventAction.updated,
         icon: PlotIcon.calendarXmark,
@@ -560,7 +585,6 @@ class SkipRsvpSeries extends _UpdateThreadCommand {
     final updated = thread.withRsvpStatus('skip');
     await saveOptimistically(context, updated);
 
-    // Skip the entire series (no occurrence)
     api
         .post<dynamic>(
           '/sync/schedule/status',

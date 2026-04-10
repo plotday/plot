@@ -120,12 +120,17 @@ schedules.post("/sync/schedule/status", async (c) => {
 
   if (thread_id && !schedule_id) {
     targetScheduleId = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
+      // Schedules attach to threads either directly (schedule.thread_id) or
+      // via a link (schedule.link_id → link.thread_id). Match both so this
+      // endpoint works for link schedules (e.g. Google Calendar events).
+      const threadFilter = sql<boolean>`(schedule.thread_id = ${thread_id}::uuid OR schedule.link_id IN (SELECT id FROM link WHERE thread_id = ${thread_id}::uuid))`;
+
       if (occurrence) {
         // Per-occurrence: find existing occurrence schedule or create one
         const existing = await trx
           .selectFrom("schedule" as any)
           .select("id")
-          .where("thread_id", "=", thread_id)
+          .where(threadFilter)
           .where("occurrence", "=", occurrence)
           .executeTakeFirst();
 
@@ -135,7 +140,7 @@ schedules.post("/sync/schedule/status", async (c) => {
         const base = await trx
           .selectFrom("schedule" as any)
           .selectAll()
-          .where("thread_id", "=", thread_id)
+          .where(threadFilter)
           .where("occurrence", "is", null)
           .executeTakeFirst();
 
@@ -183,7 +188,7 @@ schedules.post("/sync/schedule/status", async (c) => {
         const base = await trx
           .selectFrom("schedule" as any)
           .select("id")
-          .where("thread_id", "=", thread_id)
+          .where(threadFilter)
           .where("occurrence", "is", null)
           .executeTakeFirst();
         return base?.id ?? null;
@@ -230,6 +235,36 @@ schedules.post("/sync/schedule/status", async (c) => {
     }
     if (priorityId) {
       notifySync(c, priorityId);
+    }
+
+    // SyncNotify.notifyTwists() only finds priority-bound twists. For link
+    // schedules the connector is a source twist (priority_id IS NULL) that
+    // created the link, and would otherwise never be woken for the
+    // onScheduleContactUpdated callback. Notify it directly.
+    if (schedule.link_id) {
+      const sourceTwists = await c.var.db
+        .selectFrom("priority_twist as pt")
+        .innerJoin("link as l", "l.created_by", "pt.id")
+        .select("pt.id")
+        .where("l.id", "=", schedule.link_id)
+        .where("pt.priority_id", "is", null)
+        .where("pt.archived_at", "is", null)
+        .execute();
+
+      for (const twist of sourceTwists) {
+        const twistSyncId = c.env.TWIST_SYNC.idFromName(twist.id);
+        const twistSyncDO = c.env.TWIST_SYNC.get(twistSyncId);
+        c.executionCtx.waitUntil(
+          twistSyncDO
+            .fetch(
+              new Request("http://do/notify", {
+                method: "POST",
+                body: JSON.stringify({ id: twist.id }),
+              })
+            )
+            .catch(() => {})
+        );
+      }
     }
   }
 
