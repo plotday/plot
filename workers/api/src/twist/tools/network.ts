@@ -82,11 +82,7 @@ const SLACK_EVENT_SCOPES: Record<string, string[]> = {
  * If an authorization contains any of these scopes, createWebhook will return a Pub/Sub topic
  * instead of a standard webhook URL.
  */
-export const GMAIL_SCOPES = [
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.modify",
-  "https://www.googleapis.com/auth/gmail.send",
-];
+export const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"];
 
 
 /**
