@@ -191,6 +191,8 @@ async function handleSubscriptionUpdate(
         status,
         billing_cycle_start: start.toISOString(),
         billing_cycle_end: end.toISOString(),
+        // Clear any lingering reverse-trial state once the user is on a paid plan.
+        ...(plan !== "free" ? { trial_ends_at: null } : {}),
       })
       .where("stripe_customer_id", "=", customerId)
       .executeTakeFirst();
