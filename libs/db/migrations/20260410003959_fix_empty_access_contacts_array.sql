@@ -1,22 +1,5 @@
--- Upsert thread with smart handling
--- On INSERT: Infers required fields from defaults if provided
--- On UPDATE: Only updates fields whose keys are present in p_thread
---   - Key absent: keep existing value (unless thread is archived)
---   - Key present (even with null): use provided value (allows clearing to NULL)
---   - Archived threads: treated as INSERT, applying p_defaults for missing keys
--- Archived Detection: Thread is considered archived if:
---   - thread.archived_at IS NOT NULL, OR
---   - Priority is not accessible (no user.priority_expanded entry with NULL archived_at)
---
--- Parameters:
---   p_thread: thread data as JSONB (explicitly provided values only)
---   p_defaults: default values as JSONB (all fields with defaults - used on INSERT if not in p_thread)
---
--- Returns: The full thread row (not just ID) so caller can process occurrences
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_id uuid;
@@ -240,4 +223,4 @@ BEGIN
             * INTO v_result;
     RETURN v_result;
 END;
-$function$;
+$$;

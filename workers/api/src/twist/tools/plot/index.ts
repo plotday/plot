@@ -645,7 +645,7 @@ export class Plot extends Tool implements IPlot {
     if (dispatchItem.itemType === "thread") {
       const { item, isCreate = false, changes } = dispatchItem;
 
-      const currentActivity = buildThreadFromDbRecord(item);
+      const currentActivity = await buildThreadFromDbRecord(this, item);
 
       const createdByThisTwist =
         item.created_by === this.priorityTwistId;

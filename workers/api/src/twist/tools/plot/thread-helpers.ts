@@ -4,6 +4,7 @@ import { type Database, DbError } from "@plotday/db";
 import type {
   ActorId,
   ActorType,
+  Contact,
   NewThread,
   NewThreadWithNotes,
   NewActor,
@@ -18,6 +19,26 @@ import type { Plot } from "./index";
 /** Type alias for thread insert operations (DB table is now "thread") */
 type ActivityInsert = Database["public"]["Tables"]["thread"]["Insert"];
 type ActivityUpdate = Database["public"]["Tables"]["thread"]["Update"];
+
+/**
+ * Resolves access_contacts UUIDs to Contact objects with email/name.
+ */
+export async function resolveAccessContacts(
+  plot: Plot,
+  ids: string[] | null | undefined
+): Promise<Contact[]> {
+  if (!ids || ids.length === 0) return [];
+  const contacts = await plot.db
+    .selectFrom("contact")
+    .select(["id", "name", "email"])
+    .where("id", "in", ids)
+    .execute();
+  return contacts.map((c) => ({
+    id: c.id as ActorId,
+    name: c.name ?? null,
+    email: c.email ?? null,
+  }));
+}
 
 /**
  * Handles errors from database operations:
@@ -909,6 +930,21 @@ export async function prepareThreadForDb(
     }
   }
 
+  // Resolve accessContacts from NewContact[] (emails) to ActorId[]
+  let resolvedAccessContacts: ActorId[] | undefined;
+  if (activity.accessContacts && activity.accessContacts.length > 0) {
+    const actors = await addContacts(plot, activity.accessContacts as NewContact[]);
+    resolvedAccessContacts = actors.map((a) => a.id);
+  } else if (
+    activity.accessContacts === undefined &&
+    activity.access === "private" &&
+    !activity.archived
+  ) {
+    // Default to owner for new private threads (not cancellations/archives)
+    const owner = await plot.getOwner();
+    resolvedAccessContacts = [owner.id];
+  }
+
   // Build defaults object for INSERT
   const defaults: ActivityInsert = {
     created_by: plot.priorityTwistId,
@@ -917,8 +953,9 @@ export async function prepareThreadForDb(
     title: cleanTitle(activity.title?.trim() || "Untitled"),
     preview: previewText,
     draft: false,
-    access: activity.access ?? "members",
-    access_contacts: activity.accessContacts ?? (activity.access === "private" ? [] : null),
+    // Default to "private" when archiving to avoid leaking titles of private events
+    access: activity.access ?? (activity.archived ? "private" : "members"),
+    access_contacts: resolvedAccessContacts ?? (activity.access === "private" ? [] : null),
     sync_depth: plot.syncDepth + 1,
     ...(activity.archived !== undefined
       ? { archived_at: activity.archived ? new Date().toISOString() : null }
@@ -965,9 +1002,13 @@ export async function prepareThreadForDb(
     }
     if (activity.access !== undefined) {
       upsertFields.access = activity.access;
-      upsertFields.access_contacts = activity.accessContacts ?? (activity.access === "private" ? [] : null);
-    } else if (activity.accessContacts !== undefined) {
-      upsertFields.access_contacts = activity.accessContacts;
+      // Only set access_contacts in upsert when we have resolved contacts.
+      // When undefined (e.g. cancelled events), the upsert preserves existing value.
+      if (resolvedAccessContacts !== undefined) {
+        upsertFields.access_contacts = resolvedAccessContacts;
+      }
+    } else if (resolvedAccessContacts !== undefined) {
+      upsertFields.access_contacts = resolvedAccessContacts;
     }
     if ("type" in activity && (activity as any).type !== undefined) {
       upsertFields.icon = (activity as any).type;

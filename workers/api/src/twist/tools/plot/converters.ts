@@ -13,19 +13,22 @@ import {
   type Tags,
   type Uuid,
 } from "@plotday/twister/plot";
+import type { Plot } from "./index";
+import { resolveAccessContacts } from "./thread-helpers";
 
-export function fromDbThread(
+export async function fromDbThread(
+  plot: Plot,
   dbThread: Database["public"]["Tables"]["thread"]["Row"] & {
     tags?: Json | null;
   }
-): Thread {
+): Promise<Thread> {
   return {
     // @ts-ignore - dbThread.id is a string from DB, but Uuid is a branded type
     id: dbThread.id as any,
     created: new Date(dbThread.created_at),
     title: dbThread.title || "",
     access: (dbThread.access as ThreadAccessLevel) ?? "members",
-    accessContacts: (dbThread.access_contacts as ActorId[]) || [],
+    accessContacts: await resolveAccessContacts(plot, dbThread.access_contacts),
     archived: dbThread.archived_at !== null,
     type: (dbThread.icon as ThreadType) ?? null,
     priority: {

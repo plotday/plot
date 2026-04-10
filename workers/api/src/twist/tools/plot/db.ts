@@ -9,6 +9,8 @@ import {
 } from "@plotday/twister/plot";
 
 import type { EnrichedThread, EnrichedNote } from "../../view-types";
+import type { Plot } from "./index";
+import { resolveAccessContacts } from "./thread-helpers";
 
 /**
  * Calculates which tags were added between two tag states.
@@ -59,9 +61,10 @@ export function calculateTagsRemoved(
 /**
  * Converts a database thread record into a Thread object.
  */
-export function buildThreadFromDbRecord(
+export async function buildThreadFromDbRecord(
+  plot: Plot,
   threadRecord: EnrichedThread
-): Thread {
+): Promise<Thread> {
   return {
     // @ts-ignore - threadRecord.id is a string from DB, but Uuid is a branded type
     id: threadRecord.id as any,
@@ -76,7 +79,7 @@ export function buildThreadFromDbRecord(
     type: null,
     title: threadRecord.title || "",
     access: (threadRecord.access as ThreadAccessLevel) ?? "members",
-    accessContacts: (threadRecord.access_contacts as ActorId[]) || [],
+    accessContacts: await resolveAccessContacts(plot, threadRecord.access_contacts as string[]),
     archived: threadRecord.archived_at !== null,
     tags: (threadRecord.tags as Partial<Record<number, ActorId[]>>) || {},
   };

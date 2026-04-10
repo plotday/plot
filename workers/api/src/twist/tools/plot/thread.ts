@@ -30,6 +30,7 @@ import {
 } from "./thread-helpers";
 import { fromDbThread } from "./converters";
 import type { Plot } from "./index";
+import { addContacts } from "./contacts";
 import {
   createNotes,
   ensureIncreasingCreatedTimestamps,
@@ -338,11 +339,20 @@ async function updateThreadsByMatch(
         ? cleanTitle(activity.title)
         : null;
   }
+  // Resolve accessContacts from NewContact[] to ActorId[]
+  let resolvedAccessContacts: ActorId[] | undefined;
+  if (activity.accessContacts && activity.accessContacts.length > 0) {
+    const actors = await addContacts(plot, activity.accessContacts);
+    resolvedAccessContacts = actors.map((a) => a.id);
+  }
+
   if (activity.access !== undefined) {
     dbUpdate.access = activity.access;
-    dbUpdate.access_contacts = activity.accessContacts ?? (activity.access === "private" ? [] : null);
-  } else if (activity.accessContacts !== undefined) {
-    dbUpdate.access_contacts = activity.accessContacts;
+    if (resolvedAccessContacts !== undefined) {
+      dbUpdate.access_contacts = resolvedAccessContacts;
+    }
+  } else if (resolvedAccessContacts !== undefined) {
+    dbUpdate.access_contacts = resolvedAccessContacts;
   }
 
   // Check if there are meaningful updates
@@ -410,11 +420,20 @@ export async function updateThread(
           ? cleanTitle(activity.title)
           : null;
     }
+    // Resolve accessContacts from NewContact[] to ActorId[]
+    let resolvedAccessContacts: ActorId[] | undefined;
+    if (activity.accessContacts && activity.accessContacts.length > 0) {
+      const actors = await addContacts(plot, activity.accessContacts);
+      resolvedAccessContacts = actors.map((a) => a.id);
+    }
+
     if (activity.access !== undefined) {
       dbUpdate.access = activity.access;
-      dbUpdate.access_contacts = activity.accessContacts ?? (activity.access === "private" ? [] : null);
-    } else if (activity.accessContacts !== undefined) {
-      dbUpdate.access_contacts = activity.accessContacts;
+      if (resolvedAccessContacts !== undefined) {
+        dbUpdate.access_contacts = resolvedAccessContacts;
+      }
+    } else if (resolvedAccessContacts !== undefined) {
+      dbUpdate.access_contacts = resolvedAccessContacts;
     }
     if (activity.archived !== undefined) {
       dbUpdate.archived_at = activity.archived
@@ -630,6 +649,7 @@ export async function getThread(
         : (data.updated_at ?? new Date().toISOString());
 
     return fromDbThread(
+      plot,
       // @ts-ignore - Kysely returns Date for timestamp columns, but fromDbThread expects Supabase Row types with string timestamps
       {
         ...data,
@@ -1214,7 +1234,7 @@ export async function getThreads(
     }
   }
 
-  return rows.map((data) => {
+  return Promise.all(rows.map(async (data) => {
     const createdAtStr =
       data.created_at instanceof Date
         ? data.created_at.toISOString()
@@ -1225,7 +1245,8 @@ export async function getThreads(
         : (data.updated_at ?? new Date().toISOString());
 
     const priorityInfo = priorityMap.get(data.priority_id as string);
-    const thread = fromDbThread(
+    const thread = await fromDbThread(
+      plot,
       // @ts-ignore - Kysely types vs fromDbThread expectations
       {
         ...data,
@@ -1255,7 +1276,7 @@ export async function getThreads(
     }
 
     return thread;
-  });
+  }));
 }
 
 /** @deprecated Use createThread */
