@@ -39,19 +39,17 @@ type MessageSyncOptions = {
  * Auth is managed declaratively via provider config in build() and
  * handled through the twist edit modal.
  *
- * **Required OAuth Scopes:**
- * - `https://www.googleapis.com/auth/gmail.readonly` - Read emails
- * - `https://www.googleapis.com/auth/gmail.modify` - Modify labels, mark read/unread, star/unstar
- * - `https://www.googleapis.com/auth/gmail.send` - Send reply emails from Plot
+ * **Required OAuth Scope:**
+ * - `https://www.googleapis.com/auth/gmail.modify` - Read messages, modify labels, send replies
+ *
+ * `gmail.modify` is a superset that grants all read/write operations except
+ * permanent delete, so it covers reading threads, archiving, label changes,
+ * and sending replies without needing `gmail.readonly` or `gmail.send`.
  */
 export class Gmail extends Connector<Gmail> {
   static readonly PROVIDER = AuthProvider.Google;
   static readonly handleReplies = true;
-  static readonly SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/gmail.send",
-  ];
+  static readonly SCOPES = ["https://www.googleapis.com/auth/gmail.modify"];
 
   readonly provider = AuthProvider.Google;
   readonly scopes = Gmail.SCOPES;
