@@ -648,6 +648,17 @@ export class Integrations extends Tool implements IAuth {
       const channelLinkTypes = await this.getChannelLinkTypesForThread(threadId);
       if (!this.isStatusDone(dbLink.type, dbLink.status, channelLinkTypes.length > 0 ? channelLinkTypes : undefined)) {
         await createSchedule(this.db, contact.user_id, threadId as string, "task");
+      } else {
+        // Archive per-user task schedule when link status is done
+        await this.db
+          .updateTable("schedule")
+          .set({ archived_at: new Date() })
+          .where("thread_id", "=", threadId as string)
+          .where("user_id", "=", contact.user_id)
+          .where("reason", "=", "task")
+          .where("occurrence", "is", null)
+          .where("archived_at", "is", null)
+          .execute();
       }
 
       // Always recompute outstanding_tasks (handles done→undone transitions)
