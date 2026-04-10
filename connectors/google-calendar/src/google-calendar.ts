@@ -846,12 +846,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
                   description && containsHtml(description)
                     ? ("html" as const)
                     : ("text" as const),
-                created: event.created ? new Date(event.created) : new Date(),
+                created: event.created ? new Date(event.created) : undefined,
                 ...(authorContact ? { author: authorContact } : {}),
               }
             : null;
 
-          // Build mentions from organizer + attendees for thread visibility
+          // Build attendee contacts for link-level access control
           const attendeeMentions: NewContact[] = [];
           if (authorContact) attendeeMentions.push(authorContact);
           for (const att of validAttendees) {
@@ -863,23 +863,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             }
           }
 
-          // Add mentions to description note for private thread visibility
-          if (descriptionNote && attendeeMentions.length > 0) {
-            (descriptionNote as any).mentions = attendeeMentions;
-          }
-
-          // Build notes array: description note, or a participants-only note for mentions
-          const notes = descriptionNote
-            ? [descriptionNote]
-            : attendeeMentions.length > 0
-            ? [
-                {
-                  key: "participants",
-                  content: null,
-                  mentions: attendeeMentions,
-                },
-              ]
-            : [];
+          const notes = descriptionNote ? [descriptionNote] : [];
 
           const link: NewLinkWithNotes = {
             source: canonicalUrl,

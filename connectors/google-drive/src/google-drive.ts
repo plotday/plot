@@ -960,14 +960,16 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     const notes: NewNote[] = [];
 
     // Summary note with description if available
-    notes.push({
-      thread: { source: canonicalSource },
-      key: "summary",
-      content: file.description || null,
-      contentType: "text",
-      author,
-      created: file.createdTime ? new Date(file.createdTime) : new Date(),
-    });
+    if (file.description && file.description.trim().length > 0) {
+      notes.push({
+        thread: { source: canonicalSource },
+        key: "summary",
+        content: file.description,
+        contentType: "text",
+        author,
+        created: file.createdTime ? new Date(file.createdTime) : undefined,
+      });
+    }
 
     // Fetch and add comments
     try {
