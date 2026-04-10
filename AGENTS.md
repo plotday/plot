@@ -18,8 +18,8 @@ Supported platforms:
 - Twist: The Plot version of an extension/plugin/app/agent. Users add them to a Priority where they have access to that Priority and its descendants. They tend to implement opinionated workflows (e.g. create tasks from emails).
 - Connection: One source system (e.g. Google Calendar) paired with one account (e.g. <kris@plot.day>). Connections are provided by connectors that expose channels that users can enable/disable.
 - Twist Creator aka Twister: The SDK for building twists and connectors. Sometimes represented with 🌪️.
-- RSVP Tags: Special count tags (Attend, Skip, Undecided) that are mutually exclusive per actor. When an actor adds one RSVP tag, any other RSVP tags they have are automatically removed. This exclusivity is enforced at both the database level and in the Flutter app for offline support. The exclusivity respects occurrence boundaries for recurring events.
-- Count Tag Ownership: Count tags can only be added/removed by the user themselves. Users cannot modify count tags for other actors. This is enforced by database trigger functions (`update_activity_tags`, `update_note_tags`) and validated in the Flutter app.
+- RSVP: A user's response to a scheduled event (`attend`, `skip`, or unset). RSVPs are stored exclusively as `schedule_contact` rows keyed on `(schedule_id, contact_id)`. Connectors populate them from synced attendee data; users update their own via POST `/sync/schedule/status`. The Flutter app derives all RSVP UI from `schedule_contact` and never reads or writes count tags for RSVP. A single human user may have multiple `schedule_contact` rows on the same schedule when more than one of their linked contacts (e.g. work + personal email) was invited.
+- Count Tag Ownership: Count tags can only be added/removed by the user themselves. Users cannot modify count tags for other actors. "The user themselves" means any non-archived contact linked to the user, not only their primary contact. This is enforced by database trigger functions (`update_thread_tags`, `upsert_thread_tag`, `upsert_note_tag`) via `user.user_contact_ids()` and validated in the Flutter app.
 
 ## Data
 
