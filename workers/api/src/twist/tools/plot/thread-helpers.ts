@@ -323,7 +323,7 @@ export function stripMarkdown(text: string): string {
   let result = text;
 
   // Strip HTML tags (keep inner text)
-  result = result.replace(/<[^>]+>/g, "");
+  result = result.replace(/<(?!https?:\/\/)[^>]+>/g, "");
 
   // Decode common HTML entities
   result = result
@@ -351,8 +351,9 @@ export function stripMarkdown(text: string): string {
     if (text && !/^https?:\/\//.test(text)) return text;
     // Extract domain from URL (try url first, fall back to text)
     const source = url || text;
-    const domainMatch = source.match(/^https?:\/\/(?:www\.)?([^\/\s]+)/);
-    return domainMatch ? domainMatch[1] : text || '';
+    const domainMatch = source.match(/^https?:\/\/(?:www\.)?([^/\s]+)(\/\S*)?/);
+    if (!domainMatch) return text || '';
+    return domainMatch[2] ? `${domainMatch[1]}/\u2026` : domainMatch[1];
   });
 
   // Remove bold/italic
@@ -416,8 +417,9 @@ export function createPreviewFromMarkdown(
   // Replace multiple spaces with single space
   preview = preview.replace(/\s+/g, " ");
 
-  // Clean up separator artifacts (e.g. "/ /" or leading/trailing " / ")
-  preview = preview.replace(/(\s*\/\s*)+/g, " / ");
+  // Clean up separator artifacts (e.g. "/ /" or leading/trailing " / ").
+  // Require whitespace on at least one side so path slashes (e.g. "domain.com/…") aren't affected.
+  preview = preview.replace(/(\s+\/\s*|\s*\/\s+)+/g, " / ");
 
   // Trim whitespace and separators
   preview = preview.replace(/^[\s/]+|[\s/]+$/g, "");
