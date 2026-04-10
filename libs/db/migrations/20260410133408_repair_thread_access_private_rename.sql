@@ -13,11 +13,13 @@
 --   - DROP CONSTRAINT IF EXISTS + recreate is idempotent
 --   - CREATE OR REPLACE FUNCTION is idempotent
 
--- 1. Migrate existing rows to the new value.
+-- 1. Drop the old check constraint so the UPDATE below can write 'private'.
+ALTER TABLE "public"."thread" DROP CONSTRAINT IF EXISTS "thread_access_valid";
+
+-- 2. Migrate existing rows to the new value.
 UPDATE "public"."thread" SET access = 'private' WHERE access = 'restricted';
 
--- 2. Replace the check constraint to accept 'private' instead of 'restricted'.
-ALTER TABLE "public"."thread" DROP CONSTRAINT IF EXISTS "thread_access_valid";
+-- 3. Recreate the check constraint accepting 'private'.
 ALTER TABLE "public"."thread" ADD CONSTRAINT "thread_access_valid"
     CHECK (access = ANY (ARRAY['public'::text, 'members'::text, 'private'::text]));
 
