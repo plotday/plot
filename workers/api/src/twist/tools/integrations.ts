@@ -14,7 +14,6 @@ import {
   type ThreadMeta,
 } from "@plotday/twister/plot";
 import { type Callback } from "@plotday/twister/tools/callbacks";
-import { Tag } from "@plotday/twister/tag";
 import {
   type ArchiveLinkFilter,
   type AuthProvider,
@@ -874,12 +873,12 @@ export class Integrations extends Tool implements IAuth {
 
   async dispatch(
     dispatchItem: any
-  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; deferredTagRemoval?: { noteId: string; actorId: string }; deferredNoteKeyUpdate?: { noteId: string } }>> {
+  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; deferredNoteKeyUpdate?: { noteId: string } }>> {
     // Handle note dispatch for connectors with handleReplies — when a user
     // replies to a thread the connector created, the connector is auto-mentioned
-    // but there's no Plot tool to handle intent matching or tag removal.
-    // Route directly to onNoteCreated and defer tag removal.
-    // Also handles note updates (tag changes) via onNoteUpdated.
+    // and we route directly to onNoteCreated. Also handles note updates (tag
+    // changes) via onNoteUpdated. Twisting-tag removal is handled centrally
+    // by the queue handler's fail-closed finally (see updates.ts).
     if (dispatchItem?.itemType === "note" && this.sourceProvider) {
       const { item, isCreate = true } = dispatchItem;
       if (!item) return [];
@@ -912,10 +911,6 @@ export class Integrations extends Tool implements IAuth {
         return [{
           sourceMethod: "onNoteCreated",
           args: [note, thread],
-          deferredTagRemoval: {
-            noteId: item.id as string,
-            actorId: (item.author_id ?? item.created_by) as string,
-          },
           deferredNoteKeyUpdate: { noteId: item.id as string },
         }];
       }
@@ -2703,32 +2698,6 @@ export class Integrations extends Tool implements IAuth {
     return prefix
       ? (env[`${prefix}_SECRET` as keyof Bindings] as string | undefined)
       : undefined;
-  }
-
-  /** Remove the Twisting tag from a note. Called by entrypoint for deferred tag removal. */
-  async removeTagFromNote(noteId: string, actorId: string): Promise<void> {
-    try {
-      const pt = await this.db
-        .selectFrom("priority_twist")
-        .select("owner_id")
-        .where("id", "=", this.priorityTwistId)
-        .executeTakeFirst();
-
-      if (pt?.owner_id) {
-        await rpcUser(this.db, "update_note_tags", {
-          user_id: pt.owner_id,
-          p_note_id: noteId,
-          p_actor_id: actorId,
-          p_client_id: 0,
-          p_tag_updates: { [Tag.Twist]: false },
-        });
-      }
-    } catch (error) {
-      console.warn("Failed to remove deferred Twisting tag from note", {
-        note_id: noteId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
   }
 
   /** Update a note's key for external dedup. Called by entrypoint when onNoteCreated returns a key. */

@@ -112,6 +112,81 @@ function buildTagChanges(
 }
 
 /**
+ * Fail-closed removal of the Twisting tag from a single note.
+ *
+ * Called both per-note after dispatch and in a batch-level finally, so it must
+ * stay idempotent and never throw — its contract is "best-effort last line of
+ * defense; log+report and move on".
+ */
+async function clearTwistingTag(
+  db: Kysely<DB>,
+  logger: ReturnType<typeof createLogger>,
+  postHog: PostHog,
+  priorityTwistId: string,
+  ownerId: string,
+  noteId: string,
+  authorId: string
+): Promise<void> {
+  try {
+    await rpcUser(db, "update_note_tags", {
+      user_id: ownerId,
+      p_note_id: noteId,
+      p_actor_id: authorId,
+      p_client_id: 0,
+      p_tag_updates: { [Tag.Twist]: false },
+    });
+  } catch (error) {
+    logger.error(
+      "Fail-closed: failed to remove Twisting tag",
+      error as Error,
+      {
+        note_id: noteId,
+        priority_twist_id: priorityTwistId,
+      }
+    );
+    postHog.captureException(error as Error, undefined, {
+      context: "twist:tag-cleanup",
+      priority_twist_id: priorityTwistId,
+      note_id: noteId,
+    });
+  }
+}
+
+/**
+ * Walks new + updated notes and clears the Twisting tag for any that mention
+ * this twist. Runs in a top-level finally so every note the batch saw gets its
+ * tag cleared regardless of how dispatch finished (success, throw, early
+ * return). Idempotent — safe to call after per-note cleanup has already run.
+ */
+async function cleanupAllTwistingTags(
+  db: Kysely<DB>,
+  logger: ReturnType<typeof createLogger>,
+  postHog: PostHog,
+  priorityTwistId: string,
+  ownerId: string,
+  newNotes: TwistBatchMessage["newNotes"],
+  updatedNotes: TwistBatchMessage["updatedNotes"]
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const note of [...newNotes, ...updatedNotes]) {
+    if (!note.id || seen.has(note.id)) continue;
+    if (!(note.mentions ?? []).includes(priorityTwistId)) continue;
+    const authorId = note.author_id ?? note.created_by ?? ownerId;
+    if (!authorId) continue;
+    seen.add(note.id);
+    await clearTwistingTag(
+      db,
+      logger,
+      postHog,
+      priorityTwistId,
+      ownerId,
+      note.id,
+      authorId
+    );
+  }
+}
+
+/**
  * Process a batched twist update message
  * Handles notes, activities, and priority_twist updates for a single twist
  */
@@ -148,56 +223,61 @@ async function processTwistBatch(
     queue,
   });
 
-  // Check if twist is suspended before processing
+  // Fetch priority_twist metadata early so we have owner_id available for the
+  // fail-closed Twisting-tag cleanup even on early returns (suspended, quota).
   const twistStatus = await db
     .selectFrom("priority_twist")
     .innerJoin("twist", "twist.id", "priority_twist.twist_id")
-    .select(["priority_twist.suspended_at", "twist.execution_limit"])
+    .select([
+      "priority_twist.suspended_at",
+      "priority_twist.priority_id",
+      "priority_twist.owner_id",
+      "twist.execution_limit",
+    ])
     .where("priority_twist.id", "=", priorityTwistId)
     .executeTakeFirst();
 
-  if (twistStatus?.suspended_at) {
-    logger.info("Skipping twist batch for suspended twist", {
+  if (!twistStatus?.owner_id) {
+    logger.warn("Could not determine owner_id for twist batch", {
       priority_twist_id: priorityTwistId,
     });
     return;
   }
 
-  // Check execution quota
-  const usage = Usage.Get(env, priorityTwistId);
-  const withinQuota = await usage.checkExecutionQuota(
-    twistStatus?.execution_limit
-  );
-  if (!withinQuota) {
-    logger.info("Skipping twist batch: execution quota exceeded", {
-      priority_twist_id: priorityTwistId,
-    });
-    return;
-  }
+  const ownerId = twistStatus.owner_id;
+  // priorityId is the twist's actual priority_id, not the item priority_ids —
+  // items may be in child subpriorities (e.g. Twist Development), which would
+  // incorrectly narrow the twist's scope.
+  const priorityId = twistStatus.priority_id
+    ? String(twistStatus.priority_id)
+    : "";
 
   try {
+    if (twistStatus.suspended_at) {
+      logger.info("Skipping twist batch for suspended twist", {
+        priority_twist_id: priorityTwistId,
+      });
+      return;
+    }
+
+    // Check execution quota
+    const usage = Usage.Get(env, priorityTwistId);
+    const withinQuota = await usage.checkExecutionQuota(
+      twistStatus.execution_limit
+    );
+    if (!withinQuota) {
+      logger.info("Skipping twist batch: execution quota exceeded", {
+        priority_twist_id: priorityTwistId,
+      });
+      return;
+    }
+
     // Get twist factory and create twist instance
     const factory = twistFactory({
       env,
       ctx,
       db,
     });
-
-    // Always fetch the twist's actual priority_id from priority_twist table.
-    // Using item priority_ids is incorrect because items may be in child
-    // subpriorities (e.g. Twist Development), narrowing the twist's scope.
-    const pt = await db
-      .selectFrom("priority_twist")
-      .select("priority_id")
-      .where("id", "=", priorityTwistId)
-      .executeTakeFirst();
-
-    if (!pt) {
-      logger.warn("Could not determine priority_id for twist batch");
-      return;
-    }
-
-    const priorityId = pt.priority_id ? String(pt.priority_id) : "";
 
     const twistWrapper = await factory({
       version,
@@ -264,33 +344,7 @@ async function processTwistBatch(
           thread_id: note.thread_id,
           queue,
         });
-
-        // Safety net: remove Twisting tag if this note mentions the twist
-        const isMentioned = (note.mentions ?? []).includes(priorityTwistId);
-        if (isMentioned && note.author_id) {
-          try {
-            const pt = await db
-              .selectFrom("priority_twist")
-              .select("owner_id")
-              .where("id", "=", priorityTwistId)
-              .executeTakeFirst();
-
-            if (pt?.owner_id) {
-              await rpcUser(db, "update_note_tags", {
-                user_id: pt.owner_id,
-                p_note_id: noteId,
-                p_actor_id: note.author_id,
-                p_client_id: 0,
-                p_tag_updates: { [Tag.Twist]: false },
-              });
-            }
-          } catch (tagError) {
-            logger.warn("Failed to remove Twisting tag in safety net", {
-              note_id: noteId,
-              error: tagError instanceof Error ? tagError.message : String(tagError),
-            });
-          }
-        }
+        // Twisting tag removal is handled by the batch-level finally.
       }
     }
 
@@ -767,5 +821,21 @@ async function processTwistBatch(
       priority_twist_id: priorityTwistId,
       queue,
     });
+  } finally {
+    // Fail-closed: always clear the Twisting tag for every note in the batch
+    // that mentions this twist. This runs after every code path above —
+    // successful dispatch, thrown callback, suspended twist, quota exceeded,
+    // sync-depth limit, factory build failure. The `finally` waits for the
+    // whole dispatch chain to complete, so the tag stays visible for the full
+    // duration of the twist's work (including long LLM calls).
+    await cleanupAllTwistingTags(
+      db,
+      logger,
+      postHog,
+      priorityTwistId,
+      ownerId,
+      newNotes,
+      updatedNotes
+    );
   }
 }

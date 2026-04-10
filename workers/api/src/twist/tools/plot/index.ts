@@ -28,7 +28,6 @@ import type {
   Schedule,
   NewSchedule,
 } from "@plotday/twister/schedule";
-import { Tag } from "@plotday/twister/tag";
 import type { Callback } from "@plotday/twister/tools/callbacks";
 import {
   ThreadAccess,
@@ -516,11 +515,14 @@ export class Plot extends Tool implements IPlot {
     // Set sync depth from dispatch context (defaults to 1 if not provided)
     this.syncDepth = dispatchItem.syncDepth ?? 1;
 
+    // Twisting tag removal is the queue handler's responsibility (see
+    // workers/api/src/queue/updates.ts `cleanupAllTwistingTags`). This dispatch
+    // just returns callback descriptors; the queue's batch-level `finally`
+    // guarantees the tag is cleared regardless of outcome.
     const callbacks: Array<{
       sourceMethod?: string;
       optionPath?: string[];
       args: any[];
-      deferredTagRemoval?: { noteId: string; actorId: string };
     }> = [];
 
     // Handle note items
@@ -543,58 +545,21 @@ export class Plot extends Tool implements IPlot {
         try {
           const result = await intentOps.handleIntent(this, currentNote);
 
-          if (!result) {
-            // Built-in intent handled or no intent matched - notes already created
-            // Remove tag immediately
-            try {
-              const userId = await this.getUserId();
-              await rpcUser(this.db, "update_note_tags", {
-                user_id: userId,
-                p_note_id: currentNote.id,
-                p_actor_id: currentNote.author.id,
-                p_client_id: 0, // API client
-                p_tag_updates: { [Tag.Twist]: false },
-              });
-            } catch (error) {
-              // Log but don't fail - tag removal is best-effort
-              logger.warn("Failed to remove Twisting tag from note", {
-                note_id: currentNote.id,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            }
-          } else {
-            // Custom intent - defer tag removal until callback completes
-            callbacks.push({
-              ...result,
-              deferredTagRemoval: {
-                noteId: currentNote.id,
-                actorId: currentNote.author.id,
-              },
-            });
+          if (result) {
+            // Custom intent handler — run in the twist worker.
+            callbacks.push(result);
           }
+          // Built-in intents and no-match cases are handled inline by
+          // handleIntent; nothing more to dispatch.
         } catch (error) {
-          // Intent handling failed - remove tag and create error reply
+          // Intent handling failed — log, report, and reply with an error
+          // note. Tag cleanup happens in the queue handler's finally.
           logger.error("Intent handling failed for note", error as Error, {
             note_id: currentNote.id,
           });
           const postHog = new PostHog(this.env.POSTHOG_API_KEY, { host: this.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
           postHog.captureException(error as Error, undefined, { context: "plot:intentHandling", note_id: currentNote.id, priority_twist_id: this.priorityTwistId });
           await postHog.shutdown();
-          try {
-            const userId = await this.getUserId();
-            await rpcUser(this.db, "update_note_tags", {
-              user_id: userId,
-              p_note_id: currentNote.id,
-              p_actor_id: currentNote.author.id,
-              p_client_id: 0,
-              p_tag_updates: { [Tag.Twist]: false },
-            });
-          } catch (tagError) {
-            logger.warn("Failed to remove Twisting tag after error", {
-              note_id: currentNote.id,
-              error: tagError instanceof Error ? tagError.message : String(tagError),
-            });
-          }
           try {
             await threadOps.createNote(this, {
               thread: { id: currentNote.thread.id },
@@ -1048,29 +1013,6 @@ export class Plot extends Tool implements IPlot {
         error_message: error instanceof Error ? error.message : String(error),
       });
       return 0;
-    }
-  }
-
-  /**
-   * Removes the Twisting tag from a note. Used for deferred tag removal after callbacks.
-   */
-  async removeTagFromNote(noteId: string, actorId: string): Promise<void> {
-    const logger = createLogger({ priority_twist_id: this.priorityTwistId });
-    try {
-      const userId = await this.getUserId();
-      await rpcUser(this.db, "update_note_tags", {
-        user_id: userId,
-        p_note_id: noteId,
-        p_actor_id: actorId,
-        p_client_id: 0, // API client
-        p_tag_updates: { [Tag.Twist]: false },
-      });
-    } catch (error) {
-      // Log but don't fail - tag removal is best-effort
-      logger.warn("Failed to remove deferred Twisting tag from note", {
-        note_id: noteId,
-        error: error instanceof Error ? error.message : String(error),
-      });
     }
   }
 
