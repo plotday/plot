@@ -543,9 +543,10 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           contentType: (outlookEvent.body?.contentType === "html"
             ? "html"
             : "text") as ContentType,
+          created: threadData.created,
         } : null;
 
-        // Build mentions from organizer + attendees for thread visibility
+        // Build attendee contacts for link-level access control
         const attendeeMentions: NewContact[] = [];
         if (authorContact) attendeeMentions.push(authorContact);
         for (const att of validAttendees) {
@@ -557,17 +558,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           }
         }
 
-        // Add mentions to description note for private thread visibility
-        if (descriptionNote && attendeeMentions.length > 0) {
-          (descriptionNote as any).mentions = attendeeMentions;
-        }
-
-        // Build notes array: description note, or a participants-only note for mentions
-        const notes = descriptionNote
-          ? [descriptionNote]
-          : attendeeMentions.length > 0
-            ? [{ key: "participants", content: null, mentions: attendeeMentions }]
-            : [];
+        const notes = descriptionNote ? [descriptionNote] : [];
 
         // Build NewLinkWithNotes from the transformed thread data
         const linkWithNotes: NewLinkWithNotes = {

@@ -626,17 +626,10 @@ export class AppleCalendar extends Connector<AppleCalendar> {
             ? parseICSDateTimeToDate(icsEvent.created)
             : undefined,
           ...(authorContact ? { author: authorContact } : {}),
-          ...(attendeeMentions.length > 0
-            ? { mentions: attendeeMentions }
-            : {}),
         }
       : null;
 
-    const notes = descriptionNote
-      ? [descriptionNote]
-      : attendeeMentions.length > 0
-      ? [{ key: "participants", content: null, mentions: attendeeMentions }]
-      : [];
+    const notes = descriptionNote ? [descriptionNote] : [];
 
     // Skip all-day events without a type (matching Google Calendar pattern)
     if (isAllDay && !isCancelled) {
