@@ -304,12 +304,19 @@ class ClerkJsAuthService implements AuthService {
         // create accounts for new users, leaving them stuck on the sign-in
         // page with no error after the redirect.
         final origin = web.window.location.origin;
+        final options = <String, Object>{
+          'strategy': strategy,
+          'redirectUrl': origin,
+          'redirectUrlComplete': origin,
+        };
+        if (provider == IdTokenProvider.google) {
+          // Force Google to show the account chooser every time. Without
+          // this, Chrome auto-selects the signed-in Google account and
+          // users cannot switch accounts even after signing out.
+          options['oidcPrompt'] = 'select_account';
+        }
         await _clerk.client!.signUp!
-            .authenticateWithRedirect(jsObj({
-              'strategy': strategy,
-              'redirectUrl': origin,
-              'redirectUrlComplete': origin,
-            }))
+            .authenticateWithRedirect(jsObj(options))
             .toDart;
       });
 
