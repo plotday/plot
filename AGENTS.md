@@ -16,8 +16,8 @@ Supported platforms:
 - Note: Content associated with an activity, such as Markdown notes and links.
 - Priority: Similar to a project or folder for Activity. Priorities are nested using paths, and display all Activity related to them and their descendants.
 - Twist: The Plot version of an extension/plugin/app/agent. Users add them to a Priority where they have access to that Priority and its descendants. They tend to implement opinionated workflows (e.g. create tasks from emails).
-- Source: A Plot package that syncs data from external services (replaces the old Tool pattern for external integrations). Sources save threads directly via `integrations.saveThread()`. They expose channels that users can enable/disable.
-- Twist Creator aka Twister: The SDK for building twists and sources. Sometimes represented with 🌪️.
+- Connection: One source system (e.g. Google Calendar) paired with one account (e.g. <kris@plot.day>). Connections are provided by connectors that expose channels that users can enable/disable.
+- Twist Creator aka Twister: The SDK for building twists and connectors. Sometimes represented with 🌪️.
 - RSVP Tags: Special count tags (Attend, Skip, Undecided) that are mutually exclusive per actor. When an actor adds one RSVP tag, any other RSVP tags they have are automatically removed. This exclusivity is enforced at both the database level and in the Flutter app for offline support. The exclusivity respects occurrence boundaries for recurring events.
 - Count Tag Ownership: Count tags can only be added/removed by the user themselves. Users cannot modify count tags for other actors. This is enforced by database trigger functions (`update_activity_tags`, `update_note_tags`) and validated in the Flutter app.
 
@@ -38,12 +38,12 @@ Atlas is used for schema diffing and migration management. Type generation uses 
   - The website (mostly marketing, plus some Twist management) is in "apps/site/".
   - APIs and server tasks are implemented using Cloudflare Workers, located in "workers/".
     - The API also implements the twist runtime including built-in tools.
-  - Non-open-source twists and sources are in "twists/".
+  - Non-open-source twists and connectors are in "twists/".
 - There is a public monorepo mounted as a git submodule at `public/` containing:
-  - The Plot Twist Creator aka Twister is at `public/twister/`. It's the SDK for building twists and sources, but with a name that's friendly for non-developers.
-    - Twister includes all type definitions for building twists and sources, including type definitions for built-in tools (which are implemented in the api).
+  - The Plot Twist Creator aka Twister is at `public/twister/`. It's the SDK for building twists and connectors, but with a name that's friendly for non-developers.
+    - Twister includes all type definitions for building twists and connectors, including type definitions for built-in tools (which are implemented in the api).
     - The CLI is also in the twister package.
-  - Public sources at `public/sources/`.
+  - Public connectors at `public/connectors/`.
   - Public twists at `public/twists/`.
 
 ## Twister Entity Standards
@@ -77,27 +77,27 @@ This pattern allows functions to distinguish between:
 
 ## Twist Creator Development
 
-The Twist Creator repository (`public/twist/`) contains all type definitions and is the single source of truth for twist and source types. This repo uses it via pnpm workspace links.
+The Twist Creator package (`public/twister/`) contains all type definitions and is the single source of truth for twist and connector types. This repo uses it via pnpm workspace links.
 
 ### Creator Location and Structure
 
-- **Creator Repository**: `public/twist/` (git submodule)
-- **Type Definitions**: `public/twist/src/` (twist.ts, plot.ts, tag.ts, sources/\*.ts, common/\*.ts)
-- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `public/twist`
-- **Import Pattern**: Use `@plotday/twister`, `@plotday/twister/plot`, `@plotday/twister/sources/*`, etc.
+- **Creator Package**: `public/twister/` (inside the `public/` git submodule)
+- **Type Definitions**: `public/twister/src/` (twist.ts, connector.ts, plot.ts, tag.ts, tools/\*.ts, common/\*.ts)
+- **Workspace Link**: Configured in `pnpm-workspace.yaml` as `public/twister`
+- **Import Pattern**: Use `@plotday/twister`, `@plotday/twister/plot`, `@plotday/twister/tools/*`, etc.
 
 ### Making Changes to SDK Types
 
-**IMPORTANT**: Twister types must be modified in the Twister submodule, never in this repo's main code.
+**IMPORTANT**: Twister types must be modified in the Twister package, never in this repo's main code.
 
-1. **Edit Twister files**: Make changes in `public/twist/src/`
-2. **Rebuild Twister**: Run `pnpm build` in the Twister folder
+1. **Edit Twister files**: Make changes in `public/twister/src/`
+2. **Rebuild Twister**: Run `pnpm build` in `public/twister`
 3. **Test locally**: Changes are immediately available via workspace link
 4. **Verify builds**: Run `pnpm lint` in affected packages (workers/api, twists/\*)
 
 ### Adding New Twister Exports
 
-When adding new top-level type files to Twister, update `public/twist/package.json` exports:
+When adding new top-level type files to Twister, update `public/twister/package.json` exports:
 
 ```json
 {
@@ -116,14 +116,14 @@ Then rebuild Twister and run `pnpm install` in this repo to update the workspace
 
 Only publish after testing locally:
 
-1. Update version in `public/twist/package.json`
-2. Build: `cd public/twist && pnpm build`
-3. Publish: `npm publish` (from `public/twist` directory)
-4. Commit changes to the Twister submodule, then commit the submodule reference update in this repo
+1. Update version in `public/twister/package.json`
+2. Build: `cd public/twister && pnpm build`
+3. Publish: `npm publish` (from `public/twister` directory)
+4. Commit changes in the `public/` submodule, then commit the submodule reference update in this repo
 
 ### Changesets
 
-**IMPORTANT**: Any change to Twister files in `public/twist/src/` MUST include a changeset file. Never skip this step.
+**IMPORTANT**: Any change to Twister files in `public/twister/src/` MUST include a changeset file. Never skip this step.
 
 1. **Create a changeset file** at `public/.changeset/<descriptive-name>.md` with this exact format:
 
@@ -156,204 +156,31 @@ Only publish after testing locally:
 - **TypeScript Configuration**: Uses `moduleResolution: "bundler"` in `libs/tsconfig/base.json` to support Twister package exports
 - **Workspace Dependencies**: API and twists use `"@plotday/twister": "workspace:*"` for local development
 
-## Twists and Sources
+## Twists and Connectors
 
-### Built-in Tools vs Sources
+### Where things live
 
-Sources have replaced the old Tool pattern for external integrations. Sources sync data from external services and expose channels that users can enable/disable.
+- **Twist runtime**: `workers/api/src/twist/` — the API worker hosts the twist runtime and dispatches twist/connector callbacks.
+- **Built-in tools**: `workers/api/src/twist/tools/*.ts` — classes like `Plot`, `Integrations`, `Store`, `Network`, `Tasks`, `Callbacks`, `AI`. They all `extend Tool` (from `@plotday/twister`) and have privileged access to API worker internals (database, services). Twists and connectors consume them via `this.tools.<name>`.
+- **Public connectors**: `public/connectors/*` — open-source packages that each implement one type of connection (e.g. Google Calendar, Linear, Slack). They extend the `Connector` base class from `@plotday/twister`, save data via `integrations.saveLink()`, and run in isolation inside the twist runtime with access only to the tools they declare in `build()`.
+- **Public twists**: `public/twists/*` — open-source twists (orchestrators users install into a priority).
+- **Private twists/connectors**: `twists/*` — non-open-source packages that follow the same conventions as the public ones.
 
-#### BuiltInTools (workers/api/src/twist/tools/\*)
+**Terminology reminder**: "**connection**" is the user-facing term (a connected Google Calendar account, etc.); "**connector**" refers to the package that provides that type of connection.
 
-- Located in `workers/api/src/twist/tools/*`
-- Extend the `BuiltInTool` class
-- Have access to internal API resources, database connections, and backend services as they run inside the API worker
-- Examples: `Plot`, `Integrations`, `Store`
-- Use this pattern for tools that need direct access to the Plot backend infrastructure
+### Development guidance
 
-#### Sources
+Full guidance for building twists and connectors lives in the `public/` submodule and is the source of truth. When working on anything that extends `Twist` or `Connector`, start there:
 
-- Implemented in separate packages in `public/sources/`
-- Extend the base `Source` class from the Twist Creator
-- Run in isolation, inside the twist worker, with access only to the other tools they request
-- Sources sync data from external services and expose channels via `getChannels()`
-- Users enable/disable channels, triggering `onChannelEnabled()` / `onChannelDisabled()` callbacks
-- Sources save threads directly via `integrations.saveThread()`
+- **Navigation**: `public/AGENTS.md`
+- **Connector dev guide** (scaffold, patterns, checklist, pitfalls): `public/connectors/AGENTS.md`
+- **Twist template**: `public/twister/cli/templates/AGENTS.template.md`
+- **Runtime limits** (request budget, batching with `runTask()`, state via `this.set`/`this.get`): `public/twister/docs/RUNTIME.md`
+- **Built-in tools reference** (including the `this.callback(this.method, ...)` / `this.run()` / `this.deleteCallback()` API and version-upgrade rules): `public/twister/docs/TOOLS_GUIDE.md`
+- **Multi-user auth** (private auth activities, per-user write-back fallback): `public/twister/docs/MULTI_USER_AUTH.md`
+- **Sync strategies** (upsert via `source`/`key`, `initialSync` flag propagation, cross-connector Google auth sharing): `public/twister/docs/SYNC_STRATEGIES.md` and `public/connectors/AGENTS.md`
 
-### Runtime Limitations
-
-All twist and source functions are executed in a sandboxed, ephemeral environment with limited resources. This means:
-
-- Anything stored in memory (e.g. as a variable in the twist/source object) is lost
-  after the function completes. Use the store tool instead. Only use memory for
-  temporary caching.
-- Each execution has limited CPU time
-- **Use the Tasks tool** to queue separate chunks of work by passing a callback
-- **Break long operations** into smaller batches that can be processed independently
-- **Store intermediate state** using the `store` tool between batches
-- **Examples**: Syncing large datasets, processing many API calls, or performing batch operations
-
-Pattern example:
-
-```typescript
-// Instead of processing everything in one function
-async startSync(calendarId: string): Promise<void> {
-  // Setup initial state
-  await this.store.set(`sync_state_${calendarId}`, initialState);
-
-  // Create callback and queue first batch using tasks tool
-  const callback = await this.callback("syncBatch", { calendarId, batchNumber: 1 });
-  await this.runTask(callback);
-}
-
-async syncBatch(args: any, context: { calendarId: string; batchNumber: number }): Promise<void> {
-  // Process one batch
-  const result = await processBatch(context.calendarId);
-
-  if (result.hasMore) {
-    // Queue next batch
-    const callback = await this.callback("syncBatch", {
-      calendarId: context.calendarId,
-      batchNumber: context.batchNumber + 1
-    });
-    await this.runTask(callback);
-  }
-}
-```
-
-### Callbacks for Persistent Function References
-
-When sources need to pass function references that persist across worker invocations, use the **callback tool** instead of direct function passing. Regular function passing cannot be serialized and will not survive worker restarts.
-
-#### When to Use Callbacks
-
-- **Webhook handlers**: Setting up webhooks that need to callback to your source
-- **Scheduled operations**: Functions that run after worker timeouts
-- **Event handlers**: Persistent event callbacks that survive restarts
-- **Inter-source communication**: When sources need to call back to their parent
-
-#### Using the Callback Tool
-
-All twists and sources have access to the `callback` tool. It provides a simple interface for creating persistent function references:
-
-```typescript
-// Create a persistent callback
-const token = await this.callback.create("onWebhookReceived", {
-  calendarId: "primary",
-  syncType: "incremental",
-});
-
-// The token can be stored or passed to external services
-await this.store.set("webhook_token", token);
-
-// Later, execute the callback (can happen in different worker instance)
-const result = await this.callback.call(token, {
-  eventData: webhookPayload,
-});
-
-// Clean up when no longer needed
-await this.callback.delete(token);
-
-// Or clean up all callbacks for this source's parent
-await this.callback.deleteAll();
-```
-
-#### Important Notes
-
-- Callbacks are **hardcoded to target the source's parent** for security
-- Callbacks persist across worker restarts and timeouts
-- Use callbacks instead of direct function references in webhook, auth, and tasks sources
-
-### Activity Sync Best Practices
-
-When syncing activities from external systems, follow these patterns to ensure correct archiving behavior and prevent notification spam:
-
-#### The `initialSync` Flag Pattern
-
-All sync-based sources should track whether they're performing an initial sync (first import) or an incremental sync (ongoing updates). Key pattern for activity creation:
-
-```typescript
-const activity: NewActivity = {
-  type: ActivityType.Event,
-  title: event.title,
-  ...(initialSync ? { unread: false } : {}), // false for initial, omit for incremental
-  ...(initialSync ? { archived: false } : {}), // unarchive on initial only
-};
-```
-
-#### Field Behavior by Sync Type
-
-| Field      | Initial Sync | Incremental Sync | Reason                                                                                         |
-| ---------- | ------------ | ---------------- | ---------------------------------------------------------------------------------------------- |
-| `unread`   | `false`      | _omit_           | Initial: mark read for all. Incremental: auto-mark read for author if they are the twist owner |
-| `archived` | `false`      | _omit_           | Unarchive on install, preserve user choice on updates                                          |
-
-**Why this matters**:
-
-- **Initial sync**: Activities are unarchived and marked as read for all users, avoiding spam from bulk historical imports
-- **Incremental sync**: Activities are auto-marked as read for the author if they are the twist owner (user), unread for everyone else. Archived state is preserved (respects user's archiving decisions)
-- **Reinstall**: Acts as initial sync, so archived activities are unarchived (fresh start)
-
-### Multi-User Priority Auth
-
-Twists and sources that require authentication must handle multi-user priorities correctly. There are three auth models:
-
-#### Auth Models
-
-1. **No auth**: The twist/source doesn't need external credentials (e.g. a text-only twist).
-2. **Read-only single auth**: One user connects (installer), and all synced data is visible to priority members. No per-user write-back needed.
-3. **Two-way per-user auth**: Write-backs (comments, RSVP, issue updates) should use the acting user's credentials when available, falling back to the installer's.
-
-#### Private Auth Activities
-
-When a twist creates an auth activity in `activate()`, it should use `access: "private"` with `accessContacts` targeting the installing user so only they see the auth prompt:
-
-```typescript
-async activate(_priority: Pick<Priority, "id">, context?: { actor: Actor }) {
-  await this.tools.plot.createActivity({
-    type: ActivityType.Action,
-    title: "Connect your account",
-    access: "private",
-    accessContacts: context?.actor ? [context.actor.id] : [],
-    notes: [{
-      links: [authLink],
-    }],
-  });
-}
-```
-
-#### Per-User Auth for Write-Backs
-
-For two-way sync, try the acting user's credentials first, then fall back to the installer's. The simplest pattern passes the actor's ID as `authToken` — the source's `getClient()` will look it up via `integrations.get(provider, actorId)`:
-
-```typescript
-// In onNoteCreated (note.author.id is available):
-const actorId = note.author.id as string;
-const installerAuthToken = await this.getAuthToken(provider);
-
-// Try actor first, fall back to installer
-for (const authToken of [actorId, installerAuthToken]) {
-  try {
-    await tool.addIssueComment(authToken, activity.meta, note.content, note.id);
-    return; // Success
-  } catch {
-    continue; // Try next
-  }
-}
-```
-
-For `onThreadUpdated` where the acting user is not available in the callback signature, continue using the installer's auth token.
-
-### Google Source Integration Pattern
-
-When building Google-based sources, use cross-source integration with a single OAuth flow. The pattern:
-
-1. Each source exports its required scopes as `static readonly SCOPES`
-2. A coordinator source (e.g. google-calendar) combines scopes from multiple sources in `requestAuth()`
-3. On auth success, the coordinator calls `syncWithAuth(authorization)` on consumer sources
-4. Consumer sources validate they have required scopes before syncing
-5. Always wrap consumer sync calls in try-catch so coordinator auth doesn't fail if consumer sync fails
-
-See `public/sources/google-calendar/` and `public/sources/google-contacts/` for the reference implementation. Consumer sources are added as `workspace:^` dependencies.
+Do not duplicate that content back into this file — the submodule is kept in sync with the `@plotday/twister` package that every twist and connector imports.
 
 ## Database Schema Changes
 
@@ -525,7 +352,7 @@ when the submodule has unpushed local commits.
 
 ### Conditional Setup (run when needed)
 
-**Submodule changes** (modifying `public/` — twister types, sources, twists):
+**Submodule changes** (modifying `public/` — twister types, connectors, twists):
 
 ```bash
 cd public && git checkout -b <branch-name>
@@ -590,7 +417,7 @@ END)
 
 ### When these filters are NOT required
 
-- **Twist/source callbacks**: Views like `priority_twist_thread_read` are scoped to threads the twist itself created (`a.created_by = pt.id`). The twist has inherent visibility into its own threads.
+- **Twist/connector callbacks**: Views like `priority_twist_thread_read` are scoped to threads the twist itself created (`a.created_by = pt.id`). The twist has inherent visibility into its own threads.
 - **Admin/system queries**: Internal operations that don't surface results to users.
 - **RPC functions with access control**: Functions that call `assert_priority_access()` before querying.
 

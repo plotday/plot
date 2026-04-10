@@ -4,11 +4,11 @@ packages:
   - libs/*
   - twists/*
   - public/twister
-  - public/sources/*
+  - public/connectors/*
   - public/twists/*
 
 onlyBuiltDependencies:
-  - '@posthog/cli'
+  - "@posthog/cli"
   - bufferutil
   - es5-ext
   - esbuild
