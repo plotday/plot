@@ -112,7 +112,7 @@ export class PushNotify extends DurableObject<Bindings> {
               t.access = 'public'
               OR t.created_by = ${userId}::uuid
               OR (t.access = 'members' AND "user".get_effective_role(${userId}::uuid, t.priority_id) = 'member')
-              OR "user".user_contact_id(${userId}::uuid) = ANY(t.access_contacts)
+              OR t.access_contacts && "user".user_contact_ids(${userId}::uuid)
             )
           GROUP BY tu.urgency, psi.see_within_requests, psi.see_within_updates
           ORDER BY CASE tu.urgency
@@ -280,7 +280,7 @@ export class PushNotify extends DurableObject<Bindings> {
               t.access = 'public'
               OR t.created_by = ${this.userId!}::uuid
               OR (t.access = 'members' AND "user".get_effective_role(${this.userId!}::uuid, t.priority_id) = 'member')
-              OR "user".user_contact_id(${this.userId!}::uuid) = ANY(t.access_contacts)
+              OR t.access_contacts && "user".user_contact_ids(${this.userId!}::uuid)
             )
         `.execute(db);
         latestUnreadAt = result.rows[0]?.latest ?? null;

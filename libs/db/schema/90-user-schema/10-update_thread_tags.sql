@@ -54,8 +54,8 @@ BEGIN
             -- p_actor_id should match the authenticated user's contact_id
             -- Note: RLS policies already enforce this, but we validate explicitly for clarity
             IF current_tag_type = 'count' THEN
-                -- Validate p_actor_id matches current user's contact_id
-                IF p_actor_id != "user".user_contact_id (user_id) THEN
+                -- Validate p_actor_id matches one of the user's linked contacts
+                IF NOT (p_actor_id = ANY("user".user_contact_ids (user_id))) THEN
                     RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', tag_id_int;
                 END IF;
             END IF;

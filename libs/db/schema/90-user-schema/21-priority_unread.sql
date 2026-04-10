@@ -14,7 +14,7 @@ FROM
             WHEN a.access = 'public' THEN TRUE
             WHEN a.created_by = upe.user_id THEN TRUE
             WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
-            WHEN "user".user_contact_id(upe.user_id) = ANY(a.access_contacts) THEN TRUE
+            WHEN a.access_contacts && "user".user_contact_ids(upe.user_id) THEN TRUE
             ELSE FALSE
         END)
     JOIN thread_unread tu ON tu.user_id = upe.user_id

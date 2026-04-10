@@ -149,7 +149,7 @@ WHERE
         WHEN a.access = 'public' THEN TRUE
         WHEN a.created_by = upe.user_id THEN TRUE
         WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
-        WHEN "user".user_contact_id(upe.user_id) = ANY(a.access_contacts) THEN TRUE
+        WHEN a.access_contacts && "user".user_contact_ids(upe.user_id) THEN TRUE
         ELSE FALSE
     END)
 UNION ALL
@@ -185,7 +185,7 @@ WHERE
     AND a.access != 'public'
     AND a.created_by != upe.user_id
     AND NOT (a.access = 'members' AND upe.role = 'member')
-    AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(a.access_contacts, ARRAY[]::uuid[])));
+    AND NOT (COALESCE(a.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(upe.user_id));
 
 ALTER VIEW "user"."thread" OWNER TO postgres;
 

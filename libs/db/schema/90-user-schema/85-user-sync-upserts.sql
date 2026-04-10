@@ -72,7 +72,7 @@ BEGIN
     IF v_tag_type != 'count' AND "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
         RAISE EXCEPTION 'Viewer members can only modify count tags';
     END IF;
-    IF v_tag_type = 'count' AND p_actor_id != "user".user_contact_id(user_id) THEN
+    IF v_tag_type = 'count' AND NOT (p_actor_id = ANY("user".user_contact_ids(user_id))) THEN
         RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
     END IF;
 
@@ -126,7 +126,7 @@ BEGIN
     IF v_tag_type != 'count' AND "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
         RAISE EXCEPTION 'Viewer members can only modify count tags';
     END IF;
-    IF v_tag_type = 'count' AND p_actor_id != "user".user_contact_id(user_id) THEN
+    IF v_tag_type = 'count' AND NOT (p_actor_id = ANY("user".user_contact_ids(user_id))) THEN
         RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
     END IF;
 
@@ -194,7 +194,7 @@ BEGIN
     IF v_thread_access != 'public' THEN
         IF v_thread_created_by != upsert_note.user_id
            AND NOT (v_thread_access = 'members' AND "user".get_effective_role(user_id, v_priority_id) = 'member')
-           AND NOT ("user".user_contact_id(upsert_note.user_id) = ANY(COALESCE(v_thread_access_contacts, ARRAY[]::uuid[])))
+           AND NOT (COALESCE(v_thread_access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(upsert_note.user_id))
         THEN
             RAISE EXCEPTION 'Access denied to private thread';
         END IF;

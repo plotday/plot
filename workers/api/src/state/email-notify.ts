@@ -160,7 +160,7 @@ export class EmailNotify extends DurableObject<Bindings> {
               t.access = 'public'
               OR t.created_by = ${this.userId!}::uuid
               OR (t.access = 'members' AND "user".get_effective_role(${this.userId!}::uuid, t.priority_id) = 'member')
-              OR "user".user_contact_id(${this.userId!}::uuid) = ANY(t.access_contacts)
+              OR t.access_contacts && "user".user_contact_ids(${this.userId!}::uuid)
             )
           ORDER BY tu.updated_at DESC
         `.execute(db);

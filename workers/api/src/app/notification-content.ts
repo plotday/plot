@@ -47,7 +47,7 @@ notificationContent.get("/notification-content", async (c) => {
           t.access = 'public'
           OR t.created_by = ${userId}::uuid
           OR (t.access = 'members' AND "user".get_effective_role(${userId}::uuid, t.priority_id) = 'member')
-          OR "user".user_contact_id(${userId}::uuid) = ANY(t.access_contacts)
+          OR t.access_contacts && "user".user_contact_ids(${userId}::uuid)
         )
       ORDER BY CASE tu.urgency
         WHEN 'interrupt' THEN 0

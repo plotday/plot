@@ -29,14 +29,14 @@ WHERE
     (n.draft = FALSE OR n.created_by = upe.user_id)
     AND (n.access_contacts IS NULL
         OR n.created_by = upe.user_id
-        OR "user".user_contact_id(upe.user_id) = ANY(n.access_contacts))
+        OR n.access_contacts && "user".user_contact_ids(upe.user_id))
     -- Thread-level filtering (thread draft/private affects note visibility)
     AND (a.draft = FALSE OR a.created_by = upe.user_id)
     AND (CASE
         WHEN a.access = 'public' THEN TRUE
         WHEN a.created_by = upe.user_id THEN TRUE
         WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
-        WHEN "user".user_contact_id(upe.user_id) = ANY(a.access_contacts) THEN TRUE
+        WHEN a.access_contacts && "user".user_contact_ids(upe.user_id) THEN TRUE
         ELSE FALSE
     END)
 UNION ALL
@@ -71,13 +71,13 @@ WHERE
         -- Note is private and user can't see it
         (n.access_contacts IS NOT NULL
             AND n.created_by != upe.user_id
-            AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(n.access_contacts, ARRAY[]::uuid[]))))
+            AND NOT (COALESCE(n.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(upe.user_id)))
         OR
         -- Thread is private and user can't see it
         (a.access != 'public'
             AND a.created_by != upe.user_id
             AND NOT (a.access = 'members' AND upe.role = 'member')
-            AND NOT ("user".user_contact_id(upe.user_id) = ANY(COALESCE(a.access_contacts, ARRAY[]::uuid[]))))
+            AND NOT (COALESCE(a.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(upe.user_id)))
     );
 
 ALTER VIEW "user"."note" OWNER TO postgres;
@@ -102,6 +102,6 @@ WHERE
     (n.draft = FALSE OR n.created_by = ua.user_id)
     AND (n.access_contacts IS NULL
         OR n.created_by = ua.user_id
-        OR "user".user_contact_id(ua.user_id) = ANY(n.access_contacts));
+        OR n.access_contacts && "user".user_contact_ids(ua.user_id));
 
 ALTER VIEW "user"."note_tags" OWNER TO postgres;
