@@ -181,6 +181,7 @@ async function handleSubscriptionUpdate(
     : "free";
 
   // Try user_subscription first, then organization_subscription
+  let isUserSubscription = false;
   try {
     const userResult = await c.var.db
       .updateTable("user_subscription")
@@ -194,7 +195,10 @@ async function handleSubscriptionUpdate(
       .where("stripe_customer_id", "=", customerId)
       .executeTakeFirst();
 
-    if (!userResult || BigInt(userResult.numUpdatedRows) === 0n) {
+    isUserSubscription =
+      !!userResult && BigInt(userResult.numUpdatedRows) > 0n;
+
+    if (!isUserSubscription) {
       // Not a user subscription — try organization_subscription
       await c.var.db
         .updateTable("organization_subscription")
@@ -218,8 +222,12 @@ async function handleSubscriptionUpdate(
   // Enforce limits on downgrade
   await enforceDowngradeLimits(c.var.db, customerId, plan, logger);
 
-  // Cancel any old free-tier Stripe subscriptions when upgrading to a paid plan
-  if (plan !== "free") {
+  // Cancel any stale personal Stripe subscriptions when a new paid sub lands.
+  // Scoped to personal subs: user clicks upgrade again → new Pro sub arrives →
+  // cancel the previous one so the customer isn't double-billed. The resulting
+  // `customer.subscription.deleted` webhook is a no-op because
+  // handleSubscriptionDeleted early-returns when another active sub exists.
+  if (plan !== "free" && isUserSubscription) {
     try {
       const stripeClient = createStripeClient(c.env.STRIPE_SECRET_KEY);
       const activeSubscriptions = await stripeClient.subscriptions.list({
@@ -228,17 +236,22 @@ async function handleSubscriptionUpdate(
       });
 
       for (const sub of activeSubscriptions.data) {
-        if (sub.id !== subscription.id && sub.metadata.plan === "free") {
+        if (sub.id !== subscription.id) {
           await stripeClient.subscriptions.cancel(sub.id);
-          logger.info("Canceled old free subscription on upgrade", {
+          logger.info("Canceled stale personal subscription on upgrade", {
             canceled_subscription_id: sub.id,
+            canceled_plan: sub.metadata.plan ?? "unknown",
             new_subscription_id: subscription.id,
             customer_id: customerId,
           });
         }
       }
     } catch (error) {
-      logger.error("Failed to cancel old free subscription", error as Error, {
+      logger.error("Failed to cancel stale personal subscription", error as Error, {
+        customer_id: customerId,
+      });
+      c.var.tracker.captureException(error as Error, {
+        operation: "cancel_stale_personal_subscription",
         customer_id: customerId,
       });
     }
@@ -327,6 +340,30 @@ async function handleSubscriptionDeleted(
   const logger = createLogger(context);
 
   const customerId = subscription.customer as string;
+
+  // If the customer still has other active Stripe subscriptions, skip the
+  // revert-to-free flow. This prevents a race where cancelling a stale Free
+  // sub during an upgrade silently downgrades the just-upgraded paid plan and
+  // spawns a replacement Free sub. The still-active sub's own webhooks govern
+  // the DB state.
+  const stripeClient = createStripeClient(c.env.STRIPE_SECRET_KEY);
+  const activeSubs = await stripeClient.subscriptions.list({
+    customer: customerId,
+    status: "active",
+  });
+  const otherActive = activeSubs.data.filter((s) => s.id !== subscription.id);
+  if (otherActive.length > 0) {
+    logger.info(
+      "Skipping free-revert — customer has other active subscriptions",
+      {
+        customer_id: customerId,
+        deleted_subscription_id: subscription.id,
+        active_subscription_ids: otherActive.map((s) => s.id),
+      }
+    );
+    return;
+  }
+
   const { start, end } = createFreeTierBillingCycle();
 
   // Revert to free tier — try user_subscription first, then organization_subscription
@@ -375,7 +412,6 @@ async function handleSubscriptionDeleted(
 
   if (deletedUserSub) {
     try {
-      const stripeClient = createStripeClient(c.env.STRIPE_SECRET_KEY);
       const freeSub = await createFreeSubscription(stripeClient, {
         customerId,
         userId: deletedUserSub.user_id,
