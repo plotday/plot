@@ -1,6 +1,7 @@
 import type {
   NewLinkWithNotes,
   NewActor,
+  NewContact,
 } from "@plotday/twister/plot";
 
 export type GmailLabel = {
@@ -481,6 +482,29 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
   // Use Gmail's plain-text snippet for preview (avoids HTML in previews)
   const preview = parentMessage.snippet || null;
 
+  // Collect all unique participants across messages for thread-level access
+  const participantsByEmail = new Map<string, NewContact>();
+  for (const message of thread.messages) {
+    const from = getHeader(message, "From");
+    const to = getHeader(message, "To");
+    const cc = getHeader(message, "Cc");
+    for (const actors of [
+      from ? [parseEmailAddress(from)].filter(Boolean) : [],
+      parseEmailAddressesToNewActors(to),
+      parseEmailAddressesToNewActors(cc),
+    ]) {
+      for (const actor of actors) {
+        const email = (actor as any).email?.toLowerCase();
+        if (email && !participantsByEmail.has(email)) {
+          participantsByEmail.set(email, {
+            email: (actor as any).email,
+            name: (actor as any).name || undefined,
+          });
+        }
+      }
+    }
+  }
+
   // Create link
   const plotThread: NewLinkWithNotes = {
     source: canonicalUrl,
@@ -488,6 +512,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     title: subject || "Email",
     created: new Date(parseInt(parentMessage.internalDate)),
     access: "private",
+    accessContacts: [...participantsByEmail.values()],
     meta: {
       threadId: thread.id,
       historyId: thread.historyId,

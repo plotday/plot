@@ -1,6 +1,7 @@
 import type {
   NewLinkWithNotes,
   NewActor,
+  NewContact,
   NewTags,
 } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
@@ -653,6 +654,7 @@ export function transformChatThread(
     type: "message",
     title,
     access: "private",
+    accessContacts: members?.filter((m): m is NewContact => !("id" in m)) ?? [],
     created: new Date(firstMessage.createTime),
     author: senderToNewActor(firstMessage.sender, memberInfo),
     sourceUrl: `https://chat.google.com/room/${spaceId}/${threadKey}`,

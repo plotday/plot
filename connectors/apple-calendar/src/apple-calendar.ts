@@ -4,12 +4,13 @@ import {
   type Actor,
   type ActorId,
   ConferencingProvider,
+  Connector,
   type NewContact,
   type NewLinkWithNotes,
   type Thread,
-  Connector,
   type ToolBuilder,
 } from "@plotday/twister";
+import { Options } from "@plotday/twister/options";
 import type {
   NewSchedule,
   NewScheduleContact,
@@ -19,18 +20,13 @@ import type {
 import {
   type AuthToken,
   type Authorization,
-  Integrations,
   type Channel,
+  Integrations,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
-import { Options } from "@plotday/twister/options";
 
-import {
-  CalDAVClient,
-  type CalDAVEvent,
-  toCalDAVTimeString,
-} from "./caldav";
+import { CalDAVClient, type CalDAVEvent, toCalDAVTimeString } from "./caldav";
 import {
   type ICSEvent,
   parseICSDateTime,
@@ -66,8 +62,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       type: "event",
       label: "Event",
       logo: "https://plot.day/assets/logo-apple-calendar.svg",
-      logoMono:
-        "https://api.iconify.design/simple-icons/apple.svg",
+      logoMono: "https://api.iconify.design/simple-icons/apple.svg",
     },
   ];
 
@@ -195,7 +190,9 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     await this.clear(`etags_${channel.id}`);
 
     // Clear pending occurrences
-    const pendingKeys = await this.tools.store.list("pending_occ:apple-calendar:");
+    const pendingKeys = await this.tools.store.list(
+      "pending_occ:apple-calendar:"
+    );
     for (const key of pendingKeys) {
       await this.clear(key);
     }
@@ -230,7 +227,11 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       await this.set(`etags_${calendarHref}`, etagMap);
 
       // Process events in batches
-      await this.processCalDAVEvents(events.slice(0, 50), calendarHref, initialSync);
+      await this.processCalDAVEvents(
+        events.slice(0, 50),
+        calendarHref,
+        initialSync
+      );
 
       if (events.length > 50) {
         // Store remaining hrefs for next batches
@@ -305,7 +306,9 @@ export class AppleCalendar extends Connector<AppleCalendar> {
   ): Promise<void> {
     if (initialSync) {
       // Discard buffered occurrences whose masters never appeared
-      const pendingKeys = await this.tools.store.list("pending_occ:apple-calendar:");
+      const pendingKeys = await this.tools.store.list(
+        "pending_occ:apple-calendar:"
+      );
       for (const key of pendingKeys) {
         await this.clear(key);
       }
@@ -329,10 +332,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     const enabled = await this.get<boolean>(`sync_enabled_${calendarHref}`);
     if (!enabled) return;
 
-    const pollCallback = await this.callback(
-      this.pollForChanges,
-      calendarHref
-    );
+    const pollCallback = await this.callback(this.pollForChanges, calendarHref);
     const taskToken = await this.runTask(pollCallback, {
       runAt: new Date(Date.now() + 15 * 60 * 1000),
     });
@@ -361,10 +361,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         await this.schedulePoll(calendarHref);
       }
     } catch (error) {
-      console.error(
-        `Poll failed for calendar ${calendarHref}:`,
-        error
-      );
+      console.error(`Poll failed for calendar ${calendarHref}:`, error);
       // Schedule next poll even on failure
       await this.schedulePoll(calendarHref);
     }
@@ -412,10 +409,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
     // Fetch and process changed events
     if (changedHrefs.length > 0) {
-      const events = await client.fetchEventsByHref(
-        calendarHref,
-        changedHrefs
-      );
+      const events = await client.fetchEventsByHref(calendarHref, changedHrefs);
       await this.processCalDAVEvents(events, calendarHref, false);
     }
 
@@ -451,7 +445,12 @@ export class AppleCalendar extends Connector<AppleCalendar> {
               caldavEvent.href
             );
           } else {
-            await this.processEvent(icsEvent, calendarHref, initialSync, caldavEvent.href);
+            await this.processEvent(
+              icsEvent,
+              calendarHref,
+              initialSync,
+              caldavEvent.href
+            );
           }
         }
       } catch (error) {
@@ -507,9 +506,8 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       const link: NewLinkWithNotes = {
         source,
         type: "event",
-        title: icsEvent.summary || "Cancelled Event",
+        title: icsEvent.summary ?? undefined,
         status: "Cancelled",
-        access: "private",
         preview: "Cancelled",
         channelId: calendarHref,
         meta: {
@@ -579,14 +577,14 @@ export class AppleCalendar extends Connector<AppleCalendar> {
           att.partstat === "ACCEPTED"
             ? ("attend" as const)
             : att.partstat === "DECLINED"
-              ? ("skip" as const)
-              : null,
+            ? ("skip" as const)
+            : null,
         role:
           att.role === "CHAIR"
             ? ("organizer" as const)
             : att.role === "OPT-PARTICIPANT"
-              ? ("optional" as const)
-              : ("required" as const),
+            ? ("optional" as const)
+            : ("required" as const),
       }));
       schedule.contacts = scheduleContacts;
     }
@@ -637,8 +635,8 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     const notes = descriptionNote
       ? [descriptionNote]
       : attendeeMentions.length > 0
-        ? [{ key: "participants", content: null, mentions: attendeeMentions }]
-        : [];
+      ? [{ key: "participants", content: null, mentions: attendeeMentions }]
+      : [];
 
     // Skip all-day events without a type (matching Google Calendar pattern)
     if (isAllDay && !isCancelled) {
@@ -653,9 +651,10 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         icsEvent.status === "CONFIRMED"
           ? "Confirmed"
           : icsEvent.status === "TENTATIVE"
-            ? "Tentative"
-            : "Confirmed",
+          ? "Tentative"
+          : "Confirmed",
       access: "private",
+      accessContacts: attendeeMentions,
       created: icsEvent.created
         ? parseICSDateTimeToDate(icsEvent.created)
         : undefined,
@@ -754,14 +753,14 @@ export class AppleCalendar extends Connector<AppleCalendar> {
               att.partstat === "ACCEPTED"
                 ? ("attend" as const)
                 : att.partstat === "DECLINED"
-                  ? ("skip" as const)
-                  : null,
+                ? ("skip" as const)
+                : null,
             role:
               att.role === "CHAIR"
                 ? ("organizer" as const)
                 : att.role === "OPT-PARTICIPANT"
-                  ? ("optional" as const)
-                  : ("required" as const),
+                ? ("optional" as const)
+                : ("required" as const),
           }))
         : undefined;
 
@@ -772,9 +771,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
     const occurrence: NewScheduleOccurrence = {
       occurrence:
-        originalStart instanceof Date
-          ? originalStart
-          : new Date(originalStart),
+        originalStart instanceof Date ? originalStart : new Date(originalStart),
       start: instanceStart,
       contacts,
       ...(initialSync ? { unread: false } : {}),
@@ -787,8 +784,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     // During initial sync, buffer for merging with master
     if (initialSync) {
       const pendingKey = `pending_occ:${masterSource}`;
-      const existing =
-        (await this.get<PendingOccurrence[]>(pendingKey)) || [];
+      const existing = (await this.get<PendingOccurrence[]>(pendingKey)) || [];
       existing.push({ occurrence, cancelled: false });
       await this.set(pendingKey, existing);
       return;
@@ -837,8 +833,8 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       status === "attend"
         ? "ACCEPTED"
         : status === "skip"
-          ? "DECLINED"
-          : "NEEDS-ACTION";
+        ? "DECLINED"
+        : "NEEDS-ACTION";
 
     try {
       await this.updateRSVP(calendarHref, eventHref, appleId, partstat);

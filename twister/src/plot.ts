@@ -424,7 +424,7 @@ type ThreadFields = ThreadCommon & {
   /** Thread access level: "public", "members", or "private" */
   access: ThreadAccessLevel;
   /** Contacts who can see a private thread (empty array for creator-only). Only meaningful when access is "private". */
-  accessContacts: ActorId[];
+  accessContacts: Contact[];
   /** The schedule associated with this thread, if any */
   schedule?: Schedule;
   /** Source-specific metadata from the thread's link, populated on callbacks */
@@ -487,7 +487,7 @@ export type PickPriorityConfig = {
  * ```
  */
 export type NewThread = Partial<
-  Omit<ThreadFields, "priority" | "tags" | "id">
+  Omit<ThreadFields, "priority" | "tags" | "id" | "accessContacts">
 > &
   (
     | {
@@ -518,6 +518,13 @@ export type NewThread = Partial<
      * If omitted, defaults to "notes" (private) or "discussion" (shared).
      */
     type?: ThreadType;
+
+    /**
+     * Contacts who can see a private thread.
+     * Pass email-based NewContact objects; they are resolved to contact IDs by the API.
+     * If omitted for a private thread, defaults to the connection owner.
+     */
+    accessContacts?: NewContact[];
 
     /**
      * Whether the thread should be marked as unread for users.
@@ -564,8 +571,11 @@ export type ThreadFilter = {
  * that can be applied uniformly across many threads are included.
  */
 type ThreadBulkUpdateFields = Partial<
-  Pick<ThreadFields, "title" | "access" | "accessContacts" | "archived">
->;
+  Pick<ThreadFields, "title" | "access" | "archived">
+> & {
+  /** Contacts who can see a private thread. Pass NewContact objects (email-based); resolved by the API. */
+  accessContacts?: NewContact[];
+};
 
 /**
  * Fields supported by single-thread updates via `id` or `source`.
@@ -811,6 +821,19 @@ export type Actor = {
 };
 
 /**
+ * A resolved contact with identity info. Used for access control lists
+ * where only human contacts (not twists) are relevant.
+ */
+export type Contact = {
+  /** Unique identifier for the contact */
+  id: ActorId;
+  /** Email address, or null if not set */
+  email: string | null;
+  /** Display name, or null if not set */
+  name: string | null;
+};
+
+/**
  * An existing or new contact.
  */
 export type NewActor =
@@ -868,10 +891,7 @@ type NewContactBase = {
  * identified in the UI. Contacts with neither would display as "Unknown".
  */
 export type NewContact = NewContactBase &
-  (
-    | { email: string; name?: string }
-    | { email?: string; name: string }
-  );
+  ({ email: string; name?: string } | { email?: string; name: string });
 
 export type ContentType = "text" | "markdown" | "html";
 
@@ -963,10 +983,11 @@ export type NewLink = (
      */
     access?: ThreadAccessLevel;
     /**
-     * Contacts who can see a private thread (empty array for creator-only).
-     * Only meaningful when access is "private".
+     * Contacts who can see a private thread.
+     * Pass email-based NewContact objects; they are resolved to contact IDs by the API.
+     * If omitted for a private thread, defaults to the connection owner.
      */
-    accessContacts?: ActorId[];
+    accessContacts?: NewContact[];
     /**
      * Whether the thread should be marked as unread for users.
      * - undefined/omitted (default): Thread is unread for users, except auto-marked
