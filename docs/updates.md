@@ -1,3 +1,4 @@
+- Fixed tags from removed connections still appearing on threads — for example, a "Done" tag showing the same connector name multiple times
 - Fixed calendar events, emails, and chat messages not appearing after adding a connection — threads were being created as private without listing any contacts who could see them
 - Fixed web links added to threads not appearing on other devices until a manual sync
 - Fixed a crash on web when scrolling to threads with certain website icons that use an unsupported image format
