@@ -71,6 +71,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     log.info('Updating filter to $filter');
     emit(state.copyWith(filter: filter));
 
+    // When filtering, force navigation to use activityFeed (matches UI)
+    if (filter.isNotEmpty) {
+      threadListSource = ThreadListSource.activityFeed;
+    } else {
+      threadListSource = null;
+    }
+
     // Reload agenda items with new filter
     _loadPriority();
   }
@@ -92,6 +99,13 @@ class PriorityBloc extends Cubit<PriorityState> {
   void updateSearch(String search) {
     log.info('Updating search to "$search"');
     emit(state.copyWith(search: search));
+
+    // When searching, force navigation to use activityFeed (matches UI)
+    if (search.isNotEmpty) {
+      threadListSource = ThreadListSource.activityFeed;
+    } else {
+      threadListSource = null;
+    }
 
     // Reset limits but preserve sync state - search filters local data only
     _agendaLimit = 50;
