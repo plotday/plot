@@ -3385,12 +3385,26 @@ class Thread extends Equatable implements Comparable<Thread> {
             ));
       }
     }
-    if (_scheduleDirty && _schedule != null && _schedule.linkId == null) {
-      await Store.get.save(
-        Store.get.schedules,
-        _schedule.toCompanion(false),
-        SchedulesBase(),
-      );
+    if (_scheduleDirty && _schedule != null) {
+      if (_schedule.linkId == null) {
+        await Store.get.save(
+          Store.get.schedules,
+          _schedule.toCompanion(false),
+          SchedulesBase(),
+        );
+      } else {
+        // Link schedules are server-owned and rejected by /sync/schedules.
+        // Persist only the RSVP-derived fields locally so the optimistic
+        // update survives refreshAgenda(); the server-side status is
+        // reconciled via POST /sync/schedule/status from the caller.
+        await (Store.get.update(Store.get.schedules)
+              ..where((a) => a.id.equalsValue(_schedule.id)))
+            .write(SchedulesCompanion(
+              contacts: Value(_schedule.contacts),
+              currentUserStatus: Value(_schedule.currentUserStatus),
+              updatedAt: Value(DateTime.now()),
+            ));
+      }
     }
     if (_userSchedule != null) {
       await Store.get.save(

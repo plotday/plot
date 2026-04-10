@@ -4478,6 +4478,7 @@ export type Database = {
         }
       }
       user_contact_id: { Args: { p_user_id: string }; Returns: string }
+      user_contact_ids: { Args: { p_user_id: string }; Returns: string[] }
     }
     Enums: {
       [_ in never]: never
