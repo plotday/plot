@@ -8,6 +8,7 @@ type LinkTypeStatus = {
   label: string;
   tag?: number;
   done?: boolean;
+  todo?: boolean;
 };
 
 type LinkTypeConfig = {
@@ -154,6 +155,90 @@ export async function getChannelLinkTypes(
   } catch {
     return [];
   }
+}
+
+/**
+ * Load the full linkTypes config for a link — channel-level first, twist-level fallback.
+ */
+async function getLinkTypesForLink(
+  db: Kysely<DB>,
+  linkId: string,
+  createdBy: string
+): Promise<LinkTypeConfig[]> {
+  let allLinkTypes = await getChannelLinkTypes(db, linkId, createdBy);
+  if (allLinkTypes.length === 0) {
+    const twistRow = await db
+      .selectFrom("priority_twist")
+      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      .select("twist.permissions")
+      .where("priority_twist.id", "=", createdBy)
+      .executeTakeFirst();
+    if (!twistRow?.permissions) return [];
+    const permissions = twistRow.permissions as any;
+    const providers = permissions._providers;
+    if (!Array.isArray(providers)) return [];
+    allLinkTypes = providers.flatMap(
+      (p: any) => (p.linkTypes ?? []) as LinkTypeConfig[]
+    );
+  }
+  return allLinkTypes;
+}
+
+/**
+ * Find any links on a thread whose current status is marked done, and flip
+ * them back to the first non-done status for their type. Then re-propagates
+ * thread tags so Tag.Done (or any other done-status tag) is cleared.
+ *
+ * Called when a thread is brought back into the agenda (e.g. user adds it
+ * to to-do) so the link widget and thread tags reflect the active state.
+ */
+export async function unarchiveDoneLinksOnThread(
+  db: Kysely<DB>,
+  threadId: string
+): Promise<void> {
+  const links = await db
+    .selectFrom("link")
+    .select(["id", "created_by", "type", "status"])
+    .where("thread_id", "=", threadId)
+    .where("created_by", "is not", null)
+    .execute();
+
+  let changed = false;
+  for (const link of links) {
+    if (!link.type || !link.status || !link.created_by) continue;
+
+    const linkTypes = await getLinkTypesForLink(db, link.id, link.created_by);
+    const typeConfig = linkTypes.find((lt) => lt.type === link.type);
+    if (!typeConfig?.statuses) continue;
+
+    const currentStatus = typeConfig.statuses.find((s) => s.status === link.status);
+    if (currentStatus?.done !== true) continue;
+
+    // Prefer a status explicitly marked `todo: true` by the connector (e.g.
+    // Gmail's "starred", Linear's "unstarted"). Fall back to the first
+    // non-done status if the connector didn't mark one.
+    const nonDoneStatus =
+      typeConfig.statuses.find((s) => s.todo === true) ??
+      typeConfig.statuses.find((s) => s.done !== true);
+    if (!nonDoneStatus) continue;
+
+    await db
+      .updateTable("link")
+      .set({ status: nonDoneStatus.status, updated_at: new Date() })
+      .where("id", "=", link.id)
+      .execute();
+
+    await propagateLinkStatusTagsFromDb(db, {
+      id: link.id,
+      thread_id: threadId,
+      created_by: link.created_by,
+      type: link.type,
+      status: nonDoneStatus.status,
+    });
+    changed = true;
+  }
+
+  if (!changed) return;
 }
 
 /**

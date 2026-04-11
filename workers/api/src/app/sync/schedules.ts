@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { sql, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
+import { twistFactory } from "../../twist/factory";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
+import { unarchiveDoneLinksOnThread } from "./link-tags";
 import { notifySync } from "./notify";
 
 const schedules = new Hono<{ Bindings: Bindings }>();
@@ -102,6 +104,117 @@ schedules.post("/sync/schedules", async (c) => {
 
     return scheduleResult;
   });
+
+  // Resolve the thread this schedule is attached to, then:
+  //   1. notifySync to wake priority-bound twists (SyncNotify → TwistSync DOs)
+  //   2. Direct dispatch to connector's onThreadToDo for source twists
+  //      (connectors don't declare Plot tool, so the view-based Plot dispatch
+  //      can't reach them — mirror the /sync/links pattern and call
+  //      Integrations.dispatch directly).
+  //   3. Lift archived_at on the thread when an active user schedule is
+  //      upserted, so adding to the agenda also unarchives.
+  const scheduleId = (result as any)?.id as string | undefined;
+  if (scheduleId) {
+    const updated = await (c.var.db as any)
+      .selectFrom("schedule")
+      .select(["thread_id", "link_id", "user_id", "on", "at", "archived_at"])
+      .where("id", "=", scheduleId)
+      .executeTakeFirst();
+
+    let threadId: string | null = updated?.thread_id ?? null;
+    if (!threadId && updated?.link_id) {
+      const link = await (c.var.db as any)
+        .selectFrom("link")
+        .select("thread_id")
+        .where("id", "=", updated.link_id)
+        .executeTakeFirst();
+      threadId = link?.thread_id ?? null;
+    }
+
+    // Adding a thread to the agenda should lift archive state so the user
+    // sees it where they expect to act. Only clears archive for user-owned
+    // schedules that are active (on/at set) and not themselves archived.
+    const isActiveUserSchedule =
+      updated?.user_id != null &&
+      updated.archived_at == null &&
+      (updated.on != null || updated.at != null);
+    if (threadId && isActiveUserSchedule) {
+      await (c.var.db as any)
+        .updateTable("thread")
+        .set({ archived_at: null })
+        .where("id", "=", threadId)
+        .where("archived_at", "is not", null)
+        .execute();
+
+      // Also flip any done-status links back to a non-done status so the
+      // link widget no longer shows "Archived" and Tag.Done is cleared.
+      try {
+        await unarchiveDoneLinksOnThread(c.var.db as any, threadId);
+      } catch (error) {
+        console.error("[sync/schedules] unarchiveDoneLinksOnThread failed:", error);
+      }
+    }
+
+    if (threadId) {
+      const thread = await (c.var.db as any)
+        .selectFrom("thread")
+        .select(["priority_id", "created_by"])
+        .where("id", "=", threadId)
+        .executeTakeFirst();
+
+      if (thread?.priority_id) {
+        notifySync(c, thread.priority_id);
+      }
+
+      // Direct dispatch to the connector that owns the thread, if any.
+      // Matches the /sync/links direct-dispatch pattern so user-originated
+      // agenda toggles reach onThreadToDo without waiting for TwistSync polling.
+      if (thread?.created_by && thread?.priority_id) {
+        const createdBy = thread.created_by as string;
+        const threadPriorityId = thread.priority_id as string;
+        const scheduleItem = {
+          ...updated,
+          id: scheduleId,
+          thread_id: threadId,
+        };
+        c.executionCtx.waitUntil(
+          (async () => {
+            const db = createDb(c.env);
+            try {
+              // Check if created_by is a connector (has source_channel rows)
+              const isConnector = await (db as any)
+                .selectFrom("source_channel")
+                .select("priority_twist_id")
+                .where("priority_twist_id", "=", createdBy)
+                .limit(1)
+                .executeTakeFirst();
+              if (!isConnector) return;
+
+              const factory = twistFactory({
+                env: c.env,
+                ctx: c.executionCtx as any,
+                db,
+              });
+
+              const twistWrapper = await factory({
+                priorityId: threadPriorityId,
+                priorityTwistId: createdBy,
+              });
+
+              await twistWrapper.dispatch("Integrations", {
+                itemType: "thread_schedule" as const,
+                item: scheduleItem,
+              });
+            } catch (error) {
+              console.error("[sync/schedules] Direct connector dispatch failed:", error);
+            } finally {
+              await db.destroy();
+            }
+          })()
+        );
+      }
+    }
+  }
 
   return c.json(result as any);
 });

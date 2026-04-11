@@ -1246,7 +1246,19 @@ class ToggleThreadTag extends _UpdateThreadCommand {
   Future<CommandReturn> run(BuildContext context) async {
     if (!enabled(context)) return const CommandDone();
     final isRemovingReply = tag == Tag.reply && thread.hasTag(tag);
-    await saveOptimistically(context, thread.toggleTag(tag));
+
+    // When adding to to-do, use the async path that also unarchives the
+    // thread, flips any done-status links to their connector's todo status,
+    // and re-propagates tags — matching the server-side logic so offline
+    // users see the same end state.
+    if (tag == Tag.todo && !thread.hasTag(Tag.todo)) {
+      final updated = await thread.addToTodoWithPropagation();
+      if (!context.mounted) return const CommandDone();
+      await saveOptimistically(context, updated);
+    } else {
+      await saveOptimistically(context, thread.toggleTag(tag));
+    }
+
     if (isRemovingReply) {
       // Remove reply tag from all notes on this thread
       final notes = await Note.getForThread(thread.id);

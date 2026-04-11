@@ -3357,6 +3357,191 @@ class Thread extends Equatable implements Comparable<Thread> {
     return newActivity;
   }
 
+  /// Transitions this thread into the personal agenda, replicating the
+  /// server logic in `workers/api/src/app/sync/link-tags.ts`
+  /// (`unarchiveDoneLinksOnThread`) and
+  /// `workers/api/src/app/sync/schedules.ts` so offline users end up in the
+  /// same state as online ones.
+  ///
+  /// - Creates/updates the user schedule (add to agenda now)
+  /// - Clears thread.archivedAt
+  /// - Flips done-status links on the thread to their connector's todo
+  ///   status (the one marked `todo: true`, or first non-done fallback)
+  /// - Recomputes thread tags with union semantics per connector
+  ///
+  /// Link status changes are persisted inline (marked pending for sync).
+  /// The returned Thread still needs `.save()` to persist the schedule,
+  /// thread row, and tags.
+  Future<Thread> addToTodoWithPropagation() async {
+    final now = DateTime.now();
+
+    // 1. Query links on this thread.
+    final links = await Link.getForThread(id);
+
+    // 2. Compute the target status per link that's currently in a done state.
+    final newStatusByLinkId = <LinkId, LinkStatus>{};
+    for (final link in links) {
+      final config = link.getTypeConfig();
+      if (config == null || link.status == null) continue;
+      final currentStatusDef = config.statuses
+          ?.where((s) => s.status == link.status)
+          .firstOrNull;
+      if (currentStatusDef == null || !currentStatusDef.done) continue;
+      final target = config.statuses?.where((s) => s.todo).firstOrNull ??
+          config.statuses?.where((s) => !s.done).firstOrNull;
+      if (target == null) continue;
+      newStatusByLinkId[link.id] = target;
+    }
+
+    // 3. Apply link status changes (marks each row pending for sync).
+    for (final link in links) {
+      final target = newStatusByLinkId[link.id];
+      if (target != null) {
+        await Link.updateStatus(link, target.status);
+      }
+    }
+
+    // 4. Recompute thread tags with union semantics per connector.
+    //    Mirrors `propagateLinkStatusTagsFromDb` in workers/api/src/app/sync/
+    //    link-tags.ts — a tag stays iff any sibling link from the same
+    //    connector still contributes it.
+    final currentTags =
+        Map<Tag, List<ActorId>>.from(_tags?.tags ?? const {});
+    final currentTagUpdates =
+        Map<String, bool>.from(_tags?.tagsUpdated ?? {});
+    var tagsChanged = false;
+
+    final linksByConnector = <Uuid, List<Link>>{};
+    for (final link in links) {
+      final cb = link.createdBy;
+      if (cb == null) continue;
+      linksByConnector.putIfAbsent(cb, () => []).add(link);
+    }
+
+    for (final entry in linksByConnector.entries) {
+      final actor = ActorId(entry.key);
+      final connectorLinks = entry.value;
+
+      // All tags that any status across this connector's linkTypes can
+      // contribute (we may need to remove some of them from the thread).
+      final allPossibleTags = <Tag>{};
+      // Tags this connector contributes after the status flip.
+      final contributedTags = <Tag>{};
+
+      for (final link in connectorLinks) {
+        final config = link.getTypeConfig();
+        if (config == null) continue;
+
+        for (final s in config.statuses ?? const <LinkStatus>[]) {
+          final tagId = s.tag;
+          if (tagId != null) {
+            final t = Tag.get(id: tagId);
+            if (t != null) allPossibleTags.add(t);
+          }
+        }
+
+        final effectiveStatus =
+            newStatusByLinkId[link.id]?.status ?? link.status;
+        if (effectiveStatus == null) continue;
+        final statusDef = config.statuses
+            ?.where((s) => s.status == effectiveStatus)
+            .firstOrNull;
+        final tagId = statusDef?.tag;
+        if (tagId != null) {
+          final t = Tag.get(id: tagId);
+          if (t != null) contributedTags.add(t);
+        }
+      }
+
+      // Remove this actor from any tag it no longer contributes.
+      for (final tag in allPossibleTags) {
+        if (contributedTags.contains(tag)) continue;
+        final list = List<ActorId>.from(currentTags[tag] ?? const []);
+        if (list.remove(actor)) {
+          if (list.isEmpty) {
+            currentTags.remove(tag);
+          } else {
+            currentTags[tag] = list;
+          }
+          currentTagUpdates[tag.id.toString()] = false;
+          tagsChanged = true;
+        }
+      }
+
+      // Add this actor to any tag it now contributes.
+      for (final tag in contributedTags) {
+        final list = List<ActorId>.from(currentTags[tag] ?? const []);
+        if (!list.contains(actor)) {
+          list.add(actor);
+          currentTags[tag] = list;
+          currentTagUpdates[tag.id.toString()] = true;
+          tagsChanged = true;
+        }
+      }
+    }
+
+    // 5. Build the new user schedule (same rules as toggleTag(Tag.todo) add).
+    final ScheduleRow newUserSchedule;
+    if (_userSchedule != null) {
+      newUserSchedule = _userSchedule.copyWith(
+        startOn: Value(Thread.todoNowDate),
+        order: Value(Order.first()),
+        archivedAt: const Value(null),
+        reason: const Value('add'),
+        updatedAt: now,
+      );
+    } else {
+      newUserSchedule = ScheduleRow(
+        id: Uuid.generate(),
+        updatedAt: now,
+        threadId: id,
+        userId: Base.userId,
+        startOn: Thread.todoNowDate,
+        order: Order.first(),
+        reason: 'add',
+        outstandingTasks: false,
+      );
+    }
+
+    // 6. Clear thread.archivedAt if set.
+    final wasArchived = _thread.archivedAt != null;
+    final newActivity = wasArchived
+        ? _thread.copyWith(
+            archivedAt: const Value(null),
+            updatedAt: now,
+          )
+        : _thread;
+
+    // 7. Build the new tags row (only if anything actually changed).
+    final newTagsRow = tagsChanged
+        ? (_tags?.copyWith(
+              updatedAt: now,
+              tags: Value(currentTags),
+              tagsUpdated: Value(currentTagUpdates),
+            ) ??
+            ThreadTagsRow(
+              id: id,
+              occurrence: _schedule?.occurrence ?? '',
+              updatedAt: now,
+              tags: currentTags,
+              tagsUpdated:
+                  currentTagUpdates.isEmpty ? null : currentTagUpdates,
+            ))
+        : _tags;
+
+    return Thread._fromStore(
+      activity: newActivity,
+      schedule: _schedule,
+      userSchedule: newUserSchedule,
+      tags: newTagsRow,
+      priority: priority,
+      notes: _notes,
+      isLinkScheduleInstance: isLinkScheduleInstance,
+      activityDirty: wasArchived,
+      activityRemoteDirty: wasArchived,
+    );
+  }
+
   /// Save only the schedule that was changed by [reorder].
   /// Avoids unnecessary re-emissions from unchanged rows.
   Future<void> saveOrder() async {
