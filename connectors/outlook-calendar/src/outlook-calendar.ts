@@ -285,8 +285,13 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   async setupOutlookWatch(calendarId: string): Promise<void> {
     const api = await this.getApi(calendarId);
 
+    // Microsoft Graph validates subscription endpoints by POSTing with a
+    // `validationToken` query parameter and expects the token echoed back
+    // as `text/plain`. That requires a synchronous response path — the
+    // async (queued) default would just reply `200 { queued: true }` and
+    // subscription creation would fail. Opt out explicitly.
     const webhookUrl = await this.tools.network.createWebhook(
-      {},
+      { async: false },
       this.onOutlookWebhook,
       calendarId
     );
@@ -706,10 +711,12 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
   async onOutlookWebhook(
     request: WebhookRequest,
     calendarId: string
-  ): Promise<void> {
+  ): Promise<string | void> {
     if (request.params?.validationToken) {
-      // Return validation token for webhook verification
-      return;
+      // Microsoft Graph subscription validation — echo the token back as
+      // text/plain. Plot's sync webhook route maps a string return value
+      // to a `text/plain` response automatically.
+      return request.params.validationToken;
     }
 
     const body = request.body;

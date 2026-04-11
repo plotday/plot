@@ -182,6 +182,36 @@ export abstract class Network extends ITool {
       authorization?: Authorization;
       /** When true, creates a Google Pub/Sub topic instead of a webhook URL. */
       pubsub?: boolean;
+      /**
+       * Controls whether the returned webhook URL runs callbacks synchronously
+       * or asynchronously.
+       *
+       * **Async (default, `async: true`)** — Plot enqueues each incoming
+       * request and immediately returns `200 { queued: true }`. A background
+       * queue consumer runs the callback with bounded concurrency. The
+       * sender never sees the callback's return value or any error thrown
+       * by it, and delivery is at-least-once (the callback must be
+       * idempotent). This is the right default for the vast majority of
+       * webhooks — service event notifications, bulk-import fan-out, etc. —
+       * because it removes ingress-path database pressure and prevents
+       * sender-side retry storms when callbacks are slow.
+       *
+       * **Sync (`async: false`)** — Plot runs the callback inline and
+       * responds with the callback's return value. Required when:
+       * - The sender reads the response body (e.g. Microsoft Graph
+       *   subscription validation, which POSTs with a `validationToken` and
+       *   expects the token echoed as `text/plain`).
+       * - The sender uses the HTTP status code to decide whether to retry
+       *   (e.g. to surface 4xx for permanent failures).
+       * - The handler must observe throws before the sender times out.
+       *
+       * When `async: false`, a callback returning a `string` is sent back
+       * with `Content-Type: text/plain`; any other value is serialized as
+       * JSON. `undefined` / `void` yields a plain `200 OK` body.
+       *
+       * Defaults to `true`.
+       */
+      async?: boolean;
     },
     callback: TCallback,
     ...extraArgs: TArgs

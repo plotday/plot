@@ -1082,7 +1082,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     const channelToken = request.headers["x-goog-channel-token"];
 
     if (!channelId || !channelToken) {
-      throw new Error("Invalid webhook headers");
+      console.warn("Google Calendar webhook missing required headers", {
+        calendarId,
+      });
+      return;
     }
 
     const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
