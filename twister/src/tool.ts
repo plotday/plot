@@ -1,6 +1,5 @@
 import {
   type Actor,
-  type Priority,
 } from "./plot";
 import type { Callback } from "./tools/callbacks";
 import type {
@@ -295,12 +294,11 @@ export abstract class Tool<TSelf> implements ITool {
    * being called first, bubbling up to the top-level tools before the twist's
    * activate method is called.
    *
-   * @param priority - The priority context containing the priority ID
    * @param context - Optional context containing the actor who triggered activation
    * @returns Promise that resolves when pre-activation is complete
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  preActivate(priority: Priority, context?: { actor: Actor }): Promise<void> {
+  preActivate(context?: { actor: Actor }): Promise<void> {
     return Promise.resolve();
   }
 
@@ -310,12 +308,11 @@ export abstract class Tool<TSelf> implements ITool {
    * This method is called in reverse order, with top-level tools being called
    * first, then cascading down to the deepest dependencies.
    *
-   * @param priority - The priority context containing the priority ID
    * @param context - Optional context containing the actor who triggered activation
    * @returns Promise that resolves when post-activation is complete
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  postActivate(priority: Priority, context?: { actor: Actor }): Promise<void> {
+  postActivate(context?: { actor: Actor }): Promise<void> {
     return Promise.resolve();
   }
 

@@ -99,8 +99,7 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   /**
    * When true, this connector has a single implicit channel.
    * `getChannels()` must return exactly one Channel.
-   * The UI will show channel config (priority, create threads) inline
-   * instead of a channel list.
+   * The UI will show channel config inline instead of a channel list.
    */
   readonly singleChannel?: boolean;
 
@@ -292,9 +291,9 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   /**
    * Called when the connector is activated after OAuth is complete.
    *
-   * Unlike Twist.activate() which receives a priority, Connector.activate()
-   * receives the authorization and actor since connectors are not installed
-   * in priorities.
+   * Connectors receive the authorization in addition to the activating actor.
+   * When this runs, `this.userId` is already populated with the installing
+   * user's ID.
    *
    * Default implementation does nothing. Override for custom setup.
    *
@@ -302,7 +301,7 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * @param context.auth - The completed OAuth authorization
    * @param context.actor - The actor who activated the connector
    */
-  // @ts-ignore - Connector.activate() intentionally has a different signature than Twist.activate()
+  // @ts-ignore - Connector.activate() has a Connector-specific context type.
   activate(context: { auth?: Authorization; actor?: Actor }): Promise<void> {
     return Promise.resolve();
   }

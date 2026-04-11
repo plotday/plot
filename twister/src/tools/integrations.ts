@@ -21,8 +21,6 @@ export type Channel = {
   title: string;
   /** Optional nested channel resources (e.g., subfolders) */
   children?: Channel[];
-  /** Priority ID this channel is routed to (set when channel is enabled) */
-  priorityId?: string;
   /** Per-channel link type configs. Overrides twist-level linkTypes when present. */
   linkTypes?: LinkTypeConfig[];
 };

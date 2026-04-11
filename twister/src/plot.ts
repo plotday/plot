@@ -614,7 +614,7 @@ type ThreadSingleUpdateFields = ThreadBulkUpdateFields & {
 
   /**
    * Move the thread to a different priority. Requires ThreadAccess.Full.
-   * The target priority must be within the twist's scope.
+   * The target priority must be owned by the twist's user.
    */
   priority?: Pick<Priority, "id">;
 };
@@ -1042,7 +1042,7 @@ export type NewLinkWithNotes = NewLink & {
  * Requires LinkAccess.Full.
  */
 export type LinkUpdate = { id: Uuid } & {
-  /** Move the link to a different thread within the twist's scope. */
+  /** Move the link to a different thread owned by the twist's user. */
   threadId?: Uuid;
 };
 
