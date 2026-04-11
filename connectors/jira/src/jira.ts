@@ -59,7 +59,7 @@ export class Jira extends Connector<Jira> {
       logo: "https://api.iconify.design/logos/jira.svg",
       logoMono: "https://api.iconify.design/simple-icons/jira.svg",
       statuses: [
-        { status: "open", label: "Open" },
+        { status: "open", label: "Open", todo: true },
         { status: "done", label: "Done", tag: Tag.Done, done: true },
       ],
       supportsAssignee: true,

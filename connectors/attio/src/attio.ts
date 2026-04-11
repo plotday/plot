@@ -119,19 +119,26 @@ export class Attio extends Connector<Attio> {
       label: string;
       tag?: Tag;
       done?: true;
+      todo?: true;
     }> = [];
     try {
       const stages = await api.getStatusOptions("deals", "stage");
-      dealStatuses = stages
-        .filter((s) => !s.is_archived)
-        .map((stage) => ({
-          status: stage.title,
-          label: stage.title,
-          ...(isWonStage(stage.title)
-            ? { tag: Tag.Done, done: true as const }
-            : {}),
-          ...(isLostStage(stage.title) ? { done: true as const } : {}),
-        }));
+      const nonArchived = stages.filter((s) => !s.is_archived);
+      // Mark the first non-won, non-lost stage as the todo status so that
+      // reactivating a done deal flips back to a sensible active stage
+      // instead of whatever happens to be first in the pipeline.
+      const firstActiveIndex = nonArchived.findIndex(
+        (s) => !isWonStage(s.title) && !isLostStage(s.title)
+      );
+      dealStatuses = nonArchived.map((stage, i) => ({
+        status: stage.title,
+        label: stage.title,
+        ...(i === firstActiveIndex ? { todo: true as const } : {}),
+        ...(isWonStage(stage.title)
+          ? { tag: Tag.Done, done: true as const }
+          : {}),
+        ...(isLostStage(stage.title) ? { done: true as const } : {}),
+      }));
     } catch (error) {
       console.warn("Failed to fetch deal stages:", error);
     }
