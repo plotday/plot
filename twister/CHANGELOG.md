@@ -1,5 +1,17 @@
 # @plotday/twister
 
+## 0.45.0
+
+### Added
+
+- `todo` boolean on `LinkTypeConfig.statuses[]` so connectors can indicate which status represents the active/to-do state (e.g. Gmail's "starred", Linear's "To Do"). When a user adds a thread to Plot's agenda, done-status links flip to this status so the link widget and thread tags reflect the active state. ([`fe72bb9`](https://github.com/plotday/plot/commit/fe72bb96e60b3fb9eb8d4ace5afbce32a34a1477))
+
+### Changed
+
+- `accessContacts` accepts `NewContact[]` (email-based contacts) on write types, returns `Contact[]` on read types. Added `Contact` type for resolved contact identity. ([`e7a57ac`](https://github.com/plotday/plot/commit/e7a57ac589647c19b7f1f513f9eb11acb807d204))
+- `network.createWebhook()` now runs callbacks asynchronously by
+- Thread and Note visibility model — replaced `private` boolean with `access` enum ('public'|'members'|'private') and `accessContacts` array on Thread, and replaced `private` boolean with `accessContacts` array on Note. Removed `mentions` from Thread type. Note `mentions` now contains only twist/connector IDs for dispatch routing. ([#112](https://github.com/plotday/plot/pull/112) [`31d1c05`](https://github.com/plotday/plot/commit/31d1c058efb3f1ec3df777efa21f17be16db6b56))
+
 ## 0.44.0
 
 ### Added
