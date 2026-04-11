@@ -3,6 +3,8 @@ import {
   ActionType,
   type Link,
   type NewLinkWithNotes,
+  type Actor,
+  type ActorId,
 } from "@plotday/twister";
 import { Tag } from "@plotday/twister/tag";
 import { Connector } from "@plotday/twister/connector";
@@ -56,7 +58,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       logo: "https://plot.day/assets/logo-google-tasks.svg",
       logoMono: "https://api.iconify.design/simple-icons/googletasks.svg",
       statuses: [
-        { status: "open", label: "Open" },
+        { status: "open", label: "Open", tag: Tag.Todo },
         { status: "done", label: "Done", tag: Tag.Done, done: true },
       ],
       supportsAssignee: false,
@@ -69,6 +71,15 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       network: build(Network, { urls: ["https://tasks.googleapis.com/*"] }),
       tasks: build(Tasks),
     };
+  }
+
+  override async activate(context: {
+    auth?: Authorization;
+    actor?: Actor;
+  }): Promise<void> {
+    if (context.actor) {
+      await this.set("auth_actor_id", context.actor.id);
+    }
   }
 
   /**
@@ -99,18 +110,28 @@ export class GoogleTasks extends Connector<GoogleTasks> {
    */
   async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
-    await this.startBatchSync(channel.id);
+
+    await this.set(`sync_state_${channel.id}`, {
+      pageToken: null,
+      batchNumber: 1,
+      tasksProcessed: 0,
+      initialSync: true,
+    } satisfies SyncState);
+
+    const batchCallback = await this.callback(this.syncBatch, channel.id);
+    await this.tools.tasks.runTask(batchCallback);
+
+    await this.schedulePeriodicSync(channel.id);
   }
 
   /**
    * Called when a channel is disabled.
-   * Stops polling and archives links from this channel.
+   * Stops periodic sync and removes state.
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.clear(`sync_enabled_${channel.id}`);
     await this.clear(`sync_state_${channel.id}`);
     await this.clear(`last_sync_time_${channel.id}`);
-    await this.clear(`poll_task_${channel.id}`);
 
     await this.tools.integrations.archiveLinks({
       channelId: channel.id,
@@ -118,18 +139,13 @@ export class GoogleTasks extends Connector<GoogleTasks> {
   }
 
   /**
-   * Initialize batch sync process for a task list.
+   * Schedule next periodic sync for a task list.
    */
-  private async startBatchSync(listId: string): Promise<void> {
-    await this.set(`sync_state_${listId}`, {
-      pageToken: null,
-      batchNumber: 1,
-      tasksProcessed: 0,
-      initialSync: true,
-    } satisfies SyncState);
-
-    const batchCallback = await this.callback(this.syncBatch, listId);
-    await this.tools.tasks.runTask(batchCallback);
+  private async schedulePeriodicSync(listId: string): Promise<void> {
+    const syncCallback = await this.callback(this.periodicSync, listId);
+    await this.tools.tasks.runTask(syncCallback, {
+      runAt: new Date(Date.now() + POLL_INTERVAL_MS),
+    });
   }
 
   /**
@@ -142,6 +158,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
     }
 
     const token = await this.getToken(listId);
+    const authActorId = await this.get<ActorId>("auth_actor_id");
 
     // Fetch batch of tasks
     const result = await listTasks(token, listId, {
@@ -171,7 +188,8 @@ export class GoogleTasks extends Connector<GoogleTasks> {
         task,
         listId,
         state.initialSync,
-        subtasks
+        subtasks,
+        authActorId
       );
       await this.tools.integrations.saveLink(link);
     }
@@ -185,46 +203,29 @@ export class GoogleTasks extends Connector<GoogleTasks> {
             subtask,
             listId,
             state.initialSync,
-            []
+            [],
+            authActorId
           );
           await this.tools.integrations.saveLink(link);
         }
       }
     }
 
+    // Continue to next page if available
     if (result.nextPageToken) {
-      // More pages to process
       await this.set(`sync_state_${listId}`, {
         pageToken: result.nextPageToken,
         batchNumber: state.batchNumber + 1,
         tasksProcessed: state.tasksProcessed + result.tasks.length,
         initialSync: state.initialSync,
-      } satisfies SyncState);
+      });
 
       const nextBatch = await this.callback(this.syncBatch, listId);
       await this.tools.tasks.runTask(nextBatch);
     } else {
-      // Sync complete — store last sync time and schedule polling
+      // Initial sync is complete - cleanup sync state and set last sync time
       await this.clear(`sync_state_${listId}`);
-      await this.set(
-        `last_sync_time_${listId}`,
-        new Date().toISOString()
-      );
-      await this.schedulePeriodicSync(listId);
-    }
-  }
-
-  /**
-   * Schedule the next periodic sync for a task list.
-   */
-  private async schedulePeriodicSync(listId: string): Promise<void> {
-    const runAt = new Date(Date.now() + POLL_INTERVAL_MS);
-    const pollCallback = await this.callback(this.periodicSync, listId);
-    const taskToken = await this.tools.tasks.runTask(pollCallback, {
-      runAt,
-    });
-    if (taskToken) {
-      await this.set(`poll_task_${listId}`, taskToken);
+      await this.set(`last_sync_time_${listId}`, new Date().toISOString());
     }
   }
 
@@ -238,6 +239,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
 
     const lastSync = await this.get<string>(`last_sync_time_${listId}`);
     const token = await this.getToken(listId);
+    const authActorId = await this.get<ActorId>("auth_actor_id");
 
     let pageToken: string | undefined;
     do {
@@ -263,7 +265,13 @@ export class GoogleTasks extends Connector<GoogleTasks> {
 
       for (const task of parentTasks) {
         const subtasks = subtasksByParent.get(task.id) ?? [];
-        const link = this.transformTask(task, listId, false, subtasks);
+        const link = this.transformTask(
+          task,
+          listId,
+          false,
+          subtasks,
+          authActorId
+        );
         await this.tools.integrations.saveLink(link);
       }
 
@@ -271,7 +279,13 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       for (const [parentId, subtasks] of subtasksByParent) {
         if (!parentTasks.some((t) => t.id === parentId)) {
           for (const subtask of subtasks) {
-            const link = this.transformTask(subtask, listId, false, []);
+            const link = this.transformTask(
+              subtask,
+              listId,
+              false,
+              [],
+              authActorId
+            );
             await this.tools.integrations.saveLink(link);
           }
         }
@@ -292,7 +306,8 @@ export class GoogleTasks extends Connector<GoogleTasks> {
     task: GoogleTask,
     listId: string,
     initialSync: boolean,
-    subtasks: GoogleTask[]
+    subtasks: GoogleTask[],
+    authActorId: ActorId | null
   ): NewLinkWithNotes {
     const source = `google-tasks:task:${task.id}`;
     const taskUrl =
@@ -321,12 +336,23 @@ export class GoogleTasks extends Connector<GoogleTasks> {
 
     // Subtask notes with Todo tag
     for (const subtask of subtasks) {
+      const isCompleted = subtask.status === "completed";
       notes.push({
         key: `subtask-${subtask.id}`,
         content: subtask.title,
         tags: {
-          add: subtask.status === "completed" ? [Tag.Done] : [Tag.Todo],
+          add: isCompleted
+            ? [Tag.Done]
+            : authActorId
+            ? [{ id: authActorId }]
+            : [Tag.Todo],
         },
+        // For Todo tag (when not completed), also add the special Tag.Todo
+        ...(isCompleted
+          ? {}
+          : {
+              twistTags: { [Tag.Todo]: true },
+            }),
       });
     }
 
@@ -343,6 +369,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       },
       actions,
       sourceUrl: taskUrl,
+      assignee: authActorId ? { id: authActorId } : null,
       status: task.status === "completed" ? "done" : "open",
       notes,
       preview: task.notes?.slice(0, 200) || null,
