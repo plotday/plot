@@ -498,6 +498,7 @@ export class Network extends Tool implements INetwork {
       provider?: AuthProvider;
       authorization?: Authorization;
       pubsub?: boolean;
+      async?: boolean;
     },
     callback: TCallback,
     ...extraArgs: any[]
@@ -581,14 +582,18 @@ export class Network extends Tool implements INetwork {
       }
     }
 
-    // Default webhook creation for non-provider-specific webhooks
+    // Default webhook creation for non-provider-specific webhooks.
+    // Webhooks default to async (queued) delivery. Callers that need
+    // synchronous dispatch — e.g. Microsoft Graph validation echoes or
+    // handlers that propagate HTTP status back to the sender — opt out by
+    // passing `{ async: false }`.
     const token = await this.callbacks.create({
       priorityTwistId: this.priorityTwistId,
       path: this.path,
       functionName: callbackFunctionName,
       extraArgs: extraArgs,
     });
-    return this.tokenToUrl(token);
+    return this.tokenToUrl(token, options.async !== false);
   }
 
   async deleteWebhook(url: string): Promise<void> {
@@ -710,17 +715,21 @@ export class Network extends Tool implements INetwork {
     await this.callbacks.delete(token);
   }
 
-  private tokenToUrl(token: string): string {
-    return `${this.baseUrl}/hook/${token}`;
+  private tokenToUrl(token: string, async: boolean = false): string {
+    return `${this.baseUrl}/${async ? "hook-async" : "hook"}/${token}`;
   }
 
   private urlToToken(url: string): string | null {
     if (!this.baseUrl) return null;
 
-    const webhookPrefix = `${this.baseUrl}/hook/`;
-    if (!url.startsWith(webhookPrefix)) {
-      return null;
+    const asyncPrefix = `${this.baseUrl}/hook-async/`;
+    if (url.startsWith(asyncPrefix)) {
+      return url.substring(asyncPrefix.length);
     }
-    return url.substring(webhookPrefix.length);
+    const webhookPrefix = `${this.baseUrl}/hook/`;
+    if (url.startsWith(webhookPrefix)) {
+      return url.substring(webhookPrefix.length);
+    }
+    return null;
   }
 }

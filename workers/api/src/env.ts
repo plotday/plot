@@ -98,8 +98,33 @@ export type TwistBatchMessage = {
   priorityTwist: any | null;
 };
 
+/**
+ * Webhook callback message queued for async processing.
+ *
+ * Ingested by the default /hook/:token route and consumed by the webhook
+ * queue consumer, which calls Network.HandleWebhook with the payload.
+ *
+ * The consumer never inspects the callback's return value — callbacks that
+ * need a synchronous response (e.g. Microsoft Graph validation echoes) must
+ * register with `{ async: false }` so the SDK returns a /hook-sync/:token
+ * URL instead.
+ */
+export type WebhookMessage = {
+  type: "webhook";
+  token: string;
+  method: string;
+  headers: Record<string, string>;
+  params: Record<string, string>;
+  body: any;
+  rawBody?: string;
+};
+
 // Queue message type union for proper type handling
-export type QueueMessage = RunMessage | TwistBatchMessage | LogMessage;
+export type QueueMessage =
+  | RunMessage
+  | TwistBatchMessage
+  | LogMessage
+  | WebhookMessage;
 
 export type Bindings = {
   readonly HYPERDRIVE?: Hyperdrive;
@@ -170,6 +195,7 @@ export type Bindings = {
   readonly AUTH_RATE_LIMITER: RateLimit;
   readonly TOKEN_RATE_LIMITER: RateLimit;
   readonly WEBHOOK_RATE_LIMITER: RateLimit;
+  readonly WEBHOOK_ASYNC_RATE_LIMITER: RateLimit;
   readonly SYNC_RATE_LIMITER: RateLimit;
   readonly APP_SYNC_RATE_LIMITER: RateLimit;
   readonly DEPLOYMENT_RATE_LIMITER: RateLimit;
@@ -180,6 +206,7 @@ export type Bindings = {
   readonly RUN_QUEUE: Queue<RunMessage>;
   readonly UPDATES_QUEUE: Queue<TwistBatchMessage>;
   readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
+  readonly WEBHOOK_QUEUE: Queue<WebhookMessage>;
   readonly MAIL_QUEUE: Queue<{
     to: string[];
     subject: string;

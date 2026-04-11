@@ -3,7 +3,7 @@ import superjson from "superjson";
 
 import { createLogger } from "@plotday/worker-util";
 
-import { withDb } from "../db";
+import { createDb, sql, type DB, type Kysely } from "../db";
 import { type Bindings } from "../env";
 import { CallbackError } from "../errors";
 import { Usage } from "../state/usage";
@@ -46,13 +46,56 @@ function isValidDoId(id: string): boolean {
   return /^[0-9a-f]{64}$/i.test(id);
 }
 
+function isTransientDbError(error: unknown): boolean {
+  const msg = (error as Error)?.message ?? "";
+  return msg.includes("shutting down") || msg.includes("connection terminated");
+}
+
 export class CallbacksState extends DurableObject<Bindings> {
   private sql: SqlStorage;
+  private db?: Kysely<DB>;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.initializeTable();
+  }
+
+  /**
+   * Run `fn` with a long-lived Kysely instance held on this DO.
+   *
+   * Durable Objects are stateful and single-threaded: holding a DB connection
+   * across calls avoids the per-request pool churn that would otherwise
+   * exhaust Postgres (and kill local dev) when a connector fires a burst of
+   * webhooks into the same DO instance.
+   *
+   * On a transient connection error ("shutting down" / "connection
+   * terminated"), destroy the cached instance and retry once with a fresh
+   * one. Mirrors the retry semantics of the module-level withDb helper.
+   */
+  private async withDb<T>(fn: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!this.db) {
+        this.db = createDb(this.env);
+        // Set statement_timeout explicitly as a fallback for when the
+        // underlying pg connection was reused by Hyperdrive past its startup
+        // phase — matches the module-level withDb behavior.
+        await sql`SET statement_timeout = 30000`.execute(this.db);
+      }
+      try {
+        return await fn(this.db);
+      } catch (error) {
+        if (attempt === 0 && isTransientDbError(error)) {
+          const stale = this.db;
+          this.db = undefined;
+          void stale?.destroy();
+          continue;
+        }
+        throw error;
+      }
+    }
+    // Unreachable — the loop either returns or throws.
+    throw new Error("withDb retry loop exited without result");
   }
 
   /**
@@ -148,7 +191,7 @@ export class CallbacksState extends DurableObject<Bindings> {
 
     // Fetch twist_id, environment, and version from database if version not provided
     if (!version) {
-      version = await withDb(this.env, async (db) => {
+      version = await this.withDb(async (db) => {
         const ptData = await db
           .selectFrom("priority_twist")
           .select("twist_id")
@@ -297,7 +340,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       dbLookupStart = Date.now();
     }
 
-    return await withDb(this.env, async (db) => {
+    return await this.withDb(async (db) => {
       const priorityTwist = await db
         .selectFrom("priority_twist")
         .innerJoin("twist", "twist.id", "priority_twist.twist_id")

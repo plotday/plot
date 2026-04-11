@@ -101,8 +101,10 @@ app.use("*", async (c, next) => {
   }
 });
 
-// Create request-scoped DB connection (cleaned up automatically)
-app.use("*", dbMiddleware);
+// dbMiddleware is applied per-section (below) rather than globally so that
+// high-volume webhook routes that don't read the DB from the request context
+// (e.g. /hook/:token, which dispatches straight into the CallbacksState DO)
+// don't allocate a pg.Pool per request.
 
 // Rate limiting is now applied per-section instead of globally
 // This allows sync endpoints to be exempt from rate limiting
@@ -152,6 +154,7 @@ app.onError(async (err, c) => {
 
 // App section - endpoints called by the Flutter app
 const appSection = new Hono<{ Bindings: Bindings }>();
+appSection.use("*", dbMiddleware);
 appSection.use("*", async (c, next) => {
   // Sync endpoints use appSyncRateLimiter instead
   if (c.req.path.startsWith("/app/sync")) return next();
@@ -185,6 +188,7 @@ appSection.route("/", linkEmail);
 // App sync section - public sync endpoints (user-authenticated)
 // Auth runs before rate limiter to enable per-user keying (not per-IP)
 const appSyncSection = new Hono<{ Bindings: Bindings }>();
+appSyncSection.use("*", dbMiddleware);
 appSyncSection.use(appCorsMiddleware);
 appSyncSection.use("*", appSyncRateLimiter);
 appSyncSection.use("*", trackerIdentifyMiddleware);
@@ -192,6 +196,7 @@ appSyncSection.route("/", appSync);
 
 // SDK section - endpoints called by plot CLI
 const sdkSection = new Hono<{ Bindings: Bindings }>();
+sdkSection.use("*", dbMiddleware);
 sdkSection.use("*", sdkRateLimiter);
 sdkSection.use("*", sdkAuthMiddleware);
 sdkSection.use("*", trackerIdentifyMiddleware);
@@ -201,6 +206,7 @@ sdkSection.route("/", tokens);
 
 // Stripe section - webhook endpoints
 const stripeSection = new Hono<{ Bindings: Bindings }>();
+stripeSection.use("*", dbMiddleware);
 stripeSection.use("*", generalRateLimiter);
 stripeSection.use("*", stripeMiddleware);
 stripeSection.route("/", stripe);
@@ -212,7 +218,7 @@ app.route("/v1", sdkSection);
 app.route("/stripe", stripeSection);
 
 // Health check — exercises DB to detect connection exhaustion
-app.get("/health", async (c) => {
+app.get("/health", dbMiddleware, async (c) => {
   await c.var.db.selectFrom("priority").select("id").limit(1).execute();
   return c.text("ok");
 });

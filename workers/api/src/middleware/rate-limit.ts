@@ -174,13 +174,23 @@ export const tokenCreationRateLimiter: MiddlewareHandler<{
  * 300 requests per minute
  *
  * Uses per-webhook limiting based on route parameters when available:
+ * - Generic callback webhooks (/hook/:token): Limited per token, so one
+ *   noisy connector (e.g. a bulk Attio import) can't starve others.
  * - Gmail webhooks: Limited per topicId
- * - Slack webhooks: Limited per IP (no identifier in path)
+ * - Slack/other unidentified webhooks: Fall back to IP
  */
 export const webhookRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
   cloudflareRateLimiter<{ Bindings: Bindings }>({
     rateLimitBinding: (c) => c.env.WEBHOOK_RATE_LIMITER,
     keyGenerator: (c) => {
+      // Prefer the generic callback token for per-token limiting.
+      // The token is already scoped to a single callback, so burst traffic
+      // from one source is isolated from others.
+      const token = c.req.param("token");
+      if (token) {
+        return `webhook:token:${token}`;
+      }
+
       // Extract topic ID for Gmail webhooks (format: /hook/gmail/:topicId)
       const topicId = c.req.param("topicId");
       if (topicId) {
@@ -195,6 +205,36 @@ export const webhookRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
       );
     },
     handler: createRateLimitHandler("webhook", 300, 60),
+  });
+
+/**
+ * Higher-limit rate limiter for the default (async) /hook/:token ingress.
+ *
+ * The async path enqueues onto WEBHOOK_QUEUE and returns immediately, so
+ * each request is ~1ms and touches no database. Real backpressure lives at
+ * the queue consumer (max_concurrency: 5). This limiter is only here to
+ * prevent pathological enqueue storms — legitimate bulk-import traffic
+ * (e.g. an Attio sync firing thousands of webhooks in a minute) must pass
+ * through unthrottled, so the ceiling is set to 3000/min per token.
+ *
+ * The opt-in /hook-sync/:token path uses `webhookRateLimiter` (300/min)
+ * because its callbacks actually touch the database.
+ */
+export const webhookAsyncRateLimiter: MiddlewareHandler<{ Bindings: Bindings }> =
+  cloudflareRateLimiter<{ Bindings: Bindings }>({
+    rateLimitBinding: (c) => c.env.WEBHOOK_ASYNC_RATE_LIMITER,
+    keyGenerator: (c) => {
+      const token = c.req.param("token");
+      if (token) {
+        return `webhook-async:token:${token}`;
+      }
+      return (
+        c.req.header("CF-Connecting-IP") ||
+        c.req.header("x-real-ip") ||
+        "unknown"
+      );
+    },
+    handler: createRateLimitHandler("webhook_async", 3000, 60),
   });
 
 /**

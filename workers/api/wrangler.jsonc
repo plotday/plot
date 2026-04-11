@@ -144,6 +144,11 @@
           "name": "SDK_RATE_LIMITER",
           "namespace_id": "1008",
           "simple": { "limit": 500, "period": 60 }
+        },
+        {
+          "name": "WEBHOOK_ASYNC_RATE_LIMITER",
+          "namespace_id": "1009",
+          "simple": { "limit": 3000, "period": 60 }
         }
       ],
       "worker_loaders": [
@@ -177,6 +182,10 @@
           {
             "queue": "mail-development",
             "binding": "MAIL_QUEUE"
+          },
+          {
+            "queue": "webhook-development",
+            "binding": "WEBHOOK_QUEUE"
           }
         ],
         "consumers": [
@@ -199,6 +208,12 @@
             "queue": "mail-development",
             "max_batch_size": 20,
             "max_batch_timeout": 3
+          },
+          {
+            "queue": "webhook-development",
+            "max_batch_size": 10,
+            "max_batch_timeout": 1,
+            "max_concurrency": 5
           }
         ]
       },
@@ -361,6 +376,11 @@
           "name": "SDK_RATE_LIMITER",
           "namespace_id": "1008",
           "simple": { "limit": 500, "period": 60 }
+        },
+        {
+          "name": "WEBHOOK_ASYNC_RATE_LIMITER",
+          "namespace_id": "1009",
+          "simple": { "limit": 3000, "period": 60 }
         }
       ],
       "worker_loaders": [
@@ -393,6 +413,10 @@
           {
             "queue": "mail-production",
             "binding": "MAIL_QUEUE"
+          },
+          {
+            "queue": "webhook-production",
+            "binding": "WEBHOOK_QUEUE"
           }
         ],
         "consumers": [
@@ -410,6 +434,12 @@
             "queue": "twist-logs-production",
             "max_batch_size": 100,
             "max_batch_timeout": 1
+          },
+          {
+            "queue": "webhook-production",
+            "max_batch_size": 10,
+            "max_batch_timeout": 1,
+            "max_concurrency": 5
           }
         ]
       },

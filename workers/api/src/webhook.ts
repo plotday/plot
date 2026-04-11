@@ -7,7 +7,11 @@ import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "./utils/log-context";
-import { webhookRateLimiter } from "./middleware/rate-limit";
+import { dbMiddleware } from "./middleware/db";
+import {
+  webhookAsyncRateLimiter,
+  webhookRateLimiter,
+} from "./middleware/rate-limit";
 import {
   isCallbackError,
   getCallbackErrorType,
@@ -106,7 +110,7 @@ const CLERK_EMAIL_MAP: Record<
 };
 
 // Clerk webhook endpoint - handles email.created events for auth emails
-webhook.post("/hook/clerk", webhookRateLimiter, async (c) => {
+webhook.post("/hook/clerk", dbMiddleware, webhookRateLimiter, async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
@@ -621,8 +625,130 @@ webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
   }
 });
 
-// Webhook endpoint - handles all HTTP methods for webhook URLs
-webhook.all(Network.PATH, webhookRateLimiter, async (c) => {
+/**
+ * Extract webhook request data into a form that can be either (a) dispatched
+ * synchronously to CallbacksState.CallCallback or (b) serialized onto
+ * WEBHOOK_QUEUE for async processing.
+ */
+async function parseWebhookRequest(
+  c: any,
+  logger: ReturnType<typeof createLogger>
+): Promise<{
+  method: string;
+  headers: Record<string, string>;
+  params: Record<string, string>;
+  body: any;
+  rawBody?: string;
+}> {
+  const method = c.req.method;
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(c.req.header())) {
+    headers[key] = value as string;
+  }
+
+  const url = new URL(c.req.url);
+  const params: Record<string, string> = {};
+  url.searchParams.forEach((value, key) => {
+    params[key] = value;
+  });
+
+  let rawBody: string | undefined = undefined;
+  let body: any = null;
+  const contentType = c.req.header("content-type");
+
+  if (method !== "GET" && method !== "HEAD") {
+    try {
+      const raw: string = await c.req.text();
+      rawBody = raw;
+      if (contentType?.includes("application/json")) {
+        body = JSON.parse(raw);
+      } else if (contentType?.includes("application/x-www-form-urlencoded")) {
+        const formData = new URLSearchParams(raw);
+        body = Object.fromEntries(formData.entries());
+      } else {
+        body = raw;
+      }
+    } catch (error) {
+      logger.warn("Failed to parse callback request body", error as Error);
+      body = rawBody;
+    }
+  }
+
+  return { method, headers, params, body, rawBody };
+}
+
+/**
+ * Build a Hono response from a callback's return value.
+ *
+ * - `undefined` / `null` → plain "OK" text (matches the original behavior for
+ *   fire-and-forget callbacks).
+ * - `string` → `text/plain` with the string as the body. Required by providers
+ *   that validate webhook endpoints with an echo challenge, e.g. Microsoft
+ *   Graph subscription creation, which POSTs with a `validationToken` query
+ *   param and expects the token returned verbatim as plain text.
+ * - anything else → JSON.
+ */
+function respondWithCallbackResult(c: any, result: unknown): Response {
+  if (result === undefined || result === null) {
+    return new Response("OK", { status: 200 });
+  }
+  if (typeof result === "string") {
+    return new Response(result, {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    });
+  }
+  // @ts-ignore — c.json accepts arbitrary JSON-serializable values
+  return c.json(result);
+}
+
+/**
+ * Map a `CallbackError` thrown from the DO path to an HTTP response for
+ * synchronous webhook dispatch. Shared between the /hook-sync/:token route and
+ * any future inline dispatch paths.
+ */
+function respondToCallbackError(
+  c: any,
+  error: unknown,
+  logger: ReturnType<typeof createLogger>
+): Response {
+  const statusMap: Record<CallbackErrorType, number> = {
+    INVALID_TOKEN_FORMAT: 400,
+    INVALID_TOKEN: 400,
+    NOT_FOUND: 410, // 410 Gone — tells providers (Google, etc.) to stop retrying
+    EXPIRED: 410,
+    SUSPENDED: 503,
+    UNINITIALIZED: 500,
+  };
+
+  const errorType = getCallbackErrorType(error as Error);
+  if (!errorType) {
+    return captureServerError(c, error, "CallbackError missing type");
+  }
+
+  const status = statusMap[errorType];
+
+  // Log only for actual errors, not expected conditions.
+  if (errorType !== "NOT_FOUND" && errorType !== "EXPIRED") {
+    logger.warn("Callback error", {
+      errorType,
+      errorName: (error as Error).name,
+      message: (error as Error).message,
+      ...(error as any).context,
+    });
+  }
+
+  const message = (error as Error).message.replace(/^CallbackError: /, "");
+  return new Response(message, { status });
+}
+
+// Default generic webhook endpoint — enqueues to WEBHOOK_QUEUE and returns
+// 200 immediately. This is the path returned from `network.createWebhook()`
+// unless the caller explicitly passes `{ async: false }`. The queue consumer
+// (`workers/api/src/queue/webhook.ts`) dispatches each message into the
+// CallbacksState DO with bounded concurrency, so bursts of webhook traffic
+// can't exhaust Postgres connections.
+webhook.all(Network.PATH, webhookAsyncRateLimiter, async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
@@ -632,45 +758,41 @@ webhook.all(Network.PATH, webhookRateLimiter, async (c) => {
       return new Response("Bad request (missing token)", { status: 400 });
     }
 
-    // Extract request data
-    const method = c.req.method;
-    const headers: Record<string, string> = {};
-    for (const [key, value] of Object.entries(c.req.header())) {
-      headers[key] = value;
-    }
+    const { method, headers, params, body, rawBody } =
+      await parseWebhookRequest(c, logger);
 
-    // Get URL parameters
-    const url = new URL(c.req.url);
-    const params: Record<string, string> = {};
-    url.searchParams.forEach((value, key) => {
-      params[key] = value;
+    await c.env.WEBHOOK_QUEUE.send({
+      type: "webhook",
+      token,
+      method,
+      headers,
+      params,
+      body,
+      rawBody,
     });
 
-    // Get raw body first (for signature verification)
-    let rawBody: string | undefined = undefined;
-    let body: any = null;
-    const contentType = c.req.header("content-type");
+    return c.json({ queued: true });
+  } catch (error) {
+    return captureServerError(c, error, "Error enqueueing webhook");
+  }
+});
 
-    if (method !== "GET" && method !== "HEAD") {
-      try {
-        // Always get raw body first
-        rawBody = await c.req.text();
+// Synchronous webhook endpoint — callers opt in by passing `{ async: false }`
+// to `network.createWebhook()`. Used by connectors that must return a
+// response body the sender reads (e.g. Microsoft Graph validation echo) or
+// need per-request success/failure status codes propagated back.
+webhook.all("/hook-sync/:token", webhookRateLimiter, async (c) => {
+  const context = extractRequestContext(c);
+  const logger = createLogger(context);
 
-        // Then parse based on content type
-        if (contentType?.includes("application/json")) {
-          body = JSON.parse(rawBody);
-        } else if (contentType?.includes("application/x-www-form-urlencoded")) {
-          // Parse form data from raw body
-          const formData = new URLSearchParams(rawBody);
-          body = Object.fromEntries(formData.entries());
-        } else {
-          body = rawBody;
-        }
-      } catch (error) {
-        logger.warn("Failed to parse callback request body", error as Error);
-        body = rawBody;
-      }
+  try {
+    const token = c.req.param("token");
+    if (!token) {
+      return new Response("Bad request (missing token)", { status: 400 });
     }
+
+    const { method, headers, params, body, rawBody } =
+      await parseWebhookRequest(c, logger);
 
     using result = await Network.HandleWebhook(c.env.CALLBACKS, token, {
       method,
@@ -680,49 +802,11 @@ webhook.all(Network.PATH, webhookRateLimiter, async (c) => {
       rawBody,
     });
 
-    // Return the result from the callback function
-    if (result) {
-      // @ts-ignore
-      return c.json(result);
-    } else {
-      return new Response("OK", { status: 200 });
-    }
+    return respondWithCallbackResult(c, result);
   } catch (error) {
     if (isCallbackError(error)) {
-      const statusMap: Record<CallbackErrorType, number> = {
-        INVALID_TOKEN_FORMAT: 400,
-        INVALID_TOKEN: 400,
-        NOT_FOUND: 410,  // 410 Gone — tells providers (Google, etc.) to stop retrying
-        EXPIRED: 410,
-        SUSPENDED: 503,
-        UNINITIALIZED: 500,
-      };
-
-      // Extract error type (handles DO serialization)
-      const errorType = getCallbackErrorType(error as Error);
-      if (!errorType) {
-        // Shouldn't happen, but fallback to 500
-        return captureServerError(c, error, "CallbackError missing type");
-      }
-
-      const status = statusMap[errorType];
-
-      // Log only for actual errors, not expected conditions
-      if (errorType !== "NOT_FOUND" && errorType !== "EXPIRED") {
-        logger.warn("Callback error", {
-          errorType,
-          errorName: (error as Error).name,
-          message: (error as Error).message,
-          ...(error as any).context,
-        });
-      }
-
-      // Return a clean message without the "CallbackError: " prefix
-      const message = (error as Error).message.replace(/^CallbackError: /, "");
-      return new Response(message, { status });
+      return respondToCallbackError(c, error, logger);
     }
-
-    // All other errors are server errors
     return captureServerError(c, error, "Error processing callback");
   }
 });

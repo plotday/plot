@@ -6,11 +6,13 @@ import {
   type LogMessage,
   type QueueMessage,
   type TwistBatchMessage,
+  type WebhookMessage,
 } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { processLogs } from "./logs";
 import { processMail } from "./mail";
 import { processUpdates } from "./updates";
+import { processWebhooks } from "./webhook";
 
 /**
  * Queue consumer handler for run callbacks, updates, and logs
@@ -69,6 +71,15 @@ export async function queue(
         // because wrangler dev doesn't reliably route queues between workers.
         // In production, the separate mailer worker handles this.
         await processMail(batch as MessageBatch<any>, env, ctx);
+        break;
+
+      case "webhook-development":
+      case "webhook-production":
+        await processWebhooks(
+          batch as MessageBatch<WebhookMessage>,
+          env,
+          postHog
+        );
         break;
 
       default:
