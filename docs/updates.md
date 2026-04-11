@@ -1,3 +1,4 @@
+- Microsoft Teams is now available as a connector — sync messages from your Teams channels and DMs into Plot, and reply directly from Plot back to Teams
 - Fixed search being extremely slow — typing in the search field could take over a minute to show results
 - Fixed completed assigned issues from connectors like Linear staying in the to-do list after being marked done — the task was correctly shown as done but not removed from the agenda
 - Fixed tags from removed connections still appearing on threads — for example, a "Done" tag showing the same connector name multiple times

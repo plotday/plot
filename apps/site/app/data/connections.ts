@@ -122,7 +122,7 @@ export const CONNECTIONS: Connection[] = [
     logo: "https://api.iconify.design/logos/microsoft-teams.svg",
     category: "Communication",
     entities: ["Messages", "Channels"],
-    available: false,
+    available: true,
   },
   {
     name: "Discord",

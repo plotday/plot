@@ -94,7 +94,7 @@ Internal catalog of product features for marketing content generation. Direct an
 
 ### Available Tools for Twist Developers
 - Google: Calendar, Gmail, Chat, Contacts
-- Microsoft: Outlook Calendar
+- Microsoft: Outlook Calendar, Teams (channels + DMs, two-way sync)
 - Slack integration
 - Linear integration
 - Notion: Page and comment sync
