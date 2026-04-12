@@ -22,6 +22,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
@@ -176,7 +177,17 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
    * Called when a channel calendar is enabled for syncing.
    * Auto-starts sync for the calendar.
    */
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Store sync_history_min if provided and not already stored with an equal/earlier value
+    if (context?.syncHistoryMin) {
+      const key = `sync_history_min_${channel.id}`;
+      const stored = await this.get<string>(key);
+      if (stored && new Date(stored) <= context.syncHistoryMin) {
+        return; // Already synced with equal or earlier history min
+      }
+      await this.set(key, context.syncHistoryMin.toISOString());
+    }
+
     // Queue all initialization as a task to avoid blocking the HTTP response.
     // initCalendar resolves the calendar ID, sets up the webhook, and starts sync.
     const initCallback = await this.callback(this.initCalendar, channel.id);

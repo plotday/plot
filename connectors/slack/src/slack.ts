@@ -9,6 +9,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
@@ -97,11 +98,21 @@ export class Slack extends Connector<Slack> {
       .map((c: SlackChannel) => ({ id: c.id, title: c.name }));
   }
 
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Check if we've already synced with a wider or equal range
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+        return; // Already synced with wider range
+      }
+      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
+    }
+
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Default to 30 days of history
-    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // Use syncHistoryMin if provided, otherwise default to 30 days of history
+    const timeMin = syncHistoryMin ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const oldest = (timeMin.getTime() / 1000).toString();
 
     const initialState: SyncState = {

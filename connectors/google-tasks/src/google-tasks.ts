@@ -13,6 +13,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
@@ -32,6 +33,7 @@ type SyncState = {
   batchNumber: number;
   tasksProcessed: number;
   initialSync: boolean;
+  syncHistoryMin?: string;
 };
 
 /**
@@ -97,9 +99,19 @@ export class GoogleTasks extends Connector<GoogleTasks> {
    * Called when a channel (task list) is enabled.
    * Starts initial sync and schedules periodic polling.
    */
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Check if we've already synced with a wider or equal range
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+        return; // Already synced with wider range
+      }
+      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
+    }
+
     await this.set(`sync_enabled_${channel.id}`, true);
-    await this.startBatchSync(channel.id);
+    await this.startBatchSync(channel.id, syncHistoryMin);
   }
 
   /**
@@ -120,12 +132,13 @@ export class GoogleTasks extends Connector<GoogleTasks> {
   /**
    * Initialize batch sync process for a task list.
    */
-  private async startBatchSync(listId: string): Promise<void> {
+  private async startBatchSync(listId: string, syncHistoryMin?: Date): Promise<void> {
     await this.set(`sync_state_${listId}`, {
       pageToken: null,
       batchNumber: 1,
       tasksProcessed: 0,
       initialSync: true,
+      ...(syncHistoryMin ? { syncHistoryMin: syncHistoryMin.toISOString() } : {}),
     } satisfies SyncState);
 
     const batchCallback = await this.callback(this.syncBatch, listId);
@@ -148,6 +161,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       showCompleted: false,
       pageToken: state.pageToken ?? undefined,
       maxResults: 50,
+      updatedMin: state.syncHistoryMin ?? undefined,
     });
 
     // Separate parent tasks and subtasks

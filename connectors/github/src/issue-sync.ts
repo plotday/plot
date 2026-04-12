@@ -14,6 +14,7 @@ type IssueSyncState = {
   issuesProcessed: number;
   initialSync: boolean;
   phase: "open" | "closed";
+  syncHistoryMin?: string;
 };
 
 /**
@@ -23,6 +24,7 @@ export async function startIssueBatchSync(
   source: GitHub,
   repositoryId: string,
   initialSync: boolean,
+  syncHistoryMin?: Date,
 ): Promise<void> {
   await source.set(`issue_sync_state_${repositoryId}`, {
     page: 1,
@@ -30,6 +32,7 @@ export async function startIssueBatchSync(
     issuesProcessed: 0,
     initialSync,
     phase: "open",
+    ...(syncHistoryMin ? { syncHistoryMin: syncHistoryMin.toISOString() } : {}),
   } satisfies IssueSyncState);
 
   const batchCallback = await source.createCallback(source.syncIssueBatch, repositoryId);
@@ -54,11 +57,12 @@ export async function syncIssueBatch(
   // Build request URL based on phase
   let url = `/repos/${owner}/${repo}/issues?state=${state.phase}&per_page=${PAGE_SIZE}&page=${state.page}&sort=updated&direction=desc`;
 
-  // For closed phase, only fetch recently closed (last 30 days)
+  // For closed phase, only fetch recently closed (use syncHistoryMin or last 30 days)
   if (state.phase === "closed") {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    url += `&since=${thirtyDaysAgo.toISOString()}`;
+    const since = state.syncHistoryMin
+      ? new Date(state.syncHistoryMin)
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    url += `&since=${since.toISOString()}`;
   }
 
   const response = await source.githubFetch(token, url);

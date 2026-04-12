@@ -13,6 +13,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
@@ -170,7 +171,17 @@ export class Attio extends Connector<Attio> {
     ];
   }
 
-  async onChannelEnabled(_channel: Channel): Promise<void> {
+  async onChannelEnabled(_channel: Channel, context?: SyncContext): Promise<void> {
+    // Check if we've already synced with a wider or equal range
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>("sync_history_min");
+      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+        return; // Already synced with wider range
+      }
+      await this.set("sync_history_min", syncHistoryMin.toISOString());
+    }
+
     await this.set("sync_enabled", true);
 
     // Queue webhook setup as a separate task to avoid blocking the HTTP response

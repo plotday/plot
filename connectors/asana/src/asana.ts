@@ -16,6 +16,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
@@ -103,7 +104,17 @@ export class Asana extends Connector<Asana> {
    * Called when a channel is enabled for syncing.
    * Sets up webhook and auto-starts sync.
    */
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Check if we've already synced with a wider or equal range
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+        return; // Already synced with wider range
+      }
+      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
+    }
+
     await this.set(`sync_enabled_${channel.id}`, true);
 
     // Queue webhook setup as a separate task to avoid blocking the HTTP response
@@ -113,7 +124,7 @@ export class Asana extends Connector<Asana> {
     );
     await this.runTask(webhookCallback);
 
-    await this.startBatchSync(channel.id);
+    await this.startBatchSync(channel.id, syncHistoryMin ? { timeMin: syncHistoryMin } : undefined);
   }
 
   /**

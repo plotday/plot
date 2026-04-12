@@ -22,6 +22,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
@@ -142,7 +143,17 @@ export class AppleCalendar extends Connector<AppleCalendar> {
   /**
    * Called when a calendar channel is enabled for syncing.
    */
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Store sync_history_min if provided and not already stored with an equal/earlier value
+    if (context?.syncHistoryMin) {
+      const key = `sync_history_min_${channel.id}`;
+      const stored = await this.get<string>(key);
+      if (stored && new Date(stored) <= context.syncHistoryMin) {
+        return; // Already synced with equal or earlier history min
+      }
+      await this.set(key, context.syncHistoryMin.toISOString());
+    }
+
     await this.set(`sync_enabled_${channel.id}`, true);
 
     // Store initial ctag for incremental sync

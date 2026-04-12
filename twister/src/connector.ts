@@ -6,6 +6,7 @@ import {
   type Authorization,
   type Channel,
   type LinkTypeConfig,
+  type SyncContext,
 } from "./tools/integrations";
 import { Twist } from "./twist";
 
@@ -185,8 +186,9 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * ```
    *
    * @param channel - The channel that was enabled
+   * @param context - Optional sync context with plan-based hints (e.g. syncHistoryMin)
    */
-  abstract onChannelEnabled(channel: Channel): Promise<void>;
+  abstract onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void>;
 
   /**
    * Called when a channel resource is disabled.

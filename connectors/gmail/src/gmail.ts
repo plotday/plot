@@ -6,6 +6,7 @@ import {
   type Authorization,
   type Channel,
   Integrations,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
@@ -92,11 +93,22 @@ export class Gmail extends Connector<Gmail> {
       .map((l: any) => ({ id: l.id, title: l.name }));
   }
 
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Check if we've already synced with a wider or equal range
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+        return; // Already synced with wider range
+      }
+      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
+    }
+
     await this.set(`sync_enabled_${channel.id}`, true);
 
     const initialState: SyncState = {
       channelId: channel.id,
+      lastSyncTime: syncHistoryMin ?? undefined,
     };
     await this.set(`sync_state_${channel.id}`, initialState);
 
