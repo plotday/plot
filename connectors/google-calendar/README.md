@@ -25,7 +25,7 @@ export default class extends Twist {
     this.integrations = tools.get(Integrations);
   }
 
-  async activate(priority: { id: string }) {
+  async activate() {
     // Request Google Calendar access
     const authLink = await this.integrations.request(
       {
@@ -34,7 +34,6 @@ export default class extends Twist {
       },
       {
         functionName: "onAuthComplete",
-        context: { priorityId: priority.id },
       }
     );
 
