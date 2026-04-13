@@ -50,6 +50,14 @@ export type LinkTypeConfig = {
     tag?: Tag;
     /** Whether this status represents completion (done, closed, merged, cancelled, etc.) */
     done?: boolean;
+    /**
+     * Whether this status represents the connector's "to-do" / active state.
+     * When a user adds a thread to Plot's agenda, done-status links flip to
+     * the status marked `todo: true` (e.g., Gmail's "starred", Linear's
+     * "todo") so the link widget and thread tags reflect the active state.
+     * At most one status per type should set this.
+     */
+    todo?: boolean;
   }>;
   /** Whether this link type supports displaying and changing the assignee */
   supportsAssignee?: boolean;

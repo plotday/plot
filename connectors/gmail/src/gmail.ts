@@ -1,5 +1,5 @@
-import { Connector, type ToolBuilder } from "@plotday/twister";
-import type { Actor, ActorId, Note, Thread } from "@plotday/twister/plot";
+import { Connector, type ToolBuilder, Tag } from "@plotday/twister";
+import type { Actor, ActorId, Note, Thread, Link } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -40,19 +40,17 @@ type MessageSyncOptions = {
  * Auth is managed declaratively via provider config in build() and
  * handled through the twist edit modal.
  *
- * **Required OAuth Scopes:**
- * - `https://www.googleapis.com/auth/gmail.readonly` - Read emails
- * - `https://www.googleapis.com/auth/gmail.modify` - Modify labels, mark read/unread, star/unstar
- * - `https://www.googleapis.com/auth/gmail.send` - Send reply emails from Plot
+ * **Required OAuth Scope:**
+ * - `https://www.googleapis.com/auth/gmail.modify` - Read messages, modify labels, send replies
+ *
+ * `gmail.modify` is a superset that grants all read/write operations except
+ * permanent delete, so it covers reading threads, archiving, label changes,
+ * and sending replies without needing `gmail.readonly` or `gmail.send`.
  */
 export class Gmail extends Connector<Gmail> {
   static readonly PROVIDER = AuthProvider.Google;
   static readonly handleReplies = true;
-  static readonly SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/gmail.send",
-  ];
+  static readonly SCOPES = ["https://www.googleapis.com/auth/gmail.modify"];
 
   readonly provider = AuthProvider.Google;
   readonly scopes = Gmail.SCOPES;
@@ -62,6 +60,11 @@ export class Gmail extends Connector<Gmail> {
       label: "Email",
       logo: "https://api.iconify.design/logos/google-gmail.svg",
       logoMono: "https://api.iconify.design/simple-icons/gmail.svg",
+      statuses: [
+        { status: "inbox", label: "Inbox" },
+        { status: "starred", label: "Starred", tag: Tag.Star, todo: true },
+        { status: "archived", label: "Archived", tag: Tag.Done, done: true },
+      ],
     },
   ];
 
@@ -459,12 +462,25 @@ export class Gmail extends Connector<Gmail> {
           syncableId: channelId,
         };
 
+        // Star ↔ todo sync: detect star changes and update Plot todo status
+        const isStarred = GmailApi.isStarred(thread);
+        const isArchived = !thread.messages?.some((m) =>
+          m.labelIds?.includes("INBOX")
+        );
+
+        // Set status based on labels
+        if (isStarred) {
+          plotThread.status = "starred";
+        } else if (isArchived) {
+          plotThread.status = "archived";
+        } else {
+          plotThread.status = "inbox";
+        }
+
         // Save link directly via integrations
         const savedThreadId = await this.tools.integrations.saveLink(plotThread);
         if (!savedThreadId) continue; // Link was filtered (e.g., older than sync history) — skip star sync
 
-        // Star ↔ todo sync: detect star changes and update Plot todo status
-        const isStarred = GmailApi.isStarred(thread);
         const wasStarred = await this.get<boolean>(`starred:${thread.id}`);
 
         if (isStarred !== !!wasStarred) {
@@ -631,13 +647,49 @@ export class Gmail extends Connector<Gmail> {
 
     const api = await this.getApi(channelId);
     if (todo) {
-      await api.modifyThread(threadId, ["STARRED"]);
+      // Add STARRED, and re-add INBOX so an archived email returns to the
+      // inbox when the user adds it to their agenda in Plot.
+      await api.modifyThread(threadId, ["STARRED", "INBOX"]);
     } else {
       await api.modifyThread(threadId, undefined, ["STARRED"]);
     }
 
     // Prevent the Gmail webhook from echoing this change back
     await this.set(`skip_star_sync:${threadId}`, true);
+    // Update local state to match
+    await this.set(`starred:${threadId}`, todo);
+  }
+
+  async onLinkUpdated(link: Link): Promise<void> {
+    const threadId = link.meta?.threadId as string | undefined;
+    const channelId = (link.meta?.channelId ?? link.meta?.syncableId) as
+      | string
+      | undefined;
+    if (!threadId || !channelId) return;
+
+    // Loop prevention: skip if this change originated from Gmail star sync
+    if (await this.get(`skip_todo_writeback:${threadId}`)) {
+      await this.clear(`skip_todo_writeback:${threadId}`);
+      return;
+    }
+
+    const status = link.status;
+    const api = await this.getApi(channelId);
+
+    if (status === "starred") {
+      await api.modifyThread(threadId, ["STARRED"]);
+    } else if (status === "archived") {
+      // Archive = remove from INBOX. Also unstar.
+      await api.modifyThread(threadId, undefined, ["INBOX", "STARRED"]);
+    } else if (status === "inbox") {
+      // Back to inbox, unstar.
+      await api.modifyThread(threadId, ["INBOX"], ["STARRED"]);
+    }
+
+    // Prevent the Gmail webhook from echoing this change back
+    await this.set(`skip_star_sync:${threadId}`, true);
+    // Update local state to match
+    await this.set(`starred:${threadId}`, status === "starred");
   }
 
   async onGmailWebhook(

@@ -1,10 +1,7 @@
 {
-  "name": "@plotday/connector-google-tasks",
-  "private": true,
-  "plotTwistId": "019d4129-4aee-7629-9d7b-b9fdb87db532",
-  "displayName": "Google Tasks",
-  "description": "Tasks from Google Tasks",
-  "logoUrl": "https://plot.day/assets/logo-google-tasks.svg",
+  "name": "@plotday/connector-ms-teams",
+  "displayName": "Microsoft Teams",
+  "description": "Messages from your Microsoft Teams channels and chats",
   "publisher": "Plot",
   "publisherUrl": "https://plot.day",
   "author": "Plot <team@plot.day> (https://plot.day)",
@@ -20,11 +17,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "private": true,
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
@@ -40,12 +33,20 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/plotday/plot.git",
-    "directory": "connectors/google-tasks"
+    "directory": "connectors/ms-teams"
   },
   "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
   "keywords": [
     "plot",
     "connector",
-    "google-tasks"
-  ]
+    "microsoft-teams",
+    "teams",
+    "messaging"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
