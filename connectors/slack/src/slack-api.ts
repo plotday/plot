@@ -192,33 +192,6 @@ export class SlackApi {
 }
 
 /**
- * Parses user mentions from Slack message text
- * Slack mentions have the format <@USER_ID>
- */
-function parseUserMentions(text: string): string[] {
-  const mentionRegex = /<@([A-Z0-9]+)>/g;
-  const mentions: string[] = [];
-  let match;
-
-  while ((match = mentionRegex.exec(text)) !== null) {
-    mentions.push(match[1]);
-  }
-
-  return mentions;
-}
-
-/**
- * Parses user mentions and returns NewActor[] for the mentions field.
- */
-function parseUserMentionNewActors(text: string): NewActor[] {
-  const userIds = parseUserMentions(text);
-  return userIds.map((userId) => ({
-    name: userId,
-    source: { provider: AuthProvider.Slack, accountId: userId },
-  }));
-}
-
-/**
  * Converts a Slack user ID to a NewActor.
  */
 function slackUserToNewActor(userId: string): NewActor {
@@ -367,7 +340,6 @@ export function transformSlackThread(
     if (!userId) continue; // Skip messages without user
 
     const text = formatSlackText(message.text);
-    const mentions = parseUserMentionNewActors(message.text);
 
     // Create NewNote with idempotent key
     const note = {
@@ -375,7 +347,6 @@ export function transformSlackThread(
       author: slackUserToNewActor(userId),
       content: text,
       created: new Date(parseFloat(message.ts) * 1000),
-      mentions: mentions.length > 0 ? mentions : undefined,
       checkForTasks: true,
     };
 

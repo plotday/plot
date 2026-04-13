@@ -502,36 +502,9 @@ for (const [emoji, tag] of Object.entries(EMOJI_TO_TAG)) {
   if (!TAG_TO_EMOJI[tag as Tag]) TAG_TO_EMOJI[tag as Tag] = emoji;
 }
 
-/**
- * Extracts @mentions from a message's annotations, falling back to
- * all space members for private thread visibility.
- */
-function extractMentions(
-  msg: Message,
-  memberInfo?: Map<string, MemberInfo>,
-  members?: NewActor[]
-): NewActor[] {
-  const userMentions = msg.annotations?.filter(
-    (a) => a.type === "USER_MENTION" && a.userMention?.user
-  );
-
-  if (userMentions && userMentions.length > 0) {
-    const mentioned: NewActor[] = [];
-    for (const annotation of userMentions) {
-      const user = annotation.userMention!.user;
-      const info = memberInfo?.get(user.name);
-      mentioned.push({
-        name: user.displayName || info?.displayName || user.name,
-        ...(info?.email ? { email: info.email } : {}),
-        source: { provider: AuthProvider.Google, accountId: user.name },
-      });
-    }
-    return mentioned;
-  }
-
-  // Fall back to all members for private thread visibility
-  return members && members.length > 0 ? members : [];
-}
+// Note: mentions on notes are for twist/connector dispatch routing only.
+// Person contacts should NOT be in mentions — use thread-level accessContacts
+// for visibility. The thread already has accessContacts set to space members.
 
 /**
  * Builds note-level tags for a single message from its reactions.
@@ -670,7 +643,6 @@ export function transformChatThread(
       const content = baseContent && attachmentMarkdown
         ? baseContent + attachmentMarkdown
         : baseContent;
-      const mentions = extractMentions(msg, memberInfo, members);
       const reactionTags = extractMessageReactionTags(msg, reactions, memberInfo);
 
       return {
@@ -679,7 +651,6 @@ export function transformChatThread(
         contentType: msg.formattedText ? ("html" as const) : ("text" as const),
         created: new Date(msg.createTime),
         author: senderToNewActor(msg.sender, memberInfo),
-        ...(mentions.length > 0 ? { mentions } : {}),
         ...(reactionTags ? { tags: reactionTags } : {}),
         checkForTasks: true,
       };

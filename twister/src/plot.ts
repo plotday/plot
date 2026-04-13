@@ -644,7 +644,7 @@ export type Note = ThreadCommon & {
 export type NewNote = Partial<
   Omit<
     Note,
-    "author" | "thread" | "tags" | "mentions" | "id" | "key" | "reNote"
+    "author" | "thread" | "tags" | "mentions" | "accessContacts" | "id" | "key" | "reNote"
   >
 > &
   ({ id: Uuid } | { key: string } | {}) & {
@@ -675,7 +675,17 @@ export type NewNote = Partial<
     tags?: NewTags;
 
     /**
-     * Change the mentions on the note.
+     * Contacts who can see this note, or null/undefined to inherit thread visibility.
+     * Accepts resolved ActorId UUIDs or email-based NewContact objects (resolved server-side).
+     * Include all participants who should see the note (sender + recipients).
+     * The note author is NOT implicitly included — add them explicitly.
+     * When set (even to []), the note is private to the listed contacts plus the creator.
+     */
+    accessContacts?: (ActorId | NewContact)[] | null;
+
+    /**
+     * Twist/connector IDs to mention for dispatch routing.
+     * Does not include user contacts — use accessContacts for visibility.
      */
     mentions?: NewActor[];
 
@@ -739,7 +749,8 @@ export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
     twistTags?: Partial<Record<Tag, boolean>>;
 
     /**
-     * Change the mentions on the note.
+     * Twist/connector IDs to mention for dispatch routing.
+     * Does not include user contacts — use accessContacts for visibility.
      */
     mentions?: NewActor[];
   };
