@@ -460,7 +460,8 @@ export class Gmail extends Connector<Gmail> {
         };
 
         // Save link directly via integrations
-        await this.tools.integrations.saveLink(plotThread);
+        const savedThreadId = await this.tools.integrations.saveLink(plotThread);
+        if (!savedThreadId) continue; // Link was filtered (e.g., older than sync history) — skip star sync
 
         // Star ↔ todo sync: detect star changes and update Plot todo status
         const isStarred = GmailApi.isStarred(thread);
