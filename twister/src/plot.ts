@@ -442,39 +442,6 @@ export type NewThreadWithNotes = NewThread & {
 };
 
 /**
- * Configuration for automatic priority selection based on thread similarity.
- *
- * Maps thread fields to scoring weights or required exact matches:
- * - Number value: Maximum score for similarity matching on this field
- * - `true` value: Required exact match - threads must match exactly or be excluded
- *
- * Scoring rules:
- * - content: Uses vector similarity on thread embedding (cosine similarity)
- * - mentions: Percentage of existing thread's mentions that appear in new thread
- * - meta.field: Exact match on top-level meta fields (e.g., "meta.sourceId")
- *
- * When content is `true`, applies a strong similarity threshold to ensure only close matches.
- * Default (when neither priority nor pickPriority specified): `{content: true}`
- *
- * @example
- * ```typescript
- * // Require exact content match with strong similarity
- * pickPriority: { content: true }
- *
- * // Score based on content (max 100 points) and mentions
- * pickPriority: { content: 100, mentions: true }
- *
- * // Match on meta and score content
- * pickPriority: { "meta.projectId": true, content: 50 }
- * ```
- */
-export type PickPriorityConfig = {
-  content?: number | true;
-  mentions?: number | true;
-  [key: `meta.${string}`]: number | true;
-};
-
-/**
  * Type for creating new threads.
  *
  * Threads are simple containers. All other fields are optional.
@@ -498,16 +465,10 @@ export type NewThread = Partial<
         /* id is optional. An id will be generated and returned. */
       }
   ) &
-  (
-    | {
-        /** Explicit priority (required when specified) - disables automatic priority matching */
-        priority: Pick<Priority, "id">;
-      }
-    | {
-        /** Configuration for automatic priority selection based on similarity */
-        pickPriority?: PickPriorityConfig;
-      }
-  ) & {
+  {
+    /** Explicit priority - disables automatic priority matching. When omitted, the server classifies the thread using the user's priority rules. */
+    priority?: Pick<Priority, "id">;
+  } & {
     /**
      * All tags to set on the new thread.
      */
@@ -1003,13 +964,9 @@ export type NewLink = (
      */
     archived?: boolean;
     /**
-     * Configuration for automatic priority selection based on similarity.
-     * Only used when the link creates a new thread.
-     */
-    pickPriority?: PickPriorityConfig;
-    /**
      * Explicit priority (disables automatic priority matching).
-     * Only used when the link creates a new thread.
+     * Only used when the link creates a new thread. When omitted, the
+     * server classifies the thread using the user's priority rules.
      */
     priority?: Pick<Priority, "id">;
   };
