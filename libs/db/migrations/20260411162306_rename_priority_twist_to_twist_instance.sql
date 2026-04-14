@@ -1690,6 +1690,24 @@ DROP INDEX "public"."idx_secure_option_per_user";
 DROP INDEX "public"."idx_secure_option_pt";
 -- Drop index "idx_secure_option_shared" from table: "secure_option"
 DROP INDEX "public"."idx_secure_option_shared";
+-- Copy data from priority_twist tables to twist_instance tables.
+-- Disable triggers so updated_at is preserved and sync/notify triggers
+-- don't fire on the bulk copy.
+ALTER TABLE "public"."twist_instance" DISABLE TRIGGER USER;
+ALTER TABLE "public"."twist_instance_connection" DISABLE TRIGGER USER;
+ALTER TABLE "public"."twist_instance_sync" DISABLE TRIGGER USER;
+INSERT INTO "public"."twist_instance" (id, priority_id, twist_id, owner_id, name, config, created_at, updated_at, archived_at, suspended_at)
+    SELECT id, priority_id, twist_id, owner_id, name, config, created_at, updated_at, archived_at, suspended_at
+    FROM "public"."priority_twist";
+INSERT INTO "public"."twist_instance_connection" (twist_instance_id, user_id, provider, actor_id, connected_at)
+    SELECT priority_twist_id, user_id, provider, actor_id, connected_at
+    FROM "public"."priority_twist_connection";
+INSERT INTO "public"."twist_instance_sync" (twist_instance_id, entity, operation, last_update_at, last_sync_at)
+    SELECT priority_twist_id, entity, operation, last_update_at, last_sync_at
+    FROM "public"."priority_twist_sync";
+ALTER TABLE "public"."twist_instance" ENABLE TRIGGER USER;
+ALTER TABLE "public"."twist_instance_connection" ENABLE TRIGGER USER;
+ALTER TABLE "public"."twist_instance_sync" ENABLE TRIGGER USER;
 -- Modify "secure_option" table
 ALTER TABLE "public"."secure_option" RENAME COLUMN "priority_twist_id" TO "twist_instance_id";
 ALTER TABLE "public"."secure_option" DROP CONSTRAINT IF EXISTS "secure_option_priority_twist_id_fkey";
@@ -1737,6 +1755,11 @@ CREATE TABLE "public"."twist_instance_channel" (
 CREATE INDEX "idx_twist_instance_channel_instance" ON "public"."twist_instance_channel" ("twist_instance_id");
 -- Create index "idx_twist_instance_channel_source" to table: "twist_instance_channel"
 CREATE INDEX "idx_twist_instance_channel_source" ON "public"."twist_instance_channel" ("source_twist_instance_id", "channel_id");
+-- Copy data from priority_twist_channel, preserving ids, then advance the identity sequence.
+INSERT INTO "public"."twist_instance_channel" (id, twist_instance_id, source_twist_instance_id, channel_id, enabled, created_at, updated_at) OVERRIDING SYSTEM VALUE
+    SELECT id, priority_twist_id, source_priority_twist_id, channel_id, enabled, created_at, updated_at
+    FROM "public"."priority_twist_channel";
+SELECT setval(pg_get_serial_sequence('"public"."twist_instance_channel"', 'id'), COALESCE((SELECT MAX(id) FROM "public"."twist_instance_channel"), 0) + 1, false);
 -- Create "twist_instance_thread_schedule" view
 CREATE VIEW "public"."twist_instance_thread_schedule" (
   "twist_instance_id",
