@@ -170,12 +170,14 @@ class TwistApi {
     required String twistInstanceId,
     String? name,
     Map<String, dynamic>? config,
+    String? teamId,
   }) async {
     await api.patch<Map<String, dynamic>>(
       '/twist/$twistInstanceId',
       body: {
         if (name != null) 'name': name,
         if (config != null) 'config': config,
+        if (teamId != null) 'teamId': teamId,
       },
     );
   }
@@ -223,6 +225,7 @@ class TwistApi {
     required String name,
     Map<String, dynamic>? config,
     List<Map<String, Object>>? channels,
+    String? teamId,
   }) async {
     await api.post<Map<String, dynamic>>(
       '/twist/draft/$draftId/activate',
@@ -230,6 +233,7 @@ class TwistApi {
         'name': name,
         if (config != null) 'config': config,
         if (channels != null) 'syncables': channels,
+        if (teamId != null) 'teamId': teamId,
       },
     );
   }

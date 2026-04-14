@@ -467,34 +467,71 @@ export async function getByPriority(
 export async function update(
   db: Kysely<DB>,
   twist_instance_id: string,
-  twist: { name?: string; config?: any }
+  twist: { name?: string; config?: any; teamId?: string | null }
 ) {
   try {
     if (!twist_instance_id || typeof twist_instance_id !== "string") {
       throw new Error("twist_instance_id is required and must be a string");
     }
 
+    const currentTwist = await db
+      .selectFrom("twist_instance")
+      .select(["owner_id", "name", "twist_id", "team_id"])
+      .where("id", "=", twist_instance_id)
+      .where("archived_at", "is", null)
+      .executeTakeFirstOrThrow();
+
+    const twistDef = await db
+      .selectFrom("twist")
+      .select("is_source")
+      .where("id", "=", String(currentTwist.twist_id))
+      .executeTakeFirst();
+
+    // Verify team membership if teamId is changed
+    if (
+      twist.teamId !== undefined &&
+      twist.teamId !== (currentTwist.team_id ? String(currentTwist.team_id) : null)
+    ) {
+      if (twist.teamId) {
+        const membership = await db
+          .selectFrom("team_user")
+          .select("role")
+          .where("team_id", "=", twist.teamId)
+          .where("user_id", "=", currentTwist.owner_id)
+          .executeTakeFirst();
+        if (!membership) {
+          throw new Error("You are not a member of this team");
+        }
+      }
+
+      // Check quota limits if owner changes
+      if (twistDef?.is_source !== true) {
+        const limitCheck = await checkTwistLimit(
+          db,
+          currentTwist.owner_id,
+          twist.teamId
+        );
+        if (!limitCheck.allowed) {
+          throw limitCheck.error;
+        }
+      }
+    }
+
     if (twist.name !== undefined) {
       // Per-user name uniqueness: check other active instances for this owner.
       // Sources (connectors) are exempt — users can have multiple connections.
-      const currentTwist = await db
-        .selectFrom("twist_instance")
-        .select(["owner_id", "name", "twist_id"])
-        .where("id", "=", twist_instance_id)
-        .where("archived_at", "is", null)
-        .executeTakeFirstOrThrow();
-
-      const twistDef = await db
-        .selectFrom("twist")
-        .select("is_source")
-        .where("id", "=", String(currentTwist.twist_id))
-        .executeTakeFirst();
-
       if (twist.name !== currentTwist.name && twistDef?.is_source !== true) {
+        const teamId =
+          twist.teamId !== undefined
+            ? twist.teamId
+            : currentTwist.team_id
+            ? String(currentTwist.team_id)
+            : null;
         const existingTwists = await db
           .selectFrom("twist_instance")
           .select(["id"])
           .where("owner_id", "=", currentTwist.owner_id)
+          .where("team_id", teamId ? "=" : "is", teamId ? BigInt(teamId) : null)
           .where("name", "=", twist.name)
           .where("id", "!=", twist_instance_id)
           .where("archived_at", "is", null)
@@ -502,16 +539,21 @@ export async function update(
 
         if (existingTwists && existingTwists.length > 0) {
           throw new Error(
-            `Twist with name "${twist.name}" already exists for this user.`
+            `Twist with name "${twist.name}" already exists for this ${
+              teamId ? "team" : "user"
+            }.`
           );
         }
       }
     }
 
     // Map config → options for the updateTable call.
-    const dbUpdate: { name?: string; options?: any } = {};
+    const dbUpdate: { name?: string; options?: any; team_id?: bigint | null } =
+      {};
     if (twist.name !== undefined) dbUpdate.name = twist.name;
     if (twist.config !== undefined) dbUpdate.options = twist.config;
+    if (twist.teamId !== undefined)
+      dbUpdate.team_id = twist.teamId ? BigInt(twist.teamId) : null;
 
     return await db
       .updateTable("twist_instance")
@@ -687,7 +729,8 @@ export async function activateDraft(
   syncables: Array<{ provider: string; syncableId: string }> | undefined,
   activate: {
     twistFactory: ReturnType<typeof twistFactory>;
-  }
+  },
+  teamId?: string | null
 ) {
   const logger = createLogger({ twist_instance_id: draftId });
 
@@ -702,6 +745,19 @@ export async function activateDraft(
 
   if (!draft) {
     throw new Error("Draft not found or already activated");
+  }
+
+  // Verify team membership if teamId is provided
+  if (teamId) {
+    const membership = await db
+      .selectFrom("team_user")
+      .select("role")
+      .where("team_id", "=", teamId)
+      .where("user_id", "=", draft.owner_id)
+      .executeTakeFirst();
+    if (!membership) {
+      throw new Error("You are not a member of this team");
+    }
   }
 
   // Check if twist requires AI and user has it disabled
@@ -742,7 +798,7 @@ export async function activateDraft(
 
   // Check plan limits before activating (sources check limits at channel-enable time)
   if (twistRecord?.is_source !== true) {
-    const limitCheck = await checkTwistLimit(db, draft.owner_id);
+    const limitCheck = await checkTwistLimit(db, draft.owner_id, teamId);
     if (!limitCheck.allowed) {
       throw limitCheck.error;
     }
@@ -754,21 +810,23 @@ export async function activateDraft(
       .selectFrom("twist_instance")
       .select(["id"])
       .where("owner_id", "=", draft.owner_id)
+      .where("team_id", teamId ? "=" : "is", teamId ?? null)
       .where("name", "=", name)
       .where("archived_at", "is", null)
       .where("draft", "=", false)
       .executeTakeFirst();
     if (existingTwist) {
-      throw new Error(`Twist with name "${name}" already exists for this user.`);
+      throw new Error(`Twist with name "${name}" already exists for this ${teamId ? 'team' : 'user'}.`);
     }
   }
 
-  // Flip draft → false, set name/options
+  // Flip draft → false, set name/options/team_id
   await db
     .updateTable("twist_instance")
     .set({
       draft: false,
       name,
+      team_id: teamId as any,
       ...(config ? { options: config } : {}),
     })
     .where("id", "=", draftId)

@@ -1,3 +1,4 @@
+- You can now assign new connections and twists to a specific Team — help your team stay within their plan limits by choosing the correct owner during setup
 - The default Plot twist no longer counts toward your twist limit — free tier users can now install 1 additional twist
 - The Plot twist can no longer be accidentally removed
 - Moving threads now shows priority paths with colors, and offers to create rules for similar threads from the same connection

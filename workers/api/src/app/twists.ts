@@ -41,6 +41,7 @@ const TwistRequestSchema = z.object({
 const TwistUpdateRequestSchema = z.object({
   name: z.string().optional(),
   config: z.record(z.string(), z.any()).optional(),
+  teamId: z.string().nullable().optional(),
 });
 
 const DraftRequestSchema = z.object({
@@ -56,6 +57,7 @@ const ActivateDraftSchema = z.object({
   priorityId: z.string().optional(), // Optional for sources (account-level)
   name: z.string(),
   config: z.record(z.string(), z.any()).optional(),
+  teamId: z.string().nullable().optional(),
   syncables: z
     .array(
       z.object({
@@ -351,7 +353,8 @@ twists.post("/twist/draft/:id/activate", async (c) => {
           ctx: c.executionCtx as ExecutionContext,
           db: c.var.db,
         }),
-      }
+      },
+      body.teamId
     );
 
     if (body.priorityId) {
