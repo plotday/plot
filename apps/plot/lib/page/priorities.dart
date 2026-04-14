@@ -115,7 +115,7 @@ class PrioritiesPage extends StatelessWidget {
                                   ),
                                   child: Builder(
                                     builder: (context) {
-                                      final plotApp = root.children
+                                      final plotApp = state.priorities
                                           .firstWhereOrNull(
                                             (p) => p.key == '@plot.app',
                                           );

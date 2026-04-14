@@ -316,7 +316,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                             FBottomNavigationBarItem(
                               icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
                                 builder: (context, state) {
-                                  final plotApp = state.root?.children
+                                  final plotApp = state.priorities
                                       .firstWhereOrNull(
                                         (p) => p.key == '@plot.app',
                                       );

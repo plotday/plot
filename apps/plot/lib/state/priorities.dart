@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:collection/collection.dart';
 
 import 'package:plot/store/store.dart';
 import 'logging.dart';
@@ -56,7 +57,9 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
             emit(
               state.copyWith(
                 priorities: priorities,
-                root: Priority.asNested(priorities).firstOrNull ?? state.root,
+                root: Priority.asNested(priorities)
+                        .firstWhereOrNull((p) => p.root && p.personal) ??
+                    state.root,
               ),
             );
             if (!completer.isCompleted) {
