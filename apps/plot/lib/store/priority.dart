@@ -25,7 +25,6 @@ class Priorities extends Table
   TextColumn get key => text().nullable()();
   IntColumn get teamId => integer().nullable()();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
-  BoolColumn get personal => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   TextColumn get role => text().withDefault(const Constant('member'))();
   TextColumn get attentionWindow => text().nullable()();
@@ -700,33 +699,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         .map(Priority.fromStore);
   }
 
-  /// Filters out system priorities (@plot.app, @plot.twist-dev, @plot) and
-  /// their descendants from the priority list.
-  static List<Priority> excludePlot(List<Priority> priorities) {
-    // Collect paths of system priorities to also filter their descendants
-    final systemPaths = priorities
-        .where(
-          (p) =>
-              p.key == '@plot.app' ||
-              p.key == '@plot.twist-dev' ||
-              p.key == '@plot' ||
-              (p.key?.startsWith('@plot.') ?? false),
-        )
-        .map((p) => p.path)
-        .toSet();
-
-    return priorities
-        .where(
-          (p) =>
-              p.key != '@plot.app' &&
-              p.key != '@plot.twist-dev' &&
-              p.key != '@plot' &&
-              p.key?.startsWith('@plot.') != true &&
-              !systemPaths.any((sp) => sp.isParent(p.path)),
-        )
-        .toList();
-  }
-
   static Map<Uuid, Priority> asMap(List<Priority> list) {
     final priorities = <Uuid, Priority>{};
     void add(Priority priority) {
@@ -807,7 +779,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          path: Path.generate(parent: parent.path),
          order: Order(DateTime.now().millisecondsSinceEpoch.toDouble()),
          root: false,
-         personal: parent.personal,
          teamId: parent.teamId,
          unread: false,
          role: parent.role,
@@ -874,7 +845,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          key: row.key,
          teamId: row.teamId ?? parent?.teamId,
          root: row.root,
-         personal: row.personal,
          path: row.path,
          createdBy: row.createdBy,
          unread: row.unread,
@@ -1118,7 +1088,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         key: key,
         teamId: teamId,
         root: root,
-        personal: personal,
         unread: unread,
         role: role,
         attentionWindow: attentionWindow,

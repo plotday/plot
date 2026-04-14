@@ -56,48 +56,6 @@ class ChangeCurrentPriority extends PriorityCommand {
   }
 }
 
-class OpenPlotApp extends Command {
-  OpenPlotApp(this.priority)
-    : super(
-        title: 'Using Plot',
-        subtitle: 'Updates, help, and your feedback',
-        icon: PlotIcon.help,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.viewed,
-      );
-
-  final Priority priority;
-
-  @override
-  bool get unread => priority.unread;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(
-      PriorityRoute(priorityIdString: priority.id.toShortString()),
-    );
-  }
-}
-
-class OpenTwistDev extends Command {
-  OpenTwistDev(this.priority)
-    : super(
-        title: 'Twist Development',
-        icon: PlotIcon.twist,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.viewed,
-      );
-
-  final Priority priority;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    return CommandRoute(
-      PriorityRoute(priorityIdString: priority.id.toShortString()),
-    );
-  }
-}
-
 class PriorityGroup extends CommandGroup {
   PriorityGroup({required super.title, required this.builder});
 
@@ -109,8 +67,7 @@ class PriorityGroup extends CommandGroup {
       order: PriorityOrder.recent,
       search: search,
     );
-    final filtered = Priority.excludePlot(priorities);
-    final all = filtered.map((priority) => builder(priority)).toList();
+    final all = priorities.map((priority) => builder(priority)).toList();
     return CommandGroup.filter(all, search);
   }
 }
@@ -275,9 +232,8 @@ Future<FormData> _buildNewPriorityForm(
     key: 'parent',
     label: 'Parent',
     initialValue: defaultParent,
-    items: (search) async => Priority.excludePlot(
-      await Priority.get(order: PriorityOrder.nested, search: search),
-    ),
+    items: (search) async =>
+        Priority.get(order: PriorityOrder.nested, search: search),
     labelBuilder: (p) => PriorityLabel(priority: p),
     titleBuilder: (p) => p.ancestorsLabel() != null
         ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
@@ -396,7 +352,7 @@ Future<FormData> _buildNewPriorityForm(
 class NewPriority extends ShowForm {
   NewPriority({Priority? parent})
     : super(
-        title: parent == null || (parent.root == true && parent.personal == true)
+        title: parent == null || parent.root == true
             ? 'Add a priority'
             : 'Add a sub-priority',
         icon: PlotIcon.add,
@@ -494,18 +450,17 @@ class EditPriorityCommand extends ShowForm {
             enabled: !isRoot || p.teamId != null,
             placeholder: 'None',
             items: (search) async {
-              final priorities = Priority.excludePlot(
-                await Priority.get(order: PriorityOrder.nested, search: search),
-              );
+              final priorities =
+                  await Priority.get(order: PriorityOrder.nested, search: search);
               return priorities.where((candidate) {
                 if (candidate.id == p.id) return false;
                 if (p.path.isParent(candidate.path)) return false;
-                if (p.personal && !candidate.personal) return false;
+                if (p.teamId == null && candidate.teamId != null) return false;
                 // Team roots can only be placed under personal priorities
                 // or other priorities in the same team
                 if (isRoot &&
                     p.teamId != null &&
-                    !candidate.personal &&
+                    candidate.teamId != null &&
                     candidate.teamId != effectiveOrgId) {
                   return false;
                 }
@@ -665,10 +620,10 @@ class ShowPriorityCommands extends ShowCommands {
 List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.isViewer && !priority.isPlot) EditPriorityCommand(priority),
   if (!priority.isViewer) ShowAttentionSettings(priority),
-  if (!(priority.root && priority.personal))
+  if (!priority.root)
     SetTopPriority(priority, priority.topOrder == null),
   if (!priority.isViewer) NewPriority(parent: priority),
-  if (!(priority.root && priority.personal) && !priority.isViewer &&
+  if (!priority.root && !priority.isViewer &&
       !priority.isPlot)
     TogglePriorityArchived(priority),
 ];

@@ -314,35 +314,7 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               ),
                             ),
                             FBottomNavigationBarItem(
-                              icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
-                                builder: (context, state) {
-                                  final plotApp = state.priorities
-                                      .firstWhereOrNull(
-                                        (p) => p.key == '@plot.app',
-                                      );
-                                  final hasUnread = plotApp?.unread ?? false;
-
-                                  return Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      Icon(PlotIcon.menu),
-                                      if (hasUnread)
-                                        Positioned(
-                                          top: -2,
-                                          right: -4,
-                                          child: Container(
-                                            width: 6.0,
-                                            height: 6.0,
-                                            decoration: BoxDecoration(
-                                              color: context.colour.accent.withValues(alpha: 0.7),
-                                              shape: BoxShape.circle,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
+                              icon: Icon(PlotIcon.menu),
                               label: Builder(
                                 builder: (context) => DefaultTextStyle(
                                   style: context.theme.typography.xs,

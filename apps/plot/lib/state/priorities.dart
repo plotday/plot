@@ -58,7 +58,7 @@ class PrioritiesBloc extends Cubit<PrioritiesState> {
               state.copyWith(
                 priorities: priorities,
                 root: Priority.asNested(priorities)
-                        .firstWhereOrNull((p) => p.root && p.personal) ??
+                        .firstWhereOrNull((p) => p.root) ??
                     state.root,
               ),
             );

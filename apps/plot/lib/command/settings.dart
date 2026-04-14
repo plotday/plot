@@ -66,39 +66,11 @@ List<StaticCommandGroup> settingsCommandsFromState(
       prioritiesState != null &&
       prioritiesState.priorities.any((p) => p.teamId != null);
 
-  Command? plotAppCmd;
-  Command? twistDevCmd;
-  if (prioritiesState != null) {
-    final plotApp = prioritiesState.priorities.firstWhereOrNull(
-      (p) => p.key == '@plot.app',
-    );
-    if (plotApp != null) {
-      final isArchived = plotApp.archivedAt != null;
-      if (!isArchived || showAllPriorities) {
-        plotAppCmd = OpenPlotApp(plotApp);
-      }
-    }
-    final twistDev = prioritiesState.priorities.firstWhereOrNull(
-      (p) => p.key == '@plot.twist-dev',
-    );
-    if (twistDev != null) {
-      final isArchived = twistDev.archivedAt != null;
-      final hasChildren = prioritiesState.priorities.any(
-        (p) => p.parentId == twistDev.id,
-      );
-      if ((!isArchived || showAllPriorities) && hasChildren) {
-        twistDevCmd = OpenTwistDev(twistDev);
-      }
-    }
-  }
-
   final rootPriority = prioritiesState?.root;
 
   return settingsCommands(
     hasTeams: hasTeams,
     rootPriority: rootPriority,
-    plotAppCmd: plotAppCmd,
-    twistDevCmd: twistDevCmd,
     email: email,
     adminOrgs: adminOrgs,
     subscription: subscription,
@@ -108,8 +80,6 @@ List<StaticCommandGroup> settingsCommandsFromState(
 List<StaticCommandGroup> settingsCommands({
   bool hasTeams = false,
   Priority? rootPriority,
-  Command? plotAppCmd,
-  Command? twistDevCmd,
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
@@ -143,8 +113,6 @@ List<StaticCommandGroup> settingsCommands({
   StaticCommandGroup(
     title: 'App',
     commands: [
-      if (plotAppCmd != null) plotAppCmd,
-      if (twistDevCmd != null) twistDevCmd,
       if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
       CopyPageLink(),
       OpenCopiedPageLink(),

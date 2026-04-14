@@ -32,6 +32,49 @@ BEGIN
         VALUES (p_user_id, p_user_id, 'Everything', v_new_path, 0)
     RETURNING id INTO v_root_priority_id;
 
+    -- Create Using Plot (@plot.app)
+    INSERT INTO public.priority (created_by, user_id, title, path, color, key, default_thread_icon)
+    VALUES (p_user_id, p_user_id, 'Using Plot', v_new_path || generate_path(NULL), 7, '@plot.app', 'https://plot.day/assets/plot-icon.svg');
+
+    -- Create Twist Development (@plot.twist-dev)
+    INSERT INTO public.priority (created_by, user_id, title, path, color, key)
+    VALUES (p_user_id, p_user_id, 'Twist Development', v_new_path || generate_path(NULL), 3, '@plot.twist-dev');
+
+    -- Add priority rules for auto-filing
+    -- 1. Everyone topic -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria, precedence)
+    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+    FROM public.priority p
+    CROSS JOIN public.topic t
+    WHERE p.user_id = p_user_id AND p.key = '@plot.app'
+      AND t.auto_maintained = TRUE AND t.team_id IS NULL AND t.name = 'Everyone';
+
+    -- 2. User topic -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria, precedence)
+    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+    FROM public.priority p
+    CROSS JOIN public.topic t
+    WHERE p.user_id = p_user_id AND p.key = '@plot.app'
+      AND t.auto_user_id = p_user_id;
+
+    -- 3. Team admin topics -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria, precedence)
+    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+    FROM public.priority p
+    CROSS JOIN public.topic t
+    JOIN public.team_user tu ON tu.team_id = t.auto_team_admin_team_id AND tu.user_id = p_user_id
+    WHERE p.user_id = p_user_id AND p.key = '@plot.app'
+      AND t.auto_team_admin_team_id IS NOT NULL;
+
+    -- 4. Twist/Connector admin topics -> Twist Development
+    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria, precedence)
+    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+    FROM public.priority p
+    CROSS JOIN public.topic t
+    JOIN public.twist_admin ta ON ta.id = t.auto_twist_admin_id AND ta.user_id = p_user_id
+    WHERE p.user_id = p_user_id AND p.key = '@plot.twist-dev'
+      AND t.auto_twist_admin_id IS NOT NULL;
+
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
 $function$;

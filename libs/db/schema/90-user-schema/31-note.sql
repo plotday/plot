@@ -38,7 +38,10 @@ WHERE
         OR n.access_contacts && "user".user_contact_ids(tp.user_id))
     -- Thread-level filtering
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
-    AND a.contacts && "user".user_contact_ids(tp.user_id);
+    AND (
+        a.contacts && "user".user_contact_ids(tp.user_id)
+        OR a.topics && "user".user_topic_ids(tp.user_id)
+    );
 
 ALTER VIEW "user"."note" OWNER TO postgres;
 
@@ -76,7 +79,10 @@ FROM
 WHERE
     (n.draft = FALSE OR n.created_by = tp.user_id)
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
-    AND a.contacts && "user".user_contact_ids(tp.user_id)
+    AND (
+        a.contacts && "user".user_contact_ids(tp.user_id)
+        OR a.topics && "user".user_topic_ids(tp.user_id)
+    )
     -- Hidden by note-level access restriction
     AND (n.access_contacts IS NOT NULL
         AND n.created_by != tp.user_id

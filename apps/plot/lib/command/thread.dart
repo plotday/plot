@@ -622,11 +622,9 @@ class EditThread extends ShowForm {
                     label: 'Priority',
                     initialValue: thread.priority,
                     required: true,
-                    items: (search) async => Priority.excludePlot(
-                      await Priority.get(
-                        order: PriorityOrder.nested,
-                        search: search,
-                      ),
+                    items: (search) async => Priority.get(
+                      order: PriorityOrder.nested,
+                      search: search,
                     ),
                     labelBuilder: (p) => PriorityLabel(priority: p),
                     titleBuilder: (p) => p.ancestorsLabel() != null
@@ -1663,9 +1661,8 @@ class MoveThreadToPriority extends ShowCommands {
 
   static Future<Commands> _getMoveCommands(Thread thread) async {
     final priorities = await Priority.get(order: PriorityOrder.recent);
-    final filteredPriorities = Priority.excludePlot(
-      priorities,
-    ).where((p) => p.id != thread.priority.id).toList();
+    final filteredPriorities =
+        priorities.where((p) => p.id != thread.priority.id).toList();
 
     return Commands(
       prompt: 'Move thread to priority',
@@ -2630,7 +2627,7 @@ List<Command> threadCommands(
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent && !thread.priority.personal)
+    if (!skipInfrequent && thread.priority.teamId != null)
       ToggleThreadPrivate(thread),
     if (!hideArchive) ArchiveThread(thread),
   ];

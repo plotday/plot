@@ -685,7 +685,7 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
       SplitNoteToNewThread(note),
     if (note.content != null && note.content!.trim().isNotEmpty)
       CopyNoteContent(note),
-    if ((activityBloc?.state.thread.priority.personal != true || note.draft) &&
+    if ((activityBloc?.state.thread.priority.teamId != null || note.draft) &&
         (!note.isPrivate || note.authorId.isCurrentUser))
       ToggleNotePrivate(
         note,

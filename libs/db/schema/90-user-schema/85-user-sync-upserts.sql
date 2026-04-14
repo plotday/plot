@@ -361,8 +361,6 @@ DECLARE
     _is_move boolean;
     _priority_exists boolean;
     _old_actual_path ltree;
-    _old_team_id bigint;
-    _new_team_id bigint;
 BEGIN
     -- Extract input fields from JSONB into the view's row type
     _input := jsonb_populate_record(NULL::"user"."priority", p_priority || jsonb_build_object('user_id', upsert_priority.user_id));
@@ -491,13 +489,12 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF _actual_path IS NOT NULL THEN
-        INSERT INTO priority (id, user_id, archived_at, title, color, path, created_by, updated_by, team_id)
+        INSERT INTO priority (id, user_id, archived_at, title, color, path, created_by, updated_by)
             VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _actual_path, _input.created_by, _input.updated_by,
-                CASE WHEN _is_creator THEN _input.team_id ELSE NULL END)
+                END, _actual_path, _input.created_by, _input.updated_by)
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -507,8 +504,7 @@ BEGIN
                 ELSE
                     priority.color
                 END,
-                updated_by = _input.updated_by,
-                team_id = CASE WHEN _is_creator THEN _input.team_id ELSE priority.team_id END
+                updated_by = _input.updated_by
             RETURNING
                 id INTO _priority_id;
     ELSE
@@ -523,71 +519,11 @@ BEGIN
             ELSE
                 priority.color
             END,
-            updated_by = _input.updated_by,
-            team_id = CASE WHEN _is_creator THEN _input.team_id ELSE priority.team_id END
+            updated_by = _input.updated_by
         WHERE
             id = _input.id
         RETURNING
             id INTO _priority_id;
-    END IF;
-    -- Handle team_id changes: authorization, promote-to-root, and descendant propagation
-    IF _is_creator THEN
-        SELECT team_id INTO _old_team_id FROM priority WHERE id = _priority_id;
-        _new_team_id := _input.team_id;
-        -- Only act when team_id actually changed
-        IF _old_team_id IS DISTINCT FROM _new_team_id THEN
-            -- Removing from team: require admin role
-            IF _old_team_id IS NOT NULL AND (_new_team_id IS NULL OR _new_team_id != _old_team_id) THEN
-                IF NOT EXISTS (
-                    SELECT 1 FROM team_user
-                    WHERE team_id = _old_team_id
-                    AND user_id = upsert_priority.user_id
-                    AND role = 'admin'
-                ) THEN
-                    RAISE EXCEPTION 'Only team admins can remove a priority from the team';
-                END IF;
-            END IF;
-            -- Setting team: require membership
-            IF _new_team_id IS NOT NULL THEN
-                IF NOT EXISTS (
-                    SELECT 1 FROM team_user
-                    WHERE team_id = _new_team_id
-                    AND user_id = upsert_priority.user_id
-                ) THEN
-                    RAISE EXCEPTION 'Must be a member of the team';
-                END IF;
-            END IF;
-            -- Auto-promote to root: if setting team_id on a non-root priority, move it to root level
-            IF _new_team_id IS NOT NULL THEN
-                DECLARE
-                    _current_path ltree;
-                    _new_root_path ltree;
-                    _priority_label text;
-                BEGIN
-                    SELECT path INTO _current_path FROM priority WHERE id = _priority_id;
-                    IF nlevel(_current_path) > 1 THEN
-                        -- Generate a random root-level path (12 chars, ltree-safe)
-                        _new_root_path := text2ltree(
-                            substring(md5(random()::text || clock_timestamp()::text) from 1 for 12)
-                        );
-                        -- Move the priority and all descendants to the new root path
-                        UPDATE priority
-                        SET path = CASE
-                            WHEN id = _priority_id THEN _new_root_path
-                            ELSE _new_root_path || subpath(path, nlevel(_current_path))
-                        END
-                        WHERE path <@ _current_path;
-                        -- No priority_user write needed — priority.user_id
-                        -- already encodes ownership.
-                    END IF;
-                END;
-            END IF;
-            -- Propagate team_id to all descendants
-            UPDATE priority
-            SET team_id = _new_team_id
-            WHERE path <@ (SELECT path FROM priority WHERE id = _priority_id)
-            AND id != _priority_id;
-        END IF;
     END IF;
     -- Always upsert top_order, order, pomodoro, color if provided
     IF NOT _is_move THEN

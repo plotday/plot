@@ -182,51 +182,24 @@ export async function getOrCreateTwistPriority(
     };
   }
 
-  // Not found, need to create new priority and twist_admin entry
-  // First ensure Twist Development priority exists
+  // Not found, need to ensure Twist Development priority exists and use it
   const twistDevPriorityId = await getOrCreateTwistDevelopmentPriority(
     userId,
     db
   );
-
-  // Get the Twist Development priority path
-  const twistDevResult = await db
-    .selectFrom("priority")
-    .select(["path", "created_by"])
-    .where("id", "=", twistDevPriorityId)
-    .executeTakeFirstOrThrow();
-
-  // Generate child path using no-cache DB
-  const path = generatePath(twistDevResult.path as string);
-
-  // Create the twist-specific priority
-  const priorityTitle = isPersonal ? `${twistName} (Personal)` : twistName;
-  const createPriorityResult = await db
-    .insertInto("priority")
-    .values({
-      created_by: twistDevResult.created_by,
-      user_id: twistDevResult.created_by,
-      title: priorityTitle,
-      path: path as string,
-      updated_by: 0,
-    })
-    .returning(["id"])
-    .executeTakeFirstOrThrow();
-
-  const priorityId = createPriorityResult.id;
 
   // Create or update twist_admin entry
   if (existingResult) {
     // twist_admin exists but priority_id was null - update it
     const updateResult = await db
       .updateTable("twist_admin")
-      .set({ priority_id: priorityId })
+      .set({ priority_id: twistDevPriorityId })
       .where("id", "=", existingResult.id)
       .returning(["id"])
       .executeTakeFirstOrThrow();
 
     return {
-      priorityId,
+      priorityId: twistDevPriorityId,
       twistAdminId: Number(updateResult.id),
       isNew: true,
     };
@@ -239,7 +212,7 @@ export async function getOrCreateTwistPriority(
       publisher_id?: number | bigint | string;
     } = {
       twist_package_id: twistPackageId,
-      priority_id: priorityId,
+      priority_id: twistDevPriorityId,
     };
 
     if (isPersonal) {
@@ -261,7 +234,7 @@ export async function getOrCreateTwistPriority(
       .executeTakeFirstOrThrow();
 
     return {
-      priorityId,
+      priorityId: twistDevPriorityId,
       twistAdminId: Number(createAdminResult.id),
       isNew: true,
     };

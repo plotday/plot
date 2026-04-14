@@ -5,11 +5,10 @@
 -- Walking descendants is a simple path filter within the user's own tree;
 -- there are no shared priorities.
 --
--- The `personal` and `root` columns are kept for the Flutter app's
--- compatibility: `root` is true only for the user's personal root
--- priority (nlevel = 1, chosen as the first/oldest); `personal` is
--- true for anything in that root's subtree (i.e. everything the user
--- owns below their single root).
+-- The `root` column is kept for the Flutter app's compatibility: `root`
+-- is true only for the user's personal root priority (nlevel = 1).
+-- All priorities owned by the user are now inherently personal.
+DROP VIEW IF EXISTS "user"."priority" CASCADE;
 CREATE OR REPLACE VIEW "user"."priority" -- for formatting
 AS
 WITH user_root AS (
@@ -61,8 +60,6 @@ SELECT
     p.updated_by,
     -- root is the user's single top-level priority
     p.id = ur.root_id AS root,
-    -- personal: any priority inside the user's own tree (now all of them)
-    ur.root_path @> p.path AS personal,
     COALESCE(direct.title, p.title) AS title,
     CASE
         WHEN inh.path_value IS NOT NULL THEN
@@ -82,7 +79,6 @@ SELECT
     inh.pomodoro,
     inh.color,
     p.key,
-    p.team_id,
     COALESCE(upu.unread, FALSE) AS unread,
     'member'::text AS role,
     inh.attention_window,

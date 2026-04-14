@@ -64,9 +64,7 @@ class ChannelDefaultSuggester {
     if (channels.isEmpty) return const ChannelDefaultSuggestion();
 
     // Load all priorities from local store
-    final priorities = Priority.excludePlot(
-      await Priority.get(order: PriorityOrder.nested),
-    );
+    final priorities = await Priority.get(order: PriorityOrder.nested);
     if (priorities.isEmpty) return const ChannelDefaultSuggestion();
 
     final defaultPriority = await Priority.getDefault();

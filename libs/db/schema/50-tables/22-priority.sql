@@ -19,11 +19,7 @@ CREATE TABLE "public"."priority" (
     "updated_by" integer NOT NULL DEFAULT 0,
     "sync_depth" integer,
     "key" text,
-    "team_id" bigint REFERENCES public."team" ON DELETE SET NULL,
     -- inherit_members is vestigial: with per-user priorities there are no
-    -- cross-user subtree boundaries. It stays in the schema so the Flutter
-    -- app's Drift store doesn't need an immediate migration; the API views
-    -- no longer surface it and upsert_priority doesn't write it.
     "inherit_members" boolean NOT NULL DEFAULT TRUE,
     "default_thread_icon" text
 );
@@ -85,20 +81,9 @@ CREATE TABLE "public"."priority_user" (
     "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
     "archived_at" timestamp with time zone,
-    "personal" boolean NOT NULL DEFAULT FALSE,
     "role" text NOT NULL DEFAULT 'member',
     PRIMARY KEY (user_id, priority_id)
 );
-
--- Ensure each user has max one personal priority
-CREATE UNIQUE INDEX idx_priority_user_personal_user ON "public"."priority_user" ("user_id", "personal")
-WHERE
-    "personal" = TRUE;
-
--- Ensure each personal priority has max one user entry
-CREATE UNIQUE INDEX idx_priority_user_personal_priority ON "public"."priority_user" ("priority_id", "personal")
-WHERE
-    "personal" = TRUE;
 
 -- Index for user-based priority lookups in user_priority_base view
 CREATE INDEX idx_priority_user_user_id ON "public"."priority_user" ("user_id")
@@ -125,64 +110,6 @@ CREATE TRIGGER set_priority_user_created_at
     FOR EACH ROW
     EXECUTE FUNCTION set_created_at ();
 
--- The old insert_priority_user AFTER INSERT trigger is retired. Priority
--- ownership is now carried directly on priority.user_id, populated by
--- the default_priority_user_id BEFORE INSERT trigger above. Nothing
--- needs to write priority_user anymore — it stays around purely for
--- legacy readers until Stage 4d removes it.
-
-CREATE OR REPLACE FUNCTION propagate_team_id ()
-    RETURNS TRIGGER
-    AS $$
-DECLARE
-    v_parent_team_id bigint;
-BEGIN
-    IF NEW.team_id IS NULL AND nlevel (NEW.path) > 1 THEN
-        SELECT
-            team_id INTO v_parent_team_id
-        FROM
-            public.priority
-        WHERE
-            path = subpath (NEW.path, 0, nlevel (NEW.path) - 1);
-        IF v_parent_team_id IS NOT NULL THEN
-            NEW.team_id := v_parent_team_id;
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$
-LANGUAGE plpgsql;
-
-CREATE TRIGGER priority_propagate_team_id
-    BEFORE INSERT ON public.priority
-    FOR EACH ROW
-    EXECUTE FUNCTION propagate_team_id ();
-
--- When team_id changes on a priority, propagate to all descendants
-CREATE OR REPLACE FUNCTION propagate_team_id_to_descendants ()
-    RETURNS TRIGGER
-    AS $$
-BEGIN
-    IF NEW.team_id IS DISTINCT FROM OLD.team_id THEN
-        UPDATE
-            public.priority
-        SET
-            team_id = NEW.team_id
-        WHERE
-            path <@ NEW.path
-            AND path != NEW.path
-            AND (team_id IS DISTINCT FROM NEW.team_id);
-    END IF;
-    RETURN NEW;
-END;
-$$
-LANGUAGE plpgsql;
-
-CREATE TRIGGER priority_propagate_team_id_update
-    AFTER UPDATE OF team_id ON public.priority
-    FOR EACH ROW
-    EXECUTE FUNCTION propagate_team_id_to_descendants ();
-
 -- Per-user priority settings (per-key with JSONB values)
 CREATE TABLE "public"."priority_setting" (
     "updated_at" timestamptz NOT NULL DEFAULT now(),
@@ -197,4 +124,46 @@ CREATE TRIGGER set_priority_setting_updated_at
     BEFORE INSERT OR UPDATE ON "public"."priority_setting"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at ();
+
+-- Enforce single root in priority table
+CREATE OR REPLACE FUNCTION public.validate_priority_root ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_root_path ltree;
+BEGIN
+    -- Ensure each user has only one root priority (nlevel=1)
+    IF nlevel(NEW.path) = 1 THEN
+        IF EXISTS (
+            SELECT 1 FROM priority
+            WHERE user_id = NEW.user_id AND nlevel(path) = 1 AND id != NEW.id
+        ) THEN
+            RAISE EXCEPTION 'User already has a root priority';
+        END IF;
+    ELSE
+        -- Ensure all other priorities are descendants of the root
+        SELECT path INTO v_root_path
+        FROM priority
+        WHERE user_id = NEW.user_id AND nlevel(path) = 1;
+
+        IF v_root_path IS NULL THEN
+            -- Root might be being inserted in the same transaction
+            -- (e.g. by activate_invited_user). If no root yet exists,
+            -- and this isn't a root, it's invalid.
+            RAISE EXCEPTION 'User must have a root priority before adding sub-priorities';
+        END IF;
+
+        IF NOT v_root_path @> NEW.path THEN
+            RAISE EXCEPTION 'Priority path % must be under root path %', NEW.path, v_root_path;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER validate_priority_root_trigger
+    BEFORE INSERT OR UPDATE OF path, user_id ON public.priority
+    FOR EACH ROW
+    EXECUTE FUNCTION public.validate_priority_root ();
 

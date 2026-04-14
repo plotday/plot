@@ -511,11 +511,9 @@ class _PrioritiesListState extends State<PrioritiesList>
                 ),
               ],
 
-              // Third group: All Priorities (excluding system priorities)
+              // Third group: All Priorities
               ...() {
-                final allPriorities = Priority.excludePlot(
-                  widget.root.children,
-                );
+                final allPriorities = widget.root.children;
 
                 return [
                   SizedBox(height: 16),

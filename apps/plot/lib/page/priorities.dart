@@ -1,5 +1,4 @@
 import 'package:auto_route/auto_route.dart';
-import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
@@ -115,13 +114,6 @@ class PrioritiesPage extends StatelessWidget {
                                   ),
                                   child: Builder(
                                     builder: (context) {
-                                      final plotApp = state.priorities
-                                          .firstWhereOrNull(
-                                            (p) => p.key == '@plot.app',
-                                          );
-                                      final hasUnread =
-                                          plotApp?.unread ?? false;
-
                                       return Column(
                                         children: [
                                           SizedBox(height: 8),
@@ -149,28 +141,6 @@ class PrioritiesPage extends StatelessWidget {
                                                     ShowSettings(),
                                                     icon: Value(null),
                                                   ),
-                                                  leadingBuilder: hasUnread
-                                                      ? (
-                                                          isHovered,
-                                                          hasFocus,
-                                                        ) => SizedBox(
-                                                          width: 20,
-                                                          child: Center(
-                                                            child: Container(
-                                                              width: 6.0,
-                                                              height: 6.0,
-                                                              decoration: BoxDecoration(
-                                                                color: context
-                                                                    .theme
-                                                                    .colors
-                                                                    .foreground,
-                                                                shape: BoxShape
-                                                                    .circle,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        )
-                                                      : null,
                                                 );
                                               }
                                               return const SizedBox.shrink();
