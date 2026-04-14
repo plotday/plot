@@ -94,16 +94,17 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                 // Determine the correct tab index based on current route
                 int getCurrentIndex() {
                   final currentPath = context.router.currentPath;
-                  // If on NewThreadPage (/priorityId/new), highlight New tab (index 3)
+                  // If on NewThreadPage (/p/:priorityId/new), highlight New tab (index 3)
                   if (currentPath.endsWith('/new')) {
                     return 3;
                   }
-                  // If on ThreadPage (/priorityId/threadId), no tab highlighted
+                  // If on ThreadPage (/p/:priorityId/threadId), no tab highlighted
                   final pathSegments = currentPath
                       .split('/')
                       .where((s) => s.isNotEmpty)
                       .toList();
-                  if (pathSegments.length >= 2) {
+                  if (pathSegments.length >= 3 ||
+                      (pathSegments.isNotEmpty && pathSegments.first == 't')) {
                     return -1;
                   }
                   // On the Threads tab, highlight Agenda or Activity Feed based on tab notifier
@@ -122,7 +123,8 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                       .split('/')
                       .where((s) => s.isNotEmpty)
                       .toList();
-                  return pathSegments.length >= 2;
+                  return pathSegments.length >= 3 ||
+                      (pathSegments.isNotEmpty && pathSegments.first == 't');
                 }
 
                 return BottomNavigationScope(
@@ -148,7 +150,9 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                     .split('/')
                                     .where((s) => s.isNotEmpty)
                                     .toList();
-                                if (pathSegments.length >= 2 &&
+                                if ((pathSegments.length >= 3 ||
+                                        (pathSegments.isNotEmpty &&
+                                            pathSegments.first == 't')) &&
                                     tabsRouter.activeIndex == 1) {
                                   // On ThreadPage - pop back to PriorityPage
                                   context.router.back();
@@ -159,11 +163,14 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               setState(() {});
                             } else if (index == 3) {
                               // Navigate to New Thread for current priority
-                              final pathSegments = currentPath.split('/');
+                              final pathSegments = currentPath
+                                  .split('/')
+                                  .where((s) => s.isNotEmpty)
+                                  .toList();
 
                               // Check if we're on the Priorities tab
-                              if (pathSegments.length > 1 &&
-                                  pathSegments[1] == 'priorities') {
+                              if (pathSegments.isNotEmpty &&
+                                  pathSegments.first == 'priorities') {
                                 // On Priorities tab - navigate to the Activities tab's current priority
                                 final activitiesRouter = tabsRouter
                                     .stackRouterOfIndex(1);
@@ -193,8 +200,8 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                     }
                                   });
                                 }
-                              } else if (pathSegments.length > 1 &&
-                                  pathSegments[1].isNotEmpty) {
+                              } else if (pathSegments.isNotEmpty &&
+                                  pathSegments.first == 'p') {
                                 // Already on a priority route - push NewThreadRoute directly
                                 final innerRouter = context.router
                                     .innerRouterOf<StackRouter>(
