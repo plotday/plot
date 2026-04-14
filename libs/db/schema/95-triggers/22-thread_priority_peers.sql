@@ -1,13 +1,17 @@
--- Populate thread_priority rows for every linked user appearing in
--- thread.contacts (beyond the author). Fires after INSERT or after
--- contacts changes on an existing thread, so both upsert_thread RPC
--- callers and raw insertInto("thread") writers (twist runtime, dev
--- activities) share the same peer-filing behaviour.
+-- Populate thread_priority rows for peer users appearing in thread.contacts —
+-- but only for user-authored threads, where the author's sync necessarily
+-- attests their peers (think: share_thread, or a user manually creating a
+-- thread with a contact list).
 --
--- Each peer's priority is resolved via classify_thread_for_user, which
--- evaluates user-defined priority rules or falls back to the user's
--- personal root. Uses ON CONFLICT DO NOTHING so a peer who has already
--- filed the thread (via a manual move) is not overwritten.
+-- Twist-authored threads do NOT auto-file peers here. Their peers gain
+-- visibility only via their own connector's upsert_thread call (which
+-- independently confirms membership via the external source). This prevents
+-- the admission hole where one user's rogue connector could silently admit
+-- peers by merely listing their contacts.
+--
+-- Each peer's priority is resolved via classify_thread_for_user. Uses
+-- ON CONFLICT DO NOTHING so a peer who has already filed the thread is not
+-- overwritten.
 CREATE OR REPLACE FUNCTION public.file_thread_priority_peers ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -22,24 +26,22 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- Compute old contacts for delta (empty on INSERT)
+    -- Only auto-file peers for user-authored threads. For twist-authored
+    -- threads, filing happens exclusively through each user's own
+    -- upsert_thread call (which promotes them from pending_contacts).
+    IF NOT EXISTS (SELECT 1 FROM "public"."user" WHERE id = NEW.created_by) THEN
+        RETURN NEW;
+    END IF;
+    v_author_user_id := NEW.created_by;
+
+    -- Compute old contacts for delta (empty on INSERT).
     IF TG_OP = 'UPDATE' THEN
         v_old_contacts := COALESCE(OLD.contacts, ARRAY[]::uuid[]);
     ELSE
         v_old_contacts := ARRAY[]::uuid[];
     END IF;
 
-    -- Exclude the author (user_id or twist_instance owner) from peer filing
-    -- so we don't double-insert against the author trigger.
-    IF EXISTS (SELECT 1 FROM "public"."user" WHERE id = NEW.created_by) THEN
-        v_author_user_id := NEW.created_by;
-    ELSE
-        SELECT pt.owner_id INTO v_author_user_id
-        FROM public.twist_instance pt
-        WHERE pt.id = NEW.created_by;
-    END IF;
-
-    -- thread_priority for ALL contacts (idempotent via ON CONFLICT DO NOTHING)
+    -- thread_priority for ALL contacts (idempotent via ON CONFLICT DO NOTHING).
     FOR r IN
         SELECT DISTINCT uc.user_id AS peer_user_id
         FROM unnest(NEW.contacts) AS arr(contact_id)
@@ -57,9 +59,8 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- thread_unread for NEWLY ADDED contacts only, so shared threads
-    -- appear as unread for peers. Uses ON CONFLICT DO NOTHING to avoid
-    -- overwriting existing read state.
+    -- thread_unread for NEWLY ADDED contacts only, so shared threads appear
+    -- as unread for peers. ON CONFLICT DO NOTHING preserves read state.
     FOR r IN
         SELECT DISTINCT uc.user_id AS peer_user_id
         FROM unnest(NEW.contacts) AS arr(contact_id)

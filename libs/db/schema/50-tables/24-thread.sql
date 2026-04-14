@@ -15,7 +15,16 @@ CREATE TABLE "public"."thread" (
     "key" text,
     "icon" text,
     "topics" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
-    "embedding" halfvec(384)
+    "embedding" halfvec(384),
+    -- Twist definition that owns this thread's dedup scope. Set by the twist
+    -- runtime on creation and never changed afterward. NULL for user-created
+    -- threads, which do not participate in cross-user key dedup. FK intentionally
+    -- omitted to match link.twist_id and avoid load-order coupling with twist.
+    "twist_id" bigint,
+    -- Contacts whose own sync attempted to join this thread before being
+    -- attested by another user's sync. Promoted into `contacts` when an
+    -- attester's upsert includes them. See upsert_thread + file_thread_priority_peers.
+    "pending_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]
 );
 
 ALTER TABLE "public"."thread"
@@ -41,11 +50,16 @@ CREATE INDEX idx_thread_created_by ON "public"."thread" ("created_by")
 WHERE
     archived_at IS NULL;
 
-COMMENT ON COLUMN "public"."thread"."key" IS 'Internal identifier for deduplication within a creator. Used with created_by for upsert behavior. Not synced to clients.';
+COMMENT ON COLUMN "public"."thread"."key" IS 'Identifier for cross-user deduplication within a twist. Scoped by twist_id via thread_twist_key_unique. Not synced to clients.';
 
--- Ensure one thread per key per creator (twist instance or user)
--- NULL != NULL allows multiple threads when key is null
-CREATE UNIQUE INDEX thread_created_by_key_unique ON "public"."thread" ("created_by", "key");
+-- Ensure one active thread per (twist_id, key). The `archived_at IS NULL`
+-- predicate lets a new sync reuse a (twist_id, key) slot once the previous
+-- thread has been fully archived (all users archived + no active links).
+CREATE UNIQUE INDEX thread_twist_key_unique ON "public"."thread" ("twist_id", "key")
+WHERE
+    twist_id IS NOT NULL
+    AND key IS NOT NULL
+    AND archived_at IS NULL;
 
 -- Index for efficient key lookups
 CREATE INDEX idx_thread_key ON "public"."thread" ("key")
@@ -62,7 +76,11 @@ COMMENT ON COLUMN "public"."thread"."embedding" IS 'Content embedding (384-dim h
 
 COMMENT ON COLUMN "public"."thread"."topics" IS 'Topic IDs attached to this thread. Members of referenced topics gain visibility dynamically — new members automatically see past threads.';
 
-COMMENT ON COLUMN "public"."thread"."contacts" IS 'Canonical list of contact_ids with access to this thread, including the author''s primary contact for human-created threads. A user can access the thread if any of their linked (user_contact.linked=true) contacts appears in this array.';
+COMMENT ON COLUMN "public"."thread"."contacts" IS 'Attested contact_ids on this thread. For twist-created threads, a user only gains visibility when their linked contact appears here via another attester''s sync (or via share_thread). Users who attempted to join before attestation land in pending_contacts and are promoted when an attester confirms them. User-created threads do not require attestation.';
+
+COMMENT ON COLUMN "public"."thread"."twist_id" IS 'Twist definition that created this thread. Scopes (twist_id, key) dedup so all instances of the same twist share the same thread per external item. Immutable after creation.';
+
+COMMENT ON COLUMN "public"."thread"."pending_contacts" IS 'Contacts whose own sync wants to join but who have not yet been attested by another user''s sync. Promoted to contacts (with thread_priority filing) once a subsequent attester includes them.';
 
 COMMENT ON COLUMN "public"."thread"."created_by" IS 'The user_id or twist_instance_id that actually created this thread. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.';
 

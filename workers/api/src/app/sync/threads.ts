@@ -175,6 +175,14 @@ threads.post("/sync/threads", async (c) => {
     : [];
   delete threadData.invite_emails;
 
+  // Strip server-side-only fields. twist_id is set by the twist runtime and
+  // must not be settable via the user-facing sync endpoint — otherwise a
+  // caller could dedupe their thread into someone else's twist-owned thread
+  // and gain unintended visibility. pending_contacts is managed internally
+  // by upsert_thread and the peer-promotion logic.
+  delete threadData.twist_id;
+  delete threadData.pending_contacts;
+
   const userId = c.var.user.id;
 
   const result = await withUserDb(c.var.db, userId, async (trx) => {

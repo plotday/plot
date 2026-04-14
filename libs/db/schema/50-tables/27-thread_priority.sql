@@ -14,8 +14,19 @@ CREATE TABLE "public"."thread_priority" (
     "priority_id" uuid NOT NULL REFERENCES public.priority (id) ON DELETE CASCADE,
     "created_at" timestamptz NOT NULL DEFAULT now(),
     "updated_at" timestamptz NOT NULL DEFAULT now(),
+    -- Per-user archive. A user's connector archive, or an explicit local
+    -- archive, sets this without touching thread.archived_at — other users'
+    -- access is preserved. The thread is globally archived only when all
+    -- thread_priority rows are archived and no active links remain.
+    "archived_at" timestamptz,
     PRIMARY KEY ("thread_id", "user_id")
 );
+
+-- Support queries that count active (non-archived) filings, used by the
+-- last-holder trigger and the user.thread view.
+CREATE INDEX idx_thread_priority_archived
+    ON "public"."thread_priority" ("thread_id")
+    WHERE archived_at IS NULL;
 
 -- Fast lookup of a user's filings for the new user.thread view.
 CREATE INDEX idx_thread_priority_user_priority

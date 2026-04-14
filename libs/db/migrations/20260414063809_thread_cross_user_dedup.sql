@@ -1,35 +1,338 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) with archived_at IS NULL — two instances
--- of the same twist that upsert the same key converge on the same thread
--- across users. User-created threads (twist_id IS NULL) do not participate
--- in cross-user dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Drop index "thread_created_by_key_unique" from table: "thread"
+DROP INDEX "public"."thread_created_by_key_unique";
+-- Modify "thread" table
+ALTER TABLE "public"."thread" ADD COLUMN "twist_id" bigint NULL, ADD COLUMN "pending_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[];
+
+-- Data migration: backfill thread.twist_id from twist_instance.twist_id via
+-- created_by for twist-created threads. User-created threads keep twist_id
+-- NULL and are excluded from the new partial unique index.
+UPDATE thread t
+SET twist_id = ti.twist_id
+FROM twist_instance ti
+WHERE t.created_by = ti.id
+  AND t.twist_id IS NULL;
+
+-- Data migration: dedupe threads with the same (twist_id, key) before the
+-- new unique index is created. For each group, keep the oldest thread and
+-- repoint all dependent rows at it; union contacts; delete the losers.
+-- This resolves the cross-user duplication that accumulated under the
+-- old per-creator uniqueness model (Alice's and Bob's connectors each
+-- creating their own thread for the same external item).
+WITH grouped AS (
+    SELECT twist_id,
+           key,
+           array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL
+      AND key IS NOT NULL
+      AND archived_at IS NULL
+    GROUP BY twist_id, key
+    HAVING count(*) > 1
+),
+ranked AS (
+    SELECT
+        ids[1] AS keep_id,
+        (SELECT array_agg(id) FROM unnest(ids) WITH ORDINALITY AS u(id, ord) WHERE ord > 1) AS dup_ids
+    FROM grouped
+),
+mapping AS (
+    SELECT keep_id, unnest(dup_ids) AS dup_id
+    FROM ranked
+)
+-- Merge contacts and pending_contacts from duplicates into the canonical thread.
+UPDATE thread k
+SET contacts = (
+        SELECT COALESCE(array_agg(DISTINCT x), ARRAY[]::uuid[])
+        FROM unnest(
+            COALESCE(k.contacts, ARRAY[]::uuid[])
+            || COALESCE((SELECT array_agg(c) FROM mapping m, unnest(d.contacts) c
+                        WHERE m.keep_id = k.id AND d.id = m.dup_id), ARRAY[]::uuid[])
+        ) AS x
+    )
+FROM thread d
+JOIN mapping m ON m.dup_id = d.id
+WHERE k.id = m.keep_id;
+
+-- Repoint children at the canonical thread. Order matters: do this before
+-- the duplicate thread rows are deleted by the final DELETE at the bottom.
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+UPDATE note SET thread_id = m.keep_id
+FROM mapping m
+WHERE note.thread_id = m.dup_id;
+
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+UPDATE link SET thread_id = m.keep_id
+FROM mapping m
+WHERE link.thread_id = m.dup_id;
+
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+UPDATE schedule SET thread_id = m.keep_id
+FROM mapping m
+WHERE schedule.thread_id = m.dup_id;
+
+-- thread_tag: move to canonical unless a conflicting row already exists.
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+UPDATE thread_tag SET thread_id = m.keep_id
+FROM mapping m
+WHERE thread_tag.thread_id = m.dup_id
+  AND NOT EXISTS (
+      SELECT 1 FROM thread_tag existing
+      WHERE existing.thread_id = m.keep_id
+        AND existing.tag_id = thread_tag.tag_id
+        AND existing.actor_id = thread_tag.actor_id
+        AND existing.occurrence IS NOT DISTINCT FROM thread_tag.occurrence
+  );
+
+-- thread_priority: merge duplicates onto the canonical thread_id, preserving
+-- the user's chosen priority (keep row with earliest created_at on conflict).
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+UPDATE thread_priority tp SET thread_id = m.keep_id
+FROM mapping m
+WHERE tp.thread_id = m.dup_id
+  AND NOT EXISTS (
+      SELECT 1 FROM thread_priority existing
+      WHERE existing.thread_id = m.keep_id AND existing.user_id = tp.user_id
+  );
+
+-- thread_unread: same pattern — move unless duplicate already exists for the user.
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+UPDATE thread_unread tu SET thread_id = m.keep_id
+FROM mapping m
+WHERE tu.thread_id = m.dup_id
+  AND NOT EXISTS (
+      SELECT 1 FROM thread_unread existing
+      WHERE existing.thread_id = m.keep_id AND existing.user_id = tu.user_id
+  );
+
+-- thread_read: same pattern.
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+UPDATE thread_read tr SET thread_id = m.keep_id
+FROM mapping m
+WHERE tr.thread_id = m.dup_id
+  AND NOT EXISTS (
+      SELECT 1 FROM thread_read existing
+      WHERE existing.thread_id = m.keep_id AND existing.user_id = tr.user_id
+  );
+
+-- Delete any thread_priority/thread_unread/thread_read rows that couldn't move
+-- because of existing rows on the canonical thread.
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+DELETE FROM thread_priority WHERE thread_id IN (SELECT dup_id FROM mapping);
+
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+DELETE FROM thread_unread WHERE thread_id IN (SELECT dup_id FROM mapping);
+
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+DELETE FROM thread_read WHERE thread_id IN (SELECT dup_id FROM mapping);
+
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+DELETE FROM thread_tag WHERE thread_id IN (SELECT dup_id FROM mapping);
+
+-- Finally drop the duplicate thread rows.
+WITH grouped AS (
+    SELECT twist_id, key, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM thread
+    WHERE twist_id IS NOT NULL AND key IS NOT NULL AND archived_at IS NULL
+    GROUP BY twist_id, key HAVING count(*) > 1
+),
+mapping AS (
+    SELECT ids[1] AS keep_id, u.id AS dup_id
+    FROM grouped g, unnest(g.ids) WITH ORDINALITY AS u(id, ord)
+    WHERE u.ord > 1
+)
+DELETE FROM thread WHERE id IN (SELECT dup_id FROM mapping);
+
+-- Create index "thread_twist_key_unique" to table: "thread"
+CREATE UNIQUE INDEX "thread_twist_key_unique" ON "public"."thread" ("twist_id", "key") WHERE ((twist_id IS NOT NULL) AND (key IS NOT NULL) AND (archived_at IS NULL));
+-- Set comment to column: "key" on table: "thread"
+COMMENT ON COLUMN "public"."thread"."key" IS 'Identifier for cross-user deduplication within a twist. Scoped by twist_id via thread_twist_key_unique. Not synced to clients.';
+-- Set comment to column: "contacts" on table: "thread"
+COMMENT ON COLUMN "public"."thread"."contacts" IS 'Attested contact_ids on this thread. For twist-created threads, a user only gains visibility when their linked contact appears here via another attester''s sync (or via share_thread). Users who attempted to join before attestation land in pending_contacts and are promoted when an attester confirms them. User-created threads do not require attestation.';
+-- Set comment to column: "twist_id" on table: "thread"
+COMMENT ON COLUMN "public"."thread"."twist_id" IS 'Twist definition that created this thread. Scopes (twist_id, key) dedup so all instances of the same twist share the same thread per external item. Immutable after creation.';
+-- Set comment to column: "pending_contacts" on table: "thread"
+COMMENT ON COLUMN "public"."thread"."pending_contacts" IS 'Contacts whose own sync wants to join but who have not yet been attested by another user''s sync. Promoted to contacts (with thread_priority filing) once a subsequent attester includes them.';
+-- Modify "thread_priority" table
+ALTER TABLE "public"."thread_priority" ADD COLUMN "archived_at" timestamptz NULL;
+-- Create index "idx_thread_priority_archived" to table: "thread_priority"
+CREATE INDEX "idx_thread_priority_archived" ON "public"."thread_priority" ("thread_id") WHERE (archived_at IS NULL);
+-- Modify "file_thread_priority_peers" function
+CREATE OR REPLACE FUNCTION "public"."file_thread_priority_peers" () RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    r RECORD;
+    v_peer_priority_id uuid;
+    v_author_user_id uuid;
+    v_old_contacts uuid[];
+BEGIN
+    IF NEW.contacts IS NULL OR cardinality(NEW.contacts) = 0 THEN
+        RETURN NEW;
+    END IF;
+
+    -- Only auto-file peers for user-authored threads. For twist-authored
+    -- threads, filing happens exclusively through each user's own
+    -- upsert_thread call (which promotes them from pending_contacts).
+    IF NOT EXISTS (SELECT 1 FROM "public"."user" WHERE id = NEW.created_by) THEN
+        RETURN NEW;
+    END IF;
+    v_author_user_id := NEW.created_by;
+
+    -- Compute old contacts for delta (empty on INSERT).
+    IF TG_OP = 'UPDATE' THEN
+        v_old_contacts := COALESCE(OLD.contacts, ARRAY[]::uuid[]);
+    ELSE
+        v_old_contacts := ARRAY[]::uuid[];
+    END IF;
+
+    -- thread_priority for ALL contacts (idempotent via ON CONFLICT DO NOTHING).
+    FOR r IN
+        SELECT DISTINCT uc.user_id AS peer_user_id
+        FROM unnest(NEW.contacts) AS arr(contact_id)
+        JOIN public.user_contact uc
+          ON uc.contact_id = arr.contact_id
+         AND uc.linked = TRUE
+         AND uc.archived_at IS NULL
+        WHERE uc.user_id IS DISTINCT FROM v_author_user_id
+    LOOP
+        v_peer_priority_id := public.classify_thread_for_user(r.peer_user_id, NEW.id);
+        IF v_peer_priority_id IS NOT NULL THEN
+            INSERT INTO thread_priority (thread_id, user_id, priority_id)
+            VALUES (NEW.id, r.peer_user_id, v_peer_priority_id)
+            ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
+        END IF;
+    END LOOP;
+
+    -- thread_unread for NEWLY ADDED contacts only, so shared threads appear
+    -- as unread for peers. ON CONFLICT DO NOTHING preserves read state.
+    FOR r IN
+        SELECT DISTINCT uc.user_id AS peer_user_id
+        FROM unnest(NEW.contacts) AS arr(contact_id)
+        JOIN public.user_contact uc
+          ON uc.contact_id = arr.contact_id
+         AND uc.linked = TRUE
+         AND uc.archived_at IS NULL
+        WHERE uc.user_id IS DISTINCT FROM v_author_user_id
+          AND arr.contact_id != ALL(v_old_contacts)
+    LOOP
+        INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
+        VALUES (r.peer_user_id, NEW.id, 'inform-updates', 50)
+        ON CONFLICT (user_id, thread_id) DO NOTHING;
+    END LOOP;
+
+    RETURN NEW;
+END;
+$$;
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -175,51 +478,25 @@ BEGIN
         ELSE COALESCE(v_existing.topics, ARRAY[]::uuid[])
     END;
 
-    -- Attestation check (determined BEFORE we mutate thread.contacts so a
-    -- caller can't self-attest by adding their own contact in the same call):
-    --   - On insert: creator is always trusted with the initial contact list.
-    --   - On update: caller is attested iff one of their linked contacts was
-    --     already in thread.contacts before this call (or in pending_contacts,
-    --     in which case this call promotes them).
-    --   - User-created threads (v_created_by = user_id and no twist_id)
-    --     bypass attestation — user flows go through share_thread.
-    v_caller_attested := (v_existing.id IS NULL)
-        OR (v_created_by = upsert_thread.user_id AND v_twist_id IS NULL)
-        OR (v_user_contacts && COALESCE(v_existing.contacts, ARRAY[]::uuid[]));
-
-    -- Decide contact merge policy based on attestation.
-    IF v_caller_attested THEN
-        -- Trusted caller: union existing, input, and caller's own contacts.
-        SELECT COALESCE(array_agg(DISTINCT x), ARRAY[]::uuid[])
-        INTO v_merged_contacts
-        FROM unnest(
-            COALESCE(v_existing.contacts, ARRAY[]::uuid[])
-            || v_input_contacts
-            || v_user_contacts
-        ) AS x;
-    ELSE
-        -- Untrusted caller: thread.contacts cannot be extended by this
-        -- sync. The caller's primary linked contact lands in pending_contacts
-        -- below (in the post-upsert branch).
-        v_merged_contacts := COALESCE(v_existing.contacts, ARRAY[]::uuid[]);
-    END IF;
+    -- Additive merge: the new contact set is the union of the existing
+    -- contacts, the caller-provided contacts, and the caller's own linked
+    -- contacts. Removal is only possible via share_thread.
+    SELECT COALESCE(array_agg(DISTINCT x), ARRAY[]::uuid[])
+    INTO v_merged_contacts
+    FROM unnest(
+        COALESCE(v_existing.contacts, ARRAY[]::uuid[])
+        || v_input_contacts
+        || v_user_contacts
+    ) AS x;
 
     -- Identify contacts being promoted from pending_contacts on this call.
-    -- Only a trusted (attested) caller can promote — otherwise a rogue
-    -- instance could claim an attested user and push them into contacts.
-    IF v_caller_attested
-       AND v_existing.pending_contacts IS NOT NULL
-       AND cardinality(v_existing.pending_contacts) > 0 THEN
+    -- A contact is promoted when the caller-provided contacts include a
+    -- contact currently in pending_contacts.
+    IF v_existing.pending_contacts IS NOT NULL AND cardinality(v_existing.pending_contacts) > 0 THEN
         SELECT COALESCE(array_agg(DISTINCT p), ARRAY[]::uuid[])
         INTO v_promoted_contacts
         FROM unnest(v_existing.pending_contacts) AS p
         WHERE p = ANY(v_input_contacts);
-        -- Promoted contacts also go into the merged contacts list.
-        IF cardinality(v_promoted_contacts) > 0 THEN
-            SELECT COALESCE(array_agg(DISTINCT x), ARRAY[]::uuid[])
-            INTO v_merged_contacts
-            FROM unnest(v_merged_contacts || v_promoted_contacts) AS x;
-        END IF;
     ELSE
         v_promoted_contacts := ARRAY[]::uuid[];
     END IF;
@@ -345,9 +622,14 @@ BEGIN
             END
         RETURNING * INTO v_result;
 
-    -- Attestation was already computed before the merge (see above). If the
-    -- caller was attested, they file their own thread_priority row. Otherwise
-    -- we record their primary contact in pending_contacts and defer filing.
+    -- Decide whether the caller is attested on this thread.
+    --   - user-created thread (v_created_by = user_id) with no twist_id:
+    --     always attested (we trust user-driven flows and share_thread).
+    --   - twist-created thread: attested iff at least one of the caller's
+    --     linked contacts is in thread.contacts after the merge.
+    v_caller_attested := (v_created_by = upsert_thread.user_id AND v_result.twist_id IS NULL)
+        OR (v_user_contacts && v_result.contacts);
+
     IF v_caller_attested THEN
         -- Normal path: the caller can file the thread under their priority.
         INSERT INTO thread_priority (thread_id, user_id, priority_id)
@@ -408,7 +690,7 @@ BEGIN
 
                     INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
                     VALUES (r.peer_user_id, v_result.id, 'inform-updates', 50)
-                    ON CONFLICT ON CONSTRAINT thread_unread_pkey DO NOTHING;
+                    ON CONFLICT (user_id, thread_id) DO NOTHING;
                 END IF;
             END LOOP;
         END;
@@ -426,4 +708,45 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
+-- Modify "thread_x" view
+CREATE OR REPLACE VIEW "public"."thread_x" (
+  "id",
+  "created_at",
+  "updated_at",
+  "created_by",
+  "updated_by",
+  "archived_at",
+  "draft",
+  "contacts",
+  "title",
+  "preview",
+  "last_note_created_at",
+  "sync_depth",
+  "last_note_source_created_at",
+  "key",
+  "icon",
+  "topics",
+  "embedding",
+  "twist_id",
+  "pending_contacts"
+) AS SELECT id,
+    created_at,
+    updated_at,
+    created_by,
+    updated_by,
+    archived_at,
+    draft,
+    contacts,
+    title,
+    preview,
+    last_note_created_at,
+    sync_depth,
+    last_note_source_created_at,
+    key,
+    icon,
+    topics,
+    embedding,
+    twist_id,
+    pending_contacts
+   FROM public.thread a;

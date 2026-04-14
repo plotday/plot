@@ -1,35 +1,5 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) with archived_at IS NULL — two instances
--- of the same twist that upsert the same key converge on the same thread
--- across users. User-created threads (twist_id IS NULL) do not participate
--- in cross-user dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -408,7 +378,7 @@ BEGIN
 
                     INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
                     VALUES (r.peer_user_id, v_result.id, 'inform-updates', 50)
-                    ON CONFLICT ON CONSTRAINT thread_unread_pkey DO NOTHING;
+                    ON CONFLICT (user_id, thread_id) DO NOTHING;
                 END IF;
             END LOOP;
         END;
@@ -426,4 +396,4 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;

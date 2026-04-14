@@ -57,23 +57,39 @@ export async function createLink(
       ...(link.notes ? { notes: link.notes } : {}),
     };
 
-    // For source-based links, look up existing link to reuse its thread.
-    // This handles reconnection: when a source is archived (threads archived)
-    // and reinstalled, the existing thread is found and unarchived by upsert_thread.
-    // Single query combines exact source match, relatedSource match, and reverse match
-    // with priority ordering via CASE expression. Scoped to the twist owner's
-    // priority tree (workspace-level twists).
-    const ownerUserId = await plot.getUserId();
-    const priorityRootFilter = sql<boolean>`link.source_priority_root IN (SELECT subpath(path, 0, 1) FROM priority WHERE user_id = ${ownerUserId})`;
+    // Look up twist_id for icon + cross-user link lookup scope.
+    const ptRow = await plot.db
+      .selectFrom("twist_instance")
+      .select("twist_id")
+      .where("id", "=", plot.twistInstanceId)
+      .executeTakeFirst();
+    const currentTwistId = ptRow?.twist_id ?? null;
+    if (ptRow) {
+      threadData.icon = link.type
+        ? `connector:${ptRow.twist_id}:${link.type}`
+        : `connector:${ptRow.twist_id}`;
+      // Pass twist_id to upsert_thread so it can dedupe cross-user on
+      // (twist_id, key). Server-only field — users cannot set it.
+      threadData.twist_id = ptRow.twist_id;
+    }
 
-    if (hasSource && !threadData.id) {
+    // For source-based links, look up an existing link across ALL users for
+    // this twist definition so the thread can be shared. source_priority_root
+    // is per-user, but twist_id is shared across all instances of the same
+    // twist. (Individual link rows remain per-user via the
+    // link_source_priority_unique index.)
+    const twistIdFilter = currentTwistId !== null
+      ? sql<boolean>`link.twist_id = ${currentTwistId}`
+      : sql<boolean>`false`;
+
+    if (hasSource && !threadData.id && currentTwistId !== null) {
       const sourceValue = (link as any).source as string;
       const relatedSourceValue = link.relatedSource ?? null;
 
       const existingLink = await plot.db
         .selectFrom("link")
         .select("link.thread_id")
-        .where(priorityRootFilter)
+        .where(twistIdFilter)
         .where((eb) =>
           eb.or([
             eb("link.source", "=", sourceValue),
@@ -101,18 +117,6 @@ export async function createLink(
       if (existingLink) {
         threadData.id = existingLink.thread_id;
       }
-    }
-
-    // Look up twist_id for icon — passed to threadData so createThread skips its own lookup
-    const ptRow = await plot.db
-      .selectFrom("twist_instance")
-      .select("twist_id")
-      .where("id", "=", plot.twistInstanceId)
-      .executeTakeFirst();
-    if (ptRow) {
-      threadData.icon = link.type
-        ? `connector:${ptRow.twist_id}:${link.type}`
-        : `connector:${ptRow.twist_id}`;
     }
 
     let { id: threadId, priorityId: threadPriorityId } = await createThread(plot, threadData);
@@ -226,7 +230,7 @@ export async function createLink(
           .select(["link.thread_id"])
           .where("link.source", "=", link.relatedSource)
           .where("link.thread_id", "!=", threadId)
-          .where(priorityRootFilter)
+          .where(twistIdFilter)
           .executeTakeFirst();
 
         if (relatedLink?.thread_id) {
@@ -260,7 +264,7 @@ export async function createLink(
           .select(["link.id", "link.thread_id"])
           .where("link.related_source", "=", (link as any).source as string)
           .where("link.thread_id", "!=", threadId)
-          .where(priorityRootFilter)
+          .where(twistIdFilter)
           .execute();
 
         for (const rl of reverseLinks) {

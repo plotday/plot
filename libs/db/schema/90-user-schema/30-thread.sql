@@ -26,7 +26,9 @@ SELECT
     GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz),
         COALESCE(tu.updated_at, 'epoch'::timestamptz)) AS updated_at,
     a.updated_by,
-    COALESCE(a.archived_at, upe.archived_at) AS archived_at,
+    -- User-visible archived_at is the first of: global thread archive,
+    -- per-user thread_priority archive, or per-user priority archive.
+    COALESCE(a.archived_at, tp.archived_at, upe.archived_at) AS archived_at,
     tp.priority_id,
     upe.path AS priority_path,
     a.draft,

@@ -39,7 +39,7 @@ CREATE OR REPLACE VIEW "user"."note" (
      JOIN public.thread_priority tp ON tp.thread_id = a.id
   WHERE (n.draft = false OR n.created_by = tp.user_id) AND (n.access_contacts IS NULL OR n.created_by = tp.user_id OR n.access_contacts && "user".user_contact_ids(tp.user_id)) AND (a.draft = false OR a.created_by = tp.user_id) AND a.contacts && "user".user_contact_ids(tp.user_id);
 -- Create "note_redacted" view
-CREATE VIEW "user"."note_redacted" (
+CREATE OR REPLACE VIEW "user"."note_redacted" (
   "user_id",
   "id",
   "created_at",

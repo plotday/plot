@@ -131,6 +131,51 @@ export type Database = {
           },
         ]
       }
+      atlas_schema_revisions: {
+        Row: {
+          applied: number
+          description: string
+          error: string | null
+          error_stmt: string | null
+          executed_at: string
+          execution_time: number
+          hash: string
+          operator_version: string
+          partial_hashes: Json | null
+          total: number
+          type: number
+          version: string
+        }
+        Insert: {
+          applied?: number
+          description: string
+          error?: string | null
+          error_stmt?: string | null
+          executed_at: string
+          execution_time: number
+          hash: string
+          operator_version: string
+          partial_hashes?: Json | null
+          total?: number
+          type?: number
+          version: string
+        }
+        Update: {
+          applied?: number
+          description?: string
+          error?: string | null
+          error_stmt?: string | null
+          executed_at?: string
+          execution_time?: number
+          hash?: string
+          operator_version?: string
+          partial_hashes?: Json | null
+          total?: number
+          type?: number
+          version?: string
+        }
+        Relationships: []
+      }
       channel: {
         Row: {
           channel_id: string
@@ -1567,10 +1612,12 @@ export type Database = {
           key: string | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
+          pending_contacts: string[]
           preview: string | null
           sync_depth: number | null
           title: string | null
           topics: string[]
+          twist_id: number | null
           updated_at: string
           updated_by: number
         }
@@ -1586,10 +1633,12 @@ export type Database = {
           key?: string | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
+          pending_contacts?: string[]
           preview?: string | null
           sync_depth?: number | null
           title?: string | null
           topics?: string[]
+          twist_id?: number | null
           updated_at?: string
           updated_by?: number
         }
@@ -1605,10 +1654,12 @@ export type Database = {
           key?: string | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
+          pending_contacts?: string[]
           preview?: string | null
           sync_depth?: number | null
           title?: string | null
           topics?: string[]
+          twist_id?: number | null
           updated_at?: string
           updated_by?: number
         }
@@ -1683,6 +1734,7 @@ export type Database = {
       }
       thread_priority: {
         Row: {
+          archived_at: string | null
           created_at: string
           priority_id: string
           thread_id: string
@@ -1690,6 +1742,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           priority_id: string
           thread_id: string
@@ -1697,6 +1750,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           priority_id?: string
           thread_id?: string
@@ -2581,18 +2635,21 @@ export type Database = {
         Row: {
           ai_enabled: boolean | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed: boolean | null
           updated_at: string
           user_id: string
         }
         Insert: {
           ai_enabled?: boolean | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed?: boolean | null
           updated_at?: string
           user_id: string
         }
         Update: {
           ai_enabled?: boolean | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          onboarding_completed?: boolean | null
           updated_at?: string
           user_id?: string
         }
@@ -2948,10 +3005,12 @@ export type Database = {
           key: string | null
           last_note_created_at: string | null
           last_note_source_created_at: string | null
+          pending_contacts: string[] | null
           preview: string | null
           sync_depth: number | null
           title: string | null
           topics: string[] | null
+          twist_id: number | null
           updated_at: string | null
           updated_by: number | null
         }
@@ -2967,10 +3026,12 @@ export type Database = {
           key?: string | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
+          pending_contacts?: string[] | null
           preview?: string | null
           sync_depth?: number | null
           title?: string | null
           topics?: string[] | null
+          twist_id?: number | null
           updated_at?: string | null
           updated_by?: number | null
         }
@@ -2986,10 +3047,12 @@ export type Database = {
           key?: string | null
           last_note_created_at?: string | null
           last_note_source_created_at?: string | null
+          pending_contacts?: string[] | null
           preview?: string | null
           sync_depth?: number | null
           title?: string | null
           topics?: string[] | null
+          twist_id?: number | null
           updated_at?: string | null
           updated_by?: number | null
         }
@@ -4180,7 +4243,127 @@ export type Database = {
           updated_by: number | null
           user_id: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            referencedRelation: "note_redacted"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            referencedRelation: "note_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      note_redacted: {
+        Row: {
+          access_contacts: string[] | null
+          actions: Json | null
+          archived_at: string | null
+          author_id: string | null
+          content: string | null
+          created_at: string | null
+          created_by: string | null
+          draft: boolean | null
+          id: string | null
+          mentions: string[] | null
+          merged_from_thread_id: string | null
+          re_note_id: string | null
+          source_created_at: string | null
+          thread_id: string | null
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_merged_from_thread_id_fkey"
+            columns: ["merged_from_thread_id"]
+            referencedRelation: "thread_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            referencedRelation: "note"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            referencedRelation: "note_redacted"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_re_note_id_fkey"
+            columns: ["re_note_id"]
+            referencedRelation: "note_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_thread_id_fkey"
+            columns: ["thread_id"]
+            referencedRelation: "thread_tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "thread_priority_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "topic"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       note_tags: {
         Row: {
@@ -4530,13 +4713,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
