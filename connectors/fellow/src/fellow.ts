@@ -276,7 +276,9 @@ export class Fellow extends Connector<Fellow> {
     const subdomain = this.tools.options.subdomain as string;
 
     return {
-      source: `fellow:note:${note.id}`,
+      // Fellow note ids are tenant-scoped, so qualify with the workspace
+      // subdomain to keep source globally unique across users.
+      source: `fellow:${subdomain}:note:${note.id}`,
       // Cross-connector thread bundling: join existing calendar thread
       ...(note.event_guid
         ? { relatedSource: `google-calendar:${note.event_guid}` }

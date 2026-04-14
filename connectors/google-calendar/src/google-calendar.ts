@@ -716,8 +716,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             if (initialSync) {
               continue;
             }
-            // Canonical source for this event (required for upsert)
-            const canonicalUrl = `google-calendar:${event.id}`;
+            // Canonical source for this event (required for upsert).
+            // iCalUID is shared across all attendees' copies of a meeting,
+            // so using it converges cross-user threads for the same event.
+            const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
 
             // Create cancellation note
             const cancelledBy =
@@ -845,8 +847,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             continue;
           }
 
-          // Canonical source for this event (required for upsert)
-          const canonicalUrl = `google-calendar:${event.id}`;
+          // Canonical source for this event (required for upsert).
+          // iCalUID is shared across all attendees' copies of a meeting,
+          // so using it converges cross-user threads for the same event.
+          const canonicalUrl = `google-calendar:${event.iCalUID ?? event.id}`;
 
           // Build description note if available
           const descriptionNote = hasDescription
@@ -909,8 +913,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             syncableId: calendarId,
           };
 
-          // Merge any buffered occurrences that arrived before this master event
-          const pendingKey = `pending_occ:google-calendar:${event.id}`;
+          // Merge any buffered occurrences that arrived before this master event.
+          // Key matches the form used when instances buffer themselves (see
+          // processEventInstance → `pending_occ:${masterCanonicalUrl}`).
+          const pendingKey = `pending_occ:${canonicalUrl}`;
           const pendingOccurrences = await this.get<PendingOccurrence[]>(
             pendingKey
           );
@@ -954,8 +960,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       return;
     }
 
-    // Canonical URL for the master recurring event
-    const masterCanonicalUrl = `google-calendar:${event.recurringEventId}`;
+    // Canonical URL for the master recurring event. All occurrences share
+    // the master's iCalUID, so this produces the same source the master
+    // event path uses (and converges cross-user threads for shared meetings).
+    const masterCanonicalUrl = `google-calendar:${event.iCalUID ?? event.recurringEventId}`;
 
     // Transform the instance data
     const instanceData = transformGoogleEvent(event, calendarId);
@@ -1231,14 +1239,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     actor: Actor
   ): Promise<void> {
     const meta = thread.meta as Record<string, unknown> | null;
-    const linkSource = meta?.linkSource as string | null;
     const calendarId = meta?.syncableId as string | null;
+    // Per-calendar Google event id is stored in meta.id by transformGoogleEvent.
+    // We can't derive it from `source` anymore, because source uses iCalUID
+    // (shared across calendars) for cross-user dedup.
+    const eventId = meta?.id as string | null;
 
-    if (!linkSource || !calendarId) return;
-
-    // Extract event ID from source format "google-calendar:<eventId>"
-    const eventId = linkSource.replace(/^google-calendar:/, "");
-    if (!eventId || eventId === linkSource) return;
+    if (!eventId || !calendarId) return;
 
     // Map Plot status to Google Calendar status
     const googleStatus =

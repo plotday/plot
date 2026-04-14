@@ -16,6 +16,13 @@ export type TransformedEvent = {
 
 export type GoogleEvent = {
   id: string;
+  /**
+   * RFC5545 event identifier. Globally unique across calendars — all
+   * attendees' copies of the same event share this value, as do all
+   * occurrences of a recurring event. Prefer this over `id` (which is
+   * per-calendar) when building a cross-user-stable `source`.
+   */
+  iCalUID?: string;
   recurringEventId?: string;
   originalStartTime?: {
     dateTime?: string;
