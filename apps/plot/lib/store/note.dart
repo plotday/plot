@@ -989,14 +989,15 @@ class Note extends Equatable implements Comparable<Note> {
   /// Mentions are markdown links in the format: [Name](#@UUID)
   static List<ActorId> _extractMentionsFromMarkdown(String markdown) {
     final mentions = <ActorId>[];
+    // Regex matches [Name](#@UUID). Group 1 is name, Group 2 is UUID.
     final mentionPattern = RegExp(
-      r'\[([^\]]+)\]\(#@([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)',
+      r'\[([^\]]+)\]\(#@([0-9a-fA-F-]{32,36})\)',
     );
 
     final matches = mentionPattern.allMatches(markdown);
 
     for (final match in matches) {
-      final uuidString = match.group(2);
+      final uuidString = match.group(2); // Group 2 is the UUID
       if (uuidString != null) {
         try {
           final uuid = ActorId.fromString(uuidString);

@@ -281,26 +281,15 @@ class NoteEditorState extends State<NoteEditor> {
     if (_isEditing) return;
     if (content == _lastSavedContent) return;
 
+    final updatedNote = widget.draft.copyWith(content: content);
+
     if (widget.isNewThreadMode) {
-      // New-thread mode: save via callback
-      final existingNote = widget.draft.threadId == widget.thread!.id
-          ? widget.draft
-          : null;
-
-      final Note note;
-      if (existingNote != null) {
-        note = existingNote.copyWith(content: content);
-      } else {
-        note = Note.draft(threadId: widget.thread!.id);
-      }
-
-      await widget.onDraftChanged!(widget.thread!, note: note);
+      await widget.onDraftChanged!(widget.thread!, note: updatedNote);
     } else {
       // Note mode: save via ThreadBloc
       final activityBloc = context.read<ThreadBloc>();
       log.info('Saving draft note with content: $content');
-      final updatedDraft = widget.draft.copyWith(content: content);
-      await activityBloc.updateDraft(updatedDraft);
+      await activityBloc.updateDraft(updatedNote);
     }
     _lastSavedContent = content;
   }

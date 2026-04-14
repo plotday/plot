@@ -1182,6 +1182,9 @@ class EditorState extends State<Editor> {
 
         _mentionDetector.completeMention(actorId: item.id, username: item.name);
         _editorFocusNode.requestFocus();
+
+        // Notify immediately so thread sharing chips update without debounce delay
+        notify();
       },
       onCancelRequested: () {
         _mentionDetector.cancelMention();

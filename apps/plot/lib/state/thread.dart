@@ -122,6 +122,31 @@ class ThreadBloc extends Cubit<ThreadState> {
   /// Creates a fresh draft note for the thread afterward.
   /// Note: Twisting tag for twist mentions is added in Note.save()
   Future<void> add(Note note) async {
+    // Also update thread contacts if there are new user/contact mentions.
+    // Done BEFORE converting to non-draft so the mentions are correctly
+    // attributed to the original draft content if copyWith was just called.
+    if (note.mentions != null && note.mentions!.isNotEmpty) {
+      final newContacts = {...state.thread.contacts};
+      bool changed = false;
+      for (final mention in note.mentions!) {
+        if (!mention.isTwist) {
+          if (newContacts.add(mention.toUuid())) {
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        final updatedThread = state.thread.copyWith(
+          contacts: Value(newContacts.toList()),
+        );
+        // Save the thread to persist the contacts. This will trigger a
+        // DB change and we update our local state too.
+        await updatedThread.save();
+        emit(state.copyWith(thread: updatedThread));
+      }
+    }
+
     // Convert the draft to a non-draft.
     // Viewer members' notes are always private (enforced by DB), so set it
     // locally for immediate UI feedback instead of waiting for sync.

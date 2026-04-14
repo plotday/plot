@@ -324,7 +324,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     final selectedIds = draft.contacts.toSet();
     final pendingEmails = draft.inviteEmails;
 
-    // Resolve selected contacts to actors
+    // Resolve selected contacts to actors.
+    // Note: If an actor isn't in cache, it's skipped here. _handleDraftChanged
+    // fetches missing actors before calling this to ensure immediate display.
     final selected = selectedIds
         .map((id) => Actor.fromCache(ActorId.fromUuid(id)))
         .where((a) => a != null)
@@ -724,6 +726,58 @@ class NewThreadPageState extends State<NewThreadPage> {
   List<ActorId>? get _twistMentions =>
       _selectedTwist != null ? [ActorId(_selectedTwist!.id)] : null;
 
+  Future<void> _handleDraftChanged(Thread thread, {Note? note}) async {
+    if (!mounted) return;
+    final bloc = context.read<PriorityBloc>();
+
+    // Always use the latest state from the bloc as our base. This prevents
+    // rapid typing in NoteEditor from regressing the contact list or twist icon
+    // that might have been updated by other UI elements (like the share modal
+    // or twist picker) while this callback was in flight.
+    final currentThread = bloc.state.draft;
+    final nextContacts = {...currentThread.contacts};
+    bool contactsChanged = false;
+
+    // 1. Extract and add non-twist mentions from the note content
+    if (note?.mentions != null) {
+      for (final mention in note!.mentions!) {
+        if (mention.isTwist) continue;
+
+        if (nextContacts.add(mention.toUuid())) {
+          contactsChanged = true;
+          // Pre-fetch missing actors so _refreshPinnedChips can show them immediately
+          if (Actor.fromCache(mention) == null) {
+            try {
+              await Actor.getOne(mention);
+            } catch (_) {}
+          }
+        }
+      }
+    }
+
+    // 2. Also incorporate contacts from the 'thread' argument to ensure we don't
+    // miss any legitimate updates from the NoteEditor (though rare for contacts).
+    for (final id in thread.contacts) {
+      if (nextContacts.add(id)) {
+        contactsChanged = true;
+      }
+    }
+
+    final updatedThread = currentThread.copyWith(
+      contacts: contactsChanged ? Value(nextContacts.toList()) : const Value.absent(),
+      // Preserve other thread-level changes (like title/preview) from NoteEditor
+      title: thread.title == currentThread.title ? const Value.absent() : Value(thread.title),
+      preview: thread.preview == currentThread.preview ? const Value.absent() : Value(thread.preview),
+    );
+
+    // Update the bloc and persist changes.
+    await bloc.updateDraft(updatedThread, note: note);
+
+    if (contactsChanged) {
+      _refreshPinnedChips();
+    }
+  }
+
   void _onChatSubmitted() {
     if (_selectedTwist != null) {
       context.read<LocalPreferencesBloc>().recordMentionUsage(
@@ -763,8 +817,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       builder: (context, layoutState) {
         return BlocBuilder<PriorityBloc, PriorityState>(
           builder: (context, state) {
-            final priorityBloc = context.read<PriorityBloc>();
-
             final isViewerMode = state.draft.priority.isViewer;
 
             if (state.draft.priority.isTwistDev) {
@@ -836,24 +888,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                               thread: state.draft,
                               twists: _draftTwists ?? state.twists,
                               actors: state.actors,
-                              onDraftChanged: (thread, {note}) async {
-                                if (!context.mounted) return;
-                                final prevContacts = priorityBloc
-                                    .state
-                                    .draft
-                                    .contacts
-                                    .toSet();
-                                await priorityBloc.updateDraft(
-                                  thread,
-                                  note: note,
-                                );
-                                final nextContacts = thread.contacts.toSet();
-                                if (nextContacts.length !=
-                                        prevContacts.length ||
-                                    !nextContacts.containsAll(prevContacts)) {
-                                  _refreshPinnedChips();
-                                }
-                              },
+                              onDraftChanged: _handleDraftChanged,
                               flushToBottom: true,
                               showScheduleActions: false,
                               hint: state.draft.priority.isPlotApp
@@ -909,29 +944,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         thread: state.draft,
                                         twists: _draftTwists ?? state.twists,
                                         actors: state.actors,
-                                        onDraftChanged: (thread, {note}) async {
-                                          if (!context.mounted) return;
-                                          final bloc = context
-                                              .read<PriorityBloc>();
-                                          final prevContacts = bloc
-                                              .state
-                                              .draft
-                                              .contacts
-                                              .toSet();
-                                          await bloc.updateDraft(
-                                            thread,
-                                            note: note,
-                                          );
-                                          final nextContacts = thread.contacts
-                                              .toSet();
-                                          if (nextContacts.length !=
-                                                  prevContacts.length ||
-                                              !nextContacts.containsAll(
-                                                prevContacts,
-                                              )) {
-                                            _refreshPinnedChips();
-                                          }
-                                        },
+                                        onDraftChanged: _handleDraftChanged,
                                         flushToBottom: false,
                                         showScheduleActions: false,
                                         hint: state.draft.priority.isPlotApp

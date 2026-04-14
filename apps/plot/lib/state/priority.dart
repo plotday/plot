@@ -1202,10 +1202,15 @@ class PriorityBloc extends Cubit<PriorityState> {
     final existingDraft = await Thread.getDraftByPriority(priority.id);
     if (existingDraft != null) {
       if (_draftModified) return;
+
+      // Load the corresponding draft note for this thread
+      final draftNote = await Note.getDraftByActivity(existingDraft.id);
+
       // Use state.context (enriched in setPriority)
       emit(
         state.copyWith(
           draft: existingDraft.copyWith(priority: state.context),
+          draftNote: draftNote,
         ),
       );
     }
