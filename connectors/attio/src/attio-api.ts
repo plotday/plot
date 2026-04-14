@@ -239,7 +239,7 @@ export class AttioAPI {
   }
 
   /** Get the current workspace info via /v2/self. */
-  async getWorkspace(): Promise<{ name: string; slug: string }> {
+  async getWorkspace(): Promise<{ id: string; name: string; slug: string }> {
     const self = await this.request<{
       workspace_id: string;
       workspace_name: string;
@@ -247,6 +247,7 @@ export class AttioAPI {
     }>("GET", "/self");
 
     return {
+      id: self.workspace_id,
       name: self.workspace_name || self.workspace_id,
       slug: self.workspace_slug,
     };

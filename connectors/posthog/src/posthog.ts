@@ -177,8 +177,12 @@ export class PostHog extends Connector<PostHog> {
         };
       });
 
+      const projectId = this.tools.options.projectId as string;
+
       const link: NewLinkWithNotes = {
-        source: `posthog:person:${distinctId}`,
+        // PostHog distinct_id is project-scoped (often just an email), so we
+        // qualify with projectId to keep source globally unique across users.
+        source: `posthog:${projectId}:person:${distinctId}`,
         title: personName,
         type: "person",
         channelId: eventName,

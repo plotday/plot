@@ -98,7 +98,11 @@ The `source` field should be:
 
 - A canonical URL from the external system (preferred)
 - A stable identifier in a namespaced format (e.g., `gmail:thread-id-123`)
-- Unique within the priority tree
+- **Globally unique for the logical external item** — see "Source identifier uniqueness" below
+
+> **Cross-user dedup:** Two instances of the same connector (run by two different Plot users) that emit the same `source` for the same external item will converge on a **single shared thread**. This is how two users on the same Gmail message, calendar event, or Linear issue see one thread rather than two.
+>
+> This means `source` must not merely be unique within one user's account — it must be globally unique for the item. If an external id is workspace- or tenant-scoped (Attio record ids, PostHog distinct_ids, Outlook event ids, Fellow note ids, etc.), include the workspace/tenant/mailbox id as a qualifier: `attio:<workspaceId>:person:<recordId>`, not `attio:person:<recordId>`. See `connectors/AGENTS.md` → "Source identifier uniqueness" for the full guidance.
 
 ```typescript
 // Activity.source field definition

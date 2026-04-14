@@ -99,6 +99,7 @@ export class Attio extends Connector<Attio> {
     const api = this.getAPI();
     const workspace = await api.getWorkspace();
     await this.set("workspace_slug", workspace.slug);
+    await this.set("workspace_id", workspace.id);
     return workspace.name;
   }
 
@@ -358,6 +359,7 @@ export class Attio extends Connector<Attio> {
         const workspace = await api.getWorkspace();
         slug = workspace.slug;
         if (slug) await this.set("workspace_slug", slug);
+        if (workspace.id) await this.set("workspace_id", workspace.id);
       } catch {
         // Fall through — return null
       }
@@ -392,8 +394,10 @@ export class Attio extends Connector<Attio> {
       ? `${value.currency} ${value.amount.toLocaleString()}`
       : null;
 
+    const workspaceId = record.id.workspace_id;
+
     return {
-      source: `attio:deal:${recordId}`,
+      source: `attio:${workspaceId}:deal:${recordId}`,
       type: "deal",
       title: name,
       created: new Date(record.created_at),
@@ -429,8 +433,10 @@ export class Attio extends Connector<Attio> {
         ? { name }
         : undefined;
 
+    const workspaceId = record.id.workspace_id;
+
     return {
-      source: `attio:person:${recordId}`,
+      source: `attio:${workspaceId}:person:${recordId}`,
       type: "person",
       title: name || email || "Unknown Person",
       created: new Date(record.created_at),
@@ -458,9 +464,10 @@ export class Attio extends Connector<Attio> {
     const name = extractName(v) || "Untitled Company";
     const domain = extractDomain(v);
     const recordId = record.id.record_id;
+    const workspaceId = record.id.workspace_id;
 
     return {
-      source: `attio:company:${recordId}`,
+      source: `attio:${workspaceId}:company:${recordId}`,
       type: "company",
       title: name,
       created: new Date(record.created_at),
@@ -491,12 +498,14 @@ export class Attio extends Connector<Attio> {
     const content =
       (task.content_plaintext || "Untitled Task") + statusSuffix;
 
+    const workspaceId = task.id.workspace_id;
+
     for (const linked of task.linked_records) {
       const linkType = OBJECT_TO_LINK_TYPE[linked.target_object];
       if (!linkType) continue;
 
       await this.tools.integrations.saveLink({
-        source: `attio:${linkType}:${linked.target_record_id}`,
+        source: `attio:${workspaceId}:${linkType}:${linked.target_record_id}`,
         type: linkType,
         channelId: "attio",
         meta: {
@@ -527,8 +536,10 @@ export class Attio extends Connector<Attio> {
     const content = note.content_plaintext || note.title || "";
     if (!content) return;
 
+    const workspaceId = note.id.workspace_id;
+
     await this.tools.integrations.saveLink({
-      source: `attio:${linkType}:${note.parent_record_id}`,
+      source: `attio:${workspaceId}:${linkType}:${note.parent_record_id}`,
       type: linkType,
       channelId: "attio",
       meta: {

@@ -423,8 +423,9 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
           if (initialSync) {
             continue;
           }
-          // Build source URL using event ID
-          const source = `outlook-calendar:${outlookEvent.id}`;
+          // Graph event ids are mailbox-local, so qualify with calendarId
+          // to keep source globally unique across users.
+          const source = `outlook-calendar:${calendarId}:${outlookEvent.id}`;
 
           // Create cancellation note
           const cancelNote = {
@@ -578,7 +579,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
 
         // Build NewLinkWithNotes from the transformed thread data
         const linkWithNotes: NewLinkWithNotes = {
-          source: `outlook-calendar:${outlookEvent.id}`,
+          source: `outlook-calendar:${calendarId}:${outlookEvent.id}`,
           type: "event",
           title: threadData.title || "",
           access: "private",
