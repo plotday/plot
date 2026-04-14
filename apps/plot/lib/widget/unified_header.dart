@@ -301,11 +301,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             ),
             child: FHeader(
               style: FHeaderStyleDelta.delta(
-                padding: EdgeInsetsGeometryDelta.add(
-                  layoutState.multiPanel
-                      ? EdgeInsets.zero
-                      : const EdgeInsets.symmetric(vertical: 4),
-                ),
+                padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
               ),
               title: Row(spacing: 8, children: titleChildren),
               suffixes: suffixes,

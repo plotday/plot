@@ -299,9 +299,7 @@ class _HeaderState extends State<Header> {
                   ),
                   child: FHeader(
                     style: FHeaderStyleDelta.delta(
-                      padding: EdgeInsetsGeometryDelta.add(
-                        EdgeInsets.only(bottom: -2),
-                      ),
+                      padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
                     ),
                     title: Row(spacing: 8, children: titleChildren),
                     suffixes: suffixes,
