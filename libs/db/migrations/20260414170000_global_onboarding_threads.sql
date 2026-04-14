@@ -19,6 +19,11 @@ BEGIN
         SELECT id INTO v_author_id FROM "user" LIMIT 1;
     END IF;
 
+    -- Atlas robust: return if no users exist yet
+    IF v_author_id IS NULL THEN
+        RETURN;
+    END IF;
+
     SELECT id INTO v_author_contact_id
     FROM contact
     WHERE user_id = v_author_id

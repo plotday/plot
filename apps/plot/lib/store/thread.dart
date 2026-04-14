@@ -1240,9 +1240,6 @@ class Thread extends Equatable implements Comparable<Thread> {
       // Use LEFT JOIN for priority data hydration (needed by _mapResultsToThreads)
       // but do not filter by path.
       Expression<bool> joinCondition = p.id.equalsExp(a.priorityId);
-      if (archived == false) {
-        joinCondition = joinCondition & p.archivedAt.isNull();
-      }
       query = query.join([leftOuterJoin(p, joinCondition)]);
 
       // Require a link schedule to exist
@@ -1263,19 +1260,10 @@ class Thread extends Equatable implements Comparable<Thread> {
             linkSched.endAt.isBiggerOrEqualValue(now);
       }
 
-      // Also filter by priority archived status when looking at non-archived activities
       Expression<bool> joinCondition =
           p.id.equalsExp(a.priorityId) & pathCondition;
-      if (archived == false) {
-        joinCondition = joinCondition & p.archivedAt.isNull();
-      }
 
       query = query.join([innerJoin(p, joinCondition)]);
-    } else if (archived == false) {
-      // When no priorityPath filter, still need to exclude activities with archived priorities
-      query = query.join([
-        innerJoin(p, p.id.equalsExp(a.priorityId) & p.archivedAt.isNull()),
-      ]);
     }
 
     if (doTodo) {
@@ -1714,7 +1702,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
     // Get all priorities needed for the activities
     final priorities = await Priority.get(
-      archived: archived == false ? false : null,
+      archived: null,
     );
     final priorityMap = Priority.asMap(priorities);
 
