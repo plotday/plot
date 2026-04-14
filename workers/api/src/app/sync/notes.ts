@@ -32,40 +32,65 @@ notes.get("/sync/notes", async (c) => {
     sortDir,
   } = parseReadParams(c);
 
+  // On initial sync (epoch or no updated_since), a fresh client has nothing
+  // to reconcile, so we skip the expensive redacted-stub query entirely.
+  // On incremental sync, updated_since narrows the redacted branch so it's cheap.
+  const isInitialSync =
+    !updatedSince || updatedSince === "1970-01-01T00:00:00.000Z";
+
   const rows = await withUserDb(c.var.db, userId, async (trx) => {
-    let query = trx
+    // Sort on the raw updated_at column so the planner can use
+    // idx_note_updated_at. date_trunc() is still applied in the cursor
+    // WHERE comparison to match JS Date millisecond precision.
+    let visibleQ = trx
       .selectFrom("user.note")
       .selectAll()
       .where("user_id", "=", userId)
       .limit(limit);
-
-    // Apply sort
     if (updatedSince) {
-      query = query
-        .orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc")
-        .orderBy("id", "asc");
+      visibleQ = visibleQ.orderBy("updated_at", "asc").orderBy("id", "asc");
+      visibleQ = visibleQ.where(updatedSinceCursor(updatedSince, cursorId));
     } else {
-      query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
+      visibleQ = visibleQ.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
     }
+    if (archived === true) visibleQ = visibleQ.where("archived_at", "is not", null);
+    else if (archived === false) visibleQ = visibleQ.where("archived_at", "is", null);
+    if (id) visibleQ = visibleQ.where("id", "=", id);
+    if (threadId) visibleQ = visibleQ.where("thread_id", "=", threadId);
 
+    const visible = await visibleQ.execute();
+    if (isInitialSync) return visible;
+
+    let redactedQ = trx
+      .selectFrom("user.note_redacted")
+      .selectAll()
+      .where("user_id", "=", userId)
+      .limit(limit);
     if (updatedSince) {
-      query = query.where(updatedSinceCursor(updatedSince, cursorId));
+      redactedQ = redactedQ.orderBy("updated_at", "asc").orderBy("id", "asc");
+      redactedQ = redactedQ.where(updatedSinceCursor(updatedSince, cursorId));
+    } else {
+      redactedQ = redactedQ.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
     }
+    if (archived === true) redactedQ = redactedQ.where("archived_at", "is not", null);
+    else if (archived === false) redactedQ = redactedQ.where("archived_at", "is", null);
+    if (id) redactedQ = redactedQ.where("id", "=", id);
+    if (threadId) redactedQ = redactedQ.where("thread_id", "=", threadId);
 
-    if (archived === true) {
-      query = query.where("archived_at", "is not", null);
-    } else if (archived === false) {
-      query = query.where("archived_at", "is", null);
-    }
-
-    if (id) {
-      query = query.where("id", "=", id);
-    }
-    if (threadId) {
-      query = query.where("thread_id", "=", threadId);
-    }
-
-    return query.execute();
+    const redacted = await redactedQ.execute();
+    // Merge and re-sort to preserve the (updated_at, id) order across both
+    // sets, then slice to the requested limit. Each server-side query is
+    // already bounded by `limit`; the redacted set is typically tiny.
+    const merged = [...visible, ...redacted];
+    merged.sort((a, b) => {
+      const au = a.updated_at ? a.updated_at.getTime() : 0;
+      const bu = b.updated_at ? b.updated_at.getTime() : 0;
+      if (au !== bu) return au - bu;
+      const aid = a.id ?? "";
+      const bid = b.id ?? "";
+      return aid < bid ? -1 : aid > bid ? 1 : 0;
+    });
+    return merged.slice(0, limit);
   });
 
   // Enrich thread actions with current title and priorityId

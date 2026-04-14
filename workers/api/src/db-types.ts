@@ -1482,6 +1482,7 @@ export interface DB {
   "user.channel": UserChannel;
   "user.link": UserLink;
   "user.note": UserNote;
+  "user.note_redacted": UserNote;
   "user.note_tags": UserNoteTags;
   "user.priority": UserPriority;
   "user.priority_actor": UserPriorityActor;

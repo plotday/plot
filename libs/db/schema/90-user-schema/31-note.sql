@@ -1,4 +1,10 @@
--- User-accessible notes filtered by thread_priority access
+-- user.note — per-user note feed (visible rows only).
+--
+-- Split from the old UNION-ALL view for sync performance: pushing LIMIT
+-- through a UNION stalled the planner and timed out initial syncs for
+-- users with many accessible threads. Redacted stubs for notes a user
+-- can no longer see live in user.note_redacted and are queried only on
+-- incremental sync (when the client already has local copies to reconcile).
 CREATE OR REPLACE VIEW "user"."note"
 --
 AS
@@ -32,9 +38,19 @@ WHERE
         OR n.access_contacts && "user".user_contact_ids(tp.user_id))
     -- Thread-level filtering
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
-    AND a.contacts && "user".user_contact_ids(tp.user_id)
-UNION ALL
--- Redacted rows for private notes the user cannot see
+    AND a.contacts && "user".user_contact_ids(tp.user_id);
+
+ALTER VIEW "user"."note" OWNER TO postgres;
+
+-- user.note_redacted — stub rows for notes the user can no longer see.
+--
+-- Queried by the sync handler only when the client already has local data
+-- (i.e. a non-epoch updated_since). On initial sync we skip it because a
+-- fresh client has nothing to reconcile. The updated_since filter keeps
+-- this branch small on incremental syncs.
+CREATE OR REPLACE VIEW "user"."note_redacted"
+--
+AS
 SELECT
     tp.user_id,
     n.id,
@@ -66,7 +82,7 @@ WHERE
         AND n.created_by != tp.user_id
         AND NOT (COALESCE(n.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(tp.user_id)));
 
-ALTER VIEW "user"."note" OWNER TO postgres;
+ALTER VIEW "user"."note_redacted" OWNER TO postgres;
 
 -- User-accessible note tags
 CREATE OR REPLACE VIEW "user"."note_tags"

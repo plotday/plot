@@ -41,7 +41,7 @@ threads.get("/sync/threads", async (c) => {
 
     // Apply sort: use custom sort when not doing cursor pagination
     if (updatedSince) {
-      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
+      query = query.orderBy("updated_at", "asc").orderBy("id", "asc");
     } else {
       // When sorting by agenda_at (a tstzrange), sort by its lower bound
       const sortExpr = sortBy === 'agenda_at' ? sql`lower(agenda_at)` : sql.ref(sortBy);
