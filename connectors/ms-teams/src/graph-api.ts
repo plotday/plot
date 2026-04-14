@@ -1,4 +1,5 @@
 import type {
+  NewContact,
   NewLinkWithNotes,
   NewActor,
 } from "@plotday/twister/plot";
@@ -391,13 +392,17 @@ export function transformDmThread(
   members: NewActor[],
   initialSync: boolean
 ): NewLinkWithNotes {
+  const accessContacts = members.filter(
+    (m): m is NewContact => !("id" in m)
+  );
   const firstMessage = messages[0];
   if (!firstMessage) {
     return {
       source: `ms-teams:dm:${chatId}`,
       type: "message",
       title: "Empty chat",
-      private: true,
+      access: "private",
+      accessContacts,
       notes: [],
     };
   }
@@ -409,7 +414,8 @@ export function transformDmThread(
     source: `ms-teams:dm:${chatId}`,
     type: "message",
     title,
-    private: true,
+    access: "private",
+    accessContacts,
     created: new Date(firstMessage.createdDateTime),
     author: userToNewActor(firstMessage.from?.user),
     preview: stripHtml(firstMessage.body.content) || null,
