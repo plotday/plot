@@ -103,6 +103,13 @@ export class Usage extends DurableObject<Bindings> {
     } catch {
       // Column already renamed or never existed, ignore error
     }
+    try {
+      this.sql.exec(`
+        ALTER TABLE state RENAME COLUMN priorityTwistId TO twistInstanceId
+      `);
+    } catch {
+      // Column already renamed or never existed, ignore error
+    }
   }
 
   private loadState() {
