@@ -23,6 +23,12 @@ Plot provides a comprehensive set of built-in tools that give your twists powerf
 
 The Plot tool is the core interface for creating and managing activities and priorities.
 
+### Workspace-Level Twists
+
+A twist is installed by a single user at the workspace level — it is **not** scoped to a particular priority. `this.userId` exposes the installing user's ID, and `plot.getUserId()` / `plot.getDefaultPriorityId()` are available if you need them explicitly.
+
+When a twist creates a thread or link without specifying a priority, the server picks one automatically for the owner user via `match_priority_for_user`. You only need to provide a `priority` (or a `priorityId` filter) when you want to override that automatic routing.
+
 ### Understanding Activities and Notes
 
 **Activity** represents something done or to be done (a task, event, or conversation), while **Notes** represent the updates and details on that activity.
@@ -465,7 +471,7 @@ build(build: ToolBuilder) {
 import { AuthProvider, type Authorization } from "@plotday/twister/tools/integrations";
 import { ActivityLinkType } from "@plotday/twister";
 
-async activate(priority: Pick<Priority, "id">) {
+async activate() {
   // Create callback for auth completion
   const authCallback = await this.callback("onAuthComplete");
 
@@ -687,7 +693,7 @@ async fetchData() {
 ### Creating Webhooks
 
 ```typescript
-async activate(priority: Pick<Priority, "id">) {
+async activate() {
   // Create webhook endpoint
   const webhookUrl = await this.tools.network.createWebhook(
     "onCalendarUpdate",

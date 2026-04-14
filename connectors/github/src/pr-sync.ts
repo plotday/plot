@@ -15,6 +15,7 @@ type PRSyncState = {
   batchNumber: number;
   prsProcessed: number;
   initialSync: boolean;
+  syncHistoryMin?: string;
 };
 
 /**
@@ -24,12 +25,14 @@ export async function startPRBatchSync(
   source: GitHub,
   repositoryId: string,
   initialSync: boolean,
+  syncHistoryMin?: Date,
 ): Promise<void> {
   await source.set(`pr_sync_state_${repositoryId}`, {
     page: 1,
     batchNumber: 1,
     prsProcessed: 0,
     initialSync,
+    ...(syncHistoryMin ? { syncHistoryMin: syncHistoryMin.toISOString() } : {}),
   } satisfies PRSyncState);
 
   const batchCallback = await source.createCallback(source.syncPRBatch, repositoryId);
@@ -64,9 +67,10 @@ export async function syncPRBatch(
 
   const prs: GitHubPullRequest[] = await response.json();
 
-  // Filter: open PRs + recently closed/merged (within RECENT_DAYS)
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - RECENT_DAYS);
+  // Filter: open PRs + recently closed/merged (within RECENT_DAYS or syncHistoryMin)
+  const cutoff = state.syncHistoryMin
+    ? new Date(state.syncHistoryMin)
+    : new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000);
 
   const relevantPRs = prs.filter((pr) => {
     if (pr.state === "open") return true;

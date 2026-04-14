@@ -1,4 +1,4 @@
-import { type Action, type Actor, type ActorId, type Link, type Note, type Priority, type Thread, Uuid } from "./plot";
+import { type Action, type Actor, type ActorId, type Link, type Note, type Thread, Uuid } from "./plot";
 import type { Tag } from "./tag";
 import { type ITool } from "./tool";
 import type { Callback } from "./tools/callbacks";
@@ -8,10 +8,13 @@ import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
 /**
  * Base class for all twists.
  *
- * Twists are activated in a Plot priority and have access to that priority and all
- * its descendants.
+ * A twist is installed at the workspace level and is owned by a single user
+ * (see `this.userId`). It has no inherent priority scope: threads, notes, and
+ * links it creates are filed against the owner's priorities, with automatic
+ * priority matching when no explicit target is provided.
  *
- * Override build() to declare tool dependencies and lifecycle methods to handle events.
+ * Override `build()` to declare tool dependencies and lifecycle methods to
+ * handle events.
  *
  * @example
  * ```typescript
@@ -22,8 +25,7 @@ import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
  *     };
  *   }
  *
- *   async activate(priority: Pick<Priority, "id">) {
- *     // Initialize twist for the given priority
+ *   async activate() {
  *     await this.tools.plot.createThread({
  *       title: "Hello, good looking!",
  *     });
@@ -32,6 +34,12 @@ import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
  * ```
  */
 export abstract class Twist<TSelf> {
+  /**
+   * The user ID (`twist_instance.owner_id`) that installed this twist.
+   * Populated by the runtime before any lifecycle method runs.
+   */
+  protected userId!: Uuid;
+
   constructor(protected id: Uuid, private toolShed: ToolShed) {}
 
   /**
@@ -269,26 +277,27 @@ export abstract class Twist<TSelf> {
   }
 
   /**
-   * Called when the twist is activated for a specific priority.
+   * Called when the twist is installed by a user.
    *
-   * This method should contain initialization logic such as setting up
-   * initial threads, configuring webhooks, or establishing external connections.
+   * This method should contain initialization logic such as seeding
+   * initial threads, configuring webhooks, or establishing external
+   * connections. When it runs, `this.userId` is already populated with
+   * the installing user's ID.
    *
-   * @param priority - The priority context containing the priority ID
    * @param context - Optional context containing the actor who triggered activation
    * @returns Promise that resolves when activation is complete
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  activate(priority: Pick<Priority, "id">, context?: { actor: Actor }): Promise<void> {
+  activate(context?: { actor: Actor }): Promise<void> {
     return Promise.resolve();
   }
 
   /**
-   * Called when a new version of the twist is deployed to an existing priority.
+   * Called when a new version of the twist is deployed.
    *
    * This method should contain migration logic for updating old data structures
    * or setting up new resources that weren't needed by the previous version.
-   * It is called with the new version for each active priorityTwist.
+   * It is called once per active twist_instance with the new version.
    *
    * @returns Promise that resolves when upgrade is complete
    */

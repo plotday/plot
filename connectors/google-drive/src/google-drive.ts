@@ -17,6 +17,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
@@ -242,14 +243,24 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   /**
    * Called when a channel folder is enabled for syncing.
    */
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Check if we've already synced with a wider or equal range
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+        return; // Already synced with wider range
+      }
+      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
+    }
+
     await this.set(`sync_enabled_${channel.id}`, true);
     await this.set(`sync_lock_${channel.id}`, true);
 
     // Queue all initialization work as a task to avoid blocking the HTTP response.
     // initChannel makes multiple API calls (changes token, sub-channel discovery,
     // webhook setup) that would cause the client to spin if run inline.
-    const initCallback = await this.callback(this.initChannel, channel.id);
+    const initCallback = await this.callback(this.initChannel, channel.id, syncHistoryMin?.toISOString() ?? null);
     await this.runTask(initCallback);
   }
 
@@ -257,10 +268,11 @@ export class GoogleDrive extends Connector<GoogleDrive> {
    * Initializes a channel: sets up sync state, webhook, and starts the first sync batch.
    * Runs as a task to avoid blocking the HTTP response from onChannelEnabled.
    */
-  async initChannel(channelId: string): Promise<void> {
+  async initChannel(channelId: string, timeMinISO?: string | null): Promise<void> {
     console.log(`[google-drive] initChannel started for ${channelId}`);
     const api = await this.getApi(channelId);
     const changesToken = await getChangesStartToken(api);
+    const timeMin = timeMinISO ? new Date(timeMinISO) : undefined;
 
     if (isVirtualChannel(channelId) && channelId !== VIRTUAL_SHARED_WITH_ME) {
       // My Drive / Shared drives: discover sub-channels and iterate
@@ -272,6 +284,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         virtualChannelId: channelId,
         subChannelIds,
         currentSubChannelIndex: 0,
+        timeMin,
       };
       await this.set(`sync_state_${channelId}`, initialState);
     } else {
@@ -280,6 +293,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         folderId: channelId,
         changesToken,
         sequence: 1,
+        timeMin,
         ...(channelId === VIRTUAL_SHARED_WITH_ME ? { virtualChannelId: channelId } : {}),
       };
       await this.set(`sync_state_${channelId}`, initialState);

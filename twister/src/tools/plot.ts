@@ -37,7 +37,7 @@ export enum ThreadAccess {
    */
   Create,
   /**
-   * List/query all Threads in the twist's priority scope.
+   * List/query all Threads owned by the twist's user.
    * Update any Thread (title, tags, archived, type, priority) regardless of creator.
    * Create Notes on any Thread (not just own or mentioned).
    * All Create permissions.
@@ -47,14 +47,14 @@ export enum ThreadAccess {
 
 export enum PriorityAccess {
   /**
-   * Create a new Priority within the twist's Priority.
-   * Update Priority created by the twist.
+   * Create new Priorities under the twist owner's priority tree.
+   * Update Priorities created by the twist.
    */
   Create,
   /**
-   * Read all Priority within the twist's Priority.
-   * Create a new Priority within the twist's Priority.
-   * Update and archive any Priority within the twist's Priority.
+   * Read all Priorities owned by the twist's user.
+   * Create new Priorities under the twist owner's priority tree.
+   * Update and archive any Priority owned by the twist's user.
    */
   Full,
 }
@@ -65,9 +65,9 @@ export enum ContactAccess {
 }
 
 export enum LinkAccess {
-  /** Read links on any thread in the twist's priority scope. */
+  /** Read links on any thread owned by the twist's user. */
   Read,
-  /** Read + update links, including moving links between threads within scope. */
+  /** Read + update links, including moving links between threads owned by the twist's user. */
   Full,
 }
 
@@ -130,7 +130,11 @@ export type SearchOptions = {
   limit?: number;
   /** Minimum similarity score 0-1 (default: 0.3) */
   threshold?: number;
-  /** Scope search to this priority + descendants (default: twist's installed priority). Must be within the twist's allowed scope. */
+  /**
+   * Scope search to this priority + descendants. Must be owned by the twist
+   * owner. When omitted, the server scopes the search to the owner's entire
+   * priority tree.
+   */
   priorityId?: string;
 };
 
@@ -151,7 +155,7 @@ export type SearchOptions = {
  *     this.plot = tools.get(Plot);
  *   }
  *
- *   async activate(priority) {
+ *   async activate() {
  *     // Create a welcome thread
  *     await this.plot.createThread({
  *       title: "Welcome to Plot!",
@@ -255,7 +259,7 @@ export abstract class Plot extends ITool {
     contact?: {
       access?: ContactAccess;
     };
-    /** Enable semantic search across notes and links in the twist's priority scope. */
+    /** Enable semantic search across notes and links owned by the twist's user. */
     search?: true;
     /**
      * When true, admin write operations (on threads/notes/links/priorities not created by this twist)
@@ -533,6 +537,24 @@ export abstract class Plot extends ITool {
   abstract getOwner(): Promise<Actor>;
 
   /**
+   * Returns the user ID (`twist_instance.owner_id`) that installed this
+   * twist. This is the same value exposed on Twist via `this.userId`.
+   */
+  abstract getUserId(): Promise<string>;
+
+  /**
+   * Returns the owner user's root priority ID. Used as the implicit default
+   * when an operation needs a priority but the caller didn't supply one —
+   * for example, `plot.createPriority()` without a parent, or
+   * `plot.getThreads()` without an explicit `priorityId`.
+   *
+   * On the server, priority resolution for newly created threads/links
+   * happens automatically via `match_priority_for_user`; twists rarely need
+   * to call this directly.
+   */
+  abstract getDefaultPriorityId(): Promise<string>;
+
+  /**
    * Creates a new schedule for a thread.
    *
    * Schedules define when a thread occurs in time. A thread can have
@@ -591,7 +613,7 @@ export abstract class Plot extends ITool {
   abstract search(query: string, options?: SearchOptions): Promise<SearchResult[]>;
 
   /**
-   * Lists threads in a priority and optionally its descendants.
+   * Lists threads owned by the twist's user.
    *
    * Requires `ThreadAccess.Full`.
    *
@@ -600,7 +622,10 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract getThreads(options?: {
-    /** Priority to list threads from. Defaults to the twist's installed priority. */
+    /**
+     * Priority to list threads from. Must be owned by the twist owner.
+     * When omitted, defaults to the owner's root priority.
+     */
     priorityId?: Uuid;
     /** Include threads from descendant priorities. Default: true. */
     includeDescendants?: boolean;
@@ -613,7 +638,7 @@ export abstract class Plot extends ITool {
   }): Promise<Thread[]>;
 
   /**
-   * Lists priorities within the twist's scope.
+   * Lists priorities owned by the twist's user.
    *
    * Requires `PriorityAccess.Full`.
    *
@@ -622,7 +647,10 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract getPriorities(options?: {
-    /** Parent priority to list children of. Defaults to the twist's installed priority. */
+    /**
+     * Parent priority to list children of. Must be owned by the twist
+     * owner. When omitted, defaults to the owner's root priority.
+     */
     parentId?: Uuid;
     /** Include all descendants, not just direct children. Default: false. */
     includeDescendants?: boolean;

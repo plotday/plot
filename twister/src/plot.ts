@@ -442,39 +442,6 @@ export type NewThreadWithNotes = NewThread & {
 };
 
 /**
- * Configuration for automatic priority selection based on thread similarity.
- *
- * Maps thread fields to scoring weights or required exact matches:
- * - Number value: Maximum score for similarity matching on this field
- * - `true` value: Required exact match - threads must match exactly or be excluded
- *
- * Scoring rules:
- * - content: Uses vector similarity on thread embedding (cosine similarity)
- * - mentions: Percentage of existing thread's mentions that appear in new thread
- * - meta.field: Exact match on top-level meta fields (e.g., "meta.sourceId")
- *
- * When content is `true`, applies a strong similarity threshold to ensure only close matches.
- * Default (when neither priority nor pickPriority specified): `{content: true}`
- *
- * @example
- * ```typescript
- * // Require exact content match with strong similarity
- * pickPriority: { content: true }
- *
- * // Score based on content (max 100 points) and mentions
- * pickPriority: { content: 100, mentions: true }
- *
- * // Match on meta and score content
- * pickPriority: { "meta.projectId": true, content: 50 }
- * ```
- */
-export type PickPriorityConfig = {
-  content?: number | true;
-  mentions?: number | true;
-  [key: `meta.${string}`]: number | true;
-};
-
-/**
  * Type for creating new threads.
  *
  * Threads are simple containers. All other fields are optional.
@@ -498,16 +465,10 @@ export type NewThread = Partial<
         /* id is optional. An id will be generated and returned. */
       }
   ) &
-  (
-    | {
-        /** Explicit priority (required when specified) - disables automatic priority matching */
-        priority: Pick<Priority, "id">;
-      }
-    | {
-        /** Configuration for automatic priority selection based on similarity */
-        pickPriority?: PickPriorityConfig;
-      }
-  ) & {
+  {
+    /** Explicit priority - disables automatic priority matching. When omitted, the server classifies the thread using the user's priority rules. */
+    priority?: Pick<Priority, "id">;
+  } & {
     /**
      * All tags to set on the new thread.
      */
@@ -614,7 +575,7 @@ type ThreadSingleUpdateFields = ThreadBulkUpdateFields & {
 
   /**
    * Move the thread to a different priority. Requires ThreadAccess.Full.
-   * The target priority must be within the twist's scope.
+   * The target priority must be owned by the twist's user.
    */
   priority?: Pick<Priority, "id">;
 };
@@ -683,7 +644,7 @@ export type Note = ThreadCommon & {
 export type NewNote = Partial<
   Omit<
     Note,
-    "author" | "thread" | "tags" | "mentions" | "id" | "key" | "reNote"
+    "author" | "thread" | "tags" | "mentions" | "accessContacts" | "id" | "key" | "reNote"
   >
 > &
   ({ id: Uuid } | { key: string } | {}) & {
@@ -714,7 +675,17 @@ export type NewNote = Partial<
     tags?: NewTags;
 
     /**
-     * Change the mentions on the note.
+     * Contacts who can see this note, or null/undefined to inherit thread visibility.
+     * Accepts resolved ActorId UUIDs or email-based NewContact objects (resolved server-side).
+     * Include all participants who should see the note (sender + recipients).
+     * The note author is NOT implicitly included — add them explicitly.
+     * When set (even to []), the note is private to the listed contacts plus the creator.
+     */
+    accessContacts?: (ActorId | NewContact)[] | null;
+
+    /**
+     * Twist/connector IDs to mention for dispatch routing.
+     * Does not include user contacts — use accessContacts for visibility.
      */
     mentions?: NewActor[];
 
@@ -778,7 +749,8 @@ export type NoteUpdate = ({ id: Uuid; key?: string } | { key: string }) &
     twistTags?: Partial<Record<Tag, boolean>>;
 
     /**
-     * Change the mentions on the note.
+     * Twist/connector IDs to mention for dispatch routing.
+     * Does not include user contacts — use accessContacts for visibility.
      */
     mentions?: NewActor[];
   };
@@ -1003,13 +975,9 @@ export type NewLink = (
      */
     archived?: boolean;
     /**
-     * Configuration for automatic priority selection based on similarity.
-     * Only used when the link creates a new thread.
-     */
-    pickPriority?: PickPriorityConfig;
-    /**
      * Explicit priority (disables automatic priority matching).
-     * Only used when the link creates a new thread.
+     * Only used when the link creates a new thread. When omitted, the
+     * server classifies the thread using the user's priority rules.
      */
     priority?: Pick<Priority, "id">;
   };
@@ -1042,7 +1010,7 @@ export type NewLinkWithNotes = NewLink & {
  * Requires LinkAccess.Full.
  */
 export type LinkUpdate = { id: Uuid } & {
-  /** Move the link to a different thread within the twist's scope. */
+  /** Move the link to a different thread owned by the twist's user. */
   threadId?: Uuid;
 };
 

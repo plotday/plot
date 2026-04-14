@@ -3,7 +3,6 @@ import { Type } from "typebox";
 import {
   type Link,
   type Note,
-  type Priority,
   type ToolBuilder,
   Twist,
 } from "@plotday/twister";
@@ -73,7 +72,7 @@ export default class MessageTasksTwist extends Twist<MessageTasksTwist> {
     };
   }
 
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate() {
     // Auth and channel selection are now handled in the twist edit modal.
   }
 
@@ -477,7 +476,6 @@ If a task is needed, create a clear, actionable title that describes what the us
       preview: analysis.taskNote
         ? `${analysis.taskNote}\n\n---\n${sourceRef}`
         : sourceRef,
-      pickPriority: { content: 50, mentions: 50 },
     });
 
     await this.storeThreadTask(threadId, taskId);

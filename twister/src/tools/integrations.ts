@@ -21,8 +21,6 @@ export type Channel = {
   title: string;
   /** Optional nested channel resources (e.g., subfolders) */
   children?: Channel[];
-  /** Priority ID this channel is routed to (set when channel is enabled) */
-  priorityId?: string;
   /** Per-channel link type configs. Overrides twist-level linkTypes when present. */
   linkTypes?: LinkTypeConfig[];
 };
@@ -65,6 +63,24 @@ export type LinkTypeConfig = {
   supportsAssignee?: boolean;
   /** Default thread creation mode for this link type: 'all' | 'actionable' | 'manual' */
   defaultCreateThreads?: string;
+};
+
+/**
+ * Context passed to onChannelEnabled with plan-based sync hints.
+ * Connectors can use these hints to limit initial sync scope.
+ */
+export type SyncContext = {
+  /**
+   * Earliest date to include in initial sync, based on the user's plan.
+   *
+   * Non-calendar connectors should use this as their date filter (timeMin,
+   * created.gte, etc.) during initial sync. Calendar connectors should
+   * ignore this for API queries (to avoid missing recurring events) — the
+   * API layer filters non-recurring items automatically.
+   *
+   * Undefined when no limit applies.
+   */
+  syncHistoryMin?: Date;
 };
 
 /**
@@ -173,10 +189,11 @@ export abstract class Integrations extends ITool {
    * This method is available only to Connectors (not regular Twists).
    *
    * @param link - The link with notes to save
-   * @returns Promise resolving to the saved thread's UUID
+   * @returns Promise resolving to the saved thread's UUID, or null if the
+   *   link was filtered out (e.g. older than the plan's sync history limit)
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract saveLink(link: NewLinkWithNotes): Promise<Uuid>;
+  abstract saveLink(link: NewLinkWithNotes): Promise<Uuid | null>;
 
   /**
    * Saves contacts to the connector's priority.

@@ -294,9 +294,10 @@ export function parseEmailAddresses(headerValue: string | null): string[] {
 }
 
 /**
- * Parses email addresses and returns NewActor[] for mentions.
+ * Parses email addresses from a header value into NewContact objects.
+ * Used for thread/note accessContacts (visibility control).
  */
-function parseEmailAddressesToNewActors(headerValue: string | null): NewActor[] {
+function parseEmailAddressesToContacts(headerValue: string | null): NewContact[] {
   if (!headerValue) return [];
 
   return headerValue
@@ -308,7 +309,7 @@ function parseEmailAddressesToNewActors(headerValue: string | null): NewActor[] 
       return {
         email: parsed.email,
         name: parsed.name || undefined,
-      } as NewActor;
+      };
     });
 }
 
@@ -490,8 +491,8 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const cc = getHeader(message, "Cc");
     for (const actors of [
       from ? [parseEmailAddress(from)].filter(Boolean) : [],
-      parseEmailAddressesToNewActors(to),
-      parseEmailAddressesToNewActors(cc),
+      parseEmailAddressesToContacts(to),
+      parseEmailAddressesToContacts(cc),
     ]) {
       for (const actor of actors) {
         const email = (actor as any).email?.toLowerCase();
@@ -544,15 +545,15 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       content = content + "\n\n" + attachmentLinks;
     }
 
-    // Combine sender, to, and cc for mentions - convert to NewActor[]
+    // Note author (sender) and per-message recipients for visibility
     const senderActor: NewActor = {
       email: sender.email,
       name: sender.name || undefined,
     };
-    const mentions: NewActor[] = [
-      senderActor,
-      ...parseEmailAddressesToNewActors(to),
-      ...parseEmailAddressesToNewActors(cc),
+    const messageContacts: NewContact[] = [
+      { email: sender.email, name: sender.name || undefined },
+      ...parseEmailAddressesToContacts(to),
+      ...parseEmailAddressesToContacts(cc),
     ];
 
     // Create NewNote with idempotent key
@@ -561,8 +562,7 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
       author: senderActor,
       content,
       contentType,
-      accessContacts: [],
-      mentions: mentions.length > 0 ? mentions : undefined,
+      accessContacts: messageContacts,
       created: new Date(parseInt(message.internalDate)),
       checkForTasks: true,
     };

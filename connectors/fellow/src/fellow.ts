@@ -7,6 +7,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Callbacks } from "@plotday/twister/tools/callbacks";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -23,6 +24,7 @@ type SyncState = {
   batchNumber: number;
   notesProcessed: number;
   initialSync: boolean;
+  syncHistoryMin?: string;
 };
 
 /**
@@ -94,7 +96,17 @@ export class Fellow extends Connector<Fellow> {
   /**
    * Start syncing meeting notes for the enabled channel.
    */
-  async onChannelEnabled(channel: Channel): Promise<void> {
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Check if we've already synced with a wider or equal range
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+        return; // Already synced with wider range
+      }
+      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
+    }
+
     await this.set(`sync_enabled_${channel.id}`, true);
 
     // Queue webhook setup as a separate task to avoid blocking the HTTP response
@@ -104,7 +116,7 @@ export class Fellow extends Connector<Fellow> {
     );
     await this.runTask(webhookCallback);
 
-    await this.startBatchSync(channel.id);
+    await this.startBatchSync(channel.id, syncHistoryMin);
   }
 
   /**
@@ -153,12 +165,13 @@ export class Fellow extends Connector<Fellow> {
     }
   }
 
-  private async startBatchSync(channelId: string): Promise<void> {
+  private async startBatchSync(channelId: string, syncHistoryMin?: Date): Promise<void> {
     await this.set(`sync_state_${channelId}`, {
       cursor: null,
       batchNumber: 1,
       notesProcessed: 0,
       initialSync: true,
+      ...(syncHistoryMin ? { syncHistoryMin: syncHistoryMin.toISOString() } : {}),
     } satisfies SyncState);
 
     const batchCallback = await this.callback(
@@ -178,7 +191,10 @@ export class Fellow extends Connector<Fellow> {
 
     const isInitial = initialSync ?? state.initialSync;
     const api = this.getAPI();
-    const result = await api.listNotes({ cursor: state.cursor ?? undefined });
+    const result = await api.listNotes({
+      cursor: state.cursor ?? undefined,
+      updatedAtStart: state.syncHistoryMin ?? undefined,
+    });
 
     for (const note of result.data) {
       // Fetch action items for this note
