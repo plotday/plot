@@ -19,20 +19,20 @@ export class Twists extends Tool implements ITwists {
   private env: Bindings;
   private ctx: { exports: ExecutionContext["exports"] };
   private db: Kysely<DB>;
-  private priorityTwistId: string;
+  private twistInstanceId: string;
   private logSubscriptionsNamespace: DurableObjectNamespace<LogSubscriptions>;
 
   constructor(options: {
     env: Bindings;
     ctx: { exports: ExecutionContext["exports"] };
     db: Kysely<DB>;
-    priorityTwistId: string;
+    twistInstanceId: string;
   }) {
     super();
     this.env = options.env;
     this.ctx = options.ctx;
     this.db = options.db;
-    this.priorityTwistId = options.priorityTwistId;
+    this.twistInstanceId = options.twistInstanceId;
     this.logSubscriptionsNamespace = options.env.LOG_SUBSCRIPTIONS;
   }
 
@@ -41,15 +41,15 @@ export class Twists extends Tool implements ITwists {
    * @throws Error if access is denied
    */
   private async verifyTwistAccess(twistPackageId: string): Promise<void> {
-    // Get priority_id and owner_id from priority_twist context
-    const priorityTwist = await this.db
-      .selectFrom("priority_twist")
-      .select(["priority_id", "owner_id"])
-      .where("id", "=", this.priorityTwistId)
+    // Get owner_id from twist_instance context
+    const twistInstance = await this.db
+      .selectFrom("twist_instance")
+      .select(["owner_id"])
+      .where("id", "=", this.twistInstanceId)
       .where("archived_at", "is", null)
       .executeTakeFirstOrThrow();
 
-    const userId = priorityTwist.owner_id;
+    const userId = twistInstance.owner_id;
     if (!userId) {
       throw new Error("User not authenticated");
     }
@@ -96,15 +96,15 @@ export class Twists extends Tool implements ITwists {
   }
 
   async create(): Promise<string> {
-    // Get priority_id and owner_id from priority_twist context
-    const priorityTwist = await this.db
-      .selectFrom("priority_twist")
-      .select(["priority_id", "owner_id"])
-      .where("id", "=", this.priorityTwistId)
+    // Get owner_id from twist_instance context
+    const twistInstance = await this.db
+      .selectFrom("twist_instance")
+      .select(["owner_id"])
+      .where("id", "=", this.twistInstanceId)
       .where("archived_at", "is", null)
       .executeTakeFirstOrThrow();
 
-    const userId = priorityTwist.owner_id;
+    const userId = twistInstance.owner_id;
     if (!userId) {
       throw new Error("User not authenticated");
     }
@@ -119,7 +119,7 @@ export class Twists extends Tool implements ITwists {
         twist_package_id: twistPackageId,
         user_id: userId,
         publisher_id: null,
-        priority_id: priorityTwist.priority_id,
+        priority_id: null,
       })
       .execute();
 
@@ -128,13 +128,13 @@ export class Twists extends Tool implements ITwists {
 
   async generate(spec: string): Promise<TwistSource> {
     // Plan check: twist builder requires Pro or Team
-    const priorityTwist = await this.db
-      .selectFrom("priority_twist")
+    const twistInstance = await this.db
+      .selectFrom("twist_instance")
       .select("owner_id")
-      .where("id", "=", this.priorityTwistId)
+      .where("id", "=", this.twistInstanceId)
       .executeTakeFirstOrThrow();
-    if (priorityTwist.owner_id) {
-      const { plan } = await getEffectivePlan(this.db, priorityTwist.owner_id);
+    if (twistInstance.owner_id) {
+      const { plan } = await getEffectivePlan(this.db, twistInstance.owner_id);
       if (plan !== "pro" && plan !== "team") {
         throw new Error("Twist builder requires a Pro or Team plan");
       }
@@ -182,12 +182,12 @@ export class Twists extends Tool implements ITwists {
     // Get user_id for personal environment
     let userId: string | null = null;
     if (environment === "personal") {
-      const priorityTwistOwner = await this.db
-        .selectFrom("priority_twist")
+      const twistInstanceOwner = await this.db
+        .selectFrom("twist_instance")
         .select("owner_id")
-        .where("id", "=", this.priorityTwistId)
+        .where("id", "=", this.twistInstanceId)
         .executeTakeFirstOrThrow();
-      userId = priorityTwistOwner.owner_id;
+      userId = twistInstanceOwner.owner_id;
       if (!userId) throw new Error("User not authenticated");
     }
 

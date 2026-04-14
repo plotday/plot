@@ -113,9 +113,8 @@ class PriorityUser extends PriorityUserRow {
           .go();
     }
 
-    await (db.delete(db.priorityTwists)
-          ..where((pt) => pt.priorityId.isIn(treeIdBytes)))
-        .go();
+    // twist_instances are workspace-level and not tied to priorities, so they
+    // are not deleted along with the priority subtree.
 
     // Delete priorities deepest-first to respect any FK constraints
     final sorted = List<PriorityRow>.from(treePriorities)

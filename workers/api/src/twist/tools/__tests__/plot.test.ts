@@ -7,7 +7,7 @@ import { Plot } from "../plot";
 vi.mock("../../../rpc", () => ({
   rpc: vi.fn(async (_db: unknown, fn: string) => {
     if (fn === "find_matching_threads_scored") return [];
-    if (fn === "get_priority_twist_owner_contact") return "contact-1";
+    if (fn === "get_twist_instance_owner_contact") return "contact-1";
     if (fn === "get_users_with_priority_access") return [];
     return null;
   }),
@@ -123,7 +123,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {}, // No activity access configured
         env: envMock,
       });
@@ -137,7 +137,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -156,7 +156,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -177,7 +177,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {}, // No activity access
         env: envMock,
       });
@@ -212,7 +212,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -255,7 +255,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -314,7 +314,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -337,7 +337,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -389,7 +389,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -440,7 +440,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -498,7 +498,7 @@ describe("Plot", () => {
       const authorRow = {
         id: "pt-1",
         name: "Test Twist",
-        type: "priority_twist",
+        type: "twist_instance",
         email: null,
         archived_at: null,
         avatar_url: null,
@@ -510,7 +510,7 @@ describe("Plot", () => {
         if (table === "link") {
           return createSelectQuery({ thread_id: "activity-123" });
         }
-        if (table === "priority_twist") {
+        if (table === "twist_instance") {
           return createSelectQuery({ owner_id: "user-1" });
         }
         if (table === "priority") {
@@ -534,7 +534,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           thread: {
             access: ThreadAccess.Create,
@@ -559,7 +559,7 @@ describe("Plot", () => {
       const plot = new Plot({
         db: dbMock,
         priorityId: "priority-1",
-        priorityTwistId: "pt-1",
+        twistInstanceId: "pt-1",
         options: {
           // No contact access configured — addContacts is internal-only
         },

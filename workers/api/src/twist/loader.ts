@@ -14,8 +14,7 @@ export async function getTwist({
   id: providedId,
   environment: providedEnvironment,
   version,
-  priorityId: _priorityId,
-  priorityTwistId,
+  twistInstanceId,
   storage: _storage,
   callbacks: _callbacks,
   logSubscriptions: _logSubscriptions,
@@ -27,8 +26,7 @@ export async function getTwist({
   id?: string;
   environment?: TwistEnvironment;
   version?: string;
-  priorityId: string;
-  priorityTwistId: string;
+  twistInstanceId: string;
   storage: DurableObjectNamespace<Storage>;
   callbacks: DurableObjectNamespace<CallbacksState>;
   logSubscriptions: DurableObjectNamespace<LogSubscriptions>;
@@ -42,21 +40,21 @@ export async function getTwist({
     id = providedId;
     environment = providedEnvironment;
   } else {
-    // Runtime mode: look up from priorityTwistId
-    // Get twist_id from priority_twist
-    const priorityTwistData = await db
-      .selectFrom("priority_twist")
+    // Runtime mode: look up from twistInstanceId
+    // Get twist_id from twist_instance
+    const twistInstanceData = await db
+      .selectFrom("twist_instance")
       .select("twist_id")
-      .where("id", "=", priorityTwistId)
+      .where("id", "=", twistInstanceId)
       .executeTakeFirst();
 
-    if (!priorityTwistData) {
+    if (!twistInstanceData) {
       throw new Error(
-        `Failed to fetch priority_twist: No data found`
+        `Failed to fetch twist_instance: No data found`
       );
     }
 
-    const twistId = priorityTwistData.twist_id;
+    const twistId = twistInstanceData.twist_id;
 
     // Get twist metadata and twist_admin_id
     const twistData = await db
@@ -136,8 +134,8 @@ export async function getTwist({
     };
   }
 
-  // Use twistId instead of priorityTwistId to share workers across priority_twist instances
-  // priorityTwistId is passed per-invocation via twistInit context
+  // Use twistId instead of twistInstanceId to share workers across twist_instance instances
+  // twistInstanceId is passed per-invocation via twistInit context
   const moduleId = `${id}-${version}`;
 
   const worker = env.LOADER.get(moduleId, async () => {
@@ -178,7 +176,7 @@ export async function getTwist({
           props: {
             twistRootId: id,
             environment,
-            // priorityTwistId removed - now extracted from per-invocation logs
+            // twistInstanceId removed - now extracted from per-invocation logs
           },
         }),
       ],

@@ -106,71 +106,12 @@ notes.get("/sync/notes", async (c) => {
     }
   }
 
-  const apiVersion = c.var.apiVersion ?? 0;
-
-  // For old clients (version < 1): translate access_contacts back to private/mentions
-  if (apiVersion < 1) {
-    for (const row of rows as any[]) {
-      row.private = row.access_contacts !== null;
-      // Merge access_contacts users into mentions for backwards compat
-      const existingMentions: string[] = row.mentions ?? [];
-      const accessUsers: string[] = row.access_contacts ?? [];
-      const mergedMentions = [...new Set([...existingMentions, ...accessUsers])];
-      row.mentions = mergedMentions;
-    }
-  }
-
   return c.json(rows as any);
 });
 
 // POST /sync/notes - Upsert into note table
 notes.post("/sync/notes", async (c) => {
   const body = await c.req.json();
-  const apiVersion = c.var.apiVersion ?? 0;
-
-  // For old clients (version < 1): translate private/mentions → access_contacts/mentions
-  if (apiVersion < 1) {
-    if ('private' in body) {
-      if (body.private === true) {
-        // Private note: set access_contacts (keep existing if already set, otherwise empty array)
-        if (!body.access_contacts) {
-          body.access_contacts = [];
-        }
-      } else {
-        // Not private: clear access_contacts
-        body.access_contacts = null;
-      }
-      delete body.private;
-    }
-
-    // Split mentions: twist IDs stay in mentions, user contact_ids go to access_contacts
-    if (Array.isArray(body.mentions) && body.mentions.length > 0 && body.thread_id) {
-      const twistIds = await c.var.db
-        .selectFrom("priority_twist")
-        .select("id")
-        .where("id", "in", body.mentions)
-        .execute();
-      const twistIdSet = new Set(twistIds.map((t) => t.id));
-
-      const userContactIds: string[] = [];
-      const remainingMentions: string[] = [];
-      for (const id of body.mentions) {
-        if (twistIdSet.has(id)) {
-          remainingMentions.push(id);
-        } else {
-          userContactIds.push(id);
-        }
-      }
-
-      body.mentions = remainingMentions;
-
-      // Merge user contact IDs into access_contacts if note is private
-      if (userContactIds.length > 0) {
-        const existing: string[] = Array.isArray(body.access_contacts) ? body.access_contacts : [];
-        body.access_contacts = [...new Set([...existing, ...userContactIds])];
-      }
-    }
-  }
 
   // Check if this is an update (note already exists) before upserting.
   // We only run AI analysis on new notes — re-analyzing on edits causes
@@ -209,19 +150,19 @@ notes.post("/sync/notes", async (c) => {
     });
   });
 
-  const priorityId = await getPriorityForThread(c.var.db, body.thread_id);
+  const priorityId = await getPriorityForThread(c.var.db, body.thread_id, c.var.user.id);
   notifySync(c, priorityId);
 
-  // Notify account-level connectors (priority_id IS NULL) that are mentioned
-  // in this note. SyncNotify.notifyTwists() only finds priority-bound twists,
-  // so account-level connectors would never be woken up without this.
+  // Notify mentioned twists so they receive the onNoteCreated callback.
+  // SyncNotify.notifyTwists() only notifies priority-owner twists, so
+  // mention-based routing needs an explicit wake-up for any twist not
+  // owned by the priority owner.
   if (Array.isArray(body.mentions) && body.mentions.length > 0 && !body.draft) {
     try {
       const accountTwists = await c.var.db
-        .selectFrom("priority_twist")
+        .selectFrom("twist_instance")
         .select("id")
         .where("id", "in", body.mentions)
-        .where("priority_id", "is", null)
         .where("archived_at", "is", null)
         .execute();
 

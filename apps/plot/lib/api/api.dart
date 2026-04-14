@@ -70,9 +70,9 @@ String? _parsePgCode(http.Response response) {
 typedef _ErrorFields = ({
   String? code,
   String? limitType,
-  bool? isOrg,
+  bool? isTeam,
   bool? isAdmin,
-  String? organizationId,
+  String? teamId,
 });
 
 /// Extracts structured error fields from API response JSON
@@ -84,9 +84,9 @@ _ErrorFields _parseErrorFields(http.Response response) {
         return (
           code: json['code'] as String?,
           limitType: json['limit_type'] as String?,
-          isOrg: json['is_org'] as bool?,
+          isTeam: json['is_team'] as bool?,
           isAdmin: json['is_admin'] as bool?,
-          organizationId: json['organization_id'] as String?,
+          teamId: json['team_id'] as String?,
         );
       }
     }
@@ -96,9 +96,9 @@ _ErrorFields _parseErrorFields(http.Response response) {
   return (
     code: null,
     limitType: null,
-    isOrg: null,
+    isTeam: null,
     isAdmin: null,
-    organizationId: null,
+    teamId: null,
   );
 }
 
@@ -207,9 +207,9 @@ Future<T> post<T>(String url, {Object body = const <String, dynamic>{}}) async {
         pgCode: _parsePgCode(response),
         code: errorFields.code,
         limitType: errorFields.limitType,
-        isOrg: errorFields.isOrg,
+        isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
-        organizationId: errorFields.organizationId,
+        teamId: errorFields.teamId,
       );
     }
     return _parseResponse(response);
@@ -245,9 +245,9 @@ Future<T> put<T>(String url, {Object body = const <String, dynamic>{}}) async {
         pgCode: _parsePgCode(response),
         code: errorFields.code,
         limitType: errorFields.limitType,
-        isOrg: errorFields.isOrg,
+        isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
-        organizationId: errorFields.organizationId,
+        teamId: errorFields.teamId,
       );
     }
     return _parseResponse(response);
@@ -283,9 +283,9 @@ Future<T> patch<T>(String url, {Map<String, dynamic> body = const {}}) async {
         pgCode: _parsePgCode(response),
         code: errorFields.code,
         limitType: errorFields.limitType,
-        isOrg: errorFields.isOrg,
+        isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
-        organizationId: errorFields.organizationId,
+        teamId: errorFields.teamId,
       );
     }
     return _parseResponse(response);
@@ -320,9 +320,9 @@ Future<T> get<T>(String url) async {
         pgCode: _parsePgCode(response),
         code: errorFields.code,
         limitType: errorFields.limitType,
-        isOrg: errorFields.isOrg,
+        isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
-        organizationId: errorFields.organizationId,
+        teamId: errorFields.teamId,
       );
     }
     return _parseResponse(response);
@@ -357,9 +357,9 @@ Future<T> delete<T>(String url) async {
         pgCode: _parsePgCode(response),
         code: errorFields.code,
         limitType: errorFields.limitType,
-        isOrg: errorFields.isOrg,
+        isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
-        organizationId: errorFields.organizationId,
+        teamId: errorFields.teamId,
       );
     }
     return _parseResponse(response);
@@ -398,9 +398,9 @@ Future<T> deleteWithBody<T>(
         pgCode: _parsePgCode(response),
         code: errorFields.code,
         limitType: errorFields.limitType,
-        isOrg: errorFields.isOrg,
+        isTeam: errorFields.isTeam,
         isAdmin: errorFields.isAdmin,
-        organizationId: errorFields.organizationId,
+        teamId: errorFields.teamId,
       );
     }
     return _parseResponse(response);

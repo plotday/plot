@@ -48,14 +48,12 @@ export function twistFactory({
     id: providedId,
     environment: providedEnvironment,
     version,
-    priorityId,
-    priorityTwistId,
+    twistInstanceId,
   }: {
     id?: string;
     environment?: TwistEnvironment;
     version?: string;
-    priorityId: string;
-    priorityTwistId: string;
+    twistInstanceId: string;
   }) => {
     const twistData = await getTwist({
       env,
@@ -64,8 +62,7 @@ export function twistFactory({
       id: providedId,
       environment: providedEnvironment,
       version,
-      priorityId,
-      priorityTwistId,
+      twistInstanceId,
       storage: env.STORAGE,
       callbacks: env.CALLBACKS,
       logSubscriptions: env.LOG_SUBSCRIPTIONS,
@@ -95,8 +92,8 @@ export function twistFactory({
       keyOption?: string;
     } | null = null;
 
-    // Load priority_twist config for Options resolution at runtime
-    let priorityTwistConfig: Record<string, unknown> | undefined;
+    // Load twist_instance config for Options resolution at runtime
+    let twistInstanceConfig: Record<string, unknown> | undefined;
 
     if (checkPermissions) {
       const config = await env.TWIST_CONFIG.get(`${id}:${version}`);
@@ -110,18 +107,18 @@ export function twistFactory({
       } = parsedConfig);
       sourceProvider = parsedConfig.sourceProvider ?? null;
 
-      // Load user config from priority_twist for Options resolution
-      if (priorityTwistId && priorityTwistId !== "__deployment__") {
+      // Load user config from twist_instance for Options resolution
+      if (twistInstanceId && twistInstanceId !== "__deployment__") {
         const pt = await db
-          .selectFrom("priority_twist")
-          .select("config")
-          .where("id", "=", priorityTwistId)
+          .selectFrom("twist_instance")
+          .select("options")
+          .where("id", "=", twistInstanceId)
           .executeTakeFirst();
-        if (pt?.config) {
-          priorityTwistConfig =
-            typeof pt.config === "string"
-              ? JSON.parse(pt.config)
-              : (pt.config as Record<string, unknown>);
+        if (pt?.options) {
+          twistInstanceConfig =
+            typeof pt.options === "string"
+              ? JSON.parse(pt.options)
+              : (pt.options as Record<string, unknown>);
         }
       }
     }
@@ -130,18 +127,18 @@ export function twistFactory({
     let aiEnabled: boolean | undefined;
     if (
       checkPermissions &&
-      priorityTwistId &&
-      priorityTwistId !== "__deployment__"
+      twistInstanceId &&
+      twistInstanceId !== "__deployment__"
     ) {
       const ownerPref = await db
-        .selectFrom("priority_twist")
+        .selectFrom("twist_instance")
         .innerJoin(
           "ai_preference",
           "ai_preference.user_id",
-          "priority_twist.owner_id"
+          "twist_instance.owner_id"
         )
         .select("ai_preference.twist_ai_disabled")
-        .where("priority_twist.id", "=", priorityTwistId)
+        .where("twist_instance.id", "=", twistInstanceId)
         .executeTakeFirst();
       aiEnabled = ownerPref?.twist_ai_disabled !== true;
     }
@@ -150,14 +147,14 @@ export function twistFactory({
     let effectivePlan: string | undefined;
     if (
       checkPermissions &&
-      priorityTwistId &&
-      priorityTwistId !== "__deployment__"
+      twistInstanceId &&
+      twistInstanceId !== "__deployment__"
     ) {
-      // Get owner_id from priority_twist
+      // Get owner_id from twist_instance
       const ptOwner = await db
-        .selectFrom("priority_twist")
+        .selectFrom("twist_instance")
         .select("owner_id")
-        .where("id", "=", priorityTwistId)
+        .where("id", "=", twistInstanceId)
         .executeTakeFirst();
       if (ptOwner?.owner_id) {
         const plan = await getEffectivePlan(db, ptOwner.owner_id);
@@ -169,48 +166,35 @@ export function twistFactory({
     let providerConfig: AiProviderConfig | undefined;
     if (
       checkPermissions &&
-      priorityTwistId &&
-      priorityTwistId !== "__deployment__"
+      twistInstanceId &&
+      twistInstanceId !== "__deployment__"
     ) {
-      // Determine scope: org priority → org preference, else → user preference
-      // Account-level connectors have no priority_id, skip org lookup
-      const priorityOrg = priorityId
-        ? await db
-            .selectFrom("priority")
-            .select("organization_id")
-            .where("id", "=", priorityId)
-            .executeTakeFirst()
-        : undefined;
-
+      // Resolve AI config against the twist's team (if team-owned) or its
+      // owner user (personal).
       let aiPref;
-      let scopeFilter: { column: "user_id" | "organization_id"; value: any };
+      let scopeFilter: { column: "user_id" | "team_id"; value: any };
 
-      if (priorityOrg?.organization_id) {
+      const pt = await db
+        .selectFrom("twist_instance")
+        .select(["owner_id", "team_id"])
+        .where("id", "=", twistInstanceId)
+        .executeTakeFirst();
+      if (pt?.team_id) {
         aiPref = await db
           .selectFrom("ai_preference")
           .select(["twist_ai_key_id", "twist_ai_disabled"])
-          .where("organization_id", "=", priorityOrg.organization_id)
+          .where("team_id", "=", pt.team_id)
           .executeTakeFirst();
-        scopeFilter = {
-          column: "organization_id",
-          value: priorityOrg.organization_id,
-        };
+        scopeFilter = { column: "team_id", value: pt.team_id };
+      } else if (pt?.owner_id) {
+        aiPref = await db
+          .selectFrom("ai_preference")
+          .select(["twist_ai_key_id", "twist_ai_disabled"])
+          .where("user_id", "=", pt.owner_id)
+          .executeTakeFirst();
+        scopeFilter = { column: "user_id", value: pt.owner_id };
       } else {
-        const pt = await db
-          .selectFrom("priority_twist")
-          .select("owner_id")
-          .where("id", "=", priorityTwistId)
-          .executeTakeFirst();
-        if (pt?.owner_id) {
-          aiPref = await db
-            .selectFrom("ai_preference")
-            .select(["twist_ai_key_id", "twist_ai_disabled"])
-            .where("user_id", "=", pt.owner_id)
-            .executeTakeFirst();
-          scopeFilter = { column: "user_id", value: pt.owner_id };
-        } else {
-          scopeFilter = { column: "user_id", value: null };
-        }
+        scopeFilter = { column: "user_id", value: null };
       }
 
       // If twist AI is explicitly disabled via preference, we'll handle below in tool creation
@@ -296,8 +280,8 @@ export function twistFactory({
     let resolvedSecureOptions: Record<string, string> | undefined;
     if (
       checkPermissions &&
-      priorityTwistId &&
-      priorityTwistId !== "__deployment__"
+      twistInstanceId &&
+      twistInstanceId !== "__deployment__"
     ) {
       // Get the options schema from KV config (or fall back to DB twist.options)
       let optSchema: OptionsSchema | undefined;
@@ -310,16 +294,16 @@ export function twistFactory({
       // optionsSchema was added to KV config)
       if (!optSchema) {
         const twistRow = await db
-          .selectFrom("priority_twist")
-          .innerJoin("twist", "twist.id", "priority_twist.twist_id")
-          .select("twist.options")
-          .where("priority_twist.id", "=", priorityTwistId)
+          .selectFrom("twist_instance")
+          .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+          .select("twist.options_schema")
+          .where("twist_instance.id", "=", twistInstanceId)
           .executeTakeFirst();
-        if (twistRow?.options) {
+        if (twistRow?.options_schema) {
           optSchema = (
-            typeof twistRow.options === "string"
-              ? JSON.parse(twistRow.options)
-              : twistRow.options
+            typeof twistRow.options_schema === "string"
+              ? JSON.parse(twistRow.options_schema)
+              : twistRow.options_schema
           ) as OptionsSchema;
         }
       }
@@ -331,7 +315,7 @@ export function twistFactory({
           const resolved = await resolveSecureOptions(
             db,
             env.AI_KEY_ENCRYPTION_KEY,
-            priorityTwistId,
+            twistInstanceId,
             optSchema,
             {}
           );
@@ -360,11 +344,10 @@ export function twistFactory({
           twistId: id,
           environment,
           db,
-          priorityId,
-          priorityTwistId,
+          twistInstanceId,
           env,
           ctx,
-          config: priorityTwistConfig,
+          config: twistInstanceConfig,
           sourceProvider,
           aiEnabled,
           providerConfig,
@@ -396,8 +379,7 @@ export function twistFactory({
         twistId: id,
         environment,
         db,
-        priorityId,
-        priorityTwistId,
+        twistInstanceId,
         env,
         ctx,
         sourceProvider,
@@ -411,9 +393,23 @@ export function twistFactory({
       return tool;
     };
 
+    // Look up the twist owner user ID once so we can hand it to the twist
+    // runtime as `this.userId`. Falls back to empty string for the synthetic
+    // deployment twist instance that has no real owner row.
+    let twistOwnerUserId = "";
+    if (twistInstanceId && twistInstanceId !== "__deployment__") {
+      const ownerRow = await db
+        .selectFrom("twist_instance")
+        .select("owner_id")
+        .where("id", "=", twistInstanceId)
+        .executeTakeFirst();
+      twistOwnerUserId = ownerRow?.owner_id ?? "";
+    }
+
     // Create twistInit object to pass to each twist method
     const twistInit = {
-      priorityTwistId,
+      twistInstanceId,
+      userId: twistOwnerUserId,
       builtInToolFactory,
     };
 
@@ -611,7 +607,7 @@ export function twistFactory({
           twistRootId: id,
           environment,
           severity: "info",
-          message: `Deactivating in ${environment} for priority ${priorityId}`,
+          message: `Deactivating in ${environment} for twist instance ${twistInstanceId}`,
           timestamp: Date.now(),
         });
 
@@ -650,7 +646,7 @@ export function twistFactory({
         });
 
         const twistInit = {
-          priorityTwistId,
+          twistInstanceId,
           builtInToolFactory,
         };
 

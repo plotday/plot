@@ -21,7 +21,8 @@ type ActivityInsert = Database["public"]["Tables"]["thread"]["Insert"];
 type ActivityUpdate = Database["public"]["Tables"]["thread"]["Update"];
 
 /**
- * Resolves access_contacts UUIDs to Contact objects with email/name.
+ * Resolves contact UUIDs to Contact objects with email/name.
+ * Used for both thread.contacts and note.access_contacts.
  */
 export async function resolveAccessContacts(
   plot: Plot,
@@ -48,12 +49,12 @@ export async function resolveAccessContacts(
 export function handleDbOperationError(
   error: unknown,
   operation: string,
-  priorityTwistId: string,
+  twistInstanceId: string,
   context: Record<string, unknown>
 ): never {
   if (error instanceof DbError) {
     // Log full error with stack trace for debugging (PostHog/console)
-    const logger = createLogger({ priority_twist_id: priorityTwistId });
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
 
     // Extract PostgrestError from cause for full debugging info
     const cause = error.cause as
@@ -85,7 +86,7 @@ export function actorTypeToString(type: ActorType): string {
     case 1: // ActorType.Contact
       return "contact";
     case 2: // ActorType.Twist
-      return "priority_twist";
+      return "twist_instance";
     default:
       return "user";
   }
@@ -466,7 +467,7 @@ export async function processNewActor(
 export async function processNewActorArray(
   plot: Plot,
   newActors: NewActor[],
-  priorityId: string
+  _priorityId: string
 ): Promise<ActorId[]> {
   if (newActors.length === 0) return [];
 
@@ -542,40 +543,9 @@ export async function processNewActorArray(
     })
     .filter((id): id is ActorId => id !== null);
 
-  // Batch upsert priority_contact links for contacts only (not priority_twists)
-  // New contacts from addContacts are always valid, but existing actor IDs
-  // may reference priority_twists which aren't in the contact table.
-  const newContactIds = new Set(createdActorMap.values());
-  let contactIds = actorIds.filter((id) => newContactIds.has(id));
-
-  // For existing actor IDs, check which ones are actually contacts
-  const existingIdsToCheck = actorIds.filter((id) => !newContactIds.has(id));
-  if (existingIdsToCheck.length > 0) {
-    const validContacts = await plot.db
-      .selectFrom("contact")
-      .select("id")
-      .where("id", "in", existingIdsToCheck)
-      .execute();
-    const validIds = new Set(validContacts.map((c) => c.id));
-    contactIds = contactIds.concat(
-      existingIdsToCheck.filter((id) => validIds.has(id))
-    );
-  }
-
-  if (contactIds.length > 0) {
-    const priorityContacts = contactIds.map((actorId) => ({
-      priority_id: priorityId,
-      contact_id: actorId,
-    }));
-
-    await plot.db
-      .insertInto("priority_contact")
-      .values(priorityContacts)
-      .onConflict((oc) =>
-        oc.columns(["priority_id", "contact_id"]).doNothing()
-      )
-      .execute();
-  }
+  // Contact visibility is handled by user_contact rows.
+  // No batch upsert needed — contacts become visible to users through
+  // thread_contacts_sync triggers and connection ingestion.
 
   return actorIds;
 }
@@ -654,7 +624,7 @@ export type PreparedThread = (
 ) & {
   priorityId: string;
 
-  /** The resolved author contact ID (or priorityTwistId if no author specified) */
+  /** The resolved author contact ID (or twistInstanceId if no author specified) */
   authorId: string;
 };
 
@@ -667,7 +637,7 @@ export type PreparedThread = (
  * user sees there is new content from others.
  *
  * Early returns (no-op) when:
- * - authorId is the priorityTwistId (no real author, just the twist default)
+ * - authorId is the twistInstanceId (no real author, just the twist default)
  * - author contact has no linked user_id
  * - there are unread notes from other authors since the user's last read_at
  *
@@ -683,7 +653,7 @@ export async function markThreadReadForAuthor(
   timestamp: string
 ): Promise<void> {
   // No real author — just the twist itself
-  if (authorId === plot.priorityTwistId) {
+  if (authorId === plot.twistInstanceId) {
     return;
   }
 
@@ -762,7 +732,7 @@ export async function markThreadReadForAuthor(
         .execute();
     } catch (upsertError) {
       const logger = createLogger({
-        priority_twist_id: plot.priorityTwistId,
+        twist_instance_id: plot.twistInstanceId,
       });
       logger.error(
         "Failed to auto-mark activity as read for author",
@@ -773,7 +743,7 @@ export async function markThreadReadForAuthor(
   } catch (error) {
     // Log but don't throw — read status is non-critical
     const logger = createLogger({
-      priority_twist_id: plot.priorityTwistId,
+      twist_instance_id: plot.twistInstanceId,
     });
     logger.error(
       "Error in markThreadReadForAuthor",
@@ -785,8 +755,8 @@ export async function markThreadReadForAuthor(
 
 /**
  * Prepares a NewThread for database insertion, handling all common preparation logic:
- * - Priority resolution (including pickPriority embedding-based selection)
- * - Activity type mapping
+ * - Priority resolution via classify_thread_for_user (rule-based)
+ * - Embedding generation from title + first note content
  * - Preview generation from notes
  * - Author and assignee processing
  * - Database object construction
@@ -811,83 +781,61 @@ export async function prepareThreadForDb(
 
   await plot.validateActivityCreateAccess(activity);
 
+  // Generate embedding from title + first note content for content-based matching.
+  // Hoisted so it can be stored on the thread row regardless of priority resolution path.
+  let embeddingJson: string | undefined;
+
   // Determine target priority
   let targetPriorityId: string;
 
-  if ("priority" in activity) {
-    if (!activity.priority?.id) {
-      throw new Error(
-        "Invalid priority: when providing 'priority', it must have a valid 'id' field"
-      );
+  // Generate embedding for all threads (used for future content-based rule matching).
+  {
+    const firstNote =
+      "notes" in activity && activity.notes?.[0]?.content
+        ? activity.notes[0].content
+        : null;
+    const textToEmbed = [activity.title, firstNote]
+      .filter(Boolean)
+      .join("\n");
+
+    if (textToEmbed.trim().length > 0) {
+      try {
+        const embedding = await plot.ai.embed(textToEmbed);
+        embeddingJson = JSON.stringify(embedding);
+      } catch (error) {
+        const logger = createLogger({
+          twist_instance_id: plot.twistInstanceId,
+        });
+        logger.warn(
+          "Failed to generate embedding for thread",
+          {
+            error_message:
+              error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
     }
+  }
+
+  if ("priority" in activity && activity.priority?.id) {
     targetPriorityId = activity.priority.id;
-  } else if ("pickPriority" in activity) {
-    // pickPriority-based selection — uses embedding similarity
-    const pickPriorityConfig = activity.pickPriority ?? { content: true };
-    const requiredFilters: Record<string, true> = {};
-    const scoredFields: Record<string, number> = {};
-
-    for (const [key, value] of Object.entries(pickPriorityConfig)) {
-      if (value === true) {
-        requiredFilters[key] = true;
-      } else if (typeof value === "number") {
-        scoredFields[key] = value;
-      }
-    }
-
-    let embedding: number[] | null = null;
-    if (pickPriorityConfig.content !== undefined) {
-      const firstNote =
-        "notes" in activity && activity.notes?.[0]?.content
-          ? activity.notes[0].content
-          : null;
-      const textToEmbed = [activity.title, firstNote]
-        .filter(Boolean)
-        .join("\n");
-
-      if (textToEmbed.trim().length > 0) {
-        try {
-          embedding = await plot.ai.embed(textToEmbed);
-        } catch (error) {
-          const logger = createLogger({
-            priority_twist_id: plot.priorityTwistId,
-          });
-          logger.warn(
-            "Failed to generate embedding for pickPriority, falling back to default priority",
-            {
-              error_message:
-                error instanceof Error ? error.message : String(error),
-            }
-          );
-        }
-      }
-    }
-
-    if (!embedding && (requiredFilters.content || scoredFields.content)) {
-      targetPriorityId = plot.priorityId;
-    } else {
-      const matchResult = await rpc(plot.db, "find_matching_threads_scored", {
-        query_embedding: embedding ? JSON.stringify(embedding) : "[]",
-        created_by_id: plot.priorityTwistId,
-        required_filters: requiredFilters,
-        scored_fields: scoredFields,
-        thread_data: {},
-        similarity_threshold: 0.7,
-      });
-
-      const matchArray = Array.isArray(matchResult)
-        ? matchResult
-        : matchResult
-          ? [matchResult]
-          : [];
-      if (matchArray.length > 0) {
-        targetPriorityId = (matchArray[0] as any).priority_id;
-      } else {
-        targetPriorityId = plot.priorityId;
-      }
-    }
   } else {
-    targetPriorityId = plot.priorityId;
+    // Classify via user-defined priority rules.
+    const ownerUserId = await plot.getUserId();
+
+    const matched = await rpc(plot.db, "classify_thread_for_user", {
+      p_user_id: ownerUserId,
+      p_embedding: embeddingJson ?? null,
+    });
+
+    const matchedPriorityId =
+      typeof matched === "string"
+        ? matched
+        : Array.isArray(matched)
+          ? (matched[0] as string | undefined)
+          : (matched as string | null | undefined);
+    targetPriorityId =
+      matchedPriorityId ?? (await plot.getDefaultPriorityId());
   }
 
   await plot.validatePriorityAccess(targetPriorityId);
@@ -919,8 +867,8 @@ export async function prepareThreadForDb(
 
   // Resolve thread-level author for read-marking.
   // The author field comes from NewLink.author (passed via createLink → createThread).
-  // created_by in the DB remains plot.priorityTwistId (the twist created it).
-  let authorId = plot.priorityTwistId;
+  // created_by in the DB remains plot.twistInstanceId (the twist created it).
+  let authorId = plot.twistInstanceId;
   if ("author" in activity && (activity as any).author) {
     const resolvedAuthorId = await processNewActor(
       plot,
@@ -949,15 +897,12 @@ export async function prepareThreadForDb(
 
   // Build defaults object for INSERT
   const defaults: ActivityInsert = {
-    created_by: plot.priorityTwistId,
+    created_by: plot.twistInstanceId,
     updated_by: plot.getUpdatedBy(),
-    priority_id: targetPriorityId,
     title: cleanTitle(activity.title?.trim() || "Untitled"),
     preview: previewText,
     draft: false,
-    // Default to "private" when archiving to avoid leaking titles of private events
-    access: activity.access ?? (activity.archived ? "private" : "members"),
-    access_contacts: resolvedAccessContacts ?? (activity.access === "private" ? [] : null),
+    contacts: resolvedAccessContacts ?? [],
     sync_depth: plot.syncDepth + 1,
     ...(activity.archived !== undefined
       ? { archived_at: activity.archived ? new Date().toISOString() : null }
@@ -972,6 +917,8 @@ export async function prepareThreadForDb(
       : "icon" in activity && (activity as any).icon !== undefined
         ? { icon: (activity as any).icon }
         : {}),
+    // Store content embedding for future priority rule matching
+    ...(embeddingJson ? { embedding: embeddingJson } : {}),
   };
 
   // Source-based threads use upsert, non-source use insert
@@ -1002,15 +949,8 @@ export async function prepareThreadForDb(
     if ("preview" in activity && activity.preview !== undefined) {
       upsertFields.preview = previewText;
     }
-    if (activity.access !== undefined) {
-      upsertFields.access = activity.access;
-      // Only set access_contacts in upsert when we have resolved contacts.
-      // When undefined (e.g. cancelled events), the upsert preserves existing value.
-      if (resolvedAccessContacts !== undefined) {
-        upsertFields.access_contacts = resolvedAccessContacts;
-      }
-    } else if (resolvedAccessContacts !== undefined) {
-      upsertFields.access_contacts = resolvedAccessContacts;
+    if (resolvedAccessContacts !== undefined) {
+      upsertFields.contacts = resolvedAccessContacts;
     }
     if ("type" in activity && (activity as any).type !== undefined) {
       upsertFields.icon = (activity as any).type;

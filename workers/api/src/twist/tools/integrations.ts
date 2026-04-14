@@ -14,6 +14,7 @@ import {
   type ThreadMeta,
 } from "@plotday/twister/plot";
 import { type Callback } from "@plotday/twister/tools/callbacks";
+import { Tag } from "@plotday/twister/tag";
 import {
   type ArchiveLinkFilter,
   type AuthProvider,
@@ -21,6 +22,7 @@ import {
   type Authorization,
   type Channel,
   type LinkTypeConfig,
+  type SyncContext,
   type Integrations as IAuth,
 } from "@plotday/twister/tools/integrations";
 import type { Uuid } from "@plotday/twister/utils/uuid";
@@ -40,12 +42,13 @@ import superjson from "superjson";
 import type { Storage } from "../../state/storage";
 import { createLogger } from "@plotday/worker-util";
 import { rpc, rpcUser } from "../../rpc";
+import { getEffectivePlan } from "../../utils/plan";
+import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
 import { getRpcFunctionName } from "../../utils/rpc";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
 import type { Store } from "./store";
 import { Tool } from "./tool";
-import { unarchiveDoneLinksOnThread } from "../../app/sync/link-tags";
 import { createSchedule } from "../../app/sync/smart-schedule";
 
 /** Internal provider config used by the Integrations tool. */
@@ -61,7 +64,7 @@ type IntegrationProviderConfig = {
   }>;
   linkTypes?: LinkTypeConfig[];
   getChannels: (auth: Authorization, token: AuthToken) => Promise<Channel[]>;
-  onChannelEnabled: (channel: Channel) => Promise<void>;
+  onChannelEnabled: (channel: Channel, context?: SyncContext) => Promise<void>;
   onChannelDisabled: (channel: Channel) => Promise<void>;
   onLinkUpdated?: (link: Link) => Promise<void>;
   onNoteCreated?: (note: Note, meta: ThreadMeta) => Promise<void>;
@@ -86,9 +89,6 @@ type ChannelConfig = {
   enabled: boolean;
   enabledBy?: ActorId;
   title?: string | null;
-  priorityId?: string | null;
-  createThreads?: string; // 'all' | 'actionable' | 'manual'
-  createThreadsByType?: Record<string, string>; // { linkType: 'all'|'actionable'|'manual' }
 };
 
 type PendingActAs = {
@@ -102,8 +102,7 @@ export class Integrations extends Tool implements IAuth {
   private store: Store;
   private env: Bindings;
   private db: Kysely<DB>;
-  private priorityId: string;
-  private priorityTwistId: string;
+  private twistInstanceId: string;
   // These are callbacks we create and call
   private callbacks: DurableObjectStub<CallbacksState>;
   private _twistId: string;
@@ -112,6 +111,8 @@ export class Integrations extends Tool implements IAuth {
   private providerConfigs: IntegrationProviderConfig[];
   /** Source metadata passed from factory when the twist is a Source. */
   private sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; shared?: boolean; keyOption?: string } | null = null;
+  /** Cached sync history min date (undefined = not computed yet, null = no limit). */
+  private _syncHistoryMin: Date | null | undefined = undefined;
   /**
    * Extract provider metadata from integration options during deployment.
    * Returns provider/scopes pairs without lifecycle callbacks.
@@ -129,9 +130,9 @@ export class Integrations extends Tool implements IAuth {
 
   private static GetStub(
     callbacks: DurableObjectNamespace<CallbacksState>,
-    priorityTwistId: string
+    twistInstanceId: string
   ) {
-    const callbacksId = callbacks.idFromName(priorityTwistId);
+    const callbacksId = callbacks.idFromName(twistInstanceId);
     return callbacks.get(callbacksId);
   }
 
@@ -139,8 +140,7 @@ export class Integrations extends Tool implements IAuth {
     store: Store;
     env: Bindings;
     db: Kysely<DB>;
-    priorityId: string;
-    priorityTwistId: string;
+    twistInstanceId: string;
     twistId: string;
     environment: TwistEnvironment;
     path: string[];
@@ -152,13 +152,12 @@ export class Integrations extends Tool implements IAuth {
     this.store = options.store;
     this.env = options.env;
     this.db = options.db;
-    this.priorityId = options.priorityId;
-    this.priorityTwistId = options.priorityTwistId;
+    this.twistInstanceId = options.twistInstanceId;
     this._twistId = options.twistId;
     this._environment = options.environment;
     this.callbacks = Integrations.GetStub(
       options.env.CALLBACKS,
-      options.priorityTwistId
+      options.twistInstanceId
     );
     this.path = options.path;
     this.sourceProvider = options.sourceProvider ?? null;
@@ -182,6 +181,52 @@ export class Integrations extends Tool implements IAuth {
         onChannelDisabled: async () => {},
       }];
     }
+  }
+
+  /**
+   * Returns the sync history min date for this twist instance, based on the
+   * owner's effective plan. Cached after first call.
+   */
+  async getSyncHistoryMin(): Promise<Date | null> {
+    if (this._syncHistoryMin !== undefined) return this._syncHistoryMin;
+
+    const twistInstance = await this.db
+      .selectFrom("twist_instance")
+      .select(["owner_id", "team_id"])
+      .where("id", "=", this.twistInstanceId)
+      .executeTakeFirst();
+
+    if (!twistInstance?.owner_id) {
+      this._syncHistoryMin = null;
+      return null;
+    }
+
+    let plan: PlanKey;
+    if (twistInstance.team_id) {
+      const teamSub = await this.db
+        .selectFrom("team_subscription")
+        .select(["plan", "status"])
+        .where("team_id", "=", String(twistInstance.team_id))
+        .executeTakeFirst();
+      plan =
+        teamSub?.status === "active"
+          ? (teamSub.plan as PlanKey)
+          : "free";
+    } else {
+      const effective = await getEffectivePlan(this.db, twistInstance.owner_id);
+      plan = effective.plan;
+    }
+
+    this._syncHistoryMin = getSyncHistoryMinDate(plan);
+    return this._syncHistoryMin;
+  }
+
+  /**
+   * Builds the SyncContext to pass to onChannelEnabled.
+   */
+  private async buildSyncContext(): Promise<SyncContext> {
+    const syncHistoryMin = await this.getSyncHistoryMin();
+    return syncHistoryMin ? { syncHistoryMin } : {};
   }
 
   // ============================================================================
@@ -254,17 +299,17 @@ export class Integrations extends Tool implements IAuth {
       const { resolveSecureOptions } = await import("../../utils/secure-options");
       const twist = await this.db
         .selectFrom("twist")
-        .select("options")
+        .select("options_schema")
         .where("id", "=", this._twistId)
         .executeTakeFirst();
-      const optSchema = twist?.options as Record<string, unknown> | null;
+      const optSchema = twist?.options_schema as Record<string, unknown> | null;
       if (!optSchema || !this.env.AI_KEY_ENCRYPTION_KEY) return null;
 
       // Resolve the user who enabled the channel (enabledBy is actorId = userId for key connectors)
       const resolved = await resolveSecureOptions(
         this.db,
         this.env.AI_KEY_ENCRYPTION_KEY,
-        this.priorityTwistId,
+        this.twistInstanceId,
         { [keyOption]: optSchema[keyOption] } as any,
         {},
         enabledByUserId as string
@@ -311,7 +356,7 @@ export class Integrations extends Tool implements IAuth {
 
     // Create callback token for the deferred callback
     const callbackToken = await this.callbacks.create({
-      priorityTwistId: this.priorityTwistId,
+      twistInstanceId: this.twistInstanceId,
       path: this.path.slice(0, -1), // Target parent tool
       functionName: callbackFunctionName,
       extraArgs,
@@ -329,7 +374,7 @@ export class Integrations extends Tool implements IAuth {
 
     // Create auth link
     const onAuthCallback = await this.callbacks.create({
-      priorityTwistId: this.priorityTwistId,
+      twistInstanceId: this.twistInstanceId,
       path: this.path,
       functionName: "onAuth",
       extraArgs: [], // onAuth will look up pending callbacks itself
@@ -365,7 +410,7 @@ export class Integrations extends Tool implements IAuth {
 
   /**
    * Declare what channels an actor has access to.
-   * Also updates link_types on any already-enabled source_channels.
+   * Also updates link_types on any already-enabled channels.
    */
   async setChannels(
     provider: AuthProvider,
@@ -374,7 +419,7 @@ export class Integrations extends Tool implements IAuth {
   ): Promise<void> {
     await this.store.set(`channel_access:${provider}:${actorId}`, channels);
 
-    // Update link_types on existing source_channels (regardless of enabled state).
+    // Update link_types on existing channels (regardless of enabled state).
     // Offset updated_at by 1ms to ensure the change is picked up by the
     // next sync pull (the cursor uses millisecond-truncated timestamps).
     const flat = this.flattenChannels(channels);
@@ -382,12 +427,12 @@ export class Integrations extends Tool implements IAuth {
     for (const channel of flat) {
       if (channel.linkTypes) {
         await this.db
-          .updateTable("source_channel")
+          .updateTable("channel")
           .set({
             link_types: JSON.stringify(channel.linkTypes) as any,
             updated_at: futureDate,
           })
-          .where("priority_twist_id", "=", this.priorityTwistId)
+          .where("twist_instance_id", "=", this.twistInstanceId)
           .where("channel_id", "=", channel.id)
           .execute();
       }
@@ -402,83 +447,51 @@ export class Integrations extends Tool implements IAuth {
   /**
    * Get or create an internal Plot tool instance for save operations.
    * Sources use this to save threads/contacts without direct Plot access.
-   * When overridePriorityId is provided, creates a separate Plot instance for that priority.
+   * Twists are workspace-level so a single Plot instance is reused.
    */
-  private _plotCache = new Map<string, Plot>();
-  private getPlot(overridePriorityId?: string): Plot {
-    const effectivePriorityId = overridePriorityId || this.priorityId;
-    const cacheKey = effectivePriorityId || "__none__";
-    let plot = this._plotCache.get(cacheKey);
-    if (!plot) {
+  private _plot?: Plot;
+  private getPlot(): Plot {
+    if (!this._plot) {
       // Lazy import to avoid circular dependency at module load time
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { Plot: PlotClass } = require("./plot/index") as { Plot: typeof Plot };
-      plot = new PlotClass({
+      this._plot = new PlotClass({
         db: this.db,
-        priorityId: effectivePriorityId,
-        priorityTwistId: this.priorityTwistId,
+        twistInstanceId: this.twistInstanceId,
         options: {
           thread: { access: 1 /* ThreadAccess.Create */ },
         },
         env: this.env,
       });
-      this._plotCache.set(cacheKey, plot);
     }
-    return plot;
+    return this._plot!;
   }
 
   /**
-   * Saves a link with notes to the source's priority.
-   * Creates both a thread (container) and a link (external entity).
-   * For account-based sources (no priorityId), resolves priority from link.channelId.
-   * Delegates to an internal Plot instance.
+   * Saves a link with notes. Creates both a thread (container) and a link
+   * (external entity). Priority resolution is delegated to
+   * `prepareThreadForDb`, which routes via `match_priority_for_user` for the
+   * twist owner when no explicit priority is given.
    */
-  async saveLink(link: NewLinkWithNotes): Promise<Uuid> {
-    let targetPriorityId = this.priorityId;
-    let createThreads: string = "all";
-
-    // For account-based sources, resolve priority and create_threads from channel
-    if (!targetPriorityId && link.channelId) {
-      const channel = await this.db
-        .selectFrom("source_channel")
-        .select(["priority_id", "create_threads", "create_threads_by_type"])
-        .where("priority_twist_id", "=", this.priorityTwistId)
-        .where("channel_id", "=", link.channelId)
-        .executeTakeFirst();
-      targetPriorityId = channel?.priority_id ?? "";
-
-      // Resolve per-type createThreads, falling back to global default
-      const byType = channel?.create_threads_by_type as Record<string, string> | null;
-      const linkType = link.type ?? null;
-      if (byType && linkType && byType[linkType]) {
-        createThreads = byType[linkType];
-      } else {
-        createThreads = channel?.create_threads ?? "all";
+  async saveLink(link: NewLinkWithNotes): Promise<Uuid | null> {
+    // Filter initial-sync items by plan history limit.
+    // unread === false is the reliable signal for initial sync (connector convention).
+    if (link.unread === false) {
+      const syncHistoryMin = await this.getSyncHistoryMin();
+      if (syncHistoryMin) {
+        const hasRecurrence = link.schedules?.some(s => s.recurrenceRule);
+        if (!hasRecurrence) {
+          // Determine the item's date from the first schedule start or link created
+          const itemDate = this.extractLinkDate(link);
+          if (itemDate && itemDate < syncHistoryMin) {
+            return null;
+          }
+        }
       }
     }
 
-    if (!targetPriorityId) {
-      throw new Error("Cannot save link: no priority resolved. Set channelId on the link or use a priority-bound connector.");
-    }
-
-    const plot = this.getPlot(targetPriorityId);
-
-    // If 'manual', create only the link row without a thread
-    if (createThreads === "manual") {
-      return plot.createLinkOnly(link);
-    }
-
+    const plot = this.getPlot();
     const threadId = await plot.createLink(link);
-
-    // For 'actionable' mode, archive the thread immediately.
-    // Note analysis will unarchive if it finds todo/reply tags.
-    if (createThreads === "actionable") {
-      await this.db
-        .updateTable("thread")
-        .set({ archived_at: new Date().toISOString() })
-        .where("id", "=", threadId as string)
-        .execute();
-    }
 
     // Propagate status tags to the thread
     await this.propagateLinkStatusTags(plot, threadId);
@@ -487,6 +500,24 @@ export class Integrations extends Tool implements IAuth {
     await this.createTaskScheduleForLink(threadId);
 
     return threadId;
+  }
+
+  /**
+   * Extracts the most relevant date from a link for sync history filtering.
+   * Uses the first schedule's start time (for calendar events) or the
+   * link's created date as fallback.
+   */
+  private extractLinkDate(link: NewLinkWithNotes): Date | null {
+    // Prefer schedule start time (most relevant for calendar events)
+    const scheduleStart = link.schedules?.[0]?.start;
+    if (scheduleStart) {
+      return typeof scheduleStart === "string" ? new Date(scheduleStart) : scheduleStart;
+    }
+    // Fall back to link created date
+    if (link.created) {
+      return link.created instanceof Date ? link.created : new Date(link.created);
+    }
+    return null;
   }
 
   /**
@@ -513,7 +544,7 @@ export class Integrations extends Tool implements IAuth {
     // Wrap in transaction so Hyperdrive sees the mutating RPC as a write
     const affectedPriorityIds = await this.db.transaction().execute(async (trx) => {
       return await rpc(trx, "archive_links", {
-        p_created_by: this.priorityTwistId,
+        p_created_by: this.twistInstanceId,
         // @ts-ignore - filterJson is valid JSON but Record<string, unknown> doesn't satisfy the strict Json type
         p_filter: filterJson,
       }) as unknown as string[] | null;
@@ -535,14 +566,14 @@ export class Integrations extends Tool implements IAuth {
     todo: boolean,
     options?: { date?: Date | string }
   ): Promise<void> {
-    const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
 
     // Look up the link+thread by source URL and created_by
     const link = await this.db
       .selectFrom("link")
       .select(["id", "thread_id"])
       .where("source", "=", source)
-      .where("created_by", "=", this.priorityTwistId)
+      .where("created_by", "=", this.twistInstanceId)
       .executeTakeFirst();
 
     if (!link?.thread_id) {
@@ -583,27 +614,6 @@ export class Integrations extends Tool implements IAuth {
         user_id: contact.user_id,
         p_schedule: dbSchedule as Json,
       });
-
-      // Adding to the agenda should also lift archive state on the thread,
-      // so the thread is visible where the user expects to act on it.
-      await this.db
-        .updateTable("thread")
-        .set({ archived_at: null })
-        .where("id", "=", link.thread_id)
-        .where("archived_at", "is not", null)
-        .execute();
-
-      // Flip any done-status links (e.g. "archived") back to a non-done
-      // status so the link widget stops saying "Archived" and Tag.Done is
-      // cleared from the thread.
-      try {
-        await unarchiveDoneLinksOnThread(this.db, link.thread_id);
-      } catch (error) {
-        logger.warn("setThreadToDo: unarchiveDoneLinksOnThread failed", {
-          thread_id: link.thread_id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
     } else {
       // Archive the per-user schedule for this thread
       await this.db
@@ -614,25 +624,6 @@ export class Integrations extends Tool implements IAuth {
         .where("occurrence", "is", null)
         .where("archived_at", "is", null)
         .execute();
-    }
-
-    // Notify sync DOs so the Flutter client picks up the change in real time.
-    // setThreadToDo is called from the twist runtime (e.g. Gmail processing a
-    // star change from its webhook); without this the user only sees the
-    // update on the next scheduled pull.
-    const threadRow = await this.db
-      .selectFrom("thread")
-      .select("priority_id")
-      .where("id", "=", link.thread_id)
-      .executeTakeFirst();
-    if (threadRow?.priority_id) {
-      try {
-        await this.getPlot().notifySyncDOs(new Set([threadRow.priority_id]));
-      } catch (error) {
-        logger.error("setThreadToDo: failed to notify sync DOs", error as Error, {
-          thread_id: link.thread_id,
-        });
-      }
     }
   }
 
@@ -669,7 +660,7 @@ export class Integrations extends Tool implements IAuth {
         .selectFrom("link")
         .select(["assignee_id", "type", "status"])
         .where("thread_id", "=", threadId as string)
-        .where("created_by", "=", this.priorityTwistId)
+        .where("created_by", "=", this.twistInstanceId)
         .orderBy("updated_at", "desc")
         .executeTakeFirst();
 
@@ -741,7 +732,7 @@ export class Integrations extends Tool implements IAuth {
       .selectFrom("link")
       .select(["type", "status"])
       .where("thread_id", "=", threadId as string)
-      .where("created_by", "=", this.priorityTwistId)
+      .where("created_by", "=", this.twistInstanceId)
       .execute();
 
     const contributedTags = new Set<number>();
@@ -759,7 +750,7 @@ export class Integrations extends Tool implements IAuth {
         thread_id: threadId as string,
         occurrence: null,
         tag_id: tagId,
-        actor_id: this.priorityTwistId,
+        actor_id: this.twistInstanceId,
         updated_by: updatedBy,
         sync_depth: syncDepth,
       }));
@@ -786,7 +777,7 @@ export class Integrations extends Tool implements IAuth {
         .updateTable("thread_tag")
         .set({ archived_at: new Date(), updated_by: updatedBy, sync_depth: syncDepth })
         .where("thread_id", "=", threadId as string)
-        .where("actor_id", "=", this.priorityTwistId)
+        .where("actor_id", "=", this.twistInstanceId)
         .where("tag_id", "in", tagsToArchive)
         .where("archived_at", "is", null)
         .execute();
@@ -811,23 +802,23 @@ export class Integrations extends Tool implements IAuth {
   /**
    * Look up channel-level linkTypes for a thread's links.
    * Queries the first link on this thread from this twist, resolves its channel_id,
-   * then looks up link_types from source_channel.
+   * then looks up link_types from channel.
    */
   private async getChannelLinkTypesForThread(threadId: Uuid): Promise<LinkTypeConfig[]> {
     const link = await this.db
       .selectFrom("link")
       .select("channel_id")
       .where("thread_id", "=", threadId as string)
-      .where("created_by", "=", this.priorityTwistId)
+      .where("created_by", "=", this.twistInstanceId)
       .where("channel_id", "is not", null)
       .limit(1)
       .executeTakeFirst();
     if (!link?.channel_id) return [];
 
     const channel = await this.db
-      .selectFrom("source_channel")
+      .selectFrom("channel")
       .select("link_types")
-      .where("priority_twist_id", "=", this.priorityTwistId)
+      .where("twist_instance_id", "=", this.twistInstanceId)
       .where("channel_id", "=", link.channel_id)
       .executeTakeFirst();
     if (!channel?.link_types) return [];
@@ -855,7 +846,7 @@ export class Integrations extends Tool implements IAuth {
       .selectFrom("link")
       .select(["meta", "channel_id", "source"])
       .where("thread_id", "=", item.thread_id!)
-      .where("created_by", "=", this.priorityTwistId)
+      .where("created_by", "=", this.twistInstanceId)
       .executeTakeFirst();
 
     const note: Note = {
@@ -872,7 +863,7 @@ export class Integrations extends Tool implements IAuth {
         type:
           item.author_type === "user"
             ? ActorType.User
-            : item.author_type === "priority_twist"
+            : item.author_type === "twist_instance"
             ? ActorType.Twist
             : ActorType.Contact,
       },
@@ -914,21 +905,21 @@ export class Integrations extends Tool implements IAuth {
 
   async dispatch(
     dispatchItem: any
-  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; deferredNoteKeyUpdate?: { noteId: string } }>> {
+  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; deferredTagRemoval?: { noteId: string; actorId: string }; deferredNoteKeyUpdate?: { noteId: string } }>> {
     // Handle note dispatch for connectors with handleReplies — when a user
     // replies to a thread the connector created, the connector is auto-mentioned
-    // and we route directly to onNoteCreated. Also handles note updates (tag
-    // changes) via onNoteUpdated. Twisting-tag removal is handled centrally
-    // by the queue handler's fail-closed finally (see updates.ts).
+    // but there's no Plot tool to handle intent matching or tag removal.
+    // Route directly to onNoteCreated and defer tag removal.
+    // Also handles note updates (tag changes) via onNoteUpdated.
     if (dispatchItem?.itemType === "note" && this.sourceProvider) {
       const { item, isCreate = true } = dispatchItem;
       if (!item) return [];
 
-      const threadCreatedByThis = item.thread_created_by === this.priorityTwistId;
+      const threadCreatedByThis = item.thread_created_by === this.twistInstanceId;
 
       // Note updates (tag changes, etc.) — route to onNoteUpdated
       // Unlike creates, updates to twist-created notes are expected (user adds tags
-      // to synced messages), so we don't skip on created_by === priorityTwistId.
+      // to synced messages), so we don't skip on created_by === twistInstanceId.
       if (!isCreate) {
         if (!threadCreatedByThis) return [];
         // Skip if any twist/connector made the update (prevent cross-connector loops).
@@ -942,9 +933,9 @@ export class Integrations extends Tool implements IAuth {
       }
 
       // Skip notes created by this twist (prevent loops for new notes only)
-      if (item.created_by === this.priorityTwistId) return [];
+      if (item.created_by === this.twistInstanceId) return [];
 
-      const isMentioned = (item.mentions ?? []).includes(this.priorityTwistId);
+      const isMentioned = (item.mentions ?? []).includes(this.twistInstanceId);
 
       if (isMentioned && threadCreatedByThis) {
         const { note, thread } = await this.buildNoteAndThread(item);
@@ -952,6 +943,10 @@ export class Integrations extends Tool implements IAuth {
         return [{
           sourceMethod: "onNoteCreated",
           args: [note, thread],
+          deferredTagRemoval: {
+            noteId: item.id as string,
+            actorId: (item.author_id ?? item.created_by) as string,
+          },
           deferredNoteKeyUpdate: { noteId: item.id as string },
         }];
       }
@@ -965,7 +960,7 @@ export class Integrations extends Tool implements IAuth {
       if (!isCreate || !item) return [];
 
       // Skip notes created by this twist (prevent loops)
-      if (item.created_by === this.priorityTwistId) return [];
+      if (item.created_by === this.twistInstanceId) return [];
 
       // Skip notes created by ANY twist/connector (prevent cross-connector loops).
       // Negative updated_by indicates twist-originated writes. Channel note dispatch
@@ -975,8 +970,8 @@ export class Integrations extends Tool implements IAuth {
 
       // Skip notes that mention this twist on threads it created —
       // these are already dispatched via the "note" (mention) path
-      const isMentioned = (item.mentions ?? []).includes(this.priorityTwistId);
-      const threadCreatedByThis = item.thread_created_by === this.priorityTwistId;
+      const isMentioned = (item.mentions ?? []).includes(this.twistInstanceId);
+      const threadCreatedByThis = item.thread_created_by === this.twistInstanceId;
       if (isMentioned && threadCreatedByThis) return [];
 
       const note: Note = {
@@ -993,7 +988,7 @@ export class Integrations extends Tool implements IAuth {
           type:
             item.author_type === "user"
               ? ActorType.User
-              : item.author_type === "priority_twist"
+              : item.author_type === "twist_instance"
               ? ActorType.Twist
               : ActorType.Contact,
         },
@@ -1033,87 +1028,6 @@ export class Integrations extends Tool implements IAuth {
       };
 
       return [{ sourceMethod: "onNoteCreated", args: [note, thread], deferredNoteKeyUpdate: { noteId: item.id as string } }];
-    }
-
-    // Handle thread_schedule dispatch — route to source's onThreadToDo.
-    // The view-based Plot dispatch requires plotOptions.thread.access, which
-    // source connectors don't declare, so dispatch from here instead.
-    if (dispatchItem?.itemType === "thread_schedule" && this.sourceProvider) {
-      const { item } = dispatchItem;
-      if (!item?.thread_id) return [];
-
-      // Only dispatch for threads this source twist created
-      const link = await this.db
-        .selectFrom("link")
-        .select(["meta", "channel_id", "source"])
-        .where("thread_id", "=", item.thread_id as string)
-        .where("created_by", "=", this.priorityTwistId)
-        .executeTakeFirst();
-      if (!link) return [];
-
-      const threadRow = await this.db
-        .selectFrom("thread")
-        .select(["id", "title", "priority_id", "archived_at"])
-        .where("id", "=", item.thread_id as string)
-        .executeTakeFirst();
-      if (!threadRow) return [];
-
-      const meta: ThreadMeta = {
-        ...((link.meta as Record<string, unknown>) ?? {}),
-        channelId: link.channel_id ?? null,
-        linkSource: link.source ?? null,
-      } as ThreadMeta;
-
-      // Resolve actor from the schedule's user_id via the user's primary contact
-      let actor: Actor = {
-        id: (item.user_id as ActorId) ?? ("" as ActorId),
-        type: ActorType.User,
-        name: null,
-      };
-      if (item.user_id) {
-        const contact = await this.db
-          .selectFrom("contact")
-          .select(["id", "name"])
-          .where("user_id", "=", item.user_id as string)
-          .where("primary", "=", true)
-          .where("archived_at", "is", null)
-          .executeTakeFirst();
-        if (contact) {
-          actor = {
-            id: contact.id as ActorId,
-            name: contact.name ?? null,
-            type: ActorType.User,
-          };
-        }
-      }
-
-      // todo=true if schedule is active (on/at set); false if cleared
-      const todo = item.on != null || item.at != null;
-
-      // Extract date from schedule's on (daterange) or at (tstzrange)
-      let date: Date | undefined;
-      if (item.on != null) {
-        // daterange format: [start,end) — extract start date
-        const match = String(item.on).match(/[[(](\d{4}-\d{2}-\d{2})/);
-        if (match) date = new Date(match[1]);
-      } else if (item.at != null) {
-        // tstzrange format: ["start","end") — extract start timestamp
-        const match = String(item.at).match(/[[("]([\d\-T:.+Z]+)/);
-        if (match) date = new Date(match[1]);
-      }
-
-      const thread: Partial<Thread> = {
-        id: threadRow.id as Uuid,
-        title: threadRow.title ?? "",
-        priority: { id: threadRow.priority_id as Uuid } as any,
-        archived: threadRow.archived_at !== null,
-        meta,
-      };
-
-      return [{
-        sourceMethod: "onThreadToDo",
-        args: [thread, actor, todo, { date }],
-      }];
     }
 
     if (dispatchItem?.itemType !== "link" && dispatchItem?.itemType !== "channel_link") return [];
@@ -1226,7 +1140,7 @@ export class Integrations extends Tool implements IAuth {
               : undefined,
           };
         } catch (error) {
-          const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+          const logger = createLogger({ twist_instance_id: this.twistInstanceId });
           logger.error("Failed to refresh token", error as Error, {
             provider,
             actor_id: actorId,
@@ -1303,7 +1217,7 @@ export class Integrations extends Tool implements IAuth {
           )
           .execute();
       } catch (error) {
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.error("Failed to store provider mapping", error as Error);
       }
     }
@@ -1341,9 +1255,9 @@ export class Integrations extends Tool implements IAuth {
     if (contact?.user_id) {
       try {
         await this.db
-          .insertInto("priority_twist_connection")
+          .insertInto("twist_instance_connection")
           .values({
-            priority_twist_id: this.priorityTwistId,
+            twist_instance_id: this.twistInstanceId,
             user_id: contact.user_id,
             provider: tokenInfo.provider,
             actor_id: actor.id,
@@ -1351,7 +1265,7 @@ export class Integrations extends Tool implements IAuth {
           })
           .onConflict((oc) =>
             oc
-              .columns(["priority_twist_id", "user_id", "provider"])
+              .columns(["twist_instance_id", "user_id", "provider"])
               .doUpdateSet({
                 actor_id: actor.id,
                 connected_at: new Date().toISOString(),
@@ -1359,8 +1273,8 @@ export class Integrations extends Tool implements IAuth {
           )
           .execute();
       } catch (error) {
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
-        logger.error("Failed to record priority_twist_connection", error as Error);
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+        logger.error("Failed to record twist_instance_connection", error as Error);
       }
     }
 
@@ -1386,7 +1300,7 @@ export class Integrations extends Tool implements IAuth {
               authToken
             );
           } catch (error) {
-            const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+            const logger = createLogger({ twist_instance_id: this.twistInstanceId });
             logger.error("Error executing pending actAs callback", error as Error, {
               provider: tokenInfo.provider,
               actor_id: actor.id,
@@ -1406,7 +1320,7 @@ export class Integrations extends Tool implements IAuth {
           authorization
         );
       } catch (error) {
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.error("Error executing original auth callback", error as Error, {
           provider: tokenInfo.provider,
           actor_id: actor.id,
@@ -1466,6 +1380,7 @@ export class Integrations extends Tool implements IAuth {
     const dispatches: Array<{ optionPath?: (string | number)[]; sourceMethod?: string; args: any[] }> = [];
     const useSourceMethod = !!this.sourceProvider;
     const providerIndex = useSourceMethod ? -1 : this.providerConfigs.findIndex(p => p.provider === provider);
+    const syncContext = await this.buildSyncContext();
 
     for (const channel of actorChannels) {
       const channelConfig = await this.getChannelConfig(provider, channel.id);
@@ -1493,11 +1408,11 @@ export class Integrations extends Tool implements IAuth {
           } satisfies ChannelConfig);
 
           if (useSourceMethod) {
-            dispatches.push({ sourceMethod: "onChannelEnabled", args: [channel] });
+            dispatches.push({ sourceMethod: "onChannelEnabled", args: [channel, syncContext] });
           } else if (providerIndex >= 0) {
             dispatches.push({
               optionPath: ["providers", String(providerIndex), "onChannelEnabled"],
-              args: [channel],
+              args: [channel, syncContext],
             });
           }
         } else {
@@ -1526,14 +1441,14 @@ export class Integrations extends Tool implements IAuth {
     // Remove user connection record
     try {
       await this.db
-        .deleteFrom("priority_twist_connection")
-        .where("priority_twist_id", "=", this.priorityTwistId)
+        .deleteFrom("twist_instance_connection")
+        .where("twist_instance_id", "=", this.twistInstanceId)
         .where("actor_id", "=", actorId)
         .where("provider", "=", provider)
         .execute();
     } catch (error) {
-      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
-      logger.error("Failed to remove priority_twist_connection", error as Error);
+      const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+      logger.error("Failed to remove twist_instance_connection", error as Error);
     }
     // Clean up old key if it exists
     await this.store.clear(`syncable_access:${provider}:${actorId}`);
@@ -1552,10 +1467,7 @@ export class Integrations extends Tool implements IAuth {
     provider: AuthProvider,
     channelId: string,
     actorId: ActorId,
-    title?: string,
-    priorityId?: string,
-    createThreads?: string,
-    createThreadsByType?: Record<string, string>
+    title?: string
   ): Promise<void> {
     // Find the channel from the actor's channel access list
     const channels = await this.getChannelAccess(provider, actorId);
@@ -1565,12 +1477,12 @@ export class Integrations extends Tool implements IAuth {
     }
 
     // Extract per-channel linkTypes if available.
-    // Fall back to existing source_channel rows for the same channel_id
+    // Fall back to existing channel rows for the same channel_id
     // (handles re-add after archive, where KV may not have been populated yet).
     let linkTypes = channelObj?.linkTypes ?? null;
     if (!linkTypes) {
       const existingChannel = await this.db
-        .selectFrom("source_channel")
+        .selectFrom("channel")
         .select("link_types")
         .where("channel_id", "=", channelId)
         .where("link_types", "is not", null)
@@ -1589,32 +1501,23 @@ export class Integrations extends Tool implements IAuth {
       enabled: true,
       enabledBy: actorId,
       title: title ?? null,
-      ...(priorityId !== undefined ? { priorityId } : {}),
-      ...(createThreads !== undefined ? { createThreads } : {}),
-      ...(createThreadsByType !== undefined ? { createThreadsByType } : {}),
     } satisfies ChannelConfig);
 
-    // Write to source_channel DB table (dual-write with KV)
+    // Write to channel DB table (dual-write with KV)
     await this.db
-      .insertInto("source_channel")
+      .insertInto("channel")
       .values({
-        priority_twist_id: this.priorityTwistId,
+        twist_instance_id: this.twistInstanceId,
         channel_id: channelId,
         title: title ?? channelId,
-        priority_id: priorityId ?? null,
         enabled: true,
-        create_threads: createThreads ?? "all",
         link_types: linkTypes ? JSON.stringify(linkTypes) : null,
-        create_threads_by_type: createThreadsByType ? JSON.stringify(createThreadsByType) as any : null,
       })
       .onConflict((oc) =>
-        oc.columns(["priority_twist_id", "channel_id"]).doUpdateSet({
+        oc.columns(["twist_instance_id", "channel_id"]).doUpdateSet({
           enabled: true,
           title: title ?? channelId,
-          priority_id: priorityId ?? null,
-          create_threads: createThreads ?? "all",
           link_types: linkTypes ? JSON.stringify(linkTypes) : null,
-          create_threads_by_type: createThreadsByType ? JSON.stringify(createThreadsByType) as any : null,
           updated_at: new Date(),
         })
       )
@@ -1622,12 +1525,13 @@ export class Integrations extends Tool implements IAuth {
 
     // Return dispatch info for onChannelEnabled callback.
     // The entrypoint will invoke this locally on the twist worker with proper this binding.
-    const channelArg = { id: channelId, title: title ?? channelId, priorityId: priorityId ?? undefined };
+    const channelArg = { id: channelId, title: title ?? channelId };
+    const syncContext = await this.buildSyncContext();
 
     // Source pattern: dispatch directly to source method
     if (this.sourceProvider) {
       return {
-        __dispatch: [{ sourceMethod: "onChannelEnabled", args: [channelArg] }],
+        __dispatch: [{ sourceMethod: "onChannelEnabled", args: [channelArg, syncContext] }],
       } as any;
     }
 
@@ -1637,7 +1541,7 @@ export class Integrations extends Tool implements IAuth {
       return {
         __dispatch: [{
           optionPath: ["providers", providerIndex, "onChannelEnabled"],
-          args: [channelArg],
+          args: [channelArg, syncContext],
         }],
       } as any;
     }
@@ -1658,11 +1562,11 @@ export class Integrations extends Tool implements IAuth {
       title: existing?.title ?? null,
     } satisfies ChannelConfig);
 
-    // Write to source_channel DB table (dual-write with KV)
+    // Write to channel DB table (dual-write with KV)
     await this.db
-      .updateTable("source_channel")
+      .updateTable("channel")
       .set({ enabled: false, updated_at: new Date() })
-      .where("priority_twist_id", "=", this.priorityTwistId)
+      .where("twist_instance_id", "=", this.twistInstanceId)
       .where("channel_id", "=", channelId)
       .execute();
 
@@ -1708,8 +1612,6 @@ export class Integrations extends Tool implements IAuth {
       title: string;
       enabled: boolean;
       enabledBy: ActorId | undefined;
-      priorityId: string | null | undefined;
-      createThreads: string;
       currentUserHasAccess: boolean;
       children?: Array<{
         provider: AuthProvider;
@@ -1717,8 +1619,6 @@ export class Integrations extends Tool implements IAuth {
         title: string;
         enabled: boolean;
         enabledBy: ActorId | undefined;
-        priorityId: string | null | undefined;
-        createThreads: string;
         currentUserHasAccess: boolean;
         children?: any[];
       }>;
@@ -1771,9 +1671,6 @@ export class Integrations extends Tool implements IAuth {
       title: string;
       enabled: boolean;
       enabledBy: ActorId | undefined;
-      priorityId: string | null | undefined;
-      createThreads: string;
-      createThreadsByType?: Record<string, string>;
       linkTypes?: LinkTypeConfig[];
       currentUserHasAccess: boolean;
       children?: AnnotatedChannel[];
@@ -1837,12 +1734,12 @@ export class Integrations extends Tool implements IAuth {
             channelAccessByCurrentUser.add(`${provider}:${s.id}`);
           }
 
-          // Self-heal: backfill priority_twist_connection for pre-existing connections
+          // Self-heal: backfill twist_instance_connection for pre-existing connections
           if (contactUserId) {
             await this.db
-              .insertInto("priority_twist_connection")
+              .insertInto("twist_instance_connection")
               .values({
-                priority_twist_id: this.priorityTwistId,
+                twist_instance_id: this.twistInstanceId,
                 user_id: contactUserId,
                 provider,
                 actor_id: actorId,
@@ -1850,7 +1747,7 @@ export class Integrations extends Tool implements IAuth {
               })
               .onConflict((oc) =>
                 oc
-                  .columns(["priority_twist_id", "user_id", "provider"])
+                  .columns(["twist_instance_id", "user_id", "provider"])
                   .doNothing()
               )
               .execute();
@@ -1887,9 +1784,6 @@ export class Integrations extends Tool implements IAuth {
           title: channel.title,
           enabled: channelConfig?.enabled ?? false,
           enabledBy: channelConfig?.enabledBy,
-          priorityId: channelConfig?.priorityId ?? null,
-          createThreads: channelConfig?.createThreads ?? "all",
-          createThreadsByType: channelConfig?.createThreadsByType ?? undefined,
           linkTypes: effectiveLinkTypes,
           currentUserHasAccess: channelAccessByCurrentUser.has(mapKey),
         };
@@ -2069,50 +1963,12 @@ export class Integrations extends Tool implements IAuth {
    * Read channel config with backward-compatible fallback to old storage keys.
    */
 
-  /**
-   * Update the priority routing for an already-enabled channel.
-   */
-  async setChannelPriority(provider: AuthProvider, channelId: string, priorityId: string | null): Promise<void> {
-    await this.updateChannelConfig(provider, channelId, { priorityId });
-  }
-
-  /**
-   * Update config fields for an already-enabled channel.
-   * Supports updating priority, createThreads, and createThreadsByType.
-   */
-  async updateChannelConfig(
-    provider: AuthProvider,
-    channelId: string,
-    update: { priorityId?: string | null; createThreads?: string; createThreadsByType?: Record<string, string> }
-  ): Promise<void> {
-    const existing = await this.getChannelConfig(provider, channelId);
-    if (!existing) return;
-
-    await this.store.set(`channel_config:${provider}:${channelId}`, {
-      ...existing,
-      ...update,
-    } satisfies ChannelConfig);
-
-    // Write to source_channel DB table (dual-write with KV)
-    const dbUpdate: Record<string, any> = { updated_at: new Date() };
-    if (update.priorityId !== undefined) dbUpdate.priority_id = update.priorityId;
-    if (update.createThreads !== undefined) dbUpdate.create_threads = update.createThreads;
-    if (update.createThreadsByType !== undefined) dbUpdate.create_threads_by_type = JSON.stringify(update.createThreadsByType);
-
-    await this.db
-      .updateTable("source_channel")
-      .set(dbUpdate)
-      .where("priority_twist_id", "=", this.priorityTwistId)
-      .where("channel_id", "=", channelId)
-      .execute();
-  }
-
   private async getChannelConfig(provider: AuthProvider, channelId: string): Promise<ChannelConfig | null> {
-    // Try source_channel DB table first
+    // Try channel DB table first
     const dbRow = await this.db
-      .selectFrom("source_channel")
-      .select(["enabled", "title", "priority_id", "create_threads", "create_threads_by_type"])
-      .where("priority_twist_id", "=", this.priorityTwistId)
+      .selectFrom("channel")
+      .select(["enabled", "title"])
+      .where("twist_instance_id", "=", this.twistInstanceId)
       .where("channel_id", "=", channelId)
       .executeTakeFirst();
 
@@ -2123,41 +1979,28 @@ export class Integrations extends Tool implements IAuth {
         enabled: dbRow.enabled,
         enabledBy: kvConfig?.enabledBy,
         title: dbRow.title,
-        priorityId: dbRow.priority_id,
-        createThreads: dbRow.create_threads,
-        createThreadsByType: dbRow.create_threads_by_type as Record<string, string> | undefined,
       };
     }
 
     // Dual-read fallback: check KV
     const config = await this.store.get<ChannelConfig>(`channel_config:${provider}:${channelId}`);
     if (config) {
-      // Normalize boolean createThreads from old KV data
-      if (typeof config.createThreads === "boolean") {
-        config.createThreads = (config.createThreads as unknown as boolean) ? "all" : "manual";
-      }
       // Migrate KV data to DB lazily
       await this.db
-        .insertInto("source_channel")
+        .insertInto("channel")
         .values({
-          priority_twist_id: this.priorityTwistId,
+          twist_instance_id: this.twistInstanceId,
           channel_id: channelId,
           title: config.title ?? channelId,
-          priority_id: config.priorityId ?? null,
           enabled: config.enabled,
-          create_threads: config.createThreads ?? "all",
         })
-        .onConflict((oc) => oc.columns(["priority_twist_id", "channel_id"]).doNothing())
+        .onConflict((oc) => oc.columns(["twist_instance_id", "channel_id"]).doNothing())
         .execute();
       return config;
     }
 
     // Backward compat: read from old storage key prefix
-    const oldConfig = await this.store.get<ChannelConfig>(`syncable_config:${provider}:${channelId}`);
-    if (oldConfig && typeof oldConfig.createThreads === "boolean") {
-      oldConfig.createThreads = (oldConfig.createThreads as unknown as boolean) ? "all" : "manual";
-    }
-    return oldConfig;
+    return await this.store.get<ChannelConfig>(`syncable_config:${provider}:${channelId}`);
   }
 
   /**
@@ -2225,16 +2068,16 @@ export class Integrations extends Tool implements IAuth {
     }
 
     try {
-      // Get the user_id from the priority_twist owner
-      const priorityTwist = await this.db
-        .selectFrom("priority_twist")
+      // Get the user_id from the twist_instance owner
+      const twistInstance = await this.db
+        .selectFrom("twist_instance")
         .select("owner_id")
-        .where("id", "=", this.priorityTwistId)
+        .where("id", "=", this.twistInstanceId)
         .executeTakeFirst();
 
-      if (!priorityTwist?.owner_id) {
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
-        logger.warn("Cannot link contact: priority_twist has no owner", {
+      if (!twistInstance?.owner_id) {
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+        logger.warn("Cannot link contact: twist_instance has no owner", {
           email,
         });
         return {
@@ -2244,7 +2087,7 @@ export class Integrations extends Tool implements IAuth {
         };
       }
 
-      const userId = priorityTwist.owner_id;
+      const userId = twistInstance.owner_id;
 
       // Check if contact exists with this email
       const existingContact = await this.db
@@ -2266,7 +2109,7 @@ export class Integrations extends Tool implements IAuth {
           .returning(["id", "name"])
           .executeTakeFirst();
 
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.info("Created new contact from OAuth", { email, user_id: userId });
 
         // Sync to Clerk so user can sign in with this email
@@ -2289,7 +2132,7 @@ export class Integrations extends Tool implements IAuth {
           .where("id", "=", existingContact.id)
           .execute();
 
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.info("Linked existing contact from OAuth", {
           email,
           user_id: userId,
@@ -2316,7 +2159,7 @@ export class Integrations extends Tool implements IAuth {
       if (error instanceof Error && error.name === AUTH_EMAIL_CONFLICT_ERROR) {
         throw error;
       }
-      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      const logger = createLogger({ twist_instance_id: this.twistInstanceId });
       logger.error("Error building actor from email", error as Error, { email });
       // Don't throw - return a minimal actor
       return {
@@ -2342,11 +2185,11 @@ export class Integrations extends Tool implements IAuth {
 
       const { syncContactToClerk } = await import("../../app/link-email");
       await syncContactToClerk(this.env.CLERK_SECRET_KEY, user.clerk_id, email, {
-        priority_twist_id: this.priorityTwistId,
+        twist_instance_id: this.twistInstanceId,
         user_id: userId,
       });
     } catch (error) {
-      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      const logger = createLogger({ twist_instance_id: this.twistInstanceId });
       logger.error("Failed to sync OAuth email to Clerk (non-blocking)", error as Error, {
         user_id: userId,
         email,
@@ -2820,6 +2663,32 @@ export class Integrations extends Tool implements IAuth {
     return prefix
       ? (env[`${prefix}_SECRET` as keyof Bindings] as string | undefined)
       : undefined;
+  }
+
+  /** Remove the Twisting tag from a note. Called by entrypoint for deferred tag removal. */
+  async removeTagFromNote(noteId: string, actorId: string): Promise<void> {
+    try {
+      const pt = await this.db
+        .selectFrom("twist_instance")
+        .select("owner_id")
+        .where("id", "=", this.twistInstanceId)
+        .executeTakeFirst();
+
+      if (pt?.owner_id) {
+        await rpcUser(this.db, "update_note_tags", {
+          user_id: pt.owner_id,
+          p_note_id: noteId,
+          p_actor_id: actorId,
+          p_client_id: 0,
+          p_tag_updates: { [Tag.Twist]: false },
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to remove deferred Twisting tag from note", {
+        note_id: noteId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /** Update a note's key for external dedup. Called by entrypoint when onNoteCreated returns a key. */

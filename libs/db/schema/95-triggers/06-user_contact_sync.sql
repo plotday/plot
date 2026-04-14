@@ -60,3 +60,43 @@ CREATE TRIGGER on_contact_user_unlinked
     FOR EACH ROW
     WHEN (OLD.user_id IS NOT NULL AND NEW.user_id IS NULL)
     EXECUTE FUNCTION public.contact_clear_primary_on_unlink();
+
+-- Mirror legacy contact.user_id / contact.primary writes into the new
+-- user_contact join table so callers that still write the old columns keep
+-- user_contact authoritative for identity linking. Remove once every writer
+-- has been repointed at user_contact and contact.user_id is dropped.
+CREATE OR REPLACE FUNCTION public.sync_user_contact_from_contact()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $function$
+BEGIN
+    -- Remove an old identity row if user_id changed (including to NULL)
+    IF TG_OP = 'UPDATE' AND OLD.user_id IS NOT NULL
+       AND OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+        DELETE FROM user_contact
+        WHERE user_id = OLD.user_id
+          AND contact_id = OLD.id
+          AND linked = TRUE;
+    END IF;
+
+    -- Upsert the identity row for the current user_id, if any
+    IF NEW.user_id IS NOT NULL THEN
+        INSERT INTO user_contact (user_id, contact_id, linked, "primary", source, archived_at)
+        VALUES (NEW.user_id, NEW.id, TRUE, COALESCE(NEW."primary", FALSE), 'self', NEW.archived_at)
+        ON CONFLICT (user_id, contact_id)
+        DO UPDATE SET
+            linked = TRUE,
+            "primary" = EXCLUDED."primary",
+            source = COALESCE(user_contact.source, EXCLUDED.source),
+            archived_at = EXCLUDED.archived_at,
+            updated_at = now();
+    END IF;
+
+    RETURN NEW;
+END;
+$function$;
+
+CREATE TRIGGER sync_user_contact_from_contact
+    AFTER INSERT OR UPDATE OF user_id, "primary", archived_at ON public.contact
+    FOR EACH ROW
+    EXECUTE FUNCTION public.sync_user_contact_from_contact();

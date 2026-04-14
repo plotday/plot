@@ -2,13 +2,15 @@ import { Hono } from "hono";
 
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
-import { rpcUser } from "../../rpc";
+import { rpc, rpcUser } from "../../rpc";
 import { checkAiLimit, recordAiUsage } from "../../utils/ai-limits";
 import { loadBuiltinProviderConfig, summarizeWithProvider } from "../../utils/ai-provider";
 import { cleanTitle } from "../../twist/tools/plot/thread";
 import { titleFromContent, createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
 import { summarize } from "../summary";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
+import { createLogger } from "@plotday/worker-util";
+import { sendInvitation } from "../invitation";
 import { notifySync } from "./notify";
 
 const threads = new Hono<{ Bindings: Bindings }>();
@@ -109,62 +111,14 @@ threads.get("/sync/threads", async (c) => {
     return query.execute();
   });
 
-  const apiVersion = c.var.apiVersion ?? 0;
-
-  // For old clients (version < 1): translate access/access_contacts back to private/mentions
-  if (apiVersion < 1) {
-    for (const row of rows as any[]) {
-      row.private = row.access !== 'public';
-      // Merge access_contacts into synthetic mentions field for backwards compat
-      row.mentions = row.access_contacts ?? [];
-    }
-  }
-
   return c.json(rows as any);
 });
 
 // POST /sync/threads - Upsert via upsert_thread() RPC
 threads.post("/sync/threads", async (c) => {
   const body = await c.req.json();
-  const apiVersion = c.var.apiVersion ?? 0;
 
   const threadData = body.thread || body;
-
-  // For old clients (version < 1): translate private → access/access_contacts
-  if (apiVersion < 1 && 'private' in threadData) {
-    if (threadData.private === true) {
-      // Private thread: check if priority has viewers to determine access level
-      // For priorities with viewers, use 'private'; otherwise use 'members'
-      if (threadData.priority_id) {
-        const hasViewers = await c.var.db
-          .selectFrom("priority_user")
-          .select("user_id")
-          .where("priority_id", "=", threadData.priority_id)
-          .where("role", "=", "viewer")
-          .where("archived_at", "is", null)
-          .executeTakeFirst();
-        threadData.access = hasViewers ? 'members' : 'members';
-      } else {
-        threadData.access = 'members';
-      }
-    } else {
-      // Public thread: check if priority has viewers
-      if (threadData.priority_id) {
-        const hasViewers = await c.var.db
-          .selectFrom("priority_user")
-          .select("user_id")
-          .where("priority_id", "=", threadData.priority_id)
-          .where("role", "=", "viewer")
-          .where("archived_at", "is", null)
-          .executeTakeFirst();
-        threadData.access = hasViewers ? 'public' : 'members';
-      } else {
-        threadData.access = 'members';
-      }
-    }
-    // Old clients don't send access_contacts, so leave it unset (existing value preserved by JSONB upsert)
-    delete threadData.private;
-  }
 
   if (threadData.title && typeof threadData.title === "string") {
     threadData.title = cleanTitle(threadData.title);
@@ -215,13 +169,110 @@ threads.post("/sync/threads", async (c) => {
     threadData.preview = createPreviewFromMarkdown(threadData.preview);
   }
 
-  const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
-    return rpcUser(trx, "upsert_thread", {
-      user_id: c.var.user.id,
+  // Extract invite_emails before passing to upsert_thread (not a DB column)
+  const inviteEmails: string[] = Array.isArray(threadData.invite_emails)
+    ? threadData.invite_emails
+    : [];
+  delete threadData.invite_emails;
+
+  const userId = c.var.user.id;
+
+  const result = await withUserDb(c.var.db, userId, async (trx) => {
+    const upsertResult = await rpcUser(trx, "upsert_thread", {
+      user_id: userId,
       p_thread: threadData as any,
       p_defaults: (body.defaults || {}) as any,
     });
+
+    // Auto-classify: when the client signals auto_file, use classify_thread_for_user
+    // to re-file the thread based on user-defined priority rules.
+    if (body.auto_file && !threadData.draft && upsertResult) {
+      try {
+        const textToEmbed = threadData.title || threadData.preview;
+        let queryEmbedding: string | undefined;
+        if (textToEmbed) {
+          const response = (await c.env.AI.run("@cf/baai/bge-small-en-v1.5", {
+            text: textToEmbed,
+          })) as { data: number[][] };
+          queryEmbedding = JSON.stringify(response.data[0]);
+
+          // Store embedding on the thread for future rule matching
+          await sql`UPDATE thread SET embedding = ${sql.val(queryEmbedding!)}::halfvec
+                    WHERE id = ${sql.val(upsertResult.id)}`.execute(trx);
+        }
+        const matched = await rpc(trx, "classify_thread_for_user", {
+          p_user_id: userId,
+          p_thread_id: upsertResult.id,
+          p_embedding: queryEmbedding ?? null,
+        });
+        if (matched && matched !== threadData.priority_id) {
+          await sql`UPDATE thread_priority SET priority_id = ${sql.val(matched)}
+                    WHERE thread_id = ${sql.val(upsertResult.id)} AND user_id = ${sql.val(userId)}`.execute(trx);
+        }
+      } catch (error) {
+        // Auto-classification is non-critical — log but don't fail the thread save
+        console.error("[sync/threads] Auto-classification failed:", error);
+        c.var.tracker.captureException(error as Error);
+      }
+    }
+
+    return upsertResult;
   });
+
+  // Process pending email invitations: resolve emails → contacts, add to
+  // thread.contacts via share_thread, send invitation emails.
+  if (inviteEmails.length > 0 && result) {
+    const logger = createLogger({ component: "sync-threads-invite" });
+    try {
+      // Resolve emails to contact UUIDs
+      const contacts = await rpc(c.var.db, "upsert_contacts", {
+        contacts: JSON.stringify(inviteEmails.map((email: string) => ({ email: email.toLowerCase() }))),
+      });
+      const contactRows = Array.isArray(contacts) ? contacts : [contacts];
+      const contactIds = contactRows.map((row: { id: string }) => row.id);
+
+      if (contactIds.length > 0) {
+        // Add resolved contacts to thread via share_thread (handles
+        // thread_unread creation and returns needs_invitation list)
+        const shareResult = await c.var.db.transaction().execute(async (trx) => {
+          return rpc(trx, "share_thread", {
+            p_user_id: userId,
+            p_thread_id: result.id,
+            p_add_contact_ids: `{${contactIds.join(",")}}` as any,
+            p_remove_contact_ids: "{}" as any,
+          });
+        }) as unknown as { contacts: string[]; needs_invitation: string[] };
+
+        // Send invitation emails for contacts not linked to a user
+        const needsInvitation = shareResult.needs_invitation ?? [];
+        for (const contactId of needsInvitation) {
+          try {
+            await sendInvitation(c.var.db, {
+              contactId,
+              threadId: result.id,
+              inviterUserId: userId,
+              mailQueue: c.env.MAIL_QUEUE,
+              appRoot: c.env.APP_ROOT,
+            });
+          } catch (inviteError) {
+            logger.error("Invitation email failed", inviteError as Error, {
+              contact_id: contactId,
+              thread_id: result.id,
+            });
+            c.var.tracker.captureException(inviteError as Error, {
+              contact_id: contactId,
+              thread_id: result.id,
+              error_context: "sync_thread_invitation_email_failed",
+            });
+          }
+        }
+      }
+    } catch (error) {
+      // Email invitation processing is non-critical — log but don't fail the sync
+      console.error("[sync/threads] Email invitation processing failed:", error);
+      c.var.tracker.captureException(error as Error);
+    }
+  }
 
   notifySync(c, threadData.priority_id);
 

@@ -59,6 +59,10 @@ class OpenPageLink extends Command {
   final String url;
 
   /// Returns a [PlotLink] if [url] is an internal Plot URL, or null if external.
+  ///
+  /// Accepts both the canonical stage-8 forms (`/p/:priorityId`,
+  /// `/t/:threadId`) and the legacy `/:priorityId[/:threadId]` form for
+  /// backwards compatibility with links copied before the routing rewrite.
   static PlotLink? parse(String url) {
     final uri = Uri.tryParse(url);
     if (uri == null) return null;
@@ -69,6 +73,20 @@ class OpenPageLink extends Command {
     final segments = uri.pathSegments;
     if (segments.isEmpty) return null;
 
+    // Canonical priority URL: /p/:priorityId[/:threadId]
+    if (segments.first == 'p') {
+      if (segments.length < 2) return null;
+      if (segments.length >= 3 && segments[2] != 'new') {
+        return PlotLink(priorityId: segments[1], threadId: segments[2]);
+      }
+      return PlotLink(priorityId: segments[1]);
+    }
+    // Canonical standalone thread URL: /t/:threadId
+    if (segments.first == 't') {
+      if (segments.length < 2) return null;
+      return PlotLink(threadId: segments[1]);
+    }
+
     // Skip known non-entity paths
     if (segments.first == 'invite' ||
         segments.first == 'login' ||
@@ -77,6 +95,7 @@ class OpenPageLink extends Command {
       return null;
     }
 
+    // Legacy /:priorityId[/:threadId]
     if (segments.length >= 2 && segments[1] != 'new') {
       return PlotLink(priorityId: segments[0], threadId: segments[1]);
     }
@@ -100,15 +119,46 @@ class OpenPageLink extends Command {
         return const CommandDone();
       }
 
-      // Navigate based on path structure
       if (segments.first == 'priorities') {
-        // Navigate to priorities page
         context.router.push(PrioritiesRoute());
-      } else if (segments.length == 1) {
-        // Navigate to priority page: /priorityId
+        return const CommandDone();
+      }
+
+      // Canonical /p/:priorityId[/:threadId | /new]
+      if (segments.first == 'p' && segments.length >= 2) {
+        final priorityIdString = segments[1];
+        if (segments.length >= 3 && segments[2] == 'new') {
+          context.router.push(
+            PriorityRoute(
+              priorityIdString: priorityIdString,
+              children: [NewThreadRoute()],
+            ),
+          );
+        } else if (segments.length >= 3) {
+          context.router.push(
+            PriorityRoute(
+              priorityIdString: priorityIdString,
+              children: [ThreadRoute(threadIdString: segments[2])],
+            ),
+          );
+        } else {
+          context.router.push(
+            PriorityRoute(priorityIdString: priorityIdString),
+          );
+        }
+        return const CommandDone();
+      }
+
+      // Canonical /t/:threadId — lookup route resolves priority
+      if (segments.first == 't' && segments.length >= 2) {
+        context.router.push(ThreadLookupRoute(threadIdString: segments[1]));
+        return const CommandDone();
+      }
+
+      // Legacy /:priorityId[/:threadId | /new]
+      if (segments.length == 1) {
         context.router.push(PriorityRoute(priorityIdString: segments[0]));
       } else if (segments.length >= 2) {
-        // Navigate to nested route: /priorityId/threadId or /priorityId/new
         if (segments[1] == 'new') {
           context.router.push(
             PriorityRoute(
@@ -118,10 +168,7 @@ class OpenPageLink extends Command {
           );
         } else {
           context.router.push(
-            PriorityRoute(
-              priorityIdString: segments[0],
-              children: [ThreadRoute(threadIdString: segments[1])],
-            ),
+            ThreadLookupRoute(threadIdString: segments[1]),
           );
         }
       }

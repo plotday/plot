@@ -1,0 +1,42 @@
+-- Per-user filing of a thread into the user's priority hierarchy.
+--
+-- A thread has no single priority_id of its own. Instead every user that
+-- can see the thread gets one thread_priority row pointing at the priority
+-- they want the thread to appear under.
+--
+-- For human-authored threads the author gets an explicit row via the
+-- upsert_thread RPC. Peer users are filed by the file_thread_priority_peers
+-- trigger when a thread lists them in contacts. Priority selection is
+-- driven by classify_thread_for_user which evaluates user-defined priority_rules.
+CREATE TABLE "public"."thread_priority" (
+    "thread_id" uuid NOT NULL REFERENCES public.thread (id) ON DELETE CASCADE,
+    "user_id" uuid NOT NULL REFERENCES public."user" (id) ON DELETE CASCADE,
+    "priority_id" uuid NOT NULL REFERENCES public.priority (id) ON DELETE CASCADE,
+    "created_at" timestamptz NOT NULL DEFAULT now(),
+    "updated_at" timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY ("thread_id", "user_id")
+);
+
+-- Fast lookup of a user's filings for the new user.thread view.
+CREATE INDEX idx_thread_priority_user_priority
+    ON "public"."thread_priority" ("user_id", "priority_id");
+
+-- Fast lookup of threads filed under a specific priority (for priority views).
+CREATE INDEX idx_thread_priority_priority_id
+    ON "public"."thread_priority" ("priority_id");
+
+-- Support incremental sync queries filtering on updated_at.
+CREATE INDEX idx_thread_priority_updated_at
+    ON "public"."thread_priority" ("updated_at");
+
+CREATE TRIGGER set_thread_priority_updated_at
+    BEFORE INSERT OR UPDATE ON "public"."thread_priority"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at ();
+
+CREATE TRIGGER set_thread_priority_created_at
+    BEFORE INSERT ON "public"."thread_priority"
+    FOR EACH ROW
+    EXECUTE FUNCTION set_created_at ();
+
+COMMENT ON TABLE "public"."thread_priority" IS 'Per-user filing of a thread into the user''s priority hierarchy. Each user gets one row per visible thread, pointing at their chosen priority.';

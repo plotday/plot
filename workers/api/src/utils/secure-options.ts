@@ -3,7 +3,7 @@
  *
  * Secure options (e.g. API keys) are stored in a separate `secure_option` table
  * with AES-256-GCM encryption, using the same key as AI key encryption.
- * The plaintext never appears in `priority_twist.config`.
+ * The plaintext never appears in `twist_instance.config`.
  */
 
 import type { Kysely } from "kysely";
@@ -31,7 +31,7 @@ function isSecureText(def: OptionDef): boolean {
 export async function saveSecureOptions(
   db: Kysely<DB>,
   encryptionKey: string,
-  priorityTwistId: string,
+  twistInstanceId: string,
   schema: OptionsSchema,
   config: Record<string, unknown>,
   userId?: string | null
@@ -50,7 +50,7 @@ export async function saveSecureOptions(
       // Delete existing row first
       let deleteQuery = (db as any)
         .deleteFrom("secure_option")
-        .where("priority_twist_id", "=", priorityTwistId)
+        .where("twist_instance_id", "=", twistInstanceId)
         .where("key", "=", key);
       if (userId) {
         deleteQuery = deleteQuery.where("user_id", "=", userId);
@@ -63,7 +63,7 @@ export async function saveSecureOptions(
       await db
         .insertInto("secure_option" as any)
         .values({
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           key,
           encrypted_value: ciphertext,
           iv,
@@ -77,7 +77,7 @@ export async function saveSecureOptions(
       // Delete the stored secret
       let query = (db as any)
         .deleteFrom("secure_option")
-        .where("priority_twist_id", "=", priorityTwistId)
+        .where("twist_instance_id", "=", twistInstanceId)
         .where("key", "=", key);
       if (userId) {
         query = query.where("user_id", "=", userId);
@@ -105,7 +105,7 @@ export async function saveSecureOptions(
 export async function resolveSecureOptions(
   db: Kysely<DB>,
   encryptionKey: string,
-  priorityTwistId: string,
+  twistInstanceId: string,
   schema: OptionsSchema,
   resolved: Record<string, unknown>,
   userId?: string | null
@@ -121,7 +121,7 @@ export async function resolveSecureOptions(
   const sharedRows = await (db as any)
     .selectFrom("secure_option")
     .select(["key", "encrypted_value", "iv"])
-    .where("priority_twist_id", "=", priorityTwistId)
+    .where("twist_instance_id", "=", twistInstanceId)
     .where("user_id", "is", null)
     .execute() as Array<{ key: string; encrypted_value: string; iv: string }>;
 
@@ -138,7 +138,7 @@ export async function resolveSecureOptions(
     const userRows = await (db as any)
       .selectFrom("secure_option")
       .select(["key", "encrypted_value", "iv"])
-      .where("priority_twist_id", "=", priorityTwistId)
+      .where("twist_instance_id", "=", twistInstanceId)
       .where("user_id", "=", userId)
       .execute() as Array<{ key: string; encrypted_value: string; iv: string }>;
 

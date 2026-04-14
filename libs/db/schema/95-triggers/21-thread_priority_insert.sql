@@ -1,0 +1,9 @@
+-- The populate_thread_priority_for_author trigger is retired.
+--
+-- Thread filing is now handled exclusively by:
+-- * upsert_thread RPC — explicitly upserts the calling user's thread_priority row
+-- * file_thread_priority_peers trigger — files peer users based on thread.contacts
+--
+-- Raw INSERTs that bypass upsert_thread will not get a thread_priority row
+-- automatically, which is the correct safe failure mode (the thread simply
+-- won't appear in any user's feed until explicitly filed).

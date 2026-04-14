@@ -2,13 +2,13 @@ import type { Kysely } from "kysely";
 
 import type { DB } from "../db-types";
 
-type PlanSource = "personal" | "organization";
+type PlanSource = "personal" | "team";
 
 type EffectivePlan = {
   plan: "free" | "core" | "pro" | "team";
   source: PlanSource;
-  organizationId?: string;
-  organizationName?: string;
+  teamId?: string;
+  teamName?: string;
 };
 
 const PLAN_TIER: Record<string, number> = {
@@ -20,7 +20,7 @@ const PLAN_TIER: Record<string, number> = {
 
 /**
  * Resolve a user's effective plan by checking both personal subscription
- * and organization memberships. Returns the highest-tier plan.
+ * and team memberships. Returns the highest-tier plan.
  */
 export async function getEffectivePlan(
   db: Kysely<DB>,
@@ -40,33 +40,29 @@ export async function getEffectivePlan(
 
   let result: EffectivePlan = { plan: personalPlan, source: "personal" };
 
-  // Check org memberships with active subscriptions
-  const orgSubs = await db
-    .selectFrom("organization_member as om")
-    .innerJoin(
-      "organization_subscription as os",
-      "os.organization_id",
-      "om.organization_id"
-    )
-    .innerJoin("organization as o", "o.id", "om.organization_id")
+  // Check team memberships with active subscriptions
+  const teamSubs = await db
+    .selectFrom("team_user as tu")
+    .innerJoin("team_subscription as ts", "ts.team_id", "tu.team_id")
+    .innerJoin("team as t", "t.id", "tu.team_id")
     .select([
-      "o.id as organization_id",
-      "o.name as organization_name",
-      "os.plan",
-      "os.status",
+      "t.id as team_id",
+      "t.name as team_name",
+      "ts.plan",
+      "ts.status",
     ])
-    .where("om.user_id", "=", userId)
-    .where("os.status", "=", "active")
+    .where("tu.user_id", "=", userId)
+    .where("ts.status", "=", "active")
     .execute();
 
-  for (const orgSub of orgSubs) {
-    const orgPlan = orgSub.plan as "free" | "core" | "pro" | "team";
-    if ((PLAN_TIER[orgPlan] ?? 0) > (PLAN_TIER[result.plan] ?? 0)) {
+  for (const teamSub of teamSubs) {
+    const teamPlan = teamSub.plan as "free" | "core" | "pro" | "team";
+    if ((PLAN_TIER[teamPlan] ?? 0) > (PLAN_TIER[result.plan] ?? 0)) {
       result = {
-        plan: orgPlan,
-        source: "organization",
-        organizationId: String(orgSub.organization_id),
-        organizationName: orgSub.organization_name,
+        plan: teamPlan,
+        source: "team",
+        teamId: String(teamSub.team_id),
+        teamName: teamSub.team_name,
       };
     }
   }

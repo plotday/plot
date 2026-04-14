@@ -31,7 +31,7 @@ describe("Store", () => {
 
     store = new Store({
       storage: mockStorageNamespace,
-      priorityTwistId: "pa-1",
+      twistInstanceId: "pa-1",
       path: ["Tool1", "Store"],
     });
   });

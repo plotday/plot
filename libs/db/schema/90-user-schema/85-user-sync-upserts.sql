@@ -1,4 +1,5 @@
--- Helper to assert user access to a priority
+-- Helper to assert user access to a priority. In the per-user model a
+-- user can access a priority iff they own it (priority.user_id matches).
 CREATE OR REPLACE FUNCTION "user".assert_priority_access (user_id uuid, priority_id uuid)
     RETURNS void
     LANGUAGE plpgsql
@@ -9,27 +10,12 @@ BEGIN
         RAISE EXCEPTION 'priority_id must be provided';
     END IF;
     IF NOT EXISTS (
-        SELECT
-            1
-        FROM
-            priority_user pu
-            JOIN priority pp ON pu.priority_id = pp.id
-            JOIN priority p ON p.path <@ pp.path
-        WHERE
-            pu.user_id = assert_priority_access.user_id
-            AND pu.archived_at IS NULL
-            AND p.id = assert_priority_access.priority_id
-            AND (p.id = pp.id
-                OR NOT EXISTS (
-                    SELECT
-                        1
-                    FROM
-                        priority blocker
-                    WHERE
-                        blocker.path <@ pp.path
-                        AND p.path <@ blocker.path
-                        AND blocker.path != pp.path
-                        AND blocker.inherit_members = FALSE))) THEN
+        SELECT 1
+        FROM priority p
+        WHERE p.id = assert_priority_access.priority_id
+          AND p.user_id = assert_priority_access.user_id
+          AND p.archived_at IS NULL
+    ) THEN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
 END;
@@ -54,15 +40,16 @@ DECLARE
     v_row thread_tag;
 BEGIN
     SELECT
-        priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
-        thread
+        thread_priority tp
     WHERE
-        id = p_thread_id;
+        tp.thread_id = p_thread_id
+        AND tp.user_id = upsert_thread_tag.user_id;
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
-    PERFORM "user".assert_priority_access(user_id, v_priority_id);
+    PERFORM "user".assert_priority_access(upsert_thread_tag.user_id, v_priority_id);
 
     v_tag_type := get_tag_type(p_tag_id);
     IF v_tag_type = 'compute' THEN
@@ -107,24 +94,24 @@ DECLARE
     v_row note_tag;
 BEGIN
     SELECT
-        a.priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
         note n
-        JOIN thread a ON a.id = n.thread_id
+        JOIN thread_priority tp ON tp.thread_id = n.thread_id
+            AND tp.user_id = upsert_note_tag.user_id
     WHERE
         n.id = p_note_id;
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Note not found';
+        IF NOT EXISTS (SELECT 1 FROM note WHERE id = p_note_id) THEN
+            RAISE EXCEPTION 'Note not found';
+        END IF;
+        RAISE EXCEPTION 'User does not have access to this note';
     END IF;
     PERFORM "user".assert_priority_access(user_id, v_priority_id);
 
     v_tag_type := get_tag_type(p_tag_id);
     IF v_tag_type = 'compute' THEN
         RAISE EXCEPTION 'Cannot add computed tag (tag_id: %)', p_tag_id;
-    END IF;
-    -- Viewer enforcement: viewers can only modify count tags
-    IF v_tag_type != 'count' AND "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
-        RAISE EXCEPTION 'Viewer members can only modify count tags';
     END IF;
     IF v_tag_type = 'count' AND NOT (p_actor_id = ANY("user".user_contact_ids(user_id))) THEN
         RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
@@ -169,43 +156,30 @@ DECLARE
     v_priority_id uuid;
     v_created_by uuid;
     v_author_id uuid;
-    v_thread_author_id uuid;
-    v_thread_access text;
     v_thread_created_by uuid;
-    v_thread_access_contacts uuid[];
     v_row note;
 BEGIN
     SELECT
-        priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
-        thread
+        thread_priority tp
     WHERE
-        id = p_thread_id;
+        tp.thread_id = p_thread_id
+        AND tp.user_id = upsert_note.user_id;
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
-    PERFORM "user".assert_priority_access(user_id, v_priority_id);
 
-    -- Check thread access
-    SELECT access, created_by, access_contacts
-    INTO v_thread_access, v_thread_created_by, v_thread_access_contacts
-    FROM thread WHERE id = p_thread_id;
-
-    IF v_thread_access != 'public' THEN
-        IF v_thread_created_by != upsert_note.user_id
-           AND NOT (v_thread_access = 'members' AND "user".get_effective_role(user_id, v_priority_id) = 'member')
-           AND NOT (COALESCE(v_thread_access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(upsert_note.user_id))
-        THEN
-            RAISE EXCEPTION 'Access denied to private thread';
-        END IF;
-    END IF;
-
-    -- Viewer enforcement: in public threads, force note to be author-only
-    IF "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
-        IF v_thread_access = 'public' THEN
-            p_access_contacts := ARRAY[]::uuid[];
-        END IF;
-        -- In non-public threads: keep whatever access_contacts was passed (default NULL = all thread viewers)
+    -- Check thread access via contacts intersection
+    SELECT created_by INTO v_thread_created_by FROM thread WHERE id = p_thread_id;
+    IF v_thread_created_by != upsert_note.user_id
+       AND NOT EXISTS (
+           SELECT 1 FROM thread
+           WHERE id = p_thread_id
+             AND contacts && "user".user_contact_ids(upsert_note.user_id)
+       )
+    THEN
+        RAISE EXCEPTION 'Access denied to thread';
     END IF;
 
     v_created_by := COALESCE(p_created_by, user_id);
@@ -223,11 +197,11 @@ BEGIN
             SELECT
                 1
             FROM
-                priority_twist pt
+                twist_instance pt
             WHERE
                 pt.id = v_created_by
                 AND pt.owner_id = upsert_note.user_id) THEN
-            RAISE EXCEPTION 'created_by must be user or owned priority_twist';
+            RAISE EXCEPTION 'created_by must be user or owned twist_instance';
         END IF;
     END IF;
 
@@ -316,83 +290,46 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "user".upsert_priority_member (
-    user_id uuid,
-    p_contact_id uuid,
-    p_priority_id uuid,
-    p_invited_by uuid,
-    p_invited_at timestamptz
-)
-    RETURNS priority_member
-    LANGUAGE plpgsql
-    SET search_path TO 'public', 'user'
-    AS $function$
-DECLARE
-    v_row priority_member;
-BEGIN
-    PERFORM "user".assert_priority_access(user_id, p_priority_id);
-
-    -- Viewer enforcement: viewers cannot manage priority members
-    IF "user".get_effective_role(user_id, p_priority_id) = 'viewer' THEN
-        RAISE EXCEPTION 'Viewer members cannot manage priority members';
-    END IF;
-
-    INSERT INTO priority_contact (priority_id, contact_id, invited_by, invited_at)
-        VALUES (p_priority_id, p_contact_id, p_invited_by, p_invited_at)
-    ON CONFLICT (priority_id, contact_id)
-        DO UPDATE SET
-            invited_by = EXCLUDED.invited_by,
-            invited_at = EXCLUDED.invited_at,
-            updated_at = now();
-
-    SELECT
-        * INTO v_row
-    FROM
-        priority_member
-    WHERE
-        priority_id = p_priority_id
-        AND contact_id = p_contact_id;
-
-    RETURN v_row;
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION "user".upsert_priority_twist (
+CREATE OR REPLACE FUNCTION "user".upsert_twist_instance (
     user_id uuid,
     p_id uuid,
-    p_priority_id uuid,
     p_twist_id bigint,
     p_owner_id uuid,
+    p_team_id bigint,
     p_name text,
     p_config jsonb,
     p_archived_at timestamptz
 )
-    RETURNS priority_twist
+    RETURNS twist_instance
     LANGUAGE plpgsql
     SET search_path TO 'public', 'user'
     AS $function$
 DECLARE
-    v_row priority_twist;
+    v_row twist_instance;
 BEGIN
-    -- Source accounts have NULL priority_id; skip access check for those
-    IF p_priority_id IS NOT NULL THEN
-        PERFORM "user".assert_priority_access(user_id, p_priority_id);
-
-        -- Viewer enforcement: viewers cannot manage twists
-        IF "user".get_effective_role(user_id, p_priority_id) = 'viewer' THEN
-            RAISE EXCEPTION 'Viewer members cannot manage twists';
-        END IF;
-    END IF;
+    -- Twist instances are owned by a user and optionally billed to a team.
+    -- The caller can only manage their own instances.
     IF p_owner_id IS DISTINCT FROM user_id THEN
         RAISE EXCEPTION 'owner_id must match user_id';
     END IF;
 
-    INSERT INTO priority_twist (id, priority_id, twist_id, owner_id, name, config, archived_at)
-        VALUES (COALESCE(p_id, uuidv7()), p_priority_id, p_twist_id, p_owner_id, p_name, COALESCE(p_config, '{}'::jsonb), p_archived_at)
+    -- If a team is specified, the caller must be a member.
+    IF p_team_id IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM team_user
+            WHERE team_id = p_team_id AND team_user.user_id = upsert_twist_instance.user_id
+        ) THEN
+            RAISE EXCEPTION 'User is not a member of team %', p_team_id;
+        END IF;
+    END IF;
+
+    INSERT INTO twist_instance (id, twist_id, owner_id, team_id, name, options, archived_at)
+        VALUES (COALESCE(p_id, uuidv7()), p_twist_id, p_owner_id, p_team_id, p_name, COALESCE(p_config, '{}'::jsonb), p_archived_at)
     ON CONFLICT (id)
         DO UPDATE SET
             name = EXCLUDED.name,
-            config = EXCLUDED.config,
+            team_id = EXCLUDED.team_id,
+            options = EXCLUDED.options,
             archived_at = EXCLUDED.archived_at,
             updated_at = now()
     RETURNING * INTO v_row;
@@ -422,16 +359,10 @@ DECLARE
     _parent_actual_path ltree;
     _actual_path ltree;
     _is_move boolean;
-    _is_visual_move boolean := FALSE;
-    _user_personal_root_path ltree;
-    _old_is_personal boolean;
-    _new_is_personal boolean;
-    _aliased_root_id uuid;
-    _within_aliased_tree boolean;
     _priority_exists boolean;
     _old_actual_path ltree;
-    _old_org_id bigint;
-    _new_org_id bigint;
+    _old_team_id bigint;
+    _new_team_id bigint;
 BEGIN
     -- Extract input fields from JSONB into the view's row type
     _input := jsonb_populate_record(NULL::"user"."priority", p_priority || jsonb_build_object('user_id', upsert_priority.user_id));
@@ -520,140 +451,16 @@ BEGIN
         _actual_path := _old_actual_path;
     END IF;
     IF _is_move THEN
-        -- Root priorities: visual-only move (per-user alias, no actual path change)
-        IF _input.root THEN
-            -- Get user's personal root path
-            SELECT
-                p.path INTO _user_personal_root_path
-            FROM
-                priority_user pu
-                JOIN priority p ON pu.priority_id = p.id
-            WHERE
-                pu.user_id = upsert_priority.user_id
-                AND pu.personal = TRUE
-                AND pu.archived_at IS NULL
-            LIMIT 1;
-            -- Compute default visual path (team root as direct child of personal root)
-            DECLARE
-                _default_visual_path ltree;
-            BEGIN
-                _default_visual_path := _user_personal_root_path || subpath(_old_actual_path, 0, 1);
-                IF _input.path = _default_visual_path THEN
-                    -- Reset to default: remove any existing alias
-                    DELETE FROM priority_setting
-                    WHERE user_id = upsert_priority.user_id
-                        AND priority_id = _input.id
-                        AND key = 'path';
-                ELSE
-                    -- Create/update visual alias
-                    INSERT INTO priority_setting (user_id, priority_id, key, value)
-                    VALUES (upsert_priority.user_id, _input.id, 'path', to_jsonb(text(_input.path)))
-                    ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-                END IF;
-            END;
-            -- Not an actual move — clear move flags so title/color/order updates still apply
-            _is_move := FALSE;
-            _actual_path := NULL;
-        ELSE
-        -- Get user's personal root path (actual path)
-        SELECT
-            p.path INTO _user_personal_root_path
-        FROM
-            priority_user pu
-            JOIN priority p ON pu.priority_id = p.id
-        WHERE
-            pu.user_id = upsert_priority.user_id
-            AND pu.personal = TRUE
-            AND pu.archived_at IS NULL
-        LIMIT 1;
-        -- Determine if old and new locations are under personal root
-        _old_is_personal := (_user_personal_root_path @> _old_actual_path);
-        _new_is_personal := (_user_personal_root_path @> _actual_path);
         -- Prevent circular reference
         IF _actual_path <@ _old_actual_path OR _actual_path = _old_actual_path THEN
             RAISE EXCEPTION 'Cannot move priority to be a descendant of itself'
                 USING HINT = 'old_path=' || _old_actual_path::text || ', new_path=' || _actual_path::text;
         END IF;
-        -- Check if move is within an aliased tree
-        _within_aliased_tree := FALSE;
-        _aliased_root_id := NULL;
-        IF NOT _old_is_personal AND _new_is_personal THEN
-            -- Find deepest ancestor where both old and new paths are under the aliased root
-            SELECT
-                ps.priority_id INTO _aliased_root_id
-            FROM
-                priority_setting ps
-                JOIN priority p ON ps.priority_id = p.id
-            WHERE
-                ps.user_id = upsert_priority.user_id
-                AND ps.key = 'path'
-                AND _input.path <@ (ps.value #>> '{}')::ltree
-                AND _old.path <@ (ps.value #>> '{}')::ltree
-                AND (ps.value #>> '{}')::ltree != p.path
-                AND _old_actual_path <@ p.path
-                AND _actual_path <@ p.path
-            ORDER BY
-                nlevel ((ps.value #>> '{}')::ltree) DESC
-            LIMIT 1;
-            IF _aliased_root_id IS NOT NULL THEN
-                _within_aliased_tree := TRUE;
-            END IF;
-        END IF;
-        -- Determine move type and execute appropriate action
-        IF _old_is_personal AND _new_is_personal THEN
-            -- Type 1a: Actual move within personal tree
-            PERFORM
-                move_priority (_input.id, _parent_actual_path);
-            _actual_path := NULL;
-        ELSIF NOT _old_is_personal AND NOT _new_is_personal THEN
-            -- Type 1b: Actual move within/between shared trees
-            -- Notify users who lose access if the priority moves to a different shared tree
-            PERFORM
-                notify_displaced_priority_users (_input.id, _old_actual_path, _parent_actual_path);
-            PERFORM
-                move_priority (_input.id, _parent_actual_path);
-            _actual_path := NULL;
-        ELSIF NOT _old_is_personal
-                AND _new_is_personal
-                AND _within_aliased_tree THEN
-                -- Type 3: Actual move within aliased tree (no displacement - same root)
-                PERFORM
-                    move_priority (_input.id, _parent_actual_path);
-            _actual_path := NULL;
-        ELSIF NOT _old_is_personal
-                AND _new_is_personal THEN
-                -- Type 4: Move from shared tree into personal tree
-                -- If shared with other users, do a visual-only move to avoid
-                -- the priority appearing as personal (path under personal root)
-                IF EXISTS (
-                    SELECT 1 FROM priority_user
-                    WHERE priority_id = _input.id
-                    AND user_id != upsert_priority.user_id
-                    AND archived_at IS NULL
-                ) THEN
-                    -- Shared priority: visual-only move (alias under personal tree)
-                    INSERT INTO priority_setting (user_id, priority_id, key, value)
-                    VALUES (upsert_priority.user_id, _input.id, 'path', to_jsonb(text(_input.path)))
-                    ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
-                    _is_visual_move := TRUE;
-                    _actual_path := NULL;
-                ELSE
-                    -- Unshared priority: actual move into personal tree
-                    PERFORM
-                        notify_displaced_priority_users (_input.id, _old_actual_path, _parent_actual_path);
-                    PERFORM
-                        move_priority (_input.id, _parent_actual_path);
-                    _actual_path := NULL;
-                    -- Clear any existing visual alias now that priority is in the personal tree
-                    DELETE FROM priority_setting
-                    WHERE user_id = upsert_priority.user_id AND priority_id = _input.id AND key = 'path';
-                END IF;
-        ELSIF _old_is_personal
-                AND NOT _new_is_personal THEN
-                RAISE EXCEPTION 'Cannot move personal priority into shared tree'
-                USING HINT = 'Use Share dialog to share a personal priority';
-        END IF;
-        END IF; -- END root vs non-root branch
+        -- In the per-user model every priority belongs to a single user's
+        -- tree, so every actual move is a straight ltree relocation. The
+        -- old shared-tree / aliased-tree / visual-alias branches are dead.
+        PERFORM move_priority (_input.id, _parent_actual_path);
+        _actual_path := NULL;
     END IF;
     -- Translate visual path to actual path for new sub-priorities
     IF _is_move IS NOT TRUE AND NOT _priority_exists AND nlevel (_input.path) > 1 THEN
@@ -684,13 +491,13 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF _actual_path IS NOT NULL THEN
-        INSERT INTO priority (id, archived_at, title, color, path, created_by, updated_by, inherit_members, organization_id)
-            VALUES (_input.id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
+        INSERT INTO priority (id, user_id, archived_at, title, color, path, created_by, updated_by, team_id)
+            VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _actual_path, _input.created_by, _input.updated_by, COALESCE(_input.inherit_members, TRUE),
-                CASE WHEN _is_creator THEN _input.organization_id ELSE NULL END)
+                END, _actual_path, _input.created_by, _input.updated_by,
+                CASE WHEN _is_creator THEN _input.team_id ELSE NULL END)
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -701,8 +508,7 @@ BEGIN
                     priority.color
                 END,
                 updated_by = _input.updated_by,
-                inherit_members = COALESCE(_input.inherit_members, priority.inherit_members),
-                organization_id = CASE WHEN _is_creator THEN _input.organization_id ELSE priority.organization_id END
+                team_id = CASE WHEN _is_creator THEN _input.team_id ELSE priority.team_id END
             RETURNING
                 id INTO _priority_id;
     ELSE
@@ -718,42 +524,41 @@ BEGIN
                 priority.color
             END,
             updated_by = _input.updated_by,
-            inherit_members = COALESCE(_input.inherit_members, priority.inherit_members),
-            organization_id = CASE WHEN _is_creator THEN _input.organization_id ELSE priority.organization_id END
+            team_id = CASE WHEN _is_creator THEN _input.team_id ELSE priority.team_id END
         WHERE
             id = _input.id
         RETURNING
             id INTO _priority_id;
     END IF;
-    -- Handle organization_id changes: authorization, promote-to-root, and descendant propagation
+    -- Handle team_id changes: authorization, promote-to-root, and descendant propagation
     IF _is_creator THEN
-        SELECT organization_id INTO _old_org_id FROM priority WHERE id = _priority_id;
-        _new_org_id := _input.organization_id;
-        -- Only act when organization_id actually changed
-        IF _old_org_id IS DISTINCT FROM _new_org_id THEN
-            -- Removing from org: require admin role
-            IF _old_org_id IS NOT NULL AND (_new_org_id IS NULL OR _new_org_id != _old_org_id) THEN
+        SELECT team_id INTO _old_team_id FROM priority WHERE id = _priority_id;
+        _new_team_id := _input.team_id;
+        -- Only act when team_id actually changed
+        IF _old_team_id IS DISTINCT FROM _new_team_id THEN
+            -- Removing from team: require admin role
+            IF _old_team_id IS NOT NULL AND (_new_team_id IS NULL OR _new_team_id != _old_team_id) THEN
                 IF NOT EXISTS (
-                    SELECT 1 FROM organization_member
-                    WHERE organization_id = _old_org_id
+                    SELECT 1 FROM team_user
+                    WHERE team_id = _old_team_id
                     AND user_id = upsert_priority.user_id
                     AND role = 'admin'
                 ) THEN
                     RAISE EXCEPTION 'Only team admins can remove a priority from the team';
                 END IF;
             END IF;
-            -- Setting org: require membership
-            IF _new_org_id IS NOT NULL THEN
+            -- Setting team: require membership
+            IF _new_team_id IS NOT NULL THEN
                 IF NOT EXISTS (
-                    SELECT 1 FROM organization_member
-                    WHERE organization_id = _new_org_id
+                    SELECT 1 FROM team_user
+                    WHERE team_id = _new_team_id
                     AND user_id = upsert_priority.user_id
                 ) THEN
-                    RAISE EXCEPTION 'Must be a member of the organization';
+                    RAISE EXCEPTION 'Must be a member of the team';
                 END IF;
             END IF;
-            -- Auto-promote to root: if setting org_id on a non-root priority, move it to root level
-            IF _new_org_id IS NOT NULL THEN
+            -- Auto-promote to root: if setting team_id on a non-root priority, move it to root level
+            IF _new_team_id IS NOT NULL THEN
                 DECLARE
                     _current_path ltree;
                     _new_root_path ltree;
@@ -772,26 +577,17 @@ BEGIN
                             ELSE _new_root_path || subpath(path, nlevel(_current_path))
                         END
                         WHERE path <@ _current_path;
-                        -- Create priority_user entry to make this a root for the user
-                        INSERT INTO priority_user (user_id, priority_id, personal)
-                        VALUES (upsert_priority.user_id, _priority_id, FALSE)
-                        ON CONFLICT (user_id, priority_id) DO NOTHING;
+                        -- No priority_user write needed — priority.user_id
+                        -- already encodes ownership.
                     END IF;
                 END;
             END IF;
-            -- Propagate organization_id to all descendants
+            -- Propagate team_id to all descendants
             UPDATE priority
-            SET organization_id = _new_org_id
+            SET team_id = _new_team_id
             WHERE path <@ (SELECT path FROM priority WHERE id = _priority_id)
             AND id != _priority_id;
         END IF;
-    END IF;
-    -- Update priority_setting for user-specific fields
-    IF _is_visual_move THEN
-        -- Visual move: create/update path alias
-        INSERT INTO priority_setting (user_id, priority_id, key, value)
-        VALUES (upsert_priority.user_id, _priority_id, 'path', to_jsonb(text(_input.path)))
-        ON CONFLICT (user_id, priority_id, key) DO UPDATE SET value = EXCLUDED.value;
     END IF;
     -- Always upsert top_order, order, pomodoro, color if provided
     IF NOT _is_move THEN
@@ -927,11 +723,12 @@ DECLARE
     v_row thread_read;
 BEGIN
     SELECT
-        priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
-        thread
+        thread_priority tp
     WHERE
-        id = p_thread_id;
+        tp.thread_id = p_thread_id
+        AND tp.user_id = upsert_thread_read.user_id;
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
@@ -962,11 +759,12 @@ DECLARE
     v_priority_id uuid;
 BEGIN
     SELECT
-        priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
-        thread
+        thread_priority tp
     WHERE
-        id = p_thread_id;
+        tp.thread_id = p_thread_id
+        AND tp.user_id = delete_thread_read.user_id;
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
@@ -1006,11 +804,12 @@ DECLARE
     v_row thread_unread;
 BEGIN
     SELECT
-        priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
-        thread
+        thread_priority tp
     WHERE
-        id = p_thread_id;
+        tp.thread_id = p_thread_id
+        AND tp.user_id = upsert_thread_unread.user_id;
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
@@ -1055,11 +854,12 @@ DECLARE
     v_priority_id uuid;
 BEGIN
     SELECT
-        priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
-        thread
+        thread_priority tp
     WHERE
-        id = p_thread_id;
+        tp.thread_id = p_thread_id
+        AND tp.user_id = clear_thread_unread.user_id;
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;

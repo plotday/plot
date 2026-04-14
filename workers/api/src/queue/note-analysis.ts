@@ -96,13 +96,23 @@ async function gatherContext(
       .executeTakeFirst(),
     db
       .selectFrom("thread")
-      .select(["title", "priority_id"])
+      .select(["title"])
       .where("id", "=", threadId)
       .executeTakeFirst(),
   ]);
 
   if (!note?.content || !note.author_id) return null;
-  if (!thread?.priority_id) return null;
+  if (!thread) return null;
+
+  // Look up the priority via thread_priority (pick the first filing)
+  const threadPriority = await db
+    .selectFrom("thread_priority")
+    .select("priority_id")
+    .where("thread_id", "=", threadId)
+    .limit(1)
+    .executeTakeFirst();
+
+  if (!threadPriority) return null;
 
   // Fetch remaining context in parallel (all depend on note/thread results)
   const [links, members, author, existingTodos, clearedTodos, existingReplies, recentNotes] =
@@ -114,11 +124,11 @@ async function gatherContext(
         .select(["l.title", "l.status", "l.type", "c.name as assignee_name"])
         .where("l.thread_id", "=", threadId)
         .execute(),
-      // Priority members: users with actual access (via priority_user hierarchy),
+      // Users with access to the thread's priority (via priority.user_id),
       // resolved to their primary contact record.
       (async () => {
         const usersData = await rpc(db, "get_users_with_priority_access", {
-          target_priority_id: thread.priority_id,
+          target_priority_id: threadPriority.priority_id,
         });
         const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
         if (userIds.length === 0) return [];
@@ -457,7 +467,7 @@ export async function detectTasks(
   noteId: string,
   threadId: string,
   userId: string,
-  priorityTwistId: string
+  twistInstanceId: string
 ): Promise<void> {
   const db = createDb(env);
   try {
@@ -475,7 +485,7 @@ export async function detectTasks(
       return;
     }
 
-    await createTaskNotes(env, db, tasks, context, threadId, userId, priorityTwistId);
+    await createTaskNotes(env, db, tasks, context, threadId, userId, twistInstanceId);
   } finally {
     await db.destroy();
   }
@@ -641,7 +651,7 @@ async function createTaskNotes(
   context: NoteContext,
   threadId: string,
   userId: string,
-  priorityTwistId: string
+  twistInstanceId: string
 ): Promise<void> {
   for (const task of tasks) {
     try {
@@ -649,8 +659,8 @@ async function createTaskNotes(
       const noteResult = await db
         .insertInto("note")
         .values({
-          author_id: priorityTwistId,
-          created_by: priorityTwistId,
+          author_id: twistInstanceId,
+          created_by: twistInstanceId,
           thread_id: threadId,
           content: task.description,
           re_note_id: context.noteId,

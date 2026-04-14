@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
+import { sql } from "kysely";
+
 import { rpcUser } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
@@ -135,15 +137,15 @@ priority.post("/priority", async (c) => {
   } else {
     // No parent specified - get user's root priority via a JOIN
     try {
-      const rootPriorityUser = await db
-        .selectFrom("priority_user")
-        .innerJoin("priority", "priority.id", "priority_user.priority_id")
-        .select(["priority.path"])
-        .where("priority_user.user_id", "=", user.id)
-        .where("priority_user.personal", "=", true)
+      const rootPriority = await db
+        .selectFrom("priority")
+        .select("path")
+        .where("user_id", "=", user.id)
+        .where(sql<boolean>`nlevel(path) = 1`)
+        .where("archived_at", "is", null)
         .executeTakeFirstOrThrow();
 
-      parentPath = rootPriorityUser.path as string;
+      parentPath = rootPriority.path as string;
       createdBy = user.id;
     } catch (error) {
       const logger = createLogger();
@@ -168,6 +170,7 @@ priority.post("/priority", async (c) => {
       .insertInto("priority")
       .values({
         created_by: createdBy,
+        user_id: createdBy,
         title: title,
         path: childPath,
         updated_by: 0,

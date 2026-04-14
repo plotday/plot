@@ -2,7 +2,7 @@ CREATE TABLE "public"."domain" (
     "id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "name" text UNIQUE NOT NULL CHECK ("name" = lower("name")),
-    "organization_id" bigint REFERENCES organization ON DELETE SET NULL,
+    "team_id" bigint REFERENCES team ON DELETE SET NULL,
     "auto_join" boolean NOT NULL DEFAULT false
 );
 

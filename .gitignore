@@ -48,6 +48,7 @@ coverage
 vendor/bundle
 Gemfile.lock
 .worktrees
+.worktree-db
 
 # Database dumps
 *.dump

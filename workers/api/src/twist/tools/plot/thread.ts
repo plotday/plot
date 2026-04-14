@@ -106,9 +106,9 @@ export async function createThread(
       (!("type" in activity) || (activity as any).type === undefined)
     ) {
       const ptRow = await plot.db
-        .selectFrom("priority_twist")
+        .selectFrom("twist_instance")
         .select("twist_id")
-        .where("id", "=", plot.priorityTwistId)
+        .where("id", "=", plot.twistInstanceId)
         .executeTakeFirst();
       if (ptRow) {
         const iconValue = `twist:${ptRow.twist_id}`;
@@ -125,7 +125,6 @@ export async function createThread(
     let dbResult: {
       id: string;
       created_at: string | Date;
-      priority_id: string;
     };
 
     if ("upsert" in prep) {
@@ -136,7 +135,7 @@ export async function createThread(
         dbResult = await rpcUser(plot.db, "upsert_thread", {
           user_id: userId,
           p_thread: prep.upsert as Json,
-          p_defaults: prep.defaults as Json,
+          p_defaults: { ...prep.defaults, priority_id: priorityId } as Json,
         });
       } catch (error) {
         const logger = createLogger({ component: "plot_tool" });
@@ -145,7 +144,7 @@ export async function createThread(
           defaults: JSON.stringify(prep.defaults),
         });
         const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-        postHog.captureException(error as Error, undefined, { context: "plot:upsertThread", priority_twist_id: plot.priorityTwistId });
+        postHog.captureException(error as Error, undefined, { context: "plot:upsertThread", twist_instance_id: plot.twistInstanceId });
         await postHog.shutdown();
         throw error;
       }
@@ -209,7 +208,7 @@ export async function createThread(
           // The cast is safe because database IDs are valid UUIDs.
           thread: { id: dbResult.id as Uuid },
         })),
-        { priority_id: priorityId, created_by: plot.priorityTwistId }
+        { priority_id: priorityId, created_by: plot.twistInstanceId }
       );
     }
 
@@ -239,7 +238,7 @@ export async function createThread(
           `.execute(plot.db);
         } catch (err) {
           const logger = createLogger({
-            priority_twist_id: plot.priorityTwistId,
+            twist_instance_id: plot.twistInstanceId,
           });
           logger.error(
             "Failed to upsert activity_read entries",
@@ -274,7 +273,7 @@ export async function createThread(
         .where("note.thread_id", "=", dbResult.id)
         .where("note.author_id", "is not", null)
         .where("note.author_id", "!=", authorId)
-        .where("note.author_id", "!=", plot.priorityTwistId)
+        .where("note.author_id", "!=", plot.twistInstanceId)
         .where("contact.user_id", "is not", null)
         .execute();
 
@@ -296,7 +295,7 @@ export async function createThread(
 
     return { id: dbResult.id as Uuid, priorityId };
   } catch (error) {
-    handleDbOperationError(error, "createThread", plot.priorityTwistId, {
+    handleDbOperationError(error, "createThread", plot.twistInstanceId, {
       has_notes: "notes" in activity && !!activity.notes?.length,
       has_source: "source" in activity && !!activity.source,
       has_id: "id" in activity && !!activity.id,
@@ -313,7 +312,7 @@ async function updateThreadsByMatch(
   // Filter to activities created by this twist instance
   let query = plot.db
     .updateTable("thread")
-    .where("created_by", "=", plot.priorityTwistId);
+    .where("created_by", "=", plot.twistInstanceId);
 
   // Apply meta filter using jsonb containment (via link table if needed)
   if (match.meta) {
@@ -346,13 +345,8 @@ async function updateThreadsByMatch(
     resolvedAccessContacts = actors.map((a) => a.id);
   }
 
-  if (activity.access !== undefined) {
-    dbUpdate.access = activity.access;
-    if (resolvedAccessContacts !== undefined) {
-      dbUpdate.access_contacts = resolvedAccessContacts;
-    }
-  } else if (resolvedAccessContacts !== undefined) {
-    dbUpdate.access_contacts = resolvedAccessContacts;
+  if (resolvedAccessContacts !== undefined) {
+    dbUpdate.contacts = resolvedAccessContacts;
   }
 
   // Check if there are meaningful updates
@@ -363,16 +357,22 @@ async function updateThreadsByMatch(
     return;
   }
 
-  // Execute bulk update, returning affected priority IDs for sync notification
+  // Execute bulk update, returning affected thread IDs for sync notification
   const results = await query
     // @ts-ignore - Database types define `at` as `unknown` but Kysely expects specific types
     .set(dbUpdate)
-    .returning("priority_id")
+    .returning("id")
     .execute();
 
-  // Notify sync DOs for affected priorities
+  // Look up affected priority_ids via thread_priority and notify sync DOs
   if (results.length > 0) {
-    const affectedPriorityIds = new Set(results.map((r) => r.priority_id));
+    const threadIds = results.map((r) => r.id);
+    const tpRows = await plot.db
+      .selectFrom("thread_priority")
+      .select("priority_id")
+      .where("thread_id", "in", threadIds)
+      .execute();
+    const affectedPriorityIds = new Set(tpRows.map((r) => r.priority_id));
     await plot.notifySyncDOs(affectedPriorityIds);
   }
 }
@@ -427,13 +427,8 @@ export async function updateThread(
       resolvedAccessContacts = actors.map((a) => a.id);
     }
 
-    if (activity.access !== undefined) {
-      dbUpdate.access = activity.access;
-      if (resolvedAccessContacts !== undefined) {
-        dbUpdate.access_contacts = resolvedAccessContacts;
-      }
-    } else if (resolvedAccessContacts !== undefined) {
-      dbUpdate.access_contacts = resolvedAccessContacts;
+    if (resolvedAccessContacts !== undefined) {
+      dbUpdate.contacts = resolvedAccessContacts;
     }
     if (activity.archived !== undefined) {
       dbUpdate.archived_at = activity.archived
@@ -444,7 +439,7 @@ export async function updateThread(
       (dbUpdate as any).icon = (activity as any).type;
     }
 
-    // Handle priority move (thread reparenting)
+    // Handle priority move (thread reparenting via thread_priority)
     let oldPriorityId: string | undefined;
     if ("priority" in activity && (activity as any).priority?.id) {
       plot.requireThreadAccess(ThreadAccess.Full);
@@ -453,14 +448,21 @@ export async function updateThread(
       await plot.validatePriorityAccess(targetPriorityId);
 
       // Get current priority for sync notification
+      const userId = await plot.getUserId();
       const current = await plot.db
-        .selectFrom("thread")
+        .selectFrom("thread_priority")
         .select("priority_id")
-        .where("id", "=", activityId)
-        .executeTakeFirstOrThrow();
-      oldPriorityId = current.priority_id;
+        .where("thread_id", "=", activityId)
+        .where("user_id", "=", userId)
+        .executeTakeFirst();
+      oldPriorityId = current?.priority_id;
 
-      (dbUpdate as any).priority_id = targetPriorityId;
+      // Update thread_priority instead of thread.priority_id
+      await plot.db
+        .insertInto("thread_priority")
+        .values({ thread_id: activityId, user_id: userId, priority_id: targetPriorityId, matched: false })
+        .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doUpdateSet({ priority_id: targetPriorityId }))
+        .execute();
     }
 
     // Check if there are meaningful updates (beyond updated_by, sync_depth, occurrence)
@@ -486,20 +488,29 @@ export async function updateThread(
 
     // Handle full tags object replacement (only for activities created by this twist or another instance of the same twist)
     if (activity.tags !== undefined) {
-      // Query for created_by and priority_id in a single query
+      // Query for created_by from thread and priority_id from thread_priority
       const activityData = await plot.db
         .selectFrom("thread")
-        .select(["created_by", "priority_id"])
+        .select("created_by")
         .where("id", "=", activityId)
         .executeTakeFirst();
 
       if (!activityData) {
         throw new Error("Failed to fetch activity: Not found");
       }
-      const { created_by: createdBy, priority_id: priorityId } = activityData;
+      const { created_by: createdBy } = activityData;
+
+      const userId = await plot.getUserId();
+      const tpRow = await plot.db
+        .selectFrom("thread_priority")
+        .select("priority_id")
+        .where("thread_id", "=", activityId)
+        .where("user_id", "=", userId)
+        .executeTakeFirst();
+      const priorityId = tpRow?.priority_id ?? await plot.getDefaultPriorityId();
 
       // Check if activity was created by this exact instance (fast path)
-      const isExactInstance = createdBy === plot.priorityTwistId;
+      const isExactInstance = createdBy === plot.twistInstanceId;
       // Or check if activity was created by another instance of the same twist (fallback)
       const isSameTwist =
         !isExactInstance &&
@@ -508,7 +519,7 @@ export async function updateThread(
 
       if (!isExactInstance && !isSameTwist) {
         throw new Error(
-          `Cannot update tags field: activity was not created by this twist (activity.createdBy: ${createdBy}, twist: ${plot.priorityTwistId}). Use twistTags instead to add/remove tags for this twist.`
+          `Cannot update tags field: activity was not created by this twist (activity.createdBy: ${createdBy}, twist: ${plot.twistInstanceId}). Use twistTags instead to add/remove tags for this twist.`
         );
       }
 
@@ -566,7 +577,7 @@ export async function updateThread(
       await rpcUser(plot.db, "update_thread_tags", {
         user_id: userId,
         p_thread_id: activityId,
-        p_actor_id: plot.priorityTwistId,
+        p_actor_id: plot.twistInstanceId,
         p_client_id: plot.getUpdatedBy(),
         p_tag_updates: activity.twistTags,
       });
@@ -575,15 +586,16 @@ export async function updateThread(
     // Only notify sync DOs if we actually wrote something
     const hasTagUpdates = activity.tags !== undefined || activity.twistTags !== undefined;
     if (hasMeaningfulUpdates || hasTagUpdates) {
-      const prioritiesToNotify = new Set([plot.priorityId]);
+      const defaultPriorityId = await plot.getDefaultPriorityId();
+      const prioritiesToNotify = new Set([defaultPriorityId]);
       // If thread was moved, also notify the old priority
-      if (oldPriorityId && oldPriorityId !== plot.priorityId) {
+      if (oldPriorityId && oldPriorityId !== defaultPriorityId) {
         prioritiesToNotify.add(oldPriorityId);
       }
       await plot.notifySyncDOs(prioritiesToNotify);
     }
   } catch (error) {
-    handleDbOperationError(error, "updateThread", plot.priorityTwistId, {
+    handleDbOperationError(error, "updateThread", plot.twistInstanceId, {
       has_activity_id: "id" in activity && !!activity.id,
       has_source: "source" in activity && !!activity.source,
       update_fields: Object.keys(activity).filter(
@@ -658,16 +670,14 @@ export async function getThread(
         updated_at: updatedAtStr,
         created_by: (data as any).created_by ?? "",
         draft: data.draft ?? false,
-        priority_id: data.priority_id ?? "",
-        access: data.access ?? "members",
-        access_contacts: data.access_contacts ?? null,
+        contacts: data.contacts ?? [],
         updated_by: data.updated_by ?? 0,
         sync_depth: null,
         tags: tagsData?.tags || null,
       }
     );
   } catch (err) {
-    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
     logger.error("Failed to get activity", err as Error);
     throw err;
   }
@@ -737,17 +747,18 @@ export async function getNote(
 
     // Validate access to the priority via the activity
     // First fetch the activity to get the priority
-    const activityData = await plot.db
-      .selectFrom("thread")
+    const tpData = await plot.db
+      .selectFrom("thread_priority")
       .select("priority_id")
-      .where("id", "=", data.thread_id)
+      .where("thread_id", "=", data.thread_id)
+      .where("user_id", "=", await plot.getUserId())
       .executeTakeFirst();
 
-    if (!activityData) {
+    if (!tpData) {
       throw new Error(`Activity not found for note`);
     }
 
-    await plot.validatePriorityAccess(activityData.priority_id);
+    await plot.validatePriorityAccess(tpData.priority_id);
 
     // Fetch the full activity for the note
     const activity = await getThread(plot, { id: data.thread_id as Uuid });
@@ -789,7 +800,7 @@ export async function getNote(
       tags: (tagsData?.tags as Partial<Record<Tag, ActorId[]>> | null) || {},
     };
   } catch (err) {
-    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
     logger.error("Failed to get note", err as Error);
     throw err;
   }
@@ -809,7 +820,7 @@ export async function createThreads(
       ensureIncreasingThreadCreatedTimestamps(activities);
 
     const limit = pLimit(5);
-    type DbActivity = { id: string; priority_id: string; created_at: string | Date };
+    type DbActivity = { id: string; created_at: string | Date; priority_id: string };
     const dbActivities: DbActivity[] = new Array(activities.length);
 
     const preparedActivities = await Promise.all(
@@ -820,9 +831,9 @@ export async function createThreads(
 
     // Set icon for twist-created threads (single lookup for all activities)
     const ptRowBatch = await plot.db
-      .selectFrom("priority_twist")
+      .selectFrom("twist_instance")
       .select("twist_id")
-      .where("id", "=", plot.priorityTwistId)
+      .where("id", "=", plot.twistInstanceId)
       .executeTakeFirst();
     if (ptRowBatch) {
       const iconValue = `twist:${ptRowBatch.twist_id}`;
@@ -852,9 +863,9 @@ export async function createThreads(
             .insertInto("thread")
             // @ts-ignore - Database types define `at` as `unknown` but Kysely expects specific types
             .values(nonSourceInserts)
-            .returning(["id", "priority_id", "created_at"])
+            .returning(["id", "created_at"])
             .execute()
-        : ([] as DbActivity[]);
+        : [];
 
     // Upsert source-based activities
     let nonSourceIndex = 0;
@@ -863,16 +874,17 @@ export async function createThreads(
       preparedActivities.map((prepared, index) =>
         limit(async () => {
           if (!("upsert" in prepared)) {
-            dbActivities[index] = nonSourceResults[nonSourceIndex++];
+            const result = nonSourceResults[nonSourceIndex++];
+            dbActivities[index] = { ...result, priority_id: prepared.priorityId } as DbActivity;
             return;
           }
           const { upsert, defaults } = prepared;
           const dbResult = await rpcUser(plot.db, "upsert_thread", {
             user_id: userId,
             p_thread: upsert as Json,
-            p_defaults: defaults as Json,
+            p_defaults: { ...defaults, priority_id: prepared.priorityId } as Json,
           });
-          dbActivities[index] = dbResult as DbActivity;
+          dbActivities[index] = { ...dbResult, priority_id: prepared.priorityId } as DbActivity;
         })
       )
     );
@@ -972,7 +984,7 @@ export async function createThreads(
     // Create notes for each priority group, passing context to skip
     // redundant activity fetches inside createNote.
     for (const [priorityId, notes] of notesByPriority) {
-      await createNotes(plot, notes, { priority_id: priorityId, created_by: plot.priorityTwistId });
+      await createNotes(plot, notes, { priority_id: priorityId, created_by: plot.twistInstanceId });
     }
 
     // Mark activities as read based on unread flag:
@@ -1055,7 +1067,7 @@ export async function createThreads(
                 `.execute(plot.db);
               } catch (err) {
                 const logger = createLogger({
-                  priority_twist_id: plot.priorityTwistId,
+                  twist_instance_id: plot.twistInstanceId,
                 });
                 logger.error(
                   "Failed to upsert activity_read entries for batch activities",
@@ -1097,7 +1109,7 @@ export async function createThreads(
       const authorIdsByActivity = new Map<string, Set<string>>(
         activitiesToMarkAuthorAsRead.map((item) => [
           item.dbActivity.id,
-          new Set([item.authorId, plot.priorityTwistId]),
+          new Set([item.authorId, plot.twistInstanceId]),
         ])
       );
 
@@ -1108,7 +1120,7 @@ export async function createThreads(
         .distinct()
         .where("note.thread_id", "in", authorActivityIds)
         .where("note.author_id", "is not", null)
-        .where("note.author_id", "!=", plot.priorityTwistId)
+        .where("note.author_id", "!=", plot.twistInstanceId)
         .where("contact.user_id", "is not", null)
         .execute();
 
@@ -1140,7 +1152,7 @@ export async function createThreads(
     // Return just the IDs for efficiency
     return dbActivities.map((dbActivity) => dbActivity.id as Uuid);
   } catch (error) {
-    handleDbOperationError(error, "createThreads", plot.priorityTwistId, {
+    handleDbOperationError(error, "createThreads", plot.twistInstanceId, {
       count: activities.length,
       has_any_source: activities.some((a) => "source" in a && !!a.source),
     });
@@ -1169,8 +1181,9 @@ export async function getThreads(
     offset = 0,
   } = options ?? {};
 
-  const effectivePriorityId = priorityId ?? plot.priorityId;
-  await plot.validatePriorityAccess(effectivePriorityId as string);
+  const effectivePriorityId =
+    (priorityId as string | undefined) ?? (await plot.getDefaultPriorityId());
+  await plot.validatePriorityAccess(effectivePriorityId);
 
   const clampedLimit = Math.min(Math.max(1, limit), 200);
 
@@ -1255,9 +1268,7 @@ export async function getThreads(
         updated_at: updatedAtStr,
         created_by: (data as any).created_by ?? "",
         draft: data.draft ?? false,
-        priority_id: data.priority_id ?? "",
-        access: data.access ?? "members",
-        access_contacts: data.access_contacts ?? null,
+        contacts: data.contacts ?? [],
         updated_by: data.updated_by ?? 0,
         sync_depth: null,
         tags: tagsMap.get(data.id as string) || null,

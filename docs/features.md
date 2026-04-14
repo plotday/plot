@@ -14,6 +14,7 @@ Internal catalog of product features for marketing content generation. Direct an
 - @-mentions for users, contacts, and twists
 
 ### Priorities
+- Per-user priority trees — each user owns their own hierarchy, no shared folders
 - Hierarchical organization (unlimited nesting depth)
 - Path-based structure (e.g., Work/Q1/Marketing)
 - Custom colors with inheritance to children
@@ -21,6 +22,12 @@ Internal catalog of product features for marketing content generation. Direct an
 - Pin favorites with top order
 - Search scoped to priority trees
 - Unread indicators per priority
+
+### Thread Sharing
+- Threads are shared by adding contacts via the "With" field at creation
+- Globally shareable thread URLs (/t/{id}) — no priority context needed
+- Each user's copy of a shared thread is filed into their own priority tree automatically
+- Connector-created threads are filed via priority matching per user
 
 ### Notes & Content
 - Full Markdown support with live preview

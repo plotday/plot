@@ -83,7 +83,7 @@ describe("Network", () => {
       const network = new Network({
         urls: ["https://api.example.com/*"],
         callbacks: mockCallbacksNamespace,
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         twistId: "test-twist",
         environment: "personal",
         baseUrl: "https://api.plot.com",
@@ -117,7 +117,7 @@ describe("Network", () => {
 
       const network = new Network({
         callbacks: mockCallbacksNamespace,
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         twistId: "test-twist",
         environment: "personal",
         baseUrl: "https://api.plot.com",

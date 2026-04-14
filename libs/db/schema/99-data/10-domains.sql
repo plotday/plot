@@ -1,4 +1,4 @@
--- Add personal email providers to prevent the creation of organizations
+-- Add personal email providers to prevent the creation of teams
 INSERT INTO "public"."domain" ("name")
     VALUES ('gmail.com'),
     ('yahoo.com'),

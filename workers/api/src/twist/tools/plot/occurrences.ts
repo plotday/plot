@@ -102,7 +102,7 @@ export async function processOccurrences(
         await rpcUser(plot.db, "update_thread_tags", {
           user_id: userId,
           p_thread_id: activityId,
-          p_actor_id: plot.priorityTwistId,
+          p_actor_id: plot.twistInstanceId,
           p_client_id: plot.getUpdatedBy(),
           p_tag_updates: occ.twistTags,
           p_occurrence: occurrenceStr,
@@ -110,7 +110,7 @@ export async function processOccurrences(
       }
     }
   } catch (error) {
-    handleDbOperationError(error, "processOccurrences", plot.priorityTwistId, {
+    handleDbOperationError(error, "processOccurrences", plot.twistInstanceId, {
       thread_id: activityId,
       occurrence_count: occurrences.length,
     });

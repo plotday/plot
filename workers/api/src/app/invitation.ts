@@ -1,5 +1,5 @@
 import * as crypto from "crypto";
-import type { Kysely } from "kysely";
+import { type Kysely, sql } from "kysely";
 import { Hono } from "hono";
 
 import { render } from "@plotday/email";
@@ -24,7 +24,8 @@ declare const ENV: string;
 
 interface SendInvitationParams {
   contactId: string;
-  priorityId: string;
+  priorityId?: string;
+  threadId?: string;
   inviterUserId: string;
   mailQueue: Queue<{
     to: string[];
@@ -61,12 +62,13 @@ export async function sendInvitation(
   db: Kysely<DB>,
   params: SendInvitationParams
 ): Promise<SendInvitationResult> {
-  const { contactId, priorityId, inviterUserId, mailQueue, appRoot } = params;
+  const { contactId, priorityId, threadId, inviterUserId, mailQueue, appRoot } = params;
 
   const logger = createLogger({ component: "invitation" });
   logger.info("Starting invitation process", {
     contact_id: contactId,
     priority_id: priorityId,
+    thread_id: threadId,
   });
 
   // 1. Get contact info
@@ -113,35 +115,59 @@ export async function sendInvitation(
     }
   }
 
-  // 4. Get inviter and priority info for email
-  const [inviterResult, priorityResult] = await Promise.all([
-    db
-      .selectFrom("user")
-      .select(["name", "email"])
-      .where("id", "=", inviterUserId)
-      .executeTakeFirst(),
-    db
-      .selectFrom("priority")
-      .select("title")
-      .where("id", "=", priorityId)
-      .executeTakeFirst(),
-  ]);
+  // 4. Get inviter info and context (priority or thread) for email
+  const inviterResult = await db
+    .selectFrom("user")
+    .select(["name", "email"])
+    .where("id", "=", inviterUserId)
+    .executeTakeFirst();
 
   const inviterName =
     inviterResult?.name ||
     inviterResult?.email?.split("@")[0] ||
     "Someone";
-  const priorityName = priorityResult?.title || "a priority";
 
-  // 5. Send invitation email
+  // 5. Send invitation email — use thread-invitation template when sharing a thread
   const inviteUrl = `${appRoot}/invite/${token}`;
-  const emailSubject = `${inviterName} is inviting you to Plot`;
-  const emailProps = {
-    inviterName,
-    priorityName,
-    inviteUrl,
-    recipientName: contact.name || undefined,
-  };
+  const isThreadInvitation = !!threadId;
+
+  let emailTemplate: string;
+  let emailSubject: string;
+  let emailProps: Record<string, unknown>;
+
+  if (isThreadInvitation) {
+    const threadResult = await db
+      .selectFrom("thread")
+      .select("title")
+      .where("id", "=", threadId)
+      .executeTakeFirst();
+    const threadTitle = threadResult?.title || "a thread";
+    emailTemplate = "thread-invitation";
+    emailSubject = `${inviterName} shared a thread with you on Plot`;
+    emailProps = {
+      inviterName,
+      threadTitle,
+      inviteUrl,
+      recipientName: contact.name || undefined,
+    };
+  } else {
+    const priorityResult = priorityId
+      ? await db
+          .selectFrom("priority")
+          .select("title")
+          .where("id", "=", priorityId)
+          .executeTakeFirst()
+      : null;
+    const priorityName = priorityResult?.title || "a priority";
+    emailTemplate = "priority-invitation";
+    emailSubject = `${inviterName} is inviting you to Plot`;
+    emailProps = {
+      inviterName,
+      priorityName,
+      inviteUrl,
+      recipientName: contact.name || undefined,
+    };
+  }
 
   if (!contact.email) {
     logger.error("Cannot send invitation to contact without email", {
@@ -152,8 +178,8 @@ export async function sendInvitation(
 
   logger.info("Sending invitation email", {
     contact_email: contact.email,
-    priority_name: priorityName,
     inviter_name: inviterName,
+    email_template: emailTemplate,
   });
 
   // In development, bypass the queue and send directly to Mailpit.
@@ -162,7 +188,7 @@ export async function sendInvitation(
 
   try {
     if (isDevelopment) {
-      const { html, text } = await render("priority-invitation", emailProps);
+      const { html, text } = await render(emailTemplate as any, emailProps as any);
       const response = await fetch("http://127.0.0.1:54324/api/v1/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -186,7 +212,7 @@ export async function sendInvitation(
       await mailQueue.send({
         to: [contact.email],
         subject: emailSubject,
-        email: "priority-invitation",
+        email: emailTemplate,
         props: emailProps,
       });
       logger.info("Queued invitation email", {
@@ -261,31 +287,8 @@ invitation.get("/invitation/:token", async (c) => {
       return c.json({ message: "Invalid or expired invitation" }, 404);
     }
 
-    // Look up inviter name via priority_contact.invited_by
-    let inviterName: string | null = null;
-    try {
-      const pc = await c.var.db
-        .selectFrom("priority_contact")
-        .select("invited_by")
-        .where("contact_id", "=", data.contact_id)
-        .where("invited_by", "is not", null)
-        .limit(1)
-        .executeTakeFirst();
-
-      if (pc?.invited_by) {
-        const inviter = await c.var.db
-          .selectFrom("user")
-          .select(["name", "email"])
-          .where("id", "=", pc.invited_by)
-          .executeTakeFirst();
-        inviterName =
-          inviter?.name ||
-          inviter?.email?.split("@")[0] ||
-          null;
-      }
-    } catch {
-      // Non-critical: return response without inviter name
-    }
+    // Inviter name lookup — not available in the per-user priority model.
+    const inviterName: string | null = null;
 
     return c.json({ email: data.email, inviterName });
   } catch (error) {
@@ -342,16 +345,17 @@ invitation.post("/invitation/redeem", async (c) => {
   }
 
   // Get the root priority for this user to perform additional setup
-  const rootPriorityUser = await c.var.db
-    .selectFrom("priority_user")
-    .select("priority_id")
+  const rootPriority = await c.var.db
+    .selectFrom("priority")
+    .select("id")
     .where("user_id", "=", user.id)
-    .where("personal", "=", true)
+    .where(sql<boolean>`nlevel(path) = 1`)
+    .where("archived_at", "is", null)
     .executeTakeFirst();
 
   // If a root priority exists, perform Stripe and Plot twist setup
-  if (rootPriorityUser) {
-    const rootPriorityId = rootPriorityUser.priority_id;
+  if (rootPriority) {
+    const rootPriorityId = rootPriority.id;
 
     // Check if user_subscription already exists (skip if already set up)
     const existingSubscription = await c.var.db
@@ -487,11 +491,11 @@ invitation.post("/invitation/redeem", async (c) => {
         const logger9 = createLogger(context9);
         logger9.warn("Plot twist not found, skipping installation");
       } else {
-        // Check if Plot twist is already installed
+        // Check if Plot twist is already installed for this user (workspace-level)
         const existingInstallation = await c.var.db
-          .selectFrom("priority_twist")
+          .selectFrom("twist_instance")
           .select("id")
-          .where("priority_id", "=", rootPriorityId)
+          .where("owner_id", "=", user.id)
           .where("twist_id", "=", plotTwist.id)
           .where("archived_at", "is", null)
           .executeTakeFirst();

@@ -69,7 +69,7 @@ describe("twistFactory", () => {
       environment: "personal",
       version: "1.0.0",
       priorityId: "priority-1",
-      priorityTwistId: "pa-1",
+      twistInstanceId: "pa-1",
     });
 
     expect(twist).toHaveProperty("activate");
@@ -94,7 +94,7 @@ describe("twistFactory", () => {
       environment: "personal",
       version: "1.0.0",
       priorityId: "priority-1",
-      priorityTwistId: "pa-1",
+      twistInstanceId: "pa-1",
     });
 
     // Should have collected permissions from built-in tools
@@ -124,7 +124,7 @@ describe("twistFactory", () => {
       environment: "personal",
       version: "1.0.0",
       priorityId: "priority-1",
-      priorityTwistId: "pa-1",
+      twistInstanceId: "pa-1",
     });
 
     expect(twist).toBeDefined();
@@ -160,7 +160,7 @@ describe("twistFactory", () => {
         environment: "personal",
         version: "1.0.0",
         priorityId: "priority-1",
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
       })
     ).rejects.toThrow("Permission mismatch");
   });
@@ -183,7 +183,7 @@ describe("twistFactory", () => {
         environment: "personal",
         version: "1.0.0",
         priorityId: "priority-1",
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
       })
     ).rejects.toThrow("Twist configuration not found");
   });
@@ -212,7 +212,7 @@ describe("twistFactory", () => {
       environment: "personal",
       version: "1.0.0",
       priorityId: "priority-1",
-      priorityTwistId: "pa-1",
+      twistInstanceId: "pa-1",
     });
 
     // Should have initialized and collected tools

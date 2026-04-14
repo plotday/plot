@@ -377,6 +377,7 @@ class NoteCommands extends StatelessWidget {
         .thread
         .priority
         .isViewer;
+    final threadContacts = context.read<ThreadBloc>().state.thread.contacts;
     final tagFutures = Tag.getAll()
         .where((tag) {
           if (tag == Tag.todo || tag == Tag.done) return false;
@@ -384,6 +385,10 @@ class NoteCommands extends StatelessWidget {
           if (actors == null || actors.isEmpty) return false;
           // Reply tags: only show current user's
           if (tag == Tag.reply) return actors.contains(actorId);
+          // Hide private icon when note access matches thread contacts
+          if (tag == Tag.private) {
+            return !note.matchesThreadContacts(threadContacts);
+          }
           return true;
         })
         .map((tag) async {
@@ -550,6 +555,9 @@ class NoteCommands extends StatelessWidget {
                     final actors = note.tags[tag];
                     if (actors == null || actors.isEmpty) return false;
                     if (tag == Tag.reply) return actors.contains(actorId);
+                    if (tag == Tag.private) {
+                      return !note.matchesThreadContacts(threadContacts);
+                    }
                     return true;
                   })
                   .map((tag) {

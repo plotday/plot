@@ -11,7 +11,7 @@ import { type Bindings } from "../env";
 const FLUSH_INTERVAL_MS = 60_000; // 1 minute
 const HOUR_MS = 60 * 60 * 1000;
 
-// Cost safety limits per priority_twist
+// Cost safety limits per twist_instance
 const COST_LIMIT_4H = 5; // $5 in 4 hours
 const COST_LIMIT_30D = 20; // $20 in 30 days
 
@@ -26,7 +26,7 @@ type UsageRow = {
 
 export class Usage extends DurableObject<Bindings> {
   private sql: SqlStorage;
-  private priorityTwistId?: string;
+  private twistInstanceId?: string;
   private isDirty: boolean = false;
   private nextFlushTime: number | null = null;
 
@@ -34,12 +34,12 @@ export class Usage extends DurableObject<Bindings> {
     env: {
       readonly USAGE: DurableObjectNamespace<Usage>;
     },
-    priorityTwistId: string
+    twistInstanceId: string
   ) {
-    const usage = env.USAGE.get(env.USAGE.idFromName(priorityTwistId));
+    const usage = env.USAGE.get(env.USAGE.idFromName(twistInstanceId));
     // Note: init() returns void, but we still dispose the RPC result
     // to clean up any RPC resources from crossing the DO boundary
-    usage.init(priorityTwistId);
+    usage.init(twistInstanceId);
     return usage;
   }
 
@@ -58,22 +58,22 @@ export class Usage extends DurableObject<Bindings> {
     });
     postHog.captureException(error, undefined, {
       durable_object: "Usage",
-      priority_twist_id: this.priorityTwistId,
+      twist_instance_id: this.twistInstanceId,
       ...properties,
     });
     this.ctx.waitUntil(postHog.shutdown());
   }
 
-  public init(priorityTwistId: string) {
-    this.priorityTwistId = priorityTwistId;
+  public init(twistInstanceId: string) {
+    this.twistInstanceId = twistInstanceId;
     this.persistState();
   }
 
-  private getPriorityTwistId() {
-    if (!this.priorityTwistId) {
+  private getTwistInstanceId() {
+    if (!this.twistInstanceId) {
       throw new Error("Usage used before init()");
     }
-    return this.priorityTwistId;
+    return this.twistInstanceId;
   }
 
   private initializeTable() {
@@ -88,17 +88,17 @@ export class Usage extends DurableObject<Bindings> {
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS state (
         id INTEGER PRIMARY KEY DEFAULT 1,
-        priorityTwistId TEXT,
+        twistInstanceId TEXT,
         isDirty INTEGER DEFAULT 0,
         nextFlushTime INTEGER
       ) STRICT
     `);
 
-    // Migration: Rename priorityAgentId to priorityTwistId for existing DOs
+    // Migration: Rename priorityAgentId to twistInstanceId for existing DOs
     // This is safe to run multiple times - it will fail silently if column doesn't exist
     try {
       this.sql.exec(`
-        ALTER TABLE state RENAME COLUMN priorityAgentId TO priorityTwistId
+        ALTER TABLE state RENAME COLUMN priorityAgentId TO twistInstanceId
       `);
     } catch {
       // Column already renamed or never existed, ignore error
@@ -109,11 +109,11 @@ export class Usage extends DurableObject<Bindings> {
     const result = this.sql.exec("SELECT * FROM state WHERE id = 1").next();
     if (!result.done && result.value) {
       const row = result.value as {
-        priorityTwistId: string | null;
+        twistInstanceId: string | null;
         isDirty: number;
         nextFlushTime: number | null;
       };
-      this.priorityTwistId = row.priorityTwistId ?? undefined;
+      this.twistInstanceId = row.twistInstanceId ?? undefined;
       this.isDirty = row.isDirty === 1;
       this.nextFlushTime = row.nextFlushTime ?? null;
     }
@@ -121,13 +121,13 @@ export class Usage extends DurableObject<Bindings> {
 
   private persistState() {
     this.sql.exec(
-      `INSERT INTO state (id, priorityTwistId, isDirty, nextFlushTime)
+      `INSERT INTO state (id, twistInstanceId, isDirty, nextFlushTime)
        VALUES (1, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-         priorityTwistId = excluded.priorityTwistId,
+         twistInstanceId = excluded.twistInstanceId,
          isDirty = excluded.isDirty,
          nextFlushTime = excluded.nextFlushTime`,
-      this.priorityTwistId ?? null,
+      this.twistInstanceId ?? null,
       this.isDirty ? 1 : 0,
       this.nextFlushTime ?? null
     );
@@ -139,7 +139,7 @@ export class Usage extends DurableObject<Bindings> {
    * is unsafe in DOs since they can be evicted between requests.
    */
   spend(costType: string, amount: number) {
-    this.getPriorityTwistId();
+    this.getTwistInstanceId();
 
     const currentHour = this.getCurrentHour();
 
@@ -240,26 +240,26 @@ export class Usage extends DurableObject<Bindings> {
    * If exceeded, suspend the twist and notify the owner.
    */
   private async checkCostLimit(db: Kysely<DB>): Promise<void> {
-    const priorityTwistId = this.getPriorityTwistId();
+    const twistInstanceId = this.getTwistInstanceId();
     const logger = createLogger({
       durable_object: "Usage",
       operation: "checkCostLimit",
-      priority_twist_id: priorityTwistId,
+      twist_instance_id: twistInstanceId,
     });
 
     try {
       // Check if already suspended
       const pt = await db
-        .selectFrom("priority_twist")
+        .selectFrom("twist_instance")
         .select(["suspended_at", "owner_id", "name"])
-        .where("id", "=", priorityTwistId)
+        .where("id", "=", twistInstanceId)
         .executeTakeFirst();
 
       if (!pt || pt.suspended_at) {
         return;
       }
 
-      // Aggregate costs for this priority_twist
+      // Aggregate costs for this twist_instance
       const costResult = await sql<{
         cost_4h: number;
         cost_30d: number;
@@ -270,7 +270,7 @@ export class Usage extends DurableObject<Bindings> {
           COALESCE(SUM(u.amount * c.amount), 0) as cost_30d
         FROM usage u
         JOIN cost c ON u.cost_id = c.id
-        WHERE u.priority_twist_id = ${priorityTwistId}
+        WHERE u.twist_instance_id = ${twistInstanceId}
           AND u.hour >= DATE_TRUNC('hour', NOW() - INTERVAL '30 days')
       `.execute(db);
 
@@ -303,9 +303,9 @@ export class Usage extends DurableObject<Bindings> {
 
       // Suspend the twist
       await db
-        .updateTable("priority_twist")
+        .updateTable("twist_instance")
         .set({ suspended_at: sql`NOW()` })
-        .where("id", "=", priorityTwistId)
+        .where("id", "=", twistInstanceId)
         .execute();
 
       // Notify the owner via Help & Feedback activity
@@ -319,20 +319,25 @@ export class Usage extends DurableObject<Bindings> {
         const activity = await db
           .insertInto("thread")
           .values({
-            priority_id: helpPriority.id,
             title: "Twist processing suspended due to high usage",
-            created_by: priorityTwistId,
+            created_by: twistInstanceId,
           })
           .returning("id")
           .executeTakeFirstOrThrow();
+
+        await db
+          .insertInto("thread_priority")
+          .values({ thread_id: activity.id, user_id: pt.owner_id, priority_id: helpPriority.id, matched: false })
+          .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doNothing())
+          .execute();
 
         await db
           .insertInto("note")
           .values({
             thread_id: activity.id,
             content: `The twist **${pt.name}** was automatically suspended because it exceeded cost safety limits.\n\n**Reason:** ${reason}\n\nTo resume processing, clear the suspension in the database.`,
-            created_by: priorityTwistId,
-            author_id: priorityTwistId,
+            created_by: twistInstanceId,
+            author_id: twistInstanceId,
           })
           .execute();
       }
@@ -349,12 +354,12 @@ export class Usage extends DurableObject<Bindings> {
    * If exceeded, suspends the twist and notifies the owner.
    */
   async checkExecutionQuota(limit?: number | null): Promise<boolean> {
-    const priorityTwistId = this.getPriorityTwistId();
+    const twistInstanceId = this.getTwistInstanceId();
     const effectiveLimit = limit ?? DEFAULT_EXECUTION_LIMIT;
     const logger = createLogger({
       durable_object: "Usage",
       operation: "checkExecutionQuota",
-      priority_twist_id: priorityTwistId,
+      twist_instance_id: twistInstanceId,
     });
 
     try {
@@ -383,17 +388,17 @@ export class Usage extends DurableObject<Bindings> {
       // Suspend and notify using the same pattern as checkCostLimit
       await withDb(this.env, async (db) => {
         const pt = await db
-          .selectFrom("priority_twist")
+          .selectFrom("twist_instance")
           .select(["suspended_at", "owner_id", "name"])
-          .where("id", "=", priorityTwistId)
+          .where("id", "=", twistInstanceId)
           .executeTakeFirst();
 
         if (!pt || pt.suspended_at) return;
 
         await db
-          .updateTable("priority_twist")
+          .updateTable("twist_instance")
           .set({ suspended_at: sql`NOW()` })
-          .where("id", "=", priorityTwistId)
+          .where("id", "=", twistInstanceId)
           .execute();
 
         const helpPriority = await db
@@ -406,20 +411,25 @@ export class Usage extends DurableObject<Bindings> {
           const activity = await db
             .insertInto("thread")
             .values({
-              priority_id: helpPriority.id,
               title: "Twist processing suspended due to high execution count",
-              created_by: priorityTwistId,
+              created_by: twistInstanceId,
             })
             .returning("id")
             .executeTakeFirstOrThrow();
+
+          await db
+            .insertInto("thread_priority")
+            .values({ thread_id: activity.id, user_id: pt.owner_id, priority_id: helpPriority.id, matched: false })
+            .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doNothing())
+            .execute();
 
           await db
             .insertInto("note")
             .values({
               thread_id: activity.id,
               content: `The twist **${pt.name}** was automatically suspended because it exceeded the execution quota.\n\n**Reason:** ${total} executions in the last 24 hours (limit: ${effectiveLimit})\n\nTo resume processing, clear the suspension in the database.`,
-              created_by: priorityTwistId,
-              author_id: priorityTwistId,
+              created_by: twistInstanceId,
+              author_id: twistInstanceId,
             })
             .execute();
         }
@@ -442,22 +452,22 @@ export class Usage extends DurableObject<Bindings> {
     hour: number,
     records: UsageRow[]
   ): Promise<void> {
-    const priorityTwistId = this.getPriorityTwistId();
+    const twistInstanceId = this.getTwistInstanceId();
     const logger = createLogger({
       durable_object: "Usage",
       operation: "flushHourToDb",
-      priority_twist_id: priorityTwistId,
+      twist_instance_id: twistInstanceId,
     });
 
-    // Check if priority_twist still exists before flushing
+    // Check if twist_instance still exists before flushing
     const pt = await db
-      .selectFrom("priority_twist")
+      .selectFrom("twist_instance")
       .select("id")
-      .where("id", "=", priorityTwistId)
+      .where("id", "=", twistInstanceId)
       .executeTakeFirst();
 
     if (!pt) {
-      logger.info("priority_twist no longer exists, discarding usage records", {
+      logger.info("twist_instance no longer exists, discarding usage records", {
         row_count: records.length,
         hour: new Date(hour).toISOString(),
       });
@@ -468,7 +478,7 @@ export class Usage extends DurableObject<Bindings> {
 
     logger.info("Flushing usage records", {
       row_count: records.length,
-      priority_twist_id: priorityTwistId,
+      twist_instance_id: twistInstanceId,
       hour: new Date(hour).toISOString(),
     });
 
@@ -523,7 +533,7 @@ export class Usage extends DurableObject<Bindings> {
     const usageRows = costs
       .filter((cost) => recordAmountMap.has(cost.name))
       .map((cost) => ({
-        priority_twist_id: priorityTwistId,
+        twist_instance_id: twistInstanceId,
         hour: new Date(hour).toISOString(),
         cost_id: cost.id,
         amount: recordAmountMap.get(cost.name)!,
@@ -539,7 +549,7 @@ export class Usage extends DurableObject<Bindings> {
       .values(usageRows)
       .onConflict((oc) =>
         oc
-          .columns(["priority_twist_id", "hour", "cost_id"])
+          .columns(["twist_instance_id", "hour", "cost_id"])
           .doUpdateSet((eb) => ({
             amount: eb.ref("excluded.amount"),
           }))

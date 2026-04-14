@@ -6,8 +6,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'command.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
-import 'package:plot/api/api_exception.dart';
-import 'package:plot/api/network_exception.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/color_dot.dart';
@@ -258,15 +256,15 @@ Future<FormData> _buildNewPriorityForm(
       prioritiesBloc.state.root ??
       await Priority.getDefault();
 
-  // Fetch user's organizations for team selector
+  // Fetch user's teams for team selector
   List<Map<String, dynamic>> orgs = [];
   try {
-    final orgList = await api.get<List<dynamic>>('/organization');
+    final orgList = await api.get<List<dynamic>>('/team');
     orgs = orgList.cast<Map<String, dynamic>>();
   } catch (_) {}
 
   // Determine initial team state from default parent
-  final parentOrgId = defaultParent.organizationId;
+  final parentOrgId = defaultParent.teamId;
   final parentOrg = parentOrgId != null
       ? orgs.firstWhereOrNull(
           (o) => int.tryParse(o['id'] as String) == parentOrgId,
@@ -313,11 +311,11 @@ Future<FormData> _buildNewPriorityForm(
   if (teamSelect != null) {
     parentSelect.addListener(() {
       final selected = parentSelect.getValue();
-      if (selected != null && selected.organizationId != null) {
+      if (selected != null && selected.teamId != null) {
         final org = orgs.firstWhereOrNull(
           (o) =>
               int.tryParse(o['id'] as String) ==
-              selected.organizationId,
+              selected.teamId,
         );
         teamSelect.setValue(org);
         teamSelect.readonlyMessage =
@@ -372,15 +370,15 @@ Future<FormData> _buildNewPriorityForm(
                 draft: true,
               );
               // Parent's team takes precedence (constructor already
-              // inherits organizationId from parent)
-              if (selectedParent.organizationId != null) {
+              // inherits teamId from parent)
+              if (selectedParent.teamId != null) {
                 return submitBuilder(Future.value(priority));
               }
               return submitBuilder(
                 Future.value(
                   team != null
                       ? priority.copyWith(
-                          organizationId: Value(
+                          teamId: Value(
                             int.parse(team['id'] as String),
                           ),
                         )
@@ -473,16 +471,16 @@ class EditPriorityCommand extends ShowForm {
             parent = await Priority.getOne(p.parentId!);
           }
 
-          // Fetch user's organizations for team selector
+          // Fetch user's teams for team selector
           List<Map<String, dynamic>> orgs = [];
           try {
-            final orgList = await api.get<List<dynamic>>('/organization');
+            final orgList = await api.get<List<dynamic>>('/team');
             orgs = orgList.cast<Map<String, dynamic>>();
           } catch (_) {}
 
           // Determine team state — use parent's org as fallback for descendants
-          // that haven't synced organization_id yet
-          final effectiveOrgId = p.organizationId ?? parent?.organizationId;
+          // that haven't synced team_id yet
+          final effectiveOrgId = p.teamId ?? parent?.teamId;
           final isTeamDescendant = effectiveOrgId != null && !p.root;
           final currentOrg = orgs.firstWhereOrNull(
             (o) => int.tryParse(o['id'] as String) == effectiveOrgId,
@@ -493,7 +491,7 @@ class EditPriorityCommand extends ShowForm {
             key: 'parent',
             label: 'Parent',
             initialValue: parent,
-            enabled: !isRoot || p.organizationId != null,
+            enabled: !isRoot || p.teamId != null,
             placeholder: 'None',
             items: (search) async {
               final priorities = Priority.excludePlot(
@@ -506,14 +504,14 @@ class EditPriorityCommand extends ShowForm {
                 // Team roots can only be placed under personal priorities
                 // or other priorities in the same team
                 if (isRoot &&
-                    p.organizationId != null &&
+                    p.teamId != null &&
                     !candidate.personal &&
-                    candidate.organizationId != effectiveOrgId) {
+                    candidate.teamId != effectiveOrgId) {
                   return false;
                 }
                 // Team descendants can only move within the same team
                 if (isTeamDescendant &&
-                    candidate.organizationId != effectiveOrgId) {
+                    candidate.teamId != effectiveOrgId) {
                   return false;
                 }
                 return true;
@@ -539,7 +537,7 @@ class EditPriorityCommand extends ShowForm {
                       : null,
                   enabled:
                       isTeamDescendant ||
-                      p.organizationId == null ||
+                      p.teamId == null ||
                       isTeamAdmin,
                   items: (search) async =>
                       <Map<String, dynamic>?>[null, ...orgs]
@@ -559,11 +557,11 @@ class EditPriorityCommand extends ShowForm {
           if (teamSelect != null) {
             parentSelect.addListener(() {
               final newParent = parentSelect.getValue();
-              if (newParent != null && newParent.organizationId != null) {
+              if (newParent != null && newParent.teamId != null) {
                 final org = orgs.firstWhereOrNull(
                   (o) =>
                       int.tryParse(o['id'] as String) ==
-                      newParent.organizationId,
+                      newParent.teamId,
                 );
                 teamSelect.setValue(org);
                 teamSelect.readonlyMessage =
@@ -622,8 +620,8 @@ class EditPriorityCommand extends ShowForm {
                       final team = values['team'] as Map<String, dynamic>?;
                       // Parent's team takes precedence
                       Value<int?> orgId;
-                      if (newParent?.organizationId != null) {
-                        orgId = Value(newParent!.organizationId);
+                      if (newParent?.teamId != null) {
+                        orgId = Value(newParent!.teamId);
                       } else if (showTeamSelect) {
                         orgId = team != null
                             ? Value(int.parse(team['id'] as String))
@@ -637,7 +635,7 @@ class EditPriorityCommand extends ShowForm {
                             title: title,
                             parent: newParent,
                             color: Value(color),
-                            organizationId: orgId,
+                            teamId: orgId,
                           ),
                         ),
                       );
@@ -666,7 +664,6 @@ class ShowPriorityCommands extends ShowCommands {
 
 List<Command> prioritySecondaryCommands(Priority priority) => [
   if (!priority.isViewer && !priority.isPlot) EditPriorityCommand(priority),
-  if (!priority.isViewer) ManagePrioritySharing(priority),
   if (!priority.isViewer) ShowAttentionSettings(priority),
   if (!(priority.root && priority.personal))
     SetTopPriority(priority, priority.topOrder == null),
@@ -763,601 +760,5 @@ class ToggleArchivedPrioritiesFilter extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     context.read<LocalPreferencesBloc>().toggleShowAllPriorities();
     return const CommandDone();
-  }
-}
-
-class SharePriority extends PriorityCommand {
-  SharePriority(Priority super.priority, this.contactId, {required this.add})
-    : super(
-        eventObject: EventObject.priority,
-        eventAction: add ? EventAction.shared : EventAction.updated,
-      );
-
-  final Uuid contactId;
-  final bool add;
-
-  @override
-  String get title => add ? 'Share' : 'Unshare';
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      await api.post<Map<String, dynamic>>(
-        '/priority/${priority!.id}/share',
-        body: {
-          'add': add ? [contactId.toString()] : <String>[],
-          'remove': add ? <String>[] : [contactId.toString()],
-        },
-      );
-      // Ignore response - sync will update local state
-      return const CommandDone();
-    } on ApiException catch (e) {
-      return CommandMessage(e.description, title: e.title, isError: true);
-    } on NetworkException {
-      return const CommandMessage(
-        "You're offline. Please try again when connected.",
-        isError: true,
-      );
-    }
-  }
-}
-
-/// Command to manage sharing for a priority.
-/// Shows three sections: Members (accepted users), Invited (pending invitations), and Share (available contacts).
-class ManagePrioritySharing extends ShowCommands {
-  ManagePrioritySharing(this.priority)
-    : super(
-        title: priority.sharing ? 'Sharing' : 'Share',
-        icon: _sharingIcon(priority),
-        commandsBuilder: (context) => _getSharingCommands(priority),
-        showFilter: true,
-      );
-
-  static IconData _sharingIcon(Priority priority) {
-    final isTeam = priority.organizationId != null;
-    if (isTeam) {
-      return priority.sharing ? PlotIcon.buildingUser : PlotIcon.buildingLock;
-    }
-    return priority.sharing ? PlotIcon.users : PlotIcon.private;
-  }
-
-  final Priority priority;
-
-  static Future<Commands> _getSharingCommands(Priority priority) async {
-    // Read current inheritMembers from DB (priority arg may be stale after toggle)
-    final db = Store.get;
-    final row = await (db.select(
-      db.priorities,
-    )..where((p) => p.id.equalsValue(priority.id))).getSingleOrNull();
-    final currentInheritMembers =
-        row?.inheritMembers ?? priority.inheritMembers;
-    // Build a priority with the refreshed inheritMembers value
-    final current = currentInheritMembers != priority.inheritMembers
-        ? priority.copyWith(inheritMembers: currentInheritMembers)
-        : priority;
-
-    // Fetch all actors for initial ContactGroup cache, ordered by proximity
-    final allActors = await Actor.get(
-      types: [ActorType.user, ActorType.contact],
-      priorityId: current.id,
-      limit: 100,
-    );
-
-    // Only redirect to ancestor if this priority inherits members
-    final sourcePriority =
-        (current.inheritMembers && current.sharingAncestorId != null)
-        ? await Priority.getOne(current.sharingAncestorId!)
-        : current;
-
-    final groups = <CommandGroup>[
-      // Show inherit toggle for non-root shared descendants
-      if (!current.root && current.sharing)
-        StaticCommandGroup(
-          title: 'Settings',
-          commands: [ToggleInheritMembers(current)],
-        ),
-      AcceptedMembersGroup(
-        title: 'Members',
-        priority: sourcePriority,
-        role: 'member',
-      ),
-      AcceptedMembersGroup(
-        title: 'Viewers',
-        priority: sourcePriority,
-        role: 'viewer',
-      ),
-      InvitedMembersGroup(title: 'Invited', priority: sourcePriority),
-      ContactGroup(
-        title: 'Share',
-        priority: sourcePriority,
-        excludeActorIds: {},
-        initialActors: allActors,
-      ),
-    ];
-
-    return Commands(
-      prompt: 'Share with',
-      emptyMessage: 'Enter an email address to invite someone else',
-      groups: groups,
-    );
-  }
-}
-
-/// A CommandGroup for searchable contacts with email invite support.
-class ContactGroup extends CommandGroup {
-  ContactGroup({
-    required super.title,
-    required this.priority,
-    required this.excludeActorIds,
-    this.initialActors = const [],
-  });
-
-  final Priority priority;
-  final Set<Uuid> excludeActorIds;
-  final List<Actor> initialActors;
-
-  @override
-  Future<List<Command>> list({String? search}) async {
-    List<Actor> actors;
-
-    if (search == null || search.isEmpty) {
-      actors = initialActors;
-    } else {
-      actors = await Actor.get(
-        types: [ActorType.user, ActorType.contact],
-        search: search,
-        priorityId: priority.id,
-        limit: 50,
-      );
-    }
-
-    // Dynamically fetch exclude set from priority members (both accepted and invited)
-    final members = await PriorityMember.getForPriority(priority.id);
-
-    // Build exclude set from member contact_ids (already ActorId)
-    final excludeActorIds = members.map((m) => m.contactId).toSet();
-
-    // Filter out excluded and self
-    final filteredActors = actors
-        .where((a) => !excludeActorIds.contains(a.id) && !a.self)
-        .toList();
-
-    final commands = <Command>[
-      ...filteredActors.map((actor) => InviteContact(priority, actor)),
-    ];
-
-    // If search looks like an email and no exact match exists, add "invite by email" option
-    if (search != null && _isValidEmail(search)) {
-      final emailExists = actors.any(
-        (a) => a.email?.toLowerCase() == search.toLowerCase(),
-      );
-      if (!emailExists) {
-        commands.insert(0, InviteByEmail(priority, search));
-      }
-    }
-
-    return commands;
-  }
-
-  static bool _isValidEmail(String value) {
-    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
-  }
-}
-
-class AcceptedMembersGroup extends CommandGroup {
-  AcceptedMembersGroup({
-    required super.title,
-    required this.priority,
-    this.role,
-  });
-
-  final Priority priority;
-  final String? role;
-
-  @override
-  Future<List<Command>> list({String? search}) async {
-    // Get accepted members filtered by role
-    final List<PriorityMemberRow> members;
-    if (role == 'viewer') {
-      members = await PriorityMember.getAcceptedViewersForPriority(priority.id);
-    } else if (role == 'member') {
-      members = await PriorityMember.getAcceptedMembersForPriority(priority.id);
-    } else {
-      members = await PriorityMember.getAcceptedForPriority(priority.id);
-    }
-
-    final commands = <Command>[];
-    for (final member in members) {
-      // Get actor by contact_id (no remote lookup needed!)
-      final actor = await Actor.getOne(member.contactId);
-
-      // Filter by search
-      if (search != null && search.isNotEmpty) {
-        final searchLower = search.toLowerCase();
-        final nameMatch =
-            actor.name?.toLowerCase().contains(searchLower) ?? false;
-        final emailMatch =
-            actor.email?.toLowerCase().contains(searchLower) ?? false;
-        if (!nameMatch && !emailMatch) {
-          continue;
-        }
-      }
-
-      // Show current user with special command
-      if (actor.self) {
-        commands.add(CurrentUserMemberCommand(priority, actor));
-        continue;
-      }
-
-      // All members in this group are accepted
-      commands.add(EditSharingCommand(priority, actor));
-    }
-
-    return commands;
-  }
-}
-
-class InvitedMembersGroup extends CommandGroup {
-  InvitedMembersGroup({required super.title, required this.priority});
-
-  final Priority priority;
-
-  @override
-  Future<List<Command>> list({String? search}) async {
-    // Get only invited members
-    final members = await PriorityMember.getInvitedForPriority(priority.id);
-
-    final commands = <Command>[];
-    for (final member in members) {
-      // Get actor by contact_id (no remote lookup needed!)
-      final actor = await Actor.getOne(member.contactId);
-
-      // Skip current user - shouldn't be in invited list anyway
-      if (actor.self) continue;
-
-      // Filter by search
-      if (search != null && search.isNotEmpty) {
-        final searchLower = search.toLowerCase();
-        final nameMatch =
-            actor.name?.toLowerCase().contains(searchLower) ?? false;
-        final emailMatch =
-            actor.email?.toLowerCase().contains(searchLower) ?? false;
-        if (!nameMatch && !emailMatch) {
-          continue;
-        }
-      }
-
-      // Look up inviter name for subtitle
-      String? inviterName;
-      if (member.invitedBy != null) {
-        if (member.invitedBy == Base.userId) {
-          inviterName = 'you';
-        } else {
-          final inviter = await Actor.getByUserId(member.invitedBy!);
-          inviterName = inviter?.nameOrEmail;
-        }
-      }
-      commands.add(EditInvitationCommand(priority, actor, inviterName));
-    }
-
-    return commands;
-  }
-}
-
-/// View/manage an existing shared user - opens a form with remove option.
-class EditSharingCommand extends ShowForm {
-  EditSharingCommand(this.priority, this.actor)
-    : super(
-        title: actor.nameOrEmail,
-        subtitle: actor.name != null ? actor.email : null,
-        icon: PlotIcon.user,
-        form: (context) => _buildForm(priority, actor),
-      );
-
-  final Priority priority;
-  final Actor actor;
-
-  static Future<FormData> _buildForm(Priority priority, Actor actor) async {
-    return FormData(
-      title: actor.nameOrEmail,
-      groups: [
-        StaticFormGroup(
-          items: [
-            FormInfo(
-              key: 'info',
-              text: '${actor.nameOrEmail} has access to ${priority.title}.',
-            ),
-            FormDivider(key: 'divider'),
-            FormButton(
-              key: 'remove',
-              buildCommand: (_) => _RemoveSharingCommand(priority, actor),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _RemoveSharingCommand extends Command {
-  _RemoveSharingCommand(this.priority, this.actor)
-    : super(
-        title: 'Remove from ${priority.title}',
-        icon: FontAwesomeIcons.trash,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.updated,
-      );
-
-  final Priority priority;
-  final Actor actor;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final result = await SharePriority(
-      priority,
-      actor.id.toUuid(),
-      add: false,
-    ).run(context);
-    if (result is CommandDone) {
-      // Pull sync data so the local database is updated before refresh
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
-
-      return CommandRefresh(message: 'Access removed for ${actor.nameOrEmail}');
-    }
-    return result;
-  }
-}
-
-/// Show current user's membership with option to leave priority.
-class CurrentUserMemberCommand extends Command {
-  CurrentUserMemberCommand(this.priority, this.actor)
-    : super(
-        title: 'You',
-        subtitle: actor.email ?? actor.name,
-        icon: PlotIcon.user,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.viewed,
-      );
-
-  final Priority priority;
-  final Actor actor;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    // Show details with Leave Priority option
-    return ShowCommands(
-      title: 'You',
-      icon: PlotIcon.user,
-      commands: Commands(
-        groups: [
-          StaticCommandGroup(commands: [LeavePriorityCommand(priority)]),
-        ],
-      ),
-    ).run(context);
-  }
-}
-
-/// Leave priority command - allows user to remove their own access.
-class LeavePriorityCommand extends Command {
-  LeavePriorityCommand(this.priority)
-    : super(
-        title: 'Leave priority',
-        subtitle: 'Remove your access to this priority',
-        icon: PlotIcon.signOut,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.deleted,
-      );
-
-  final Priority priority;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    // Check if user is the only member
-    final members = await PriorityMember.getAcceptedForPriority(priority.id);
-    if (members.length <= 1) {
-      return const CommandMessage(
-        'Cannot leave priority - you are the only member',
-        isError: true,
-      );
-    }
-
-    // Get current user's actor
-    final currentUser = await Actor.getOne(Base.actorId);
-
-    if (!context.mounted) {
-      return const CommandSkipped();
-    }
-
-    final result = await SharePriority(
-      priority,
-      currentUser.id.toUuid(),
-      add: false,
-    ).run(context);
-
-    if (result is CommandDone) {
-      // Pull priority_member to reflect removal
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
-
-      return CommandRefresh(message: 'Left priority');
-    }
-    return result;
-  }
-}
-
-/// View/manage a pending invitation - opens a form with cancel option.
-class EditInvitationCommand extends ShowForm {
-  EditInvitationCommand(this.priority, this.actor, String? inviterName)
-    : super(
-        title: actor.nameOrEmail,
-        subtitle: _buildSubtitle(actor, inviterName),
-        icon: PlotIcon.waiting,
-        form: (context) => _buildForm(priority, actor),
-      );
-
-  static String? _buildSubtitle(Actor actor, String? inviterName) {
-    final parts = <String>[];
-    // Only show email in subtitle if name is available (to avoid repeating email)
-    if (actor.name != null) parts.add(actor.email ?? '');
-    if (inviterName != null) parts.add('invited by $inviterName');
-    return parts.isEmpty ? null : parts.join(' · ');
-  }
-
-  final Priority priority;
-  final Actor actor;
-
-  static Future<FormData> _buildForm(Priority priority, Actor actor) async {
-    return FormData(
-      title: actor.nameOrEmail,
-      groups: [
-        StaticFormGroup(
-          items: [
-            FormInfo(
-              key: 'info',
-              text:
-                  'Invitation pending for ${actor.nameOrEmail} to ${priority.title}.',
-            ),
-            FormDivider(key: 'divider'),
-            FormButton(
-              key: 'cancel',
-              buildCommand: (_) => _CancelInvitationCommand(priority, actor),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _CancelInvitationCommand extends Command {
-  _CancelInvitationCommand(this.priority, this.actor)
-    : super(
-        title: 'Cancel invitation to ${priority.title}',
-        icon: FontAwesomeIcons.trash,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.updated,
-      );
-
-  final Priority priority;
-  final Actor actor;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final result = await SharePriority(
-      priority,
-      actor.id.toUuid(),
-      add: false,
-    ).run(context);
-    if (result is CommandDone) {
-      // Pull sync data so the local database is updated before refresh
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
-
-      return CommandRefresh(
-        message: 'Invitation canceled for ${actor.nameOrEmail}',
-      );
-    }
-    return result;
-  }
-}
-
-/// Invite an existing contact - runs immediately (no confirmation needed).
-class InviteContact extends Command {
-  InviteContact(this.priority, this.actor)
-    : super(
-        title: actor.nameOrEmail,
-        subtitle: actor.name != null ? actor.email : null,
-        eventObject: EventObject.priority,
-        eventAction: EventAction.updated,
-        icon: PlotIcon.share,
-      );
-
-  final Priority priority;
-  final Actor actor;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    final result = await SharePriority(
-      priority,
-      actor.id.toUuid(),
-      add: true,
-    ).run(context);
-    if (result is CommandDone) {
-      // Pull sync data so the local database has updated paths and members
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priority);
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.actor);
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
-
-      return CommandRefresh(message: 'Invited ${actor.nameOrEmail}');
-    }
-    return result;
-  }
-}
-
-/// Invite by email (creates contact if needed) - runs immediately.
-class InviteByEmail extends Command {
-  InviteByEmail(this.priority, this.email)
-    : super(
-        title: 'Invite $email',
-        subtitle: 'Invite by email',
-        eventObject: EventObject.priority,
-        eventAction: EventAction.updated,
-        icon: PlotIcon.add,
-      );
-
-  final Priority priority;
-  final String email;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      // API will create contact and invite in one call
-      await api.post<Map<String, dynamic>>(
-        '/priority/${priority.id}/share',
-        body: {
-          'add': [email], // API accepts email strings
-          'remove': <String>[],
-        },
-      );
-      // Pull sync data so the local database has updated paths, contacts,
-      // and members before the modal refreshes
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priority);
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.actor);
-      await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
-
-      return CommandRefresh(message: 'Invitation sent to $email');
-    } on ApiException catch (e) {
-      return CommandMessage(e.description, title: e.title, isError: true);
-    } on NetworkException {
-      return const CommandMessage(
-        "You're offline. Please try again when connected.",
-        isError: true,
-      );
-    }
-  }
-}
-
-/// Toggle whether a priority inherits members from its parent.
-class ToggleInheritMembers extends Command {
-  ToggleInheritMembers(this.priority)
-    : super(
-        title: 'Include members of the parent priority',
-        eventObject: EventObject.priority,
-        eventAction: EventAction.updated,
-        icon: priority.inheritMembers ? PlotIcon.on : PlotIcon.off,
-        on: priority.inheritMembers,
-      );
-
-  final Priority priority;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await priority.copyWith(inheritMembers: !priority.inheritMembers).save();
-    // Pull updated data so sharing UI reflects the change
-    await SyncOrchestrator.instance.pull(SyncOrchestrator.priority);
-    await SyncOrchestrator.instance.pull(SyncOrchestrator.priorityMember);
-    return CommandRefresh(
-      message: priority.inheritMembers
-          ? 'Parent members excluded'
-          : 'Parent members included',
-    );
   }
 }

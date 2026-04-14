@@ -1,22 +1,11 @@
+-- Apply default thread icon from the priority's default_thread_icon setting.
+-- Since thread no longer has priority_id (per-user filing via thread_priority),
+-- this trigger is a no-op. Default icons are applied by the API layer instead.
 CREATE OR REPLACE FUNCTION public.apply_default_thread_icon ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     AS $$
-DECLARE
-    v_default_icon text;
 BEGIN
-    -- Apply when icon is unset or is a default sub-type auto-assigned by the app
-    IF (NEW.icon IS NULL OR NEW.icon IN ('notes', 'discussion')) AND NEW.access != 'private' THEN
-        SELECT
-            default_thread_icon INTO v_default_icon
-        FROM
-            priority
-        WHERE
-            id = NEW.priority_id;
-        IF v_default_icon IS NOT NULL THEN
-            NEW.icon := v_default_icon;
-        END IF;
-    END IF;
     RETURN NEW;
 END;
 $$;

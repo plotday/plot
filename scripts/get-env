@@ -25,8 +25,8 @@ fi
 bash "$SCRIPTS_DIR/gen-env" development $VARS > "${NATIVE}.development"
 bash "$SCRIPTS_DIR/gen-env" production $VARS > "${NATIVE}.production"
 
-# Copy development env if no file exists or if it's a stale symlink (default to development)
-if [ ! -f "$NATIVE" ] || [ -L "$NATIVE" ]; then
-  rm -f "$NATIVE"
-  cp "${NATIVE}.development" "$NATIVE"
-fi
+# Always refresh the native file from the development version.
+# Previous behavior only copied when missing or a symlink, which left
+# .dev.vars stale after env changes (e.g. worktree-db port updates).
+rm -f "$NATIVE"
+cp "${NATIVE}.development" "$NATIVE"

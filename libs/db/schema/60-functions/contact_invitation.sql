@@ -115,19 +115,6 @@ BEGIN
         redeemed_by = p_user_id
     WHERE
         contact_id = v_contact_id;
-    -- Accept any pending invitations for this contact (from priority_contact)
-    INSERT INTO public.priority_user (user_id, priority_id)
-    SELECT
-        p_user_id,
-        pc.priority_id
-    FROM
-        public.priority_contact pc
-    WHERE
-        pc.contact_id = v_contact_id
-        AND pc.invited_at IS NOT NULL
-    ON CONFLICT
-        DO NOTHING;
-    -- Note: priority_contact remains - status changes from 'invited' to 'accepted' in priority_member view
     RETURN jsonb_build_object('success', TRUE, 'already_redeemed', FALSE, 'contact_id', v_contact_id);
 END;
 $function$;

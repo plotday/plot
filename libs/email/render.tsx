@@ -8,12 +8,14 @@ import PasswordChanged from "./emails/password-changed";
 import PasswordRemoved from "./emails/password-removed";
 import PasswordReset from "./emails/password-reset";
 import PriorityInvitation from "./emails/priority-invitation";
+import ThreadInvitation from "./emails/thread-invitation";
 import LinkEmail from "./emails/link-email";
 import NotificationDigest from "./emails/notification-digest";
 import SignInVerification from "./emails/sign-in-verification";
 
 export type EmailType =
   | "priority-invitation"
+  | "thread-invitation"
   | "email-confirmation"
   | "password-reset"
   | "email-change"
@@ -32,12 +34,20 @@ interface PriorityInvitationProps {
   recipientName?: string;
 }
 
+interface ThreadInvitationProps {
+  inviterName: string;
+  threadTitle: string;
+  inviteUrl: string;
+  recipientName?: string;
+}
+
 interface AuthCodeProps {
   code: string;
 }
 
 type EmailProps = {
   "priority-invitation": PriorityInvitationProps;
+  "thread-invitation": ThreadInvitationProps;
   "email-confirmation": AuthCodeProps;
   "password-reset": AuthCodeProps;
   "email-change": AuthCodeProps;
@@ -69,6 +79,9 @@ export const render = async <T extends EmailType>(
   switch (type) {
     case "priority-invitation":
       Component = PriorityInvitation;
+      break;
+    case "thread-invitation":
+      Component = ThreadInvitation;
       break;
     case "email-confirmation":
       Component = EmailConfirmation;

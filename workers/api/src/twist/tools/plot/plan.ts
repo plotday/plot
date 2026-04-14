@@ -17,7 +17,7 @@ export async function executePlan(
   plot: Plot,
   operations: PlanOperation[]
 ): Promise<Array<{ success: boolean; error?: string }>> {
-  const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+  const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
   const results: Array<{ success: boolean; error?: string }> = [];
 
   for (const op of operations) {

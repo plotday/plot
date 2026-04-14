@@ -29,7 +29,7 @@
    ```bash
    pnpm apply-migrations
    ```
-   - Uses Atlas to apply all pending migrations to the LOCAL database (localhost:54322)
+   - Uses Atlas to apply all pending migrations to the LOCAL database (uses `$DATABASE_URL`)
    - Atlas tracks applied migrations in its `atlas_schema_revisions` table
    - Use `pnpm diff-schema-migrations` to check if schema changes need new migrations
 
@@ -99,36 +99,49 @@ This applies to:
 
 ## Thread Visibility in Views
 
-Any view or query that joins `thread_unread` to determine what a user can see must enforce thread visibility. The canonical reference is the `user.thread` view. Required filters when joining thread (aliased as `a`) with `thread_unread`:
+Any view or query that joins `thread_unread` (or otherwise decides what a
+user can see) must enforce thread visibility. The canonical reference is the
+`user.thread` view. In the per-user priority model, visibility is driven
+by the `thread_priority` join table plus contact membership:
 
 ```sql
-AND a.archived_at IS NULL
-AND (a.draft = FALSE OR a.created_by = user_id)
-AND (CASE
-    WHEN a.access = 'public' THEN TRUE
-    WHEN a.created_by = user_id THEN TRUE
-    WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
-    WHEN "user".user_contact_id(user_id) = ANY(a.access_contacts) THEN TRUE
-    ELSE FALSE
-END)
+JOIN public.thread_priority tp ON tp.thread_id = a.id
+LEFT JOIN public.thread_unread tu
+    ON tu.user_id = tp.user_id AND tu.thread_id = a.id
+WHERE a.archived_at IS NULL
+  AND (a.draft = FALSE OR a.created_by = tp.user_id)
+  AND a.contacts && "user".user_contact_ids(tp.user_id)
 ```
 
-Without these, views like `user.priority_unread` will show false unread indicators for threads the user can't actually see (access-restricted threads from other users, archived threads, other users' drafts).
+- `thread_priority` is populated automatically by the
+  `populate_thread_priority_for_author` (author / twist owner) and
+  `file_thread_priority_peers` (peers in `contacts`) triggers, so raw
+  inserts and RPC-driven upserts both get correct filings for free.
+- `thread.contacts` must include every linked contact the thread is
+  authored by or shared with. `user_contact_ids(user_id)` returns every
+  contact linked to the user (`linked = true`), not only the primary.
+- `a.access` / `a.access_contacts` are vestigial columns kept in the
+  schema for legacy readers. New code should read `a.contacts` only.
 
-**Exception**: Twist callback views (e.g. `priority_twist_thread_read`) are scoped to threads the twist created — the twist has inherent visibility.
+Without the `thread_priority` join + `contacts` intersection, views like
+`user.priority_unread` will show unread indicators for threads the user
+can't actually see.
+
+**Exception**: Twist callback views (e.g. `twist_instance_thread_read`) are
+scoped to threads the twist created — the twist has inherent visibility.
 
 ## Database Infrastructure
 
 The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `docker-compose.yml`. Key details:
 
-- **Local database port**: 54322 (Docker maps 54322:5432)
+- **Local database port**: 54322 in main repo (Docker maps 54322:5432). **Worktrees use a different port** — always use `$DATABASE_URL` for psql commands, never hardcode 54322. The worktree port is in `.worktree-db` at the repo root.
 - **Schema management**: Atlas handles diffing, migration generation, and migration application
 - **Type generation**: Uses `@supabase/postgres-meta` as a library (via `pnpm types`)
 - **Atlas config**: `atlas.hcl` defines the local environment, schema sources, and migration directory
 
 ## CRITICAL: When Modifying Synced Tables
 
-**When you modify columns in `activity`, `note`, `priority`, `session`, `priority_twist`, or `activity_read` tables, you MUST update TWO additional locations:**
+**When you modify columns in `activity`, `note`, `priority`, `session`, `twist_instance`, or `activity_read` tables, you MUST update TWO additional locations:**
 
 ### 1. Database Notification Functions (`schema/60-functions/70-update.sql`)
 
@@ -151,7 +164,7 @@ Each synced table has a corresponding `notify_internal_api_for_<table>()` functi
 - **For `session` table**: Update `notify_internal_api_for_session()`
   - Add new fields to the `jsonb_build_object()` call on line ~202
 
-- **For `priority_twist` table**: Update `notify_internal_api_for_priority_twist()`
+- **For `twist_instance` table**: Update `notify_internal_api_for_twist_instance()`
   - Add new fields to the `jsonb_build_object()` call on line ~371
 
 - **For `activity_read` table**: Update `notify_internal_api_for_activity_read()`
@@ -165,7 +178,7 @@ Update the corresponding Zod schema to match the database columns:
 - **NoteItemSchema** (line ~38): For `note` table changes
 - **PriorityItemSchema** (line ~63): For `priority` table changes
 - **SessionItemSchema** (line ~76): For `session` table changes
-- **PriorityTwistItemSchema** (line ~92): For `priority_twist` table changes
+- **TwistInstanceItemSchema** (line ~92): For `twist_instance` table changes
 - **ActivityReadItemSchema** (line ~106): For `activity_read` table changes
 
 **Field type mapping**:
@@ -230,7 +243,7 @@ rm migrations/20260129*_dev_*.sql
 atlas migrate hash --env local
 
 # 3. Remove them from Atlas's tracking table
-psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c \
+psql "$DATABASE_URL" -c \
   "DELETE FROM atlas_schema_revisions WHERE version IN ('20260129123456', '20260129123457')"
 
 # 4. Generate one clean migration from your schema files
@@ -280,7 +293,7 @@ Migrations run in CI before workers deploy. Between "migrations applied" and "ne
 ### NEVER Touch the Remote Database
 
 - ❌ **NEVER**: Modify the remote/production database directly - ALL WORK IS LOCAL ONLY
-- ✅ **ONLY**: Work with local database at localhost:54322
+- ✅ **ONLY**: Work with local database via `$DATABASE_URL` (port 54322 in main repo, different port in worktrees — check `.worktree-db`)
 
 ### Local Database Rules
 
@@ -289,7 +302,7 @@ Migrations run in CI before workers deploy. Between "migrations applied" and "ne
 - ✅ **DO**: Create multiple migrations for iterative changes
 - ✅ **DO**: Add data migrations to generated migration files when needed
 - ✅ **DO**: Regenerate types after schema changes
-- ✅ **DO**: Always verify you're targeting localhost:54322
+- ✅ **DO**: Always use `$DATABASE_URL` for psql commands — never hardcode port 54322 (worktrees use different ports)
 
 - ❌ **NEVER**: Create migration files manually
 - ❌ **NEVER**: Edit migration files after they've been successfully applied

@@ -98,7 +98,7 @@ threadTags.post("/sync/thread-tags", async (c) => {
     });
   });
 
-  const priorityId = await getPriorityForThread(c.var.db, body.thread_id);
+  const priorityId = await getPriorityForThread(c.var.db, body.thread_id, c.var.user.id);
   notifySync(c, priorityId);
 
   return c.json(result as any);
@@ -119,7 +119,7 @@ threadTags.post("/sync/thread-tags/update", async (c) => {
     });
   });
 
-  const priorityId2 = await getPriorityForThread(c.var.db, body.thread_id);
+  const priorityId2 = await getPriorityForThread(c.var.db, body.thread_id, c.var.user.id);
   notifySync(c, priorityId2);
 
   return c.json(result as any);

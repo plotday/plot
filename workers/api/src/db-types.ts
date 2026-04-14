@@ -40,15 +40,19 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Numeric = ColumnType<string, number | string, number | string>;
 
-export type OrganizationRole = "admin" | "member";
-
 export type SubscriptionPlan = "core" | "free" | "pro" | "team";
 
 export type SubscriptionStatus = "active" | "canceled" | "incomplete" | "incomplete_expired" | "past_due" | "trialing" | "unpaid";
 
 export type SyncOperation = "create" | "update";
 
+export type TeamRole = "admin" | "member";
+
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
+
+export type TopicJoinPolicy = "admin" | "member" | "open";
+
+export type TopicType = "announce" | "private" | "public" | "team";
 
 export type TwistEnvironment = "personal" | "private" | "public" | "review";
 
@@ -72,8 +76,8 @@ export interface AiKey {
   iv: string;
   key_suffix: string;
   name: string | null;
-  organization_id: Int8 | null;
   provider: AiProvider;
+  team_id: Int8 | null;
   thinking_model: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
@@ -84,7 +88,7 @@ export interface AiPreference {
   builtin_ai_key_id: Int8 | null;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
-  organization_id: Int8 | null;
+  team_id: Int8 | null;
   twist_ai_disabled: Generated<boolean>;
   twist_ai_key_id: Int8 | null;
   updated_at: Generated<Timestamp>;
@@ -104,6 +108,20 @@ export interface AtlasSchemaRevisionsAtlasSchemaRevisions {
   total: Generated<Int8>;
   type: Generated<Int8>;
   version: string;
+}
+
+export interface Channel {
+  /**
+   * Provider-specific global ID for the channel. The same calendar/project has the same ID across users.
+   */
+  channel_id: string;
+  created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
+  id: Generated<Int8>;
+  link_types: Json | null;
+  title: string;
+  twist_instance_id: string;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface Contact {
@@ -160,7 +178,7 @@ export interface Domain {
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
   name: string;
-  organization_id: Int8 | null;
+  team_id: Int8 | null;
 }
 
 export interface EmailClaim {
@@ -278,7 +296,7 @@ export interface Link {
   channel_id: string | null;
   created_at: Generated<Timestamp>;
   /**
-   * The user_id or priority_twist_id that actually created this link. Used for filtering callbacks and permissions.
+   * The user_id or twist_instance_id that actually created this link. Used for filtering callbacks and permissions.
    */
   created_by: string | null;
   embedding: string | null;
@@ -359,16 +377,20 @@ export interface LinkX {
 }
 
 export interface Note {
+  /**
+   * Restricts note visibility within thread viewers. NULL = all thread viewers can see, empty array = author only, array of contact_ids = author + listed contacts.
+   */
+  access_contacts: string[] | null;
   actions: Json | null;
   archived_at: Timestamp | null;
   /**
-   * The actor to credit with creating this note. For notes created by users, this is the user's contact ID (never the user_id). For notes created by twists, this is the twist's priority_twist_id.
+   * The actor to credit with creating this note. For notes created by users, this is the user's contact ID (never the user_id). For notes created by twists, this is the twist's twist_instance_id.
    */
   author_id: string;
   content: string | null;
   created_at: Generated<Timestamp>;
   /**
-   * The user_id or priority_twist_id that actually created this note. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.
+   * The user_id or twist_instance_id that actually created this note. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.
    */
   created_by: string;
   draft: Generated<boolean>;
@@ -379,11 +401,10 @@ export interface Note {
    */
   key: string | null;
   /**
-   * Array of actor IDs (contact_id or priority_twist_id) mentioned in this note. For users, this stores their contact_id (not user_id).
+   * Array of twist_instance_ids (twists and connectors) mentioned in this note. Used for dispatch routing only — user visibility is handled by access_contacts.
    */
   mentions: string[] | null;
   merged_from_thread_id: string | null;
-  access_contacts: string[] | null;
   re_note_id: string | null;
   /**
    * When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot's database.
@@ -413,45 +434,6 @@ export interface NoteTags {
   updated_by: number | null;
 }
 
-export interface Organization {
-  billing_email: string | null;
-  created_at: Generated<Timestamp>;
-  id: Generated<Int8>;
-  name: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface OrganizationInvitation {
-  created_at: Generated<Timestamp>;
-  email: string;
-  id: Generated<Int8>;
-  invited_by: string;
-  organization_id: Int8;
-  role: Generated<OrganizationRole>;
-}
-
-export interface OrganizationMember {
-  created_at: Generated<Timestamp>;
-  id: Generated<Int8>;
-  organization_id: Int8;
-  role: Generated<OrganizationRole>;
-  user_id: string;
-}
-
-export interface OrganizationSubscription {
-  billing_cycle_end: Timestamp;
-  billing_cycle_start: Timestamp;
-  connection_group_quantity: Generated<number>;
-  created_at: Generated<Timestamp>;
-  id: Generated<Int8>;
-  organization_id: Int8;
-  plan: Generated<SubscriptionPlan>;
-  status: Generated<SubscriptionStatus>;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-  updated_at: Generated<Timestamp>;
-}
-
 export interface Priority {
   archived_at: Timestamp | null;
   color: number | null;
@@ -461,12 +443,13 @@ export interface Priority {
   id: Generated<string>;
   inherit_members: Generated<boolean>;
   key: string | null;
-  organization_id: Int8 | null;
   path: string;
   sync_depth: number | null;
+  team_id: Int8 | null;
   title: string;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
+  user_id: string;
 }
 
 export interface PriorityChild {
@@ -480,41 +463,19 @@ export interface PriorityChildTwist {
   author_email: string | null;
   author_name: string | null;
   author_url: string | null;
-  config: Json | null;
   created_at: Timestamp | null;
+  draft: boolean | null;
   id: string | null;
   is_source: boolean | null;
   name: string | null;
+  options: Json | null;
   owner_id: string | null;
-  priority_child_id: string | null;
-  priority_id: string | null;
   suspended_at: Timestamp | null;
+  team_id: Int8 | null;
   twist_environment: TwistEnvironment | null;
   twist_id: Int8 | null;
   updated_at: Timestamp | null;
   version: string | null;
-}
-
-export interface PriorityContact {
-  contact_id: string;
-  created_at: Generated<Timestamp>;
-  id: Generated<Int8>;
-  invited_at: Timestamp | null;
-  invited_by: string | null;
-  priority_id: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface PriorityMember {
-  archived_at: Timestamp | null;
-  contact_id: string | null;
-  created_at: Timestamp | null;
-  invited_by: string | null;
-  personal: boolean | null;
-  priority_id: string | null;
-  role: string | null;
-  status: string | null;
-  updated_at: Timestamp | null;
 }
 
 export interface PrioritySetting {
@@ -539,286 +500,6 @@ export interface PriorityTags {
   priority_id: string | null;
   tag_id: number | null;
   updated_at: Timestamp | null;
-}
-
-export interface PriorityTwist {
-  archived_at: Timestamp | null;
-  config: Generated<Json>;
-  created_at: Generated<Timestamp>;
-  id: Generated<string>;
-  name: string;
-  owner_id: string;
-  priority_id: string | null;
-  suspended_at: Timestamp | null;
-  twist_id: Int8;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface PriorityTwistChannel {
-  channel_id: string;
-  created_at: Generated<Timestamp>;
-  enabled: Generated<boolean>;
-  id: Generated<Int8>;
-  priority_twist_id: string;
-  source_priority_twist_id: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface PriorityTwistChannelLinkCreate {
-  actions: Json | null;
-  assignee_id: string | null;
-  author_id: string | null;
-  author_name: string | null;
-  author_type: string | null;
-  channel_id: string | null;
-  created_at: Timestamp | null;
-  created_by: string | null;
-  id: string | null;
-  meta: Json | null;
-  preview: string | null;
-  priority_id: string | null;
-  priority_title: string | null;
-  priority_twist_id: string | null;
-  source: string | null;
-  source_created_at: Timestamp | null;
-  source_url: string | null;
-  status: string | null;
-  sync_depth: number | null;
-  thread_id: string | null;
-  title: string | null;
-  twist_id: Int8 | null;
-  type: string | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-}
-
-export interface PriorityTwistChannelLinkUpdate {
-  actions: Json | null;
-  assignee_id: string | null;
-  author_id: string | null;
-  author_name: string | null;
-  author_type: string | null;
-  channel_id: string | null;
-  created_at: Timestamp | null;
-  created_by: string | null;
-  id: string | null;
-  meta: Json | null;
-  preview: string | null;
-  priority_id: string | null;
-  priority_title: string | null;
-  priority_twist_id: string | null;
-  source: string | null;
-  source_created_at: Timestamp | null;
-  source_url: string | null;
-  status: string | null;
-  sync_depth: number | null;
-  thread_id: string | null;
-  title: string | null;
-  twist_id: Int8 | null;
-  type: string | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-}
-
-export interface PriorityTwistChannelNoteCreate {
-  actions: Json | null;
-  archived_at: Timestamp | null;
-  author_id: string | null;
-  author_name: string | null;
-  author_type: string | null;
-  content: string | null;
-  created_at: Timestamp | null;
-  created_by: string | null;
-  draft: boolean | null;
-  id: string | null;
-  key: string | null;
-  link_channel_id: string | null;
-  link_id: string | null;
-  link_meta: Json | null;
-  link_source: string | null;
-  link_source_url: string | null;
-  link_title: string | null;
-  link_type: string | null;
-  mentions: string[] | null;
-  priority_id: string | null;
-  priority_twist_id: string | null;
-  access_contacts: string[] | null;
-  re_note_id: string | null;
-  source_created_at: Timestamp | null;
-  sync_depth: number | null;
-  tags: Json | null;
-  thread_created_by: string | null;
-  thread_id: string | null;
-  thread_title: string | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-}
-
-export interface PriorityTwistChild {
-  archived_at: Timestamp | null;
-  priority_id: string | null;
-  priority_twist_id: string | null;
-}
-
-export interface PriorityTwistConnection {
-  actor_id: string;
-  connected_at: Generated<Timestamp>;
-  priority_twist_id: string;
-  provider: string;
-  user_id: string;
-}
-
-export interface PriorityTwistLinkUpdate {
-  actions: Json | null;
-  assignee_id: string | null;
-  author_id: string | null;
-  author_name: string | null;
-  author_type: string | null;
-  created_at: Timestamp | null;
-  created_by: string | null;
-  id: string | null;
-  meta: Json | null;
-  preview: string | null;
-  priority_id: string | null;
-  priority_title: string | null;
-  priority_twist_id: string | null;
-  source: string | null;
-  source_created_at: Timestamp | null;
-  status: string | null;
-  sync_depth: number | null;
-  thread_id: string | null;
-  title: string | null;
-  twist_id: Int8 | null;
-  type: string | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-}
-
-export interface PriorityTwistNoteCreate {
-  access_contacts: string[] | null;
-  actions: Json | null;
-  archived_at: Timestamp | null;
-  author_id: string | null;
-  author_name: string | null;
-  author_type: string | null;
-  content: string | null;
-  created_at: Timestamp | null;
-  created_by: string | null;
-  draft: boolean | null;
-  id: string | null;
-  key: string | null;
-  mentions: string[] | null;
-  priority_id: string | null;
-  priority_twist_id: string | null;
-  re_note_id: string | null;
-  source_created_at: Timestamp | null;
-  sync_depth: number | null;
-  tags: Json | null;
-  thread_created_by: string | null;
-  thread_id: string | null;
-  thread_meta: Json | null;
-  thread_title: string | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-}
-
-export interface PriorityTwistNoteUpdate {
-  access_contacts: string[] | null;
-  actions: Json | null;
-  archived_at: Timestamp | null;
-  author_id: string | null;
-  author_name: string | null;
-  author_type: string | null;
-  content: string | null;
-  created_at: Timestamp | null;
-  created_by: string | null;
-  draft: boolean | null;
-  id: string | null;
-  key: string | null;
-  mentions: string[] | null;
-  priority_id: string | null;
-  priority_twist_id: string | null;
-  re_note_id: string | null;
-  source_created_at: Timestamp | null;
-  sync_depth: number | null;
-  tags: Json | null;
-  thread_created_by: string | null;
-  thread_id: string | null;
-  thread_meta: Json | null;
-  thread_title: string | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
-}
-
-export interface PriorityTwistScheduleContact {
-  archived_at: Timestamp | null;
-  contact_id: string | null;
-  link_id: string | null;
-  priority_id: string | null;
-  priority_twist_id: string | null;
-  role: string | null;
-  schedule_contact_id: Int8 | null;
-  schedule_id: string | null;
-  status: string | null;
-  thread_id: string | null;
-  updated_at: Timestamp | null;
-}
-
-export interface PriorityTwistSync {
-  entity: string;
-  last_sync_at: Generated<Timestamp>;
-  last_update_at: Timestamp;
-  operation: SyncOperation;
-  priority_twist_id: string;
-}
-
-export interface PriorityTwistThreadRead {
-  priority_id: string | null;
-  priority_twist_id: string | null;
-  read_at: Timestamp | null;
-  thread_id: string | null;
-  updated_at: Timestamp | null;
-  user_id: string | null;
-}
-
-export interface PriorityTwistThreadSchedule {
-  at: string | null;
-  on: string | null;
-  priority_id: string | null;
-  priority_twist_id: string | null;
-  schedule_id: string | null;
-  thread_id: string | null;
-  updated_at: Timestamp | null;
-  user_id: string | null;
-}
-
-export interface PriorityTwistThreadTagChange {
-  actor_id: string | null;
-  change_type: string | null;
-  occurrence: string | null;
-  priority_twist_id: string | null;
-  tag_id: number | null;
-  thread_id: string | null;
-  updated_at: Timestamp | null;
-}
-
-export interface PriorityTwistThreadUpdate {
-  access: string | null;
-  access_contacts: string[] | null;
-  archived_at: Timestamp | null;
-  created_at: Timestamp | null;
-  created_by: string | null;
-  draft: boolean | null;
-  id: string | null;
-  preview: string | null;
-  priority_id: string | null;
-  priority_title: string | null;
-  priority_twist_id: string | null;
-  sync_depth: number | null;
-  tags: Json | null;
-  title: string | null;
-  updated_at: Timestamp | null;
-  updated_by: number | null;
 }
 
 export interface PriorityUser {
@@ -876,7 +557,7 @@ export interface SecureOption {
   id: Generated<Int8>;
   iv: string;
   key: string;
-  priority_twist_id: string;
+  twist_instance_id: string;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
 }
@@ -906,38 +587,61 @@ export interface Session {
   user_id: string;
 }
 
-export interface SourceChannel {
-  /**
-   * Provider-specific global ID for the channel. The same calendar/project has the same ID across users.
-   */
-  channel_id: string;
-  create_threads: Generated<string>;
-  create_threads_by_type: Json | null;
+export interface Team {
+  billing_email: string | null;
   created_at: Generated<Timestamp>;
-  enabled: Generated<boolean>;
   id: Generated<Int8>;
-  link_types: Json | null;
-  /**
-   * The priority this channel syncs data to. NULL means the channel is known but not routed to any priority.
-   */
-  priority_id: string | null;
-  priority_twist_id: string;
-  title: string;
+  name: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface TeamInvitation {
+  created_at: Generated<Timestamp>;
+  email: string;
+  id: Generated<Int8>;
+  invited_by: string;
+  role: Generated<TeamRole>;
+  team_id: Int8;
+}
+
+export interface TeamSubscription {
+  billing_cycle_end: Timestamp;
+  billing_cycle_start: Timestamp;
+  connection_group_quantity: Generated<number>;
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  plan: Generated<SubscriptionPlan>;
+  status: Generated<SubscriptionStatus>;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  team_id: Int8;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface TeamUser {
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  role: Generated<TeamRole>;
+  team_id: Int8;
+  user_id: string;
 }
 
 export interface Thread {
   archived_at: Timestamp | null;
+  /**
+   * Canonical list of contact_ids with access to this thread, including the author's primary contact for human-created threads. A user can access the thread if any of their linked (user_contact.linked=true) contacts appears in this array.
+   */
+  contacts: Generated<string[]>;
   created_at: Generated<Timestamp>;
   /**
-   * The user_id or priority_twist_id that actually created this thread. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.
+   * The user_id or twist_instance_id that actually created this thread. Unlike author_id, this always reflects the entity that performed the creation action, used for filtering callbacks and permissions.
    */
   created_by: string;
   draft: Generated<boolean>;
   icon: string | null;
   id: Generated<string>;
   /**
-   * Internal identifier for deduplication within a priority. Used with priority_id for upsert behavior. Not synced to clients.
+   * Internal identifier for deduplication within a creator. Used with created_by for upsert behavior. Not synced to clients.
    */
   key: string | null;
   /**
@@ -949,11 +653,12 @@ export interface Thread {
    */
   last_note_source_created_at: Timestamp | null;
   preview: string | null;
-  priority_id: string;
-  access: Generated<string>;
-  access_contacts: string[] | null;
   sync_depth: number | null;
   title: string | null;
+  /**
+   * Topic IDs attached to this thread. Members of referenced topics gain visibility dynamically — new members automatically see past threads.
+   */
+  topics: Generated<string[]>;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
 }
@@ -966,6 +671,18 @@ export interface ThreadAssociation {
   order: number;
   parent_thread_id: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface ThreadPriority {
+  created_at: Generated<Timestamp>;
+  /**
+   * TRUE if this filing was assigned by the priority matching algorithm (vs explicitly chosen by the user or inherited from the author).
+   */
+  matched: Generated<boolean>;
+  priority_id: string;
+  thread_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
 }
 
 export interface ThreadRead {
@@ -1010,9 +727,8 @@ export interface ThreadUnread {
 }
 
 export interface ThreadX {
-  access: string | null;
-  access_contacts: string[] | null;
   archived_at: Timestamp | null;
+  contacts: string[] | null;
   created_at: Timestamp | null;
   created_by: string | null;
   draft: boolean | null;
@@ -1022,10 +738,9 @@ export interface ThreadX {
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
   preview: string | null;
-  priority_id: string | null;
-  priority_path: string | null;
   sync_depth: number | null;
   title: string | null;
+  topics: string[] | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
 }
@@ -1042,6 +757,35 @@ export interface Token {
   user_id: string | null;
 }
 
+export interface Topic {
+  archived_at: Timestamp | null;
+  /**
+   * TRUE for system-managed topics (Everyone, team topics). Membership is maintained by triggers and cannot be modified via API.
+   */
+  auto_maintained: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  id: Generated<string>;
+  join_policy: Generated<TopicJoinPolicy>;
+  name: string;
+  team_id: Int8 | null;
+  type: Generated<TopicType>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface TopicAdmin {
+  created_at: Generated<Timestamp>;
+  topic_id: string;
+  user_id: string;
+}
+
+export interface TopicMember {
+  contact_id: string;
+  created_at: Generated<Timestamp>;
+  topic_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Twist {
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
@@ -1054,7 +798,7 @@ export interface Twist {
   logo_url: string | null;
   logo_url_dark: string | null;
   name: string;
-  options: Json | null;
+  options_schema: Json | null;
   permissions: Json | null;
   shared: Generated<boolean>;
   twist_admin_id: Int8;
@@ -1073,6 +817,280 @@ export interface TwistAdmin {
   user_id: string | null;
 }
 
+export interface TwistInstance {
+  archived_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  draft: Generated<boolean>;
+  id: Generated<string>;
+  name: string;
+  options: Generated<Json>;
+  owner_id: string;
+  suspended_at: Timestamp | null;
+  team_id: Int8 | null;
+  twist_id: Int8;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface TwistInstanceChannel {
+  channel_id: string;
+  created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
+  id: Generated<Int8>;
+  source_twist_instance_id: string;
+  twist_instance_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface TwistInstanceChannelLinkCreate {
+  actions: Json | null;
+  assignee_id: string | null;
+  author_id: string | null;
+  author_name: string | null;
+  author_type: string | null;
+  channel_id: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  id: string | null;
+  meta: Json | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_title: string | null;
+  source: string | null;
+  source_created_at: Timestamp | null;
+  source_url: string | null;
+  status: string | null;
+  sync_depth: number | null;
+  thread_id: string | null;
+  title: string | null;
+  twist_id: Int8 | null;
+  twist_instance_id: string | null;
+  type: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
+export interface TwistInstanceChannelLinkUpdate {
+  actions: Json | null;
+  assignee_id: string | null;
+  author_id: string | null;
+  author_name: string | null;
+  author_type: string | null;
+  channel_id: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  id: string | null;
+  meta: Json | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_title: string | null;
+  source: string | null;
+  source_created_at: Timestamp | null;
+  source_url: string | null;
+  status: string | null;
+  sync_depth: number | null;
+  thread_id: string | null;
+  title: string | null;
+  twist_id: Int8 | null;
+  twist_instance_id: string | null;
+  type: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
+export interface TwistInstanceChannelNoteCreate {
+  access_contacts: string[] | null;
+  actions: Json | null;
+  archived_at: Timestamp | null;
+  author_id: string | null;
+  author_name: string | null;
+  author_type: string | null;
+  content: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  draft: boolean | null;
+  id: string | null;
+  key: string | null;
+  link_channel_id: string | null;
+  link_id: string | null;
+  link_meta: Json | null;
+  link_source: string | null;
+  link_source_url: string | null;
+  link_title: string | null;
+  link_type: string | null;
+  mentions: string[] | null;
+  priority_id: string | null;
+  re_note_id: string | null;
+  source_created_at: Timestamp | null;
+  sync_depth: number | null;
+  tags: Json | null;
+  thread_created_by: string | null;
+  thread_id: string | null;
+  thread_title: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
+export interface TwistInstanceConnection {
+  actor_id: string;
+  connected_at: Generated<Timestamp>;
+  provider: string;
+  twist_instance_id: string;
+  user_id: string;
+}
+
+export interface TwistInstanceLinkUpdate {
+  actions: Json | null;
+  assignee_id: string | null;
+  author_id: string | null;
+  author_name: string | null;
+  author_type: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  id: string | null;
+  meta: Json | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_title: string | null;
+  source: string | null;
+  source_created_at: Timestamp | null;
+  status: string | null;
+  sync_depth: number | null;
+  thread_id: string | null;
+  title: string | null;
+  twist_id: Int8 | null;
+  twist_instance_id: string | null;
+  type: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
+export interface TwistInstanceNoteCreate {
+  access_contacts: string[] | null;
+  actions: Json | null;
+  archived_at: Timestamp | null;
+  author_id: string | null;
+  author_name: string | null;
+  author_type: string | null;
+  content: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  draft: boolean | null;
+  id: string | null;
+  key: string | null;
+  mentions: string[] | null;
+  priority_id: string | null;
+  re_note_id: string | null;
+  source_created_at: Timestamp | null;
+  sync_depth: number | null;
+  tags: Json | null;
+  thread_created_by: string | null;
+  thread_id: string | null;
+  thread_meta: Json | null;
+  thread_title: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
+export interface TwistInstanceNoteUpdate {
+  access_contacts: string[] | null;
+  actions: Json | null;
+  archived_at: Timestamp | null;
+  author_id: string | null;
+  author_name: string | null;
+  author_type: string | null;
+  content: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  draft: boolean | null;
+  id: string | null;
+  key: string | null;
+  mentions: string[] | null;
+  priority_id: string | null;
+  re_note_id: string | null;
+  source_created_at: Timestamp | null;
+  sync_depth: number | null;
+  tags: Json | null;
+  thread_created_by: string | null;
+  thread_id: string | null;
+  thread_meta: Json | null;
+  thread_title: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
+export interface TwistInstanceScheduleContact {
+  archived_at: Timestamp | null;
+  contact_id: string | null;
+  link_id: string | null;
+  priority_id: string | null;
+  role: string | null;
+  schedule_contact_id: Int8 | null;
+  schedule_id: string | null;
+  status: string | null;
+  thread_id: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+}
+
+export interface TwistInstanceSync {
+  entity: string;
+  last_sync_at: Generated<Timestamp>;
+  last_update_at: Timestamp;
+  operation: SyncOperation;
+  twist_instance_id: string;
+}
+
+export interface TwistInstanceThreadRead {
+  priority_id: string | null;
+  read_at: Timestamp | null;
+  thread_id: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
+export interface TwistInstanceThreadSchedule {
+  at: string | null;
+  on: string | null;
+  priority_id: string | null;
+  schedule_id: string | null;
+  thread_id: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
+export interface TwistInstanceThreadTagChange {
+  actor_id: string | null;
+  change_type: string | null;
+  occurrence: string | null;
+  tag_id: number | null;
+  thread_id: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+}
+
+export interface TwistInstanceThreadUpdate {
+  archived_at: Timestamp | null;
+  contacts: string[] | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  draft: boolean | null;
+  id: string | null;
+  preview: string | null;
+  priority_id: string | null;
+  priority_title: string | null;
+  sync_depth: number | null;
+  tags: Json | null;
+  title: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+}
+
 export interface TwistReviewer {
   created_at: Generated<Timestamp>;
   user_id: string;
@@ -1084,7 +1102,7 @@ export interface Usage {
   created_at: Generated<Timestamp>;
   hour: Timestamp;
   id: Generated<Int8>;
-  priority_twist_id: string;
+  twist_instance_id: string;
   updated_at: Generated<Timestamp>;
 }
 
@@ -1110,6 +1128,29 @@ export interface UserActor {
   type: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
+}
+
+export interface UserChannel {
+  channel_id: string | null;
+  created_at: Timestamp | null;
+  enabled: boolean | null;
+  id: Int8 | null;
+  link_types: Json | null;
+  title: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
+export interface UserContact {
+  archived_at: Timestamp | null;
+  contact_id: string;
+  created_at: Generated<Timestamp>;
+  linked: Generated<boolean>;
+  primary: Generated<boolean>;
+  source: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
 }
 
 export interface UserLink {
@@ -1140,6 +1181,7 @@ export interface UserLink {
 }
 
 export interface UserNote {
+  access_contacts: string[] | null;
   actions: Json | null;
   archived_at: Timestamp | null;
   author_id: string | null;
@@ -1150,7 +1192,6 @@ export interface UserNote {
   id: string | null;
   mentions: string[] | null;
   merged_from_thread_id: string | null;
-  access_contacts: string[] | null;
   re_note_id: string | null;
   source_created_at: Timestamp | null;
   thread_id: string | null;
@@ -1181,7 +1222,6 @@ export interface UserPriority {
   inherit_members: boolean | null;
   key: string | null;
   order: number | null;
-  organization_id: Int8 | null;
   path: string | null;
   personal: boolean | null;
   pomodoro: number | null;
@@ -1191,6 +1231,7 @@ export interface UserPriority {
   see_within_requests_set: boolean | null;
   see_within_updates: Json | null;
   see_within_updates_set: boolean | null;
+  team_id: Int8 | null;
   title: string | null;
   top_order: number | null;
   unread: boolean | null;
@@ -1252,24 +1293,8 @@ export interface UserSchedule {
 export interface UserSettings {
   ai_enabled: boolean | null;
   enter_behavior: EnterBehavior | null;
-  onboarding_completed: boolean | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
-}
-
-export interface UserSourceChannel {
-  channel_id: string | null;
-  create_threads: string | null;
-  create_threads_by_type: Json | null;
-  created_at: Timestamp | null;
-  enabled: boolean | null;
-  id: Int8 | null;
-  link_types: Json | null;
-  priority_id: string | null;
-  priority_twist_id: string | null;
-  title: string | null;
-  updated_at: Timestamp | null;
-  user_id: string | null;
 }
 
 export interface UserSubscription {
@@ -1298,6 +1323,7 @@ export interface UserThread {
   agenda_at: string | null;
   archived_at: Timestamp | null;
   bumped_at: Timestamp | null;
+  contacts: string[] | null;
   created_at: Timestamp | null;
   draft: boolean | null;
   icon: string | null;
@@ -1305,12 +1331,11 @@ export interface UserThread {
   importance: number | null;
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
-  access: string | null;
-  access_contacts: string[] | null;
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
   title: string | null;
+  topics: string[] | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
@@ -1340,9 +1365,24 @@ export interface UserThreadTags {
   user_id: string | null;
 }
 
+export interface UserTopic {
+  archived_at: Timestamp | null;
+  auto_maintained: boolean | null;
+  created_at: Timestamp | null;
+  id: string | null;
+  is_admin: boolean | null;
+  is_member: boolean | null;
+  join_policy: TopicJoinPolicy | null;
+  member_contact_ids: string[] | null;
+  name: string | null;
+  team_id: Int8 | null;
+  type: TopicType | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface UserTwist {
   archived_at: Timestamp | null;
-  config: Json | null;
   created_at: Timestamp | null;
   default_mention_created: boolean | null;
   default_mention_mentioned: boolean | null;
@@ -1353,8 +1393,8 @@ export interface UserTwist {
   logo_url: string | null;
   logo_url_dark: string | null;
   name: string | null;
+  options: Json | null;
   owner_id: string | null;
-  priority_id: string | null;
   shared: boolean | null;
   twist_environment: TwistEnvironment | null;
   twist_id: Int8 | null;
@@ -1368,6 +1408,7 @@ export interface DB {
   ai_key: AiKey;
   ai_preference: AiPreference;
   "atlas_schema_revisions.atlas_schema_revisions": AtlasSchemaRevisionsAtlasSchemaRevisions;
+  channel: Channel;
   contact: Contact;
   contact_external_account: ContactExternalAccount;
   contact_invitation: ContactInvitation;
@@ -1384,34 +1425,12 @@ export interface DB {
   note: Note;
   note_tag: NoteTag;
   note_tags: NoteTags;
-  organization: Organization;
-  organization_invitation: OrganizationInvitation;
-  organization_member: OrganizationMember;
-  organization_subscription: OrganizationSubscription;
   priority: Priority;
   priority_child: PriorityChild;
   priority_child_twist: PriorityChildTwist;
-  priority_contact: PriorityContact;
-  priority_member: PriorityMember;
   priority_setting: PrioritySetting;
   priority_setting_inherited: PrioritySettingInherited;
   priority_tags: PriorityTags;
-  priority_twist: PriorityTwist;
-  priority_twist_channel: PriorityTwistChannel;
-  priority_twist_channel_link_create: PriorityTwistChannelLinkCreate;
-  priority_twist_channel_link_update: PriorityTwistChannelLinkUpdate;
-  priority_twist_channel_note_create: PriorityTwistChannelNoteCreate;
-  priority_twist_child: PriorityTwistChild;
-  priority_twist_connection: PriorityTwistConnection;
-  priority_twist_link_update: PriorityTwistLinkUpdate;
-  priority_twist_note_create: PriorityTwistNoteCreate;
-  priority_twist_note_update: PriorityTwistNoteUpdate;
-  priority_twist_schedule_contact: PriorityTwistScheduleContact;
-  priority_twist_sync: PriorityTwistSync;
-  priority_twist_thread_read: PriorityTwistThreadRead;
-  priority_twist_thread_schedule: PriorityTwistThreadSchedule;
-  priority_twist_thread_tag_change: PriorityTwistThreadTagChange;
-  priority_twist_thread_update: PriorityTwistThreadUpdate;
   priority_user: PriorityUser;
   publisher: Publisher;
   schedule: Schedule;
@@ -1419,24 +1438,48 @@ export interface DB {
   secure_option: SecureOption;
   series: Series;
   session: Session;
-  source_channel: SourceChannel;
+  team: Team;
+  team_invitation: TeamInvitation;
+  team_subscription: TeamSubscription;
+  team_user: TeamUser;
   thread: Thread;
   thread_association: ThreadAssociation;
+  thread_priority: ThreadPriority;
   thread_read: ThreadRead;
   thread_tag: ThreadTag;
   thread_tags: ThreadTags;
   thread_unread: ThreadUnread;
   thread_x: ThreadX;
   token: Token;
+  topic: Topic;
+  topic_admin: TopicAdmin;
+  topic_member: TopicMember;
   twist: Twist;
   twist_admin: TwistAdmin;
+  twist_instance: TwistInstance;
+  twist_instance_channel: TwistInstanceChannel;
+  twist_instance_channel_link_create: TwistInstanceChannelLinkCreate;
+  twist_instance_channel_link_update: TwistInstanceChannelLinkUpdate;
+  twist_instance_channel_note_create: TwistInstanceChannelNoteCreate;
+  twist_instance_connection: TwistInstanceConnection;
+  twist_instance_link_update: TwistInstanceLinkUpdate;
+  twist_instance_note_create: TwistInstanceNoteCreate;
+  twist_instance_note_update: TwistInstanceNoteUpdate;
+  twist_instance_schedule_contact: TwistInstanceScheduleContact;
+  twist_instance_sync: TwistInstanceSync;
+  twist_instance_thread_read: TwistInstanceThreadRead;
+  twist_instance_thread_schedule: TwistInstanceThreadSchedule;
+  twist_instance_thread_tag_change: TwistInstanceThreadTagChange;
+  twist_instance_thread_update: TwistInstanceThreadUpdate;
   twist_reviewer: TwistReviewer;
   usage: Usage;
   user: User;
+  user_contact: UserContact;
   user_settings: UserSettings;
   user_subscription: UserSubscription;
   user_sync: UserSync;
   "user.actor": UserActor;
+  "user.channel": UserChannel;
   "user.link": UserLink;
   "user.note": UserNote;
   "user.note_tags": UserNoteTags;
@@ -1445,9 +1488,9 @@ export interface DB {
   "user.priority_expanded": UserPriorityExpanded;
   "user.priority_unread": UserPriorityUnread;
   "user.schedule": UserSchedule;
-  "user.source_channel": UserSourceChannel;
   "user.thread": UserThread;
   "user.thread_association": UserThreadAssociation;
   "user.thread_tags": UserThreadTags;
+  "user.topic": UserTopic;
   "user.twist": UserTwist;
 }

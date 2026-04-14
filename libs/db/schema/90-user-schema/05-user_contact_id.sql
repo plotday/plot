@@ -1,9 +1,16 @@
+-- Returns the user's primary linked contact, or NULL if none is set.
 CREATE OR REPLACE FUNCTION "user".user_contact_id (p_user_id uuid)
     RETURNS uuid
     LANGUAGE sql
     STABLE
     AS $$
-    SELECT c.id FROM contact c WHERE c.user_id = p_user_id AND c."primary" = TRUE LIMIT 1;
+    SELECT uc.contact_id
+    FROM user_contact uc
+    WHERE uc.user_id = p_user_id
+      AND uc."primary" = TRUE
+      AND uc.linked = TRUE
+      AND uc.archived_at IS NULL
+    LIMIT 1;
 $$;
 
 -- Returns every non-archived contact linked to the user. Access checks and
@@ -14,7 +21,9 @@ CREATE OR REPLACE FUNCTION "user".user_contact_ids (p_user_id uuid)
     LANGUAGE sql
     STABLE
     AS $$
-    SELECT COALESCE(array_agg(c.id), ARRAY[]::uuid[])
-    FROM contact c
-    WHERE c.user_id = p_user_id AND c.archived_at IS NULL;
+    SELECT COALESCE(array_agg(uc.contact_id), ARRAY[]::uuid[])
+    FROM user_contact uc
+    WHERE uc.user_id = p_user_id
+      AND uc.linked = TRUE
+      AND uc.archived_at IS NULL;
 $$;

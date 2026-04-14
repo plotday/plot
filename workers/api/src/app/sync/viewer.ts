@@ -5,36 +5,14 @@ import type { DB } from "../../db-types";
 const COUNT_TAG_MIN = 1000;
 
 /**
- * Get the set of viewer priority IDs for a user, or null if the user has none.
- * Uses early exit on priority_user before querying priority_expanded.
+ * Stub: viewer role is removed in the per-user priority model.
+ * Always returns null (no viewer priorities).
  */
 async function getViewerPriorityIds(
-  db: Kysely<DB>,
-  userId: string
+  _db: Kysely<DB>,
+  _userId: string
 ): Promise<Set<string> | null> {
-  const hasViewer = await db
-    .selectFrom("priority_user")
-    .select("priority_id")
-    .where("user_id", "=", userId)
-    .where("role", "=", "viewer")
-    .where("archived_at", "is", null)
-    .limit(1)
-    .executeTakeFirst();
-
-  if (!hasViewer) return null;
-
-  // Get effective viewer priority IDs (most-permissive-wins already computed)
-  const viewerPriorities = await db
-    .selectFrom("user.priority_expanded" as any)
-    .select("priority_id")
-    .where("user_id", "=", userId)
-    .where("role", "=", "viewer")
-    .where("archived_at", "is", null)
-    .execute();
-
-  if (viewerPriorities.length === 0) return null;
-
-  return new Set(viewerPriorities.map((r: any) => r.priority_id).filter((id: any): id is string => id != null));
+  return null;
 }
 
 /**
@@ -59,18 +37,9 @@ async function getAllowedActorsByPriority(
 
   const selfContactId = selfContact?.id;
 
-  // Get member contact IDs per priority (via priority_child expansion)
-  const memberContacts = await db
-    .selectFrom("priority_user as pu")
-    .innerJoin("priority_child as pc", "pu.priority_id", "pc.priority_id")
-    .innerJoin("contact as c", (join) =>
-      join.onRef("c.user_id", "=", "pu.user_id").on("c.primary", "=", true)
-    )
-    .select(["c.id as contact_id", "pc.child_id as priority_id"])
-    .where("pc.child_id", "in", priorityIdArray)
-    .where("pu.role", "=", "member")
-    .where("pu.archived_at", "is", null)
-    .execute();
+  // In the per-user priority model, all priorities are owned by the user —
+  // there are no shared "member" contacts to enumerate.
+  const memberContacts: { contact_id: string; priority_id: string }[] = [];
 
   // Build priorityId → Set<allowedContactId>
   const result = new Map<string, Set<string>>();
@@ -143,18 +112,20 @@ export async function stripCountTagActors(
 
   if (type === "thread") {
     const threads = await db
-      .selectFrom("thread")
-      .select(["id", "priority_id"])
-      .where("id", "in", rowIds)
+      .selectFrom("thread_priority")
+      .select(["thread_id as id", "priority_id"])
+      .where("thread_id", "in", rowIds)
+      .where("user_id", "=", userId)
       .execute();
     idToPriority = new Map(threads.map((t) => [t.id, t.priority_id]));
   } else {
-    // note: look up note -> thread -> priority_id
+    // note: look up note -> thread_priority -> priority_id
     const notes = await db
       .selectFrom("note")
-      .innerJoin("thread", "thread.id", "note.thread_id")
-      .select(["note.id", "thread.priority_id"])
+      .innerJoin("thread_priority", "thread_priority.thread_id", "note.thread_id")
+      .select(["note.id", "thread_priority.priority_id"])
       .where("note.id", "in", rowIds)
+      .where("thread_priority.user_id", "=", userId)
       .execute();
     idToPriority = new Map(notes.map((n) => [n.id, n.priority_id]));
   }

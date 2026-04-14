@@ -98,7 +98,7 @@ noteTags.post("/sync/note-tags", async (c) => {
     });
   });
 
-  const priorityId = await getPriorityForNote(c.var.db, body.note_id);
+  const priorityId = await getPriorityForNote(c.var.db, body.note_id, c.var.user.id);
   notifySync(c, priorityId);
 
   // Create task schedule when todo tag is added
@@ -170,7 +170,7 @@ noteTags.post("/sync/note-tags/update", async (c) => {
     });
   });
 
-  const priorityId2 = await getPriorityForNote(c.var.db, body.note_id);
+  const priorityId2 = await getPriorityForNote(c.var.db, body.note_id, c.var.user.id);
   notifySync(c, priorityId2);
 
   // Create task schedule when todo tags are added via update

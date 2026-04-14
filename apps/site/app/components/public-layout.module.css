@@ -38,4 +38,6 @@
     var(--mantine-color-dark-7)
   );
   overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
 }

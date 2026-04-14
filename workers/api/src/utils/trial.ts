@@ -3,22 +3,32 @@ import { sql } from "kysely";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
-import { PLAN_LIMITS } from "./limits";
+import { BUILTIN_TWIST_PACKAGE_ID, PLAN_LIMITS } from "./limits";
 import { createLogger } from "@plotday/worker-util";
 
 /**
- * Find the Plot twist's priority_twist ID that covers a given priority.
- * Looks through the priority hierarchy via priority_child_twist.
+ * Find the Plot twist's twist_instance ID for the user who owns a given
+ * priority. Twists are workspace-level so there's at most one per user.
  */
-export async function getPlotPriorityTwistId(
+export async function getPlotTwistInstanceId(
   db: Kysely<DB>,
   priorityId: string
 ): Promise<string | null> {
+  const priority = await db
+    .selectFrom("priority")
+    .select("user_id")
+    .where("id", "=", priorityId)
+    .executeTakeFirst();
+  if (!priority?.user_id) return null;
+
   const row = await db
-    .selectFrom("priority_child_twist")
-    .select("id")
-    .where("priority_child_id", "=", priorityId)
-    .where("name", "=", "Plot")
+    .selectFrom("twist_instance")
+    .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+    .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+    .select("twist_instance.id")
+    .where("twist_instance.owner_id", "=", priority.user_id)
+    .where("twist_admin.twist_package_id", "=", BUILTIN_TWIST_PACKAGE_ID)
+    .where("twist_instance.archived_at", "is", null)
     .executeTakeFirst();
   return row?.id ?? null;
 }
@@ -33,19 +43,12 @@ export async function getExcessConnectionNames(
   userId: string
 ): Promise<{ twistName: string; provider: string }[]> {
   const excess = await db
-    .selectFrom("priority_twist_connection as ptc")
-    .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
+    .selectFrom("twist_instance_connection as ptc")
+    .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .leftJoin("priority as p", "p.id", "pt.priority_id")
     .select(["t.name as twist_name", "ptc.provider"])
     .where("ptc.user_id", "=", userId)
     .where("pt.archived_at", "is", null)
-    .where((eb) =>
-      eb.or([
-        eb("pt.priority_id", "is", null),
-        eb("p.organization_id", "is", null),
-      ])
-    )
     .orderBy("ptc.connected_at", "desc")
     .offset(PLAN_LIMITS.free.connections)
     .execute();
@@ -66,19 +69,14 @@ export async function getExcessTwistNames(
   userId: string
 ): Promise<string[]> {
   const excess = await db
-    .selectFrom("priority_twist as pt")
+    .selectFrom("twist_instance as pt")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .leftJoin("priority as p", "p.id", "pt.priority_id")
+    .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
     .select("t.name")
     .where("pt.owner_id", "=", userId)
     .where("pt.archived_at", "is", null)
     .where("t.is_source", "=", false)
-    .where((eb) =>
-      eb.or([
-        eb("pt.priority_id", "is", null),
-        eb("p.organization_id", "is", null),
-      ])
-    )
+    .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
     .orderBy("pt.created_at", "desc")
     .offset(PLAN_LIMITS.free.twists)
     .execute();
@@ -127,7 +125,7 @@ export async function addTrialNote(
   content: string,
   key: string,
   addTodo: boolean,
-  plotPriorityTwistId?: string | null
+  plotTwistInstanceId?: string | null
 ): Promise<void> {
   // Look up user's primary contact for todo tags
   const contact = await db
@@ -138,8 +136,8 @@ export async function addTrialNote(
     .executeTakeFirst();
 
   // Use the Plot twist as author so the note appears from Plot, not the user
-  const createdBy = plotPriorityTwistId ?? userId;
-  const authorId = plotPriorityTwistId ?? contact?.id ?? userId;
+  const createdBy = plotTwistInstanceId ?? userId;
+  const authorId = plotTwistInstanceId ?? contact?.id ?? userId;
 
   // Insert note with key for idempotency
   const note = await db
@@ -205,7 +203,7 @@ export async function completeTrialTodos(
  */
 async function findTrialThread(
   db: Kysely<DB>
-): Promise<{ threadId: string; priorityId: string; plotPriorityTwistId: string | null } | null> {
+): Promise<{ threadId: string; priorityId: string; plotTwistInstanceId: string | null } | null> {
   const plotAppPriority = await db
     .selectFrom("priority")
     .select("id")
@@ -216,16 +214,17 @@ async function findTrialThread(
 
   const thread = await db
     .selectFrom("thread")
-    .select("id")
-    .where("priority_id", "=", plotAppPriority.id)
-    .where("key", "=", "core-trial")
+    .innerJoin("thread_priority", "thread_priority.thread_id", "thread.id")
+    .select("thread.id")
+    .where("thread_priority.priority_id", "=", plotAppPriority.id)
+    .where("thread.key", "=", "core-trial")
     .executeTakeFirst();
 
   if (!thread) return null;
 
-  const plotPriorityTwistId = await getPlotPriorityTwistId(db, plotAppPriority.id);
+  const plotTwistInstanceId = await getPlotTwistInstanceId(db, plotAppPriority.id);
 
-  return { threadId: thread.id, priorityId: plotAppPriority.id, plotPriorityTwistId };
+  return { threadId: thread.id, priorityId: plotAppPriority.id, plotTwistInstanceId };
 }
 
 /**
@@ -253,7 +252,7 @@ export async function handleTrialUpgrade(
     "You upgraded! Thanks for choosing Plot. All your connections and twists are yours to keep.",
     "upgraded",
     false,
-    trial.plotPriorityTwistId
+    trial.plotTwistInstanceId
   );
 
   // Complete outstanding todo tags
@@ -338,25 +337,19 @@ export async function expireTrial(
     // Trim excess connections
     if (limits.connections !== Infinity) {
       const excess = await db
-        .selectFrom("priority_twist_connection as ptc")
-        .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
-        .leftJoin("priority as p", "p.id", "pt.priority_id")
-        .select(["ptc.priority_twist_id", "ptc.user_id", "ptc.provider"])
+        .selectFrom("twist_instance_connection as ptc")
+        .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
+        .select(["ptc.twist_instance_id", "ptc.user_id", "ptc.provider"])
         .where("ptc.user_id", "=", userId)
-        .where((eb) =>
-          eb.or([
-            eb("pt.priority_id", "is", null),
-            eb("p.organization_id", "is", null),
-          ])
-        )
+        .where("pt.archived_at", "is", null)
         .orderBy("ptc.connected_at", "desc")
         .offset(limits.connections)
         .execute();
 
       for (const row of excess) {
         await db
-          .deleteFrom("priority_twist_connection")
-          .where("priority_twist_id", "=", row.priority_twist_id)
+          .deleteFrom("twist_instance_connection")
+          .where("twist_instance_id", "=", row.twist_instance_id)
           .where("user_id", "=", row.user_id)
           .where("provider", "=", row.provider)
           .execute();
@@ -370,29 +363,24 @@ export async function expireTrial(
       }
     }
 
-    // Archive excess twists
+    // Archive excess twists (excluding built-in Plot twist)
     if (limits.twists !== Infinity) {
       const excessPts = await db
-        .selectFrom("priority_twist as pt")
+        .selectFrom("twist_instance as pt")
         .innerJoin("twist as t", "t.id", "pt.twist_id")
-        .leftJoin("priority as p", "p.id", "pt.priority_id")
+        .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
         .select("pt.id")
         .where("pt.owner_id", "=", userId)
         .where("pt.archived_at", "is", null)
         .where("t.is_source", "=", false)
-        .where((eb) =>
-          eb.or([
-            eb("pt.priority_id", "is", null),
-            eb("p.organization_id", "is", null),
-          ])
-        )
+        .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
         .orderBy("pt.created_at", "desc")
         .offset(limits.twists)
         .execute();
 
       for (const row of excessPts) {
         await db
-          .updateTable("priority_twist")
+          .updateTable("twist_instance")
           .set({ archived_at: new Date().toISOString() })
           .where("id", "=", row.id)
           .execute();
@@ -433,7 +421,7 @@ export async function expireTrial(
 
     content += `You can upgrade anytime to unlock more connections and twists. [Upgrade →](${siteRoot}/upgrade)`;
 
-    await addTrialNote(db, trial.threadId, userId, content, "expired", false, trial.plotPriorityTwistId);
+    await addTrialNote(db, trial.threadId, userId, content, "expired", false, trial.plotTwistInstanceId);
 
     // Complete any remaining todos
     await completeTrialTodos(db, trial.threadId);

@@ -59,9 +59,7 @@ part 'sync_orchestrator.dart';
 part 'actor.dart';
 part 'priority.dart';
 part 'priority_user.dart';
-part 'priority_member.dart';
-part 'priority_actor.dart';
-part 'priority_twist.dart';
+part 'twist_instance.dart';
 part 'user_action.dart';
 part 'thread.dart';
 part 'link.dart';
@@ -75,7 +73,8 @@ part 'session.dart';
 part 'tag.dart';
 part 'thread_sub_type.dart';
 part 'user_settings.dart';
-part 'source_channel.dart';
+part 'channel.dart';
+part 'topic.dart';
 
 part 'store.g.dart';
 
@@ -358,9 +357,7 @@ abstract class BaseTable {
     Actors,
     Priorities,
     PriorityUsers,
-    PriorityMembers,
-    PriorityActors,
-    PriorityTwists,
+    TwistInstances,
     Threads,
     Links,
     Notes,
@@ -371,8 +368,10 @@ abstract class BaseTable {
     NoteTags,
     Sessions,
     UserSettings,
-    SourceChannels,
+    Channels,
+    Topics,
     ThreadAssociations,
+    PriorityRules,
   ],
   include: {'priority.drift'},
 )
@@ -1105,7 +1104,7 @@ class Store extends _$Store {
           return [baseTable.fromBase(r)];
         } catch (e, stackTrace) {
           log.warning(
-            "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
+            "Error parsing row ${jsonEncode(r, toEncodable: (o) => o.toString())} from ${baseTable.table}",
             e,
             stackTrace,
           );
@@ -1252,7 +1251,7 @@ class Store extends _$Store {
           return [baseTable.fromBase(r)];
         } catch (e, stackTrace) {
           log.warning(
-            "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
+            "Error parsing row ${jsonEncode(r, toEncodable: (o) => o.toString())} from ${baseTable.table}",
             e,
             stackTrace,
           );
@@ -1540,7 +1539,7 @@ class Store extends _$Store {
           return [baseTable.fromBase(r)];
         } catch (e, stackTrace) {
           log.warning(
-            "Error parsing row ${jsonEncode(r)} from ${baseTable.table}",
+            "Error parsing row ${jsonEncode(r, toEncodable: (o) => o.toString())} from ${baseTable.table}",
             e,
             stackTrace,
           );
@@ -2021,7 +2020,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 292;
+  int get schemaVersion => 306;
 
   @override
   MigrationStrategy get migration {
@@ -2184,10 +2183,8 @@ class Store extends _$Store {
         links,
         sessions,
         priorityUsers,
-        priorityMembers,
-        priorityActors,
-        priorityTwists,
-        sourceChannels,
+        twistInstances,
+        channels,
         noteTags,
         threadTags,
         userSettings,
@@ -2220,10 +2217,8 @@ class Store extends _$Store {
         schedules,
         links,
         sessions,
-        sourceChannels,
-        priorityTwists,
-        priorityActors,
-        priorityMembers,
+        channels,
+        twistInstances,
         priorityUsers,
         threads,
         priorities,
@@ -2384,7 +2379,7 @@ class Store extends _$Store {
       await m.alterTable(TableMigration(schedules));
     }
     if (from < 250) {
-      await _safeAddColumn(m, priorityTwists, priorityTwists.isSource);
+      await _safeAddColumn(m, twistInstances, twistInstances.isSource);
     }
     if (from < 251) {
       // logo column was later removed in migration 255; use raw SQL
@@ -2397,7 +2392,7 @@ class Store extends _$Store {
       await _safeAddColumn(m, links, links.createdBy);
     }
     if (from < 254) {
-      await _safeAddColumn(m, priorityTwists, priorityTwists.linkTypes);
+      await _safeAddColumn(m, twistInstances, twistInstances.linkTypes);
     }
     if (from < 255) {
       // Drop logo column from links (resolved from LinkTypeConfig now)
@@ -2420,21 +2415,25 @@ class Store extends _$Store {
       await _safeAddColumn(m, schedules, schedules.archivedAt);
     }
     if (from < 259) {
-      // Account-based sources: add channelId to links, logoUrl to priorityTwists,
-      // make priorityId nullable, create source_channels table
+      // Account-based sources: add channelId to links, logoUrl to twistInstances,
+      // make priorityId nullable, create channels table
       await _safeAddColumn(m, links, links.channelId);
-      await _safeAddColumn(m, priorityTwists, priorityTwists.logoUrl);
+      await _safeAddColumn(m, twistInstances, twistInstances.logoUrl);
       // Make priorityId nullable (rebuild table with current schema)
       // ignore: experimental_member_use
-      await m.alterTable(TableMigration(priorityTwists));
-      await _safeCreateTable(m, sourceChannels);
+      await m.alterTable(TableMigration(twistInstances));
+      await _safeCreateTable(m, channels);
     }
     if (from < 260) {
-      await _safeAddColumn(m, priorityTwists, priorityTwists.logoUrlDark);
+      await _safeAddColumn(m, twistInstances, twistInstances.logoUrlDark);
     }
     if (from < 261) {
       await _safeAddColumn(m, links, links.priorityId);
-      await _safeAddColumn(m, sourceChannels, sourceChannels.createThreads);
+      // create_threads column added here (later dropped in v294)
+      await _safeCustomStatement(
+        m,
+        "ALTER TABLE channels ADD COLUMN create_threads INTEGER NOT NULL DEFAULT 1",
+      );
       // thread_id nullable change requires table rebuild
       // ignore: experimental_member_use
       await m.alterTable(TableMigration(links));
@@ -2466,24 +2465,34 @@ class Store extends _$Store {
       await m.alterTable(TableMigration(schedules));
     }
     if (from < 265) {
-      await _safeAddColumn(m, priorities, priorities.organizationId);
+      // organization_id column (later renamed to team_id in schema 293);
+      // use raw SQL here because the Dart column has moved on.
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE priorities ADD COLUMN organization_id INTEGER',
+      );
       await _safeAddColumn(m, priorities, priorities.role);
-      await _safeAddColumn(m, priorityMembers, priorityMembers.role);
+      // priority_members table removed in per-user priorities migration;
+      // keep the raw ALTER for users upgrading from older schema versions.
+      await _safeCustomStatement(
+        m,
+        "ALTER TABLE priority_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'",
+      );
     }
     if (from < 266) {
       await _safeAddColumn(
         m,
-        priorityTwists,
-        priorityTwists.defaultMentionCreated,
+        twistInstances,
+        twistInstances.defaultMentionCreated,
       );
       await _safeAddColumn(
         m,
-        priorityTwists,
-        priorityTwists.defaultMentionMentioned,
+        twistInstances,
+        twistInstances.defaultMentionMentioned,
       );
     }
     if (from < 267) {
-      await _safeAddColumn(m, priorityTwists, priorityTwists.userConnected);
+      await _safeAddColumn(m, twistInstances, twistInstances.userConnected);
     }
     if (from < 268) {
       // Original columns added as response_window/turnaround
@@ -2536,15 +2545,22 @@ class Store extends _$Store {
       await m.alterTable(TableMigration(priorities));
     }
     if (from < 276) {
-      await m.database.customStatement(
-        "ALTER TABLE source_channels RENAME COLUMN create_threads TO create_threads_old",
+      // Convert create_threads int → text (later dropped in v294).
+      await _safeCustomStatement(
+        m,
+        "ALTER TABLE channels RENAME COLUMN create_threads TO create_threads_old",
       );
-      await m.addColumn(sourceChannels, sourceChannels.createThreads);
-      await m.database.customStatement(
-        "UPDATE source_channels SET create_threads = CASE WHEN create_threads_old = 1 THEN 'all' ELSE 'manual' END",
+      await _safeCustomStatement(
+        m,
+        "ALTER TABLE channels ADD COLUMN create_threads TEXT NOT NULL DEFAULT 'all'",
       );
-      await m.database.customStatement(
-        "ALTER TABLE source_channels DROP COLUMN create_threads_old",
+      await _safeCustomStatement(
+        m,
+        "UPDATE channels SET create_threads = CASE WHEN create_threads_old = 1 THEN 'all' ELSE 'manual' END",
+      );
+      await _safeCustomStatement(
+        m,
+        "ALTER TABLE channels DROP COLUMN create_threads_old",
       );
     }
     if (from < 277) {
@@ -2593,26 +2609,35 @@ class Store extends _$Store {
       );
     }
     if (from < 285) {
-      await _safeAddColumn(m, priorityActors, priorityActors.depth);
-      await _safeAddColumn(m, actors, actors.minDepth);
+      // priority_actors table and actors.minDepth were added in 285
+      // but removed in 306 — skip for fresh migrations past 306.
+      if (from < 306) {
+        // The columns were needed between 285-305; the table drop
+        // happens in the 306 block below.
+      }
     }
     if (from < 286) {
-      // Reset priority_twists sync cursor so rows re-pull with the
-      // int→BigInt fix in PriorityTwistsBase.fromBase (twist_id was
+      // Reset twist_instances sync cursor so rows re-pull with the
+      // int→BigInt fix in TwistInstancesBase.fromBase (twist_id was
       // silently failing to deserialize from server JSON).
       await m.database.customStatement(
-        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'priority_twists'",
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'twist_instances'",
       );
-      // Also reset source_channels which has the same int→BigInt issue
+      // Also reset channels which has the same int→BigInt issue
       await m.database.customStatement(
-        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'source_channels'",
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity = 'channels'",
       );
     }
     if (from < 287) {
-      await m.addColumn(priorities, priorities.inheritMembers);
+      // inherit_members column removed in schema 299; keep raw ADD for
+      // users upgrading through older versions.
+      await _safeCustomStatement(
+        m,
+        "ALTER TABLE priorities ADD COLUMN inherit_members INTEGER NOT NULL DEFAULT 1",
+      );
     }
     if (from < 288) {
-      await _safeAddColumn(m, sourceChannels, sourceChannels.linkTypes);
+      await _safeAddColumn(m, channels, channels.linkTypes);
     }
     if (from < 289) {
       await _safeCreateTable(m, threadAssociations);
@@ -2623,17 +2648,28 @@ class Store extends _$Store {
       await m.alterTable(TableMigration(threads));
     }
     if (from < 291) {
-      await m.addColumn(priorityTwists, priorityTwists.shared);
-      await m.addColumn(priorityTwists, priorityTwists.keyOption);
+      await m.addColumn(twistInstances, twistInstances.shared);
+      await m.addColumn(twistInstances, twistInstances.keyOption);
     }
     if (from < 292) {
-      // Thread: add access and access_contacts columns, migrate from private
-      await _safeAddColumn(m, threads, threads.access);
-      await _safeAddColumn(m, threads, threads.accessContacts);
+      // Thread: previously added access and access_contacts columns (now
+      // removed in the per-user-priorities migration). Add them temporarily
+      // via raw SQL so the data migration runs, then rebuild drops them.
+      try {
+        await m.database.customStatement(
+          "ALTER TABLE threads ADD COLUMN access TEXT NOT NULL DEFAULT 'public'",
+        );
+      } catch (_) {}
+      try {
+        await m.database.customStatement(
+          "ALTER TABLE threads ADD COLUMN access_contacts TEXT",
+        );
+      } catch (_) {}
       await m.database.customStatement(
-        "UPDATE threads SET access = CASE WHEN private = 1 THEN 'private' ELSE 'members' END",
+        "UPDATE threads SET access = CASE WHEN private = 1 THEN 'private' ELSE 'members' END WHERE access = 'public'",
       );
-      // Drop old private and mentions columns by rebuilding the table
+      // Drop old private, mentions, access, and access_contacts columns by
+      // rebuilding the table to match the current Drift schema
       // ignore: experimental_member_use
       await m.alterTable(TableMigration(threads));
 
@@ -2650,6 +2686,107 @@ class Store extends _$Store {
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = 0 WHERE entity LIKE 'threads%' OR entity LIKE 'notes%'",
       );
+    }
+    if (from < 293) {
+      // Rename priorities.organization_id → priorities.team_id to match the
+      // server schema. Use a column transformer so existing values survive.
+      // ignore: experimental_member_use
+      await m.alterTable(
+        TableMigration(
+          priorities,
+          columnTransformer: {
+            priorities.teamId: const CustomExpression<int>('organization_id'),
+          },
+        ),
+      );
+    }
+    if (from < 294) {
+      // Drop channels.create_threads (connector defaults are now hardcoded).
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(channels));
+    }
+    if (from < 295) {
+      // Drop channels.priority_id — channels no longer route to priorities;
+      // per-user matching handles thread routing.
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(channels));
+    }
+    if (from < 296) {
+      // Twist instances become workspace-level: drop priority_id, add team_id
+      // + draft to match the server schema.
+      await _safeAddColumn(m, twistInstances, twistInstances.teamId);
+      await _safeAddColumn(m, twistInstances, twistInstances.draft);
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(twistInstances));
+    }
+    if (from < 297) {
+      // Per-user priorities, stage 8: mirror the server `thread.contacts`
+      // field locally. The single-user client keeps priority_id directly
+      // on the thread (no join table) — it tracks only the current user's
+      // filing, which the server's `user.thread` view already denormalizes
+      // from `thread_priority.priority_id`.
+      await _safeAddColumn(m, threads, threads.contacts);
+    }
+    if (from < 298) {
+      // Drop vestigial access/access_contacts columns from threads
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(threads));
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = 0 WHERE entity LIKE 'threads%'",
+      );
+    }
+    if (from < 299) {
+      // Per-user priorities: drop priority_members table and inherit_members
+      // column — priorities are per-user now, no sharing or member concepts.
+      await m.database.customStatement('DROP TABLE IF EXISTS priority_members');
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'priority_member%' OR entity LIKE 'priority-member%'",
+      );
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(priorities));
+    }
+    if (from < 300) {
+      await m.createTable(topics);
+      await m.addColumn(threads, threads.topics);
+    }
+    if (from < 301) {
+      await _safeAddColumn(m, threads, threads.inviteEmails);
+    }
+    if (from < 302) {
+      await _safeAddColumn(m, twistInstances, twistInstances.isBuiltin);
+    }
+    if (from < 303) {
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE threads ADD COLUMN has_embedding INTEGER NOT NULL DEFAULT 0',
+      );
+      await _safeCreateTable(m, priorityRules);
+    }
+    if (from < 304) {
+      // Re-sync links to pick up channel_id now included in user.link view.
+      // Delete link rows so they get re-fetched with channel_id populated.
+      await m.database.customStatement("DELETE FROM links");
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'links%'",
+      );
+    }
+    if (from < 305) {
+      // Reset channel sync so initial pull fetches all rows.
+      // Channel.pull() previously called pull() without initial:true,
+      // which set pulledAt without fetching, leaving channels empty.
+      await m.database.customStatement("DELETE FROM channels");
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity = 'channels'",
+      );
+    }
+    if (from < 306) {
+      // Remove priority_actors table (actor visibility is now user-level)
+      await m.database.customStatement("DROP TABLE IF EXISTS priority_actors");
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity = 'priority_actors'",
+      );
+      // Remove minDepth column from actors (was priority-scoped depth)
+      await m.alterTable(TableMigration(actors));
     }
   }
 

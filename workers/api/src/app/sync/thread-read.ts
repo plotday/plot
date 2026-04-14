@@ -31,7 +31,7 @@ threadRead.post("/sync/thread-read", async (c) => {
   const priorityIds = new Set<string>();
   for (const record of threadReads) {
     try {
-      const priorityId = await getPriorityForThread(c.var.db, record.thread_id);
+      const priorityId = await getPriorityForThread(c.var.db, record.thread_id, c.var.user.id);
       priorityIds.add(priorityId);
     } catch {
       // Thread may not exist; skip

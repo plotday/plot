@@ -14,7 +14,7 @@ import { disposeRpc } from "../utils/rpc";
 
 export type CallbackData = {
   token: string;
-  priorityTwistId: string;
+  twistInstanceId: string;
   path: string[]; // tool hierarchy only
   version: string; // twist version
   functionName: string;
@@ -32,7 +32,7 @@ export type CallbackData = {
  * already-constructed tool tree, avoiding full twist reconstruction.
  */
 export type ResolvedCallback = {
-  priorityTwistId: string;
+  twistInstanceId: string;
   path: string[];
   functionName: string;
   extraArgs?: any[];
@@ -121,7 +121,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     this.sql.exec(`
         CREATE TABLE IF NOT EXISTS callbacks (
           token TEXT PRIMARY KEY,
-          priority_twist_id TEXT NOT NULL,
+          twist_instance_id TEXT NOT NULL,
           path TEXT NOT NULL,
           version TEXT NOT NULL,
           function_name TEXT NOT NULL,
@@ -132,8 +132,8 @@ export class CallbacksState extends DurableObject<Bindings> {
         )
       `);
     this.sql.exec(`
-        CREATE INDEX IF NOT EXISTS idx_callbacks_priority_twist
-        ON callbacks(priority_twist_id)
+        CREATE INDEX IF NOT EXISTS idx_callbacks_twist_instance
+        ON callbacks(twist_instance_id)
       `);
     this.sql.exec(`
         CREATE INDEX IF NOT EXISTS idx_callbacks_call_at
@@ -158,7 +158,7 @@ export class CallbacksState extends DurableObject<Bindings> {
   }
 
   async create({
-    priorityTwistId,
+    twistInstanceId,
     path,
     version,
     functionName,
@@ -169,7 +169,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     key,
     meta,
   }: {
-    priorityTwistId: string;
+    twistInstanceId: string;
     path: string[]; // tool hierarchy only
     version?: string;
     functionName: string;
@@ -193,14 +193,14 @@ export class CallbacksState extends DurableObject<Bindings> {
     if (!version) {
       version = await this.withDb(async (db) => {
         const ptData = await db
-          .selectFrom("priority_twist")
+          .selectFrom("twist_instance")
           .select("twist_id")
-          .where("id", "=", priorityTwistId)
+          .where("id", "=", twistInstanceId)
           .executeTakeFirst();
 
         if (!ptData) {
           throw new Error(
-            `Failed to fetch priority_twist ${priorityTwistId}: No data found`
+            `Failed to fetch twist_instance ${twistInstanceId}: No data found`
           );
         }
 
@@ -227,11 +227,11 @@ export class CallbacksState extends DurableObject<Bindings> {
     this.sql.exec(
       `
         INSERT INTO callbacks (
-          token, priority_twist_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
+          token, twist_instance_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       token,
-      priorityTwistId,
+      twistInstanceId,
       superjson.stringify(path),
       version,
       functionName,
@@ -282,7 +282,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const result = this.sql
       .exec(
         `
-          SELECT token, priority_twist_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
+          SELECT token, twist_instance_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
           FROM callbacks
           WHERE token = ?
           `,
@@ -303,7 +303,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const rawCallback = result.value as any;
     const callback: CallbackData = {
       token: rawCallback.token,
-      priorityTwistId: rawCallback.priority_twist_id,
+      twistInstanceId: rawCallback.twist_instance_id,
       path: this.parseWithFallback(rawCallback.path),
       version: rawCallback.version,
       functionName: rawCallback.function_name,
@@ -341,21 +341,20 @@ export class CallbacksState extends DurableObject<Bindings> {
     }
 
     return await this.withDb(async (db) => {
-      const priorityTwist = await db
-        .selectFrom("priority_twist")
-        .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      const twistInstance = await db
+        .selectFrom("twist_instance")
+        .innerJoin("twist", "twist.id", "twist_instance.twist_id")
         .select([
-          "priority_twist.priority_id",
-          "priority_twist.twist_id",
-          "priority_twist.archived_at",
-          "priority_twist.suspended_at",
+          "twist_instance.twist_id",
+          "twist_instance.archived_at",
+          "twist_instance.suspended_at",
           "twist.execution_limit",
         ])
-        .where("priority_twist.id", "=", callback.priorityTwistId)
+        .where("twist_instance.id", "=", callback.twistInstanceId)
         .executeTakeFirst();
 
-      // If priority_twist was deleted, clean up callback and return error object
-      if (!priorityTwist) {
+      // If twist_instance was deleted, clean up callback and return error object
+      if (!twistInstance) {
         this.delete(token);
         // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
         return {
@@ -363,15 +362,15 @@ export class CallbacksState extends DurableObject<Bindings> {
           type: "NOT_FOUND",
           context: {
             operation: "callCallback",
-            priorityTwistId: callback.priorityTwistId,
+            twistInstanceId: callback.twistInstanceId,
             reason: "Priority twist deleted",
           },
         };
       }
 
-      // If priority_twist is archived, clean up callback and return error object
+      // If twist_instance is archived, clean up callback and return error object
       // This is expected behavior when a twist is uninstalled
-      if (priorityTwist.archived_at) {
+      if (twistInstance.archived_at) {
         this.delete(token);
         // Return error object instead of throwing to prevent DO runtime from logging as "Uncaught"
         return {
@@ -379,29 +378,29 @@ export class CallbacksState extends DurableObject<Bindings> {
           type: "NOT_FOUND",
           context: {
             operation: "callCallback",
-            priorityTwistId: callback.priorityTwistId,
+            twistInstanceId: callback.twistInstanceId,
             reason: "Priority twist archived",
           },
         };
       }
 
-      // If priority_twist is suspended, block without deleting callback (allows retry after resume)
-      if (priorityTwist.suspended_at) {
+      // If twist_instance is suspended, block without deleting callback (allows retry after resume)
+      if (twistInstance.suspended_at) {
         return {
           __error: true,
           type: "SUSPENDED",
           context: {
             operation: "callCallback",
-            priorityTwistId: callback.priorityTwistId,
+            twistInstanceId: callback.twistInstanceId,
             reason: "Twist processing suspended due to high usage",
           },
         };
       }
 
       // Check execution quota
-      const usage = Usage.Get(this.env, callback.priorityTwistId);
+      const usage = Usage.Get(this.env, callback.twistInstanceId);
       const withinQuota = await usage.checkExecutionQuota(
-        priorityTwist.execution_limit
+        twistInstance.execution_limit
       );
       if (!withinQuota) {
         return {
@@ -409,7 +408,7 @@ export class CallbacksState extends DurableObject<Bindings> {
           type: "SUSPENDED",
           context: {
             operation: "callCallback",
-            priorityTwistId: callback.priorityTwistId,
+            twistInstanceId: callback.twistInstanceId,
             reason:
               "Twist processing suspended due to execution quota exceeded",
           },
@@ -421,13 +420,13 @@ export class CallbacksState extends DurableObject<Bindings> {
         .selectFrom("twist")
         .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
         .select(["twist.environment", "twist_admin.twist_package_id"])
-        .where("twist.id", "=", priorityTwist.twist_id)
+        .where("twist.id", "=", twistInstance.twist_id)
         .executeTakeFirst();
 
       // If twist was deleted, clean up callback and return
       if (!twistMeta) {
         logger.warn("Twist not found for callback, deleting callback", {
-          twistId: priorityTwist.twist_id,
+          twistId: twistInstance.twist_id,
           token,
         });
         this.delete(token);
@@ -448,8 +447,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       });
       const twistWrapper = await factory({
         version: callback.version,
-        priorityId: priorityTwist.priority_id!,
-        priorityTwistId: callback.priorityTwistId,
+        twistInstanceId: callback.twistInstanceId,
       });
 
       let factoryInitMs: number | undefined;
@@ -500,7 +498,7 @@ export class CallbacksState extends DurableObject<Bindings> {
         logger.info("Callback execution timing", {
           token: token.substring(0, 8) + "...",
           function_name: callback.functionName,
-          priority_twist_id: callback.priorityTwistId,
+          twist_instance_id: callback.twistInstanceId,
           db_lookup_ms: dbLookupMs,
           factory_init_ms: factoryInitMs,
           callback_exec_ms: callbackExecMs,
@@ -537,7 +535,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     const result = this.sql
       .exec(
         `
-          SELECT token, priority_twist_id, path, function_name, extra_args, call_once, expires
+          SELECT token, twist_instance_id, path, function_name, extra_args, call_once, expires
           FROM callbacks
           WHERE token = ?
           `,
@@ -555,7 +553,7 @@ export class CallbacksState extends DurableObject<Bindings> {
     }
 
     return {
-      priorityTwistId: row.priority_twist_id,
+      twistInstanceId: row.twist_instance_id,
       path: this.parseWithFallback(row.path),
       functionName: row.function_name,
       extraArgs: row.extra_args
@@ -594,7 +592,7 @@ export class CallbacksState extends DurableObject<Bindings> {
   deleteAll(
     args:
       | {
-          priorityTwistId: string;
+          twistInstanceId: string;
           path?: string[];
           reallyDeleteEverything?: boolean;
         }
@@ -604,26 +602,26 @@ export class CallbacksState extends DurableObject<Bindings> {
       this.sql.exec("DELETE FROM callbacks");
       return;
     }
-    const { priorityTwistId, path } = args;
+    const { twistInstanceId, path } = args;
     this.sql.exec(
-      "DELETE FROM callbacks WHERE priority_twist_id = ?" +
+      "DELETE FROM callbacks WHERE twist_instance_id = ?" +
         (path ? " AND path = ?" : ""),
       ...(path
-        ? [priorityTwistId, superjson.stringify(path)]
-        : [priorityTwistId])
+        ? [twistInstanceId, superjson.stringify(path)]
+        : [twistInstanceId])
     );
   }
 
   /**
-   * Upgrade all callbacks for a priority_twist to a new version.
+   * Upgrade all callbacks for a twist_instance to a new version.
    * This is called during twist deployment to ensure webhooks execute with the new version.
    */
-  upgradeCallbacks(priorityTwistId: string, newVersion: string): void {
-    // Update version for all callbacks belonging to this priority_twist
+  upgradeCallbacks(twistInstanceId: string, newVersion: string): void {
+    // Update version for all callbacks belonging to this twist_instance
     this.sql.exec(
-      "UPDATE callbacks SET version = ? WHERE priority_twist_id = ?",
+      "UPDATE callbacks SET version = ? WHERE twist_instance_id = ?",
       newVersion,
-      priorityTwistId
+      twistInstanceId
     );
   }
 
@@ -703,7 +701,7 @@ export class CallbacksState extends DurableObject<Bindings> {
 
   /**
    * Static method to call a callback by token.
-   * Parses the token to extract priorityTwistId, gets the correct DO stub,
+   * Parses the token to extract twistInstanceId, gets the correct DO stub,
    * and executes the callback.
    */
   static async CallCallback(

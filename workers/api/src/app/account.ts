@@ -20,8 +20,8 @@ import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync } from "./sync/notify";
-import { addUserToOrgPriorities } from "./organization";
-import { getPlotPriorityTwistId } from "../utils/trial";
+import { addUserToTeamPriorities } from "./team";
+import { getPlotTwistInstanceId } from "../utils/trial";
 
 const account = new Hono<{ Bindings: Bindings }>();
 
@@ -167,13 +167,14 @@ account.post("/activate", async (c) => {
   }
 
   // Step 1: Check if root priority already exists
-  let existingPriorityUser: { priority_id: string } | undefined;
+  let existingRoot: { id: string } | undefined;
   try {
-    existingPriorityUser = await c.var.db
-      .selectFrom("priority_user")
-      .select("priority_id")
+    existingRoot = await c.var.db
+      .selectFrom("priority")
+      .select("id")
       .where("user_id", "=", user.id)
-      .where("personal", "=", true)
+      .where(sql<boolean>`nlevel(path) = 1`)
+      .where("archived_at", "is", null)
       .executeTakeFirst();
   } catch (err) {
     return captureServerError(c, err as Error, `Failed to check for existing priority: ${(err as Error).message}`, {
@@ -183,15 +184,15 @@ account.post("/activate", async (c) => {
 
   let priority: { id: string } | null = null;
 
-  if (existingPriorityUser) {
+  if (existingRoot) {
     // Root priority already exists (e.g., from signup trigger or seed data)
     const context = extractRequestContext(c);
     const logger = createLogger(context);
     logger.info("Root priority already exists, skipping creation", {
       user_id: user.id,
-      priority_id: existingPriorityUser.priority_id,
+      priority_id: existingRoot.id,
     });
-    priority = { id: existingPriorityUser.priority_id };
+    priority = existingRoot;
   } else {
     // Step 2: Generate path for root priority (TypeScript, not DB — see utils/path.ts)
     const rootPath = generatePath(null);
@@ -203,6 +204,7 @@ account.post("/activate", async (c) => {
         .insertInto("priority")
         .values({
           created_by: user.id,
+          user_id: user.id,
           title: "Everything",
           path: rootPath,
           color: 0,
@@ -216,21 +218,7 @@ account.post("/activate", async (c) => {
       });
     }
 
-    // Step 3.5: Mark the priority_user entry as root
-    // The insert_priority_user trigger already created a priority_user entry
-    try {
-      await c.var.db
-        .updateTable("priority_user")
-        .set({ personal: true })
-        .where("user_id", "=", user.id)
-        .where("priority_id", "=", newPriority.id)
-        .execute();
-    } catch (err) {
-      return captureServerError(c, err as Error, `Failed to set personal flag: ${(err as Error).message}`, {
-        user_id: user.id,
-        priority_id: newPriority.id,
-      });
-    }
+    // priority.user_id is set automatically by the default_priority_user_id trigger
 
     // Step 3.6: Set default attention settings on root priority
     try {
@@ -405,13 +393,13 @@ account.post("/activate", async (c) => {
     const logger6 = createLogger(context6);
     logger6.warn("Plot twist not found, skipping installation");
   } else {
-    // Check if Plot twist is already installed on the root priority
-    let existingPriorityTwist: { id: string } | undefined;
+    // Check if Plot twist is already installed for this user (workspace-level)
+    let existingTwistInstance: { id: string } | undefined;
     try {
-      existingPriorityTwist = await c.var.db
-        .selectFrom("priority_twist")
+      existingTwistInstance = await c.var.db
+        .selectFrom("twist_instance")
         .select("id")
-        .where("priority_id", "=", priority.id)
+        .where("owner_id", "=", user.id)
         .where("twist_id", "=", String(plotTwist.id))
         .where("archived_at", "is", null)
         .executeTakeFirst();
@@ -422,14 +410,14 @@ account.post("/activate", async (c) => {
       });
     }
 
-    if (existingPriorityTwist) {
+    if (existingTwistInstance) {
       // Plot twist already installed
       const context = extractRequestContext(c);
       const logger = createLogger(context);
       logger.info("Plot twist already installed on root priority, skipping installation", {
         user_id: user.id,
         priority_id: priority.id,
-        priority_twist_id: existingPriorityTwist.id,
+        twist_instance_id: existingTwistInstance.id,
       });
     } else {
       // Install Plot twist
@@ -500,29 +488,6 @@ account.post("/activate", async (c) => {
         .where("primary", "=", true)
         .executeTakeFirst();
 
-      if (userContact) {
-        await c.var.db
-          .insertInto("priority_contact")
-          .values({ priority_id: plotAppPriority.id, contact_id: userContact.id })
-          .onConflict((oc) => oc.columns(["priority_id", "contact_id"]).doNothing())
-          .execute();
-      }
-
-      await c.var.db
-        .insertInto("priority_user")
-        .values({
-          user_id: user.id,
-          priority_id: plotAppPriority.id,
-          personal: false,
-          role: "viewer",
-        })
-        .onConflict((oc) =>
-          oc.columns(["user_id", "priority_id"]).doUpdateSet({
-            archived_at: null,
-          })
-        )
-        .execute();
-
       // 9c: Position @plot.app under user's root via priority_setting
       const rootPriority = await c.var.db
         .selectFrom("priority")
@@ -545,13 +510,15 @@ account.post("/activate", async (c) => {
       // 9d: Query onboarding threads by key
       const onboardingThreads = await c.var.db
         .selectFrom("thread")
-        .select(["id", "key"])
-        .where("priority_id", "=", plotAppPriority.id)
-        .where("key", "in", [
+        .innerJoin("thread_priority", "thread_priority.thread_id", "thread.id")
+        .select(["thread.id", "thread.key"])
+        .where("thread_priority.priority_id", "=", plotAppPriority.id)
+        .where("thread_priority.user_id", "=", user.id)
+        .where("thread.key", "in", [
           "welcome", "priorities", "connections", "getting-around",
           "twists", "notifications", "clean-up",
         ])
-        .where("archived_at", "is", null)
+        .where("thread.archived_at", "is", null)
         .execute();
 
       // 9e: Create per-user schedules with staggered dates
@@ -599,25 +566,29 @@ account.post("/activate", async (c) => {
       // 9f: Create reverse trial thread
       try {
         // Use the Plot twist as author so plan threads appear from Plot, not the user
-        const plotPriorityTwistId = await getPlotPriorityTwistId(c.var.db, plotAppPriority.id);
+        const plotTwistInstanceId = await getPlotTwistInstanceId(c.var.db, plotAppPriority.id);
 
         const trialThread = await c.var.db
           .insertInto("thread")
           .values({
-            priority_id: plotAppPriority.id,
             title: "Your Core plan trial",
-            created_by: plotPriorityTwistId ?? user.id,
+            created_by: plotTwistInstanceId ?? user.id,
             key: "core-trial",
-            access: "private",
-            ...(userContact ? { access_contacts: [userContact.id] } : {}),
+            ...(userContact ? { contacts: [userContact.id] } : {}),
           })
           .onConflict((oc) =>
-            oc.columns(["priority_id", "key"]).doNothing()
+            oc.columns(["created_by", "key"]).doNothing()
           )
           .returning("id")
           .executeTakeFirst();
 
         if (trialThread) {
+          await c.var.db
+            .insertInto("thread_priority")
+            .values({ thread_id: trialThread.id, user_id: user.id, priority_id: plotAppPriority.id, matched: false })
+            .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doUpdateSet({ priority_id: plotAppPriority.id }))
+            .execute();
+
           // Welcome note explaining the trial
           await c.var.db
             .insertInto("note")
@@ -625,8 +596,8 @@ account.post("/activate", async (c) => {
               thread_id: trialThread.id,
               content:
                 "Welcome to Plot! You have the **Core plan** free for 30 days — that's up to 5 connections and 2 twists. We'll let you know before your trial ends.",
-              created_by: plotPriorityTwistId ?? user.id,
-              author_id: plotPriorityTwistId ?? user.id,
+              created_by: plotTwistInstanceId ?? user.id,
+              author_id: plotTwistInstanceId ?? user.id,
             })
             .execute();
 
@@ -688,41 +659,41 @@ account.post("/activate", async (c) => {
     });
   }
 
-  // Step 10: Process pending organization invitations
+  // Step 10: Process pending team invitations
   try {
     const invitations = await c.var.db
-      .selectFrom("organization_invitation")
-      .select(["id", "organization_id", "role"])
+      .selectFrom("team_invitation")
+      .select(["id", "team_id", "role"])
       .where("email", "=", user.email.toLowerCase())
       .execute();
 
     for (const inv of invitations) {
       await c.var.db
-        .insertInto("organization_member")
+        .insertInto("team_user")
         .values({
-          organization_id: inv.organization_id,
+          team_id: inv.team_id,
           user_id: user.id,
           role: inv.role,
         })
         .onConflict((oc) =>
-          oc.columns(["organization_id", "user_id"]).doNothing()
+          oc.columns(["team_id", "user_id"]).doNothing()
         )
         .execute();
 
       await c.var.db
-        .deleteFrom("organization_invitation")
+        .deleteFrom("team_invitation")
         .where("id", "=", inv.id)
         .execute();
 
-      // Give user access to all org priorities
-      const orgPriorityIds = await addUserToOrgPriorities(c.var.db, inv.organization_id, user.id);
-      for (const pid of orgPriorityIds) notifySync(c, pid);
+      // Give user access to all team priorities
+      const teamPriorityIds = await addUserToTeamPriorities(c.var.db, inv.team_id, user.id);
+      for (const pid of teamPriorityIds) notifySync(c, pid);
     }
 
     if (invitations.length > 0) {
       const context = extractRequestContext(c);
       const logger = createLogger(context);
-      logger.info("Processed pending org invitations", {
+      logger.info("Processed pending team invitations", {
         user_id: user.id,
         count: invitations.length,
       });
@@ -730,53 +701,53 @@ account.post("/activate", async (c) => {
   } catch (err) {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
-    logger.error("Failed to process org invitations (non-blocking)", err as Error, {
+    logger.error("Failed to process team invitations (non-blocking)", err as Error, {
       user_id: user.id,
     });
   }
 
-  // Step 11: Domain auto-join for organizations
+  // Step 11: Domain auto-join for teams
   try {
     const emailDomain = user.email.split("@")[1]?.toLowerCase();
     if (emailDomain) {
       const domain = await c.var.db
         .selectFrom("domain")
-        .select(["organization_id"])
+        .select(["team_id"])
         .where("name", "=", emailDomain)
         .where("auto_join", "=", true)
-        .where("organization_id", "is not", null)
+        .where("team_id", "is not", null)
         .executeTakeFirst();
 
-      if (domain?.organization_id) {
+      if (domain?.team_id) {
         await c.var.db
-          .insertInto("organization_member")
+          .insertInto("team_user")
           .values({
-            organization_id: domain.organization_id,
+            team_id: domain.team_id,
             user_id: user.id,
             role: "member",
           })
           .onConflict((oc) =>
-            oc.columns(["organization_id", "user_id"]).doNothing()
+            oc.columns(["team_id", "user_id"]).doNothing()
           )
           .execute();
 
-        // Give user access to all org priorities
-        const domainOrgPriorityIds = await addUserToOrgPriorities(c.var.db, domain.organization_id, user.id);
-        for (const pid of domainOrgPriorityIds) notifySync(c, pid);
+        // Give user access to all team priorities
+        const domainTeamPriorityIds = await addUserToTeamPriorities(c.var.db, domain.team_id, user.id);
+        for (const pid of domainTeamPriorityIds) notifySync(c, pid);
 
         const context = extractRequestContext(c);
         const logger = createLogger(context);
-        logger.info("Auto-joined user to organization via domain", {
+        logger.info("Auto-joined user to team via domain", {
           user_id: user.id,
           domain: emailDomain,
-          organization_id: String(domain.organization_id),
+          team_id: String(domain.team_id),
         });
       }
     }
   } catch (err) {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
-    logger.error("Failed to auto-join org via domain (non-blocking)", err as Error, {
+    logger.error("Failed to auto-join team via domain (non-blocking)", err as Error, {
       user_id: user.id,
     });
   }

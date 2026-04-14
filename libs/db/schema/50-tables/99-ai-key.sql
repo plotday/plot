@@ -3,7 +3,7 @@ CREATE TABLE "public"."ai_key" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "user_id" uuid REFERENCES public."user" ON DELETE CASCADE,
-    "organization_id" bigint REFERENCES public."organization" ON DELETE CASCADE,
+    "team_id" bigint REFERENCES public."team" ON DELETE CASCADE,
     "provider" ai_provider NOT NULL,
     "name" text,
     "encrypted_key" text NOT NULL,
@@ -13,8 +13,8 @@ CREATE TABLE "public"."ai_key" (
     "fast_model" text,
     "thinking_model" text,
     CONSTRAINT ai_key_scope_check CHECK (
-        (user_id IS NOT NULL AND organization_id IS NULL)
-        OR (user_id IS NULL AND organization_id IS NOT NULL)
+        (user_id IS NOT NULL AND team_id IS NULL)
+        OR (user_id IS NULL AND team_id IS NOT NULL)
     )
 );
 
@@ -28,23 +28,23 @@ CREATE UNIQUE INDEX idx_ai_key_user_custom ON "public"."ai_key" ("user_id", "nam
 WHERE
     user_id IS NOT NULL AND provider = 'custom';
 
--- One of each standard provider per org
-CREATE UNIQUE INDEX idx_ai_key_org_standard ON "public"."ai_key" ("organization_id", "provider")
+-- One of each standard provider per team
+CREATE UNIQUE INDEX idx_ai_key_team_standard ON "public"."ai_key" ("team_id", "provider")
 WHERE
-    organization_id IS NOT NULL AND provider != 'custom';
+    team_id IS NOT NULL AND provider != 'custom';
 
--- Unique custom provider names per org
-CREATE UNIQUE INDEX idx_ai_key_org_custom ON "public"."ai_key" ("organization_id", "name")
+-- Unique custom provider names per team
+CREATE UNIQUE INDEX idx_ai_key_team_custom ON "public"."ai_key" ("team_id", "name")
 WHERE
-    organization_id IS NOT NULL AND provider = 'custom';
+    team_id IS NOT NULL AND provider = 'custom';
 
 CREATE INDEX idx_ai_key_user_id ON "public"."ai_key" ("user_id")
 WHERE
     user_id IS NOT NULL;
 
-CREATE INDEX idx_ai_key_org_id ON "public"."ai_key" ("organization_id")
+CREATE INDEX idx_ai_key_team_id ON "public"."ai_key" ("team_id")
 WHERE
-    organization_id IS NOT NULL;
+    team_id IS NOT NULL;
 
 CREATE TRIGGER set_ai_key_updated_at
     BEFORE INSERT OR UPDATE ON "public"."ai_key"

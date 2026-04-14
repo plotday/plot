@@ -69,6 +69,8 @@ class PlotIcon {
   static const othersTaskDone = FontAwesomeIcons.circleUserCircleCheck;
   static const assignAdd = FontAwesomeIcons.circleUserCirclePlus;
   static const assignRemove = FontAwesomeIcons.circleUserCircleXmark;
+  static const shareAdd = FontAwesomeIcons.userPlus;
+  static const shareRemove = FontAwesomeIcons.userXmark;
   static const doneAll = FontAwesomeIcons.checkDouble;
 
   // Tags

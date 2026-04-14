@@ -51,7 +51,7 @@ export function extractRequestContext(c: Context<{ Bindings: Bindings }>): LogCo
 /**
  * Extract log context from run queue messages (callback execution).
  *
- * Extracts priority_twist_id, path, callback token.
+ * Extracts twist_instance_id, path, callback token.
  */
 export function extractRunQueueContext(
   message: RunMessage,
@@ -59,7 +59,7 @@ export function extractRunQueueContext(
 ): LogContext {
   return {
     queue: queue ?? "run",
-    priority_twist_id: message.priorityTwistId,
+    twist_instance_id: message.twistInstanceId,
     path: message.path.join("/"),
     callback_token: message.token,
   };
@@ -110,7 +110,7 @@ export function extractErrorContext(error: Error | unknown): LogContext {
   // (e.g., TwistError might have additional context)
   const errorObj = error as any;
   if (errorObj.twist_id) context.twist_id = errorObj.twist_id;
-  if (errorObj.priority_twist_id) context.priority_twist_id = errorObj.priority_twist_id;
+  if (errorObj.twist_instance_id) context.twist_instance_id = errorObj.twist_instance_id;
   if (errorObj.priority_id) context.priority_id = errorObj.priority_id;
   if (errorObj.operation) context.operation = errorObj.operation;
 
@@ -209,14 +209,14 @@ export function mergeContext(...contexts: (LogContext | undefined)[]): LogContex
  */
 export function addTwistContext(
   twistId?: string | number,
-  priorityTwistId?: string,
+  twistInstanceId?: string,
   priorityId?: string | number,
   environment?: "personal" | "private" | "review" | "public"
 ): LogContext {
   const context: LogContext = {};
 
   if (twistId) context.twist_id = String(twistId);
-  if (priorityTwistId) context.priority_twist_id = priorityTwistId;
+  if (twistInstanceId) context.twist_instance_id = twistInstanceId;
   if (priorityId) context.priority_id = String(priorityId);
   if (environment) context.environment = environment;
 

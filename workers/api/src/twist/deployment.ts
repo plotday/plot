@@ -245,7 +245,7 @@ export async function deployTwist({
         description,
         version,
         permissions: JSON.stringify(twistPermissions),
-        options: optionsSchema ? JSON.stringify(optionsSchema) : null,
+        options_schema: optionsSchema ? JSON.stringify(optionsSchema) : null,
         is_source: providers.length > 0 || isNoProviderConnector,
         shared: sourceProvider?.shared ?? false,
         key_option: sourceProvider?.keyOption ?? null,
@@ -271,7 +271,7 @@ export async function deployTwist({
         description,
         version,
         permissions: JSON.stringify(newTwistPermissions),
-        options: optionsSchema ? JSON.stringify(optionsSchema) : null,
+        options_schema: optionsSchema ? JSON.stringify(optionsSchema) : null,
         is_source: providers.length > 0 || isNoProviderConnector,
         shared: sourceProvider?.shared ?? false,
         key_option: sourceProvider?.keyOption ?? null,
@@ -284,20 +284,20 @@ export async function deployTwist({
     logger.info("Created new twist", { twist_id: String(twist.id) });
   }
 
-  // Call upgrade callback for all active priorityTwists (if any exist)
-  // This only matters for updates - new twists won't have priority_twists yet
+  // Call upgrade callback for all active twistInstances (if any exist)
+  // This only matters for updates - new twists won't have twist_instances yet
   onProgress?.("Upgrading active twists");
   try {
-    const priorityTwists = await db
-      .selectFrom("priority_twist")
-      .select(["id", "priority_id", "twist_id"])
+    const twistInstances = await db
+      .selectFrom("twist_instance")
+      .select(["id", "twist_id"])
       .where("twist_id", "=", twist.id)
       .where("archived_at", "is", null)
       .execute();
 
-    if (priorityTwists.length > 0) {
+    if (twistInstances.length > 0) {
       logger.info("Calling upgrade on active priority twists", {
-        count: priorityTwists.length,
+        count: twistInstances.length,
       });
 
       const { twistFactory } = await import("./index");
@@ -305,11 +305,10 @@ export async function deployTwist({
 
       // Use allSettled to handle errors without blocking other upgrades
       const upgradeResults = await Promise.allSettled(
-        priorityTwists.map(async (pa) => {
+        twistInstances.map(async (pa) => {
           const twistWrapper = await factory({
             version, // Use NEW version
-            priorityId: pa.priority_id!,
-            priorityTwistId: pa.id,
+            twistInstanceId: pa.id,
           });
           return twistWrapper.upgrade();
         })
@@ -318,17 +317,17 @@ export async function deployTwist({
       // Log any upgrade failures
       upgradeResults.forEach((result, index) => {
         if (result.status === "rejected") {
-          logger.error("Failed to upgrade priority_twist", result.reason as Error, {
-            priority_twist_id: priorityTwists[index].id,
+          logger.error("Failed to upgrade twist_instance", result.reason as Error, {
+            twist_instance_id: twistInstances[index].id,
           });
         }
       });
 
-      // Upgrade all callbacks for each priority_twist to use the new version
+      // Upgrade all callbacks for each twist_instance to use the new version
       logger.info("Upgrading callbacks for active priority twists");
       const callbackUpgradeResults = await Promise.allSettled(
-        priorityTwists.map(async (pa) => {
-          // Get the callbacks Durable Object for this priority_twist
+        twistInstances.map(async (pa) => {
+          // Get the callbacks Durable Object for this twist_instance
           const callbacksId = env.CALLBACKS.idFromName(pa.id);
           const callbacksStub = env.CALLBACKS.get(callbacksId);
           return callbacksStub.upgradeCallbacks(pa.id, version);
@@ -339,10 +338,10 @@ export async function deployTwist({
       callbackUpgradeResults.forEach((result, index) => {
         if (result.status === "rejected") {
           logger.error(
-            "Failed to upgrade callbacks for priority_twist",
+            "Failed to upgrade callbacks for twist_instance",
             result.reason as Error,
             {
-              priority_twist_id: priorityTwists[index].id,
+              twist_instance_id: twistInstances[index].id,
             }
           );
         }
@@ -378,7 +377,7 @@ export async function deployTwist({
             description,
             version,
             permissions: JSON.stringify(publicPermissions),
-            options: optionsSchema ? JSON.stringify(optionsSchema) : null,
+            options_schema: optionsSchema ? JSON.stringify(optionsSchema) : null,
             is_source: providers.length > 0 || isNoProviderConnector,
             shared: sourceProvider?.shared ?? false,
             key_option: sourceProvider?.keyOption ?? null,
@@ -391,7 +390,7 @@ export async function deployTwist({
               description,
               version,
               permissions: JSON.stringify(publicPermissions),
-              options: optionsSchema ? JSON.stringify(optionsSchema) : null,
+              options_schema: optionsSchema ? JSON.stringify(optionsSchema) : null,
               is_source: providers.length > 0 || isNoProviderConnector,
               shared: sourceProvider?.shared ?? false,
               key_option: sourceProvider?.keyOption ?? null,
@@ -404,24 +403,24 @@ export async function deployTwist({
 
         logger.info("Successfully auto-deployed twist to public environment");
 
-        // Upgrade callbacks for PUBLIC priority_twists too
+        // Upgrade callbacks for PUBLIC twist_instances too
         // This ensures webhooks execute with the new twist version
         try {
-          const publicPriorityTwists = await db
-            .selectFrom("priority_twist")
-            .select(["id", "priority_id", "twist_id"])
+          const publicTwistInstances = await db
+            .selectFrom("twist_instance")
+            .select(["id", "twist_id"])
             .where("twist_id", "=", publicTwist.id)
             .where("archived_at", "is", null)
             .execute();
 
-          if (publicPriorityTwists.length > 0) {
+          if (publicTwistInstances.length > 0) {
             logger.info("Upgrading callbacks for public priority twists", {
-              count: publicPriorityTwists.length,
+              count: publicTwistInstances.length,
             });
 
             // Upgrade callbacks for public installations
             const publicCallbackUpgradeResults = await Promise.allSettled(
-              publicPriorityTwists.map(async (pa) => {
+              publicTwistInstances.map(async (pa) => {
                 const callbacksId = env.CALLBACKS.idFromName(pa.id);
                 const callbacksStub = env.CALLBACKS.get(callbacksId);
                 return callbacksStub.upgradeCallbacks(pa.id, version);
@@ -432,10 +431,10 @@ export async function deployTwist({
             publicCallbackUpgradeResults.forEach((result, index) => {
               if (result.status === "rejected") {
                 logger.error(
-                  "Failed to upgrade callbacks for public priority_twist",
+                  "Failed to upgrade callbacks for public twist_instance",
                   result.reason as Error,
                   {
-                    priority_twist_id: publicPriorityTwists[index].id,
+                    twist_instance_id: publicTwistInstances[index].id,
                   }
                 );
               }

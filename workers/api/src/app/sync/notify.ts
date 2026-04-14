@@ -58,13 +58,14 @@ export function notifyUserSync(c: Context<{ Bindings: Bindings }>, userId: strin
 }
 
 /**
- * Look up the priority_id for a thread.
+ * Look up the priority_id for a thread via thread_priority for a given user.
  */
-export async function getPriorityForThread(db: Kysely<DB>, threadId: string): Promise<string> {
+export async function getPriorityForThread(db: Kysely<DB>, threadId: string, userId: string): Promise<string> {
   const row = await db
-    .selectFrom("thread")
+    .selectFrom("thread_priority")
     .select("priority_id")
-    .where("id", "=", threadId)
+    .where("thread_id", "=", threadId)
+    .where("user_id", "=", userId)
     .executeTakeFirstOrThrow();
   return row.priority_id;
 }
@@ -73,14 +74,15 @@ export async function getPriorityForThread(db: Kysely<DB>, threadId: string): Pr
 export const getPriorityForActivity = getPriorityForThread;
 
 /**
- * Look up the priority_id for a note (via its parent thread).
+ * Look up the priority_id for a note (via thread_priority for a given user).
  */
-export async function getPriorityForNote(db: Kysely<DB>, noteId: string): Promise<string> {
+export async function getPriorityForNote(db: Kysely<DB>, noteId: string, userId: string): Promise<string> {
   const row = await db
     .selectFrom("note")
-    .innerJoin("thread", "thread.id", "note.thread_id")
-    .select("thread.priority_id")
+    .innerJoin("thread_priority", "thread_priority.thread_id", "note.thread_id")
+    .select("thread_priority.priority_id")
     .where("note.id", "=", noteId)
+    .where("thread_priority.user_id", "=", userId)
     .executeTakeFirstOrThrow();
   return row.priority_id;
 }

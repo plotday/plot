@@ -8,28 +8,28 @@
 import type { Database } from "@plotday/db";
 
 /**
- * Note from priority_twist_note_create view.
+ * Note from twist_instance_note_create view.
  * Used for new note notifications to twists.
  */
-export type NoteCreate = Database["public"]["Views"]["priority_twist_note_create"]["Row"];
+export type NoteCreate = Database["public"]["Views"]["twist_instance_note_create"]["Row"];
 
 /**
- * Note from priority_twist_note_update view.
+ * Note from twist_instance_note_update view.
  * Used for note update notifications to twists.
  */
-export type NoteUpdate = Database["public"]["Views"]["priority_twist_note_update"]["Row"];
+export type NoteUpdate = Database["public"]["Views"]["twist_instance_note_update"]["Row"];
 
 /**
- * Thread from priority_twist_thread_update view.
+ * Thread from twist_instance_thread_update view.
  * Used for thread update notifications to twists.
  */
-export type ThreadUpdate = Database["public"]["Views"]["priority_twist_thread_update"]["Row"];
+export type ThreadUpdate = Database["public"]["Views"]["twist_instance_thread_update"]["Row"];
 
 /**
- * Thread tag change from priority_twist_thread_tag_change view.
+ * Thread tag change from twist_instance_thread_tag_change view.
  * Used for tracking tag additions/removals on threads.
  */
-export type ThreadTagChange = Database["public"]["Views"]["priority_twist_thread_tag_change"]["Row"];
+export type ThreadTagChange = Database["public"]["Views"]["twist_instance_thread_tag_change"]["Row"];
 
 /** @deprecated Use ThreadUpdate */
 export type ActivityCreate = ThreadUpdate;
@@ -66,37 +66,37 @@ export type EnrichedThread = ThreadUpdate;
 export type EnrichedActivity = EnrichedThread;
 
 /**
- * Link from priority_twist_channel_link_create view.
+ * Link from twist_instance_channel_link_create view.
  * Used for new link notifications from connected source channels.
  */
-export type ChannelLinkCreate = Database["public"]["Views"]["priority_twist_channel_link_create"]["Row"];
+export type ChannelLinkCreate = Database["public"]["Views"]["twist_instance_channel_link_create"]["Row"];
 
 /**
- * Link from priority_twist_channel_link_update view.
+ * Link from twist_instance_channel_link_update view.
  * Used for updated link notifications from connected source channels.
  */
-export type ChannelLinkUpdate = Database["public"]["Views"]["priority_twist_channel_link_update"]["Row"];
+export type ChannelLinkUpdate = Database["public"]["Views"]["twist_instance_channel_link_update"]["Row"];
 
 /**
- * Note from priority_twist_channel_note_create view.
+ * Note from twist_instance_channel_note_create view.
  * Used for new note notifications on threads with links from connected channels.
  */
-export type ChannelNoteCreate = Database["public"]["Views"]["priority_twist_channel_note_create"]["Row"];
+export type ChannelNoteCreate = Database["public"]["Views"]["twist_instance_channel_note_create"]["Row"];
 
 /**
- * Thread read status change from priority_twist_thread_read view.
+ * Thread read status change from twist_instance_thread_read view.
  * Used for dispatching onThreadRead callbacks to sources.
  */
-export type ThreadReadChange = Database["public"]["Views"]["priority_twist_thread_read"]["Row"];
+export type ThreadReadChange = Database["public"]["Views"]["twist_instance_thread_read"]["Row"];
 
 /**
- * Thread schedule change from priority_twist_thread_schedule view.
+ * Thread schedule change from twist_instance_thread_schedule view.
  * Used for dispatching onThreadToDo callbacks to sources.
  */
-export type ThreadScheduleChange = Database["public"]["Views"]["priority_twist_thread_schedule"]["Row"];
+export type ThreadScheduleChange = Database["public"]["Views"]["twist_instance_thread_schedule"]["Row"];
 
 /**
- * Schedule contact change from priority_twist_schedule_contact view.
+ * Schedule contact change from twist_instance_schedule_contact view.
  * Used for dispatching onScheduleContactUpdated callbacks to sources.
  */
-export type ScheduleContactChange = Database["public"]["Views"]["priority_twist_schedule_contact"]["Row"];
+export type ScheduleContactChange = Database["public"]["Views"]["twist_instance_schedule_contact"]["Row"];

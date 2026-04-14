@@ -17,19 +17,19 @@ import { saveSecureOptions } from "../utils/secure-options";
 
 const twistIntegrations = new Hono<{ Bindings: Bindings }>();
 
-/** Query organization domains for smart channel default suggestions. */
-async function getOrganizationDomains(
+/** Query team domains for smart channel default suggestions. */
+async function getTeamDomains(
   db: Kysely<DB>
 ): Promise<Record<string, string[]>> {
   const rows = await db
     .selectFrom("domain")
-    .select(["organization_id", "name"])
-    .where("organization_id", "is not", null)
+    .select(["team_id", "name"])
+    .where("team_id", "is not", null)
     .execute();
 
   const result: Record<string, string[]> = {};
   for (const row of rows) {
-    const orgId = String(row.organization_id);
+    const orgId = String(row.team_id);
     if (!result[orgId]) result[orgId] = [];
     result[orgId].push(row.name);
   }
@@ -41,25 +41,24 @@ async function getOrganizationDomains(
 // ============================================================================
 
 /**
- * Look up priority_twist metadata needed for integration operations.
+ * Look up twist_instance metadata needed for integration operations.
  */
-async function resolveTwistInfo(db: Kysely<DB>, priorityTwistId: string) {
+async function resolveTwistInfo(db: Kysely<DB>, twistInstanceId: string) {
   const row = await db
-    .selectFrom("priority_twist")
-    .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+    .selectFrom("twist_instance")
+    .innerJoin("twist", "twist.id", "twist_instance.twist_id")
     .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
     .select([
-      "priority_twist.twist_id as twistId",
-      "priority_twist.priority_id as priorityId",
+      "twist_instance.twist_id as twistId",
       "twist.version",
       "twist.environment",
-      "twist.options as twistOptions",
+      "twist.options_schema as twistOptions",
       "twist.shared",
       "twist.key_option as keyOption",
       "twist_admin.twist_package_id as twistPackageId",
     ])
-    .where("priority_twist.id", "=", priorityTwistId)
-    .where("priority_twist.archived_at", "is", null)
+    .where("twist_instance.id", "=", twistInstanceId)
+    .where("twist_instance.archived_at", "is", null)
     .executeTakeFirst();
 
   return row ?? null;
@@ -119,7 +118,7 @@ function createReadOnlyIntegrations(
   providers: ProviderDeclaration[],
   env: Bindings,
   db: Kysely<DB>,
-  priorityTwistId: string,
+  twistInstanceId: string,
   twistPackageId: string,
   environment: string
 ): Integrations {
@@ -135,7 +134,7 @@ function createReadOnlyIntegrations(
   const store = new Store({
     path,
     storage: env.STORAGE,
-    priorityTwistId,
+    twistInstanceId,
   });
 
   return new Integrations({
@@ -143,8 +142,7 @@ function createReadOnlyIntegrations(
     store,
     env,
     db,
-    priorityId: "", // Read-only context - save operations not used
-    priorityTwistId,
+    twistInstanceId,
     twistId: twistPackageId,
     environment: environment as any,
     integrationOptions: { providers: providerConfigs },
@@ -158,9 +156,9 @@ function createReadOnlyIntegrations(
 // GET /twist/:id/integrations
 // Returns accounts, providers, and channels for the edit modal.
 twistIntegrations.get("/twist/:id/integrations", async (c) => {
-  const priorityTwistId = c.req.param("id");
+  const twistInstanceId = c.req.param("id");
 
-  const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+  const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
   if (!twistInfo) {
     return c.json({ message: "Twist not found" }, 404);
   }
@@ -177,14 +175,14 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
   if (config.providers.length === 0) {
     // No-provider connector: check if options have been configured (via /connect)
     const pt = await c.var.db
-      .selectFrom("priority_twist")
-      .select("config")
-      .where("id", "=", priorityTwistId)
+      .selectFrom("twist_instance")
+      .select("options")
+      .where("id", "=", twistInstanceId)
       .executeTakeFirst();
-    const ptConfig = pt?.config
-      ? typeof pt.config === "string"
-        ? JSON.parse(pt.config)
-        : pt.config
+    const ptConfig = pt?.options
+      ? typeof pt.options === "string"
+        ? JSON.parse(pt.options)
+        : pt.options
       : {};
     const hasConfig = Object.keys(ptConfig).length > 0;
 
@@ -205,7 +203,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     }
 
     // Connected — call getChannels to fetch available channels
-    const logger = createLogger({ priority_twist_id: priorityTwistId });
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
     let twistWrapper;
     try {
       const factory = twistFactory({
@@ -214,8 +212,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
         db: c.var.db,
       });
       twistWrapper = await factory({
-        priorityId: twistInfo.priorityId ?? priorityTwistId,
-        priorityTwistId,
+        twistInstanceId,
       });
     } catch (error) {
       logger.error("Failed to create twist factory for no-provider connector", error as Error);
@@ -242,11 +239,11 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       );
       disposeRpc(result);
 
-      // Query source_channel to merge enabled state
+      // Query channel to merge enabled state
       const enabledChannels = await c.var.db
-        .selectFrom("source_channel")
-        .select(["channel_id", "enabled", "priority_id", "create_threads", "create_threads_by_type"])
-        .where("priority_twist_id", "=", priorityTwistId)
+        .selectFrom("channel")
+        .select(["channel_id", "enabled"])
+        .where("twist_instance_id", "=", twistInstanceId)
         .execute();
       const enabledMap = new Map(
         enabledChannels.map((ch) => [ch.channel_id, ch])
@@ -261,9 +258,6 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
           provider: "_options",
           enabled: stored?.enabled ?? false,
           enabledBy: null,
-          priorityId: stored?.priority_id ?? null,
-          createThreads: stored?.create_threads ?? ch.createThreads ?? "all",
-          createThreadsByType: stored?.create_threads_by_type ?? undefined,
           // Fall back to connector-level linkTypes when channel doesn't specify its own
           linkTypes: ch.linkTypes ?? config.connectorLinkTypes ?? undefined,
           currentUserHasAccess: true,
@@ -274,7 +268,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     }
 
     const accounts = accountName
-      ? [{ provider: "_options", actorId: priorityTwistId, name: accountName, email: null }]
+      ? [{ provider: "_options", actorId: twistInstanceId, name: accountName, email: null }]
       : [];
 
     // Include options schema and current config for editing.
@@ -301,14 +295,14 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       optionsConfig = masked;
     }
 
-    const organizationDomains = await getOrganizationDomains(c.var.db);
+    const teamDomains = await getTeamDomains(c.var.db);
 
     return c.json({
       providers: [], accounts, syncables, optionsSchema, optionsConfig,
       singleChannel: config.singleChannel,
       shared: twistInfo.shared,
       keyOption: twistInfo.keyOption,
-      organizationDomains,
+      teamDomains,
     });
   }
 
@@ -339,7 +333,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       providers,
       c.env,
       c.var.db,
-      priorityTwistId,
+      twistInstanceId,
       twistInfo.twistPackageId,
       twistInfo.environment
     );
@@ -353,7 +347,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     allChannels.push(...data.syncables);
   }
 
-  const organizationDomains = await getOrganizationDomains(c.var.db);
+  const teamDomains = await getTeamDomains(c.var.db);
 
   return c.json({
     providers: allProviders,
@@ -362,7 +356,7 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     singleChannel: config.singleChannel,
     shared: twistInfo.shared,
     keyOption: twistInfo.keyOption,
-    organizationDomains,
+    teamDomains,
   });
 });
 
@@ -376,7 +370,7 @@ const AuthRequestSchema = z.object({
 });
 
 twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
-  const priorityTwistId = c.req.param("id");
+  const twistInstanceId = c.req.param("id");
 
   const rawBody = await c.req.json();
   const parseResult = AuthRequestSchema.safeParse(rawBody);
@@ -385,7 +379,7 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
   }
   const { provider, redirectUri, platform } = parseResult.data;
 
-  const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+  const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
   if (!twistInfo) {
     return c.json({ message: "Twist not found" }, 404);
   }
@@ -434,10 +428,10 @@ twistIntegrations.post("/twist/:id/integrations/auth", async (c) => {
     }
 
     // Create a callback token pointing to the Integrations tool's onAuth method
-  const callbacksId = c.env.CALLBACKS.idFromName(priorityTwistId);
+  const callbacksId = c.env.CALLBACKS.idFromName(twistInstanceId);
   const callbacksStub = c.env.CALLBACKS.get(callbacksId);
   const callback = await callbacksStub.create({
-    priorityTwistId,
+    twistInstanceId,
     path: integrationsPathStr.split(":"),
     functionName: "onAuth",
     extraArgs: [],
@@ -472,7 +466,7 @@ const ConnectRequestSchema = z.object({
 });
 
 twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
-  const priorityTwistId = c.req.param("id");
+  const twistInstanceId = c.req.param("id");
 
   const rawBody = await c.req.json();
   const parseResult = ConnectRequestSchema.safeParse(rawBody);
@@ -481,9 +475,9 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
   }
   const { options } = parseResult.data;
 
-  const logger = createLogger({ priority_twist_id: priorityTwistId });
+  const logger = createLogger({ twist_instance_id: twistInstanceId });
 
-  const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+  const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
   if (!twistInfo) {
     return c.json({ message: "Twist not found" }, 404);
   }
@@ -525,7 +519,7 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
           await saveSecureOptions(
             c.var.db,
             c.env.AI_KEY_ENCRYPTION_KEY,
-            priorityTwistId,
+            twistInstanceId,
             keySchema,
             { [keyOptionField]: keyValue },
             c.var.user.id
@@ -541,7 +535,7 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
           ? await saveSecureOptions(
               c.var.db,
               c.env.AI_KEY_ENCRYPTION_KEY,
-              priorityTwistId,
+              twistInstanceId,
               sharedSchema,
               sharedOptions
             )
@@ -553,18 +547,18 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
         cleanedConfig = await saveSecureOptions(
           c.var.db,
           c.env.AI_KEY_ENCRYPTION_KEY,
-          priorityTwistId,
+          twistInstanceId,
           optSchema,
           options
         );
       }
     }
 
-    // Save config to priority_twist
+    // Save config to twist_instance
     await c.var.db
-      .updateTable("priority_twist")
-      .set({ config: JSON.stringify(cleanedConfig) })
-      .where("id", "=", priorityTwistId)
+      .updateTable("twist_instance")
+      .set({ options: JSON.stringify(cleanedConfig) })
+      .where("id", "=", twistInstanceId)
       .execute();
 
     // Instantiate the twist and call getChannels(null, null) on the connector
@@ -575,8 +569,7 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
     });
 
     const twistWrapper = await factory({
-      priorityId: twistInfo.priorityId ?? priorityTwistId,
-      priorityTwistId,
+      twistInstanceId,
     });
 
     // Call getChannels(null, null) directly on the connector (path=[])
@@ -616,7 +609,6 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
       provider: "_options",
       enabled: false,
       enabledBy: null,
-      priorityId: null,
       createThreads: ch.createThreads ?? "all",
       linkTypes: ch.linkTypes ?? kvConfig.connectorLinkTypes ?? undefined,
       currentUserHasAccess: true,
@@ -638,18 +630,18 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
     if (accountName) {
       const updatedConfig = { ...cleanedConfig, _accountName: accountName };
       await c.var.db
-        .updateTable("priority_twist")
-        .set({ config: JSON.stringify(updatedConfig) })
-        .where("id", "=", priorityTwistId)
+        .updateTable("twist_instance")
+        .set({ options: JSON.stringify(updatedConfig) })
+        .where("id", "=", twistInstanceId)
         .execute();
     }
 
     // Record connection for user_connected tracking
     try {
       await c.var.db
-        .insertInto("priority_twist_connection")
+        .insertInto("twist_instance_connection")
         .values({
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           user_id: c.var.user.id,
           provider: "_key",
           actor_id: c.var.user.id,
@@ -657,14 +649,14 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
         })
         .onConflict((oc) =>
           oc
-            .columns(["priority_twist_id", "user_id", "provider"])
+            .columns(["twist_instance_id", "user_id", "provider"])
             .doUpdateSet({
               connected_at: new Date().toISOString(),
             })
         )
         .execute();
     } catch (error) {
-      logger.error("Failed to record priority_twist_connection for key connector", error as Error);
+      logger.error("Failed to record twist_instance_connection for key connector", error as Error);
     }
 
     logger.info("No-provider connect successful", {
@@ -687,39 +679,17 @@ twistIntegrations.post("/twist/:id/integrations/connect", async (c) => {
 });
 
 // POST /twist/:id/syncables/:provider/:syncableId/enable
-// Enable a channel. Optionally accepts { priorityId } in body.
+// Enable a channel.
 twistIntegrations.post(
   "/twist/:id/syncables/:provider/:syncableId/enable",
   async (c) => {
-    const priorityTwistId = c.req.param("id");
+    const twistInstanceId = c.req.param("id");
     const provider = c.req.param("provider");
     const channelId = c.req.param("syncableId");
 
-    // Parse optional body for priorityId, createThreads, and createThreadsByType
-    let priorityId: string | undefined;
-    let createThreads: string | undefined;
-    let createThreadsByType: Record<string, string> | undefined;
-    try {
-      const body = await c.req.json();
-      priorityId = body?.priorityId;
-      if (typeof body?.createThreads === "string" &&
-          ["all", "actionable", "manual"].includes(body.createThreads)) {
-        createThreads = body.createThreads;
-      }
-      if (body?.createThreadsByType && typeof body.createThreadsByType === "object" && !Array.isArray(body.createThreadsByType)) {
-        const validModes = ["all", "actionable", "manual"];
-        const entries = Object.entries(body.createThreadsByType);
-        if (entries.every(([, v]) => typeof v === "string" && validModes.includes(v as string))) {
-          createThreadsByType = body.createThreadsByType;
-        }
-      }
-    } catch {
-      // No body or invalid JSON — fine, fields stay undefined
-    }
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
 
-    const logger = createLogger({ priority_twist_id: priorityTwistId });
-
-    const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
       return c.json({ message: "Twist not found" }, 404);
     }
@@ -751,8 +721,7 @@ twistIntegrations.post(
     const limitCheck = await checkChannelConnectionLimit(
       c.var.db,
       c.var.user.id,
-      priorityTwistId,
-      priorityId ?? null
+      twistInstanceId
     );
     if (!limitCheck.allowed) {
       return c.json(limitCheck.error.toJSON(), 403);
@@ -767,8 +736,7 @@ twistIntegrations.post(
       });
 
       const twistWrapper = await factory({
-        priorityId: twistInfo.priorityId!,
-        priorityTwistId,
+        twistInstanceId,
       });
 
       const result = await twistWrapper.callCallback(
@@ -777,10 +745,7 @@ twistIntegrations.post(
         provider,
         channelId,
         currentActorId,
-        undefined, // title
-        priorityId,
-        createThreads,
-        createThreadsByType
+        undefined // title
       );
       disposeRpc(result);
 
@@ -788,7 +753,6 @@ twistIntegrations.post(
         provider,
         channel_id: channelId,
         actor_id: currentActorId,
-        priority_id: priorityId,
       });
 
       return c.json({ success: true });
@@ -817,13 +781,13 @@ twistIntegrations.post(
 twistIntegrations.post(
   "/twist/:id/syncables/:provider/:syncableId/disable",
   async (c) => {
-    const priorityTwistId = c.req.param("id");
+    const twistInstanceId = c.req.param("id");
     const provider = c.req.param("provider");
     const channelId = c.req.param("syncableId");
 
-    const logger = createLogger({ priority_twist_id: priorityTwistId });
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
 
-    const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
       return c.json({ message: "Twist not found" }, 404);
     }
@@ -853,8 +817,7 @@ twistIntegrations.post(
       });
 
       const twistWrapper = await factory({
-        priorityId: twistInfo.priorityId!,
-        priorityTwistId,
+        twistInstanceId,
       });
 
       const result = await twistWrapper.callCallback(
@@ -889,95 +852,13 @@ twistIntegrations.post(
 );
 
 // PATCH /twist/:id/syncables/:provider/:syncableId
-// Update config for an already-enabled channel (priority, createThreads, createThreadsByType).
-const ChannelUpdateSchema = z.object({
-  priorityId: z.string().nullable().optional(),
-  createThreads: z.enum(["all", "actionable", "manual"]).optional(),
-  createThreadsByType: z.record(z.string(), z.enum(["all", "actionable", "manual"])).optional(),
-});
-
+// Legacy no-op: channels no longer store per-channel routing.
+// Kept so existing clients don't 404 when they try to write an obsolete
+// priorityId field.
 twistIntegrations.patch(
   "/twist/:id/syncables/:provider/:syncableId",
   async (c) => {
-    const priorityTwistId = c.req.param("id");
-    const provider = c.req.param("provider");
-    const channelId = c.req.param("syncableId");
-
-    const rawBody = await c.req.json();
-    const parseResult = ChannelUpdateSchema.safeParse(rawBody);
-    if (!parseResult.success) {
-      return handleValidationError(parseResult.error);
-    }
-    const { priorityId, createThreads, createThreadsByType } = parseResult.data;
-
-    const logger = createLogger({ priority_twist_id: priorityTwistId });
-
-    const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
-    if (!twistInfo) {
-      return c.json({ message: "Twist not found" }, 404);
-    }
-
-    const config = await loadTwistConfig(
-      c.env,
-      twistInfo.twistPackageId,
-      twistInfo.version
-    );
-    if (!config) {
-      return c.json({ message: "Twist config not found" }, 404);
-    }
-
-    const integrationsPathStr = config.integrationsMap[provider];
-    if (!integrationsPathStr) {
-      return c.json(
-        { message: `Provider ${provider} not configured` },
-        400
-      );
-    }
-
-    try {
-      // Use read-only Integrations to set channel priority directly
-      const providerDecl = config.providers.filter((p) => p.provider === provider);
-      const integrations = createReadOnlyIntegrations(
-        integrationsPathStr.split(":"),
-        providerDecl,
-        c.env,
-        c.var.db,
-        priorityTwistId,
-        twistInfo.twistPackageId,
-        twistInfo.environment
-      );
-
-      await integrations.updateChannelConfig(
-        provider as any,
-        channelId,
-        {
-          ...(priorityId !== undefined ? { priorityId } : {}),
-          ...(createThreads !== undefined ? { createThreads } : {}),
-          ...(createThreadsByType !== undefined ? { createThreadsByType } : {}),
-        }
-      );
-
-      logger.info("Channel config updated", {
-        provider,
-        channel_id: channelId,
-        priority_id: priorityId ?? undefined,
-      });
-
-      return c.json({ success: true });
-    } catch (error) {
-      logger.error("Error updating channel config", error as Error, {
-        provider,
-        channel_id: channelId,
-      });
-      return c.json(
-        {
-          message: `Failed to update channel config: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-        },
-        500
-      );
-    }
+    return c.json({ success: true });
   }
 );
 
@@ -986,12 +867,12 @@ twistIntegrations.patch(
 twistIntegrations.post(
   "/twist/:id/syncables/:provider/refresh",
   async (c) => {
-    const priorityTwistId = c.req.param("id");
+    const twistInstanceId = c.req.param("id");
     const provider = c.req.param("provider");
 
-    const logger = createLogger({ priority_twist_id: priorityTwistId });
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
 
-    const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
       return c.json({ message: "Twist not found" }, 404);
     }
@@ -1027,8 +908,7 @@ twistIntegrations.post(
       });
 
       const twistWrapper = await factory({
-        priorityId: twistInfo.priorityId!,
-        priorityTwistId,
+        twistInstanceId,
       });
 
       const result = await twistWrapper.callCallback(
@@ -1066,13 +946,13 @@ twistIntegrations.post(
 twistIntegrations.delete(
   "/twist/:id/integrations/:provider/:actorId",
   async (c) => {
-    const priorityTwistId = c.req.param("id");
+    const twistInstanceId = c.req.param("id");
     const provider = c.req.param("provider");
     const actorId = c.req.param("actorId");
 
-    const logger = createLogger({ priority_twist_id: priorityTwistId });
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
 
-    const twistInfo = await resolveTwistInfo(c.var.db, priorityTwistId);
+    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
     if (!twistInfo) {
       return c.json({ message: "Twist not found" }, 404);
     }
@@ -1102,8 +982,7 @@ twistIntegrations.delete(
       });
 
       const twistWrapper = await factory({
-        priorityId: twistInfo.priorityId!,
-        priorityTwistId,
+        twistInstanceId,
       });
 
       const result = await twistWrapper.callCallback(

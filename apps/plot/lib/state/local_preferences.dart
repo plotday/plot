@@ -21,14 +21,14 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
   static const int _maxMruItems = 50;
 
   /// Record usage of a mention, moving it to the front of the MRU list
-  Future<void> recordMentionUsage(String priorityTwistId) async {
+  Future<void> recordMentionUsage(String twistInstanceId) async {
     final currentIds = List<String>.from(state.mentionMruIds);
 
     // Remove if exists (to move to front)
-    currentIds.remove(priorityTwistId);
+    currentIds.remove(twistInstanceId);
 
     // Add to front
-    currentIds.insert(0, priorityTwistId);
+    currentIds.insert(0, twistInstanceId);
 
     // Limit size
     if (currentIds.length > _maxMruItems) {
@@ -97,13 +97,12 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
         if (subType != null) result.add(subType);
       }
       // Add any missing sub-types at the end (e.g. newly added types)
-      final defaults = ThreadSubType.forPriority(sharing: true);
-      for (final t in defaults) {
+      for (final t in ThreadSubType.values) {
         if (!result.contains(t)) result.add(t);
       }
       return result;
     }
-    return ThreadSubType.forPriority(sharing: true);
+    return ThreadSubType.values.toList();
   }
 
   /// Moves [subType] to position 0 in the priority's MRU list and persists.

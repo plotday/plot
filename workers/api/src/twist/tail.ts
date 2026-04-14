@@ -7,8 +7,8 @@ import { createLogger } from "@plotday/worker-util";
 /**
  * Tail handler for capturing console logs and usage metrics from dynamically loaded twist workers.
  * Twist metadata (twistRootId, environment) is passed as trusted props from the API worker.
- * priorityTwistId is extracted from per-invocation context logs to support worker sharing across
- * multiple priority_twist instances.
+ * twistInstanceId is extracted from per-invocation context logs to support worker sharing across
+ * multiple twist_instance instances.
  */
 export class TwistTail extends WorkerEntrypoint<
   {
@@ -26,42 +26,42 @@ export class TwistTail extends WorkerEntrypoint<
     // Get trusted metadata from props (passed from API worker)
     const { twistRootId, environment } = this.ctx.props;
 
-    // Track Workers usage metrics per priorityTwistId
-    // Map of priorityTwistId -> { invocations, cpuTimeMs }
-    const usageByPriorityTwist = new Map<
+    // Track Workers usage metrics per twistInstanceId
+    // Map of twistInstanceId -> { invocations, cpuTimeMs }
+    const usageByTwistInstance = new Map<
       string,
       { invocations: number; cpuTimeMs: number }
     >();
 
     for (const event of events) {
-      // Extract priorityTwistId from context logs
-      let priorityTwistId: string | undefined;
+      // Extract twistInstanceId from context logs
+      let twistInstanceId: string | undefined;
       for (const logEntry of event.logs || []) {
         const message = logEntry.message
           .map((msg: any) => (typeof msg === "string" ? msg : String(msg)))
           .join(" ");
 
-        // Parse context log: [TWIST_CONTEXT] priorityTwistId=<id>
-        const contextMatch = message.match(/^\[TWIST_CONTEXT\] priorityTwistId=(.+)$/);
+        // Parse context log: [TWIST_CONTEXT] twistInstanceId=<id>
+        const contextMatch = message.match(/^\[TWIST_CONTEXT\] twistInstanceId=(.+)$/);
         if (contextMatch) {
-          priorityTwistId = contextMatch[1];
+          twistInstanceId = contextMatch[1];
           break; // Found context, stop looking
         }
       }
 
       // Skip deployment operations (permission collection) and malformed events
-      if (!priorityTwistId || priorityTwistId === "__deployment__") {
+      if (!twistInstanceId || twistInstanceId === "__deployment__") {
         continue;
       }
 
-      // Initialize usage tracking for this priorityTwistId if needed
-      if (!usageByPriorityTwist.has(priorityTwistId)) {
-        usageByPriorityTwist.set(priorityTwistId, {
+      // Initialize usage tracking for this twistInstanceId if needed
+      if (!usageByTwistInstance.has(twistInstanceId)) {
+        usageByTwistInstance.set(twistInstanceId, {
           invocations: 0,
           cpuTimeMs: 0,
         });
       }
-      const usageMetrics = usageByPriorityTwist.get(priorityTwistId)!;
+      const usageMetrics = usageByTwistInstance.get(twistInstanceId)!;
 
       // Track worker invocations (1 per event)
       usageMetrics.invocations++;
@@ -124,8 +124,8 @@ export class TwistTail extends WorkerEntrypoint<
 
       // Process diagnosticsChannelEvents for AI usage tracking
       if (event.diagnosticsChannelEvents) {
-        // Get usage instance for this priorityTwistId
-        const usage = Usage.Get(this.env, priorityTwistId);
+        // Get usage instance for this twistInstanceId
+        const usage = Usage.Get(this.env, twistInstanceId);
 
         for (const diagEvent of event.diagnosticsChannelEvents) {
           // AI Gateway sends usage data in diagnosticsChannelEvents
@@ -173,7 +173,7 @@ export class TwistTail extends WorkerEntrypoint<
               const logger = createLogger({
                 twist_root_id: twistRootId,
                 environment,
-                priority_twist_id: priorityTwistId,
+                twist_instance_id: twistInstanceId,
               });
               logger.error(
                 "Failed to parse AI usage from diagnostics",
@@ -185,9 +185,9 @@ export class TwistTail extends WorkerEntrypoint<
       }
     }
 
-    // Record Workers usage metrics per priorityTwistId
-    for (const [priorityTwistId, metrics] of usageByPriorityTwist.entries()) {
-      const usage = Usage.Get(this.env, priorityTwistId);
+    // Record Workers usage metrics per twistInstanceId
+    for (const [twistInstanceId, metrics] of usageByTwistInstance.entries()) {
+      const usage = Usage.Get(this.env, twistInstanceId);
 
       if (metrics.invocations > 0) {
         usage.spend("worker:invocation", metrics.invocations);

@@ -1,9 +1,9 @@
--- User-accessible notes filtered by priority access
+-- User-accessible notes filtered by thread_priority access
 CREATE OR REPLACE VIEW "user"."note"
 --
 AS
 SELECT
-    upe.user_id,
+    tp.user_id,
     n.id,
     n.created_at,
     n.updated_at,
@@ -23,26 +23,20 @@ SELECT
 FROM
     note n
     JOIN thread a ON a.id = n.thread_id
-    JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
+    JOIN thread_priority tp ON tp.thread_id = a.id
 WHERE
     -- Note-level filtering
-    (n.draft = FALSE OR n.created_by = upe.user_id)
+    (n.draft = FALSE OR n.created_by = tp.user_id)
     AND (n.access_contacts IS NULL
-        OR n.created_by = upe.user_id
-        OR n.access_contacts && "user".user_contact_ids(upe.user_id))
-    -- Thread-level filtering (thread draft/private affects note visibility)
-    AND (a.draft = FALSE OR a.created_by = upe.user_id)
-    AND (CASE
-        WHEN a.access = 'public' THEN TRUE
-        WHEN a.created_by = upe.user_id THEN TRUE
-        WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
-        WHEN a.access_contacts && "user".user_contact_ids(upe.user_id) THEN TRUE
-        ELSE FALSE
-    END)
+        OR n.created_by = tp.user_id
+        OR n.access_contacts && "user".user_contact_ids(tp.user_id))
+    -- Thread-level filtering
+    AND (a.draft = FALSE OR a.created_by = tp.user_id)
+    AND a.contacts && "user".user_contact_ids(tp.user_id)
 UNION ALL
 -- Redacted rows for private notes the user cannot see
 SELECT
-    upe.user_id,
+    tp.user_id,
     n.id,
     n.created_at,
     n.updated_at,
@@ -62,23 +56,15 @@ SELECT
 FROM
     note n
     JOIN thread a ON a.id = n.thread_id
-    JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
+    JOIN thread_priority tp ON tp.thread_id = a.id
 WHERE
-    (n.draft = FALSE OR n.created_by = upe.user_id)
-    AND (a.draft = FALSE OR a.created_by = upe.user_id)
-    -- Hidden by note-level OR thread-level access restriction
-    AND (
-        -- Note is private and user can't see it
-        (n.access_contacts IS NOT NULL
-            AND n.created_by != upe.user_id
-            AND NOT (COALESCE(n.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(upe.user_id)))
-        OR
-        -- Thread is private and user can't see it
-        (a.access != 'public'
-            AND a.created_by != upe.user_id
-            AND NOT (a.access = 'members' AND upe.role = 'member')
-            AND NOT (COALESCE(a.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(upe.user_id)))
-    );
+    (n.draft = FALSE OR n.created_by = tp.user_id)
+    AND (a.draft = FALSE OR a.created_by = tp.user_id)
+    AND a.contacts && "user".user_contact_ids(tp.user_id)
+    -- Hidden by note-level access restriction
+    AND (n.access_contacts IS NOT NULL
+        AND n.created_by != tp.user_id
+        AND NOT (COALESCE(n.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(tp.user_id)));
 
 ALTER VIEW "user"."note" OWNER TO postgres;
 

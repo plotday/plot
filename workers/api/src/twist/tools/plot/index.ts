@@ -1,6 +1,8 @@
 import { sql, type Kysely } from "kysely";
 import { PostHog } from "posthog-node";
 
+import { Tag } from "@plotday/twister/tag";
+
 import {
   type Action,
   type Thread,
@@ -76,8 +78,8 @@ export type PlotOptions = typeof IPlot.Options;
  * Worker-level cache for twist definition IDs to avoid database queries.
  * This cache persists across HTTP requests within the same worker instance.
  *
- * Key format: `${priorityTwistId}` (the priority_twist.id)
- * Value: `twist_id` from priority_twist table
+ * Key format: `${twistInstanceId}` (the twist_instance.id)
+ * Value: `twist_id` from twist_instance table
  * Entries expire after 5 minutes to prevent unbounded growth.
  */
 const TWIST_ID_CACHE = new Map<
@@ -150,8 +152,7 @@ export type DispatchItem =
 
 export class Plot extends Tool implements IPlot {
   public db: Kysely<DB>;
-  public priorityId: string;
-  public priorityTwistId: ActorId;
+  public twistInstanceId: ActorId;
   public plotOptions?: typeof IPlot.Options;
   public env: Bindings;
   public ai: AI;
@@ -160,6 +161,7 @@ export class Plot extends Tool implements IPlot {
   private _owner?: Actor;
   private _twistId?: number;
   private _userId?: string;
+  private _defaultPriorityId?: string;
   private _priorityRoot?: string;
   private _aiEnabled?: boolean;
 
@@ -258,24 +260,21 @@ export class Plot extends Tool implements IPlot {
 
   constructor({
     db,
-    priorityId,
-    priorityTwistId,
+    twistInstanceId,
     options,
     env,
   }: {
     db: Kysely<DB>;
-    priorityId: string;
-    priorityTwistId: string;
+    twistInstanceId: string;
     options?: typeof IPlot.Options;
     env: Bindings;
   }) {
     super();
     this.db = db;
-    this.priorityId = priorityId;
-    this.priorityTwistId = priorityTwistId as ActorId;
+    this.twistInstanceId = twistInstanceId as ActorId;
     this.plotOptions = options;
     this.env = env;
-    this.ai = new AI({ env, priorityTwistId });
+    this.ai = new AI({ env, twistInstanceId });
   }
 
   /**
@@ -288,7 +287,7 @@ export class Plot extends Tool implements IPlot {
         const data = await this.db
           .selectFrom("actor")
           .select(["id", "name", "type", "email"])
-          .where("id", "=", this.priorityTwistId)
+          .where("id", "=", this.twistInstanceId)
           .executeTakeFirstOrThrow();
 
         this._actor = {
@@ -308,7 +307,7 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Gets the user ID who owns this twist (from priority_twist.owner_id).
+   * Gets the user ID who owns this twist (from twist_instance.owner_id).
    * Fetches and caches it on first access.
    * @returns The user ID
    * @throws Error if the owner_id cannot be fetched
@@ -317,9 +316,9 @@ export class Plot extends Tool implements IPlot {
     if (!this._userId) {
       try {
         const data = await this.db
-          .selectFrom("priority_twist")
+          .selectFrom("twist_instance")
           .select("owner_id")
-          .where("id", "=", this.priorityTwistId)
+          .where("id", "=", this.twistInstanceId)
           .executeTakeFirstOrThrow();
 
         if (!data.owner_id) {
@@ -397,27 +396,45 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Gets the root path component of the priority where this twist is installed.
-   * This is used for scoping key lookups to the correct priority tree.
-   * Fetches and caches it on first access.
-   * @returns The priority root as a string (first level of the ltree path)
-   * @throws Error if the priority path cannot be fetched
+   * Returns the default priority ID for this twist instance — the owner
+   * user's root priority. Used when a caller doesn't supply an explicit
+   * target (e.g. priority.create() without a parent, link source fallback).
+   */
+  async getDefaultPriorityId(): Promise<string> {
+    if (!this._defaultPriorityId) {
+      const userId = await this.getUserId();
+      const row = await this.db
+        .selectFrom("priority")
+        .select("id")
+        .where("user_id", "=", userId)
+        .where("archived_at", "is", null)
+        .orderBy(sql`nlevel(path)`, "asc")
+        .orderBy("created_at", "asc")
+        .limit(1)
+        .executeTakeFirstOrThrow();
+      this._defaultPriorityId = row.id;
+    }
+    return this._defaultPriorityId;
+  }
+
+  /**
+   * Gets the root path component of the owner user's default priority.
+   * Used for scoping key lookups to the correct priority tree.
    */
   async getPriorityRoot(): Promise<string> {
     if (!this._priorityRoot) {
       try {
+        const defaultPriorityId = await this.getDefaultPriorityId();
         const data = await this.db
           .selectFrom("priority")
           .select("path")
-          .where("id", "=", this.priorityId)
+          .where("id", "=", defaultPriorityId)
           .executeTakeFirstOrThrow();
 
         if (!data.path) {
           throw new Error("No path found");
         }
 
-        // Extract the first level of the ltree path (the root)
-        // For a path like "work.projects.alpha", this returns "work"
         const pathParts = (data.path as string).split(".");
         this._priorityRoot = pathParts[0]!;
       } catch (error) {
@@ -433,23 +450,23 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Gets the twist definition ID for a given priority_twist ID.
+   * Gets the twist definition ID for a given twist_instance ID.
    * Uses worker-level cache to avoid repeated database queries.
-   * @param priorityTwistId - The priority_twist.id to look up
+   * @param twistInstanceId - The twist_instance.id to look up
    * @returns The twist_id (twist definition ID) or null if not found
    */
-  async getTwistId(priorityTwistId: string): Promise<number | null> {
+  async getTwistId(twistInstanceId: string): Promise<number | null> {
     // Check worker-level cache first
-    const cached = TWIST_ID_CACHE.get(priorityTwistId);
+    const cached = TWIST_ID_CACHE.get(twistInstanceId);
     if (cached && Date.now() - cached.timestamp < TWIST_ID_CACHE_TTL_MS) {
       return cached.twist_id;
     }
 
     // Query database
     const data = await this.db
-      .selectFrom("priority_twist")
+      .selectFrom("twist_instance")
       .select("twist_id")
-      .where("id", "=", priorityTwistId)
+      .where("id", "=", twistInstanceId)
       .executeTakeFirst();
 
     if (!data) {
@@ -459,7 +476,7 @@ export class Plot extends Tool implements IPlot {
     const twistId = Number(data.twist_id);
 
     // Cache the result
-    TWIST_ID_CACHE.set(priorityTwistId, {
+    TWIST_ID_CACHE.set(twistInstanceId, {
       twist_id: twistId,
       timestamp: Date.now(),
     });
@@ -473,15 +490,15 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Checks if the given priority_twist ID belongs to the same twist definition
+   * Checks if the given twist_instance ID belongs to the same twist definition
    * as the current twist instance.
-   * @param priorityTwistId - The priority_twist.id to check
+   * @param twistInstanceId - The twist_instance.id to check
    * @returns True if both belong to the same twist definition, false otherwise
    */
-  async isSameTwistDefinition(priorityTwistId: string): Promise<boolean> {
+  async isSameTwistDefinition(twistInstanceId: string): Promise<boolean> {
     // Get the current twist's definition ID
     if (!this._twistId) {
-      const twistId = await this.getTwistId(this.priorityTwistId);
+      const twistId = await this.getTwistId(this.twistInstanceId);
       if (!twistId) {
         return false;
       }
@@ -489,7 +506,7 @@ export class Plot extends Tool implements IPlot {
     }
 
     // Get the other twist's definition ID
-    const otherTwistId = await this.getTwistId(priorityTwistId);
+    const otherTwistId = await this.getTwistId(twistInstanceId);
     if (!otherTwistId) {
       return false;
     }
@@ -506,7 +523,7 @@ export class Plot extends Tool implements IPlot {
   async dispatch(
     dispatchItem: DispatchItem
   ): Promise<Array<{ sourceMethod?: string; optionPath?: string[]; args: any[] }>> {
-    const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
 
     if (!this.plotOptions) {
       return [];
@@ -530,7 +547,7 @@ export class Plot extends Tool implements IPlot {
       const { item, isCreate = true } = dispatchItem; // Default true for backwards compat
 
       // Skip notes created by this twist to prevent self-response loops
-      if (isCreate && item.created_by === this.priorityTwistId) {
+      if (isCreate && item.created_by === this.twistInstanceId) {
         return [];
       }
 
@@ -539,7 +556,7 @@ export class Plot extends Tool implements IPlot {
 
       // Dispatch intent matching if twist was mentioned in this note and it's a create
       const isMentioned = (currentNote.mentions ?? []).includes(
-        this.priorityTwistId
+        this.twistInstanceId
       );
       if (isMentioned && isCreate) {
         try {
@@ -558,7 +575,7 @@ export class Plot extends Tool implements IPlot {
             note_id: currentNote.id,
           });
           const postHog = new PostHog(this.env.POSTHOG_API_KEY, { host: this.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-          postHog.captureException(error as Error, undefined, { context: "plot:intentHandling", note_id: currentNote.id, priority_twist_id: this.priorityTwistId });
+          postHog.captureException(error as Error, undefined, { context: "plot:intentHandling", note_id: currentNote.id, twist_instance_id: this.twistInstanceId });
           await postHog.shutdown();
           try {
             await threadOps.createNote(this, {
@@ -577,8 +594,8 @@ export class Plot extends Tool implements IPlot {
       // Dispatch onNoteCreated for new notes on threads created by this twist
       if (isCreate) {
         const activityCreatedByThisTwist =
-          item.thread_created_by === this.priorityTwistId;
-        const noteCreatedByThisTwist = item.created_by === this.priorityTwistId;
+          item.thread_created_by === this.twistInstanceId;
+        const noteCreatedByThisTwist = item.created_by === this.twistInstanceId;
 
         if (activityCreatedByThisTwist && !noteCreatedByThisTwist) {
           if (this.plotOptions?.thread?.access) {
@@ -589,7 +606,7 @@ export class Plot extends Tool implements IPlot {
                 .selectFrom("link")
                 .select(["meta", "channel_id", "source"])
                 .where("thread_id", "=", item.thread_id!)
-                .where("created_by", "=", this.priorityTwistId)
+                .where("created_by", "=", this.twistInstanceId)
                 .executeTakeFirst();
               thread.meta = {
                 ...(link?.meta as Record<string, unknown> ?? {}),
@@ -613,7 +630,7 @@ export class Plot extends Tool implements IPlot {
       const currentActivity = await buildThreadFromDbRecord(this, item);
 
       const createdByThisTwist =
-        item.created_by === this.priorityTwistId;
+        item.created_by === this.twistInstanceId;
 
       if (createdByThisTwist && !isCreate) {
         if (this.plotOptions?.thread?.access) {
@@ -682,7 +699,7 @@ export class Plot extends Tool implements IPlot {
               .selectFrom("link")
               .select(["meta", "channel_id", "source"])
               .where("thread_id", "=", item.thread_id!)
-              .where("created_by", "=", this.priorityTwistId)
+              .where("created_by", "=", this.twistInstanceId)
               .executeTakeFirst();
             thread.meta = {
               ...(link?.meta as Record<string, unknown> ?? {}),
@@ -717,7 +734,7 @@ export class Plot extends Tool implements IPlot {
               .selectFrom("link")
               .select(["meta", "channel_id", "source"])
               .where("thread_id", "=", item.thread_id!)
-              .where("created_by", "=", this.priorityTwistId)
+              .where("created_by", "=", this.twistInstanceId)
               .executeTakeFirst();
             thread.meta = {
               ...(link?.meta as Record<string, unknown> ?? {}),
@@ -770,7 +787,7 @@ export class Plot extends Tool implements IPlot {
               .selectFrom("link")
               .select(["meta", "channel_id", "source"])
               .where("thread_id", "=", item.thread_id!)
-              .where("created_by", "=", this.priorityTwistId)
+              .where("created_by", "=", this.twistInstanceId)
               .executeTakeFirst();
             thread.meta = {
               ...(link?.meta as Record<string, unknown> ?? {}),
@@ -836,7 +853,7 @@ export class Plot extends Tool implements IPlot {
         type:
           item.author_type === "user"
             ? ActorType.User
-            : item.author_type === "priority_twist"
+            : item.author_type === "twist_instance"
             ? ActorType.Twist
             : ActorType.Contact,
       },
@@ -914,7 +931,7 @@ export class Plot extends Tool implements IPlot {
           type:
             row.author_type === "user"
               ? ActorType.User
-              : row.author_type === "priority_twist"
+              : row.author_type === "twist_instance"
               ? ActorType.Twist
               : ActorType.Contact,
         },
@@ -933,9 +950,12 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Notifies UserSync and TwistSync DOs for all users and twists with access
-   * to the given priorities. Called after twist batch operations since triggers
-   * skip HTTP calls for twist-originated writes (negative updated_by).
+   * Notifies UserSync DOs for all users with access to the given priorities.
+   * Called after twist batch operations since triggers skip HTTP calls for
+   * twist-originated writes (negative updated_by).
+   *
+   * Twists are workspace-level: only the priority owner ever sees twist
+   * mutations, so there is no fan-out to other twists on the same subtree.
    *
    * Safe to fail — the recovery system detects stale sync state within 30s.
    */
@@ -945,7 +965,6 @@ export class Plot extends Tool implements IPlot {
       const userIds = new Set<string>();
       for (const priorityId of priorityIds) {
         // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
-        // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
         const data = await rpc(this.db, "get_users_with_priority_access", {
           target_priority_id: priorityId,
         }) as unknown as string | string[] | null;
@@ -963,38 +982,10 @@ export class Plot extends Tool implements IPlot {
           })
         );
       }
-
-      // 3. Notify TwistSync DOs for other twists on ancestor priorities
-      //    (twists installed on ancestors have access to descendant priorities)
-      //    (skip self — same echo prevention as triggers)
-      const priorityIdArray = Array.from(priorityIds);
-      const twists = await this.db
-        .selectFrom("priority_twist")
-        .innerJoin("priority as twist_priority", "twist_priority.id", "priority_twist.priority_id")
-        .innerJoin("priority as changed_priority", (join) =>
-          join.on("changed_priority.id", "in", priorityIdArray)
-        )
-        .select("priority_twist.id")
-        .where("priority_twist.archived_at", "is", null)
-        .where("priority_twist.id", "!=", this.priorityTwistId)
-        .where(sql<boolean>`${sql.ref("changed_priority.path")} <@ ${sql.ref("twist_priority.path")}`)
-        .groupBy("priority_twist.id")
-        .execute();
-
-      for (const twist of twists) {
-        const doId = this.env.TWIST_SYNC.idFromName(twist.id);
-        const twistSync = this.env.TWIST_SYNC.get(doId);
-        await twistSync.fetch(
-          new Request("http://do/notify", {
-            method: "POST",
-            body: JSON.stringify({ id: twist.id }),
-          })
-        );
-      }
     } catch (error) {
       // Log but don't fail — recovery system catches stale sync state within 30s
       const logger = createLogger({
-        priority_twist_id: this.priorityTwistId,
+        twist_instance_id: this.twistInstanceId,
       });
       logger.error("Failed to notify sync DOs", error as Error);
     }
@@ -1006,9 +997,9 @@ export class Plot extends Tool implements IPlot {
    */
   getUpdatedBy(): number {
     try {
-      return truncateUuidForUpdatedBy(this.priorityTwistId);
+      return truncateUuidForUpdatedBy(this.twistInstanceId);
     } catch (error) {
-      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      const logger = createLogger({ twist_instance_id: this.twistInstanceId });
       logger.warn("Failed to generate updated_by for twist", {
         error_message: error instanceof Error ? error.message : String(error),
       });
@@ -1017,25 +1008,45 @@ export class Plot extends Tool implements IPlot {
   }
 
   /**
-   * Validates that the given priority ID is within the allowed hierarchy
-   * (either the configured priorityId or one of its children)
+   * Removes the Twisting tag from a note. Used for deferred tag removal after callbacks.
+   */
+  async removeTagFromNote(noteId: string, actorId: string): Promise<void> {
+    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+    try {
+      const userId = await this.getUserId();
+      await rpcUser(this.db, "update_note_tags", {
+        user_id: userId,
+        p_note_id: noteId,
+        p_actor_id: actorId,
+        p_client_id: 0, // API client
+        p_tag_updates: { [Tag.Twist]: false },
+      });
+    } catch (error) {
+      // Log but don't fail - tag removal is best-effort
+      logger.warn("Failed to remove deferred Twisting tag from note", {
+        note_id: noteId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Validates that the given priority belongs to the twist owner. Twists
+   * are workspace-level, so they can touch any priority owned by their
+   * user (and only those priorities).
    */
   async validatePriorityAccess(priorityId: string): Promise<void> {
-    if (priorityId === this.priorityId) {
-      return; // Direct access to root priority is allowed
-    }
-
-    // Check if the priority is a child of the configured priority
+    const userId = await this.getUserId();
     const data = await this.db
-      .selectFrom("priority_child")
-      .select("child_id")
-      .where("priority_id", "=", this.priorityId)
-      .where("child_id", "=", priorityId)
+      .selectFrom("priority")
+      .select("id")
+      .where("id", "=", priorityId)
+      .where("user_id", "=", userId)
       .executeTakeFirst();
 
     if (!data) {
       throw new Error(
-        `Access denied: Priority ${priorityId} is not within ${this.priorityId}`
+        `Access denied: Priority ${priorityId} does not belong to twist owner ${userId}`
       );
     }
   }
@@ -1153,7 +1164,7 @@ export class Plot extends Tool implements IPlot {
    */
   enforceApprovalGate(createdBy: string | null): void {
     if (!this.isApprovalRequired) return;
-    if (createdBy === this.priorityTwistId) return;
+    if (createdBy === this.twistInstanceId) return;
     throw new Error(
       "This twist requires user approval for admin operations. Use createPlan() to submit a plan for approval."
     );
@@ -1191,7 +1202,7 @@ export class Plot extends Tool implements IPlot {
       // Fetch the parent activity to check permissions (fallback for calls from twist code)
       try {
         const activity = await this.db
-          .selectFrom("thread_x")
+          .selectFrom("thread")
           .select(["id", "created_by"])
           .where("id", "=", activityId)
           .executeTakeFirstOrThrow();
@@ -1205,12 +1216,12 @@ export class Plot extends Tool implements IPlot {
     }
 
     // Check if the activity was created by this twist
-    if (created_by === this.priorityTwistId) {
+    if (created_by === this.twistInstanceId) {
       return;
     }
 
     // Check if the activity mentions the twist
-    if (Array.isArray(mentions) && mentions.includes(this.priorityTwistId)) {
+    if (Array.isArray(mentions) && mentions.includes(this.twistInstanceId)) {
       // Twist was mentioned in the activity - requires Respond
       this.requireThreadAccess(ThreadAccess.Respond);
       return;
@@ -1260,7 +1271,7 @@ export class Plot extends Tool implements IPlot {
       // Fetch the activity to check author (fallback for calls from twist code)
       try {
         const activity = await this.db
-          .selectFrom("thread_x")
+          .selectFrom("thread")
           .select(["id", "created_by"])
           .where("id", "=", activityId)
           .executeTakeFirstOrThrow();
@@ -1274,7 +1285,7 @@ export class Plot extends Tool implements IPlot {
     }
 
     // Check if the activity was created by this twist
-    if (created_by === this.priorityTwistId) {
+    if (created_by === this.twistInstanceId) {
       this.requireThreadAccess(ThreadAccess.Create);
       return;
     }
@@ -1283,7 +1294,7 @@ export class Plot extends Tool implements IPlot {
     if (
       mentions &&
       Array.isArray(mentions) &&
-      mentions.includes(this.priorityTwistId)
+      mentions.includes(this.twistInstanceId)
     ) {
       this.requireThreadAccess(ThreadAccess.Respond);
       return;
@@ -1295,7 +1306,7 @@ export class Plot extends Tool implements IPlot {
     if (
       triggering_note_mentions &&
       Array.isArray(triggering_note_mentions) &&
-      triggering_note_mentions.includes(this.priorityTwistId)
+      triggering_note_mentions.includes(this.twistInstanceId)
     ) {
       this.requireThreadAccess(ThreadAccess.Respond);
       return;
@@ -1455,17 +1466,18 @@ export class Plot extends Tool implements IPlot {
 
     // Process contacts if present
     if (schedule.contacts?.length && result?.id) {
-      const thread = await this.db
-        .selectFrom("thread")
+      const threadPriority = await this.db
+        .selectFrom("thread_priority")
         .select("priority_id")
-        .where("id", "=", schedule.threadId)
+        .where("thread_id", "=", schedule.threadId)
+        .where("user_id", "=", userId)
         .executeTakeFirstOrThrow();
 
       await processScheduleContacts(
         this,
         result.id,
         schedule.contacts,
-        thread.priority_id
+        threadPriority.priority_id
       );
     }
 

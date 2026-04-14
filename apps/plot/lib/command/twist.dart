@@ -65,7 +65,7 @@ sealed class _ConnectionItem {
 }
 
 class _ActiveSource extends _ConnectionItem {
-  final String id; // priority_twist_id
+  final String id; // twist_instance_id
   final String name;
   final String? accountName;
   final String? accountEmail;
@@ -156,7 +156,7 @@ class ManageConnections extends Command {
         onSelect: (ctx, item, _) async {
           if (item is _ActiveSource) {
             await EditSource(
-              priorityTwistId: item.id,
+              twistInstanceId: item.id,
               name: item.name,
               logoUrl: item.logoUrl,
               logoUrlDark: item.logoUrlDark,
@@ -187,7 +187,7 @@ class ManageConnections extends Command {
       // Open EditSource after SelectModal has closed
       if (activatedSourceId != null && context.mounted) {
         await EditSource(
-          priorityTwistId: activatedSourceId!,
+          twistInstanceId: activatedSourceId!,
           name: activatedSourceName!,
           isNewlyActivated: true,
         ).run(context);
@@ -769,63 +769,6 @@ class _UpgradeCommand extends Command {
   }
 }
 
-/// Checks if any newly enabled channels would exceed connection limits.
-/// Returns an upgrade message if blocked, or null if allowed.
-String? _checkConnectionLimitsForSave({
-  required UsageData usage,
-  required Set<String> initialEnabled,
-  required IntegrationChanges changes,
-}) {
-  final newChannels = changes.selectedChannels.difference(initialEnabled);
-  if (newChannels.isEmpty) return null;
-
-  // Determine which connection types already exist among still-enabled initial channels
-  bool hasExistingPersonal = false;
-  final existingOrgIds = <String>{};
-
-  for (final key in initialEnabled) {
-    if (!changes.selectedChannels.contains(key)) continue; // was disabled
-    final pid = changes.channelPriorities[key];
-    if (pid == null) continue;
-    final orgId = changes.priorityOrgIds[pid];
-    if (orgId != null) {
-      existingOrgIds.add(orgId.toString());
-    } else {
-      hasExistingPersonal = true;
-    }
-  }
-
-  // Check if new channels introduce types that would exceed limits
-  bool checkedPersonal = false;
-  final checkedOrgs = <String>{};
-
-  for (final key in newChannels) {
-    final pid = changes.channelPriorities[key];
-    if (pid == null) continue;
-    final orgId = changes.priorityOrgIds[pid];
-    if (orgId != null) {
-      final orgIdStr = orgId.toString();
-      if (existingOrgIds.contains(orgIdStr) || checkedOrgs.contains(orgIdStr)) {
-        continue;
-      }
-      checkedOrgs.add(orgIdStr);
-      final org = usage.organizations.firstWhereOrNull((o) => o.id == orgIdStr);
-      if (org != null && org.connections.isAtLimit) {
-        return org.isAdmin
-            ? '${org.name} has reached its connection limit. Upgrade to add more.'
-            : '${org.name} has reached its connection limit. Contact an admin to upgrade.';
-      }
-    } else {
-      if (hasExistingPersonal || checkedPersonal) continue;
-      checkedPersonal = true;
-      if (usage.personal.connections.isAtLimit) {
-        return 'You\'ve reached your personal connection limit. Upgrade for more.';
-      }
-    }
-  }
-  return null;
-}
-
 /// Builds a usage suffix for group titles, e.g. "(1 of 2 personal, 40 Acme Co)".
 String _usageSuffix(UsageData usage, _ResourceType resourceType) {
   final parts = <String>[];
@@ -837,7 +780,7 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
           ? '${personal.count} personal'
           : '${personal.count} of ${personal.limit} personal',
     );
-    for (final org in usage.organizations) {
+    for (final org in usage.teams) {
       parts.add(
         org.connections.isUnlimited
             ? '${org.connections.count} ${org.name}'
@@ -859,7 +802,7 @@ String _usageSuffix(UsageData usage, _ResourceType resourceType) {
 /// Edit an existing source — shows integrations, channels, and management options.
 class EditSource extends ShowForm {
   EditSource({
-    required this.priorityTwistId,
+    required this.twistInstanceId,
     required this.name,
     this.isAccountBased = true,
     this.isNewlyActivated = false,
@@ -870,7 +813,7 @@ class EditSource extends ShowForm {
          title: isNewlyActivated ? 'Set up $name' : name,
          icon: PlotIcon.settings,
          form: (context) => _buildForm(
-           priorityTwistId,
+           twistInstanceId,
            name,
            isAccountBased,
            isNewlyActivated,
@@ -879,7 +822,7 @@ class EditSource extends ShowForm {
          ),
        );
 
-  final String priorityTwistId;
+  final String twistInstanceId;
   final String name;
   final bool isAccountBased;
   final String? logoUrl;
@@ -889,21 +832,16 @@ class EditSource extends ShowForm {
   final bool isNewlyActivated;
 
   static Future<FormData> _buildForm(
-    String priorityTwistId,
+    String twistInstanceId,
     String name,
     bool isAccountBased,
     bool isNewlyActivated, {
     String? logoUrl,
     String? logoUrlDark,
   }) async {
-    final results = await Future.wait([
-      TwistApi.getIntegrations(priorityTwistId),
-      UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
-    ]);
-    final integrations = results[0] as TwistIntegrations;
-    final usage = results[1] as UsageData?;
+    final integrations = await TwistApi.getIntegrations(twistInstanceId);
     final refreshNotifier = ValueNotifier<int>(0);
-    final sourceChannelListController = FormChannelListController();
+    final channelListController = FormChannelListController();
 
     Set<String> collectEnabled(List<TwistChannel> channels) {
       final result = <String>{};
@@ -914,48 +852,9 @@ class EditSource extends ShowForm {
       return result;
     }
 
-    Map<String, String> collectPriorities(List<TwistChannel> channels) {
-      final result = <String, String>{};
-      for (final s in channels) {
-        if (s.priorityId != null) {
-          result['${s.providerKey}:${s.id}'] = s.priorityId!;
-        }
-        result.addAll(collectPriorities(s.children));
-      }
-      return result;
-    }
-
-    Map<String, String> collectCreateThreads(List<TwistChannel> channels) {
-      final result = <String, String>{};
-      for (final s in channels) {
-        result['${s.providerKey}:${s.id}'] = s.createThreads;
-        result.addAll(collectCreateThreads(s.children));
-      }
-      return result;
-    }
-
-    Map<String, Map<String, String>> collectCreateThreadsByType(
-      List<TwistChannel> channels,
-    ) {
-      final result = <String, Map<String, String>>{};
-      for (final s in channels) {
-        if (s.createThreadsByType.isNotEmpty) {
-          result['${s.providerKey}:${s.id}'] = s.createThreadsByType;
-        }
-        result.addAll(collectCreateThreadsByType(s.children));
-      }
-      return result;
-    }
-
     final initialEnabled = collectEnabled(integrations.channels);
-    final initialPriorities = collectPriorities(integrations.channels);
-    final initialCreateThreads = collectCreateThreads(integrations.channels);
-    final initialCreateThreadsByType = collectCreateThreadsByType(
-      integrations.channels,
-    );
     var integrationChanges = IntegrationChanges(
       selectedChannels: Set.of(initialEnabled),
-      channelPriorities: Map.of(initialPriorities),
     );
 
     // Build option form items for no-provider connectors
@@ -984,10 +883,10 @@ class EditSource extends ShowForm {
               ),
             FormChannelList(
               key: 'integrations',
-              controller: sourceChannelListController,
+              controller: channelListController,
               validator: () => integrationChanges.selectedChannels.isNotEmpty,
               builder: (context) => SetupSourceWidget(
-                priorityTwistId: priorityTwistId,
+                twistInstanceId: twistInstanceId,
                 setupMode: isNewlyActivated,
                 isAccountBased: isAccountBased,
                 sourceName: name,
@@ -995,8 +894,7 @@ class EditSource extends ShowForm {
                 logoUrlDark: logoUrlDark,
                 initialData: integrations,
                 refreshNotifier: refreshNotifier,
-                channelListController: sourceChannelListController,
-                usage: usage,
+                channelListController: channelListController,
                 onChanged: (changes) {
                   integrationChanges = changes;
                 },
@@ -1009,23 +907,10 @@ class EditSource extends ShowForm {
             FormButton(
               key: 'save',
               buildCommand: (values) {
-                if (usage != null) {
-                  final limitMsg = _checkConnectionLimitsForSave(
-                    usage: usage,
-                    initialEnabled: initialEnabled,
-                    changes: integrationChanges,
-                  );
-                  if (limitMsg != null) {
-                    return _UpgradeCommand(limitMsg);
-                  }
-                }
                 return SaveSource(
-                  priorityTwistId: priorityTwistId,
+                  twistInstanceId: twistInstanceId,
                   name: name,
                   initialEnabled: initialEnabled,
-                  initialPriorities: initialPriorities,
-                  initialCreateThreads: initialCreateThreads,
-                  initialCreateThreadsByType: initialCreateThreadsByType,
                   changes: integrationChanges,
                   optionItems: optionItems,
                   isNewlyActivated: isNewlyActivated,
@@ -1038,7 +923,7 @@ class EditSource extends ShowForm {
                 key: 'archive',
                 skipValidation: true,
                 buildCommand: (_) => PromptToArchiveSource(
-                  priorityTwistId: priorityTwistId,
+                  twistInstanceId: twistInstanceId,
                   name: name,
                 ),
               ),
@@ -1052,18 +937,18 @@ class EditSource extends ShowForm {
 
 /// Archive a source with confirmation.
 class PromptToArchiveSource extends ShowForm {
-  PromptToArchiveSource({required this.priorityTwistId, required this.name})
+  PromptToArchiveSource({required this.twistInstanceId, required this.name})
     : super(
         title: 'Archive',
         icon: PlotIcon.archived,
-        form: (context) => _buildForm(priorityTwistId, name),
+        form: (context) => _buildForm(twistInstanceId, name),
       );
 
-  final String priorityTwistId;
+  final String twistInstanceId;
   final String name;
 
   static Future<FormData> _buildForm(
-    String priorityTwistId,
+    String twistInstanceId,
     String name,
   ) async {
     return FormData(
@@ -1079,7 +964,7 @@ class PromptToArchiveSource extends ShowForm {
             FormDivider(key: 'divider'),
             FormButton(
               key: 'archive',
-              buildCommand: (_) => _ArchiveSourceCommand(priorityTwistId, name),
+              buildCommand: (_) => _ArchiveSourceCommand(twistInstanceId, name),
             ),
           ],
         ),
@@ -1089,7 +974,7 @@ class PromptToArchiveSource extends ShowForm {
 }
 
 class _ArchiveSourceCommand extends Command {
-  _ArchiveSourceCommand(this.priorityTwistId, this.name)
+  _ArchiveSourceCommand(this.twistInstanceId, this.name)
     : super(
         title: 'Archive connection',
         icon: PlotIcon.archived,
@@ -1097,31 +982,31 @@ class _ArchiveSourceCommand extends Command {
         eventAction: EventAction.archived,
       );
 
-  final String priorityTwistId;
+  final String twistInstanceId;
   final String name;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      await TwistApi.archiveAndRemoveTwist(priorityTwistId);
+      await TwistApi.archiveAndRemoveTwist(twistInstanceId);
 
       // Update local database to immediately reflect the archive.
       // Try cache first, fall back to DB query if cache misses.
-      final id = Uuid.fromString(priorityTwistId);
-      var twist = PriorityTwist.fromCache(id);
-      twist ??= await (Store.get.select(PriorityTwist.table)
+      final id = Uuid.fromString(twistInstanceId);
+      var twist = TwistInstance.fromCache(id);
+      twist ??= await (Store.get.select(TwistInstance.table)
             ..where((t) => t.id.equals(id.toBytes())))
           .getSingleOrNull()
-          .then((row) => row == null ? null : PriorityTwist(row));
+          .then((row) => row == null ? null : TwistInstance(row));
 
       if (twist != null) {
         await Store.get.save(
-          PriorityTwist.table,
+          TwistInstance.table,
           twist.copyWith(
             archivedAt: Value(DateTime.now()),
             updatedAt: DateTime.now(),
           ),
-          PriorityTwistsBase(),
+          TwistInstancesBase(),
         );
       }
 
@@ -1275,7 +1160,7 @@ class AddSourceDetail extends ShowForm {
         channels: integrations.channels,
         optionsSchema: integrations.optionsSchema,
         optionsConfig: integrations.optionsConfig,
-        organizationDomains: integrations.organizationDomains,
+        teamDomains: integrations.teamDomains,
       );
     }
 
@@ -1318,7 +1203,7 @@ class AddSourceDetail extends ShowForm {
           channels: refreshed.channels,
           optionsSchema: refreshed.optionsSchema,
           optionsConfig: refreshed.optionsConfig,
-          organizationDomains: refreshed.organizationDomains,
+          teamDomains: refreshed.teamDomains,
         );
       }
 
@@ -1339,7 +1224,7 @@ class AddSourceDetail extends ShowForm {
                   padding: formContext.theme.spacing.padding.copyWith(top: 0),
                   child: _AuthWithScopeToggles(
                     provider: provider,
-                    priorityTwistId: draftId,
+                    twistInstanceId: draftId,
                     initialEnabledGroups:
                         scopeGroupSelections[provider.provider.name],
                     onScopeGroupsChanged: (groups) {
@@ -1361,7 +1246,7 @@ class AddSourceDetail extends ShowForm {
               FormButton(
                 key: 'connect',
                 buildCommand: (_) => ConnectNoProviderCommand(
-                  priorityTwistId: draftId,
+                  twistInstanceId: draftId,
                   optionItems: optionItems,
                 ),
               ),
@@ -1371,7 +1256,7 @@ class AddSourceDetail extends ShowForm {
                 controller: refreshChannelController,
                 validator: () => refreshChanges.selectedChannels.isNotEmpty,
                 builder: (context) => SetupSourceWidget(
-                  priorityTwistId: draftId,
+                  twistInstanceId: draftId,
                   setupMode: true,
                   isAccountBased: true,
                   sourceName: twist.name,
@@ -1414,7 +1299,7 @@ class AddSourceDetail extends ShowForm {
                   padding: formContext.theme.spacing.padding.copyWith(top: 0),
                   child: _AuthWithScopeToggles(
                     provider: provider,
-                    priorityTwistId: draftId,
+                    twistInstanceId: draftId,
                     initialEnabledGroups:
                         scopeGroupSelections[provider.provider.name],
                     onScopeGroupsChanged: (groups) {
@@ -1437,7 +1322,7 @@ class AddSourceDetail extends ShowForm {
               FormButton(
                 key: 'connect',
                 buildCommand: (_) => ConnectNoProviderCommand(
-                  priorityTwistId: draftId,
+                  twistInstanceId: draftId,
                   optionItems: optionItems,
                 ),
               ),
@@ -1448,7 +1333,7 @@ class AddSourceDetail extends ShowForm {
                 controller: noProviderChannelController,
                 validator: () => noProviderChanges.selectedChannels.isNotEmpty,
                 builder: (context) => SetupSourceWidget(
-                  priorityTwistId: draftId,
+                  twistInstanceId: draftId,
                   setupMode: true,
                   isAccountBased: true,
                   sourceName: twist.name,
@@ -1494,10 +1379,10 @@ class AddSourceDetail extends ShowForm {
       log.warning('Failed to activate source', e, t);
       if (context.mounted) {
         if (e.isPlanLimitExceeded) {
-          final message = e.isOrg == true
+          final message = e.isTeam == true
               ? (e.isAdmin == true
-                    ? 'Your organization has reached its connection limit. Upgrade your plan to add more.'
-                    : 'Your organization has reached its connection limit. Contact an admin to upgrade.')
+                    ? 'Your team has reached its connection limit. Upgrade your plan to add more.'
+                    : 'Your team has reached its connection limit. Contact an admin to upgrade.')
               : 'You\'ve reached your connection limit. Upgrade for unlimited connections.';
           context.showToast(message: message, isError: true);
         } else {
@@ -1552,14 +1437,14 @@ class ManageTwists extends ShowCommands {
   }
 
   static Future<Commands> _getTwistCommands(Priority? priority) async {
+    // Twists are workspace-level; priority arg is retained for route context
+    // but is no longer used to filter which twists are shown.
     final defaultPriority = priority ?? await Priority.getDefault();
     final results = await Future.wait([
-      priority != null
-          ? PriorityTwist.get(priority: priority, includeAncestors: false)
-          : PriorityTwist.get(),
+      TwistInstance.get(),
       TwistApi.getAllTwists(defaultPriority),
     ]);
-    final priorityTwists = results[0] as List<PriorityTwist>;
+    final twistInstances = results[0] as List<TwistInstance>;
     final allTwists = results[1] as List<Twist>;
 
     // Fetch usage to check twist limits
@@ -1568,42 +1453,26 @@ class ManageTwists extends ShowCommands {
       usage = await UpgradeApi.getUsage();
     } catch (_) {}
     // Filter to non-sources only
-    final twistOnlyPriorityTwists = priorityTwists
+    final twistOnlyTwistInstances = twistInstances
         .where((pt) => !pt.isSource)
         .toList();
     final twistOnlyAvailable = allTwists.where((t) => !t.isSource).toList();
 
-    // Fetch priorities for each twist to get their paths
-    final editCommandsFutures = twistOnlyPriorityTwists.map((twist) async {
-      final twistPriority = twist.priorityId != null
-          ? await Priority.getOne(twist.priorityId!)
-          : null;
-      return EditTwist(twist, priority: twistPriority);
-    });
-    final editCommands = await Future.wait(editCommandsFutures);
+    final editCommands =
+        twistOnlyTwistInstances.map((twist) => EditTwist(twist)).toList();
 
-    // Sort active twists by name, then priority path, then environment
+    // Sort active twists by name, then environment
     editCommands.sort((a, b) {
       // Primary: alphabetical by name (case-insensitive)
-      final nameComparison = a.priorityTwist.name.toLowerCase().compareTo(
-        b.priorityTwist.name.toLowerCase(),
+      final nameComparison = a.twistInstance.name.toLowerCase().compareTo(
+        b.twistInstance.name.toLowerCase(),
       );
       if (nameComparison != 0) return nameComparison;
 
-      // Secondary: priority path (case-insensitive)
-      final aPath = a.priority?.root == true
-          ? ''
-          : (a.priority?.ancestorsLabel() ?? a.priority?.title ?? '');
-      final bPath = b.priority?.root == true
-          ? ''
-          : (b.priority?.ancestorsLabel() ?? b.priority?.title ?? '');
-      final pathComparison = aPath.toLowerCase().compareTo(bPath.toLowerCase());
-      if (pathComparison != 0) return pathComparison;
-
-      // Tertiary: environment (public, review, private, personal)
+      // Secondary: environment (public, review, private, personal)
       return _compareEnvironment(
-        a.priorityTwist.twistEnvironment,
-        b.priorityTwist.twistEnvironment,
+        a.twistInstance.twistEnvironment,
+        b.twistInstance.twistEnvironment,
       );
     });
 
@@ -1641,25 +1510,21 @@ class ManageTwists extends ShowCommands {
 // ============================================================================
 
 class EditTwist extends ShowForm {
-  EditTwist(this.priorityTwist, {this.priority})
+  EditTwist(this.twistInstance)
     : super(
-        title: priorityTwist.name,
-        subtitle: priority?.root == true
-            ? null
-            : (priority?.ancestorsLabel() ?? priority?.title),
+        title: twistInstance.name,
         icon: PlotIcon.settings,
-        form: (context) => _buildForm(context, priorityTwist, priority),
+        form: (context) => _buildForm(context, twistInstance),
       );
 
-  final PriorityTwist priorityTwist;
-  final Priority? priority;
+  final TwistInstance twistInstance;
 
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
     final isDark = context.colour.brightness == Brightness.dark;
-    final url = isDark && priorityTwist.logoUrlDark != null
-        ? priorityTwist.logoUrlDark
-        : priorityTwist.logoUrl;
+    final url = isDark && twistInstance.logoUrlDark != null
+        ? twistInstance.logoUrlDark
+        : twistInstance.logoUrl;
     if (url != null) {
       return LogoImage(url: url, size: context.theme.iconSizes.base);
     }
@@ -1668,24 +1533,14 @@ class EditTwist extends ShowForm {
 
   static Future<FormData> _buildForm(
     BuildContext context,
-    PriorityTwist priorityTwist,
-    Priority? priority,
+    TwistInstance twistInstance,
   ) async {
     try {
-      // Load priority if not provided
-      final loadedPriority =
-          priority ??
-          (priorityTwist.priorityId != null
-              ? await Priority.getOne(priorityTwist.priorityId!)
-              : null);
-
-      // Fetch all twists for details (source accounts have no priority)
-      if (loadedPriority == null) {
-        return FormData(title: priorityTwist.name, groups: []);
-      }
-      final allTwists = await TwistApi.getAllTwists(loadedPriority);
+      // Twists are workspace-level; use the default priority for metadata lookup.
+      final defaultPriority = await Priority.getDefault();
+      final allTwists = await TwistApi.getAllTwists(defaultPriority);
       final matchingTwist = allTwists.firstWhere(
-        (a) => a.id == priorityTwist.twistId.toString(),
+        (a) => a.id == twistInstance.twistId.toString(),
         orElse: () => throw Exception('Twist not found'),
       );
 
@@ -1695,7 +1550,7 @@ class EditTwist extends ShowForm {
       final optionItems = hasOptions
           ? TwistOptionItems(
               options: matchingTwist.options!,
-              initialConfig: priorityTwist.config,
+              initialConfig: twistInstance.config,
             )
           : null;
 
@@ -1714,14 +1569,14 @@ class EditTwist extends ShowForm {
       final linkChannelListController = FormChannelListController();
 
       return FormData(
-        title: 'Edit ${priorityTwist.name}',
+        title: 'Edit ${twistInstance.name}',
         groups: [
           StaticFormGroup(
             items: [
               FormTextInput(
                 key: 'name',
                 label: 'Name',
-                initialValue: priorityTwist.name,
+                initialValue: twistInstance.name,
                 required: true,
               ),
               if (hasLinkPermission)
@@ -1729,8 +1584,7 @@ class EditTwist extends ShowForm {
                   key: 'link_channels',
                   controller: linkChannelListController,
                   builder: (context) => SetupLinkChannelsWidget(
-                    priorityTwistId: priorityTwist.id.toString(),
-                    priorityId: priorityTwist.priorityId?.toString(),
+                    twistInstanceId: twistInstance.id.toString(),
                     channelListController: linkChannelListController,
                     onChanged: (selection) {
                       linkChannelSelection = selection;
@@ -1747,7 +1601,7 @@ class EditTwist extends ShowForm {
                 buildCommand: (values) {
                   final name = values['name'] as String;
                   return SaveTwistSettings(
-                    priorityTwist: priorityTwist,
+                    twistInstance: twistInstance,
                     name: name,
                     config: optionItems?.values,
                     linkChannels: hasLinkPermission
@@ -1759,13 +1613,13 @@ class EditTwist extends ShowForm {
               FormDivider(key: 'divider'),
               FormButton(
                 key: 'details',
-                buildCommand: (_) =>
-                    ShowTwistDetails(matchingTwist, priority: loadedPriority),
+                buildCommand: (_) => ShowTwistDetails(matchingTwist),
               ),
-              FormButton(
-                key: 'archive',
-                buildCommand: (_) => PromptToArchiveTwist(priorityTwist),
-              ),
+              if (!twistInstance.isBuiltin)
+                FormButton(
+                  key: 'archive',
+                  buildCommand: (_) => PromptToArchiveTwist(twistInstance),
+                ),
             ],
           ),
         ],
@@ -1774,14 +1628,14 @@ class EditTwist extends ShowForm {
       log.warning('Error loading twist details', e, t);
       // Fallback to simple form without details
       return FormData(
-        title: 'Edit ${priorityTwist.name}',
+        title: 'Edit ${twistInstance.name}',
         groups: [
           StaticFormGroup(
             items: [
               FormTextInput(
                 key: 'name',
                 label: 'Name',
-                initialValue: priorityTwist.name,
+                initialValue: twistInstance.name,
                 required: true,
               ),
               FormDivider(key: 'divider'),
@@ -1789,13 +1643,14 @@ class EditTwist extends ShowForm {
                 key: 'save',
                 buildCommand: (values) {
                   final name = values['name'] as String;
-                  return EditTwistName(priorityTwist, name: name);
+                  return EditTwistName(twistInstance, name: name);
                 },
               ),
-              FormButton(
-                key: 'archive',
-                buildCommand: (_) => PromptToArchiveTwist(priorityTwist),
-              ),
+              if (!twistInstance.isBuiltin)
+                FormButton(
+                  key: 'archive',
+                  buildCommand: (_) => PromptToArchiveTwist(twistInstance),
+                ),
             ],
           ),
         ],
@@ -1809,17 +1664,16 @@ class EditTwist extends ShowForm {
 // ============================================================================
 
 class ShowTwistDetails extends ShowForm {
-  ShowTwistDetails(this.twist, {this.priority})
+  ShowTwistDetails(this.twist)
     : super(
         title: 'View twist details',
         icon: PlotIcon.twist,
-        form: (context) => _buildForm(twist, priority),
+        form: (context) => _buildForm(twist),
       );
 
   final Twist twist;
-  final Priority? priority;
 
-  static Future<FormData> _buildForm(Twist twist, Priority? priority) async {
+  static Future<FormData> _buildForm(Twist twist) async {
     // Only fetch plan/keys info for twists that use AI
     bool? hasAiKeys;
     String? effectivePlan;
@@ -1844,7 +1698,6 @@ class ShowTwistDetails extends ShowForm {
               divider: false,
               builder: (context) => TwistDetails(
                 twist: twist,
-                priority: priority,
                 hasAiKeys: hasAiKeys,
                 effectivePlan: effectivePlan,
               ),
@@ -2031,9 +1884,6 @@ class SetupTwist extends ShowForm {
       );
     }
 
-    // Default to root priority ("Everything")
-    final initialPriority = await Priority.getDefault();
-
     // Pre-fetch integrations for the draft
     final integrations = await TwistApi.getIntegrations(draftId);
     final refreshNotifier = ValueNotifier<int>(0);
@@ -2053,46 +1903,16 @@ class SetupTwist extends ShowForm {
         twist.permissions != null &&
         twist.permissions!.hasPermission('plot', 'link', PermissionFlag.read);
 
-    // Priority notifier for link channels to react to priority changes
-    final priorityNotifier = ValueNotifier<String?>(
-      initialPriority.id.toString(),
-    );
-
     // Track link channel changes
     var linkChannelSelection = const LinkChannelSelection();
     final setupSourceController = FormChannelListController();
     final setupLinkController = FormChannelListController();
-
-    final prioritySelect = FormSelect<Priority>(
-      key: 'priority',
-      label: 'Add to Priority',
-      initialValue: initialPriority,
-      items: (search) async => Priority.excludePlot(
-        await Priority.get(order: PriorityOrder.nested, search: search),
-      ),
-      labelBuilder: (p) => PriorityLabel(priority: p),
-      titleBuilder: (p) => p.ancestorsLabel() != null
-          ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
-          : p.title,
-      onAdd: (ctx) => createPriorityInline(ctx),
-    );
-
-    // Update priority notifier when selection changes
-    if (hasLinkPermission) {
-      prioritySelect.addListener(() {
-        final selected = prioritySelect.getValue();
-        if (selected != null) {
-          priorityNotifier.value = selected.id.toString();
-        }
-      });
-    }
 
     return FormData(
       title: 'Set up ${twist.name}',
       groups: [
         StaticFormGroup(
           items: [
-            prioritySelect,
             FormTextInput(
               key: 'name',
               label: 'Name',
@@ -2103,7 +1923,7 @@ class SetupTwist extends ShowForm {
               key: 'integrations',
               controller: setupSourceController,
               builder: (context) => SetupSourceWidget(
-                priorityTwistId: draftId,
+                twistInstanceId: draftId,
                 setupMode: true,
                 sourceName: twist.name,
                 logoUrl: twist.logoUrl,
@@ -2120,7 +1940,7 @@ class SetupTwist extends ShowForm {
               FormButton(
                 key: 'add_account',
                 buildCommand: (_) => ShowAddIntegrationAccount(
-                  priorityTwistId: draftId,
+                  twistInstanceId: draftId,
                   onAccountAdded: () => refreshNotifier.value++,
                 ),
               ),
@@ -2131,7 +1951,7 @@ class SetupTwist extends ShowForm {
               FormButton(
                 key: 'connect',
                 buildCommand: (_) => ConnectNoProviderCommand(
-                  priorityTwistId: draftId,
+                  twistInstanceId: draftId,
                   optionItems: optionItems,
                   onConnected: (syncables) {
                     refreshNotifier.value++;
@@ -2143,8 +1963,7 @@ class SetupTwist extends ShowForm {
                 key: 'link_channels',
                 controller: setupLinkController,
                 builder: (context) => SetupLinkChannelsWidget(
-                  priorityTwistId: draftId,
-                  priorityNotifier: priorityNotifier,
+                  twistInstanceId: draftId,
                   setupMode: true,
                   channelListController: setupLinkController,
                   onChanged: (selection) {
@@ -2159,10 +1978,7 @@ class SetupTwist extends ShowForm {
             FormButton(
               key: 'add',
               buildCommand: (values) {
-                final selectedPriority = values['priority'] as Priority;
                 final name = values['name'] as String;
-                // Update priority notifier for any last-minute change
-                priorityNotifier.value = selectedPriority.id.toString();
                 // Convert IntegrationChanges to SelectedChannel list
                 final selectedChannels = integrationChanges.selectedChannels
                     .map((key) {
@@ -2175,7 +1991,6 @@ class SetupTwist extends ShowForm {
                     .toList();
                 return ActivateTwist(
                   draftId: draftId,
-                  priority: selectedPriority,
                   name: name,
                   config: optionItems?.values,
                   channels: selectedChannels,
@@ -2192,11 +2007,10 @@ class SetupTwist extends ShowForm {
   }
 }
 
-/// Activates a draft twist: assigns priority, calls activate, enables channels.
+/// Activates a draft twist: flips draft=false, calls activate, enables channels.
 class ActivateTwist extends Command {
   ActivateTwist({
     required this.draftId,
-    required this.priority,
     required this.name,
     this.config,
     required this.channels,
@@ -2209,7 +2023,6 @@ class ActivateTwist extends Command {
        );
 
   final String draftId;
-  final Priority priority;
   final String name;
   final Map<String, dynamic>? config;
   final List<SelectedChannel> channels;
@@ -2220,7 +2033,6 @@ class ActivateTwist extends Command {
     try {
       await TwistApi.activateDraft(
         draftId: draftId,
-        priorityId: priority.id.toString(),
         name: name,
         config: config,
         channels: channels.isNotEmpty
@@ -2235,16 +2047,16 @@ class ActivateTwist extends Command {
       // Mark the draft as activated so cleanup doesn't delete it
       SetupTwist.clearDraft();
 
-      // Save link channel selections if any (draftId is now the priorityTwistId)
+      // Save link channel selections if any (draftId is now the twistInstanceId)
       if (linkChannels != null && linkChannels!.isNotEmpty) {
         await TwistApi.updateLinkChannels(
-          priorityTwistId: draftId,
+          twistInstanceId: draftId,
           channels: linkChannels!.map((e) => e.toJson()).toList(),
         );
       }
 
       // Sync new twist to local DB
-      await PriorityTwist.pull();
+      await TwistInstance.pull();
 
       // Pop all modals and reopen twist list
       if (context.mounted) {
@@ -2261,10 +2073,10 @@ class ActivateTwist extends Command {
       log.warning('Failed to activate twist', e, t);
       if (e.isPlanLimitExceeded) {
         return CommandMessage(
-          e.isOrg == true
+          e.isTeam == true
               ? (e.isAdmin == true
-                    ? 'Your organization has reached its twist limit. Upgrade your plan.'
-                    : 'Your organization has reached its twist limit. Contact an admin to upgrade.')
+                    ? 'Your team has reached its twist limit. Upgrade your plan.'
+                    : 'Your team has reached its twist limit. Contact an admin to upgrade.')
               : 'You\'ve reached your twist limit. Upgrade for unlimited twists.',
           isError: true,
         );
@@ -2290,7 +2102,7 @@ class ActivateTwist extends Command {
 /// Streamlined auth modal shown when a user taps a link from a source they
 /// haven't connected. Shows only the twist logo/name and auth buttons.
 class ConnectConnectorAccount extends ShowForm {
-  ConnectConnectorAccount(PriorityTwist twist)
+  ConnectConnectorAccount(TwistInstance twist)
     : super(
         title: 'Connect ${twist.name}',
         icon: PlotIcon.connection,
@@ -2299,7 +2111,7 @@ class ConnectConnectorAccount extends ShowForm {
         form: (context) => _buildForm(twist),
       );
 
-  static Future<FormData> _buildForm(PriorityTwist twist) async {
+  static Future<FormData> _buildForm(TwistInstance twist) async {
     final integrations = await TwistApi.getIntegrations(twist.id.toString());
 
     // Individual key connector: show key entry form
@@ -2334,9 +2146,9 @@ class ConnectConnectorAccount extends ShowForm {
                       hasExistingAccount: integrations.accounts.any(
                         (a) => a.provider == provider.provider,
                       ),
-                      priorityTwistId: twist.id.toString(),
+                      twistInstanceId: twist.id.toString(),
                       onSuccess: () {
-                        PriorityTwist.pullUpdates();
+                        TwistInstance.pullUpdates();
                         if (formContext.mounted) {
                           Modal.pop<CommandReturn>(
                             formContext,
@@ -2356,7 +2168,7 @@ class ConnectConnectorAccount extends ShowForm {
 
   /// Build a form for individual key entry (e.g. Fellow API key).
   static FormData _buildKeyConnectForm(
-    PriorityTwist twist,
+    TwistInstance twist,
     TwistIntegrations integrations,
   ) {
     final keyOption = integrations.keyOption!;
@@ -2381,7 +2193,7 @@ class ConnectConnectorAccount extends ShowForm {
               key: 'connect',
               skipValidation: true,
               buildCommand: (_) => ConnectNoProviderCommand(
-                priorityTwistId: twist.id.toString(),
+                twistInstanceId: twist.id.toString(),
                 optionItems: optionItems,
               ),
             ),
@@ -2400,7 +2212,7 @@ class ConnectConnectorAccount extends ShowForm {
 /// If [activateAs] is provided, also activates the draft after connecting.
 class ConnectNoProviderCommand extends Command {
   ConnectNoProviderCommand({
-    required this.priorityTwistId,
+    required this.twistInstanceId,
     required this.optionItems,
     this.activateAs,
     this.onConnected,
@@ -2411,7 +2223,7 @@ class ConnectNoProviderCommand extends Command {
          eventAction: EventAction.updated,
        );
 
-  final String priorityTwistId;
+  final String twistInstanceId;
   final TwistOptionItems optionItems;
 
   /// If set, activates the draft with this name after connecting.
@@ -2424,7 +2236,7 @@ class ConnectNoProviderCommand extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final result = await TwistApi.connectNoProvider(
-        priorityTwistId: priorityTwistId,
+        twistInstanceId: twistInstanceId,
         options: optionItems.values,
       );
 
@@ -2439,10 +2251,10 @@ class ConnectNoProviderCommand extends Command {
       // Activate the draft source if requested
       if (activateAs != null) {
         await TwistApi.activateDraft(
-          draftId: priorityTwistId,
+          draftId: twistInstanceId,
           name: activateAs!,
         );
-        AddSourceDetail.lastActivatedSourceId = priorityTwistId;
+        AddSourceDetail.lastActivatedSourceId = twistInstanceId;
         AddSourceDetail.clearDraft();
         return const CommandDone(message: 'Connected');
       }
@@ -2492,15 +2304,9 @@ class _ActivateNoProviderSource extends Command {
       final changes = getChanges();
       final channels = changes.selectedChannels.map((key) {
         final parts = key.split(':');
-        return {
+        return <String, Object>{
           'provider': parts.first,
           'syncableId': parts.skip(1).join(':'),
-          if (changes.channelPriorities.containsKey(key))
-            'priorityId': changes.channelPriorities[key]!,
-          if (changes.channelCreateThreads.containsKey(key))
-            'createThreads': changes.channelCreateThreads[key]!,
-          if (changes.channelCreateThreadsByType.containsKey(key))
-            'createThreadsByType': changes.channelCreateThreadsByType[key]!,
         };
       }).toList();
 
@@ -2516,10 +2322,10 @@ class _ActivateNoProviderSource extends Command {
       return const CommandDone();
     } on ApiException catch (e) {
       if (e.isPlanLimitExceeded) {
-        final message = e.isOrg == true
+        final message = e.isTeam == true
             ? (e.isAdmin == true
-                  ? 'Your organization has reached its connection limit. Upgrade your plan to add more.'
-                  : 'Your organization has reached its connection limit. Contact an admin to upgrade.')
+                  ? 'Your team has reached its connection limit. Upgrade your plan to add more.'
+                  : 'Your team has reached its connection limit. Contact an admin to upgrade.')
             : 'You\'ve reached your connection limit. Upgrade for unlimited connections.';
         return CommandMessage(message, isError: true);
       }
@@ -2545,19 +2351,19 @@ class _ActivateNoProviderSource extends Command {
 /// When a provider is authenticated, pops back and refreshes integrations.
 class ShowAddIntegrationAccount extends ShowForm {
   ShowAddIntegrationAccount({
-    required String priorityTwistId,
+    required String twistInstanceId,
     required VoidCallback onAccountAdded,
   }) : super(
          title: 'Add account',
          icon: PlotIcon.add,
-         form: (context) => _buildForm(priorityTwistId, onAccountAdded),
+         form: (context) => _buildForm(twistInstanceId, onAccountAdded),
        );
 
   static Future<FormData> _buildForm(
-    String priorityTwistId,
+    String twistInstanceId,
     VoidCallback onAccountAdded,
   ) async {
-    final integrations = await TwistApi.getIntegrations(priorityTwistId);
+    final integrations = await TwistApi.getIntegrations(twistInstanceId);
 
     return FormData(
       title: 'Add account',
@@ -2575,7 +2381,7 @@ class ShowAddIntegrationAccount extends ShowForm {
                       hasExistingAccount: integrations.accounts.any(
                         (a) => a.provider == provider.provider,
                       ),
-                      priorityTwistId: priorityTwistId,
+                      twistInstanceId: twistInstanceId,
                       onSuccess: () {
                         onAccountAdded();
                         if (formContext.mounted) {
@@ -2600,14 +2406,14 @@ class ShowAddIntegrationAccount extends ShowForm {
 class _AuthWithScopeToggles extends StatefulWidget {
   const _AuthWithScopeToggles({
     required this.provider,
-    required this.priorityTwistId,
+    required this.twistInstanceId,
     required this.onSuccess,
     this.initialEnabledGroups,
     this.onScopeGroupsChanged,
   });
 
   final TwistProvider provider;
-  final String priorityTwistId;
+  final String twistInstanceId;
   final VoidCallback onSuccess;
   final Set<String>? initialEnabledGroups;
   final ValueChanged<Set<String>>? onScopeGroupsChanged;
@@ -2679,7 +2485,7 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
           child: _IntegrationAuthButton(
             provider: widget.provider,
             hasExistingAccount: false,
-            priorityTwistId: widget.priorityTwistId,
+            twistInstanceId: widget.twistInstanceId,
             enabledScopeGroups: _enabledGroups.isNotEmpty
                 ? _enabledGroups.toList()
                 : null,
@@ -2695,14 +2501,14 @@ class _IntegrationAuthButton extends StatefulWidget {
   const _IntegrationAuthButton({
     required this.provider,
     required this.hasExistingAccount,
-    required this.priorityTwistId,
+    required this.twistInstanceId,
     required this.onSuccess,
     this.enabledScopeGroups,
   });
 
   final TwistProvider provider;
   final bool hasExistingAccount;
-  final String priorityTwistId;
+  final String twistInstanceId;
   final VoidCallback onSuccess;
   final List<String>? enabledScopeGroups;
 
@@ -2743,7 +2549,7 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
     try {
       // Create the server-side callback for this auth flow
       final authUrl = await TwistApi.getAuthUrl(
-        priorityTwistId: widget.priorityTwistId,
+        twistInstanceId: widget.twistInstanceId,
         provider: widget.provider.provider.name,
         redirectUri: redirectUri,
         platform: platform,
@@ -2913,12 +2719,9 @@ class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
 /// Saves source integration changes: channel toggles and account removals.
 class SaveSource extends Command {
   SaveSource({
-    required this.priorityTwistId,
+    required this.twistInstanceId,
     required this.name,
     required this.initialEnabled,
-    this.initialPriorities = const {},
-    this.initialCreateThreads = const {},
-    this.initialCreateThreadsByType = const {},
     required this.changes,
     this.optionItems,
     this.isNewlyActivated = false,
@@ -2929,12 +2732,9 @@ class SaveSource extends Command {
          eventAction: EventAction.updated,
        );
 
-  final String priorityTwistId;
+  final String twistInstanceId;
   final String name;
   final Set<String> initialEnabled;
-  final Map<String, String> initialPriorities;
-  final Map<String, String> initialCreateThreads;
-  final Map<String, Map<String, String>> initialCreateThreadsByType;
   final IntegrationChanges changes;
 
   /// Option items for no-provider connectors (API key, etc.).
@@ -2949,7 +2749,7 @@ class SaveSource extends Command {
       // 0. Save updated options if present (no-provider connectors)
       if (optionItems != null) {
         final result = await TwistApi.connectNoProvider(
-          priorityTwistId: priorityTwistId,
+          twistInstanceId: twistInstanceId,
           options: optionItems!.values,
         );
         if (result.isError) {
@@ -2972,12 +2772,9 @@ class SaveSource extends Command {
         if (removedProviders.contains(provider)) continue;
         final channelId = parts.sublist(1).join(':');
         await TwistApi.enableChannel(
-          priorityTwistId: priorityTwistId,
+          twistInstanceId: twistInstanceId,
           provider: provider,
           channelId: channelId,
-          priorityId: changes.channelPriorities[key],
-          createThreads: changes.channelCreateThreads[key],
-          createThreadsByType: changes.channelCreateThreadsByType[key],
         );
       }
 
@@ -2987,47 +2784,10 @@ class SaveSource extends Command {
         if (removedProviders.contains(provider)) continue;
         final channelId = parts.sublist(1).join(':');
         await TwistApi.disableChannel(
-          priorityTwistId: priorityTwistId,
+          twistInstanceId: twistInstanceId,
           provider: provider,
           channelId: channelId,
         );
-      }
-
-      // 2b. Update config for channels that stayed enabled but changed settings
-      final stayEnabled = changes.selectedChannels.intersection(initialEnabled);
-      for (final key in stayEnabled) {
-        final parts = key.split(':');
-        final provider = parts[0];
-        if (removedProviders.contains(provider)) continue;
-        final newPriority = changes.channelPriorities[key];
-        final oldPriority = initialPriorities[key];
-        final newCreateThreads = changes.channelCreateThreads[key];
-        final oldCreateThreads = initialCreateThreads[key];
-        final newByType = changes.channelCreateThreadsByType[key];
-        final oldByType = initialCreateThreadsByType[key];
-
-        final priorityChanged =
-            newPriority != null && newPriority != oldPriority;
-        final createThreadsChanged =
-            newCreateThreads != null && newCreateThreads != oldCreateThreads;
-        final byTypeChanged =
-            newByType != null &&
-            !const MapEquality<String, String>().equals(
-              newByType,
-              oldByType ?? const {},
-            );
-
-        if (priorityChanged || createThreadsChanged || byTypeChanged) {
-          final channelId = parts.sublist(1).join(':');
-          await TwistApi.updateChannel(
-            priorityTwistId: priorityTwistId,
-            provider: provider,
-            channelId: channelId,
-            priorityId: priorityChanged ? newPriority : null,
-            createThreads: createThreadsChanged ? newCreateThreads : null,
-            createThreadsByType: byTypeChanged ? newByType : null,
-          );
-        }
       }
 
       // 3. Remove accounts
@@ -3036,7 +2796,7 @@ class SaveSource extends Command {
         final provider = parts[0];
         final actorId = parts.sublist(1).join(':');
         await TwistApi.removeIntegration(
-          priorityTwistId: priorityTwistId,
+          twistInstanceId: twistInstanceId,
           provider: provider,
           actorId: actorId,
         );
@@ -3053,7 +2813,7 @@ class SaveSource extends Command {
 /// Saves twist name and config settings (no integrations for twists).
 class SaveTwistSettings extends Command {
   SaveTwistSettings({
-    required this.priorityTwist,
+    required this.twistInstance,
     required this.name,
     this.config,
     this.linkChannels,
@@ -3064,7 +2824,7 @@ class SaveTwistSettings extends Command {
          eventAction: EventAction.updated,
        );
 
-  final PriorityTwist priorityTwist;
+  final TwistInstance twistInstance;
   final String? name;
   final Map<String, dynamic>? config;
   final List<LinkChannelEntry>? linkChannels;
@@ -3077,7 +2837,7 @@ class SaveTwistSettings extends Command {
       }
 
       await TwistApi.updateTwist(
-        priorityTwistId: priorityTwist.id.toString(),
+        twistInstanceId: twistInstance.id.toString(),
         name: name!,
         config: config,
       );
@@ -3085,7 +2845,7 @@ class SaveTwistSettings extends Command {
       // Save link channel selections if provided
       if (linkChannels != null) {
         await TwistApi.updateLinkChannels(
-          priorityTwistId: priorityTwist.id.toString(),
+          twistInstanceId: twistInstance.id.toString(),
           channels: linkChannels!.map((e) => e.toJson()).toList(),
         );
       }
@@ -3102,7 +2862,7 @@ class SaveTwistSettings extends Command {
 /// Used by the SetupTwist flow which still needs integration handling.
 class SaveTwist extends Command {
   SaveTwist({
-    required this.priorityTwist,
+    required this.twistInstance,
     required this.name,
     this.config,
     required this.initialEnabled,
@@ -3114,7 +2874,7 @@ class SaveTwist extends Command {
          eventAction: EventAction.updated,
        );
 
-  final PriorityTwist priorityTwist;
+  final TwistInstance twistInstance;
   final String? name;
   final Map<String, dynamic>? config;
   final Set<String> initialEnabled;
@@ -3127,11 +2887,11 @@ class SaveTwist extends Command {
         return CommandMessage('Name is required', isError: true);
       }
 
-      final ptId = priorityTwist.id.toString();
+      final ptId = twistInstance.id.toString();
 
       // 1. Update name and config
       await TwistApi.updateTwist(
-        priorityTwistId: ptId,
+        twistInstanceId: ptId,
         name: name!,
         config: config,
       );
@@ -3151,7 +2911,7 @@ class SaveTwist extends Command {
         if (removedProviders.contains(provider)) continue;
         final channelId = parts.sublist(1).join(':');
         await TwistApi.enableChannel(
-          priorityTwistId: ptId,
+          twistInstanceId: ptId,
           provider: provider,
           channelId: channelId,
         );
@@ -3163,7 +2923,7 @@ class SaveTwist extends Command {
         if (removedProviders.contains(provider)) continue;
         final channelId = parts.sublist(1).join(':');
         await TwistApi.disableChannel(
-          priorityTwistId: ptId,
+          twistInstanceId: ptId,
           provider: provider,
           channelId: channelId,
         );
@@ -3175,7 +2935,7 @@ class SaveTwist extends Command {
         final provider = parts[0];
         final actorId = parts.sublist(1).join(':');
         await TwistApi.removeIntegration(
-          priorityTwistId: ptId,
+          twistInstanceId: ptId,
           provider: provider,
           actorId: actorId,
         );
@@ -3190,7 +2950,7 @@ class SaveTwist extends Command {
 }
 
 class EditTwistName extends Command {
-  EditTwistName(this.priorityTwist, {this.name})
+  EditTwistName(this.twistInstance, {this.name})
     : super(
         title: 'Save',
         icon: FontAwesomeIcons.check,
@@ -3198,7 +2958,7 @@ class EditTwistName extends Command {
         eventAction: EventAction.updated,
       );
 
-  final PriorityTwist priorityTwist;
+  final TwistInstance twistInstance;
   final String? name;
 
   @override
@@ -3209,7 +2969,7 @@ class EditTwistName extends Command {
       }
 
       await TwistApi.updateTwist(
-        priorityTwistId: priorityTwist.id.toString(),
+        twistInstanceId: twistInstance.id.toString(),
         name: name!,
       );
 
@@ -3231,10 +2991,13 @@ class RemoveTwist extends Command {
         icon: FontAwesomeIcons.trash,
       );
 
-  final PriorityTwist twist;
+  final TwistInstance twist;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    if (twist.isBuiltin) {
+      return CommandMessage('The Plot twist cannot be removed', isError: true);
+    }
     try {
       await TwistApi.removeTwist(twist.id.toString());
 
@@ -3254,11 +3017,11 @@ class PromptToArchiveTwist extends ShowForm {
         form: (context) => _buildForm(context, twist),
       );
 
-  final PriorityTwist twist;
+  final TwistInstance twist;
 
   static Future<FormData> _buildForm(
     BuildContext context,
-    PriorityTwist twist,
+    TwistInstance twist,
   ) async {
     return FormData(
       title: 'Archive twist',
@@ -3291,21 +3054,24 @@ class ArchiveTwist extends Command {
         eventAction: EventAction.archived,
       );
 
-  final PriorityTwist twist;
+  final TwistInstance twist;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    if (twist.isBuiltin) {
+      return CommandMessage('The Plot twist cannot be removed', isError: true);
+    }
     try {
       await TwistApi.archiveAndRemoveTwist(twist.id.toString());
 
       // Update local database to immediately reflect the archive
       await Store.get.save(
-        PriorityTwist.table,
+        TwistInstance.table,
         twist.copyWith(
           archivedAt: Value(DateTime.now()),
           updatedAt: DateTime.now(),
         ),
-        PriorityTwistsBase(),
+        TwistInstancesBase(),
       );
 
       return CommandMessage(
@@ -3327,11 +3093,11 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
         form: (context) => _buildForm(context, twist),
       );
 
-  final PriorityTwist twist;
+  final TwistInstance twist;
 
   static Future<FormData> _buildForm(
     BuildContext context,
-    PriorityTwist twist,
+    TwistInstance twist,
   ) async {
     // Query the count of activities created by this twist
     final count = await _getActivityCount(twist.id);
@@ -3360,7 +3126,7 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
     );
   }
 
-  static Future<int> _getActivityCount(Uuid priorityTwistId) async {
+  static Future<int> _getActivityCount(Uuid twistInstanceId) async {
     try {
       final query = Store.get.select(Store.get.threads)
         ..where((a) => a.archivedAt.isNull());
@@ -3382,7 +3148,7 @@ class _ArchiveActivitiesCommand extends Command {
         eventAction: EventAction.archived,
       );
 
-  final PriorityTwist twist;
+  final TwistInstance twist;
   final int count;
 
   @override

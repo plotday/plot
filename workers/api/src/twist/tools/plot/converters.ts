@@ -27,12 +27,12 @@ export async function fromDbThread(
     id: dbThread.id as any,
     created: new Date(dbThread.created_at),
     title: dbThread.title || "",
-    access: (dbThread.access as ThreadAccessLevel) ?? "members",
-    accessContacts: await resolveAccessContacts(plot, dbThread.access_contacts),
+    access: "members" as ThreadAccessLevel,
+    accessContacts: await resolveAccessContacts(plot, dbThread.contacts),
     archived: dbThread.archived_at !== null,
     type: (dbThread.icon as ThreadType) ?? null,
     priority: {
-      id: dbThread.priority_id as Uuid,
+      id: (dbThread as any).priority_id as Uuid ?? ("" as Uuid),
       title: dbThread.title ?? "Untitled",
       archived: false,
       key: null,
@@ -54,7 +54,7 @@ function mapActorType(type: string | null): number {
       return ActorType.User;
     case "contact":
       return ActorType.Contact;
-    case "priority_twist":
+    case "twist_instance":
       return ActorType.Twist;
     default:
       return ActorType.User;

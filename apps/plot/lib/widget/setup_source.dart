@@ -1,32 +1,18 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
-import 'package:url_launcher/url_launcher.dart';
-
-import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/twist_api.dart';
-import 'package:plot/api/upgrade_api.dart';
-import 'package:plot/command/base.dart';
-import 'package:plot/command/priority.dart' show createPriorityInline;
-import 'package:plot/env.dart';
-import 'package:plot/store/store.dart' show Priority, PriorityOrder;
-import 'package:plot/util/uuid.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
+import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
-import 'package:plot/widget/form_modal.dart';
-import 'package:plot/widget/priority.dart';
+import 'package:plot/util/channel_defaults.dart';
+import 'package:plot/widget/form.dart';
+import 'package:plot/widget/logo_image.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
-import 'package:plot/style/colors.dart';
-import 'package:plot/widget/icon.dart';
-import 'package:plot/widget/logo_image.dart';
-import 'package:plot/widget/select_modal.dart';
-import 'package:plot/widget/select_tile.dart';
-import 'package:plot/util/channel_defaults.dart';
 import 'logging.dart';
 
 /// Selected channel for the setup flow.
@@ -42,22 +28,10 @@ class SelectedChannel {
 class IntegrationChanges {
   final Set<String> selectedChannels; // "provider:channelId" keys
   final Set<String> removedAccounts; // "provider:actorId" keys
-  final Map<String, String>
-  channelPriorities; // "provider:channelId" → priorityId
-  final Map<String, String>
-  channelCreateThreads; // "provider:channelId" → createThreads ('all'|'actionable'|'manual')
-  final Map<String, Map<String, String>>
-  channelCreateThreadsByType; // "provider:channelId" → {linkType: mode}
-  final Map<String, int?>
-  priorityOrgIds; // priorityId → organizationId (null = personal)
 
   const IntegrationChanges({
     this.selectedChannels = const {},
     this.removedAccounts = const {},
-    this.channelPriorities = const {},
-    this.channelCreateThreads = const {},
-    this.channelCreateThreadsByType = const {},
-    this.priorityOrgIds = const {},
   });
 }
 
@@ -65,7 +39,7 @@ class IntegrationChanges {
 /// Used in both the setup and edit twist modals.
 class SetupSourceWidget extends StatefulWidget {
   const SetupSourceWidget({
-    required this.priorityTwistId,
+    required this.twistInstanceId,
     this.setupMode = false,
     this.isAccountBased = false,
     this.sourceName,
@@ -75,17 +49,17 @@ class SetupSourceWidget extends StatefulWidget {
     this.refreshNotifier,
     this.onChanged,
     this.channelListController,
-    this.usage,
     super.key,
   });
 
-  final String priorityTwistId;
+  final String twistInstanceId;
 
   /// When true, account removal calls the API immediately (for drafts).
   /// When false (edit mode), account removal is deferred until Save.
   final bool setupMode;
 
-  /// When true, channels require per-channel priority selection (account-based sources).
+  /// When true, this is an account-based source (Google, Slack, etc. vs.
+  /// no-provider connectors). Controls whether account rows are shown.
   final bool isAccountBased;
 
   /// Display name of the source/connector, used in channel config modal titles.
@@ -109,9 +83,6 @@ class SetupSourceWidget extends StatefulWidget {
   /// Controller for keyboard navigation integration with FormChannelList.
   final FormChannelListController? channelListController;
 
-  /// Usage data for checking connection limits when enabling channels.
-  final UsageData? usage;
-
   @override
   State<SetupSourceWidget> createState() => _SetupSourceWidgetState();
 }
@@ -129,25 +100,6 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
   /// Tracks expanded state for nested channels in the tree view.
   final Set<String> _expandedChannels = {};
-
-  /// Locally tracked priority assignments per channel key ("provider:channelId" → priorityId).
-  final Map<String, String> _channelPriorities = {};
-
-  /// Locally tracked createThreads per channel key ("provider:channelId" → 'all'|'actionable'|'manual').
-  final Map<String, String> _channelCreateThreads = {};
-
-  /// Locally tracked per-type createThreads ("provider:channelId" → {linkType: mode}).
-  final Map<String, Map<String, String>> _channelCreateThreadsByType = {};
-
-  /// Cached priority names for display (priorityId → title).
-  final Map<String, String> _priorityNames = {};
-
-  /// Cached priority organizationIds for limit checks (priorityId → orgId or null).
-  final Map<String, int?> _priorityOrgIds = {};
-
-  /// The most recently manually selected priority ID (via FormModal or defaults).
-  /// Used for quick-toggle to avoid reopening the modal.
-  String? _lastSelectedPriorityId;
 
   /// Whether we've seeded _localSelectedChannels from server state (edit mode).
   bool _initializedFromServer = false;
@@ -194,9 +146,6 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       // Edit mode: seed from server state
       _collectEnabledChannels(data.channels);
       _initializedFromServer = true;
-      if (widget.isAccountBased) {
-        _resolvePriorityNames();
-      }
     } else {
       // Setup mode: compute smart defaults
       _initializedFromServer = true;
@@ -209,47 +158,16 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     final suggestion = await ChannelDefaultSuggester.suggest(
       channels: data.channels,
       accounts: data.accounts,
-      organizationDomains: data.organizationDomains,
-      isAccountBased: widget.isAccountBased || data.singleChannel,
+      teamDomains: data.teamDomains,
     );
 
     if (!mounted) return;
 
     setState(() {
       _localSelectedChannels.addAll(suggestion.enabledChannels);
-      _channelPriorities.addAll(suggestion.channelPriorities);
-      if (suggestion.channelPriorities.isNotEmpty) {
-        _lastSelectedPriorityId = suggestion.channelPriorities.values.first;
-      }
     });
 
-    if (suggestion.channelPriorities.isNotEmpty) {
-      await _resolvePriorityNames();
-    }
-
     _notifyChanged();
-  }
-
-  /// Resolve priority names for all channel priority assignments.
-  Future<void> _resolvePriorityNames() async {
-    final priorityIds = _channelPriorities.values.toSet();
-    for (final id in priorityIds) {
-      if (_priorityNames.containsKey(id)) continue;
-      try {
-        final priority = await Priority.getOne(Uuid.fromString(id));
-        if (mounted) {
-          final ancestorTitles =
-              priority.ancestors(includeSelf: true).map((a) => a.title);
-          setState(() {
-            _priorityNames[id] =
-                ancestorTitles.join(Priority.separator);
-            _priorityOrgIds[id] = priority.organizationId;
-          });
-        }
-      } catch (_) {
-        // Priority may have been deleted
-      }
-    }
   }
 
   void _collectEnabledChannels(List<TwistChannel> channels) {
@@ -257,14 +175,6 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       final key = '${channel.providerKey}:${channel.id}';
       if (channel.enabled) {
         _localSelectedChannels.add(key);
-      }
-      if (channel.priorityId != null) {
-        _channelPriorities[key] = channel.priorityId!;
-        _lastSelectedPriorityId ??= channel.priorityId;
-      }
-      _channelCreateThreads[key] = channel.createThreads;
-      if (channel.createThreadsByType.isNotEmpty) {
-        _channelCreateThreadsByType[key] = Map.of(channel.createThreadsByType);
       }
       _collectEnabledChannels(channel.children);
     }
@@ -287,7 +197,7 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     });
 
     try {
-      final data = await TwistApi.getIntegrations(widget.priorityTwistId);
+      final data = await TwistApi.getIntegrations(widget.twistInstanceId);
       if (mounted) {
         _seedLocalState(data);
         setState(() {
@@ -314,13 +224,13 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     try {
       // Ask the server to re-run getChannels() on the tool
       await TwistApi.refreshChannels(
-        priorityTwistId: widget.priorityTwistId,
+        twistInstanceId: widget.twistInstanceId,
         provider: provider.name,
       );
       if (!mounted) return;
 
       // Now re-fetch integration data which includes the updated channels
-      final data = await TwistApi.getIntegrations(widget.priorityTwistId);
+      final data = await TwistApi.getIntegrations(widget.twistInstanceId);
       if (!mounted) return;
 
       // Compute set of available channel keys from new data (including nested)
@@ -345,244 +255,18 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     }
   }
 
-  /// Synchronous check if enabling [key] with [priority] would be the first
-  /// channel of its type (personal or team) for this connector, and whether
-  /// that type is at its connection limit.
-  /// Returns an upgrade message if blocked, or null if allowed.
-  String? _checkConnectionLimitSync(String key, Priority priority) {
-    final usage = widget.usage;
-    if (usage == null) return null;
-
-    final isTeam = priority.organizationId != null;
-
-    // Check if there's already another enabled channel of the same type
-    for (final existingKey in _localSelectedChannels) {
-      if (existingKey == key) continue;
-      final existingPriorityId = _channelPriorities[existingKey];
-      if (existingPriorityId == null) continue;
-      // Use cached org ID if available
-      if (_priorityOrgIds.containsKey(existingPriorityId)) {
-        final existingIsTeam = _priorityOrgIds[existingPriorityId] != null;
-        if (isTeam == existingIsTeam) return null;
-      }
-    }
-
-    // This would be the first channel of this type — check limits
-    if (isTeam) {
-      final orgId = priority.organizationId.toString();
-      final org = usage.organizations.firstWhereOrNull(
-        (o) => o.id == orgId,
-      );
-      if (org != null && org.connections.isAtLimit) {
-        return org.isAdmin
-            ? '${org.name} has reached its connection limit. Upgrade to add more.'
-            : '${org.name} has reached its connection limit. Contact an admin to upgrade.';
-      }
-    } else {
-      if (usage.personal.connections.isAtLimit) {
-        return 'You\'ve reached your personal connection limit. Upgrade for more.';
-      }
-    }
-
-    return null;
-  }
-
-  /// Returns the best default priority for a new channel.
-  /// If the personal connection limit is reached but a team has available
-  /// connections, returns a root priority for that team instead.
-  Future<Priority> _getDefaultPriority() async {
-    final usage = widget.usage;
-    if (usage != null && usage.personal.connections.isAtLimit) {
-      // Find an org with available connections
-      final availableOrg = usage.organizations
-          .firstWhereOrNull((o) => !o.connections.isAtLimit);
-      if (availableOrg != null) {
-        final orgId = int.tryParse(availableOrg.id);
-        if (orgId != null) {
-          final rootPriorities = await Priority.getRoot();
-          final teamRoot = rootPriorities.firstWhereOrNull(
-            (p) => p.organizationId == orgId,
-          );
-          if (teamRoot != null) return teamRoot;
-        }
-      }
-    }
-    return Priority.getDefault();
-  }
-
-  void _handleChannelTap(TwistChannel channel) async {
+  void _handleChannelTap(TwistChannel channel) {
     final key = '${channel.providerKey}:${channel.id}';
     final isEnabled = _localSelectedChannels.contains(key);
-    final isSingleChannel = _data?.singleChannel == true;
 
-    if (widget.isAccountBased || isSingleChannel) {
-      // Resolve current priority for initial value
-      final currentPriorityId = _channelPriorities[key];
-      final currentCreateThreads = _channelCreateThreads[key] ?? 'all';
-
-      Priority? currentPriority;
-      if (currentPriorityId != null) {
-        try {
-          currentPriority = await Priority.getOne(
-            Uuid.fromString(currentPriorityId),
-          );
-        } catch (_) {}
-      }
-      currentPriority ??= await _getDefaultPriority();
-      if (!mounted) return;
-
-      final hasLinkTypes = channel.linkTypes.isNotEmpty;
-      final currentByType = _channelCreateThreadsByType[key] ?? {};
-
-      final items = <FormItem>[
-        FormSelect<Priority>(
-          key: 'priority',
-          label: 'Sync to',
-          required: true,
-          items: (search) async => Priority.excludePlot(
-            await Priority.get(order: PriorityOrder.nested, search: search),
-          ),
-          labelBuilder: (p) => PriorityLabel(priority: p),
-          titleBuilder: (p) => p.ancestorsLabel() != null
-              ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
-              : p.title,
-          initialValue: currentPriority,
-          placeholder: 'Select a priority',
-          onAdd: (ctx) => createPriorityInline(ctx),
-        ),
-        if (hasLinkTypes)
-          for (final lt in channel.linkTypes)
-            FormSelect<String>(
-              key: 'createThreads_${lt.type}',
-              label: 'Create threads for each ${lt.label.toLowerCase()}',
-              items: (_) async => ['all', 'actionable', 'manual'],
-              titleBuilder: _createThreadsLabel,
-              initialValue: currentByType[lt.type]
-                  ?? lt.defaultCreateThreads
-                  ?? currentCreateThreads,
-              hasInitialValue: true,
-            )
-        else
-          FormSelect<String>(
-            key: 'createThreads',
-            label: 'Create threads',
-            items: (_) async => ['all', 'actionable', 'manual'],
-            titleBuilder: _createThreadsLabel,
-            initialValue: currentCreateThreads,
-            hasInitialValue: true,
-          ),
-        FormButton(
-          key: 'save',
-          buildCommand: (values) {
-            final priority = values['priority'] as Priority?;
-            // Check connection limit for the selected priority
-            if (priority != null && !isEnabled) {
-              final limitMessage = _checkConnectionLimitSync(key, priority);
-              if (limitMessage != null) {
-                return _UpgradeChannelCommand(limitMessage);
-              }
-            }
-            return _CallbackCommand(
-              title: isEnabled ? 'Save' : 'Enable sync',
-              icon: FontAwesomeIcons.check,
-              onRun: () async {
-                if (priority != null) {
-                  setState(() {
-                    _localSelectedChannels.add(key);
-                    _channelPriorities[key] = priority.id.toString();
-                    _lastSelectedPriorityId = priority.id.toString();
-                    if (hasLinkTypes) {
-                      final byType = <String, String>{};
-                      for (final lt in channel.linkTypes) {
-                        final mode = values['createThreads_${lt.type}']
-                            as String? ?? 'all';
-                        byType[lt.type] = mode;
-                      }
-                      _channelCreateThreadsByType[key] = byType;
-                    } else {
-                      final createThreads =
-                          values['createThreads'] as String? ?? 'all';
-                      _channelCreateThreads[key] = createThreads;
-                    }
-                    _priorityNames[priority.id.toString()] =
-                        priority.ancestorsLabel() != null
-                            ? '${priority.ancestorsLabel()}${Priority.separator}${priority.title}'
-                            : priority.title;
-                    _priorityOrgIds[priority.id.toString()] =
-                        priority.organizationId;
-                  });
-                  _notifyChanged();
-                }
-                return const CommandDone();
-              },
-            );
-          },
-        ),
-      ];
-
+    setState(() {
       if (isEnabled) {
-        items.add(FormDivider(key: 'divider'));
-        items.add(
-          FormButton(
-            key: 'disable',
-            buildCommand: (_) => _CallbackCommand(
-              title: 'Disable sync',
-              icon: PlotIcon.archived,
-              onRun: () async {
-                setState(() {
-                  _localSelectedChannels.remove(key);
-                  _channelPriorities.remove(key);
-                  _channelCreateThreads.remove(key);
-                  _channelCreateThreadsByType.remove(key);
-                });
-                _notifyChanged();
-                return const CommandDone();
-              },
-            ),
-          ),
-        );
+        _localSelectedChannels.remove(key);
+      } else {
+        _localSelectedChannels.add(key);
       }
-
-      // Build a descriptive title: "Channel from Account (Source)"
-      String formTitle = channel.title;
-      final data = _data;
-      if (data != null) {
-        final account = data.accounts
-            .where((a) => a.provider == channel.provider)
-            .firstOrNull;
-        final parts = <String>[];
-        if (account != null) parts.add(account.displayName);
-        if (widget.sourceName != null) parts.add(widget.sourceName!);
-        if (parts.isNotEmpty) {
-          formTitle = '${channel.title} from ${parts.join(' · ')}';
-        }
-      }
-
-      final formData = FormData(
-        title: formTitle,
-        groups: [StaticFormGroup(items: items)],
-      );
-
-      final groups = await formData.list();
-      if (!mounted) return;
-
-      await FormModal(
-        formData,
-        groups: groups,
-        rootContext: context,
-      ).run(context);
-    } else {
-      // Non-account-based: simple toggle
-      setState(() {
-        if (isEnabled) {
-          _localSelectedChannels.remove(key);
-          _channelPriorities.remove(key);
-        } else {
-          _localSelectedChannels.add(key);
-        }
-      });
-      _notifyChanged();
-    }
+    });
+    _notifyChanged();
   }
 
   /// Recursively collects all descendant channel keys from a parent channel.
@@ -603,26 +287,19 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
     setState(() {
       _localSelectedChannels.remove(key);
-      _channelPriorities.remove(key);
-      _channelCreateThreads.remove(key);
-      _channelCreateThreadsByType.remove(key);
 
       if (cascadeIfCollapsed && isCollapsed && channel.hasChildren) {
         final descendantKeys = _collectDescendantKeys(channel);
         for (final dk in descendantKeys) {
           _localSelectedChannels.remove(dk);
-          _channelPriorities.remove(dk);
-          _channelCreateThreads.remove(dk);
-          _channelCreateThreadsByType.remove(dk);
         }
       }
     });
     _notifyChanged();
   }
 
-  /// Quick-toggle a channel via the switch. Uses the last selected priority
-  /// (or default) to enable without opening a modal.
-  Future<void> _quickToggleChannel(TwistChannel channel) async {
+  /// Quick-toggle a channel via the switch.
+  void _quickToggleChannel(TwistChannel channel) {
     final key = '${channel.providerKey}:${channel.id}';
     final isEnabled = _localSelectedChannels.contains(key);
 
@@ -631,45 +308,10 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       return;
     }
 
-    // Toggle ON
-    if (widget.isAccountBased || _data?.singleChannel == true) {
-      // Find the best priority: last selected, or first from existing, or default
-      final priorityId = _lastSelectedPriorityId ??
-          _channelPriorities.values.firstOrNull;
-      Priority? priority;
-      if (priorityId != null) {
-        try {
-          priority = await Priority.getOne(Uuid.fromString(priorityId));
-        } catch (_) {}
-      }
-      priority ??= await _getDefaultPriority();
-      if (!mounted) return;
-
-      // Check connection limit
-      final limitMsg = _checkConnectionLimitSync(key, priority);
-      if (limitMsg != null) {
-        context.showToast(message: limitMsg, isError: true);
-        return;
-      }
-
-      setState(() {
-        _localSelectedChannels.add(key);
-        _channelPriorities[key] = priority!.id.toString();
-        _priorityNames[priority.id.toString()] =
-            priority.ancestorsLabel() != null
-                ? '${priority.ancestorsLabel()}${Priority.separator}${priority.title}'
-                : priority.title;
-        _priorityOrgIds[priority.id.toString()] = priority.organizationId;
-        _channelCreateThreads.putIfAbsent(key, () => 'all');
-      });
-      _notifyChanged();
-    } else {
-      // Non-account-based: simple toggle
-      setState(() {
-        _localSelectedChannels.add(key);
-      });
-      _notifyChanged();
-    }
+    setState(() {
+      _localSelectedChannels.add(key);
+    });
+    _notifyChanged();
   }
 
   void _notifyChanged() {
@@ -677,12 +319,6 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       IntegrationChanges(
         selectedChannels: Set.of(_localSelectedChannels),
         removedAccounts: Set.of(_removedAccounts),
-        channelPriorities: Map.of(_channelPriorities),
-        channelCreateThreads: Map.of(_channelCreateThreads),
-        channelCreateThreadsByType: _channelCreateThreadsByType.map(
-          (k, v) => MapEntry(k, Map.of(v)),
-        ),
-        priorityOrgIds: Map.of(_priorityOrgIds),
       ),
     );
     // Notify form that validation state may have changed
@@ -733,15 +369,6 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
           !isForceEnabled && (widget.setupMode || channel.currentUserHasAccess);
       final isExpanded = _expandedChannels.contains(key);
 
-      // Resolve priority info for display
-      final priorityId = _channelPriorities[key];
-      String? priorityName;
-      bool isTeamPriority = false;
-      if (priorityId != null) {
-        priorityName = _priorityNames[priorityId];
-        isTeamPriority = _priorityOrgIds[priorityId] != null;
-      }
-
       // Determine highlight and focus node for toggleable rows
       final int subIndex = canToggle ? focusCounter[0] : -1;
       final bool highlighted =
@@ -781,8 +408,6 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
                 }
               : null,
           isForceEnabled: isForceEnabled,
-          priorityName: widget.isAccountBased ? priorityName : null,
-          isTeamPriority: widget.isAccountBased && isTeamPriority,
           highlighted: highlighted,
           focusNode: focusNode,
         ),
@@ -917,18 +542,13 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     );
   }
 
-  /// Builds inline priority + create threads config for single-channel connectors.
+  /// Builds inline toggle for single-channel connectors.
   Widget _buildSingleChannelConfig(
     BuildContext context,
     TwistIntegrations data,
   ) {
     final theme = context.theme;
     final channel = data.channels.first;
-    final key = '${channel.providerKey}:${channel.id}';
-    final isEnabled = _localSelectedChannels.contains(key);
-    final priorityId = _channelPriorities[key];
-    final priorityName = priorityId != null ? _priorityNames[priorityId] : null;
-    final createThreads = _channelCreateThreads[key] ?? 'all';
 
     // Build account rows
     final accountRows = <Widget>[];
@@ -943,232 +563,32 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
     }
 
     final controller = widget.channelListController;
-    final hasLinkTypes = channel.linkTypes.isNotEmpty;
-    // Focusable items: 1 (Sync to) + N (one per link type or 1 for single select)
-    final createThreadsCount = hasLinkTypes ? channel.linkTypes.length : 1;
-    final totalFocusable = 1 + createThreadsCount;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      controller?.update(totalFocusable, (context, subIndex) async {
+      controller?.update(1, (context, subIndex) async {
         if (subIndex == 0) {
-          await _openPriorityPicker(channel);
-        } else if (hasLinkTypes) {
-          final typeIndex = subIndex - 1;
-          if (typeIndex < channel.linkTypes.length) {
-            await _openCreateThreadsPickerForType(
-              channel,
-              channel.linkTypes[typeIndex],
-            );
-          }
-        } else if (subIndex == 1) {
-          await _openCreateThreadsPicker(channel);
+          _quickToggleChannel(channel);
         }
       });
     });
 
-    final priorityHighlighted = controller != null && controller.highlightedSubIndex == 0;
-    final priorityFocusNode = controller != null && controller.focusNodes.isNotEmpty
-        ? controller.focusNodes[0]
-        : null;
-
-    // Build create threads tiles
-    final createThreadsTiles = <Widget>[];
-    if (hasLinkTypes) {
-      for (var i = 0; i < channel.linkTypes.length; i++) {
-        final lt = channel.linkTypes[i];
-        final mode = _channelCreateThreadsByType[key]?[lt.type]
-            ?? lt.defaultCreateThreads
-            ?? _channelCreateThreads[key]
-            ?? 'all';
-        final highlighted = controller != null && controller.highlightedSubIndex == i + 1;
-        final focusNode = controller != null && controller.focusNodes.length > i + 1
-            ? controller.focusNodes[i + 1]
-            : null;
-        createThreadsTiles.add(
-          SelectTile(
-            label: 'Create threads for each ${lt.label.toLowerCase()}',
-            value: _createThreadsLabel(mode),
-            onSelect: () => _openCreateThreadsPickerForType(channel, lt),
-            highlighted: highlighted,
-            focusNode: focusNode,
-          ),
-        );
-      }
-    } else {
-      final createThreadsHighlighted = controller != null && controller.highlightedSubIndex == 1;
-      final createThreadsFocusNode = controller != null && controller.focusNodes.length > 1
-          ? controller.focusNodes[1]
-          : null;
-      createThreadsTiles.add(
-        SelectTile(
-          label: 'Create threads',
-          value: _createThreadsLabel(createThreads),
-          onSelect: () => _openCreateThreadsPicker(channel),
-          highlighted: createThreadsHighlighted,
-          focusNode: createThreadsFocusNode,
-        ),
-      );
-    }
+    final focusCounter = [0];
+    final row = _buildChannelTree(
+      [channel],
+      focusCounter: focusCounter,
+    );
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ...accountRows,
-        SelectTile(
-          label: 'Sync to',
-          value: isEnabled && priorityName != null ? priorityName : null,
-          placeholder: 'Select a priority',
-          onSelect: () => _openPriorityPicker(channel),
-          highlighted: priorityHighlighted,
-          focusNode: priorityFocusNode,
-        ),
-        ...createThreadsTiles,
+        ...row,
         SizedBox(height: theme.spacing.md),
       ],
     );
   }
-
-  /// Opens the priority picker for a single-channel connector.
-  Future<void> _openPriorityPicker(TwistChannel channel) async {
-    final key = '${channel.providerKey}:${channel.id}';
-    final currentPriorityId = _channelPriorities[key];
-
-    Priority? currentPriority;
-    if (currentPriorityId != null) {
-      try {
-        currentPriority = await Priority.getOne(
-          Uuid.fromString(currentPriorityId),
-        );
-      } catch (_) {}
-    }
-    if (!mounted) return;
-
-    final result = await SelectModal.open<Priority>(
-      context,
-      items: (search) async => [
-        SelectGroup(
-          title: null,
-          items: Priority.excludePlot(
-            await Priority.get(order: PriorityOrder.nested, search: search),
-          ),
-        ),
-      ],
-      itemBuilder: (p, _) => Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: context.theme.spacing.lg,
-          vertical: context.theme.spacing.md,
-        ),
-        child: PriorityLabel(priority: p),
-      ),
-      selectedValue: currentPriority,
-      prompt: 'Select a priority',
-      onAdd: (ctx) => createPriorityInline(ctx),
-    );
-
-    if (!result.present || !mounted) return;
-    final priority = result.value;
-
-    // Check connection limit
-    final isEnabled = _localSelectedChannels.contains(key);
-    if (!isEnabled) {
-      final limitMessage = _checkConnectionLimitSync(key, priority);
-      if (limitMessage != null) {
-        if (mounted) context.showToast(message: limitMessage, isError: true);
-        return;
-      }
-    }
-
-    setState(() {
-      _localSelectedChannels.add(key);
-      _channelPriorities[key] = priority.id.toString();
-      _lastSelectedPriorityId = priority.id.toString();
-      _priorityNames[priority.id.toString()] = priority.ancestorsLabel() != null
-          ? '${priority.ancestorsLabel()}${Priority.separator}${priority.title}'
-          : priority.title;
-      _priorityOrgIds[priority.id.toString()] = priority.organizationId;
-      // Default createThreads if not already set
-      _channelCreateThreads.putIfAbsent(key, () => 'all');
-    });
-    _notifyChanged();
-  }
-
-  /// Opens the create threads picker for a single-channel connector.
-  Future<void> _openCreateThreadsPicker(TwistChannel channel) async {
-    final key = '${channel.providerKey}:${channel.id}';
-    final currentCreateThreads = _channelCreateThreads[key] ?? 'all';
-
-    final result = await SelectModal.open<String>(
-      context,
-      items: (_) async => [
-        SelectGroup(title: null, items: ['all', 'actionable', 'manual']),
-      ],
-      itemBuilder: (v, _) => Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: context.theme.spacing.lg,
-          vertical: context.theme.spacing.md,
-        ),
-        child: Text(switch (v) {
-          'all' => 'For everything',
-          'actionable' => 'For anything requiring action',
-          'manual' => 'Add links manually',
-          _ => v,
-        }),
-      ),
-      selectedValue: currentCreateThreads,
-      prompt: 'Create threads',
-    );
-
-    if (!result.present || !mounted) return;
-    setState(() {
-      _channelCreateThreads[key] = result.value;
-    });
-    _notifyChanged();
-  }
-
-  /// Opens the create threads picker for a specific link type.
-  Future<void> _openCreateThreadsPickerForType(
-    TwistChannel channel,
-    TwistLinkType linkType,
-  ) async {
-    final key = '${channel.providerKey}:${channel.id}';
-    final currentMode = _channelCreateThreadsByType[key]?[linkType.type]
-        ?? linkType.defaultCreateThreads
-        ?? _channelCreateThreads[key]
-        ?? 'all';
-
-    final result = await SelectModal.open<String>(
-      context,
-      items: (_) async => [
-        SelectGroup(title: null, items: ['all', 'actionable', 'manual']),
-      ],
-      itemBuilder: (v, _) => Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: context.theme.spacing.lg,
-          vertical: context.theme.spacing.md,
-        ),
-        child: Text(_createThreadsLabel(v)),
-      ),
-      selectedValue: currentMode,
-      prompt: 'Create threads for each ${linkType.label.toLowerCase()}',
-    );
-
-    if (!result.present || !mounted) return;
-    setState(() {
-      _channelCreateThreadsByType
-          .putIfAbsent(key, () => {})
-          [linkType.type] = result.value;
-    });
-    _notifyChanged();
-  }
-
-  static String _createThreadsLabel(String mode) => switch (mode) {
-    'all' => 'For everything',
-    'actionable' => 'For anything requiring action',
-    'manual' => 'Add links manually',
-    _ => mode,
-  };
 }
 
 class _AccountRow extends StatelessWidget {
@@ -1285,8 +705,6 @@ class _ChannelRow extends StatefulWidget {
     this.isExpanded = false,
     this.onExpandToggle,
     this.isForceEnabled = false,
-    this.priorityName,
-    this.isTeamPriority = false,
     this.highlighted = false,
     this.focusNode,
   });
@@ -1301,8 +719,6 @@ class _ChannelRow extends StatefulWidget {
   final bool isExpanded;
   final VoidCallback? onExpandToggle;
   final bool isForceEnabled;
-  final String? priorityName;
-  final bool isTeamPriority;
   final bool highlighted;
   final FocusNode? focusNode;
 
@@ -1387,53 +803,15 @@ class _ChannelRowState extends State<_ChannelRow> {
                   ),
                   SizedBox(width: theme.spacing.md),
                   Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            widget.channel.title,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: theme.typography.sm.fontSize,
-                              color: widget.canToggle
-                                  ? theme.colors.foreground
-                                  : theme.colors.mutedForeground,
-                            ),
-                          ),
-                        ),
-                        if (widget.priorityName != null &&
-                            widget.isChecked) ...[
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: theme.spacing.sm,
-                            ),
-                            child: Icon(
-                              FontAwesomeIcons.arrowRight,
-                              size: 10,
-                              color: theme.colors.mutedForeground,
-                            ),
-                          ),
-                          Icon(
-                            widget.isTeamPriority
-                                ? FontAwesomeIcons.building
-                                : FontAwesomeIcons.lock,
-                            size: 10,
-                            color: theme.colors.mutedForeground,
-                          ),
-                          SizedBox(width: theme.spacing.xs),
-                          Flexible(
-                            child: Text(
-                              widget.priorityName!,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: theme.typography.sm.fontSize,
-                                color: theme.colors.mutedForeground,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                    child: Text(
+                      widget.channel.title,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: theme.typography.sm.fontSize,
+                        color: widget.canToggle
+                            ? theme.colors.foreground
+                            : theme.colors.mutedForeground,
+                      ),
                     ),
                   ),
                 ],
@@ -1443,34 +821,6 @@ class _ChannelRowState extends State<_ChannelRow> {
         ),
       ),
     );
-  }
-}
-
-/// Simple command that runs a callback. Used for inline FormButton actions.
-class _CallbackCommand extends Command {
-  _CallbackCommand({required super.title, super.icon, required this.onRun})
-    : super(eventObject: EventObject.modal, eventAction: EventAction.updated);
-
-  final Future<CommandReturn> Function() onRun;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) => onRun();
-}
-
-/// Upgrade command shown in channel config when a connection limit is reached.
-class _UpgradeChannelCommand extends Command {
-  _UpgradeChannelCommand(String title)
-    : super(
-        title: title,
-        icon: PlotIcon.sparkles,
-        eventObject: EventObject.modal,
-        eventAction: EventAction.opened,
-      );
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    launchUrl(Uri.parse('${Env.siteRoot}/upgrade'));
-    return const CommandSkipped();
   }
 }
 

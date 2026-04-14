@@ -28,13 +28,13 @@ BEGIN
             SELECT 1
             FROM link l
             JOIN contact c ON c.user_id = p_user_id
-            LEFT JOIN source_channel sc ON sc.priority_twist_id = l.created_by
+            LEFT JOIN channel sc ON sc.twist_instance_id = l.created_by
               AND sc.channel_id = l.channel_id
             CROSS JOIN LATERAL jsonb_array_elements(
                 CASE WHEN sc.link_types IS NOT NULL THEN sc.link_types
                 ELSE (
                     SELECT jsonb_agg(lt_item)
-                    FROM priority_twist pt2
+                    FROM twist_instance pt2
                     JOIN twist tw ON tw.id = pt2.twist_id
                     CROSS JOIN LATERAL jsonb_array_elements(tw.permissions -> '_providers') AS provider
                     CROSS JOIN LATERAL jsonb_array_elements(provider -> 'linkTypes') AS lt_item

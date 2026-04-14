@@ -18,29 +18,22 @@ DECLARE
     v_archived boolean;
     v_priority_id uuid;
 BEGIN
-    -- Validate user has access to the schedule's priority
-    -- Supports both thread_id and link_id paths
-    SELECT
-        CASE
-            WHEN s.thread_id IS NOT NULL THEN t.priority_id
-            WHEN s.link_id IS NOT NULL THEN lt.priority_id
-        END INTO v_priority_id
+    -- Validate user has access to the schedule's thread via thread_priority
+    SELECT tp.priority_id INTO v_priority_id
     FROM schedule s
-    LEFT JOIN thread t ON t.id = s.thread_id
-    LEFT JOIN link l ON l.id = s.link_id
-    LEFT JOIN thread lt ON lt.id = l.thread_id
+    LEFT JOIN thread_priority tp ON tp.thread_id = COALESCE(s.thread_id, (SELECT l.thread_id FROM link l WHERE l.id = s.link_id))
+      AND tp.user_id = upsert_schedule_contacts.user_id
     WHERE s.id = p_schedule_id;
 
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Schedule not found';
-    END IF;
-
-    IF NOT "user".has_priority_access(user_id, v_priority_id) THEN
+        IF NOT EXISTS (SELECT 1 FROM schedule WHERE id = p_schedule_id) THEN
+            RAISE EXCEPTION 'Schedule not found';
+        END IF;
         RAISE EXCEPTION 'User does not have access to this schedule';
     END IF;
-    -- Enforce viewer restriction: viewers cannot manage schedule contacts
-    IF "user".get_effective_role(upsert_schedule_contacts.user_id, v_priority_id) = 'viewer' THEN
-        RAISE EXCEPTION 'Viewer members cannot manage schedule contacts';
+
+    IF NOT user_has_priority_access(upsert_schedule_contacts.user_id, v_priority_id) THEN
+        RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
 
     FOR v_contact IN SELECT * FROM jsonb_array_elements(p_contacts)
@@ -73,10 +66,6 @@ BEGIN
                 ELSE NULL
             END;
 
-        -- Ensure priority_contact exists for the contact
-        INSERT INTO priority_contact (priority_id, contact_id)
-        VALUES (v_priority_id, v_contact_id)
-        ON CONFLICT (priority_id, contact_id) DO NOTHING;
     END LOOP;
 END;
 $function$;
@@ -103,24 +92,22 @@ DECLARE
     v_primary_contact_id uuid;
     v_updated_count integer;
 BEGIN
-    -- Validate user has priority access to the schedule (supports both thread_id and link_id paths)
-    SELECT
-        CASE
-            WHEN s.thread_id IS NOT NULL THEN t.priority_id
-            WHEN s.link_id IS NOT NULL THEN lt.priority_id
-        END INTO v_priority_id
+    -- Validate user has access to the schedule's thread via thread_priority
+    SELECT tp.priority_id INTO v_priority_id
     FROM schedule s
-    LEFT JOIN thread t ON t.id = s.thread_id
-    LEFT JOIN link l ON l.id = s.link_id
-    LEFT JOIN thread lt ON lt.id = l.thread_id
+    LEFT JOIN thread_priority tp ON tp.thread_id = COALESCE(s.thread_id, (SELECT l.thread_id FROM link l WHERE l.id = s.link_id))
+      AND tp.user_id = update_schedule_contact_status.user_id
     WHERE s.id = p_schedule_id;
 
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Schedule not found';
+        IF NOT EXISTS (SELECT 1 FROM schedule WHERE id = p_schedule_id) THEN
+            RAISE EXCEPTION 'Schedule not found';
+        END IF;
+        RAISE EXCEPTION 'User does not have access to this schedule';
     END IF;
 
-    IF NOT "user".has_priority_access(user_id, v_priority_id) THEN
-        RAISE EXCEPTION 'User does not have access to this schedule';
+    IF NOT user_has_priority_access(update_schedule_contact_status.user_id, v_priority_id) THEN
+        RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
 
     -- Validate status

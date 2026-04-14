@@ -59,13 +59,18 @@ class PermissionDescriptions {
 
   /// Maps entity + flags combinations to specific descriptions
   static const _plotPermissionDescriptions = {
+    'activity:any|read,write,update': 'Read, create, and update threads',
     'activity:new|write': 'Create threads with notes',
     'activity:mentioned|read,write,update': 'Respond to mentions in threads',
     'priority|write': 'Create priorities',
     'priority|read,write,update': 'Read, create, and update priorities',
     'contact|read': 'Read contacts',
     'contact|read,write,update': 'Read and update contacts',
+    'search|read': 'Search threads and notes',
   };
+
+  /// Entities to never show (user approves plans directly)
+  static const _hiddenEntities = {'plan'};
 
   /// Generates descriptions for each entity based on flags
   static List<String> _getPlotDescriptions(
@@ -73,7 +78,16 @@ class PermissionDescriptions {
   ) {
     final List<String> descriptions = [];
 
+    // When activity:any is present, skip narrower activity scopes
+    final hasFullThreadAccess = entities.containsKey('activity:any');
+    final skipEntities = <String>{
+      ..._hiddenEntities,
+      if (hasFullThreadAccess) ...['activity:new', 'activity:mentioned'],
+    };
+
     entities.forEach((entity, flags) {
+      if (skipEntities.contains(entity)) return;
+
       // Create key from entity and sorted flags
       final flagsKey = flags.map((f) => f.name).toList()..sort();
       final key = '$entity|${flagsKey.join(',')}';

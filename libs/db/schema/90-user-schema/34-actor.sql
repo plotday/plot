@@ -1,32 +1,16 @@
--- user_actor view
--- Shows all actors accessible to each user with aggregated access information
--- One row per (user, actor) combination
+-- user.actor view
+-- Shows all actors accessible to each user: contacts via user_contact,
+-- non-primary contacts via their primary contact's visibility, and
+-- twist instances owned by the user.
 CREATE OR REPLACE VIEW "user"."actor" --
 AS
-WITH upa_agg AS (
-    SELECT
-        upa.user_id,
-        upa.actor_id,
-        COALESCE(MIN(upa.updated_at) FILTER (WHERE upa.archived_at IS NULL), MAX(upa.archived_at)) AS updated_at,
-        CASE WHEN COUNT(*) FILTER (WHERE upa.archived_at IS NULL) = 0 THEN
-            MAX(upa.archived_at)
-        ELSE
-            NULL
-        END AS archived_at,
-        MIN(upa.depth) FILTER (WHERE upa.archived_at IS NULL) AS min_depth
-    FROM
-        "user".priority_actor upa
-    GROUP BY
-        upa.user_id,
-        upa.actor_id
-)
+-- Contacts visible via user_contact (primary or external contacts)
 SELECT
-    ua.user_id,
+    uc.user_id,
     a.id,
     a.created_at,
-    GREATEST (ua.updated_at, a.updated_at) AS updated_at,
-    COALESCE(a.archived_at, ua.archived_at) AS archived_at,
-    ua.min_depth,
+    GREATEST(uc.updated_at, a.updated_at) AS updated_at,
+    COALESCE(a.archived_at, uc.archived_at) AS archived_at,
     a.type,
     a.name,
     a.email,
@@ -35,31 +19,50 @@ SELECT
         SELECT 1
         FROM contact c
         WHERE c.id = a.id
-            AND c.user_id = ua.user_id
+            AND c.user_id = uc.user_id
     ) AS self
 FROM
-    upa_agg ua
-    JOIN actor a ON a.id = ua.actor_id
+    user_contact uc
+    JOIN contact c ON c.id = uc.contact_id
+    JOIN actor a ON a.id = c.id
+WHERE
+    (c.user_id IS NULL OR c."primary" = true)
 UNION ALL
 -- Non-primary contacts: include for any user who can already see
 -- the primary contact, so notes authored by alternate contact IDs
 -- resolve to a name instead of "Unknown" for all viewers
 SELECT
-    ua_primary.user_id,
+    uc_primary.user_id,
     a.id,
     a.created_at,
     a.updated_at,
     a.archived_at,
-    NULL::integer AS min_depth,
     a.type,
     a.name,
     a.email,
     a.avatar_url,
-    (c.user_id = ua_primary.user_id) AS self
+    (c.user_id = uc_primary.user_id) AS self
 FROM
     contact c
     JOIN actor a ON a.id = c.id
     JOIN contact c_primary ON c_primary.user_id = c.user_id AND c_primary."primary" = true
-    JOIN upa_agg ua_primary ON ua_primary.actor_id = c_primary.id
+    JOIN user_contact uc_primary ON uc_primary.contact_id = c_primary.id
 WHERE
-    c."primary" = false;
+    c."primary" = false
+UNION ALL
+-- Twist instances owned by each user
+SELECT
+    u.id AS user_id,
+    a.id,
+    a.created_at,
+    a.updated_at,
+    a.archived_at,
+    a.type,
+    a.name,
+    a.email,
+    a.avatar_url,
+    false AS self
+FROM
+    "public"."user" u
+    JOIN twist_instance pt ON pt.owner_id = u.id
+    JOIN actor a ON a.id = pt.id;

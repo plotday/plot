@@ -23,7 +23,7 @@ class Priorities extends Table
   IntColumn get color =>
       integer().nullable().map(const ThemeColorConverter())();
   TextColumn get key => text().nullable()();
-  IntColumn get organizationId => integer().nullable()();
+  IntColumn get teamId => integer().nullable()();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get personal => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
@@ -37,8 +37,6 @@ class Priorities extends Table
       boolean().withDefault(const Constant(false))();
   BoolColumn get seeWithinUpdatesSet =>
       boolean().withDefault(const Constant(false))();
-  BoolColumn get inheritMembers =>
-      boolean().withDefault(const Constant(true))();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -85,10 +83,10 @@ class PrioritiesBase extends BaseTable {
     json['order'] ??= DateTime.parse(
       json['created_at'] as String,
     ).millisecondsSinceEpoch.toDouble();
-    json['inherit_members'] ??= true;
-    // organization_id comes as a string from the API (PostgreSQL bigint → JSON string)
-    if (json['organization_id'] is String) {
-      json['organization_id'] = int.tryParse(json['organization_id'] as String);
+    json.remove('inherit_members');
+    // team_id comes as a string from the API (PostgreSQL bigint → JSON string)
+    if (json['team_id'] is String) {
+      json['team_id'] = int.tryParse(json['team_id'] as String);
     }
 
     return PriorityRow.fromJson(json);
@@ -117,20 +115,16 @@ class PriorityAncestor {
     final rawTitles = jsonDecode(row.titles) as List;
     final rawIds = jsonDecode(row.ancestors) as List;
     final rawColors = jsonDecode(row.colors) as List;
-    final rawInheritMembers = jsonDecode(row.inheritMembersList) as List;
-
     // Filter out NULL entries (from LEFT JOIN when ancestor doesn't exist)
     final ids = <Uuid>[];
     final titles = <String>[];
     final colors = <int?>[];
-    final inheritMembersList = <bool>[];
 
     for (int i = 0; i < rawTitles.length; i++) {
       if (rawTitles[i] != null) {
         titles.add(rawTitles[i] as String);
         ids.add(Uuid.fromString(rawIds[i] as String));
         colors.add(rawColors[i] as int?);
-        inheritMembersList.add(rawInheritMembers[i] == 1);
       }
     }
 
@@ -150,7 +144,6 @@ class PriorityAncestor {
         id: ids[index],
         title: titles[index],
         color: displayColors[index],
-        inheritMembers: inheritMembersList[index],
       ),
     );
   }
@@ -159,7 +152,6 @@ class PriorityAncestor {
     required this.id,
     required this.title,
     required this.color,
-    this.inheritMembers = true,
   });
 
   final PriorityId id;
@@ -168,9 +160,6 @@ class PriorityAncestor {
   /// The computed display color index (with inheritance applied).
   /// Root priorities default to 7 (Resolution) when no color is explicitly set.
   final int color;
-
-  /// Whether this ancestor inherits members from its parent.
-  final bool inheritMembers;
 }
 
 class Priority extends PriorityRow implements Comparable<Priority> {
@@ -248,42 +237,24 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       self: self,
     ).watch();
 
-    // Watch active, unread, and shared priority IDs
+    // Watch active and unread priority IDs
     final activePriorityIdsStream = _watchActivePriorityIds();
     final unreadPriorityIdsStream = _watchUnreadPriorityIds();
-    final sharedPriorityIdsStream = _watchSharedPriorityIds();
 
-    // Combine all four streams
-    return Rx.combineLatest4(
+    // Combine all three streams
+    return Rx.combineLatest3(
           prioritiesStream,
           activePriorityIdsStream,
           unreadPriorityIdsStream,
-          sharedPriorityIdsStream,
-          (priorities, activeIds, unreadIds, sharingIds) =>
-              (priorities, activeIds, unreadIds, sharingIds),
+          (priorities, activeIds, unreadIds) =>
+              (priorities, activeIds, unreadIds),
         )
         .map((tuple) {
           final priorities = tuple.$1;
           final activeIds = tuple.$2;
           final unreadIds = tuple.$3;
-          final sharingIds = tuple.$4;
 
-          // Map priorities with computed status
           return priorities.map((p) {
-            // Find nearest shared ancestor (walk from parent to root),
-            // stopping if an ancestor has opted out of inheriting members.
-            PriorityId? ancestorId;
-            if (!sharingIds.contains(p.id)) {
-              for (final ancestor in p._ancestors.reversed) {
-                if (sharingIds.contains(ancestor.id)) {
-                  ancestorId = ancestor.id;
-                  break;
-                }
-                // Stop walking if this ancestor opted out of parent membership
-                if (!ancestor.inheritMembers) break;
-              }
-            }
-
             return Priority.fromStore(
               p,
               parent: p.parent,
@@ -293,8 +264,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
               minAncestorTopOrder: p.minAncestorTopOrder,
               active: activeIds.contains(p.id),
               unreadComputed: unreadIds.contains(p.id),
-              sharing: sharingIds.contains(p.id),
-              sharingAncestorId: ancestorId,
               displayColor: p.displayColor,
             );
           }).toList();
@@ -387,33 +356,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     // Get all priority IDs
     final priorityIds = priorities.map((p) => p.id).toList();
 
-    // Collect all ancestor IDs so we can check if any are shared
-    final allAncestorIds = priorities
-        .expand((p) => p._ancestors.map((a) => a.id))
-        .toSet();
-    final sharedQueryIds = {...priorityIds, ...allAncestorIds}.toList();
-
-    // Compute which priorities have active/unread/shared status
+    // Compute which priorities have active/unread status
     final activeIds = await _getActivePriorityIds(priorityIds);
     final unreadIds = await _getUnreadPriorityIds(priorityIds);
-    final sharedIds = await _getSharedPriorityIds(sharedQueryIds);
 
     // Create new Priority objects with computed status
     return priorities.map((p) {
-      // Find nearest shared ancestor (walk from parent to root),
-      // stopping if an ancestor has opted out of inheriting members.
-      PriorityId? ancestorId;
-      if (!sharedIds.contains(p.id)) {
-        for (final ancestor in p._ancestors.reversed) {
-          if (sharedIds.contains(ancestor.id)) {
-            ancestorId = ancestor.id;
-            break;
-          }
-          // Stop walking if this ancestor opted out of parent membership
-          if (!ancestor.inheritMembers) break;
-        }
-      }
-
       return Priority.fromStore(
         p,
         parent: p.parent,
@@ -423,8 +371,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         minAncestorTopOrder: p.minAncestorTopOrder,
         active: activeIds.contains(p.id),
         unreadComputed: unreadIds.contains(p.id),
-        sharing: sharedIds.contains(p.id),
-        sharingAncestorId: ancestorId,
         displayColor: p.displayColor,
       );
     }).toList();
@@ -616,78 +562,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     return Rx.combineLatest2(sharedStream, userStream, (shared, user) {
       return {...shared, ...user};
     }).distinct();
-  }
-
-  /// Gets which priority IDs from the given list are shared (have other members).
-  static Future<Set<PriorityId>> _getSharedPriorityIds(
-    List<PriorityId> ids,
-  ) async {
-    if (ids.isEmpty) return {};
-
-    final db = Store.get;
-    final pm = db.priorityMembers;
-    final idBytes = ids.map((id) => id.toBytes()).toList();
-
-    // Get current user's actor IDs to exclude from sharing check
-    final userActorIds = Actor._cache.values
-        .where((actor) => actor.self)
-        .map((actor) => actor.id.toBytes())
-        .toList();
-    if (userActorIds.isEmpty) {
-      final id = Base.actorIdOrNull;
-      if (id != null) {
-        userActorIds.add(id.toBytes());
-      } else {
-        return {};
-      }
-    }
-
-    final query = db.selectOnly(pm, distinct: true)
-      ..addColumns([pm.priorityId])
-      ..where(
-        pm.priorityId.isIn(idBytes) &
-            pm.archivedAt.isNull() &
-            pm.contactId.isNotIn(userActorIds),
-      );
-
-    final results = await query.get();
-    return results
-        .map((row) => Uuid.fromBytes(row.read(pm.priorityId)!))
-        .toSet();
-  }
-
-  /// Watches which priorities are shared (have other members).
-  static Stream<Set<PriorityId>> _watchSharedPriorityIds() {
-    final db = Store.get;
-    final pm = db.priorityMembers;
-
-    // Get current user's actor IDs to exclude from sharing check
-    final userActorIds = Actor._cache.values
-        .where((actor) => actor.self)
-        .map((actor) => actor.id.toBytes())
-        .toList();
-    if (userActorIds.isEmpty) {
-      final id = Base.actorIdOrNull;
-      if (id != null) {
-        userActorIds.add(id.toBytes());
-      } else {
-        // actorId not yet available — return empty until identity is set
-        return Stream.value(<PriorityId>{});
-      }
-    }
-
-    final query = db.selectOnly(pm, distinct: true)
-      ..addColumns([pm.priorityId])
-      ..where(pm.archivedAt.isNull() & pm.contactId.isNotIn(userActorIds));
-
-    return query
-        .watch()
-        .map(
-          (results) => results
-              .map((row) => Uuid.fromBytes(row.read(pm.priorityId)!))
-              .toSet(),
-        )
-        .distinct();
   }
 
   static MultiSelectable<Priority> _get({
@@ -918,7 +792,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                id: parent.id,
                title: parent.title,
                color: parent.displayColor.index,
-               inheritMembers: parent.inheritMembers,
              ),
            ],
        minAncestorTopOrder = null,
@@ -926,8 +799,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
        _originalPath = null,
        _activeComputed = null,
        _unreadComputed = null,
-       _sharingComputed = null,
-       sharingAncestorId = null,
        super(
          id: Uuid.generate(),
          createdBy: Base.userId,
@@ -937,13 +808,12 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          order: Order(DateTime.now().millisecondsSinceEpoch.toDouble()),
          root: false,
          personal: parent.personal,
-         organizationId: parent.organizationId,
+         teamId: parent.teamId,
          unread: false,
          role: parent.role,
          attentionWindowSet: false,
          seeWithinRequestsSet: false,
          seeWithinUpdatesSet: false,
-         inheritMembers: true,
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -961,8 +831,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Path? originalPath,
     bool? active,
     bool? unreadComputed,
-    bool? sharing,
-    this.sharingAncestorId,
     ThemeColor? displayColor,
   }) : children = children ?? [],
        _ancestors =
@@ -976,7 +844,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
                                id: parent.id,
                                title: parent.title,
                                color: parent.displayColor.index,
-                               inheritMembers: parent.inheritMembers,
                              ),
                            ]
                : PriorityAncestor.fromStore(ancestry)),
@@ -993,7 +860,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
            ),
        _activeComputed = active,
        _unreadComputed = unreadComputed,
-       _sharingComputed = sharing,
        super(
          id: row.id,
          createdAt: row.createdAt,
@@ -1006,7 +872,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          pomodoro: row.pomodoro,
          color: row.color,
          key: row.key,
-         organizationId: row.organizationId ?? parent?.organizationId,
+         teamId: row.teamId ?? parent?.teamId,
          root: row.root,
          personal: row.personal,
          path: row.path,
@@ -1019,7 +885,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          attentionWindowSet: row.attentionWindowSet,
          seeWithinRequestsSet: row.seeWithinRequestsSet,
          seeWithinUpdatesSet: row.seeWithinUpdatesSet,
-         inheritMembers: row.inheritMembers,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -1124,11 +989,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Falls back to row's unread value if not computed.
   final bool? _unreadComputed;
 
-  /// Computed sharing status (true if priority has more than one user).
-  final bool? _sharingComputed;
-
-  /// The ID of the nearest shared ancestor, if any.
-  final PriorityId? sharingAncestorId;
 
   /// Returns true if this priority has a viewer role (read-only).
   bool get isViewer => role == 'viewer';
@@ -1163,10 +1023,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   @override
   bool get unread => _unreadComputed ?? super.unread;
 
-  /// Returns true if this priority is shared with more than one user,
-  /// or if it inherits sharing from an ancestor.
-  bool get sharing => (_sharingComputed ?? false) || sharingAncestorId != null;
-
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1174,8 +1030,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
           super == other &&
           _activeComputed == other._activeComputed &&
           _unreadComputed == other._unreadComputed &&
-          _sharingComputed == other._sharingComputed &&
-          sharingAncestorId == other.sharingAncestorId &&
           displayColor == other.displayColor);
 
   @override
@@ -1183,8 +1037,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.hashCode,
     _activeComputed,
     _unreadComputed,
-    _sharingComputed,
-    sharingAncestorId,
     displayColor,
   );
 
@@ -1222,7 +1074,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
     Value<String?> key = const Value.absent(),
-    Value<int?> organizationId = const Value.absent(),
+    Value<int?> teamId = const Value.absent(),
     bool? root,
     bool? personal,
     Priority? parent,
@@ -1235,7 +1087,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? attentionWindowSet,
     bool? seeWithinRequestsSet,
     bool? seeWithinUpdatesSet,
-    bool? inheritMembers,
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1265,7 +1116,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         pomodoro: pomodoro,
         color: color,
         key: key,
-        organizationId: organizationId,
+        teamId: teamId,
         root: root,
         personal: personal,
         unread: unread,
@@ -1276,7 +1127,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         attentionWindowSet: attentionWindowSet,
         seeWithinRequestsSet: seeWithinRequestsSet,
         seeWithinUpdatesSet: seeWithinUpdatesSet,
-        inheritMembers: inheritMembers,
       ),
       parent: currentParent,
       children: children,
@@ -1286,8 +1136,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       originalPath: _originalPath,
       active: _activeComputed,
       unreadComputed: _unreadComputed,
-      sharing: _sharingComputed,
-      sharingAncestorId: sharingAncestorId,
     );
   }
 

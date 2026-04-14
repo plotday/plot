@@ -17,7 +17,7 @@ CREATE TABLE "public"."link" (
     "author_id" uuid,
     -- Twist definition ID (twist_admin.id) that created this link
     "twist_id" bigint,
-    -- User ID or priority_twist_id that created this link
+    -- User ID or twist_instance_id that created this link
     "created_by" uuid,
     -- Sync tracking
     "updated_by" integer NOT NULL DEFAULT 0,
@@ -38,16 +38,10 @@ CREATE TABLE "public"."link" (
     "source_url" text,
     -- Logo/favicon URL for this link
     "logo" text,
-    -- Provider-specific channel ID, matches source_channel.channel_id
+    -- Provider-specific channel ID, matches channel.channel_id
     "channel_id" text,
-    -- Similarity matching
-    "embedding" halfvec (384),
-    -- Was pick_priority on thread
-    "match" jsonb,
     "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL
 );
-
-CREATE INDEX ON link USING hnsw (embedding halfvec_cosine_ops);
 
 COMMENT ON COLUMN "public"."link"."source" IS 'External source identifier for deduplication and sync. Used with source_priority_root for upsert behavior.';
 
@@ -61,9 +55,8 @@ COMMENT ON COLUMN "public"."link"."author_id" IS 'The actor to credit with creat
 
 COMMENT ON COLUMN "public"."link"."twist_id" IS 'The twist definition ID (twist_admin.id) that created this link. Null for user-created links.';
 
-COMMENT ON COLUMN "public"."link"."created_by" IS 'The user_id or priority_twist_id that actually created this link. Used for filtering callbacks and permissions.';
+COMMENT ON COLUMN "public"."link"."created_by" IS 'The user_id or twist_instance_id that actually created this link. Used for filtering callbacks and permissions.';
 
-COMMENT ON COLUMN "public"."link"."match" IS 'The PickPriorityConfig used to automatically select this link''s priority. Null if priority was explicitly specified. Used when moving links to find similar links to move.';
 
 COMMENT ON COLUMN "public"."link"."type" IS 'Source-defined type string (e.g., issue, pull_request, email, event). Free text, with structured registry in source linkTypes config.';
 
@@ -94,7 +87,7 @@ WHERE
 -- Support incremental sync queries filtering on updated_at
 CREATE INDEX idx_link_updated_at ON "public"."link" ("updated_at");
 
--- Support twist sync views that filter links by created_by (priority_twist_id)
+-- Support twist sync views that filter links by created_by (twist_instance_id)
 CREATE INDEX idx_link_created_by ON "public"."link" ("created_by");
 
 CREATE TRIGGER set_link_updated_at

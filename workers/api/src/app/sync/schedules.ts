@@ -158,20 +158,26 @@ schedules.post("/sync/schedules", async (c) => {
     if (threadId) {
       const thread = await (c.var.db as any)
         .selectFrom("thread")
-        .select(["priority_id", "created_by"])
+        .select(["created_by"])
         .where("id", "=", threadId)
         .executeTakeFirst();
 
-      if (thread?.priority_id) {
-        notifySync(c, thread.priority_id);
+      const tp = await (c.var.db as any)
+        .selectFrom("thread_priority")
+        .select("priority_id")
+        .where("thread_id", "=", threadId)
+        .where("user_id", "=", c.var.user.id)
+        .executeTakeFirst();
+
+      if (tp?.priority_id) {
+        notifySync(c, tp.priority_id);
       }
 
       // Direct dispatch to the connector that owns the thread, if any.
       // Matches the /sync/links direct-dispatch pattern so user-originated
       // agenda toggles reach onThreadToDo without waiting for TwistSync polling.
-      if (thread?.created_by && thread?.priority_id) {
+      if (thread?.created_by && tp?.priority_id) {
         const createdBy = thread.created_by as string;
-        const threadPriorityId = thread.priority_id as string;
         const scheduleItem = {
           ...updated,
           id: scheduleId,
@@ -184,8 +190,8 @@ schedules.post("/sync/schedules", async (c) => {
               // Check if created_by is a connector (has source_channel rows)
               const isConnector = await (db as any)
                 .selectFrom("source_channel")
-                .select("priority_twist_id")
-                .where("priority_twist_id", "=", createdBy)
+                .select("twist_instance_id")
+                .where("twist_instance_id", "=", createdBy)
                 .limit(1)
                 .executeTakeFirst();
               if (!isConnector) return;
@@ -197,8 +203,7 @@ schedules.post("/sync/schedules", async (c) => {
               });
 
               const twistWrapper = await factory({
-                priorityId: threadPriorityId,
-                priorityTwistId: createdBy,
+                twistInstanceId: createdBy,
               });
 
               await twistWrapper.dispatch("Integrations", {
@@ -329,38 +334,31 @@ schedules.post("/sync/schedule/status", async (c) => {
     .executeTakeFirst();
 
   if (schedule) {
-    let priorityId: string | null = null;
-    if (schedule.thread_id) {
-      const thread = await c.var.db
-        .selectFrom("thread")
+    // Resolve thread_id from either direct or via link
+    const threadId = schedule.thread_id ?? (schedule.link_id
+      ? (await c.var.db.selectFrom("link").select("thread_id").where("id", "=", schedule.link_id).executeTakeFirst())?.thread_id
+      : null);
+    if (threadId) {
+      const tp = await c.var.db
+        .selectFrom("thread_priority")
         .select("priority_id")
-        .where("id", "=", schedule.thread_id)
+        .where("thread_id", "=", threadId)
+        .where("user_id", "=", c.var.user.id)
         .executeTakeFirst();
-      priorityId = thread?.priority_id ?? null;
-    } else if (schedule.link_id) {
-      const link = await c.var.db
-        .selectFrom("link")
-        .innerJoin("thread", "thread.id", "link.thread_id")
-        .select("thread.priority_id")
-        .where("link.id", "=", schedule.link_id)
-        .executeTakeFirst();
-      priorityId = link?.priority_id ?? null;
-    }
-    if (priorityId) {
-      notifySync(c, priorityId);
+      if (tp?.priority_id) {
+        notifySync(c, tp.priority_id);
+      }
     }
 
-    // SyncNotify.notifyTwists() only finds priority-bound twists. For link
-    // schedules the connector is a source twist (priority_id IS NULL) that
-    // created the link, and would otherwise never be woken for the
-    // onScheduleContactUpdated callback. Notify it directly.
+    // Notify the twist that created the link directly for the
+    // onScheduleContactUpdated callback. Link-authoring twists (connectors)
+    // would otherwise miss this notification.
     if (schedule.link_id) {
       const sourceTwists = await c.var.db
-        .selectFrom("priority_twist as pt")
+        .selectFrom("twist_instance as pt")
         .innerJoin("link as l", "l.created_by", "pt.id")
         .select("pt.id")
         .where("l.id", "=", schedule.link_id)
-        .where("pt.priority_id", "is", null)
         .where("pt.archived_at", "is", null)
         .execute();
 

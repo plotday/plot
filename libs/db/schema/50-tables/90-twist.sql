@@ -53,7 +53,7 @@ CREATE TABLE "public"."twist" (
     "description" text,
     "version" text NOT NULL,
     "permissions" jsonb,
-    "options" jsonb,
+    "options_schema" jsonb,
     "is_source" boolean NOT NULL DEFAULT false,
     "shared" boolean NOT NULL DEFAULT false,
     "key_option" text,

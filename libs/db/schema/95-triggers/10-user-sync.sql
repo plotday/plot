@@ -50,18 +50,18 @@ CREATE TRIGGER user_sync_session_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_session();
 
--- User sync triggers for priority_twist table
-CREATE TRIGGER user_sync_priority_twist_insert
-  AFTER INSERT ON priority_twist
+-- User sync triggers for twist_instance table
+CREATE TRIGGER user_sync_twist_instance_insert
+  AFTER INSERT ON twist_instance
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_twist();
+  EXECUTE FUNCTION sync_user_for_twist_instance();
 
-CREATE TRIGGER user_sync_priority_twist_update
-  AFTER UPDATE ON priority_twist
+CREATE TRIGGER user_sync_twist_instance_update
+  AFTER UPDATE ON twist_instance
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_twist();
+  EXECUTE FUNCTION sync_user_for_twist_instance();
 
 -- User sync triggers for thread_read table
 CREATE TRIGGER user_sync_thread_read_insert
@@ -88,19 +88,6 @@ CREATE TRIGGER user_sync_thread_unread_update
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_thread_unread();
-
--- User sync triggers for priority_contact table
-CREATE TRIGGER user_sync_priority_contact_insert
-  AFTER INSERT ON priority_contact
-  REFERENCING NEW TABLE AS new_table
-  FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_contact();
-
-CREATE TRIGGER user_sync_priority_contact_update
-  AFTER UPDATE ON priority_contact
-  REFERENCING NEW TABLE AS new_table
-  FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_contact();
 
 -- User sync triggers for thread_tag table
 CREATE TRIGGER user_sync_thread_tag_insert
@@ -141,7 +128,7 @@ CREATE TRIGGER user_sync_contact_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_contact();
 
--- User sync triggers for priority_user table (for priority_member sync)
+-- User sync triggers for priority_user table
 CREATE TRIGGER user_sync_priority_user_insert
   AFTER INSERT ON priority_user
   REFERENCING NEW TABLE AS new_table
@@ -154,31 +141,31 @@ CREATE TRIGGER user_sync_priority_user_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_priority_user();
 
--- User sync triggers for source_channel table
-CREATE TRIGGER user_sync_source_channel_insert
-  AFTER INSERT ON source_channel
+-- User sync triggers for channel table
+CREATE TRIGGER user_sync_channel_insert
+  AFTER INSERT ON channel
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_source_channel();
+  EXECUTE FUNCTION sync_user_for_channel();
 
-CREATE TRIGGER user_sync_source_channel_update
-  AFTER UPDATE ON source_channel
+CREATE TRIGGER user_sync_channel_update
+  AFTER UPDATE ON channel
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_source_channel();
+  EXECUTE FUNCTION sync_user_for_channel();
 
--- User sync triggers for priority_twist_connection table
-CREATE TRIGGER user_sync_priority_twist_connection_insert
-  AFTER INSERT ON priority_twist_connection
+-- User sync triggers for twist_instance_connection table
+CREATE TRIGGER user_sync_twist_instance_connection_insert
+  AFTER INSERT ON twist_instance_connection
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_twist_connection();
+  EXECUTE FUNCTION sync_user_for_twist_instance_connection();
 
-CREATE TRIGGER user_sync_priority_twist_connection_delete
-  AFTER DELETE ON priority_twist_connection
+CREATE TRIGGER user_sync_twist_instance_connection_delete
+  AFTER DELETE ON twist_instance_connection
   REFERENCING OLD TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_twist_connection();
+  EXECUTE FUNCTION sync_user_for_twist_instance_connection();
 
 -- User sync triggers for link table
 CREATE TRIGGER user_sync_link_insert
@@ -205,3 +192,16 @@ CREATE TRIGGER user_sync_schedule_update
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_schedule();
+
+-- User sync triggers for topic table
+CREATE TRIGGER user_sync_topic_insert
+  AFTER INSERT ON topic
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_topic();
+
+CREATE TRIGGER user_sync_topic_update
+  AFTER UPDATE ON topic
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_topic();

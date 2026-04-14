@@ -59,7 +59,7 @@ type SubscriptionInfo = {
   billing_cycle_end: string | null;
   effective_plan?: string;
   effective_source?: string;
-  organizations: OrgInfo[];
+  teams: OrgInfo[];
 };
 
 const QUANTITY_OPTIONS = Array.from({ length: 40 }, (_, i) => ({
@@ -154,11 +154,11 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
       if (plan === "team") {
         body.quantity = parseInt(teamQuantity);
         if (!orgName.trim()) {
-          setError("Organization name is required for Team plan");
+          setError("Team name is required for Team plan");
           setLoadingPlan(null);
           return;
         }
-        body.organizationName = orgName.trim();
+        body.teamName = orgName.trim();
         body.domainAutoJoin = isFreemailDomain ? false : domainAutoJoin;
       }
 
@@ -196,7 +196,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
     try {
       const token = await getToken();
       const portalUrl = orgId
-        ? `${loaderData.apiUrl}/app/organization/${orgId}/upgrade/portal`
+        ? `${loaderData.apiUrl}/app/team/${orgId}/upgrade/portal`
         : `${loaderData.apiUrl}/app/upgrade/portal`;
 
       const res = await fetch(portalUrl, {
@@ -281,7 +281,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
 
   const personalPlan = subscription?.plan ?? "free";
   const hasPersonalPaid = personalPlan !== "free" && subscription?.status === "active";
-  const activeOrgs = (subscription?.organizations ?? []).filter(
+  const activeOrgs = (subscription?.teams ?? []).filter(
     (o) => o.plan !== "free" && o.status === "active"
   );
   const hasAnySubscription = hasPersonalPaid || activeOrgs.length > 0;
@@ -291,7 +291,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
 
   // Success alert org name lookup
   const successOrg = successOrgId
-    ? subscription?.organizations?.find((o) => o.id === successOrgId)
+    ? subscription?.teams?.find((o) => o.id === successOrgId)
     : null;
 
   const preselectedPlan = searchParams.get("plan");
@@ -385,11 +385,11 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
                   ) : (
                     <Button
                       component={Link}
-                      to={`/organization/${org.id}`}
+                      to={`/team/${org.id}`}
                       variant="outline"
                       size="sm"
                     >
-                      Manage organization
+                      Manage team
                     </Button>
                   )}
                 </Box>
@@ -547,7 +547,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
               size="sm"
             />
             <TextInput
-              label="Organization name"
+              label="Team name"
               placeholder="Your company name"
               value={orgName}
               onChange={(e) => setOrgName(e.currentTarget.value)}

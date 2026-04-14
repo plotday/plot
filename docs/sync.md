@@ -120,11 +120,10 @@ Entities tracked in `user_sync` for app client notifications:
 | `note`             | Notes attached to threads                       | `note`, `note_tag`                   |
 | `priority`         | Priorities (projects/folders)                   | `priority`, `priority_user`          |
 | `session`          | User focus sessions                             | `session`                            |
-| `priority_twist`   | Twist instances on priorities                   | `priority_twist`                     |
+| `priority_twist`   | Twist instances on priorities                   | `twist_instance`                     |
 | `thread_read`      | Read status for threads                         | `thread_read`                        |
-| `actor`            | Combined view of contacts and twists            | `priority_contact`, `contact`        |
-| `priority_member`  | Priority membership and invitations             | `priority_contact`, `priority_user`  |
-| `source_channel`   | Source channels for twist integrations          | `source_channel`                     |
+| `actor`            | Combined view of contacts and twists            | `user_contact`, `contact`            |
+| `source_channel`   | Source channels for twist integrations          | `channel`                            |
 | `schedule`         | Thread schedules                                | `schedule`                           |
 | `user_settings`    | Per-user settings                               | `user_settings`                      |
 
@@ -137,10 +136,9 @@ All 17 entity types with REST sync endpoints:
 | `actors`             | `/sync/actors`            | GET                           |
 | `priorities`         | `/sync/priorities`        | GET, POST                     |
 | `priority-actors`    | `/sync/priority-actors`   | GET                           |
-| `priority-members`   | `/sync/priority-members`  | GET, POST                     |
 | `priority-users`     | `/sync/priority-users`    | GET, POST                     |
-| `priority-twists`    | `/sync/priority-twists`   | GET, POST                     |
-| `source-channels`    | `/sync/source-channels`   | GET                           |
+| `twist-instances`    | `/sync/twist-instances`   | GET, POST                     |
+| `channels`           | `/sync/channels`          | GET                           |
 | `threads`            | `/sync/threads`           | GET, POST                     |
 | `links`              | `/sync/links`             | GET, POST                     |
 | `notes`              | `/sync/notes`             | GET, POST                     |
@@ -152,7 +150,7 @@ All 17 entity types with REST sync endpoints:
 | `thread-exceptions`  | `/sync/thread-exceptions` | GET, POST                     |
 | `user-settings`      | `/sync/user-settings`     | GET, POST                     |
 
-Read-only: `actors`, `priority-actors`, `source-channels`. Write-only: `thread-read`.
+Read-only: `actors`, `priority-actors`, `channels`. Write-only: `thread-read`.
 
 ## Database Triggers
 
@@ -173,14 +171,12 @@ These triggers update `user_sync` to track which users need app sync updates.
 | `note`               | INSERT, UPDATE | `sync_user_for_note()`            | `note`               |
 | `priority`           | INSERT, UPDATE | `sync_user_for_priority()`        | `priority`           |
 | `session`            | INSERT, UPDATE | `sync_user_for_session()`         | `session`            |
-| `priority_twist`     | INSERT, UPDATE | `sync_user_for_priority_twist()`  | `priority_twist`     |
+| `twist_instance`     | INSERT, UPDATE | `sync_user_for_twist_instance()`  | `twist_instance`     |
 | `thread_read`        | INSERT, UPDATE | `sync_user_for_thread_read()`     | `thread_read`        |
-| `priority_contact`   | INSERT, UPDATE | `sync_user_for_priority_contact()`| `actor` + `priority_member` |
 | `thread_tag`         | INSERT, UPDATE | `sync_user_for_thread_tag()`      | `thread`             |
 | `note_tag`           | INSERT, UPDATE | `sync_user_for_note_tag()`        | `note`               |
 | `contact`            | INSERT, UPDATE | `sync_user_for_contact()`         | `actor`              |
-| `priority_user`      | INSERT, UPDATE | `sync_user_for_priority_user()`   | `priority_member` + `priority` |
-| `source_channel`     | INSERT, UPDATE | `sync_user_for_source_channel()`  | `source_channel`     |
+| `channel`            | INSERT, UPDATE | `sync_user_for_channel()`         | `channel`            |
 | `schedule`           | INSERT, UPDATE | `sync_user_for_schedule()`        | `schedule`           |
 
 ### Twist Sync Triggers
@@ -214,11 +210,9 @@ Each function determines which users need to be notified and upserts into `user_
 - `priority`: All users with access to the priority itself
 - `session`: The session owner only
 - `thread_read`: The reading user only
-- `priority_twist`: All users with access to the priority, plus owner directly (for source accounts with NULL priority_id)
-- `priority_contact`: All users with access to the priority; also writes `priority_member` entity if `invited_by IS NOT NULL`
-- `contact`: Users with access to priorities where the contact is linked via `priority_contact`
-- `priority_user`: All users with access to the priority (writes both `priority_member` and `priority` entities)
-- `source_channel`: Owner of the source account (`priority_twist.owner_id`)
+- `twist_instance`: All users with access to the priority, plus owner directly (for source accounts with NULL priority_id)
+- `contact`: All users who have visibility of the contact via `user_contact`
+- `channel`: Owner of the twist instance (`twist_instance.owner_id`)
 - `schedule`: Users with access to the thread's priority, plus per-user schedule owners directly
 
 #### Twist Sync Functions
@@ -589,7 +583,6 @@ The `SyncOrchestrator` (`apps/plot/lib/store/sync_orchestrator.dart`) manages cl
 | `userSettings`   | (none)                                | yes  | yes  |
 | `priority`       | actor                                 | yes  | yes  |
 | `priorityUser`   | priority, actor                       | yes  | yes  |
-| `priorityMember` | priority, actor, priorityUser         | yes  | yes  |
 | `priorityActor`  | priority, actor                       | skip | yes  |
 | `priorityTwist`  | priority                              | yes  | yes  |
 | `sourceChannel`  | priorityTwist                         | skip | yes  |

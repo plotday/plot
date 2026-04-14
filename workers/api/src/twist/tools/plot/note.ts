@@ -135,7 +135,7 @@ export async function createNote(
     } else {
       const activityData = await plot.db
         .selectFrom("thread")
-        .select(["priority_id", "created_by"])
+        .select(["created_by"])
         .where("id", "=", activityId)
         .executeTakeFirst();
 
@@ -143,7 +143,15 @@ export async function createNote(
         throw new Error(`Activity not found: ${activityId}`);
       }
 
-      priorityId = activityData.priority_id;
+      const userId = await plot.getUserId();
+      const tp = await plot.db
+        .selectFrom("thread_priority")
+        .select("priority_id")
+        .where("thread_id", "=", activityId)
+        .where("user_id", "=", userId)
+        .executeTakeFirst();
+
+      priorityId = tp?.priority_id ?? "";
       threadCreatedBy = activityData.created_by;
     }
 
@@ -163,7 +171,7 @@ export async function createNote(
     // Process author - use provided author or default to twist
     const authorId = note.author
       ? await processNewActor(plot, note.author, priorityId)
-      : plot.priorityTwistId;
+      : plot.twistInstanceId;
 
     // Process mentions if provided - convert NewActor[] to ActorId[]
     let mentionIds: ActorId[] | null = null;
@@ -173,15 +181,15 @@ export async function createNote(
 
     // Auto-mention the calling twist so it stays routed for future notes
     if (mentionIds === null) mentionIds = [];
-    if (!mentionIds.includes(plot.priorityTwistId as ActorId)) {
-      mentionIds.push(plot.priorityTwistId as ActorId);
+    if (!mentionIds.includes(plot.twistInstanceId as ActorId)) {
+      mentionIds.push(plot.twistInstanceId as ActorId);
     }
 
     // Auto-mention the thread-creating twist (if different from calling twist)
     // so the thread creator continues to receive notes
-    if (threadCreatedBy && threadCreatedBy !== plot.priorityTwistId) {
+    if (threadCreatedBy && threadCreatedBy !== plot.twistInstanceId) {
       const isCreatorTwist = await plot.db
-        .selectFrom("priority_twist")
+        .selectFrom("twist_instance")
         .select("id")
         .where("id", "=", threadCreatedBy)
         .executeTakeFirst();
@@ -190,15 +198,34 @@ export async function createNote(
       }
     }
 
+    // Resolve accessContacts: may contain NewContact objects (email-based) or raw ActorIds
+    let resolvedAccessContacts: string[] | null = null;
+    if (note.accessContacts && note.accessContacts.length > 0) {
+      const hasNewContacts = note.accessContacts.some(
+        (ac: any) => typeof ac === "object" && "email" in ac
+      );
+      if (hasNewContacts) {
+        resolvedAccessContacts = await processNewActorArray(
+          plot,
+          note.accessContacts as any[],
+          priorityId
+        );
+      } else {
+        resolvedAccessContacts = note.accessContacts as string[];
+      }
+    } else if (note.accessContacts === null) {
+      resolvedAccessContacts = null;
+    }
+
     // Convert Note to database format
     const dbNote: any = {
       author_id: authorId,
-      created_by: plot.priorityTwistId,
+      created_by: plot.twistInstanceId,
       thread_id: activityId,
       source_created_at:
         note.created?.toISOString() ?? new Date().toISOString(),
       draft: false,
-      access_contacts: note.accessContacts ?? null,
+      access_contacts: resolvedAccessContacts,
       content: contentToStore,
       actions: note.actions ? JSON.stringify(note.actions) : null,
       mentions: mentionIds,
@@ -283,7 +310,7 @@ export async function createNote(
       contentToStore.trim().length > 0 &&
       (await plot.isAiEnabled())
     ) {
-      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
       try {
         const embedding = await plot.ai.embed(contentToStore);
         await plot.db
@@ -336,7 +363,7 @@ export async function createNote(
             .execute();
         } catch (upsertError) {
           const logger = createLogger({
-            priority_twist_id: plot.priorityTwistId,
+            twist_instance_id: plot.twistInstanceId,
           });
           logger.error(
             "Failed to upsert activity_read entries for note",
@@ -406,7 +433,7 @@ export async function createNote(
     // Return just the ID for efficiency
     return dbResult.id as Uuid;
   } catch (error) {
-    handleDbOperationError(error, "createNote", plot.priorityTwistId, {
+    handleDbOperationError(error, "createNote", plot.twistInstanceId, {
       thread_id: "id" in note.thread ? note.thread.id : undefined,
       has_key: "key" in note && !!note.key,
       has_content: !!note.content,
@@ -517,9 +544,9 @@ export async function createNotes(
   if (checkForTasksNotes.length > 0 && activityContext) {
     // Resolve owner for AI limit check
     const ownerRow = await plot.db
-      .selectFrom("priority_twist")
+      .selectFrom("twist_instance")
       .select("owner_id")
-      .where("id", "=", plot.priorityTwistId)
+      .where("id", "=", plot.twistInstanceId)
       .executeTakeFirst();
     const ownerId = ownerRow?.owner_id;
 
@@ -545,7 +572,7 @@ export async function createNotes(
               noteId,
               threadId,
               ownerId,
-              plot.priorityTwistId
+              plot.twistInstanceId
             );
           } catch (error) {
             const logger = createLogger({ component: "plot_tool" });
@@ -564,7 +591,8 @@ export async function createNotes(
 
   // Notify sync DOs once for the batch (unless called from createActivities which notifies itself)
   if (!activityContext) {
-    await plot.notifySyncDOs(new Set([plot.priorityId]));
+    const defaultPriorityId = await plot.getDefaultPriorityId();
+    await plot.notifySyncDOs(new Set([defaultPriorityId]));
   }
 
   return noteIds;
@@ -610,17 +638,19 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     }
 
     // Validate access to the activity's priority
-    const activityData = await plot.db
-      .selectFrom("thread")
+    const noteUserId = await plot.getUserId();
+    const activityPriority = await plot.db
+      .selectFrom("thread_priority")
       .select("priority_id")
-      .where("id", "=", noteData.thread_id)
+      .where("thread_id", "=", noteData.thread_id)
+      .where("user_id", "=", noteUserId)
       .executeTakeFirst();
 
-    if (!activityData) {
+    if (!activityPriority) {
       throw new Error(`Activity not found: ${noteData.thread_id}`);
     }
 
-    const priorityId = activityData.priority_id;
+    const priorityId = activityPriority.priority_id;
 
     // Skip priority access validation for notes - activities may have been moved
     // after creation and the twist should still be able to update notes
@@ -711,7 +741,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       (await plot.isAiEnabled())
     ) {
       const contentForEmbed = dbUpdate.content as string | null;
-      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
       if (contentForEmbed && contentForEmbed.trim().length > 0) {
         try {
           const embedding = await plot.ai.embed(contentForEmbed);
@@ -773,7 +803,7 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     // Notify sync DOs since triggers skip HTTP calls for twist writes
     await plot.notifySyncDOs(new Set([priorityId]));
   } catch (error) {
-    handleDbOperationError(error, "updateNote", plot.priorityTwistId, {
+    handleDbOperationError(error, "updateNote", plot.twistInstanceId, {
       has_note_id: "id" in note && !!note.id,
       has_key: "key" in note && !!note.key,
       update_fields: Object.keys(note).filter((k) => k !== "id" && k !== "key"),
@@ -886,7 +916,7 @@ export async function getNotes(plot: Plot, activity: Thread): Promise<Note[]> {
       };
     });
   } catch (err) {
-    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
     logger.error("Failed to get notes", err as Error);
     throw err;
   }

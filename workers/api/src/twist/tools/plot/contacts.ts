@@ -258,7 +258,7 @@ export async function getActors(
       type:
         actor.type === "user"
           ? ActorType.User
-          : actor.type === "priority_twist"
+          : actor.type === "twist_instance"
           ? ActorType.Twist
           : ActorType.Contact,
       name: actor.name || null,

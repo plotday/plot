@@ -14,20 +14,25 @@ BEGIN
     IF p_thread_id IS NULL THEN
         RAISE EXCEPTION 'p_thread_id must be provided';
     END IF;
-    -- Validate access to the thread's priority
+    -- Validate access to the thread via thread_priority
     SELECT
-        a.priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
-        thread a
+        thread_priority tp
     WHERE
-        a.id = p_thread_id;
+        tp.thread_id = p_thread_id
+        AND tp.user_id = update_thread_tags.user_id;
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Thread not found';
-    END IF;
-    IF NOT "user".has_priority_access (user_id, v_priority_id) THEN
+        IF NOT EXISTS (SELECT 1 FROM thread WHERE id = p_thread_id) THEN
+            RAISE EXCEPTION 'Thread not found';
+        END IF;
         RAISE EXCEPTION 'User does not have access to this thread';
     END IF;
-    v_effective_role := "user".get_effective_role(user_id, v_priority_id);
+    IF NOT user_has_priority_access(update_thread_tags.user_id, v_priority_id) THEN
+        RAISE EXCEPTION 'User does not have access to this priority';
+    END IF;
+    -- All users are members in the per-user model
+    v_effective_role := 'member';
     -- Iterate through the tag updates JSON object
     FOR tag_record IN
     SELECT
@@ -68,27 +73,6 @@ BEGIN
                         archived_at = NULL,
                         updated_at = now(),
                         updated_by = p_client_id;
-                -- Ensure priority_contact exists if actor is a contact
-                -- This allows contacts to be visible via RLS when tagged on threads
-                IF EXISTS (
-                    SELECT
-                        1
-                    FROM
-                        contact
-                    WHERE
-                        id = p_actor_id) THEN
-                INSERT INTO priority_contact (priority_id, contact_id)
-                SELECT
-                    a.priority_id,
-                    p_actor_id
-                FROM
-                    thread a
-                WHERE
-                    a.id = p_thread_id
-                ON CONFLICT (priority_id,
-                    contact_id)
-                    DO NOTHING;
-            END IF;
         ELSE
             -- Removing a tag - use update to soft delete existing records
             IF current_tag_type = 'toggle' OR tag_id_int = 3 THEN

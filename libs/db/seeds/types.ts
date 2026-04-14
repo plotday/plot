@@ -54,7 +54,7 @@ export interface PrioritySettings {
 }
 
 // ============================================================================
-// Sources (creates twist + priority_twist records for link logos)
+// Sources (creates twist + twist_instance records for link logos)
 // ============================================================================
 
 export interface SeedSource {
@@ -260,7 +260,7 @@ export interface GeneratedLink {
   source_url: string | null;
   assignee_id: string | null; // UUID
   author_id: string | null; // UUID
-  created_by: string | null; // UUID (priority_twist_id)
+  created_by: string | null; // UUID (twist_instance_id)
   source_created_at: string; // ISO timestamp
   meta: string | null; // JSONB
 }
@@ -293,7 +293,7 @@ export interface GeneratedTwist {
   logo_url_dark: string | null;
 }
 
-export interface GeneratedPriorityTwist {
+export interface GeneratedTwistInstance {
   priority_id: string; // UUID
   twist_ref: string; // Reference to resolve twist ID
   owner_id: string; // UUID

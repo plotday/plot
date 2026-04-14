@@ -3,6 +3,7 @@ import 'package:forui/forui.dart';
 import 'package:prism_flutter/prism_flutter.dart';
 
 import 'package:plot/style/colors.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
@@ -375,6 +376,53 @@ FButtonStyleDelta _buildGhostStyleDelta(
         pressed: IconThemeData(
           color: colourScheme.foreground, size: iconSizes.lg,
         ),
+      ),
+    ),
+  );
+}
+
+/// Produces an [FButtonStyleDelta] for ghost [FButton]s that overrides the
+/// text size, icon size, and/or colors while preserving hover/pressed color
+/// variants.
+///
+/// Use this at call sites that need a smaller or recolored ghost button
+/// without losing the base → hovered color transition. Pass the resulting
+/// delta as [FButton]'s `style:`, then let [prefix] / `child` inherit colors
+/// from the ambient [IconTheme] / [DefaultTextStyle] (i.e. don't set `color:`
+/// on child [Text]/[Icon]).
+///
+/// - [textStyle]: base text style (e.g. `typography.sm`). `fontWeight: w500`
+///   and `height: 1` are applied automatically to match the ghost defaults,
+///   which keeps icon and text vertically centered.
+/// - [iconSize]: icon size applied to prefix/suffix icons.
+/// - [color] / [hoverColor]: override base and hovered colors. Default to
+///   `plotColors.veryMuted` and `colors.foreground` (the ghost defaults).
+FButtonStyleDelta ghostSizedStyleDelta(
+  BuildContext context, {
+  TextStyle? textStyle,
+  double? iconSize,
+  Color? color,
+  Color? hoverColor,
+}) {
+  final base = (textStyle ?? context.theme.typography.md).copyWith(
+    fontWeight: FontWeight.w500,
+    height: 1,
+  );
+  final iconPx = iconSize ?? context.theme.iconSizes.base;
+  final baseColor = color ?? context.theme.plotColors.veryMuted;
+  final hoverC = hoverColor ?? context.theme.colors.foreground;
+
+  return FButtonStyleDelta.delta(
+    contentStyle: FButtonContentStyleDelta.delta(
+      textStyle: _textStyleVariants(
+        base: base.copyWith(color: baseColor),
+        hovered: base.copyWith(color: hoverC),
+        pressed: base.copyWith(color: hoverC),
+      ),
+      iconStyle: _iconVariants(
+        base: IconThemeData(color: baseColor, size: iconPx),
+        hovered: IconThemeData(color: hoverC, size: iconPx),
+        pressed: IconThemeData(color: hoverC, size: iconPx),
       ),
     ),
   );

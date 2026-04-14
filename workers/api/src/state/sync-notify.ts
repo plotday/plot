@@ -1,5 +1,4 @@
 import { DurableObject } from "cloudflare:workers";
-import { sql } from "kysely";
 
 import { createLogger } from "@plotday/worker-util";
 
@@ -126,27 +125,20 @@ export class SyncNotify extends DurableObject<Bindings> {
   ): Promise<void> {
     let twists: { id: string }[];
     try {
-      // Find all active twists on this priority AND ancestor priorities
-      // (twists installed on ancestors have access to descendant priorities)
+      // Twists are workspace-level: find all active twists owned by the
+      // user who owns the changed priority.
       twists = await withDb(this.env, (db) =>
         db
-          .selectFrom("priority_twist")
+          .selectFrom("twist_instance")
           .innerJoin(
-            "priority as twist_priority",
-            "twist_priority.id",
-            "priority_twist.priority_id"
+            "priority",
+            "priority.user_id",
+            "twist_instance.owner_id"
           )
-          .innerJoin("priority as changed_priority", (join) =>
-            join.on("changed_priority.id", "=", this.priorityId!)
-          )
-          .select("priority_twist.id")
-          .where("priority_twist.archived_at", "is", null)
-          // changed_priority.path is a descendant of (or equal to) twist_priority.path
-          .where(
-            sql<boolean>`${sql.ref("changed_priority.path")} <@ ${sql.ref(
-              "twist_priority.path"
-            )}`
-          )
+          .select("twist_instance.id")
+          .where("priority.id", "=", this.priorityId!)
+          .where("twist_instance.archived_at", "is", null)
+          .groupBy("twist_instance.id")
           .execute()
       );
     } catch (error) {
@@ -172,7 +164,7 @@ export class SyncNotify extends DurableObject<Bindings> {
         );
       } catch (error) {
         logger.error("Error notifying TwistSync DO", error as Error, {
-          priority_twist_id: twist.id,
+          twist_instance_id: twist.id,
           priority_id: this.priorityId!,
         });
       }

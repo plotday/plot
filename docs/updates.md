@@ -1,3 +1,9 @@
+- The default Plot twist no longer counts toward your twist limit — free tier users can now install 1 additional twist
+- The Plot twist can no longer be accidentally removed
+- Moving threads now shows priority paths with colors, and offers to create rules for similar threads from the same connection
+- Your priorities are now personal — each person has their own organization system instead of shared folders. Threads are shared by choosing who's on them with the new "With" field when creating a thread.
+- Connections and twists are now workspace-level — they work across all your priorities instead of being tied to a specific one
+- Thread URLs are now globally shareable — you can send someone a direct link to any thread
 - Microsoft Teams is now available as a connector — sync messages from your Teams channels and DMs into Plot, and reply directly from Plot back to Teams
 - Fixed search being extremely slow — typing in the search field could take over a minute to show results
 - Fixed completed assigned issues from connectors like Linear staying in the to-do list after being marked done — the task was correctly shown as done but not removed from the agenda

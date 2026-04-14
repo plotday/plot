@@ -199,7 +199,7 @@ links.post("/sync/links", async (c) => {
   // Notify sync so twist callbacks (e.g. onLinkUpdated) can fire
   if (linkData.thread_id) {
     try {
-      const priorityId = await getPriorityForThread(c.var.db, linkData.thread_id);
+      const priorityId = await getPriorityForThread(c.var.db, linkData.thread_id, c.var.user.id);
       notifySync(c, priorityId);
     } catch {
       // Thread lookup may fail for orphaned links
@@ -219,23 +219,15 @@ links.post("/sync/links", async (c) => {
       (async () => {
         const db = createDb(c.env);
         try {
-          // Check if created_by is a connector (has source_channel rows)
+          // Check if created_by is a connector (has channel rows)
           const isConnector = await db
-            .selectFrom("source_channel")
-            .select("priority_twist_id")
-            .where("priority_twist_id", "=", result.created_by)
+            .selectFrom("channel")
+            .select("twist_instance_id")
+            .where("twist_instance_id", "=", result.created_by)
             .limit(1)
             .executeTakeFirst();
 
           if (!isConnector) return;
-
-          // Get priority_id from the thread (connectors don't have a priority_id on priority_twist)
-          const thread = result.thread_id ? await db
-            .selectFrom("thread")
-            .select("priority_id")
-            .where("id", "=", result.thread_id)
-            .executeTakeFirst() : null;
-          if (!thread?.priority_id) return;
 
           const factory = twistFactory({
             env: c.env,
@@ -244,8 +236,7 @@ links.post("/sync/links", async (c) => {
           });
 
           const twistWrapper = await factory({
-            priorityId: thread.priority_id,
-            priorityTwistId: result.created_by!,
+            twistInstanceId: result.created_by!,
           });
 
           await twistWrapper.dispatch("Integrations", {

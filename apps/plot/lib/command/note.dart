@@ -1,6 +1,8 @@
 import 'command.dart';
+import 'package:flutter/services.dart';
 import 'package:plot/router.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/util/shortcut.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/editor_clipboard.dart';
 import 'package:plot/store/store.dart';
@@ -53,6 +55,7 @@ abstract class NoteCommand extends Command {
     super.icon,
     super.hoverIcon,
     super.on,
+    super.shortcut,
     String? title,
   }) : super(title: title ?? 'Note', subtitle: '');
 
@@ -180,6 +183,7 @@ class ToggleSelfTask extends NoteCommand {
             ? EventAction.untagged
             : EventAction.tagged,
         icon: PlotIcon.selfTask,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyT, shift: true),
       );
 
   @override
@@ -407,6 +411,7 @@ class PickNoteAssignee extends ShowCommands {
         showFilter: true,
         eventObject: EventObject.note,
         eventAction: EventAction.updated,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyA, shift: true),
       );
 
   final Note note;
@@ -437,17 +442,25 @@ class PickNoteAssignee extends ShowCommands {
         ? await Future.wait(assigneeIds.map(Actor.getOne))
         : <Actor>[];
 
-    // Resolve members for the "Members" section
-    final memberActors = await _getMemberActors(activity.priority.id);
-    final memberActorIds = memberActors.map((a) => a.id).toSet();
+    // Resolve thread contacts for the "With" section
+    final contactActors = <Actor>[];
+    for (final contactId in activity.contacts) {
+      try {
+        final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+        if (!actor.self) contactActors.add(actor);
+      } catch (_) {
+        // Skip contacts whose actors can't be resolved
+      }
+    }
+    final contactActorIds = contactActors.map((a) => a.id).toSet();
 
-    // Exclude already-assigned members from the Members section
-    final unassignedMembers = memberActors
+    // Exclude already-assigned contacts from the With section
+    final unassignedContacts = contactActors
         .where((a) => !assigneeIds.contains(a.id))
         .toList();
 
-    // Exclude both assigned and member actors from Contacts
-    final excludeFromContacts = <ActorId>[...assigneeIds, ...memberActorIds];
+    // Exclude both assigned and thread contact actors from Contacts
+    final excludeFromContacts = <ActorId>[...assigneeIds, ...contactActorIds];
 
     return Commands(
       prompt: 'Assign to',
@@ -459,46 +472,20 @@ class PickNoteAssignee extends ShowCommands {
                 .map((actor) => AssignNoteActor(freshNote, actor))
                 .toList(),
           ),
-        if (unassignedMembers.isNotEmpty)
+        if (unassignedContacts.isNotEmpty)
           StaticCommandGroup(
-            title: 'Members',
-            commands: unassignedMembers
+            title: 'In this thread',
+            commands: unassignedContacts
                 .map((actor) => AssignNoteActor(freshNote, actor))
                 .toList(),
           ),
         ActorGroup(
           title: 'Contacts',
-          priorityId: activity.priority.id,
           excludeActorIds: excludeFromContacts,
           builder: (actor) => AssignNoteActor(freshNote, actor),
         ),
       ],
     );
-  }
-
-  /// Resolves the members of the sharing priority (direct or ancestor).
-  static Future<List<Actor>> _getMemberActors(PriorityId priorityId) async {
-    // Fetch enriched priority to get sharingAncestorId
-    final enriched = await Priority.get(id: priorityId, archived: null);
-    if (enriched.isEmpty) return [];
-    final priority = enriched.first;
-
-    // Use the sharing ancestor if this priority inherits sharing
-    final sharingId = priority.sharingAncestorId ?? priority.id;
-
-    final members = await PriorityMember.getForPriority(sharingId);
-    if (members.isEmpty) return [];
-
-    final actors = <Actor>[];
-    for (final member in members) {
-      try {
-        final actor = await Actor.getOne(member.contactId);
-        actors.add(actor);
-      } catch (_) {
-        // Skip members whose actors can't be resolved
-      }
-    }
-    return actors;
   }
 }
 
@@ -547,6 +534,17 @@ class AssignNoteActor extends NoteCommand {
         await activityBloc.updateDraft(updatedNote);
       }
       await updatedNote.save();
+
+      // If assigning (not unassigning) and actor is not on the thread, add them
+      if (!isAssigned) {
+        final thread = await Thread.getOne(note.threadId);
+        final contactUuid = actor.id.toUuid();
+        if (!thread.contacts.contains(contactUuid)) {
+          final newContacts = [...thread.contacts, contactUuid];
+          await thread.copyWith(contacts: Value(newContacts)).save();
+        }
+      }
+
       return const CommandRefresh();
     } catch (e, stackTrace) {
       log.severe('Error in AssignNoteActor: $e', e, stackTrace);
@@ -768,28 +766,37 @@ class ShowNoteCommands extends ShowCommands {
 class PickDraftNoteAssignee extends ShowCommands {
   factory PickDraftNoteAssignee({
     required Note note,
+    required Thread thread,
     required Uuid priorityId,
-    required Future<void> Function(Note note) onUpdate,
+    required Future<void> Function(Note note, {Thread? thread}) onUpdate,
   }) {
-    // Mutable reference so commandsBuilder always sees the latest note
+    // Mutable references so commandsBuilder always sees the latest state
     final noteRef = [note];
+    final threadRef = [thread];
 
-    Future<void> wrappedOnUpdate(Note updatedNote) async {
+    Future<void> wrappedOnUpdate(Note updatedNote, {Thread? thread}) async {
       noteRef[0] = updatedNote;
-      await onUpdate(updatedNote);
+      if (thread != null) threadRef[0] = thread;
+      await onUpdate(updatedNote, thread: thread);
     }
 
     return PickDraftNoteAssignee._(
       note: note,
+      thread: thread,
       priorityId: priorityId,
       onUpdate: onUpdate,
-      commandsBuilder: (context) =>
-          _getAssigneeCommands(noteRef[0], priorityId, wrappedOnUpdate),
+      commandsBuilder: (context) => _getAssigneeCommands(
+        noteRef[0],
+        threadRef[0],
+        priorityId,
+        wrappedOnUpdate,
+      ),
     );
   }
 
   PickDraftNoteAssignee._({
     required this.note,
+    required this.thread,
     required this.priorityId,
     required this.onUpdate,
     required Future<Commands> Function(BuildContext) commandsBuilder,
@@ -800,11 +807,16 @@ class PickDraftNoteAssignee extends ShowCommands {
          showFilter: true,
          eventObject: EventObject.note,
          eventAction: EventAction.updated,
+         shortcut: platformSingleActivator(
+           LogicalKeyboardKey.keyA,
+           shift: true,
+         ),
        );
 
   final Note note;
+  final Thread thread;
   final Uuid priorityId;
-  final Future<void> Function(Note note) onUpdate;
+  final Future<void> Function(Note note, {Thread? thread}) onUpdate;
 
   static String _computeTitle(Note note) {
     final otherAssignees = note.assignees.where((id) => id != Base.actorId);
@@ -820,8 +832,9 @@ class PickDraftNoteAssignee extends ShowCommands {
 
   static Future<Commands> _getAssigneeCommands(
     Note note,
+    Thread thread,
     Uuid priorityId,
-    Future<void> Function(Note note) onUpdate,
+    Future<void> Function(Note note, {Thread? thread}) onUpdate,
   ) async {
     final assigneeIds = note.activeAssignees;
 
@@ -830,17 +843,25 @@ class PickDraftNoteAssignee extends ShowCommands {
         ? await Future.wait(assigneeIds.map(Actor.getOne))
         : <Actor>[];
 
-    // Resolve members for the "Members" section
-    final memberActors = await PickNoteAssignee._getMemberActors(priorityId);
-    final memberActorIds = memberActors.map((a) => a.id).toSet();
+    // Resolve thread contacts for the "With" section
+    final contactActors = <Actor>[];
+    for (final contactId in thread.contacts) {
+      try {
+        final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+        if (!actor.self) contactActors.add(actor);
+      } catch (_) {
+        // Skip contacts whose actors can't be resolved
+      }
+    }
+    final contactActorIds = contactActors.map((a) => a.id).toSet();
 
-    // Exclude already-assigned members from the Members section
-    final unassignedMembers = memberActors
+    // Exclude already-assigned contacts from the With section
+    final unassignedContacts = contactActors
         .where((a) => !assigneeIds.contains(a.id))
         .toList();
 
-    // Exclude both assigned and member actors from Contacts
-    final excludeFromContacts = <ActorId>[...assigneeIds, ...memberActorIds];
+    // Exclude both assigned and thread contact actors from Contacts
+    final excludeFromContacts = <ActorId>[...assigneeIds, ...contactActorIds];
 
     return Commands(
       prompt: 'Assign to',
@@ -855,22 +876,29 @@ class PickDraftNoteAssignee extends ShowCommands {
                 )
                 .toList(),
           ),
-        if (unassignedMembers.isNotEmpty)
+        if (unassignedContacts.isNotEmpty)
           StaticCommandGroup(
-            title: 'Members',
-            commands: unassignedMembers
+            title: 'In this thread',
+            commands: unassignedContacts
                 .map(
-                  (actor) =>
-                      _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),
+                  (actor) => _AssignDraftNoteActor(
+                    note,
+                    actor,
+                    onUpdate: onUpdate,
+                    thread: thread,
+                  ),
                 )
                 .toList(),
           ),
         ActorGroup(
           title: 'Contacts',
-          priorityId: priorityId,
           excludeActorIds: excludeFromContacts,
-          builder: (actor) =>
-              _AssignDraftNoteActor(note, actor, onUpdate: onUpdate),
+          builder: (actor) => _AssignDraftNoteActor(
+            note,
+            actor,
+            onUpdate: onUpdate,
+            thread: thread,
+          ),
         ),
       ],
     );
@@ -878,23 +906,28 @@ class PickDraftNoteAssignee extends ShowCommands {
 }
 
 class _AssignDraftNoteActor extends NoteCommand {
-  _AssignDraftNoteActor(super.note, this.actor, {required this.onUpdate})
-    : super(
-        title: actor.nameOrEmail,
-        eventObject: EventObject.note,
-        eventAction: note.isAssignedTo(actor.id)
-            ? EventAction.untagged
-            : EventAction.tagged,
-        icon: note.isCompletedBy(actor.id)
-            ? PlotIcon.othersTaskDone
-            : note.isAssignedTo(actor.id)
-            ? PlotIcon.othersTask
-            : PlotIcon.assignAdd,
-        on: note.isAssignedTo(actor.id),
-      );
+  _AssignDraftNoteActor(
+    super.note,
+    this.actor, {
+    required this.onUpdate,
+    this.thread,
+  }) : super(
+         title: actor.nameOrEmail,
+         eventObject: EventObject.note,
+         eventAction: note.isAssignedTo(actor.id)
+             ? EventAction.untagged
+             : EventAction.tagged,
+         icon: note.isCompletedBy(actor.id)
+             ? PlotIcon.othersTaskDone
+             : note.isAssignedTo(actor.id)
+             ? PlotIcon.othersTask
+             : PlotIcon.assignAdd,
+         on: note.isAssignedTo(actor.id),
+       );
 
   final Actor actor;
-  final Future<void> Function(Note note) onUpdate;
+  final Future<void> Function(Note note, {Thread? thread}) onUpdate;
+  final Thread? thread;
 
   @override
   String? get subtitle => actor.name != null ? actor.email : null;
@@ -904,7 +937,21 @@ class _AssignDraftNoteActor extends NoteCommand {
     try {
       final isAssigned = note.isAssignedTo(actor.id);
       final updatedNote = note.setTag(Tag.todo, actor.id, !isAssigned);
-      await onUpdate(updatedNote);
+
+      // If assigning (not unassigning) and actor is not on the thread, add
+      // them to the draft thread's contacts so sharing follows assignment.
+      Thread? updatedThread;
+      if (!isAssigned && thread != null) {
+        final contactUuid = actor.id.toUuid();
+        if (!thread!.contacts.contains(contactUuid)) {
+          updatedThread = thread!.copyWith(
+            contacts: Value([...thread!.contacts, contactUuid]),
+          );
+        }
+      }
+
+      await onUpdate(updatedNote, thread: updatedThread);
+
       return const CommandRefresh();
     } catch (e, stackTrace) {
       log.severe('Error in _AssignDraftNoteActor: $e', e, stackTrace);

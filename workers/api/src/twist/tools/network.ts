@@ -23,7 +23,7 @@ import { Tool } from "./tool";
 export type NetworkOptions = {
   urls?: string[];
   callbacks?: DurableObjectNamespace<CallbacksState>;
-  priorityTwistId?: string;
+  twistInstanceId?: string;
   twistId?: string;
   environment?: TwistEnvironment;
   baseUrl?: string;
@@ -109,7 +109,7 @@ function checkSlackEventScopes(
 export class Network extends Tool implements INetwork {
   private callbacks?: DurableObjectStub<CallbacksState>;
   private callbacksNamespace?: DurableObjectNamespace<CallbacksState>;
-  private priorityTwistId?: string;
+  private twistInstanceId?: string;
   private twistId?: string;
   private environment?: TwistEnvironment;
   private baseUrl?: string;
@@ -121,7 +121,7 @@ export class Network extends Tool implements INetwork {
 
   private static GetCallbacksStub(
     callbacks: DurableObjectNamespace<CallbacksState>,
-    /// Usually priorityTwistId. For Slack webhooks, we use the Slack team ID.
+    /// Usually twistInstanceId. For Slack webhooks, we use the Slack team ID.
     key: string
   ) {
     const callbacksId = callbacks.idFromName(key);
@@ -259,13 +259,13 @@ export class Network extends Tool implements INetwork {
     super();
 
     // Initialize webhook functionality if options provided
-    if (options?.callbacks && options.priorityTwistId) {
+    if (options?.callbacks && options.twistInstanceId) {
       this.callbacksNamespace = options.callbacks;
       this.callbacks = Network.GetCallbacksStub(
         options.callbacks,
-        options.priorityTwistId
+        options.twistInstanceId
       );
-      this.priorityTwistId = options.priorityTwistId;
+      this.twistInstanceId = options.twistInstanceId;
       this.twistId = options.twistId;
       this.environment = options.environment;
       this.baseUrl = options.baseUrl;
@@ -315,15 +315,15 @@ export class Network extends Tool implements INetwork {
     const scopes = tokenData.scopes || [];
 
     // For Slack webhooks, we use team_id for DO sharding to enable
-    // webhook routing without knowing the priorityTwistId in advance.
+    // webhook routing without knowing the twistInstanceId in advance.
     // Get CallbacksState DO for this team_id.
     const teamCallbacksId = this.callbacksNamespace!.idFromName(teamId);
     const teamCallbacksStub = this.callbacksNamespace!.get(teamCallbacksId);
 
     // Create callback with team_id as key for routing
-    // Store the actual priorityTwistId in meta for callback execution
+    // Store the actual twistInstanceId in meta for callback execution
     const callbackToken = await teamCallbacksStub.create({
-      priorityTwistId: this.priorityTwistId!,
+      twistInstanceId: this.twistInstanceId!,
       path: this.path!,
       functionName: callbackFunctionName,
       extraArgs,
@@ -332,7 +332,7 @@ export class Network extends Tool implements INetwork {
         scopes,
         provider: authorization.provider,
         actorId: authorization.actor.id,
-        priorityTwistId: this.priorityTwistId, // Store for reference
+        twistInstanceId: this.twistInstanceId, // Store for reference
       },
     });
 
@@ -373,9 +373,9 @@ export class Network extends Tool implements INetwork {
 
     try {
       // First, create the callback to get a token
-      // Use standard callback creation with priorityTwistId for DO sharding
+      // Use standard callback creation with twistInstanceId for DO sharding
       const callbackToken = await this.callbacks!.create({
-        priorityTwistId: this.priorityTwistId!,
+        twistInstanceId: this.twistInstanceId!,
         path: this.path!,
         functionName: callbackFunctionName,
         extraArgs,
@@ -453,7 +453,7 @@ export class Network extends Tool implements INetwork {
 
     try {
       const callbackToken = await this.callbacks!.create({
-        priorityTwistId: this.priorityTwistId!,
+        twistInstanceId: this.twistInstanceId!,
         path: this.path!,
         functionName: callbackFunctionName,
         extraArgs,
@@ -506,7 +506,7 @@ export class Network extends Tool implements INetwork {
     const { provider, authorization } = options;
     if (
       !this.callbacks ||
-      !this.priorityTwistId ||
+      !this.twistInstanceId ||
       !this.twistId ||
       !this.environment ||
       !this.baseUrl ||
@@ -588,7 +588,7 @@ export class Network extends Tool implements INetwork {
     // handlers that propagate HTTP status back to the sender — opt out by
     // passing `{ async: false }`.
     const token = await this.callbacks.create({
-      priorityTwistId: this.priorityTwistId,
+      twistInstanceId: this.twistInstanceId,
       path: this.path,
       functionName: callbackFunctionName,
       extraArgs: extraArgs,
@@ -608,7 +608,7 @@ export class Network extends Tool implements INetwork {
       const encoded = url.substring(8); // Remove "slack://" prefix
       const colonIndex = encoded.indexOf(":");
       if (colonIndex === -1) {
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.warn("Invalid Slack webhook format", { url });
         return;
       }
@@ -630,7 +630,7 @@ export class Network extends Tool implements INetwork {
     if (url.startsWith("projects/") && url.includes("/topics/")) {
       const topicParts = url.split("/topics/");
       if (topicParts.length !== 2) {
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.warn("Invalid Pub/Sub webhook format", { url });
         return;
       }
@@ -652,7 +652,7 @@ export class Network extends Tool implements INetwork {
       // Extract project ID from topic name
       const projectIdMatch = url.match(/projects\/([^/]+)/);
       if (!projectIdMatch) {
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.warn("Could not extract project ID from Pub/Sub webhook", { url });
         return;
       }
@@ -664,7 +664,7 @@ export class Network extends Tool implements INetwork {
         !this.env?.GCP_SERVICE_ACCOUNT_EMAIL ||
         !this.env?.GCP_SERVICE_ACCOUNT_KEY
       ) {
-        const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.warn("GCP configuration missing, cannot delete Pub/Sub resources");
         // Continue to delete callback even if Pub/Sub cleanup fails
       } else {
@@ -679,7 +679,7 @@ export class Network extends Tool implements INetwork {
           // Delete subscription first (order matters)
           await deleteSubscription(pubsubConfig, subscriptionName);
         } catch (error) {
-          const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+          const logger = createLogger({ twist_instance_id: this.twistInstanceId });
           logger.warn("Failed to delete Pub/Sub subscription", {
             error_message: error instanceof Error ? error.message : String(error),
             subscription_name: subscriptionName,
@@ -691,7 +691,7 @@ export class Network extends Tool implements INetwork {
           // Delete topic
           await deleteTopic(pubsubConfig, url);
         } catch (error) {
-          const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+          const logger = createLogger({ twist_instance_id: this.twistInstanceId });
           logger.warn("Failed to delete Pub/Sub topic", {
             error_message: error instanceof Error ? error.message : String(error),
             topic_url: url,
@@ -708,7 +708,7 @@ export class Network extends Tool implements INetwork {
     // Handle standard webhooks (format: {baseUrl}/hook/{token})
     const token = this.urlToToken(url);
     if (!token) {
-      const logger = createLogger({ priority_twist_id: this.priorityTwistId });
+      const logger = createLogger({ twist_instance_id: this.twistInstanceId });
       logger.warn("Could not extract token from webhook URL", { url });
       return;
     }

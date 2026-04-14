@@ -150,18 +150,14 @@ export class EmailNotify extends DurableObject<Bindings> {
             p.title AS priority_title
           FROM thread_unread tu
           JOIN thread t ON t.id = tu.thread_id
-          JOIN priority p ON p.id = t.priority_id
+          JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${this.userId!}::uuid
+          JOIN priority p ON p.id = tp.priority_id
           WHERE tu.user_id = ${this.userId!}::uuid
             AND tu.read_at IS NULL
             AND tu.urgency != 'passive'
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
-            AND (
-              t.access = 'public'
-              OR t.created_by = ${this.userId!}::uuid
-              OR (t.access = 'members' AND "user".get_effective_role(${this.userId!}::uuid, t.priority_id) = 'member')
-              OR t.access_contacts && "user".user_contact_ids(${this.userId!}::uuid)
-            )
+            AND t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
           ORDER BY tu.updated_at DESC
         `.execute(db);
 

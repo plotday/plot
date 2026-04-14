@@ -3,7 +3,7 @@ import 'package:change_case/change_case.dart';
 
 enum TagType { toggle, count, compute }
 
-enum ActorType { user, contact, priorityTwist }
+enum ActorType { user, contact, twistInstance }
 
 enum EnterBehavior { enterNewline, enterSubmits }
 

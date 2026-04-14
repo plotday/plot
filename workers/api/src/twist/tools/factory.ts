@@ -124,8 +124,7 @@ export function createTool(
     twistId,
     environment,
     db,
-    priorityId,
-    priorityTwistId,
+    twistInstanceId,
     env,
     ctx,
     config,
@@ -138,8 +137,7 @@ export function createTool(
     twistId: string;
     environment: TwistEnvironment;
     db: Kysely<DB>;
-    priorityId: string;
-    priorityTwistId: string;
+    twistInstanceId: string;
     env: Bindings;
     ctx: { exports: ExecutionContext["exports"] };
     config?: Record<string, unknown>;
@@ -159,8 +157,7 @@ export function createTool(
     case "Plot":
       return new Plot({
         db,
-        priorityId,
-        priorityTwistId,
+        twistInstanceId,
         options,
         env,
       });
@@ -173,12 +170,12 @@ export function createTool(
       if (effectivePlan === "free" && !providerConfig) {
         return new AIDisabledStub();
       }
-      return new AI({ env, priorityTwistId, providerConfig });
+      return new AI({ env, twistInstanceId, providerConfig });
     case "Network":
       return new Network({
         ...options,
         callbacks: env.CALLBACKS,
-        priorityTwistId,
+        twistInstanceId,
         twistId,
         environment,
         baseUrl: env.API_ROOT,
@@ -187,7 +184,7 @@ export function createTool(
         store: new Store({
           path,
           storage: env.STORAGE,
-          priorityTwistId,
+          twistInstanceId,
         }),
       });
     case "Integrations":
@@ -196,12 +193,11 @@ export function createTool(
         store: new Store({
           path,
           storage: env.STORAGE,
-          priorityTwistId,
+          twistInstanceId,
         }),
         env,
         db,
-        priorityId,
-        priorityTwistId,
+        twistInstanceId,
         twistId,
         environment,
         integrationOptions: options as any,
@@ -211,13 +207,13 @@ export function createTool(
       return new Store({
         path,
         storage: env.STORAGE,
-        priorityTwistId,
+        twistInstanceId,
       });
     case "Tasks":
       return new Tasks({
         path,
         callbacks: env.CALLBACKS,
-        priorityTwistId,
+        twistInstanceId,
         twistId,
         environment,
         queue: env.RUN_QUEUE,
@@ -225,7 +221,7 @@ export function createTool(
     case "Callbacks":
       return new Callbacks({
         callbacks: env.CALLBACKS,
-        priorityTwistId,
+        twistInstanceId,
         twistId,
         environment,
         path,
@@ -235,7 +231,7 @@ export function createTool(
         env,
         ctx,
         db,
-        priorityTwistId,
+        twistInstanceId,
       });
     case "Imap":
       return new Imap(options as ImapOptions);
@@ -243,7 +239,7 @@ export function createTool(
       return new Smtp(options as SmtpOptions);
     case "Options":
       // Options is not a real tool — return a plain object with resolved values.
-      // The schema is passed as `options`, config comes from priority_twist.config
+      // The schema is passed as `options`, config comes from twist_instance.config
       // which is injected by the factory caller.
       // Secure options are resolved separately via secureOptions param.
       {

@@ -10,7 +10,7 @@ export async function search(
   query: string,
   options?: SearchOptions
 ): Promise<SearchResult[]> {
-  const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+  const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
 
   if (!query?.trim()) {
     logger.info("[search] Empty query, returning no results");
@@ -23,7 +23,8 @@ export async function search(
     return [];
   }
 
-  const scopePriorityId = options?.priorityId ?? plot.priorityId;
+  const scopePriorityId =
+    options?.priorityId ?? (await plot.getDefaultPriorityId());
   await plot.validatePriorityAccess(scopePriorityId);
 
   const limit = Math.min(options?.limit ?? SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT);
@@ -32,18 +33,19 @@ export async function search(
   logger.info("[search] Starting search", {
     query: query.substring(0, 100),
     scope_priority_id: scopePriorityId,
-    twist_priority_id: plot.priorityId,
     limit,
     threshold,
   });
 
   // Check if there are any notes with embeddings in scope
+  const userId = await plot.getUserId();
   const embeddingCount = await plot.db
     .selectFrom("note")
     .innerJoin("thread", "thread.id", "note.thread_id")
+    .innerJoin("thread_priority", "thread_priority.thread_id", "thread.id")
     .innerJoin("priority_child", (join) =>
       join
-        .onRef("priority_child.child_id", "=", "thread.priority_id")
+        .onRef("priority_child.child_id", "=", "thread_priority.priority_id")
         .on("priority_child.priority_id", "=", scopePriorityId)
     )
     .select(sql<number>`count(*)`.as("total"))
@@ -51,20 +53,23 @@ export async function search(
     .where("note.archived_at", "is", null)
     .where("note.draft", "=", false)
     .where("thread.archived_at", "is", null)
+    .where("thread_priority.user_id", "=", userId)
     .executeTakeFirst();
 
   const totalNotesInScope = await plot.db
     .selectFrom("note")
     .innerJoin("thread", "thread.id", "note.thread_id")
+    .innerJoin("thread_priority", "thread_priority.thread_id", "thread.id")
     .innerJoin("priority_child", (join) =>
       join
-        .onRef("priority_child.child_id", "=", "thread.priority_id")
+        .onRef("priority_child.child_id", "=", "thread_priority.priority_id")
         .on("priority_child.priority_id", "=", scopePriorityId)
     )
     .select(sql<number>`count(*)`.as("total"))
     .where("note.archived_at", "is", null)
     .where("note.draft", "=", false)
     .where("thread.archived_at", "is", null)
+    .where("thread_priority.user_id", "=", userId)
     .executeTakeFirst();
 
   logger.info("[search] Notes in scope", {
@@ -79,14 +84,13 @@ export async function search(
     embedding_sample: embedding.slice(0, 5),
   });
 
-  const userId = await plot.getUserId();
   logger.info("[search] Requesting user", { user_id: userId });
 
   const results = await rpc(plot.db, "search_notes_and_links", {
     query_embedding: JSON.stringify(embedding),
     scope_priority_id: scopePriorityId,
     requesting_user_id: userId,
-    exclude_created_by: plot.priorityTwistId,
+    exclude_created_by: plot.twistInstanceId,
     similarity_threshold: threshold,
     match_limit: limit,
   });

@@ -16,18 +16,18 @@ class LinkChannelSelection {
 
 /// A single link channel selection entry.
 class LinkChannelEntry {
-  final String sourcePriorityTwistId;
+  final String sourceTwistInstanceId;
   final String channelId;
   final bool enabled;
 
   const LinkChannelEntry({
-    required this.sourcePriorityTwistId,
+    required this.sourceTwistInstanceId,
     required this.channelId,
     required this.enabled,
   });
 
   Map<String, dynamic> toJson() => {
-        'sourcePriorityTwistId': sourcePriorityTwistId,
+        'sourceTwistInstanceId': sourceTwistInstanceId,
         'channelId': channelId,
         'enabled': enabled,
       };
@@ -37,22 +37,14 @@ class LinkChannelEntry {
 /// Used in both the setup and edit twist modals.
 class SetupLinkChannelsWidget extends StatefulWidget {
   const SetupLinkChannelsWidget({
-    required this.priorityTwistId,
-    this.priorityId,
-    this.priorityNotifier,
+    required this.twistInstanceId,
     this.setupMode = false,
     this.onChanged,
     this.channelListController,
     super.key,
   });
 
-  final String priorityTwistId;
-
-  /// Priority ID used to filter available channels.
-  final String? priorityId;
-
-  /// When provided, the widget listens for priority changes and reloads.
-  final ValueNotifier<String?>? priorityNotifier;
+  final String twistInstanceId;
 
   /// In setup mode, skip fetching existing link channels (draft has none).
   final bool setupMode;
@@ -78,25 +70,8 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
   @override
   void initState() {
     super.initState();
-    widget.priorityNotifier?.addListener(_onPriorityChanged);
     _load();
   }
-
-  @override
-  void dispose() {
-    widget.priorityNotifier?.removeListener(_onPriorityChanged);
-    super.dispose();
-  }
-
-  void _onPriorityChanged() {
-    _localEnabled.clear();
-    _notifyChanged();
-    _load();
-  }
-
-  /// The effective priority ID: from notifier (if present) or direct param.
-  String? get _effectivePriorityId =>
-      widget.priorityNotifier?.value ?? widget.priorityId;
 
   Future<void> _load() async {
     setState(() {
@@ -106,20 +81,19 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
 
     try {
       final available = await TwistApi.getAvailableLinkChannels(
-        widget.priorityTwistId,
-        priorityId: _effectivePriorityId,
+        widget.twistInstanceId,
       );
 
       List<ConnectedLinkChannel>? connected;
       if (!widget.setupMode) {
-        connected = await TwistApi.getLinkChannels(widget.priorityTwistId);
+        connected = await TwistApi.getLinkChannels(widget.twistInstanceId);
       }
 
       if (mounted) {
         // Seed local state from connected channels (edit mode only)
         if (connected != null) {
           for (final ch in connected) {
-            final key = '${ch.sourcePriorityTwistId}:${ch.channelId}';
+            final key = '${ch.sourceTwistInstanceId}:${ch.channelId}';
             _localEnabled[key] = ch.enabled;
           }
         }
@@ -141,7 +115,7 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
   }
 
   void _handleToggle(LinkChannel channel) {
-    final key = '${channel.sourcePriorityTwistId}:${channel.channelId}';
+    final key = '${channel.sourceTwistInstanceId}:${channel.channelId}';
     final isEnabled = _localEnabled[key] ?? false;
 
     setState(() {
@@ -156,10 +130,10 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
     final entries = <LinkChannelEntry>[];
     for (final entry in _localEnabled.entries) {
       final parts = entry.key.split(':');
-      final sourcePriorityTwistId = parts[0];
+      final sourceTwistInstanceId = parts[0];
       final channelId = parts.sublist(1).join(':');
       entries.add(LinkChannelEntry(
-        sourcePriorityTwistId: sourcePriorityTwistId,
+        sourceTwistInstanceId: sourceTwistInstanceId,
         channelId: channelId,
         enabled: entry.value,
       ));
@@ -192,7 +166,7 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
       return Padding(
         padding: context.theme.spacing.padding,
         child: Text(
-          'No source channels available. Add a source to this priority first.',
+          'No source channels available. Connect a source first.',
           style: TextStyle(
             fontSize: context.theme.typography.sm.fontSize,
             color: context.theme.colors.mutedForeground,
@@ -205,7 +179,7 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
     final grouped = <String, List<LinkChannel>>{};
     for (final channel in channels) {
       grouped
-          .putIfAbsent(channel.sourcePriorityTwistId, () => [])
+          .putIfAbsent(channel.sourceTwistInstanceId, () => [])
           .add(channel);
     }
 
@@ -242,7 +216,7 @@ class _SetupLinkChannelsWidgetState extends State<SetupLinkChannelsWidget> {
       // Channel rows
       for (final channel in entry.value) {
         final key =
-            '${channel.sourcePriorityTwistId}:${channel.channelId}';
+            '${channel.sourceTwistInstanceId}:${channel.channelId}';
         final isEnabled = _localEnabled[key] ?? false;
         final highlighted = controller != null &&
             controller.highlightedSubIndex == focusIndex;

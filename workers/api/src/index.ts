@@ -6,7 +6,6 @@ import { Tracker } from "./utils/tracker";
 import account from "./app/account";
 import device from "./app/device";
 import invitation from "./app/invitation";
-import share from "./app/share";
 import twists from "./app/twists";
 import twistIntegrations from "./app/twist-integrations";
 // Import app routes and middleware
@@ -15,12 +14,14 @@ import authRoutes from "./app/authRoutes";
 import callbacks from "./app/callbacks";
 import connections from "./app/connections";
 import linkEmail from "./app/link-email";
+import threadShare from "./app/thread-share";
+import topicRoutes from "./app/topic";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import favicon from "./app/favicon";
 import files from "./app/files";
 import upgrade from "./app/upgrade";
 import aiKeyRoutes from "./app/ai-keys";
-import organizationRoutes from "./app/organization";
+import teamRoutes from "./app/team";
 import appSync from "./app/sync";
 import notificationContent from "./app/notification-content";
 import notificationSummary from "./app/notification-summary";
@@ -166,7 +167,6 @@ appSection.use("*", trackerIdentifyMiddleware);
 appSection.route("/", account);
 appSection.route("/", device);
 appSection.route("/", invitation);
-appSection.route("/", share);
 appSection.route("/", twists);
 appSection.route("/", twistIntegrations);
 appSection.route("/", authRoutes);
@@ -180,9 +180,11 @@ appSection.route("/", favicon);
 appSection.route("/", files);
 appSection.route("/", upgrade);
 appSection.route("/", connections);
-appSection.route("/", organizationRoutes);
+appSection.route("/", teamRoutes);
 appSection.route("/", aiKeyRoutes);
 appSection.route("/", linkEmail);
+appSection.route("/", threadShare);
+appSection.route("/", topicRoutes);
 // Note: /app/sync routes are mounted separately with appSyncRateLimiter.
 
 // App sync section - public sync endpoints (user-authenticated)

@@ -54,7 +54,7 @@ final appearanceCommands = StaticCommandGroup(
 /// Build the App settings command group from [PrioritiesState].
 ///
 /// Accepts optional [adminOrgs] list (fetched from the API) to include
-/// per-org AI preference commands for organizations the user administers.
+/// per-org AI preference commands for teams the user administers.
 List<StaticCommandGroup> settingsCommandsFromState(
   PrioritiesState? prioritiesState, {
   bool showAllPriorities = false,
@@ -62,9 +62,9 @@ List<StaticCommandGroup> settingsCommandsFromState(
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
 }) {
-  final hasOrganizations =
+  final hasTeams =
       prioritiesState != null &&
-      prioritiesState.priorities.any((p) => p.organizationId != null);
+      prioritiesState.priorities.any((p) => p.teamId != null);
 
   Command? plotAppCmd;
   Command? twistDevCmd;
@@ -95,7 +95,7 @@ List<StaticCommandGroup> settingsCommandsFromState(
   final rootPriority = prioritiesState?.root;
 
   return settingsCommands(
-    hasOrganizations: hasOrganizations,
+    hasTeams: hasTeams,
     rootPriority: rootPriority,
     plotAppCmd: plotAppCmd,
     twistDevCmd: twistDevCmd,
@@ -106,7 +106,7 @@ List<StaticCommandGroup> settingsCommandsFromState(
 }
 
 List<StaticCommandGroup> settingsCommands({
-  bool hasOrganizations = false,
+  bool hasTeams = false,
   Priority? rootPriority,
   Command? plotAppCmd,
   Command? twistDevCmd,
@@ -137,7 +137,7 @@ List<StaticCommandGroup> settingsCommands({
       if (hasPhysicalKeyboard()) ChangeEnterBehavior(),
       if (subscription != null && subscription.hasPaidPlan)
         ManageSubscription(),
-      if (hasOrganizations) ManageOrganizations(),
+      if (hasTeams) ManageTeams(),
     ],
   ),
   StaticCommandGroup(
@@ -177,13 +177,13 @@ class ShowSettings extends ShowCommands {
           SubscriptionInfo? subscription;
           try {
             final results = await Future.wait([
-              api.get<List<dynamic>>('/organization'),
+              api.get<List<dynamic>>('/team'),
               UpgradeApi.getSubscription(),
             ]);
             final allOrgs = (results[0] as List<dynamic>)
                 .cast<Map<String, dynamic>>();
             log.info(
-              'ShowSettings: /organization returned ${allOrgs.length} orgs: $allOrgs',
+              'ShowSettings: /team returned ${allOrgs.length} orgs: $allOrgs',
             );
             adminOrgs = allOrgs.where((o) => o['role'] == 'admin').toList();
             log.info('ShowSettings: adminOrgs after role filter: $adminOrgs');
@@ -313,11 +313,11 @@ class SignOut extends Command {
   }
 }
 
-class ManageOrganizations extends Command {
-  ManageOrganizations()
+class ManageTeams extends Command {
+  ManageTeams()
     : super(
-        title: 'Organizations',
-        description: 'Members, domains, and billing for your organizations.',
+        title: 'Teams',
+        description: 'Members, domains, and billing for your teams.',
         icon: FontAwesomeIcons.building,
         eventObject: EventObject.settings,
         eventAction: EventAction.opened,
@@ -326,14 +326,14 @@ class ManageOrganizations extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final orgs = await api.get<List<dynamic>>('/organization');
+      final orgs = await api.get<List<dynamic>>('/team');
 
       if (orgs.isEmpty) {
-        return CommandMessage('You are not a member of any organization');
+        return CommandMessage('You are not a member of any team');
       }
 
       if (orgs.length == 1) {
-        final url = Uri.parse('${Env.siteRoot}/organization/${orgs[0]['id']}');
+        final url = Uri.parse('${Env.siteRoot}/team/${orgs[0]['id']}');
         await launchUrl(url, mode: LaunchMode.externalApplication);
         return const CommandDone();
       }
@@ -344,7 +344,7 @@ class ManageOrganizations extends Command {
         context,
         items: (search) async => [
           SelectGroup(
-            title: 'Organizations',
+            title: 'Teams',
             items: orgs.cast<Map<String, dynamic>>(),
           ),
         ],
@@ -372,15 +372,15 @@ class ManageOrganizations extends Command {
 
       if (context.mounted && selected.present) {
         final url = Uri.parse(
-          '${Env.siteRoot}/organization/${selected.value['id']}',
+          '${Env.siteRoot}/team/${selected.value['id']}',
         );
         await launchUrl(url, mode: LaunchMode.externalApplication);
       }
       return const CommandDone();
     } catch (e, t) {
-      log.warning('Failed to open organization management', e, t);
+      log.warning('Failed to open team management', e, t);
       return CommandMessage(
-        'Failed to open organization management',
+        'Failed to open team management',
         isError: true,
       );
     }
@@ -659,10 +659,10 @@ String _providerDisplayName(String provider) {
   };
 }
 
-/// Fetch configured AI providers for a user or org.
+/// Fetch configured AI providers for a user or team.
 Future<List<Map<String, dynamic>>> _fetchProviders(String? orgId) async {
   try {
-    final path = orgId != null ? '/organization/$orgId/ai-keys' : '/ai-keys';
+    final path = orgId != null ? '/team/$orgId/ai-keys' : '/ai-keys';
     final keys = await api.get<List<dynamic>>(path);
     return keys.cast<Map<String, dynamic>>();
   } catch (_) {
@@ -670,11 +670,11 @@ Future<List<Map<String, dynamic>>> _fetchProviders(String? orgId) async {
   }
 }
 
-/// Fetch AI preference selections for a user or org.
+/// Fetch AI preference selections for a user or team.
 Future<Map<String, dynamic>> _fetchPreference(String? orgId) async {
   try {
     final path = orgId != null
-        ? '/organization/$orgId/ai-preference'
+        ? '/team/$orgId/ai-preference'
         : '/ai-preference';
     return await api.get<Map<String, dynamic>>(path);
   } catch (_) {
@@ -719,7 +719,7 @@ List<FormItem> _buildProviderListItems(
                 GestureDetector(
                   onTap: () async {
                     final basePath = orgId != null
-                        ? '/organization/$orgId/ai-keys/${p['id']}'
+                        ? '/team/$orgId/ai-keys/${p['id']}'
                         : '/ai-keys/${p['id']}';
                     try {
                       await api.delete<Map<String, dynamic>>(basePath);
@@ -1089,7 +1089,7 @@ class _SaveAiProvider extends Command {
 
     try {
       final basePath = orgId != null
-          ? '/organization/$orgId/ai-keys'
+          ? '/team/$orgId/ai-keys'
           : '/ai-keys';
 
       final body = <String, dynamic>{
@@ -1142,7 +1142,7 @@ class _SaveAiPreference extends Command {
     try {
       // Save provider selections
       final prefPath = orgId != null
-          ? '/organization/$orgId/ai-preference'
+          ? '/team/$orgId/ai-preference'
           : '/ai-preference';
 
       final prefBody = <String, dynamic>{};
@@ -1229,15 +1229,12 @@ class _SaveAiPreference extends Command {
               true,
         );
 
-        // Get active local priority_twists for this priority to find IDs
-        final localTwists = await PriorityTwist.get(
-          priorityId: priority.id,
-          includeAncestors: false,
-          archived: false,
-        );
+        // Get active local twist_instances to find IDs. Twists are now
+        // workspace-level, so this is not filtered by priority.
+        final localTwists = await TwistInstance.get(archived: false);
 
         for (final aiTwist in aiTwists) {
-          // Find matching local priority_twist
+          // Find matching local twist_instance
           final localTwist = localTwists
               .where((lt) => lt.twistId.toString() == aiTwist.id)
               .firstOrNull;
@@ -1245,12 +1242,12 @@ class _SaveAiPreference extends Command {
           if (localTwist != null) {
             await TwistApi.archiveAndRemoveTwist(localTwist.id.toString());
             await Store.get.save(
-              PriorityTwist.table,
+              TwistInstance.table,
               localTwist.copyWith(
                 archivedAt: Value(DateTime.now()),
                 updatedAt: DateTime.now(),
               ),
-              PriorityTwistsBase(),
+              TwistInstancesBase(),
             );
             archived++;
           }

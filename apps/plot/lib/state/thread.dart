@@ -223,20 +223,8 @@ class ThreadBloc extends Cubit<ThreadState> {
     }
   }
 
-  /// Defaults the current draft to private if the priority has viewer members.
-  /// Safety measure so members don't accidentally post public messages.
-  Future<void> _defaultDraftToPrivateIfViewers() async {
-    final priority = state.thread.priority;
-    if (priority.sharing && !priority.isViewer && !state.thread.isPrivate) {
-      final viewers =
-          await PriorityMember.getAcceptedViewersForPriority(priority.id);
-      if (viewers.isNotEmpty) {
-        emit(state.copyWith(
-          draft: state.draft.copyWith(accessContacts: const Value([])),
-        ));
-      }
-    }
-  }
+  /// No-op: viewers and public/private toggle removed in per-user priorities.
+  Future<void> _defaultDraftToPrivateIfViewers() async {}
 
   void _loadNotes() {
     log.info('Getting notes for thread ${state.thread.id}');

@@ -1,5 +1,5 @@
--- When a priority_twist is archived, archive all thread_tags and note_tags
--- that were created by that twist (actor_id = priority_twist.id).
+-- When a twist_instance is archived, archive all thread_tags and note_tags
+-- that were created by that twist (actor_id = twist_instance.id).
 CREATE OR REPLACE FUNCTION archive_twist_tags()
     RETURNS trigger
     LANGUAGE plpgsql
@@ -20,7 +20,7 @@ END;
 $function$;
 
 CREATE TRIGGER archive_twist_tags_on_archive
-    AFTER UPDATE OF archived_at ON priority_twist
+    AFTER UPDATE OF archived_at ON twist_instance
     FOR EACH ROW
     WHEN (OLD.archived_at IS NULL AND NEW.archived_at IS NOT NULL)
     EXECUTE FUNCTION archive_twist_tags();

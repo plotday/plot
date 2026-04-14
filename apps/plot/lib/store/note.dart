@@ -198,6 +198,18 @@ class Note extends Equatable implements Comparable<Note> {
   final List<ActorId>? accessContacts;
   bool get isPrivate => accessContacts != null;
   bool get isAuthorOnly => accessContacts != null && accessContacts!.isEmpty;
+
+  /// Whether this note's effective contacts (author + accessContacts) exactly
+  /// match the thread's contacts — meaning everyone on the thread can see it,
+  /// so showing a private icon would be misleading.
+  bool matchesThreadContacts(List<Uuid>? threadContacts) {
+    if (!isPrivate || threadContacts == null) return !isPrivate;
+    final noteUuids = <Uuid>{authorId.value, ...?accessContacts?.map((c) => c.value)};
+    final threadSet = threadContacts.toSet();
+    return noteUuids.length == threadSet.length &&
+        noteUuids.containsAll(threadSet);
+  }
+
   final String? content;
   final List<UserAction>? actions;
   final List<ActorId>? mentions;

@@ -1,10 +1,11 @@
 -- User-scoped link view
--- Shows links visible to the user via thread's or link's priority access
+-- Shows links visible to the user via thread_priority (for thread-attached links)
+-- or via priority ownership (for threadless links with their own priority_id)
 CREATE OR REPLACE VIEW "user"."link"
 --
 AS
 SELECT
-    upe.user_id,
+    COALESCE(tp.user_id, p.user_id) AS user_id,
     l.id,
     l.created_at,
     l.updated_at,
@@ -24,12 +25,20 @@ SELECT
     l.actions,
     l.meta,
     l.source_url,
+    l.channel_id,
     l.logo,
-    l.priority_id,
+    COALESCE(tp.priority_id, l.priority_id) AS priority_id,
     l.merged_from_thread_id,
-    upe.path AS priority_path
+    COALESCE(upe.path, pp.path) AS priority_path
 FROM
-    link_x l
-    JOIN "user".priority_expanded upe ON l.priority_id = upe.priority_id;
+    link l
+    -- Thread-attached links: resolve priority via thread_priority
+    LEFT JOIN thread_priority tp ON tp.thread_id = l.thread_id
+    LEFT JOIN "user".priority_expanded upe ON upe.user_id = tp.user_id AND upe.priority_id = tp.priority_id
+    -- Threadless links: use link's own priority_id
+    LEFT JOIN priority pp ON pp.id = l.priority_id AND l.thread_id IS NULL
+    LEFT JOIN priority p ON p.id = l.priority_id AND l.thread_id IS NULL
+WHERE
+    tp.user_id IS NOT NULL OR p.user_id IS NOT NULL;
 
 ALTER VIEW "user"."link" OWNER TO postgres;

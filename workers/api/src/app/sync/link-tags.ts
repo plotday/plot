@@ -23,7 +23,7 @@ type LinkTypeConfig = {
  * Uses union semantics: a tag is present if ANY link on the thread (from the same twist)
  * has a status that maps to that tag.
  *
- * Checks channel-level linkTypes first (from source_channel.link_types),
+ * Checks channel-level linkTypes first (from channel.link_types),
  * falling back to twist-level linkTypes (from twist.permissions._providers[].linkTypes).
  */
 export async function propagateLinkStatusTagsFromDb(
@@ -38,10 +38,10 @@ export async function propagateLinkStatusTagsFromDb(
   // Fall back to twist-level linkTypes
   if (allLinkTypes.length === 0) {
     const twistRow = await db
-      .selectFrom("priority_twist")
-      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      .selectFrom("twist_instance")
+      .innerJoin("twist", "twist.id", "twist_instance.twist_id")
       .select("twist.permissions")
-      .where("priority_twist.id", "=", link.created_by)
+      .where("twist_instance.id", "=", link.created_by)
       .executeTakeFirst();
 
     if (!twistRow?.permissions) return;
@@ -125,7 +125,7 @@ export async function propagateLinkStatusTagsFromDb(
 
 /**
  * Look up channel-level linkTypes for a link.
- * Queries the link's channel_id, then looks up link_types from source_channel.
+ * Queries the link's channel_id, then looks up link_types from channel.
  */
 export async function getChannelLinkTypes(
   db: Kysely<DB>,
@@ -140,9 +140,9 @@ export async function getChannelLinkTypes(
   if (!linkRow?.channel_id) return [];
 
   const channel = await db
-    .selectFrom("source_channel")
+    .selectFrom("channel")
     .select("link_types")
-    .where("priority_twist_id", "=", createdBy)
+    .where("twist_instance_id", "=", createdBy)
     .where("channel_id", "=", linkRow.channel_id)
     .executeTakeFirst();
   if (!channel?.link_types) return [];
@@ -168,10 +168,10 @@ async function getLinkTypesForLink(
   let allLinkTypes = await getChannelLinkTypes(db, linkId, createdBy);
   if (allLinkTypes.length === 0) {
     const twistRow = await db
-      .selectFrom("priority_twist")
-      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      .selectFrom("twist_instance")
+      .innerJoin("twist", "twist.id", "twist_instance.twist_id")
       .select("twist.permissions")
-      .where("priority_twist.id", "=", createdBy)
+      .where("twist_instance.id", "=", createdBy)
       .executeTakeFirst();
     if (!twistRow?.permissions) return [];
     const permissions = twistRow.permissions as any;
@@ -257,10 +257,10 @@ export async function isLinkStatusDone(
   // Fall back to twist-level linkTypes
   if (allLinkTypes.length === 0) {
     const twistRow = await db
-      .selectFrom("priority_twist")
-      .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+      .selectFrom("twist_instance")
+      .innerJoin("twist", "twist.id", "twist_instance.twist_id")
       .select("twist.permissions")
-      .where("priority_twist.id", "=", link.created_by)
+      .where("twist_instance.id", "=", link.created_by)
       .executeTakeFirst();
 
     if (!twistRow?.permissions) return false;

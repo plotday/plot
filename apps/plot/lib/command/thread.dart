@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:collection/collection.dart';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -6,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
@@ -597,7 +601,7 @@ class SkipRsvp extends _UpdateThreadCommand {
 }
 
 class EditThread extends ShowForm {
-  EditThread(Thread thread)
+  EditThread(Thread thread, {VoidCallback? onSaved, PriorityBloc? priorityBloc})
     : super(
         title: 'Edit',
         icon: FontAwesomeIcons.pen,
@@ -611,19 +615,31 @@ class EditThread extends ShowForm {
                     key: 'title',
                     label: 'Title',
                     initialValue: thread.title,
+                    required: !thread.draft,
+                  ),
+                  FormSelect<Priority>(
+                    key: 'priority',
+                    label: 'Priority',
+                    initialValue: thread.priority,
                     required: true,
+                    items: (search) async => Priority.excludePlot(
+                      await Priority.get(
+                        order: PriorityOrder.nested,
+                        search: search,
+                      ),
+                    ),
+                    labelBuilder: (p) => PriorityLabel(priority: p),
+                    titleBuilder: (p) => p.ancestorsLabel() != null
+                        ? '${p.ancestorsLabel()}${Priority.separator}${p.title}'
+                        : p.title,
                   ),
                   FormSelect<ThreadSubType>(
                     key: 'type',
                     label: 'Type',
                     initialValue:
                         ThreadSubType.fromIcon(thread.icon) ??
-                        ThreadSubType.defaultFor(
-                          sharing: thread.priority.sharing,
-                        ),
-                    items: (_) async => ThreadSubType.forPriority(
-                      sharing: thread.priority.sharing,
-                    ),
+                        ThreadSubType.defaultFor(),
+                    items: (_) async => ThreadSubType.values,
                     titleBuilder: (t) => t.label,
                     leadingBuilder: (t) => Icon(t.icon, size: 16),
                   ),
@@ -631,8 +647,16 @@ class EditThread extends ShowForm {
                     key: 'save',
                     buildCommand: (values) {
                       final title = values['title'] as String;
+                      final priority = values['priority'] as Priority;
                       final type = values['type'] as ThreadSubType?;
-                      return _SaveThreadEdit(thread, title, type);
+                      return _SaveThreadEdit(
+                        thread,
+                        title,
+                        priority,
+                        type,
+                        onSaved: onSaved,
+                        priorityBloc: priorityBloc,
+                      );
                     },
                   ),
                 ],
@@ -644,22 +668,35 @@ class EditThread extends ShowForm {
 }
 
 class _SaveThreadEdit extends _UpdateThreadCommand {
-  _SaveThreadEdit(super.thread, this.newTitle, this.newType)
-    : super(
-        title: 'Save',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-      );
+  _SaveThreadEdit(
+    super.thread,
+    this.newTitle,
+    this.newPriority,
+    this.newType, {
+    this.onSaved,
+    super.priorityBloc,
+  }) : super(
+         title: 'Save',
+         eventObject: EventObject.activity,
+         eventAction: EventAction.updated,
+       );
 
   final String newTitle;
+  final Priority newPriority;
   final ThreadSubType? newType;
+  final VoidCallback? onSaved;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     await saveOptimistically(
       context,
-      thread.copyWith(title: Value(newTitle), icon: Value(newType?.value)),
+      thread.copyWith(
+        title: Value(newTitle.isEmpty ? null : newTitle),
+        priority: newPriority,
+        icon: Value(newType?.value),
+      ),
     );
+    onSaved?.call();
     return const CommandDone();
   }
 }
@@ -694,6 +731,16 @@ abstract class _UpdateThreadCommand extends Command {
       try {
         bloc = context.read<PriorityBloc>();
       } catch (_) {}
+    }
+    // Draft threads live in bloc state and must be updated there so the UI
+    // reflects the change after the modal closes. optimisticallyUpdateThread
+    // ignores drafts, so use updateDraft which emits the new state and
+    // persists in one step.
+    if (updatedThread.draft &&
+        bloc != null &&
+        updatedThread.id == bloc.state.draft.id) {
+      await bloc.updateDraft(updatedThread);
+      return;
     }
     bloc?.optimisticallyUpdateThread(updatedThread);
     await onUpdate(updatedThread);
@@ -890,7 +937,7 @@ class FinishThread extends _UpdateThreadCommand {
     for (final link in links) {
       final ptId = link.createdBy;
       if (ptId != null) {
-        final pt = PriorityTwist.fromCache(ptId);
+        final pt = TwistInstance.fromCache(ptId);
         if (pt != null && pt.isSource && !pt.userConnected) {
           if (context.mounted) {
             context.showToast(
@@ -976,23 +1023,16 @@ class FinishThread extends _UpdateThreadCommand {
 }
 
 class ActorGroup extends CommandGroup {
-  ActorGroup({
-    super.title,
-    required this.priorityId,
-    required this.builder,
-    this.excludeActorIds,
-  });
+  ActorGroup({super.title, required this.builder, this.excludeActorIds});
 
-  final Uuid priorityId;
   final Command Function(Actor actor) builder;
   final List<ActorId>? excludeActorIds;
 
   @override
   Future<List<Command>> list({String? search}) async {
     final actors = await Actor.get(
-      priorityId: priorityId,
       types: [ActorType.user, ActorType.contact],
-      search: search, // Backend search by name/email
+      search: search,
       limit: 50,
     );
     if (excludeActorIds != null && excludeActorIds!.isNotEmpty) {
@@ -1275,29 +1315,19 @@ class ToggleThreadTag extends _UpdateThreadCommand {
 
 class ToggleThreadPrivate extends _UpdateThreadCommand {
   ToggleThreadPrivate(super.thread, {super.onUpdate})
-    : _readOnly = thread.priority.isViewer,
-      super(
-        title: thread.priority.isViewer
-            ? (thread.isPrivate ? 'Private' : 'Public')
-            : (thread.isPrivate ? 'Make public' : 'Make private'),
+    : super(
+        title: 'Private',
         eventObject: EventObject.activity,
-        eventAction: thread.isPrivate ? EventAction.untagged : EventAction.tagged,
+        eventAction: EventAction.tagged,
         icon: PlotIcon.private,
-        on: thread.priority.isViewer ? thread.isPrivate : null,
+        on: null,
       );
 
-  final bool _readOnly;
-
   @override
-  bool enabled(BuildContext context) => !_readOnly;
+  bool enabled(BuildContext context) => false;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    if (_readOnly) return const CommandDone();
-    await saveOptimistically(
-      context,
-      thread.copyWith(access: thread.isPrivate ? 'public' : 'private'),
-    );
     return const CommandDone();
   }
 }
@@ -1316,6 +1346,275 @@ class MoveToPriority extends PriorityCommand {
   Future<CommandReturn> run(BuildContext context) async {
     await thread.copyWith(priority: priority!).save();
     return const CommandDone();
+  }
+}
+
+/// Moves a thread to a priority, then shows rule creation options.
+/// Wraps MoveToPriority + a second ShowCommands step for rules.
+class MoveToPriorityWithRules extends ShowCommands {
+  MoveToPriorityWithRules(this.thread, this.targetPriority)
+    : super(
+        title: targetPriority.title,
+        icon: PlotIcon.move,
+        showFilter: false,
+        commandsBuilder: (context) =>
+            _buildRuleCommands(thread, targetPriority),
+      );
+
+  final Thread thread;
+  final Priority targetPriority;
+
+  @override
+  Widget? buildBody(BuildContext context) =>
+      PriorityLabel(priority: targetPriority);
+
+  static Future<Commands> _buildRuleCommands(
+    Thread thread,
+    Priority targetPriority,
+  ) async {
+    final options = <Command>[];
+
+    // Resolve the thread's channel from its links
+    final links = await Link.getForThread(thread.id);
+    final channelLink = links.firstWhereOrNull(
+      (Link l) => l.channelId != null && l.createdBy != null,
+    );
+    Channel? channel;
+    if (channelLink != null) {
+      channel = Channel.findByChannel(
+        channelLink.createdBy!,
+        channelLink.channelId!,
+      );
+    }
+
+    // Resolve connector name for display
+    String? connectorLabel;
+    if (channel != null) {
+      final twist = TwistInstance.fromCache(channelLink!.createdBy!);
+      connectorLabel = twist != null
+          ? '${twist.name} > ${channel.title}'
+          : channel.title;
+    }
+
+    final threadsPrefix = connectorLabel != null
+        ? 'Move all $connectorLabel threads'
+        : 'Move all threads';
+
+    // Content match rule — show when thread has content for embedding.
+    // hasEmbedding may be false for threads that haven't re-synced yet;
+    // the server generates embeddings on the fly when applying rules.
+    if (thread.hasEmbedding ||
+        (thread.title != null && thread.title!.isNotEmpty)) {
+      options.add(
+        _CreatePriorityRule(
+          thread: thread,
+          targetPriority: targetPriority,
+          channel: channel,
+          ruleType: 'content',
+          title: '$threadsPrefix about something similar',
+          mutedPrefix: threadsPrefix,
+          keyLabel: 'about something similar',
+          icon: PlotIcon.note,
+        ),
+      );
+    }
+
+    // Topic rule (only if exactly one topic)
+    final topics = thread.topics;
+    if (topics.length == 1) {
+      final topicRow = await (Store.get.select(
+        Store.get.topics,
+      )..where((t) => t.id.equals(topics.first.toBytes()))).getSingleOrNull();
+      final topicName = topicRow?.name ?? 'this topic';
+      options.add(
+        _CreatePriorityRule(
+          thread: thread,
+          targetPriority: targetPriority,
+          channel: channel,
+          ruleType: 'contact_topics',
+          title: '$threadsPrefix with $topicName',
+          mutedPrefix: '$threadsPrefix with',
+          keyLabel: topicName,
+          criteria: {
+            'topics': [topics.first.toString()],
+          },
+          icon: PlotIcon.note,
+        ),
+      );
+    }
+
+    // Contact/topics rule (if has contacts or multiple topics)
+    if (thread.contacts.isNotEmpty || topics.length > 1) {
+      options.add(
+        _CreatePriorityRule(
+          thread: thread,
+          targetPriority: targetPriority,
+          channel: channel,
+          ruleType: 'contact_topics',
+          title: '$threadsPrefix with similar people',
+          mutedPrefix: '$threadsPrefix with',
+          keyLabel: 'similar people',
+          criteria: {
+            if (thread.contacts.isNotEmpty)
+              'contacts': thread.contacts.map((c) => c.toString()).toList(),
+            if (topics.isNotEmpty)
+              'topics': topics.map((Uuid t) => t.toString()).toList(),
+          },
+          icon: PlotIcon.users,
+        ),
+      );
+    }
+
+    // Channel rule (only if from a connector)
+    if (channel != null) {
+      options.add(
+        _CreatePriorityRule(
+          thread: thread,
+          targetPriority: targetPriority,
+          channel: channel,
+          ruleType: 'channel',
+          title: 'Move all threads from $connectorLabel',
+          mutedPrefix: 'Move all threads from',
+          keyLabel: connectorLabel!,
+          icon: PlotIcon.connection,
+        ),
+      );
+    }
+
+    // Always show "just this thread"
+    options.add(_MoveJustThisThread(thread, targetPriority));
+
+    return Commands(
+      prompt: 'Also move matching threads?',
+      groups: [StaticCommandGroup(commands: options)],
+    );
+  }
+}
+
+class _CreatePriorityRule extends Command {
+  _CreatePriorityRule({
+    required this.thread,
+    required this.targetPriority,
+    required this.channel,
+    required this.ruleType,
+    required String title,
+    required this.mutedPrefix,
+    required this.keyLabel,
+    this.criteria,
+    IconData? icon,
+  }) : super(
+         title: title,
+         eventObject: EventObject.activity,
+         eventAction: EventAction.moved,
+         icon: icon ?? PlotIcon.move,
+       );
+
+  final Thread thread;
+  final Priority targetPriority;
+  final Channel? channel;
+  final String ruleType;
+  final String mutedPrefix;
+  final String keyLabel;
+  final Map<String, dynamic>? criteria;
+
+  @override
+  Widget? buildBody(BuildContext context) =>
+      _RuleLabel(mutedPrefix: mutedPrefix, keyLabel: keyLabel);
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    // Move the thread first
+    await thread.copyWith(priority: targetPriority).save();
+
+    final ruleId = Uuid.generate();
+
+    // Insert a local priority_rule row for offline resilience.
+    await Store.get
+        .into(Store.get.priorityRules)
+        .insert(
+          PriorityRulesCompanion(
+            id: Value(ruleId),
+            userId: Value(Base.userId),
+            priorityId: Value(targetPriority.id),
+            channelId: Value(channel?.id.toInt()),
+            type: Value(ruleType),
+            label: Value(title),
+            anchorThreadId: Value(thread.id),
+            criteria: Value(criteria != null ? jsonEncode(criteria) : null),
+          ),
+        );
+
+    // Try to push immediately; if offline, the rule will be retried on next sync.
+    try {
+      await api.post<dynamic>(
+        '/sync/priority-rules',
+        body: {
+          'id': ruleId.toString(),
+          'priority_id': targetPriority.id.toString(),
+          'channel_id': channel?.id.toInt(),
+          'type': ruleType,
+          'criteria': criteria,
+          'label': title,
+          'anchor_thread_id': thread.id.toString(),
+        },
+      );
+      // Success — delete the local row
+      await (Store.get.delete(
+        Store.get.priorityRules,
+      )..where((r) => r.id.equals(ruleId.toBytes()))).go();
+    } catch (_) {
+      // Offline or error — rule stays local for retry
+    }
+
+    return const CommandDone();
+  }
+}
+
+class _MoveJustThisThread extends Command {
+  _MoveJustThisThread(this.thread, this.targetPriority)
+    : super(
+        title: 'Move just this thread',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.moved,
+        icon: PlotIcon.move,
+      );
+
+  final Thread thread;
+  final Priority targetPriority;
+
+  @override
+  Widget? buildBody(BuildContext context) =>
+      _RuleLabel(mutedPrefix: 'Move', keyLabel: 'just this thread');
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await thread.copyWith(priority: targetPriority).save();
+    return const CommandDone();
+  }
+}
+
+class _RuleLabel extends StatelessWidget {
+  const _RuleLabel({required this.mutedPrefix, required this.keyLabel});
+
+  final String mutedPrefix;
+  final String keyLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = context.theme.typography.md;
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: '$mutedPrefix ',
+            style: style.copyWith(color: context.theme.plotColors.muted),
+          ),
+          TextSpan(text: keyLabel, style: style),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 }
 
@@ -1364,9 +1663,9 @@ class MoveThreadToPriority extends ShowCommands {
 
   static Future<Commands> _getMoveCommands(Thread thread) async {
     final priorities = await Priority.get(order: PriorityOrder.recent);
-    final filteredPriorities = priorities
-        .where((p) => p.id != thread.priority.id)
-        .toList();
+    final filteredPriorities = Priority.excludePlot(
+      priorities,
+    ).where((p) => p.id != thread.priority.id).toList();
 
     return Commands(
       prompt: 'Move thread to priority',
@@ -1374,7 +1673,7 @@ class MoveThreadToPriority extends ShowCommands {
         StaticCommandGroup(
           title: 'Priorities',
           commands: filteredPriorities
-              .map((priority) => MoveToPriority(thread, priority))
+              .map((priority) => MoveToPriorityWithRules(thread, priority))
               .toList(),
         ),
       ],
@@ -1704,9 +2003,7 @@ class ChangeThreadSubType extends ShowCommands {
         title: 'Change type',
         icon: PlotIcon.notes,
         commandsBuilder: (context) async {
-          final types = ThreadSubType.forPriority(
-            sharing: thread.priority.sharing,
-          );
+          final types = ThreadSubType.values;
           return Commands(
             groups: [
               StaticCommandGroup(
@@ -1740,6 +2037,306 @@ class SetThreadSubType extends Command {
     return const CommandDone();
   }
 }
+
+// Thread sharing commands
+
+class PickThreadShared extends ShowCommands {
+  PickThreadShared(this.thread)
+    : super(
+        title: _computeSharedTitle(thread),
+        icon: _computeSharedIcon(thread),
+        commandsBuilder: (context) => _getSharedCommands(thread),
+        showFilter: true,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyS, shift: true),
+      );
+
+  final Thread thread;
+
+  static Future<Commands> _getSharedCommands(Thread thread) async {
+    final fresh = await Thread.getOne(thread.id);
+    return _buildSharedCommands(fresh, onUpdate: null);
+  }
+}
+
+/// Share picker for draft threads on NewThreadPage (uses callback instead of
+/// direct save).
+class PickDraftThreadShared extends ShowCommands {
+  factory PickDraftThreadShared({
+    required Thread thread,
+    required Future<void> Function(Thread thread) onUpdate,
+  }) {
+    // Mutable reference so commandsBuilder always sees the latest thread
+    final threadRef = [thread];
+
+    Future<void> wrappedOnUpdate(Thread updated) async {
+      threadRef[0] = updated;
+      await onUpdate(updated);
+    }
+
+    return PickDraftThreadShared._(
+      thread: thread,
+      onUpdate: onUpdate,
+      commandsBuilder: (context) =>
+          _buildSharedCommands(threadRef[0], onUpdate: wrappedOnUpdate),
+    );
+  }
+
+  PickDraftThreadShared._({
+    required this.thread,
+    required this.onUpdate,
+    required Future<Commands> Function(BuildContext) commandsBuilder,
+  }) : super(
+         title: _computeSharedTitle(thread),
+         icon: _computeSharedIcon(thread),
+         commandsBuilder: commandsBuilder,
+         showFilter: true,
+         eventObject: EventObject.activity,
+         eventAction: EventAction.updated,
+         shortcut: platformSingleActivator(
+           LogicalKeyboardKey.keyS,
+           shift: true,
+         ),
+       );
+
+  final Thread thread;
+  final Future<void> Function(Thread thread) onUpdate;
+}
+
+String _computeSharedTitle(Thread thread) {
+  return _hasOtherShared(thread) ? 'Shared' : 'Share';
+}
+
+IconData _computeSharedIcon(Thread thread) {
+  return _hasOtherShared(thread) ? PlotIcon.user : PlotIcon.shareAdd;
+}
+
+bool _hasOtherShared(Thread thread) {
+  if (thread.inviteEmails.isNotEmpty) return true;
+  if (thread.contacts.isEmpty) return false;
+  final selfUuids = Actor.getCurrentUserActorIds()
+      .map((a) => a.toUuid())
+      .toSet();
+  return thread.contacts.any((id) => !selfUuids.contains(id));
+}
+
+Future<Commands> _buildSharedCommands(
+  Thread thread, {
+  required Future<void> Function(Thread)? onUpdate,
+}) async {
+  // Resolve shared actors (excluding self).
+  final sharedActors = <Actor>[];
+  for (final contactId in thread.contacts) {
+    try {
+      final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+      if (!actor.self) sharedActors.add(actor);
+    } catch (_) {
+      // Skip contacts whose actors can't be resolved
+    }
+  }
+  final sharedActorIds = sharedActors.map((a) => a.id).toList();
+
+  Command toggleActor(Actor actor) => onUpdate != null
+      ? _ShareDraftThreadActor(thread, actor, onUpdate: onUpdate)
+      : ShareThreadActor(thread, actor);
+
+  Command toggleInvite(String email) =>
+      InviteThreadEmail(thread, email, onUpdate: onUpdate);
+
+  return Commands(
+    prompt: 'Share with',
+    emptyMessage: 'Enter an email address to invite someone',
+    groups: [
+      if (sharedActors.isNotEmpty || thread.inviteEmails.isNotEmpty)
+        StaticCommandGroup(
+          title: 'Shared',
+          commands: [
+            ...sharedActors.map(toggleActor),
+            ...thread.inviteEmails.map(toggleInvite),
+          ],
+        ),
+      _ThreadShareContactsGroup(
+        thread: thread,
+        excludeActorIds: sharedActorIds,
+        onUpdate: onUpdate,
+      ),
+    ],
+  );
+}
+
+class _ThreadShareContactsGroup extends CommandGroup {
+  _ThreadShareContactsGroup({
+    required this.thread,
+    required this.excludeActorIds,
+    required this.onUpdate,
+  }) : super(title: 'Contacts');
+
+  final Thread thread;
+  final List<ActorId> excludeActorIds;
+  final Future<void> Function(Thread)? onUpdate;
+
+  @override
+  Future<List<Command>> list({String? search}) async {
+    final actors = await Actor.get(
+      types: [ActorType.user, ActorType.contact],
+      search: search,
+      limit: 50,
+    );
+    final excluded = excludeActorIds.toSet();
+    actors.removeWhere((a) => excluded.contains(a.id) || a.self);
+
+    final commands = <Command>[
+      for (final actor in actors)
+        if (onUpdate != null)
+          _ShareDraftThreadActor(thread, actor, onUpdate: onUpdate!)
+        else
+          ShareThreadActor(thread, actor),
+    ];
+
+    if (search != null && _isValidShareEmail(search)) {
+      final normalized = search.toLowerCase();
+      final emailExists = actors.any(
+        (a) => a.email?.toLowerCase() == normalized,
+      );
+      final alreadyInvited = thread.inviteEmails.contains(normalized);
+      if (!emailExists && !alreadyInvited) {
+        commands.insert(
+          0,
+          InviteThreadEmail(thread, normalized, onUpdate: onUpdate),
+        );
+      }
+    }
+
+    return commands;
+  }
+}
+
+class ShareThreadActor extends Command {
+  ShareThreadActor(this.thread, this.actor)
+    : _isShared = thread.contacts.contains(actor.id.toUuid()),
+      super(
+        title: actor.nameOrEmail,
+        eventObject: EventObject.activity,
+        eventAction: thread.contacts.contains(actor.id.toUuid())
+            ? EventAction.updated
+            : EventAction.shared,
+        icon: thread.contacts.contains(actor.id.toUuid())
+            ? PlotIcon.user
+            : PlotIcon.shareAdd,
+        on: thread.contacts.contains(actor.id.toUuid()),
+      );
+
+  final Thread thread;
+  final Actor actor;
+  final bool _isShared;
+
+  @override
+  String? get subtitle => actor.name != null ? actor.email : null;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final contactUuid = actor.id.toUuid();
+      final newContacts = _isShared
+          ? thread.contacts.where((id) => id != contactUuid).toList()
+          : [...thread.contacts, contactUuid];
+      await thread.copyWith(contacts: Value(newContacts)).save();
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in ShareThreadActor: $e', e, stackTrace);
+      return CommandMessage('Failed to update sharing', isError: true);
+    }
+  }
+}
+
+class _ShareDraftThreadActor extends Command {
+  _ShareDraftThreadActor(this.thread, this.actor, {required this.onUpdate})
+    : _isShared = thread.contacts.contains(actor.id.toUuid()),
+      super(
+        title: actor.nameOrEmail,
+        eventObject: EventObject.activity,
+        eventAction: thread.contacts.contains(actor.id.toUuid())
+            ? EventAction.updated
+            : EventAction.shared,
+        icon: thread.contacts.contains(actor.id.toUuid())
+            ? PlotIcon.user
+            : PlotIcon.shareAdd,
+        on: thread.contacts.contains(actor.id.toUuid()),
+      );
+
+  final Thread thread;
+  final Actor actor;
+  final Future<void> Function(Thread) onUpdate;
+  final bool _isShared;
+
+  @override
+  String? get subtitle => actor.name != null ? actor.email : null;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final contactUuid = actor.id.toUuid();
+      final newContacts = _isShared
+          ? thread.contacts.where((id) => id != contactUuid).toList()
+          : [...thread.contacts, contactUuid];
+      await onUpdate(thread.copyWith(contacts: Value(newContacts)));
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in _ShareDraftThreadActor: $e', e, stackTrace);
+      return CommandMessage('Failed to update sharing', isError: true);
+    }
+  }
+}
+
+class InviteThreadEmail extends Command {
+  InviteThreadEmail(this.thread, this.email, {this.onUpdate})
+    : _isInvited = thread.inviteEmails.contains(email.toLowerCase()),
+      super(
+        title: thread.inviteEmails.contains(email.toLowerCase())
+            ? email
+            : 'Invite $email',
+        subtitle: thread.inviteEmails.contains(email.toLowerCase())
+            ? 'Pending invitation'
+            : 'Invite by email',
+        eventObject: EventObject.activity,
+        eventAction: thread.inviteEmails.contains(email.toLowerCase())
+            ? EventAction.updated
+            : EventAction.shared,
+        icon: thread.inviteEmails.contains(email.toLowerCase())
+            ? PlotIcon.user
+            : PlotIcon.shareAdd,
+        on: thread.inviteEmails.contains(email.toLowerCase()),
+      );
+
+  final Thread thread;
+  final String email;
+  final Future<void> Function(Thread)? onUpdate;
+  final bool _isInvited;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final normalized = email.toLowerCase();
+      final newEmails = _isInvited
+          ? thread.inviteEmails.where((e) => e != normalized).toList()
+          : [...thread.inviteEmails, normalized];
+      final updated = thread.copyWith(inviteEmails: Value(newEmails));
+      if (onUpdate != null) {
+        await onUpdate!(updated);
+      } else {
+        await updated.save();
+      }
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in InviteThreadEmail: $e', e, stackTrace);
+      return CommandMessage('Failed to update invitation', isError: true);
+    }
+  }
+}
+
+bool _isValidShareEmail(String value) =>
+    RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
 
 // Focus navigation intents and actions for list items
 
@@ -2030,6 +2627,7 @@ List<Command> threadCommands(
       PickScheduleThread(thread),
     if (!skipInfrequent) EditThread(thread),
     MoveThreadToPriority(thread),
+    PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
     if (!skipInfrequent && !thread.priority.personal)

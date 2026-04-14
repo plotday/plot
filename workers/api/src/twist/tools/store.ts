@@ -11,14 +11,14 @@ export class Store extends Tool implements IStore {
 
   constructor(options: {
     storage: DurableObjectNamespace<Storage>;
-    priorityTwistId: string;
+    twistInstanceId: string;
     path: string[];
   }) {
     super();
     // Remove final element (this tool's ID) from path
     const toolPath = options.path.slice(0, -1);
     const storageId = options.storage.idFromName(
-      `${options.priorityTwistId}:${toolPath.join(":")}`
+      `${options.twistInstanceId}:${toolPath.join(":")}`
     );
     this.storage = options.storage.get(storageId);
   }

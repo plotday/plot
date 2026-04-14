@@ -15,8 +15,6 @@ DECLARE
     v_child_thread_id uuid;
     v_parent_priority_id uuid;
     v_child_priority_id uuid;
-    v_parent_role text;
-    v_child_role text;
     v_existing_id uuid;
     v_result thread_association;
 BEGIN
@@ -49,53 +47,33 @@ BEGIN
         RAISE EXCEPTION 'Cannot associate a thread with itself';
     END IF;
 
-    -- Check access to parent thread's priority
-    SELECT
-        a.priority_id,
-        CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE COALESCE(MAX(pu.role), NULL) END
-    INTO v_parent_priority_id, v_parent_role
-    FROM
-        thread a
-        JOIN priority p ON p.id = a.priority_id
-        LEFT JOIN priority pp ON p.path <@ pp.path
-        LEFT JOIN priority_user pu ON pu.priority_id = pp.id
-            AND pu.user_id = upsert_thread_association.user_id
-            AND pu.archived_at IS NULL
-    WHERE
-        a.id = v_parent_thread_id
-    GROUP BY a.priority_id;
+    -- Check access to parent thread via thread_priority
+    SELECT tp.priority_id INTO v_parent_priority_id
+    FROM thread_priority tp
+    WHERE tp.thread_id = v_parent_thread_id
+      AND tp.user_id = upsert_thread_association.user_id;
 
     IF v_parent_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Parent thread not found';
+        IF NOT EXISTS (SELECT 1 FROM thread WHERE id = v_parent_thread_id) THEN
+            RAISE EXCEPTION 'Parent thread not found';
+        END IF;
+        RAISE EXCEPTION 'User does not have access to parent thread';
     END IF;
-    IF v_parent_role IS NULL THEN
+    IF NOT user_has_priority_access(upsert_thread_association.user_id, v_parent_priority_id) THEN
         RAISE EXCEPTION 'User does not have access to parent thread priority';
     END IF;
-    IF v_parent_role = 'viewer' THEN
-        RAISE EXCEPTION 'Viewer members cannot create or modify associations';
-    END IF;
 
-    -- Check access to child thread's priority
-    SELECT
-        a.priority_id,
-        CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE COALESCE(MAX(pu.role), NULL) END
-    INTO v_child_priority_id, v_child_role
-    FROM
-        thread a
-        JOIN priority p ON p.id = a.priority_id
-        LEFT JOIN priority pp ON p.path <@ pp.path
-        LEFT JOIN priority_user pu ON pu.priority_id = pp.id
-            AND pu.user_id = upsert_thread_association.user_id
-            AND pu.archived_at IS NULL
-    WHERE
-        a.id = v_child_thread_id
-    GROUP BY a.priority_id;
+    -- Check access to child thread via thread_priority
+    SELECT tp.priority_id INTO v_child_priority_id
+    FROM thread_priority tp
+    WHERE tp.thread_id = v_child_thread_id
+      AND tp.user_id = upsert_thread_association.user_id;
 
     IF v_child_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Child thread not found';
-    END IF;
-    IF v_child_role IS NULL THEN
-        RAISE EXCEPTION 'User does not have access to child thread priority';
+        IF NOT EXISTS (SELECT 1 FROM thread WHERE id = v_child_thread_id) THEN
+            RAISE EXCEPTION 'Child thread not found';
+        END IF;
+        RAISE EXCEPTION 'User does not have access to child thread';
     END IF;
 
     -- Resolve existing association ID based on unique constraints

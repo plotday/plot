@@ -14,14 +14,14 @@ class ApiException implements Exception {
   /// The type of limit that was exceeded (e.g. 'connections', 'twists')
   final String? limitType;
 
-  /// Whether the limit applies to an organization (true) or personal account (false)
-  final bool? isOrg;
+  /// Whether the limit applies to a team (true) or personal account (false)
+  final bool? isTeam;
 
-  /// Whether the current user is an admin of the affected organization
+  /// Whether the current user is an admin of the affected team
   final bool? isAdmin;
 
-  /// The organization ID associated with the limit, if applicable
-  final String? organizationId;
+  /// The team ID associated with the limit, if applicable
+  final String? teamId;
 
   ApiException({
     required this.statusCode,
@@ -31,9 +31,9 @@ class ApiException implements Exception {
     this.pgCode,
     this.code,
     this.limitType,
-    this.isOrg,
+    this.isTeam,
     this.isAdmin,
-    this.organizationId,
+    this.teamId,
   });
 
   /// Returns true if this exception represents a plan limit being exceeded

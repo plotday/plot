@@ -111,9 +111,10 @@ class AppRouter extends RootStackRouter {
               page: EmptyShellRoute("PriorityShell"),
               path: '',
               children: [
+                // Canonical priority URL: /p/:priorityId
                 AutoRoute(
                   page: PriorityRoute.page,
-                  path: ':priorityId',
+                  path: 'p/:priorityId',
                   children: [
                     // This route redirects to NewThreadRoute when the middle panel is
                     // already showing PriorityPage.
@@ -132,6 +133,13 @@ class AppRouter extends RootStackRouter {
                     ),
                     AutoRoute(page: ThreadRoute.page, path: ':threadId'),
                   ],
+                ),
+                // Canonical standalone thread URL: /t/:threadId — resolves
+                // the thread's priority and replaces the stack with the
+                // nested PriorityRoute + ThreadRoute form.
+                AutoRoute(
+                  page: ThreadLookupRoute.page,
+                  path: 't/:threadId',
                 ),
               ],
             ),
@@ -157,7 +165,7 @@ class AppRouter extends RootStackRouter {
     Clip clipBehavior = Clip.hardEdge,
   }) {
     return super.config(
-      deepLinkTransformer: deepLinkTransformer,
+      deepLinkTransformer: deepLinkTransformer ?? _legacyDeepLinkTransformer,
       deepLinkBuilder: deepLinkBuilder,
       navRestorationScopeId: navRestorationScopeId,
       placeholder: placeholder,
@@ -173,6 +181,44 @@ class AppRouter extends RootStackRouter {
       clipBehavior: clipBehavior,
     );
   }
+}
+
+/// Rewrites pre-stage-8 URLs into the new canonical forms:
+///
+///   /:priorityId              → /p/:priorityId
+///   /:priorityId/new          → /p/:priorityId/new
+///   /:priorityId/:threadId    → /t/:threadId
+///
+/// Only threads are deep-linked between users, so the priority segment
+/// is dropped for legacy thread URLs — the new standalone thread route
+/// resolves per-user filing client-side.
+Future<Uri> _legacyDeepLinkTransformer(Uri uri) async {
+  final segments = uri.pathSegments;
+  if (segments.isEmpty) return uri;
+  final first = segments.first;
+  // Pass through already-canonical and non-entity paths untouched.
+  const reserved = {
+    'p',
+    't',
+    'login',
+    'priorities',
+    'invite',
+    'account',
+  };
+  if (reserved.contains(first)) return uri;
+
+  if (segments.length == 1) {
+    return uri.replace(pathSegments: ['p', segments[0]]);
+  }
+  if (segments.length >= 2) {
+    if (segments[1] == 'new') {
+      return uri.replace(pathSegments: ['p', segments[0], 'new']);
+    }
+    // Legacy /priority/thread → canonical /t/thread (priority is
+    // resolved per-user via ThreadLookupRoute).
+    return uri.replace(pathSegments: ['t', segments[1]]);
+  }
+  return uri;
 }
 
 extension FocusedRouterExtension on BuildContext {

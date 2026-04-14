@@ -7,15 +7,15 @@ DECLARE
     v_old_path ltree;
     v_new_path ltree;
     v_priority_label text;
-    v_priority_org_id bigint;
-    v_dest_parent_org_id bigint;
-    v_new_parent_org_id bigint;
+    v_priority_team_id bigint;
+    v_dest_parent_team_id bigint;
+    v_new_parent_team_id bigint;
 BEGIN
     -- Get the current path of the priority being moved
     SELECT
         path,
-        organization_id INTO v_old_path,
-        v_priority_org_id
+        team_id INTO v_old_path,
+        v_priority_team_id
     FROM
         public.priority
     WHERE
@@ -28,19 +28,19 @@ BEGIN
     IF p_new_parent_path IS NOT NULL AND (p_new_parent_path <@ v_old_path OR p_new_parent_path = v_old_path) THEN
         RAISE EXCEPTION 'Cannot move priority to be a descendant of itself';
     END IF;
-    -- Block moves that cross org boundaries
-    IF v_priority_org_id IS NOT NULL THEN
+    -- Block moves that cross team boundaries
+    IF v_priority_team_id IS NOT NULL THEN
         IF p_new_parent_path IS NULL THEN
-            RAISE EXCEPTION 'Cannot move org priority outside its organization tree';
+            RAISE EXCEPTION 'Cannot move team priority outside its team tree';
         END IF;
         SELECT
-            organization_id INTO v_dest_parent_org_id
+            team_id INTO v_dest_parent_team_id
         FROM
             public.priority
         WHERE
             path = p_new_parent_path;
-        IF v_dest_parent_org_id IS DISTINCT FROM v_priority_org_id THEN
-            RAISE EXCEPTION 'Cannot move org priority outside its organization tree';
+        IF v_dest_parent_team_id IS DISTINCT FROM v_priority_team_id THEN
+            RAISE EXCEPTION 'Cannot move team priority outside its team tree';
         END IF;
     END IF;
     -- Extract the last label from the current path (the priority's own identifier)
@@ -69,22 +69,22 @@ BEGIN
     WHERE
         path <@ v_old_path
         OR path = v_old_path;
-    -- Propagate organization_id to moved priority and descendants (for moves into org tree)
+    -- Propagate team_id to moved priority and descendants (for moves into team tree)
     IF p_new_parent_path IS NOT NULL THEN
         SELECT
-            organization_id INTO v_new_parent_org_id
+            team_id INTO v_new_parent_team_id
         FROM
             public.priority
         WHERE
             path = p_new_parent_path;
-        IF v_new_parent_org_id IS NOT NULL THEN
+        IF v_new_parent_team_id IS NOT NULL THEN
             UPDATE
                 public.priority
             SET
-                organization_id = v_new_parent_org_id
+                team_id = v_new_parent_team_id
             WHERE
                 path <@ v_new_path
-                AND (organization_id IS DISTINCT FROM v_new_parent_org_id);
+                AND (team_id IS DISTINCT FROM v_new_parent_team_id);
         END IF;
     END IF;
 END;

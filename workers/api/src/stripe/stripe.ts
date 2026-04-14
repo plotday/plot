@@ -13,8 +13,10 @@ import {
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { sql } from "kysely";
-import { PLAN_LIMITS, TEAM_CONNECTIONS_PER_GROUP } from "../utils/limits";
+import { BUILTIN_TWIST_PACKAGE_ID, PLAN_LIMITS, type PlanKey } from "../utils/limits";
 import { backfillEmbeddings } from "../queue/backfill-embeddings";
+import { twistFactory } from "../twist/factory";
+import { disposeRpc } from "../utils/rpc";
 import { notifyUserSync } from "../app/sync/notify";
 import { handleTrialUpgrade } from "../utils/trial";
 
@@ -177,10 +179,18 @@ async function handleSubscriptionUpdate(
   // Determine plan from subscription metadata, validated against known values
   const validPlans = ["free", "core", "pro", "team"];
   const plan = validPlans.includes(subscription.metadata.plan)
-    ? (subscription.metadata.plan as "free" | "core" | "pro" | "team")
-    : "free";
+    ? (subscription.metadata.plan as PlanKey)
+    : ("free" as PlanKey);
 
-  // Try user_subscription first, then organization_subscription
+  // Read the old plan before updating (for sync history expansion detection)
+  const oldUserSub = await c.var.db
+    .selectFrom("user_subscription")
+    .select(["plan", "user_id"])
+    .where("stripe_customer_id", "=", customerId)
+    .executeTakeFirst();
+  const oldPlan = (oldUserSub?.plan as PlanKey) ?? "free";
+
+  // Try user_subscription first, then team_subscription
   let isUserSubscription = false;
   try {
     const userResult = await c.var.db
@@ -201,9 +211,9 @@ async function handleSubscriptionUpdate(
       !!userResult && BigInt(userResult.numUpdatedRows) > 0n;
 
     if (!isUserSubscription) {
-      // Not a user subscription — try organization_subscription
+      // Not a user subscription — try team_subscription
       await c.var.db
-        .updateTable("organization_subscription")
+        .updateTable("team_subscription")
         .set({
           stripe_subscription_id: subscription.id,
           plan,
@@ -278,6 +288,28 @@ async function handleSubscriptionUpdate(
     }
   }
 
+  // Trigger historical re-sync when sync history range expands on upgrade
+  if (
+    PLAN_LIMITS[plan].syncHistoryDays > PLAN_LIMITS[oldPlan].syncHistoryDays &&
+    oldUserSub?.user_id
+  ) {
+    c.executionCtx.waitUntil(
+      triggerHistoryResync(
+        c.var.db,
+        c.env,
+        c.executionCtx as ExecutionContext,
+        oldUserSub.user_id,
+        logger
+      ).catch((error) => {
+        logger.error("Failed to trigger history re-sync on upgrade", error as Error, {
+          user_id: oldUserSub.user_id,
+          old_plan: oldPlan,
+          new_plan: plan,
+        });
+      })
+    );
+  }
+
   // Detect mid-trial upgrade: if user was on a reverse trial and just upgraded
   if (plan !== "free") {
     try {
@@ -301,7 +333,7 @@ async function handleSubscriptionUpdate(
   // Update connection_group_quantity for org subscriptions
   const quantity = subscription.items?.data?.[0]?.quantity ?? 1;
   await c.var.db
-    .updateTable("organization_subscription")
+    .updateTable("team_subscription")
     .set({ connection_group_quantity: quantity })
     .where("stripe_customer_id", "=", customerId)
     .execute();
@@ -368,7 +400,7 @@ async function handleSubscriptionDeleted(
 
   const { start, end } = createFreeTierBillingCycle();
 
-  // Revert to free tier — try user_subscription first, then organization_subscription
+  // Revert to free tier — try user_subscription first, then team_subscription
   try {
     const userResult = await c.var.db
       .updateTable("user_subscription")
@@ -384,7 +416,7 @@ async function handleSubscriptionDeleted(
 
     if (!userResult || BigInt(userResult.numUpdatedRows) === 0n) {
       await c.var.db
-        .updateTable("organization_subscription")
+        .updateTable("team_subscription")
         .set({
           stripe_subscription_id: null,
           plan: "free",
@@ -489,24 +521,24 @@ async function notifySubscriptionChange(
 }
 
 /**
- * Get all user IDs that belong to an organization (by stripe customer ID).
+ * Get all user IDs that belong to a team (by stripe customer ID).
  */
 async function getOrgMemberUserIds(
   db: any,
   stripeCustomerId: string
 ): Promise<string[]> {
   const orgSub = await db
-    .selectFrom("organization_subscription")
-    .select("organization_id")
+    .selectFrom("team_subscription")
+    .select("team_id")
     .where("stripe_customer_id", "=", stripeCustomerId)
     .executeTakeFirst();
 
   if (!orgSub) return [];
 
   const members = await db
-    .selectFrom("organization_member")
+    .selectFrom("team_user")
     .select("user_id")
-    .where("organization_id", "=", orgSub.organization_id)
+    .where("team_id", "=", orgSub.team_id)
     .execute();
 
   return members.map((m: any) => m.user_id as string);
@@ -534,25 +566,19 @@ async function enforceDowngradeLimits(
     // Personal downgrade: trim connections
     if (limits.connections !== Infinity) {
       const excess = await db
-        .selectFrom("priority_twist_connection as ptc")
-        .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
-        .leftJoin("priority as p", "p.id", "pt.priority_id")
-        .select(["ptc.priority_twist_id", "ptc.user_id", "ptc.provider"])
+        .selectFrom("twist_instance_connection as ptc")
+        .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
+        .select(["ptc.twist_instance_id", "ptc.user_id", "ptc.provider"])
         .where("ptc.user_id", "=", userSub.user_id)
-        .where((eb: any) =>
-          eb.or([
-            eb("pt.priority_id", "is", null),
-            eb("p.organization_id", "is", null),
-          ])
-        )
+        .where("pt.archived_at", "is", null)
         .orderBy("ptc.connected_at", "desc")
         .offset(limits.connections)
         .execute();
 
       for (const row of excess) {
         await db
-          .deleteFrom("priority_twist_connection")
-          .where("priority_twist_id", "=", row.priority_twist_id)
+          .deleteFrom("twist_instance_connection")
+          .where("twist_instance_id", "=", row.twist_instance_id)
           .where("user_id", "=", row.user_id)
           .where("provider", "=", row.provider)
           .execute();
@@ -566,29 +592,24 @@ async function enforceDowngradeLimits(
       }
     }
 
-    // Personal downgrade: archive excess twists
+    // Personal downgrade: archive excess twists (excluding built-in Plot twist)
     if (limits.twists !== Infinity) {
       const excessTwists = await db
-        .selectFrom("priority_twist as pt")
+        .selectFrom("twist_instance as pt")
         .innerJoin("twist as t", "t.id", "pt.twist_id")
-        .leftJoin("priority as p", "p.id", "pt.priority_id")
+        .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
         .select("pt.id")
         .where("pt.owner_id", "=", userSub.user_id)
         .where("pt.archived_at", "is", null)
         .where("t.is_source", "=", false)
-        .where((eb: any) =>
-          eb.or([
-            eb("pt.priority_id", "is", null),
-            eb("p.organization_id", "is", null),
-          ])
-        )
+        .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
         .orderBy("pt.created_at", "desc")
         .offset(limits.twists)
         .execute();
 
       for (const row of excessTwists) {
         await db
-          .updateTable("priority_twist")
+          .updateTable("twist_instance")
           .set({ archived_at: new Date().toISOString() })
           .where("id", "=", row.id)
           .execute();
@@ -605,43 +626,112 @@ async function enforceDowngradeLimits(
     return;
   }
 
-  // Check if this is an org subscription
-  const orgSub = await db
-    .selectFrom("organization_subscription")
-    .select(["organization_id", "connection_group_quantity"])
-    .where("stripe_customer_id", "=", stripeCustomerId)
-    .executeTakeFirst();
+  // Team downgrades: team ownership of twist_instance has not landed yet,
+  // so there's nothing to trim for org subscriptions.
+}
 
-  if (orgSub) {
-    const orgId = String(orgSub.organization_id);
-    const orgLimit = orgSub.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP;
+/**
+ * Triggers re-sync for all enabled channels on a user's twist instances
+ * when their plan's sync history range expands. Calls enableSync on each
+ * channel, which dispatches onChannelEnabled with the updated syncHistoryMin.
+ * Connectors handle idempotency by comparing their stored sync_history_min
+ * with the new limit and only re-syncing if the range actually expanded.
+ */
+async function triggerHistoryResync(
+  db: any,
+  env: Bindings,
+  ctx: ExecutionContext,
+  userId: string,
+  logger: ReturnType<typeof createLogger>
+): Promise<void> {
+  // Find all enabled channels for twist instances owned by this user
+  const channels = await db
+    .selectFrom("channel as c")
+    .innerJoin("twist_instance as ti", "ti.id", "c.twist_instance_id")
+    .select([
+      "c.twist_instance_id",
+      "c.channel_id",
+    ])
+    .where("ti.owner_id", "=", userId)
+    .where("ti.archived_at", "is", null)
+    .where("c.enabled", "=", true)
+    .execute();
 
-    // For free orgs, limit is 0; for team, use group-based limit
-    const effectiveLimit = newPlan === "free" ? 0 : orgLimit;
+  if (channels.length === 0) return;
 
-    const excessOrgConns = await db
-      .selectFrom("priority_twist_connection as ptc")
-      .innerJoin("priority_twist as pt", "pt.id", "ptc.priority_twist_id")
-      .innerJoin("priority as p", "p.id", "pt.priority_id")
-      .select(["ptc.priority_twist_id", "ptc.user_id", "ptc.provider"])
-      .where("p.organization_id", "=", orgId)
-      .orderBy("ptc.connected_at", "desc")
-      .offset(effectiveLimit)
-      .execute();
+  logger.info("Triggering history re-sync for plan upgrade", {
+    user_id: userId,
+    channel_count: channels.length,
+  });
 
-    for (const row of excessOrgConns) {
-      await db
-        .deleteFrom("priority_twist_connection")
-        .where("priority_twist_id", "=", row.priority_twist_id)
-        .where("user_id", "=", row.user_id)
-        .where("provider", "=", row.provider)
-        .execute();
-    }
+  const factory = twistFactory({ env, ctx, db });
 
-    if (excessOrgConns.length > 0) {
-      logger.info("Trimmed excess org connections on downgrade", {
-        organization_id: orgId,
-        removed: excessOrgConns.length,
+  // Group channels by twist_instance_id so we load config once per twist
+  const byInstance = new Map<string, string[]>();
+  for (const ch of channels) {
+    const existing = byInstance.get(ch.twist_instance_id) ?? [];
+    existing.push(ch.channel_id);
+    byInstance.set(ch.twist_instance_id, existing);
+  }
+
+  for (const [twistInstanceId, channelIds] of byInstance) {
+    try {
+      // Resolve twist metadata to load config
+      const twistInfo = await db
+        .selectFrom("twist_instance")
+        .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+        .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
+        .select([
+          "twist_admin.twist_package_id as twistPackageId",
+          "twist.version",
+        ])
+        .where("twist_instance.id", "=", twistInstanceId)
+        .executeTakeFirst();
+      if (!twistInfo) continue;
+
+      const configRaw = await env.TWIST_CONFIG.get(
+        `${twistInfo.twistPackageId}:${twistInfo.version}`
+      );
+      if (!configRaw) continue;
+
+      const config = JSON.parse(configRaw);
+      const integrationsMap: Record<string, string> = config.integrationsMap ?? {};
+      const integrationsPath = Object.values(integrationsMap)[0];
+      if (!integrationsPath) continue;
+
+      // Get the provider from the connection or source provider config
+      const connection = await db
+        .selectFrom("twist_instance_connection")
+        .select("provider")
+        .where("twist_instance_id", "=", twistInstanceId)
+        .limit(1)
+        .executeTakeFirst();
+      const provider = connection?.provider ?? config.sourceProvider?.provider;
+      if (!provider) continue;
+
+      const twistWrapper = await factory({ twistInstanceId });
+
+      for (const channelId of channelIds) {
+        try {
+          const result = await twistWrapper.callCallback(
+            integrationsPath.split(":"),
+            "enableSync",
+            provider,
+            channelId,
+            userId,
+            undefined // title
+          );
+          disposeRpc(result);
+        } catch (error) {
+          logger.error("Failed to re-sync channel on upgrade", error as Error, {
+            twist_instance_id: twistInstanceId,
+            channel_id: channelId,
+          });
+        }
+      }
+    } catch (error) {
+      logger.error("Failed to process twist for re-sync", error as Error, {
+        twist_instance_id: twistInstanceId,
       });
     }
   }

@@ -15,21 +15,26 @@ BEGIN
     IF p_note_id IS NULL THEN
         RAISE EXCEPTION 'p_note_id must be provided';
     END IF;
-    -- Validate access to the note's thread priority
+    -- Validate access to the note's thread via thread_priority
     SELECT
-        a.priority_id INTO v_priority_id
+        tp.priority_id INTO v_priority_id
     FROM
         note n
-        JOIN thread a ON a.id = n.thread_id
+        JOIN thread_priority tp ON tp.thread_id = n.thread_id
+            AND tp.user_id = update_note_tags.user_id
     WHERE
         n.id = p_note_id;
     IF v_priority_id IS NULL THEN
-        RAISE EXCEPTION 'Note not found';
-    END IF;
-    IF NOT "user".has_priority_access (user_id, v_priority_id) THEN
+        IF NOT EXISTS (SELECT 1 FROM note WHERE id = p_note_id) THEN
+            RAISE EXCEPTION 'Note not found';
+        END IF;
         RAISE EXCEPTION 'User does not have access to this note';
     END IF;
-    v_effective_role := "user".get_effective_role(user_id, v_priority_id);
+    IF NOT user_has_priority_access(update_note_tags.user_id, v_priority_id) THEN
+        RAISE EXCEPTION 'User does not have access to this priority';
+    END IF;
+    -- All users are members in the per-user model
+    v_effective_role := 'member';
     -- Iterate through the tag updates JSON object
     FOR tag_record IN
     SELECT

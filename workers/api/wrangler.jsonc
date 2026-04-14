@@ -91,9 +91,7 @@
         "RELEASE": "\"dev\"",
         "PACKAGE": "\"api\""
       },
-      "vars": {
-        "DATABASE_URL": "postgresql://postgres:postgres@localhost:54322/postgres"
-      },
+      "vars": {},
       "kv_namespaces": [
         {
           "binding": "TWIST_CONFIG",

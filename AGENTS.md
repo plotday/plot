@@ -15,7 +15,7 @@ Supported platforms:
 - Activity: A single item in Plot, containing notes. An activity might be just notes, or it might be an event or action (task).
 - Note: Content associated with an activity, such as Markdown notes and links.
 - Priority: Similar to a project or folder for Activity. Priorities are nested using paths, and display all Activity related to them and their descendants.
-- Twist: The Plot version of an extension/plugin/app/agent. Users add them to a Priority where they have access to that Priority and its descendants. They tend to implement opinionated workflows (e.g. create tasks from emails).
+- Twist: The Plot version of an extension/plugin/app/agent. Users install them at the workspace level, where they operate across the user's priorities. They tend to implement opinionated workflows (e.g. create tasks from emails).
 - Connection: One source system (e.g. Google Calendar) paired with one account (e.g. <kris@plot.day>). Connections are provided by connectors that expose channels that users can enable/disable.
 - Twist Creator aka Twister: The SDK for building twists and connectors. Sometimes represented with 🌪️.
 - RSVP: A user's response to a scheduled event (`attend`, `skip`, or unset). RSVPs are stored exclusively as `schedule_contact` rows keyed on `(schedule_id, contact_id)`. Connectors populate them from synced attendee data; users update their own via POST `/sync/schedule/status`. The Flutter app derives all RSVP UI from `schedule_contact` and never reads or writes count tags for RSVP. A single human user may have multiple `schedule_contact` rows on the same schedule when more than one of their linked contacts (e.g. work + personal email) was invited.
@@ -27,7 +27,7 @@ The app is local-first, so it can function without an internet connection while 
 Local storage uses the Drift package (which uses SQLite), with entities defined in "apps/plot/libs/store/".
 Data is synchronized to a remote PostgreSQL database for backup, multi-device sync, and collaboration.
 The database schema is defined in "libs/db/schema/".
-The local development database runs as a Docker container (PostgreSQL 18.1) on port 54322.
+The local development database runs as a Docker container (PostgreSQL 18.1) on port 54322 by default. **Worktrees use a different port** — see "Worktree Development" below.
 Atlas is used for schema diffing and migration management. Type generation uses `@supabase/postgres-meta` as a library (via `pnpm types`).
 
 ## Code Structure
@@ -215,7 +215,7 @@ Do not duplicate that content back into this file — the submodule is kept in s
    pnpm apply-migrations
    ```
 
-   - This uses Atlas to apply all pending migrations to the LOCAL database (localhost:54322)
+   - This uses Atlas to apply all pending migrations to the LOCAL database (uses `$DATABASE_URL`)
    - Atlas tracks applied migrations in its `atlas_schema_revisions` table
    - You can modify the migration file and re-run until it succeeds
 
@@ -276,8 +276,8 @@ pnpm reset
 
 #### NEVER Touch the Remote Database
 
-- **NEVER modify remote database** - All work is LOCAL ONLY (localhost:54322)
-- **ONLY work with local database** - Always use localhost:54322 connection
+- **NEVER modify remote database** - All work is LOCAL ONLY
+- **ONLY work with local database** - Always use `$DATABASE_URL` (port 54322 in main repo, different port in worktrees — see "Worktree Database Port")
 
 #### Local Database Rules
 
@@ -285,7 +285,7 @@ pnpm reset
 - **NEVER modify migration files** after they've been applied - create a new migration instead
 - **NEVER create migrations manually** - always generate them with `pnpm gen-migration`
 - **ALWAYS generate types** after schema changes: `pnpm types`
-- **ALWAYS verify** you're targeting local database (localhost:54322) before running SQL
+- **ALWAYS use `$DATABASE_URL`** for psql commands — never hardcode a port number
 
 ## Development Webhooks with Cloudflare Tunnel
 
@@ -350,6 +350,25 @@ env file copying, and pnpm install. Submodule init uses `--reference` to borrow
 objects from the main repo's local `public/` directory, so worktrees work even
 when the submodule has unpushed local commits.
 
+### Worktree Database Port
+
+**CRITICAL: Worktrees do NOT use port 54322.** Each worktree gets its own isolated PostgreSQL instance on a unique port. The port is stored in `.worktree-db` at the repo root and in `$DATABASE_URL` (set in `.claude/settings.local.json`).
+
+**Never hardcode port 54322 in a worktree.** Always use `$DATABASE_URL` or read the port from `.worktree-db`:
+
+```bash
+# Correct: use $DATABASE_URL (set automatically by worktree-db script)
+psql "$DATABASE_URL" -c "SELECT ..."
+
+# Correct: read port from .worktree-db
+source .worktree-db && psql "postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres" -c "SELECT ..."
+
+# WRONG: hardcoding 54322 connects to the MAIN repo's database, not this worktree's
+psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "SELECT ..."
+```
+
+If `.worktree-db` does not exist, the worktree database hasn't been set up yet — run `bash scripts/worktree-db` first.
+
 ### Conditional Setup (run when needed)
 
 **Submodule changes** (modifying `public/` — twister types, connectors, twists):
@@ -394,20 +413,29 @@ Before committing or declaring any code change complete, run `/finalize` to exec
 
 **CRITICAL: Any query on `thread_unread` or `thread` that determines what a user can see or what triggers notifications MUST enforce thread visibility filters.**
 
-The `user.thread` view is the canonical reference for visibility logic. When querying `thread_unread` directly (outside the view), you MUST replicate these filters:
+The `user.thread` view is the canonical reference for visibility logic. In the per-user priority model visibility is driven by `thread_priority` (who filed the thread where) and `thread.contacts` (who is allowed to see it).
 
 ```sql
 -- Required visibility filters when joining thread_unread with thread:
-AND t.archived_at IS NULL                           -- exclude archived threads
-AND (t.draft = false OR t.created_by = :userId)     -- only show own drafts
-AND (CASE
-  WHEN t.access = 'public' THEN true                -- public threads: visible to all
-  WHEN t.created_by = :userId THEN true             -- creator always has access
-  WHEN t.access = 'members' AND :userRole = 'member' THEN true  -- members see members-only threads
-  WHEN "user".user_contact_id(:userId) = ANY(t.access_contacts) THEN true  -- listed contacts
-  ELSE false
-END)
+JOIN public.thread_priority tp ON tp.thread_id = t.id
+LEFT JOIN public.thread_unread tu
+    ON tu.user_id = tp.user_id AND tu.thread_id = t.id
+WHERE t.archived_at IS NULL                            -- exclude archived threads
+  AND (t.draft = false OR t.created_by = tp.user_id)   -- only own drafts
+  AND t.contacts && "user".user_contact_ids(tp.user_id) -- contacts intersect user's linked contacts
 ```
+
+- `thread_priority` is populated automatically by the
+  `populate_thread_priority_for_author` and `file_thread_priority_peers`
+  triggers, so raw inserts and RPC-driven upserts both get correct
+  filings. Callers do not need to write `thread_priority` directly.
+- `thread.contacts` must include every linked contact the thread is
+  authored by or shared with. `user.user_contact_ids(user_id)` returns
+  every contact linked to the user, not only the primary.
+- `thread.access` and `thread.access_contacts` are vestigial — kept in
+  the schema for Flutter backwards compatibility but **no longer
+  consulted** by visibility logic. New code should read `thread.contacts`
+  (and the user's linked contacts) only.
 
 ### When these filters are required
 
@@ -421,18 +449,14 @@ END)
 - **Admin/system queries**: Internal operations that don't surface results to users.
 - **RPC functions with access control**: Functions that call `assert_priority_access()` before querying.
 
-### Common mistake
-
-Querying `thread_unread` with only `read_at IS NULL` and `urgency != 'passive'` — this misses archived, draft, and access-restricted thread visibility, causing phantom notifications and incorrect unread counts.
-
 ## Plot App URLs
 
 The app uses base58-encoded UUIDs in URLs. URL formats:
 
-- **Production**: `https://app.plot.day/{priority_base58}/{thread_base58?}`
-- **Dev**: `http://localhost:8788/{priority_base58}/{thread_base58?}`
-
-The first path segment is the priority ID, the second (optional) is the thread ID.
+- **Priority**: `/p/{priority_base58}` (e.g. `https://app.plot.day/p/CXH9QUq4zFmvTopn1i8Xv`)
+- **Thread**: `/t/{thread_base58}` (globally shareable, e.g. `https://app.plot.day/t/2kF8...`)
+- **Dev**: `http://localhost:8788/p/{priority_base58}` or `http://localhost:8788/t/{thread_base58}`
+- **Legacy**: `/{priority_base58}/{thread_base58?}` is translated client-side to `/p/` or `/t/` on open
 
 ### Decoding base58 to UUID
 
@@ -458,7 +482,7 @@ h=format(n,'032x'); print(f'{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}')
 
 Once decoded, query the database:
 
-- **Local DB**: `psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "SELECT id, title FROM priority WHERE id = '<uuid>'"`
+- **Local DB**: `psql "$DATABASE_URL" -c "SELECT id, title FROM priority WHERE id = '<uuid>'"` (see "Worktree Database Port" for how the URL is set)
 - **Prod DB**: Use the `prod-db-investigate` skill (psql on port 5433)
 
 ## Connector Icon Guidelines

@@ -54,9 +54,6 @@ export async function createLink(
       ...(link.archived !== undefined ? { archived: link.archived } : {}),
       ...(link.preview !== undefined ? { preview: link.preview } : {}),
       ...(link.priority ? { priority: link.priority } : {}),
-      ...(link.pickPriority !== undefined
-        ? { pickPriority: link.pickPriority }
-        : {}),
       ...(link.notes ? { notes: link.notes } : {}),
     };
 
@@ -64,8 +61,10 @@ export async function createLink(
     // This handles reconnection: when a source is archived (threads archived)
     // and reinstalled, the existing thread is found and unarchived by upsert_thread.
     // Single query combines exact source match, relatedSource match, and reverse match
-    // with priority ordering via CASE expression.
-    const priorityRootFilter = sql<boolean>`link.source_priority_root = (SELECT subpath(path, 0, 1) FROM priority WHERE id = ${plot.priorityId})`;
+    // with priority ordering via CASE expression. Scoped to the twist owner's
+    // priority tree (workspace-level twists).
+    const ownerUserId = await plot.getUserId();
+    const priorityRootFilter = sql<boolean>`link.source_priority_root IN (SELECT subpath(path, 0, 1) FROM priority WHERE user_id = ${ownerUserId})`;
 
     if (hasSource && !threadData.id) {
       const sourceValue = (link as any).source as string;
@@ -106,9 +105,9 @@ export async function createLink(
 
     // Look up twist_id for icon — passed to threadData so createThread skips its own lookup
     const ptRow = await plot.db
-      .selectFrom("priority_twist")
+      .selectFrom("twist_instance")
       .select("twist_id")
-      .where("id", "=", plot.priorityTwistId)
+      .where("id", "=", plot.twistInstanceId)
       .executeTakeFirst();
     if (ptRow) {
       threadData.icon = link.type
@@ -150,8 +149,8 @@ export async function createLink(
     // Build link defaults (all fields for INSERT)
     const linkDefaults: Record<string, any> = {
       thread_id: threadId,
-      created_by: plot.priorityTwistId,
-      author_id: plot.priorityTwistId,
+      created_by: plot.twistInstanceId,
+      author_id: plot.twistInstanceId,
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
       source_created_at:
@@ -168,9 +167,6 @@ export async function createLink(
         ? { meta: link.meta as Json | null }
         : {}),
       ...(link.sourceUrl !== undefined ? { source_url: link.sourceUrl } : {}),
-      ...(link.pickPriority !== undefined
-        ? { match: link.pickPriority as Json | null }
-        : {}),
       ...(link.channelId !== undefined ? { channel_id: link.channelId } : {}),
       ...(link.relatedSource !== undefined
         ? { related_source: link.relatedSource }
@@ -309,7 +305,6 @@ export async function createLink(
           meta: (link.meta ?? null) as Json | null,
           source_url: link.sourceUrl ?? null,
           channel_id: link.channelId ?? null,
-          match: linkDefaults.match ?? null,
         })
         .returning("id")
         .executeTakeFirstOrThrow();
@@ -329,7 +324,7 @@ export async function createLink(
 
     return threadId;
   } catch (error) {
-    handleDbOperationError(error, "createLink", plot.priorityTwistId, {
+    handleDbOperationError(error, "createLink", plot.twistInstanceId, {
       has_notes: !!link.notes?.length,
       has_source: "source" in link && !!(link as any).source,
     });
@@ -338,7 +333,6 @@ export async function createLink(
 
 /**
  * Creates a link row without creating a thread.
- * Used when create_threads is false on a source channel.
  * The link is associated directly with a priority via link.priority_id.
  *
  * @param plot - The Plot instance
@@ -352,13 +346,14 @@ export async function createLinkOnly(
   try {
     const hasSource = "source" in link && link.source;
 
-    // Resolve assignee
+    // Resolve assignee. Scope contact linking to the twist owner's root priority.
+    const defaultPriorityId = await plot.getDefaultPriorityId();
     let assigneeId: string | null | undefined = undefined;
     if (link.assignee !== undefined) {
       assigneeId = await processNewActor(
         plot,
         link.assignee,
-        plot.priorityId
+        defaultPriorityId
       );
     }
 
@@ -381,9 +376,9 @@ export async function createLinkOnly(
 
     const linkValues: Record<string, any> = {
       thread_id: null,
-      priority_id: plot.priorityId,
-      created_by: plot.priorityTwistId,
-      author_id: plot.priorityTwistId,
+      priority_id: defaultPriorityId,
+      created_by: plot.twistInstanceId,
+      author_id: plot.twistInstanceId,
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
       source_created_at:
@@ -397,7 +392,6 @@ export async function createLinkOnly(
       meta: (link.meta ?? null) as Json | null,
       source_url: link.sourceUrl ?? null,
       channel_id: link.channelId ?? null,
-      match: link.pickPriority ?? null,
       ...(link.relatedSource !== undefined
         ? { related_source: link.relatedSource }
         : {}),
@@ -442,7 +436,7 @@ export async function createLinkOnly(
       return linkResult.id as Uuid;
     }
   } catch (error) {
-    handleDbOperationError(error, "createLinkOnly", plot.priorityTwistId, {
+    handleDbOperationError(error, "createLinkOnly", plot.twistInstanceId, {
       has_source: "source" in link && !!(link as any).source,
     });
   }
@@ -458,11 +452,11 @@ export async function getLinks(
 ): Promise<Array<{ link: Link; notes: Note[] }>> {
   // Get connected channel info
   let query = plot.db
-    .selectFrom("priority_twist_channel")
+    .selectFrom("twist_instance_channel")
     .innerJoin("link", (join) =>
       join
-        .onRef("link.created_by", "=", "priority_twist_channel.source_priority_twist_id")
-        .onRef("link.channel_id", "=", "priority_twist_channel.channel_id")
+        .onRef("link.created_by", "=", "twist_instance_channel.source_twist_instance_id")
+        .onRef("link.channel_id", "=", "twist_instance_channel.channel_id")
     )
     .leftJoin("actor as author", "author.id", "link.author_id")
     .leftJoin("actor as assignee", "assignee.id", "link.assignee_id")
@@ -487,8 +481,8 @@ export async function getLinks(
       "assignee.name as assignee_name",
       "assignee.type as assignee_type",
     ])
-    .where("priority_twist_channel.priority_twist_id", "=", plot.priorityTwistId)
-    .where("priority_twist_channel.enabled", "=", true)
+    .where("twist_instance_channel.twist_instance_id", "=", plot.twistInstanceId)
+    .where("twist_instance_channel.enabled", "=", true)
     .orderBy("link.created_at", "desc");
 
   if (filter?.channelIds?.length) {
@@ -565,7 +559,7 @@ export async function getLinks(
             type:
               row.author_type === "user"
                 ? ActorType.User
-                : row.author_type === "priority_twist"
+                : row.author_type === "twist_instance"
                 ? ActorType.Twist
                 : ActorType.Contact,
           }
@@ -579,7 +573,7 @@ export async function getLinks(
             type:
               row.assignee_type === "user"
                 ? ActorType.User
-                : row.assignee_type === "priority_twist"
+                : row.assignee_type === "twist_instance"
                 ? ActorType.Twist
                 : ActorType.Contact,
           }
@@ -605,7 +599,7 @@ export async function getLinks(
         type:
           n.author_type === "user"
             ? ActorType.User
-            : n.author_type === "priority_twist"
+            : n.author_type === "twist_instance"
             ? ActorType.Twist
             : ActorType.Contact,
       },
@@ -650,22 +644,26 @@ export async function updateLink(
 
   // Verify the link's current thread is within the twist's priority scope
   if (existingLink.thread_id) {
-    const currentThread = await plot.db
-      .selectFrom("thread")
+    const userId = await plot.getUserId();
+    const currentThreadPriority = await plot.db
+      .selectFrom("thread_priority")
       .select("priority_id")
-      .where("id", "=", existingLink.thread_id)
+      .where("thread_id", "=", existingLink.thread_id)
+      .where("user_id", "=", userId)
       .executeTakeFirst();
-    if (currentThread) {
-      await plot.validatePriorityAccess(currentThread.priority_id);
+    if (currentThreadPriority) {
+      await plot.validatePriorityAccess(currentThreadPriority.priority_id);
     }
   }
 
   if (link.threadId !== undefined) {
     // Verify target thread exists and is within scope
+    const userId = await plot.getUserId();
     const targetThread = await plot.db
-      .selectFrom("thread")
+      .selectFrom("thread_priority")
       .select("priority_id")
-      .where("id", "=", link.threadId)
+      .where("thread_id", "=", link.threadId)
+      .where("user_id", "=", userId)
       .executeTakeFirst();
 
     if (!targetThread) {

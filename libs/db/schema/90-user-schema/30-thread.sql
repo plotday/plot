@@ -1,6 +1,15 @@
--- Unread is now explicit via thread_unread table. When a thread_unread row exists
--- with read_at IS NULL, the thread is unread. The complex timestamp comparison
--- logic is no longer needed since unread classification is done by note analysis.
+-- user.thread — per-user thread feed.
+--
+-- Filing is driven by thread_priority (one row per visible user). Visibility
+-- is enforced by the contacts array: a user sees a thread only if any of
+-- their linked contacts appears in thread.contacts. No more redacted stub
+-- branch — if you don't have a thread_priority row, the thread doesn't
+-- exist as far as you're concerned.
+--
+-- Transitional note (until Stage 4 lands): priority_expanded is still joined
+-- to recover the user-specific priority path + per-user archived_at. When
+-- priorities become per-user the join can be replaced with a direct join
+-- on priority.
 CREATE OR REPLACE VIEW "user"."thread"
 --
 AS
@@ -10,22 +19,23 @@ WITH link_agg AS (
     GROUP BY thread_id
 )
 SELECT
-    upe.user_id,
+    tp.user_id,
     a.id,
     a.created_at,
-    -- updated_at: when thread_unread exists, use its updated_at; otherwise use thread timestamps
+    -- updated_at: use the latest of thread, last note, and thread_unread timestamps
     GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz),
         COALESCE(tu.updated_at, 'epoch'::timestamptz)) AS updated_at,
     a.updated_by,
     COALESCE(a.archived_at, upe.archived_at) AS archived_at,
-    a.priority_id,
+    tp.priority_id,
     upe.path AS priority_path,
     a.draft,
-    a.access,
-    a.access_contacts,
+    a.contacts,
+    a.topics,
     a.title,
     a.preview,
     a.icon,
+    a.embedding IS NOT NULL AS has_embedding,
     a.last_note_created_at,
     a.last_note_source_created_at,
     tu.bumped_at,
@@ -70,7 +80,7 @@ SELECT
                  LIMIT 1),
                 -- Direct per-user schedule start
                 (SELECT COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz)
-                 FROM schedule s_lo WHERE s_lo.thread_id = a.id AND s_lo.user_id = upe.user_id
+                 FROM schedule s_lo WHERE s_lo.thread_id = a.id AND s_lo.user_id = tp.user_id
                  AND s_lo.archived_at IS NULL
                  ORDER BY COALESCE(lower(s_lo.at), lower(s_lo."on")::timestamptz) ASC NULLS LAST
                  LIMIT 1),
@@ -120,7 +130,7 @@ SELECT
                      LIMIT 1),
                     -- Direct per-user schedule end
                     (SELECT COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz)
-                     FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id = upe.user_id
+                     FROM schedule s_hi WHERE s_hi.thread_id = a.id AND s_hi.user_id = tp.user_id
                      AND s_hi.archived_at IS NULL
                      ORDER BY COALESCE(upper(s_hi.at), upper(s_hi."on")::timestamptz) DESC NULLS LAST
                      LIMIT 1),
@@ -138,54 +148,19 @@ SELECT
         ) AS hi
     ) bounds) AS agenda_at
 FROM
-    thread_x a
-    JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
-    LEFT JOIN thread_unread tu ON tu.user_id = upe.user_id
+    thread a
+    JOIN thread_priority tp ON tp.thread_id = a.id
+    LEFT JOIN "user".priority_expanded upe
+        ON upe.user_id = tp.user_id AND upe.priority_id = tp.priority_id
+    LEFT JOIN thread_unread tu ON tu.user_id = tp.user_id
         AND tu.thread_id = a.id
     LEFT JOIN link_agg la ON la.thread_id = a.id
 WHERE
-    (a.draft = FALSE OR a.created_by = upe.user_id)
-    AND (CASE
-        WHEN a.access = 'public' THEN TRUE
-        WHEN a.created_by = upe.user_id THEN TRUE
-        WHEN a.access = 'members' AND upe.role = 'member' THEN TRUE
-        WHEN a.access_contacts && "user".user_contact_ids(upe.user_id) THEN TRUE
-        ELSE FALSE
-    END)
-UNION ALL
--- Redacted rows for private threads the user cannot see
-SELECT
-    upe.user_id,
-    a.id,
-    a.created_at,
-    a.updated_at,
-    a.updated_by,
-    COALESCE(a.archived_at, upe.archived_at, a.updated_at) AS archived_at,
-    a.priority_id,
-    upe.path AS priority_path,
-    a.draft,
-    a.access,
-    CAST(NULL AS uuid[]) AS access_contacts,
-    NULL::text AS title,
-    NULL::text AS preview,
-    a.icon,
-    a.last_note_created_at,
-    a.last_note_source_created_at,
-    NULL::timestamptz AS bumped_at,
-    FALSE AS unread,
-    0::smallint AS importance,
-    NULL::text AS urgency,
-    a.created_at AS activity_at,
-    tstzrange(a.created_at, a.created_at, '[]') AS agenda_at
-FROM
-    thread_x a
-    JOIN "user".priority_expanded upe ON a.priority_id = upe.priority_id
-WHERE
-    (a.draft = FALSE OR a.created_by = upe.user_id)
-    AND a.access != 'public'
-    AND a.created_by != upe.user_id
-    AND NOT (a.access = 'members' AND upe.role = 'member')
-    AND NOT (COALESCE(a.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(upe.user_id));
+    (a.draft = FALSE OR a.created_by = tp.user_id)
+    AND (
+        a.contacts && "user".user_contact_ids(tp.user_id)
+        OR a.topics && "user".user_topic_ids(tp.user_id)
+    );
 
 ALTER VIEW "user"."thread" OWNER TO postgres;
 

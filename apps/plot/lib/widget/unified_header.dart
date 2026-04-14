@@ -266,6 +266,9 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // Active tag toggles (when thread is visible)
       if (thread != null) ..._buildActiveTagToggles(context, thread),
 
+      // Edit thread (when thread is visible)
+      if (thread != null) Button.icon(EditThread(thread)),
+
       // Todo toggle (when thread is visible)
       if (thread != null) _buildTodoToggle(context, thread),
 
@@ -459,12 +462,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       }
 
       return [
-        ...state.iconCounts.map(
-          (d) => ToggleIconFilter(d.$1, context: ctx),
-        ),
-        ...allTags.keys.map(
-          (tag) => ToggleActivityFilter(tag, context: ctx),
-        ),
+        ...state.iconCounts.map((d) => ToggleIconFilter(d.$1, context: ctx)),
+        ...allTags.keys.map((tag) => ToggleActivityFilter(tag, context: ctx)),
         // Active filters not in current tag counts
         ...state.filter
             .where((tag) => !allTags.containsKey(tag))
@@ -472,7 +471,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       ];
     }
 
-    final hasActiveFilters = state.filter.isNotEmpty ||
+    final hasActiveFilters =
+        state.filter.isNotEmpty ||
         state.iconFilter.isNotEmpty ||
         (notifier?.filter.isNotEmpty == true);
 
@@ -554,11 +554,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final Widget todoIcon;
     if (!isTodo) {
       todoIcon = Button.icon(
-        CommandWrapper(
-          StartThread(thread),
-          icon: Value(PlotIcon.addTodo),
-          title: 'Start',
-        ),
+        CommandWrapper(StartThread(thread), icon: Value(PlotIcon.addTodo)),
         color: context.theme.plotColors.muted,
       );
     } else {

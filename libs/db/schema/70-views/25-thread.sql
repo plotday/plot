@@ -25,12 +25,11 @@ GROUP BY
     sq.thread_id,
     sq.occurrence;
 
--- Add priority_path to thread view
+-- Simplified thread_x: thread no longer has priority_id, so this is
+-- just an alias kept for backward compatibility with API code.
 CREATE OR REPLACE VIEW "public"."thread_x" --
 AS
 SELECT
-    a.*,
-    p.path AS priority_path
+    a.*
 FROM
-    thread a
-    JOIN priority p ON p.id = a.priority_id;
+    thread a;

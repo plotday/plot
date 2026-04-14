@@ -251,14 +251,13 @@ enum Tag {
 
 /// A list of actor IDs for a tag, with an optional total count that may differ
 /// from the list length when some actors are hidden (e.g. viewer privacy).
-/// Extends DelegatingList so it works as a drop-in List<ActorId> everywhere.
+/// Extends DelegatingList so it works as a drop-in `List<ActorId>` everywhere.
 class TagActors extends DelegatingList<ActorId> {
   /// Total count of actors including hidden ones.
   final int count;
 
-  TagActors(List<ActorId> actors, [int? count])
-      : count = count ?? actors.length,
-        super(actors);
+  TagActors(super.actors, [int? count])
+      : count = count ?? actors.length;
 
   /// Create a TagActors with no count override.
   factory TagActors.from(List<ActorId> actors) => TagActors(actors);

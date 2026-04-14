@@ -135,6 +135,7 @@ aiKeys.post("/ai-keys", async (c) => {
           oc
             .columns(["user_id", "provider"])
             .where("user_id", "is not", null)
+            .where("provider", "!=", "custom" as any)
             .doUpdateSet({
               encrypted_key: ciphertext,
               key_suffix: keySuffix,
@@ -270,9 +271,9 @@ aiKeys.post("/ai-preference", async (c) => {
 async function requireOrgAdmin(c: any, orgId: string) {
   const user = c.var.user;
   const member = await c.var.db
-    .selectFrom("organization_member")
+    .selectFrom("team_user")
     .select(["id", "role"])
-    .where("organization_id", "=", orgId as any)
+    .where("team_id", "=", orgId as any)
     .where("user_id", "=", user.id)
     .executeTakeFirst();
 
@@ -282,8 +283,8 @@ async function requireOrgAdmin(c: any, orgId: string) {
   return member;
 }
 
-// GET /organization/:id/ai-keys — list org's key metadata
-aiKeys.get("/organization/:id/ai-keys", async (c) => {
+// GET /team/:id/ai-keys — list org's key metadata
+aiKeys.get("/team/:id/ai-keys", async (c) => {
   const orgId = c.req.param("id");
 
   if (!(await requireOrgAdmin(c, orgId))) {
@@ -293,14 +294,14 @@ aiKeys.get("/organization/:id/ai-keys", async (c) => {
   const keys = await c.var.db
     .selectFrom("ai_key")
     .select(["id", "provider", "name", "key_suffix", "custom_base_url", "fast_model", "thinking_model", "created_at"])
-    .where("organization_id", "=", orgId as any)
+    .where("team_id", "=", orgId as any)
     .execute();
 
   return c.json(keys);
 });
 
-// POST /organization/:id/ai-keys — add or replace an org key
-aiKeys.post("/organization/:id/ai-keys", async (c) => {
+// POST /team/:id/ai-keys — add or replace an org key
+aiKeys.post("/team/:id/ai-keys", async (c) => {
   const orgId = c.req.param("id");
 
   if (!(await requireOrgAdmin(c, orgId))) {
@@ -329,7 +330,7 @@ aiKeys.post("/organization/:id/ai-keys", async (c) => {
     const keySuffix = key.slice(-4);
 
     const values: any = {
-      organization_id: orgId as any,
+      team_id: orgId as any,
       provider: provider as any,
       encrypted_key: ciphertext,
       key_suffix: keySuffix,
@@ -347,7 +348,7 @@ aiKeys.post("/organization/:id/ai-keys", async (c) => {
       const existing = await c.var.db
         .selectFrom("ai_key")
         .select("id")
-        .where("organization_id", "=", orgId as any)
+        .where("team_id", "=", orgId as any)
         .where("provider", "=", "custom" as any)
         .where("name", "=", values.name)
         .executeTakeFirst();
@@ -377,8 +378,9 @@ aiKeys.post("/organization/:id/ai-keys", async (c) => {
         .values(values)
         .onConflict((oc) =>
           oc
-            .columns(["organization_id", "provider"])
-            .where("organization_id", "is not", null)
+            .columns(["team_id", "provider"])
+            .where("team_id", "is not", null)
+            .where("provider", "!=", "custom" as any)
             .doUpdateSet({
               encrypted_key: ciphertext,
               key_suffix: keySuffix,
@@ -399,8 +401,8 @@ aiKeys.post("/organization/:id/ai-keys", async (c) => {
   }
 });
 
-// DELETE /organization/:id/ai-keys/:id — remove org key by id
-aiKeys.delete("/organization/:id/ai-keys/:keyId", async (c) => {
+// DELETE /team/:id/ai-keys/:keyId — remove org key by id
+aiKeys.delete("/team/:id/ai-keys/:keyId", async (c) => {
   const orgId = c.req.param("id");
 
   if (!(await requireOrgAdmin(c, orgId))) {
@@ -424,20 +426,20 @@ aiKeys.delete("/organization/:id/ai-keys/:keyId", async (c) => {
         .else(eb.ref("twist_ai_key_id"))
         .end(),
     }))
-    .where("organization_id", "=", orgId as any)
+    .where("team_id", "=", orgId as any)
     .execute();
 
   await c.var.db
     .deleteFrom("ai_key")
-    .where("organization_id", "=", orgId as any)
+    .where("team_id", "=", orgId as any)
     .where("id", "=", Number(keyId) as any)
     .execute();
 
   return c.json({ success: true });
 });
 
-// GET /organization/:id/ai-preference
-aiKeys.get("/organization/:id/ai-preference", async (c) => {
+// GET /team/:id/ai-preference
+aiKeys.get("/team/:id/ai-preference", async (c) => {
   const orgId = c.req.param("id");
 
   if (!(await requireOrgAdmin(c, orgId))) {
@@ -447,14 +449,14 @@ aiKeys.get("/organization/:id/ai-preference", async (c) => {
   const pref = await c.var.db
     .selectFrom("ai_preference")
     .select(["builtin_ai_key_id", "twist_ai_key_id", "twist_ai_disabled", "builtin_ai_disabled"])
-    .where("organization_id", "=", orgId as any)
+    .where("team_id", "=", orgId as any)
     .executeTakeFirst();
 
   return c.json(pref ?? { builtin_ai_key_id: null, twist_ai_key_id: null, twist_ai_disabled: false, builtin_ai_disabled: false });
 });
 
-// POST /organization/:id/ai-preference
-aiKeys.post("/organization/:id/ai-preference", async (c) => {
+// POST /team/:id/ai-preference
+aiKeys.post("/team/:id/ai-preference", async (c) => {
   const orgId = c.req.param("id");
 
   if (!(await requireOrgAdmin(c, orgId))) {
@@ -470,7 +472,7 @@ aiKeys.post("/organization/:id/ai-preference", async (c) => {
 
   try {
     const values: any = {
-      organization_id: orgId as any,
+      team_id: orgId as any,
     };
     if (body.builtinAiKeyId !== undefined) values.builtin_ai_key_id = body.builtinAiKeyId;
     if (body.twistAiKeyId !== undefined) values.twist_ai_key_id = body.twistAiKeyId;
@@ -488,8 +490,8 @@ aiKeys.post("/organization/:id/ai-preference", async (c) => {
       .values(values)
       .onConflict((oc) =>
         oc
-          .column("organization_id")
-          .where("organization_id", "is not", null)
+          .column("team_id")
+          .where("team_id", "is not", null)
           .doUpdateSet(updateSet)
       )
       .execute();

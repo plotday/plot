@@ -154,25 +154,25 @@ class TwistApi {
   }
 
   /// Remove a twist from a priority
-  static Future<void> removeTwist(String priorityTwistId) async {
-    await api.delete<Map<String, dynamic>>('/twist/$priorityTwistId');
+  static Future<void> removeTwist(String twistInstanceId) async {
+    await api.delete<Map<String, dynamic>>('/twist/$twistInstanceId');
   }
 
   /// Archive all activities created by a twist and remove the twist
-  static Future<void> archiveAndRemoveTwist(String priorityTwistId) async {
+  static Future<void> archiveAndRemoveTwist(String twistInstanceId) async {
     await api.delete<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/archive-activities',
+      '/twist/$twistInstanceId/archive-activities',
     );
   }
 
   /// Update a twist
   static Future<void> updateTwist({
-    required String priorityTwistId,
+    required String twistInstanceId,
     String? name,
     Map<String, dynamic>? config,
   }) async {
     await api.patch<Map<String, dynamic>>(
-      '/twist/$priorityTwistId',
+      '/twist/$twistInstanceId',
       body: {
         if (name != null) 'name': name,
         if (config != null) 'config': config,
@@ -180,9 +180,8 @@ class TwistApi {
     );
   }
 
-  /// Add a twist to a priority
+  /// Add a workspace-level twist.
   static Future<String> addTwist({
-    required String priorityId,
     required String twistId,
     required String twistEnvironment,
     String? name,
@@ -191,7 +190,6 @@ class TwistApi {
     final response = await api.post<Map<String, dynamic>>(
       '/twist',
       body: {
-        'priorityId': priorityId,
         'twistId': twistId,
         'twistEnvironment': twistEnvironment,
         if (name != null) 'name': name,
@@ -202,7 +200,7 @@ class TwistApi {
     return response['id'].toString();
   }
 
-  /// Creates a draft twist with priority_id = NULL. Returns the draft ID.
+  /// Creates a draft twist. Returns the draft ID.
   static Future<String> createDraft({
     required String twistId,
     required String twistEnvironment,
@@ -219,11 +217,9 @@ class TwistApi {
     return response['id'].toString();
   }
 
-  /// Assigns priority, activates the draft, and enables selected channels.
-  /// [priorityId] is optional for sources (account-level, no priority needed).
+  /// Activates the draft and enables selected channels.
   static Future<void> activateDraft({
     required String draftId,
-    String? priorityId,
     required String name,
     Map<String, dynamic>? config,
     List<Map<String, Object>>? channels,
@@ -231,7 +227,6 @@ class TwistApi {
     await api.post<Map<String, dynamic>>(
       '/twist/draft/$draftId/activate',
       body: {
-        if (priorityId != null) 'priorityId': priorityId,
         'name': name,
         if (config != null) 'config': config,
         if (channels != null) 'syncables': channels,
@@ -246,24 +241,24 @@ class TwistApi {
 
   /// Get integration data for the twist edit modal
   static Future<TwistIntegrations> getIntegrations(
-    String priorityTwistId,
+    String twistInstanceId,
   ) async {
     final response = await api.get<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/integrations',
+      '/twist/$twistInstanceId/integrations',
     );
     return TwistIntegrations.fromJson(response);
   }
 
   /// Generate an auth URL for a provider
   static Future<TwistAuthUrl> getAuthUrl({
-    required String priorityTwistId,
+    required String twistInstanceId,
     required String provider,
     required String redirectUri,
     String? platform,
     List<String>? enabledScopeGroups,
   }) async {
     final response = await api.post<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/integrations/auth',
+      '/twist/$twistInstanceId/integrations/auth',
       body: {
         'provider': provider,
         'redirectUri': redirectUri,
@@ -277,54 +272,44 @@ class TwistApi {
 
   /// Remove an integration account
   static Future<void> removeIntegration({
-    required String priorityTwistId,
+    required String twistInstanceId,
     required String provider,
     required String actorId,
   }) async {
     await api.delete<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/integrations/$provider/$actorId',
+      '/twist/$twistInstanceId/integrations/$provider/$actorId',
     );
   }
 
   /// Enable a channel resource
   static Future<void> enableChannel({
-    required String priorityTwistId,
+    required String twistInstanceId,
     required String provider,
     required String channelId,
-    String? priorityId,
-    String? createThreads,
-    Map<String, String>? createThreadsByType,
   }) async {
     await api.post<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/syncables/$provider/$channelId/enable',
-      body: {
-        if (priorityId != null) 'priorityId': priorityId,
-        if (createThreads != null) 'createThreads': createThreads,
-        if (createThreadsByType != null)
-          'createThreadsByType': createThreadsByType,
-      },
+      '/twist/$twistInstanceId/syncables/$provider/$channelId/enable',
+      body: const <String, dynamic>{},
     );
   }
 
   /// Disable a channel resource
   static Future<void> disableChannel({
-    required String priorityTwistId,
+    required String twistInstanceId,
     required String provider,
     required String channelId,
   }) async {
     await api.post<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/syncables/$provider/$channelId/disable',
+      '/twist/$twistInstanceId/syncables/$provider/$channelId/disable',
     );
   }
 
   /// Get available source channels for link observation
   static Future<List<LinkChannel>> getAvailableLinkChannels(
-    String priorityTwistId, {
-    String? priorityId,
-  }) async {
-    final query = priorityId != null ? '?priorityId=$priorityId' : '';
+    String twistInstanceId,
+  ) async {
     final response = await api.get<List<dynamic>>(
-      '/twist/$priorityTwistId/available-link-channels$query',
+      '/twist/$twistInstanceId/available-link-channels',
     );
     return response
         .map((json) => LinkChannel.fromJson(json as Map<String, dynamic>))
@@ -333,10 +318,10 @@ class TwistApi {
 
   /// Get connected link channels for a twist
   static Future<List<ConnectedLinkChannel>> getLinkChannels(
-    String priorityTwistId,
+    String twistInstanceId,
   ) async {
     final response = await api.get<List<dynamic>>(
-      '/twist/$priorityTwistId/link-channels',
+      '/twist/$twistInstanceId/link-channels',
     );
     return response
         .map(
@@ -347,11 +332,11 @@ class TwistApi {
 
   /// Update link channel connections for a twist
   static Future<void> updateLinkChannels({
-    required String priorityTwistId,
+    required String twistInstanceId,
     required List<Map<String, dynamic>> channels,
   }) async {
     await api.put<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/link-channels',
+      '/twist/$twistInstanceId/link-channels',
       body: channels,
     );
   }
@@ -372,26 +357,6 @@ class TwistApi {
         .toList();
   }
 
-  /// Update the priority routing for a channel
-  /// Update channel config (priority, createThreads, createThreadsByType).
-  static Future<void> updateChannel({
-    required String priorityTwistId,
-    required String provider,
-    required String channelId,
-    String? priorityId,
-    String? createThreads,
-    Map<String, String>? createThreadsByType,
-  }) async {
-    await api.patch<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/syncables/$provider/$channelId',
-      body: {
-        if (priorityId != null) 'priorityId': priorityId,
-        if (createThreads != null) 'createThreads': createThreads,
-        if (createThreadsByType != null)
-          'createThreadsByType': createThreadsByType,
-      },
-    );
-  }
 
   /// Get upcoming connections with vote counts
   static Future<
@@ -423,11 +388,11 @@ class TwistApi {
 
   /// Connect a no-provider connector. Saves options and returns channels.
   static Future<TwistConnectResult> connectNoProvider({
-    required String priorityTwistId,
+    required String twistInstanceId,
     required Map<String, dynamic> options,
   }) async {
     final response = await api.post<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/integrations/connect',
+      '/twist/$twistInstanceId/integrations/connect',
       body: {'options': options},
     );
 
@@ -447,18 +412,18 @@ class TwistApi {
 
   /// Re-fetch the channel list from the external service for a provider.
   static Future<void> refreshChannels({
-    required String priorityTwistId,
+    required String twistInstanceId,
     required String provider,
   }) async {
     await api.post<Map<String, dynamic>>(
-      '/twist/$priorityTwistId/syncables/$provider/refresh',
+      '/twist/$twistInstanceId/syncables/$provider/refresh',
     );
   }
 }
 
 /// Summary of a connected source for the Connections modal list view.
 class SourceSummary {
-  final String id; // priority_twist_id
+  final String id; // twist_instance_id
   final String name;
   final String? logoUrl;
   final String? logoUrlDark;
@@ -538,7 +503,7 @@ class UpcomingConnection {
 class LinkChannel {
   final String channelId;
   final String title;
-  final String sourcePriorityTwistId;
+  final String sourceTwistInstanceId;
   final String sourceName;
   final String? accountName;
   final String? logoUrl;
@@ -547,7 +512,7 @@ class LinkChannel {
   const LinkChannel({
     required this.channelId,
     required this.title,
-    required this.sourcePriorityTwistId,
+    required this.sourceTwistInstanceId,
     required this.sourceName,
     this.accountName,
     this.logoUrl,
@@ -558,7 +523,7 @@ class LinkChannel {
     return LinkChannel(
       channelId: json['channel_id'] as String,
       title: json['title'] as String,
-      sourcePriorityTwistId: json['source_priority_twist_id'] as String,
+      sourceTwistInstanceId: json['source_twist_instance_id'] as String,
       sourceName: json['source_name'] as String,
       accountName: json['account_name'] as String?,
       logoUrl: json['logo_url'] as String?,
@@ -570,7 +535,7 @@ class LinkChannel {
 /// A connected link channel for a twist
 class ConnectedLinkChannel {
   final int id;
-  final String sourcePriorityTwistId;
+  final String sourceTwistInstanceId;
   final String channelId;
   final bool enabled;
   final String title;
@@ -579,7 +544,7 @@ class ConnectedLinkChannel {
 
   const ConnectedLinkChannel({
     required this.id,
-    required this.sourcePriorityTwistId,
+    required this.sourceTwistInstanceId,
     required this.channelId,
     required this.enabled,
     required this.title,
@@ -590,7 +555,7 @@ class ConnectedLinkChannel {
   factory ConnectedLinkChannel.fromJson(Map<String, dynamic> json) {
     return ConnectedLinkChannel(
       id: json['id'] as int,
-      sourcePriorityTwistId: json['source_priority_twist_id'] as String,
+      sourceTwistInstanceId: json['source_twist_instance_id'] as String,
       channelId: json['channel_id'] as String,
       enabled: json['enabled'] as bool,
       title: json['title'] as String,
@@ -687,9 +652,9 @@ class TwistIntegrations {
   /// The Options field name containing the auth key (for key-based connectors).
   final String? keyOption;
 
-  /// Maps organizationId → list of email domains for that org.
+  /// Maps teamId → list of email domains for that team.
   /// Used for smart channel default suggestions.
-  final Map<int, List<String>>? organizationDomains;
+  final Map<int, List<String>>? teamDomains;
 
   const TwistIntegrations({
     required this.providers,
@@ -700,7 +665,7 @@ class TwistIntegrations {
     this.singleChannel = false,
     this.shared = false,
     this.keyOption,
-    this.organizationDomains,
+    this.teamDomains,
   });
 
   factory TwistIntegrations.fromJson(Map<String, dynamic> json) {
@@ -719,15 +684,15 @@ class TwistIntegrations {
       singleChannel: json['singleChannel'] as bool? ?? false,
       shared: json['shared'] as bool? ?? false,
       keyOption: json['keyOption'] as String?,
-      organizationDomains: _parseOrganizationDomains(
-        json['organizationDomains'],
+      teamDomains: _parseTeamDomains(
+        json['teamDomains'],
       ),
     );
   }
 
   bool get isEmpty => providers.isEmpty && channels.isEmpty;
 
-  static Map<int, List<String>>? _parseOrganizationDomains(dynamic raw) {
+  static Map<int, List<String>>? _parseTeamDomains(dynamic raw) {
     if (raw is! Map) return null;
     final result = <int, List<String>>{};
     for (final entry in raw.entries) {
@@ -837,9 +802,6 @@ class TwistChannel extends Equatable {
   final String title;
   final bool enabled;
   final String? enabledBy;
-  final String? priorityId;
-  final String createThreads;
-  final Map<String, String> createThreadsByType;
   final List<TwistLinkType> linkTypes;
   final bool currentUserHasAccess;
   final List<TwistChannel> children;
@@ -851,9 +813,6 @@ class TwistChannel extends Equatable {
     required this.title,
     required this.enabled,
     this.enabledBy,
-    this.priorityId,
-    this.createThreads = 'all',
-    this.createThreadsByType = const {},
     this.linkTypes = const [],
     required this.currentUserHasAccess,
     this.children = const [],
@@ -871,11 +830,6 @@ class TwistChannel extends Equatable {
       title: json['title'] as String,
       enabled: json['enabled'] as bool? ?? false,
       enabledBy: json['enabledBy'] as String?,
-      priorityId: json['priorityId'] as String?,
-      createThreads: json['createThreads'] as String? ?? 'all',
-      createThreadsByType: (json['createThreadsByType'] as Map<String, dynamic>?)
-              ?.map((k, v) => MapEntry(k, v as String)) ??
-          const {},
       linkTypes: (json['linkTypes'] as List<dynamic>?)
               ?.map(
                 (lt) => TwistLinkType.fromJson(lt as Map<String, dynamic>),
@@ -901,9 +855,6 @@ class TwistChannel extends Equatable {
     title,
     enabled,
     enabledBy,
-    priorityId,
-    createThreads,
-    createThreadsByType,
     linkTypes,
     currentUserHasAccess,
     children,

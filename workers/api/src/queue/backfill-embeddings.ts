@@ -19,15 +19,12 @@ export async function backfillEmbeddings(
 
   const db = createDb(env);
   try {
-    // Find notes without embeddings in the user's priorities
+    // Find notes without embeddings in the user's threads
     const notes = await db
       .selectFrom("note as n")
       .innerJoin("thread as t", "t.id", "n.thread_id")
-      .innerJoin("priority_contact as pc", "pc.priority_id", "t.priority_id")
-      .innerJoin("contact as c", (join) =>
-        join
-          .onRef("c.id", "=", "pc.contact_id")
-          .on("c.user_id", "=", userId)
+      .innerJoin("thread_priority as tp", (join) =>
+        join.onRef("tp.thread_id", "=", "t.id").on("tp.user_id", "=", userId)
       )
       .select(["n.id", "n.content"])
       .where("n.embedding", "is", null)

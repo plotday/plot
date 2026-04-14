@@ -47,22 +47,22 @@ class PersonalUsage extends Equatable {
   List<Object?> get props => [connections, twists];
 }
 
-/// Usage data for an organization the current user belongs to
-class OrganizationUsage extends Equatable {
+/// Usage data for a team the current user belongs to
+class TeamUsage extends Equatable {
   final String id;
   final String name;
   final ResourceUsage connections;
   final bool isAdmin;
 
-  const OrganizationUsage({
+  const TeamUsage({
     required this.id,
     required this.name,
     required this.connections,
     required this.isAdmin,
   });
 
-  factory OrganizationUsage.fromJson(Map<String, dynamic> json) {
-    return OrganizationUsage(
+  factory TeamUsage.fromJson(Map<String, dynamic> json) {
+    return TeamUsage(
       id: json['id'] as String,
       name: json['name'] as String,
       connections: ResourceUsage.fromJson(
@@ -79,27 +79,27 @@ class OrganizationUsage extends Equatable {
 /// Combined usage data for the current user
 class UsageData extends Equatable {
   final PersonalUsage personal;
-  final List<OrganizationUsage> organizations;
+  final List<TeamUsage> teams;
 
-  const UsageData({required this.personal, required this.organizations});
+  const UsageData({required this.personal, required this.teams});
 
   factory UsageData.fromJson(Map<String, dynamic> json) {
     return UsageData(
       personal: PersonalUsage.fromJson(
         json['personal'] as Map<String, dynamic>,
       ),
-      organizations:
-          (json['organizations'] as List<dynamic>)
+      teams:
+          (json['teams'] as List<dynamic>)
               .map(
                 (org) =>
-                    OrganizationUsage.fromJson(org as Map<String, dynamic>),
+                    TeamUsage.fromJson(org as Map<String, dynamic>),
               )
               .toList(),
     );
   }
 
   @override
-  List<Object?> get props => [personal, organizations];
+  List<Object?> get props => [personal, teams];
 }
 
 /// Subscription info including the effective plan across personal + org

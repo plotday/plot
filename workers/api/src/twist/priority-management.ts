@@ -12,13 +12,13 @@ export async function getOrCreatePlotPriority(
   userId: string,
   db: Kysely<DB>
 ): Promise<string> {
-  // First get the user's root priority to scope the key lookup
+  // Find the user's root priority (depth-1 path)
   const rootResult = await db
-    .selectFrom("priority_user")
-    .innerJoin("priority", "priority.id", "priority_user.priority_id")
-    .select(["priority_user.priority_id", "priority.path"])
-    .where("priority_user.user_id", "=", userId)
-    .where("priority_user.personal", "=", true)
+    .selectFrom("priority")
+    .select(["id", "path"])
+    .where("user_id", "=", userId)
+    .where(sql<boolean>`nlevel(path) = 1`)
+    .where("archived_at", "is", null)
     .executeTakeFirstOrThrow();
 
   const rootPath = rootResult.path as string;
@@ -48,6 +48,7 @@ export async function getOrCreatePlotPriority(
       .insertInto("priority")
       .values({
         created_by: userId,
+        user_id: userId,
         title: "Plot",
         path: path as string,
         updated_by: 0,
@@ -84,11 +85,11 @@ export async function getOrCreateTwistDevelopmentPriority(
 ): Promise<string> {
   // Get user's root priority path
   const rootResult = await db
-    .selectFrom("priority_user")
-    .innerJoin("priority", "priority.id", "priority_user.priority_id")
-    .select(["priority.path"])
-    .where("priority_user.user_id", "=", userId)
-    .where("priority_user.personal", "=", true)
+    .selectFrom("priority")
+    .select("path")
+    .where("user_id", "=", userId)
+    .where(sql<boolean>`nlevel(path) = 1`)
+    .where("archived_at", "is", null)
     .executeTakeFirst();
 
   if (!rootResult) {
@@ -113,32 +114,22 @@ export async function getOrCreateTwistDevelopmentPriority(
   // Generate child path under user root
   const path = generatePath(rootPath);
 
-  // Create the Twist Development priority — handle race condition
+  // Create the Twist Development priority — handle race condition. In
+  // the per-user priority model the old inherit_members / viewer dance
+  // is gone; the priority is simply owned by the user.
   try {
     const createResult = await db
       .insertInto("priority")
       .values({
         created_by: userId,
+        user_id: userId,
         title: "Twist Development",
         path: path as string,
         updated_by: 0,
         key: "@plot.twist-dev",
-        inherit_members: false,
       })
       .returning(["id"])
       .executeTakeFirstOrThrow();
-
-    // Add user as viewer (inherit_members=false blocks root member role)
-    await db
-      .insertInto("priority_user")
-      .values({
-        user_id: userId,
-        priority_id: createResult.id,
-        role: "viewer",
-        personal: false,
-      })
-      .onConflict((oc) => oc.doNothing())
-      .execute();
 
     return createResult.id;
   } catch (insertError) {
@@ -214,6 +205,7 @@ export async function getOrCreateTwistPriority(
     .insertInto("priority")
     .values({
       created_by: twistDevResult.created_by,
+      user_id: twistDevResult.created_by,
       title: priorityTitle,
       path: path as string,
       updated_by: 0,

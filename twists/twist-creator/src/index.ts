@@ -1,7 +1,6 @@
 import {
   Twist,
   type NewThread,
-  type Priority,
   type ToolBuilder,
 } from "@plotday/twister";
 import { Twists, type Log } from "@plotday/twister/tools/twists";
@@ -15,7 +14,7 @@ export default class TwistCreator extends Twist<TwistCreator> {
     };
   }
 
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate() {
     // Generate unique Twist ID
     const twistId = await this.tools.twist.create();
 

@@ -1,4 +1,6 @@
--- Add priority_path to link view (via thread's priority or direct priority)
+-- link_x exposes the link's own priority_id (for threadless links).
+-- Thread-attached links no longer inherit thread.priority_id here;
+-- per-user resolution goes through thread_priority in user-schema views.
 CREATE OR REPLACE VIEW "public"."link_x" --
 AS
 SELECT
@@ -24,13 +26,9 @@ SELECT
     l.source_url,
     l.logo,
     l.channel_id,
-    l.embedding,
-    l.match,
     l.merged_from_thread_id,
-    COALESCE(l.priority_id, t.priority_id) AS priority_id,
-    COALESCE(pp.path, tp.path) AS priority_path
+    l.priority_id,
+    pp.path AS priority_path
 FROM
     link l
-    LEFT JOIN thread t ON t.id = l.thread_id
-    LEFT JOIN priority tp ON tp.id = t.priority_id
     LEFT JOIN priority pp ON pp.id = l.priority_id;

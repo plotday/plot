@@ -82,12 +82,13 @@ files.get("/files/:fileId", async (c) => {
     return c.json({ message: "File not found" }, 404);
   }
 
-  // Look up priority from DB: note.actions -> thread.priority_id
+  // Look up priority from DB: note -> thread_priority for the current user
   const noteRow = await c.var.db
     .selectFrom("note")
-    .innerJoin("thread", "thread.id", "note.thread_id")
-    .select("thread.priority_id")
+    .innerJoin("thread_priority", "thread_priority.thread_id", "note.thread_id")
+    .select("thread_priority.priority_id")
     .where(sql<boolean>`note.actions @> ${JSON.stringify([{ fileId }])}::jsonb`)
+    .where("thread_priority.user_id", "=", user.id)
     .executeTakeFirst();
 
   // Fall back to R2 metadata for files not yet attached to a note

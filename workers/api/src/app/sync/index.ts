@@ -11,26 +11,22 @@ import actors from "./actors";
 import noteTags from "./note-tags";
 import notes from "./notes";
 import priorities from "./priorities";
-import priorityActors from "./priority-actors";
-import priorityMembers from "./priority-members";
-import priorityTwists from "./priority-twists";
-import priorityUsers from "./priority-users";
+import twistInstances from "./twist-instances";
 import sessions from "./sessions";
-import sourceChannels from "./source-channels";
+import channels from "./channels";
 import userSettings from "./user-settings";
 import priorityAttention from "./priority-attention";
 import threadAssociations from "./thread-associations";
 import threadUnread from "./thread-unread";
+import topics from "./topics";
+import priorityRules from "./priority-rules";
 
 const sync = new Hono<{ Bindings: Bindings }>();
 
 sync.route("/", actors);
 sync.route("/", priorities);
-sync.route("/", priorityUsers);
-sync.route("/", priorityMembers);
-sync.route("/", priorityActors);
-sync.route("/", priorityTwists);
-sync.route("/", sourceChannels);
+sync.route("/", twistInstances);
+sync.route("/", channels);
 sync.route("/", threads);
 sync.route("/", links);
 sync.route("/", notes);
@@ -43,6 +39,8 @@ sync.route("/", threadRead);
 sync.route("/", threadUnread);
 sync.route("/", priorityAttention);
 sync.route("/", threadAssociations);
+sync.route("/", topics);
+sync.route("/", priorityRules);
 
 sync.onError((err, c) => {
   // Handle authorization errors from assertPriorityAccess/assertThreadAccess

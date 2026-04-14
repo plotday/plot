@@ -14,7 +14,7 @@ describe("Tool Factory", () => {
       environment: "production" as const,
       db: {} as any,
       priorityId: "priority-1",
-      priorityTwistId: "pa-1",
+      twistInstanceId: "pa-1",
       storage: env.STORAGE,
       callbacks: env.CALLBACKS,
       logSubscriptions: env.LOG_SUBSCRIPTIONS,

@@ -33,7 +33,7 @@ export async function storeTwistModule({
     db,
     checkPermissions: false,
     module,
-  })({ id, environment, version, priorityId: "", priorityTwistId: "__deployment__" });
+  })({ id, environment, version, twistInstanceId: "__deployment__" });
 
   // Only store to R2 and KV if not in dry-run mode
   if (!dryRun) {

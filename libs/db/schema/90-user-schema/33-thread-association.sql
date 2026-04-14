@@ -1,10 +1,10 @@
 -- User-scoped thread association view
--- Shows associations where the user has access to the parent thread's priority
+-- Shows associations where the user has a thread_priority row for the parent thread
 CREATE OR REPLACE VIEW "user"."thread_association"
 --
 AS
 SELECT
-    upe.user_id,
+    tp.user_id,
     ta.id,
     ta.created_at,
     ta.updated_at,
@@ -14,5 +14,4 @@ SELECT
     ta."order"
 FROM
     thread_association ta
-    JOIN thread t ON t.id = ta.parent_thread_id
-    JOIN "user".priority_expanded upe ON upe.priority_id = t.priority_id;
+    JOIN thread_priority tp ON tp.thread_id = ta.parent_thread_id;

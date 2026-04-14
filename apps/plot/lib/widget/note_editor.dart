@@ -1,4 +1,4 @@
-import 'package:flutter/services.dart' show Uint8List;
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -11,6 +11,7 @@ import 'package:plot/command/command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/image_utils.dart';
+import 'package:plot/util/shortcut.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/network_exception.dart';
 import 'logging.dart';
@@ -30,6 +31,11 @@ class NoteEditor extends StatefulWidget {
     this.onSubmitted,
     this.assignNote = true,
     this.viewerMode = false,
+    // Twist selection (new-thread mode)
+    this.selectedTwist,
+    this.onTwistSelected,
+    // Link/navigation callbacks
+    this.onNavigateToThread,
     super.key,
   });
 
@@ -38,7 +44,7 @@ class NoteEditor extends StatefulWidget {
 
   /// When non-null, the editor operates in new-thread mode.
   final Thread? thread;
-  final List<PriorityTwist>? twists;
+  final List<TwistInstance>? twists;
   final List<Actor>? actors;
   final Future<void> Function(Thread thread, {Note? note})? onDraftChanged;
 
@@ -65,6 +71,15 @@ class NoteEditor extends StatefulWidget {
   /// readonly priorities. Notes are auto-private.
   final bool viewerMode;
 
+  /// Currently selected twist (new-thread mode). Button shows selected state.
+  final TwistInstance? selectedTwist;
+
+  /// Called when user selects a twist from the picker modal.
+  final ValueChanged<TwistInstance>? onTwistSelected;
+
+  /// Called when user selects an existing thread from the link modal.
+  final void Function(Thread thread)? onNavigateToThread;
+
   bool get isNewThreadMode => thread != null;
 
   @override
@@ -83,7 +98,7 @@ class NoteEditorState extends State<NoteEditor> {
   FocusNode? _currentFocusNode;
 
   /// Twist IDs toggled OFF by the user for the current note.
-  final Set<PriorityTwistId> _disabledTwists = {};
+  final Set<TwistInstanceId> _disabledTwists = {};
 
   void _resetDisabledTwists() {
     _disabledTwists.clear();
@@ -100,11 +115,9 @@ class NoteEditorState extends State<NoteEditor> {
       // Sources with defaultMentionCreated always default ON —
       // they appear in threadTwists because they created this thread
       if (twist.isSource && twist.defaultMentionCreated) continue;
-      final isAuthor = threadState.notes.any(
-        (n) => n.authorId.toUuid() == twist.id,
-      ) || threadState.links.any(
-        (l) => l.createdBy == twist.id,
-      );
+      final isAuthor =
+          threadState.notes.any((n) => n.authorId.toUuid() == twist.id) ||
+          threadState.links.any((l) => l.createdBy == twist.id);
       final shouldDefault =
           (isAuthor && twist.defaultMentionCreated) ||
           twist.defaultMentionMentioned;
@@ -304,8 +317,7 @@ class NoteEditorState extends State<NoteEditor> {
     // Note mode: wrap with BlocListener (editing) and BlocBuilder (twists/actors)
     return BlocListener<ThreadBloc, ThreadState>(
       listenWhen: (prev, curr) =>
-          prev.editingNote != curr.editingNote ||
-          prev.replyTo != curr.replyTo,
+          prev.editingNote != curr.editingNote || prev.replyTo != curr.replyTo,
       listener: (context, activityState) {
         if (activityState.editingNote != null) {
           // Load editing note content into editor
@@ -329,7 +341,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Widget _buildEditorArea({
-    required List<PriorityTwist> twists,
+    required List<TwistInstance> twists,
     required List<Actor> actors,
   }) {
     return EditableArea(
@@ -388,14 +400,18 @@ class NoteEditorState extends State<NoteEditor> {
           onImagePasted: (imageBytes) => _handleImagePaste(imageBytes),
         );
 
-        return Padding(
+        return CallbackShortcuts(
+          bindings: _buildNoteShortcuts(context),
+          child: Padding(
           padding: EdgeInsets.only(
             left: 12,
             right: 12,
             top: 4,
-            bottom: 12 + (widget.flushToBottom
-                ? MediaQuery.paddingOf(context).bottom
-                : 0),
+            bottom:
+                12 +
+                (widget.flushToBottom
+                    ? MediaQuery.paddingOf(context).bottom
+                    : 0),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -404,6 +420,8 @@ class NoteEditorState extends State<NoteEditor> {
             children: [
               // Reply, editing, and twist indicators (note mode only)
               if (!widget.isNewThreadMode) _buildNoteIndicators(context),
+              // Attachment and link rows (both modes)
+              _buildAttachmentRows(),
               Flexible(
                 child: IgnorePointer(
                   ignoring: _saving,
@@ -444,6 +462,7 @@ class NoteEditorState extends State<NoteEditor> {
                 _buildNoteBottomBar(context),
             ],
           ),
+        ),
         );
       },
     );
@@ -457,16 +476,13 @@ class NoteEditorState extends State<NoteEditor> {
     return BlocBuilder<ThreadBloc, ThreadState>(
       buildWhen: (prev, curr) =>
           prev.replyTo != curr.replyTo ||
-          prev.editingNote != curr.editingNote ||
-          prev.threadTwists != curr.threadTwists,
+          prev.editingNote != curr.editingNote,
       builder: (context, state) {
         final indicators = <Widget>[
           if (state.replyTo != null)
             _buildReplyIndicatorContent(context, state.replyTo!),
           if (state.editingNote != null)
             _buildEditingIndicatorContent(context, state.editingNote!),
-          if (state.editingNote == null && state.threadTwists.isNotEmpty)
-            _buildTwistIndicatorContent(context, state.threadTwists),
         ];
         if (indicators.isEmpty) return const SizedBox.shrink();
         return Column(
@@ -581,67 +597,93 @@ class NoteEditorState extends State<NoteEditor> {
     );
   }
 
-  Widget _buildTwistIndicatorContent(
-    BuildContext context,
-    List<PriorityTwist> twists,
-  ) {
-    final mentionableTwists = twists
-        .where((t) => !t.isSource || t.defaultMentionCreated)
+  // -- Attachment rows (both modes) --
+
+  /// Renders attached files and links as compact rows with an X to remove.
+  Widget _buildAttachmentRows() {
+    final actions = widget.draft.actions;
+    if (actions == null || actions.isEmpty) return const SizedBox.shrink();
+
+    final attachments = actions
+        .where(
+          (a) =>
+              a.type == UserActionType.file ||
+              a.type == UserActionType.external,
+        )
         .toList();
+    if (attachments.isEmpty) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.only(left: 6, right: 6),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 4,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          for (final twist in mentionableTwists)
-            _buildTwistToggleChip(context, twist),
+          for (final action in attachments) _buildAttachmentRow(action),
         ],
       ),
     );
   }
 
-  Widget _buildTwistToggleChip(BuildContext context, PriorityTwist twist) {
-    final disabled = _disabledTwists.contains(twist.id);
-    final isDark = context.colour.brightness == Brightness.dark;
-    final logoUrl = isDark && twist.logoUrlDark != null
-        ? twist.logoUrlDark
-        : twist.logoUrl;
-    const chipRadius = BorderRadius.all(Radius.circular(24));
-    const chipPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 4);
+  Widget _buildAttachmentRow(UserAction action) {
+    final Widget icon;
+    final String label;
 
-    return FButton(
-      onPress: () {
-        setState(() {
-          if (disabled) {
-            _disabledTwists.remove(twist.id);
-          } else {
-            _disabledTwists.add(twist.id);
-          }
-        });
-      },
-      variant: disabled ? FButtonVariant.secondary : FButtonVariant.primary,
-      style: FButtonStyleDelta.delta(
-        decoration: FVariantsDelta.delta([
-          FVariantOperation.all(
-            DecorationDelta.boxDelta(borderRadius: chipRadius),
+    if (action is FileUserAction) {
+      icon = Icon(PlotIcon.attachment, size: 12, color: context.colour.muted);
+      label = action.fileName;
+    } else if (action is ExternalUserAction) {
+      icon = Icon(PlotIcon.link, size: 12, color: context.colour.muted);
+      label = action.title;
+    } else {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          icon,
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              style: context.theme.typography.xs.copyWith(
+                color: context.colour.muted,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ]),
-        contentStyle: FButtonContentStyleDelta.delta(
-          padding: EdgeInsetsGeometryDelta.value(chipPadding),
-        ),
-      ),
-      mainAxisSize: MainAxisSize.min,
-      prefix: logoUrl != null
-          ? LogoImage(url: logoUrl, size: 12)
-          : Icon(PlotIcon.twist, size: 12),
-      child: Text(
-        twist.name,
-        style: disabled
-            ? TextStyle(decoration: TextDecoration.lineThrough)
-            : null,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _removeAttachment(action),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Icon(
+                FontAwesomeIcons.xmark,
+                size: 12,
+                color: context.colour.muted,
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  void _removeAttachment(UserAction action) {
+    final currentActions = widget.draft.actions ?? const [];
+    final updatedActions = currentActions.where((a) => a != action).toList();
+
+    if (widget.isNewThreadMode) {
+      widget.onDraftChanged!(
+        widget.thread!,
+        note: widget.draft.copyWith(actions: updatedActions),
+      );
+    } else {
+      final updatedDraft = widget.draft.copyWith(actions: updatedActions);
+      context.read<ThreadBloc>().updateDraft(updatedDraft);
+    }
   }
 
   // -- Bottom bars --
@@ -652,6 +694,8 @@ class NoteEditorState extends State<NoteEditor> {
           prev.editingNote != curr.editingNote || prev.draft != curr.draft,
       builder: (context, activityState) {
         final isCurrentlyEditing = activityState.editingNote != null;
+        final threadState = context.read<ThreadBloc>().state;
+        final priorityId = threadState.thread.priority.id.toString();
         return Row(
           children: [
             if (!isCurrentlyEditing)
@@ -661,42 +705,20 @@ class NoteEditorState extends State<NoteEditor> {
                   opacity: _saving ? 0.6 : 1.0,
                   child: Row(
                     children: [
-                      // Left side: Add Task toggle
+                      // Task toggle
                       Button.icon(
                         ToggleSelfTask(widget.draft),
                         selected: widget.draft.isAssignedTo(Base.actorId),
                       ),
-                      // Assign (only for shared, non-viewer priorities)
-                      if (context
-                              .read<ThreadBloc>()
-                              .state
-                              .thread
-                              .priority
-                              .sharing &&
-                          !context
-                              .read<ThreadBloc>()
-                              .state
-                              .thread
-                              .priority
-                              .isViewer)
-                        Button.icon(
-                          PickNoteAssignee(widget.draft),
-                          selected: widget.draft.assignees
-                              .any((id) => id != Base.actorId),
+                      // Assign
+                      Button.icon(
+                        PickNoteAssignee(widget.draft),
+                        selected: widget.draft.assignees.any(
+                          (id) => !id.isCurrentUser,
                         ),
-                      // Private toggle (only for shared, non-viewer priorities)
-                      if (context
-                              .read<ThreadBloc>()
-                              .state
-                              .thread
-                              .priority
-                              .sharing &&
-                          !context
-                              .read<ThreadBloc>()
-                              .state
-                              .thread
-                              .priority
-                              .isViewer &&
+                      ),
+                      // Private toggle (only for threads with other contacts)
+                      if (threadState.thread.contacts.length > 1 &&
                           (!widget.draft.isPrivate ||
                               widget.draft.authorId.isCurrentUser))
                         Button.icon(
@@ -707,15 +729,24 @@ class NoteEditorState extends State<NoteEditor> {
                           ),
                           selected: widget.draft.isPrivate,
                         ),
+                      // Link button
+                      Button.icon(
+                        AddLink(
+                          currentActions: widget.draft.actions ?? const [],
+                          onActionsChanged: (actions) {
+                            final updatedDraft = widget.draft.copyWith(
+                              actions: actions,
+                            );
+                            context.read<ThreadBloc>().updateDraft(
+                              updatedDraft,
+                            );
+                          },
+                          onNavigateToThread: widget.onNavigateToThread,
+                        ),
+                      ),
                       Button.icon(
                         AttachFile(
-                          priorityId: context
-                              .read<ThreadBloc>()
-                              .state
-                              .thread
-                              .priority
-                              .id
-                              .toString(),
+                          priorityId: priorityId,
                           currentLinks: widget.draft.actions ?? const [],
                           onLinksChanged: (actions) {
                             final updatedDraft = widget.draft.copyWith(
@@ -726,22 +757,11 @@ class NoteEditorState extends State<NoteEditor> {
                             );
                           },
                         ),
-                        selected:
-                            widget.draft.actions?.any(
-                              (l) => l.type == UserActionType.file,
-                            ) ??
-                            false,
                       ),
                       if (isMobilePlatform())
                         Button.icon(
                           TakePhoto(
-                            priorityId: context
-                                .read<ThreadBloc>()
-                                .state
-                                .thread
-                                .priority
-                                .id
-                                .toString(),
+                            priorityId: priorityId,
                             currentLinks: widget.draft.actions ?? const [],
                             onLinksChanged: (actions) {
                               final updatedDraft = widget.draft.copyWith(
@@ -753,6 +773,12 @@ class NoteEditorState extends State<NoteEditor> {
                             },
                           ),
                         ),
+                      // Twist button (only when thread has twists)
+                      if (threadState.threadTwists.isNotEmpty)
+                        _buildTwistButton(context),
+                      // Connector button (autoReply connectors on thread)
+                      if (threadState.threadTwists.isNotEmpty)
+                        _buildConnectorButton(context),
                     ],
                   ),
                 ),
@@ -771,11 +797,7 @@ class NoteEditorState extends State<NoteEditor> {
               loading: _saving,
               enabled:
                   !_saving &&
-                  (!_isEmpty ||
-                      (widget.draft.actions?.any(
-                            (l) => l.type == UserActionType.file,
-                          ) ??
-                          false)),
+                  (!_isEmpty || (widget.draft.actions?.isNotEmpty ?? false)),
             ),
           ],
         );
@@ -794,51 +816,52 @@ class NoteEditorState extends State<NoteEditor> {
             opacity: _saving ? 0.6 : 1.0,
             child: Row(
               children: [
-                if (!widget.viewerMode &&
-                    widget.showScheduleActions &&
-                    !thread.priority.isViewer) ...[
-                  // Left side: Todo toggle (on == today)
+                if (!widget.viewerMode && !thread.priority.isViewer) ...[
+                  // Task toggle — use CommandWrapper to update draft instead of saving
                   Button.icon(
-                    ToggleThreadToDo(
-                      thread,
-                      onUpdate: (t) => widget.onDraftChanged!(t),
+                    CommandWrapper(
+                      ToggleSelfTask(draftNote),
+                      run: (action, ctx) async {
+                        final updatedNote = draftNote.toggleTag(
+                          Tag.todo,
+                          Base.actorId,
+                        );
+                        widget.onDraftChanged!(thread, note: updatedNote);
+                        return const CommandDone();
+                      },
                     ),
-                    selected: thread.todo,
-                  ),
-                  // Schedule toggle (on == future date)
-                  Builder(
-                    builder: (context) {
-                      final isScheduled = thread.isFuture;
-                      return Button.icon(
-                        isScheduled
-                            ? CommandWrapper(
-                                FinishThread(
-                                  thread,
-                                  onUpdate: (t) => widget.onDraftChanged!(t),
-                                ),
-                                icon: Value(PlotIcon.schedule),
-                              )
-                            : PickScheduleThread(
-                                thread,
-                                onUpdate: (t) => widget.onDraftChanged!(t),
-                              ),
-                        selected: isScheduled,
-                      );
-                    },
+                    selected: draftNote.isAssignedTo(Base.actorId),
                   ),
                 ],
-                if (!widget.viewerMode &&
-                    thread.priority.sharing &&
-                    !thread.priority.isViewer)
+                if (!widget.viewerMode && !thread.priority.isViewer)
                   Button.icon(
                     PickDraftNoteAssignee(
                       note: draftNote,
+                      thread: thread,
                       priorityId: thread.priority.id,
-                      onUpdate: (note) =>
-                          widget.onDraftChanged!(thread, note: note),
+                      onUpdate: (note, {Thread? thread}) =>
+                          widget.onDraftChanged!(
+                            thread ?? widget.thread!,
+                            note: note,
+                          ),
                     ),
-                    selected: draftNote.assignees.isNotEmpty,
+                    selected: draftNote.assignees.any(
+                      (id) => !id.isCurrentUser,
+                    ),
                   ),
+                // Link button
+                Button.icon(
+                  AddLink(
+                    currentActions: draftNote.actions ?? const [],
+                    onActionsChanged: (actions) {
+                      widget.onDraftChanged!(
+                        thread,
+                        note: draftNote.copyWith(actions: actions),
+                      );
+                    },
+                    onNavigateToThread: widget.onNavigateToThread,
+                  ),
+                ),
                 Button.icon(
                   AttachFile(
                     priorityId: thread.priority.id.toString(),
@@ -850,11 +873,6 @@ class NoteEditorState extends State<NoteEditor> {
                       );
                     },
                   ),
-                  selected:
-                      draftNote.actions?.any(
-                        (l) => l.type == UserActionType.file,
-                      ) ??
-                      false,
                 ),
                 if (isMobilePlatform())
                   Button.icon(
@@ -869,6 +887,9 @@ class NoteEditorState extends State<NoteEditor> {
                       },
                     ),
                   ),
+                // Twist button (when twists are available)
+                if (!widget.viewerMode && (widget.twists?.isNotEmpty ?? false))
+                  _buildNewThreadTwistButton(),
               ],
             ),
           ),
@@ -889,6 +910,286 @@ class NoteEditorState extends State<NoteEditor> {
         ),
       ],
     );
+  }
+
+  // -- Twist buttons --
+
+  /// Twist button for note mode (ThreadPage). Opens a modal showing
+  /// thread twists with toggle state. Source connectors are handled by
+  /// the separate connector (plug) button and excluded here.
+  Widget _buildTwistButton(BuildContext context) {
+    final threadState = context.read<ThreadBloc>().state;
+    final mentionableTwists = threadState.threadTwists
+        .where((t) => !t.isSource)
+        .toList();
+    if (mentionableTwists.isEmpty) return const SizedBox.shrink();
+
+    final anyEnabled = mentionableTwists.any(
+      (t) => !_disabledTwists.contains(t.id),
+    );
+
+    return Button.icon(
+      CommandWrapper(
+        PickTwist(),
+        run: (action, ctx) async {
+          // Single twist: click toggles directly without opening a modal.
+          if (mentionableTwists.length == 1) {
+            setState(() {
+              final id = mentionableTwists.first.id;
+              if (_disabledTwists.contains(id)) {
+                _disabledTwists.remove(id);
+              } else {
+                _disabledTwists.add(id);
+              }
+            });
+            return const CommandDone();
+          }
+          await _openTwistToggleModal(ctx, mentionableTwists);
+          return const CommandDone();
+        },
+      ),
+      selected: anyEnabled,
+    );
+  }
+
+  /// Plug button for autoReply connectors on the thread. Toggles all
+  /// connectors on or off together. Hidden when no autoReply connectors
+  /// are present.
+  Widget _buildConnectorButton(BuildContext context) {
+    final threadState = context.read<ThreadBloc>().state;
+    final connectors = threadState.threadTwists
+        .where((t) => t.isSource && t.defaultMentionCreated)
+        .toList();
+    if (connectors.isEmpty) return const SizedBox.shrink();
+
+    final anyEnabled = connectors.any(
+      (c) => !_disabledTwists.contains(c.id),
+    );
+    final names = connectors.map((c) => c.name).join(', ');
+    return Button.icon(
+      CommandWrapper(
+        PickTwist(),
+        title: 'Send to $names',
+        icon: Value(PlotIcon.connection),
+        run: (action, ctx) async {
+          setState(() {
+            if (anyEnabled) {
+              // Disable all
+              for (final c in connectors) {
+                _disabledTwists.add(c.id);
+              }
+            } else {
+              // Enable all
+              for (final c in connectors) {
+                _disabledTwists.remove(c.id);
+              }
+            }
+          });
+          return const CommandDone();
+        },
+      ),
+      selected: anyEnabled,
+    );
+  }
+
+  Future<void> _openTwistToggleModal(
+    BuildContext context,
+    List<TwistInstance> twists,
+  ) async {
+    final result = await SelectModal.open<TwistInstance>(
+      context,
+      items: (_) async => [SelectGroup(title: null, items: twists)],
+      itemBuilder: (twist, _) {
+        final disabled = _disabledTwists.contains(twist.id);
+        final isDark = context.colour.brightness == Brightness.dark;
+        final logoUrl = isDark && twist.logoUrlDark != null
+            ? twist.logoUrlDark
+            : twist.logoUrl;
+        return ListTile(
+          selected: !disabled,
+          body: Row(
+            spacing: 8,
+            children: [
+              if (logoUrl != null)
+                LogoImage(url: logoUrl, size: 14)
+              else
+                Icon(PlotIcon.twist, size: 14),
+              Text(twist.name),
+            ],
+          ),
+        );
+      },
+      prompt: 'Select twists',
+    );
+
+    if (!context.mounted || !result.present) return;
+    setState(() {
+      final twist = result.value;
+      if (_disabledTwists.contains(twist.id)) {
+        _disabledTwists.remove(twist.id);
+      } else {
+        _disabledTwists.add(twist.id);
+      }
+    });
+  }
+
+  /// Twist button for new-thread mode. Opens a single-select modal.
+  Widget _buildNewThreadTwistButton() {
+    final hasTwist = widget.selectedTwist != null;
+    return Button.icon(
+      CommandWrapper(
+        PickTwist(),
+        run: (action, ctx) async {
+          await _openNewThreadTwistPicker(ctx);
+          return const CommandDone();
+        },
+      ),
+      selected: hasTwist,
+    );
+  }
+
+  Future<void> _openNewThreadTwistPicker(BuildContext context) async {
+    final twists = (widget.twists ?? const <TwistInstance>[])
+        .where((t) => !t.isSource)
+        .toList();
+    if (twists.isEmpty) return;
+
+    final result = await SelectModal.open<TwistInstance>(
+      context,
+      items: (_) async => [SelectGroup(title: null, items: twists)],
+      itemBuilder: (twist, _) {
+        final isDark = context.colour.brightness == Brightness.dark;
+        final logoUrl = isDark && twist.logoUrlDark != null
+            ? twist.logoUrlDark
+            : twist.logoUrl;
+        return ListTile(
+          body: Row(
+            spacing: 8,
+            children: [
+              if (logoUrl != null)
+                LogoImage(url: logoUrl, size: 14)
+              else
+                Icon(PlotIcon.twist, size: 14),
+              Text(twist.name),
+            ],
+          ),
+        );
+      },
+      selectedValue: widget.selectedTwist,
+      prompt: 'Select twist',
+    );
+
+    if (!context.mounted || !result.present) return;
+    widget.onTwistSelected?.call(result.value);
+  }
+
+  // -- Keyboard shortcuts --
+
+  /// Builds keyboard shortcut bindings for note-level actions. These fire
+  /// from anywhere inside the NoteEditor (editor + toolbar). Uses mode
+  /// (new-thread vs note) to invoke the same logic the toolbar buttons use.
+  Map<ShortcutActivator, VoidCallback> _buildNoteShortcuts(
+    BuildContext context,
+  ) {
+    final bindings = <ShortcutActivator, VoidCallback>{};
+
+    // ⌘⇧T — toggle self task
+    bindings[platformSingleActivator(LogicalKeyboardKey.keyT, shift: true)] =
+        () => _shortcutToggleSelfTask(context);
+
+    // ⌘⇧A — assign
+    bindings[platformSingleActivator(LogicalKeyboardKey.keyA, shift: true)] =
+        () => _shortcutAssign(context);
+
+    // ⌘⇧L — add link
+    bindings[platformSingleActivator(LogicalKeyboardKey.keyL, shift: true)] =
+        () => _shortcutAddLink(context);
+
+    // ⌘⇧M — select twist
+    bindings[platformSingleActivator(LogicalKeyboardKey.keyM, shift: true)] =
+        () => _shortcutSelectTwist(context);
+
+    return bindings;
+  }
+
+  void _shortcutToggleSelfTask(BuildContext context) {
+    if (_saving) return;
+    if (widget.isNewThreadMode) {
+      if (widget.viewerMode || widget.thread!.priority.isViewer) return;
+      final updatedNote = widget.draft.toggleTag(Tag.todo, Base.actorId);
+      widget.onDraftChanged?.call(widget.thread!, note: updatedNote);
+    } else {
+      context.run(ToggleSelfTask(widget.draft));
+    }
+  }
+
+  void _shortcutAssign(BuildContext context) {
+    if (_saving) return;
+    if (widget.isNewThreadMode) {
+      if (widget.viewerMode || widget.thread!.priority.isViewer) return;
+      context.run(
+        PickDraftNoteAssignee(
+          note: widget.draft,
+          thread: widget.thread!,
+          priorityId: widget.thread!.priority.id,
+          onUpdate: (note, {Thread? thread}) =>
+              widget.onDraftChanged?.call(
+                thread ?? widget.thread!,
+                note: note,
+              ) ??
+              Future.value(),
+        ),
+      );
+    } else {
+      context.run(PickNoteAssignee(widget.draft));
+    }
+  }
+
+  void _shortcutAddLink(BuildContext context) {
+    if (_saving) return;
+    final currentActions = widget.draft.actions ?? const <UserAction>[];
+    void onActionsChanged(List<UserAction> actions) {
+      final updatedDraft = widget.draft.copyWith(actions: actions);
+      if (widget.isNewThreadMode) {
+        widget.onDraftChanged?.call(widget.thread!, note: updatedDraft);
+      } else {
+        context.read<ThreadBloc>().updateDraft(updatedDraft);
+      }
+    }
+
+    context.run(
+      AddLink(
+        currentActions: currentActions,
+        onActionsChanged: onActionsChanged,
+        onNavigateToThread: widget.onNavigateToThread,
+      ),
+    );
+  }
+
+  void _shortcutSelectTwist(BuildContext context) {
+    if (_saving) return;
+    if (widget.isNewThreadMode) {
+      if (widget.viewerMode || (widget.twists?.isEmpty ?? true)) return;
+      _openNewThreadTwistPicker(context);
+    } else {
+      final threadState = context.read<ThreadBloc>().state;
+      final mentionableTwists = threadState.threadTwists
+          .where((t) => !t.isSource)
+          .toList();
+      if (mentionableTwists.isEmpty) return;
+      if (mentionableTwists.length == 1) {
+        setState(() {
+          final id = mentionableTwists.first.id;
+          if (_disabledTwists.contains(id)) {
+            _disabledTwists.remove(id);
+          } else {
+            _disabledTwists.add(id);
+          }
+        });
+        return;
+      }
+      _openTwistToggleModal(context, mentionableTwists);
+    }
   }
 
   // -- Submit handlers --
@@ -1008,7 +1309,7 @@ class NoteEditorState extends State<NoteEditor> {
 
   Future<ThreadWithNote> finalizeThreadDraft(
     String body, {
-    required List<PriorityTwist> twists,
+    required List<TwistInstance> twists,
     required bool alt,
   }) async {
     _finalized = true;
@@ -1049,10 +1350,13 @@ class NoteEditorState extends State<NoteEditor> {
       );
     }
 
+    // Cmd-Enter (alt) adds the thread to agenda (Do Now scheduling) but
+    // should not auto-assign the note to self. Users who want the note
+    // assigned can toggle "Add task" explicitly before submitting.
     return ThreadWithNote(
       thread: thread,
       note: note,
-      assignNote: widget.assignNote,
+      assignNote: widget.assignNote && !alt,
     );
   }
 }

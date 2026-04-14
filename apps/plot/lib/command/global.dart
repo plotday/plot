@@ -32,7 +32,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
     try {
       final results = await Future.wait([
         UpgradeApi.getSubscription(),
-        api.get<List<dynamic>>('/organization'),
+        api.get<List<dynamic>>('/team'),
       ]);
       if (mounted) {
         setState(() {
@@ -58,7 +58,7 @@ class _GlobalShortcutsState extends State<GlobalShortcuts> {
     try {
       final results = await Future.wait([
         UpgradeApi.getSubscription(),
-        api.get<List<dynamic>>('/organization'),
+        api.get<List<dynamic>>('/team'),
       ]);
       if (mounted) {
         setState(() {

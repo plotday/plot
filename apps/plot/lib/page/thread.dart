@@ -640,7 +640,7 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
   bool get _isUserConnected {
     final ptId = widget.link.createdBy;
     if (ptId == null) return true;
-    final pt = PriorityTwist.fromCache(ptId);
+    final pt = TwistInstance.fromCache(ptId);
     if (pt == null || !pt.isSource) return true;
     return pt.userConnected;
   }
@@ -673,7 +673,7 @@ class _ThreadLinkRowState extends State<_ThreadLinkRow> {
                 : () {
                     final ptId = link.createdBy;
                     if (ptId == null) return;
-                    final pt = PriorityTwist.fromCache(ptId);
+                    final pt = TwistInstance.fromCache(ptId);
                     if (pt == null) return;
                     ConnectConnectorAccount(pt).run(context);
                   },
@@ -842,7 +842,6 @@ class _LinkAssigneeBadge extends StatelessWidget {
       context,
       items: (search) async {
         final actors = await Actor.get(
-          priorityId: priorityId,
           search: search,
           types: [ActorType.user, ActorType.contact],
           limit: 50,

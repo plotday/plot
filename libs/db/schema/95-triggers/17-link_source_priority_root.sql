@@ -9,14 +9,22 @@ DECLARE
 BEGIN
     -- Only set source_priority_root when source is non-null
     IF NEW.source IS NOT NULL THEN
-        -- Get the priority path via the thread or direct priority
+        -- Get the priority path via thread_priority (for the link creator's owner)
+        -- or via the link's own priority_id
         SELECT
             p.path INTO priority_path
         FROM
             public.priority p
         WHERE
             p.id = COALESCE(
-                (SELECT t.priority_id FROM public.thread t WHERE t.id = NEW.thread_id),
+                (SELECT tp.priority_id
+                 FROM public.thread_priority tp
+                 WHERE tp.thread_id = NEW.thread_id
+                   AND tp.user_id = COALESCE(
+                       (SELECT pt.owner_id FROM public.twist_instance pt WHERE pt.id = NEW.created_by),
+                       NEW.created_by
+                   )
+                ),
                 NEW.priority_id
             );
         -- Extract the root element (first segment) of the priority path

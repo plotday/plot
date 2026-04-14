@@ -33,4 +33,12 @@ describe("computeLcaPath", () => {
       "root.a.b.d",
     ], "root.a")).toBe("root.a.b");
   });
+
+  it('returns single-segment path when all paths share it', () => {
+    expect(computeLcaPath(["myroot", "myroot"], "fallback")).toBe("myroot");
+  });
+
+  it('returns root when paths have mixed depths', () => {
+    expect(computeLcaPath(["root.child", "root"], "fallback")).toBe("root");
+  });
 });

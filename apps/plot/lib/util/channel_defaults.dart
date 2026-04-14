@@ -1,18 +1,14 @@
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/store/store.dart' show Priority, PriorityOrder;
 
-/// Suggested defaults for which channels to enable and their priority assignments.
+/// Suggested defaults for which channels to enable.
 class ChannelDefaultSuggestion {
   final Set<String> enabledChannels;
-  final Map<String, String> channelPriorities;
 
-  const ChannelDefaultSuggestion({
-    this.enabledChannels = const {},
-    this.channelPriorities = const {},
-  });
+  const ChannelDefaultSuggestion({this.enabledChannels = const {}});
 }
 
-/// Common personal email domains that should not match organizations.
+/// Common personal email domains that should not match teams.
 const _personalDomains = {
   'gmail.com',
   'googlemail.com',
@@ -55,17 +51,15 @@ final _informationalPatterns = RegExp(
 
 /// Computes smart default channel selections and priority assignments.
 class ChannelDefaultSuggester {
-  /// Suggest which channels to enable and which priorities to assign.
+  /// Suggest which channels to enable.
   ///
   /// [channels] — available channels from the source.
   /// [accounts] — connected accounts with email info.
-  /// [organizationDomains] — orgId → list of email domains from the API.
-  /// [isAccountBased] — whether each channel needs a priority assignment.
+  /// [teamDomains] — teamId → list of email domains from the API.
   static Future<ChannelDefaultSuggestion> suggest({
     required List<TwistChannel> channels,
     required List<TwistAccount> accounts,
-    required Map<int, List<String>>? organizationDomains,
-    required bool isAccountBased,
+    required Map<int, List<String>>? teamDomains,
   }) async {
     if (channels.isEmpty) return const ChannelDefaultSuggestion();
 
@@ -77,10 +71,10 @@ class ChannelDefaultSuggester {
 
     final defaultPriority = await Priority.getDefault();
 
-    // Phase 1: Map account email domains → organization priorities
+    // Phase 1: Map account email domains → team priorities
     final domainToPriority = _buildDomainPriorityMap(
       accounts,
-      organizationDomains,
+      teamDomains,
       priorities,
       defaultPriority,
     );
@@ -103,9 +97,8 @@ class ChannelDefaultSuggester {
       scored.add(score);
     }
 
-    // Phase 3: Select and assign
+    // Phase 3: Select
     final enabledChannels = <String>{};
-    final channelPriorities = <String, String>{};
 
     // Enable channels with score >= 3
     for (final s in scored) {
@@ -120,34 +113,22 @@ class ChannelDefaultSuggester {
       enabledChannels.add(scored.first.key);
     }
 
-    // Assign priorities for enabled channels
-    if (isAccountBased) {
-      for (final s in scored) {
-        if (!enabledChannels.contains(s.key)) continue;
-        channelPriorities[s.key] =
-            (s.matchedPriority ?? defaultPriority).id.toString();
-      }
-    }
-
-    return ChannelDefaultSuggestion(
-      enabledChannels: enabledChannels,
-      channelPriorities: channelPriorities,
-    );
+    return ChannelDefaultSuggestion(enabledChannels: enabledChannels);
   }
 
   /// Build a map from email domain → best matching priority.
   static Map<String, Priority> _buildDomainPriorityMap(
     List<TwistAccount> accounts,
-    Map<int, List<String>>? organizationDomains,
+    Map<int, List<String>>? teamDomains,
     List<Priority> priorities,
     Priority defaultPriority,
   ) {
     final result = <String, Priority>{};
-    if (organizationDomains == null) return result;
+    if (teamDomains == null) return result;
 
-    // Invert: domain → orgId
+    // Invert: domain → teamId
     final domainToOrgId = <String, int>{};
-    for (final entry in organizationDomains.entries) {
+    for (final entry in teamDomains.entries) {
       for (final domain in entry.value) {
         domainToOrgId[domain.toLowerCase()] = entry.key;
       }
@@ -163,10 +144,10 @@ class ChannelDefaultSuggester {
 
       // Find the root priority for this org
       final orgPriority = priorities.firstWhere(
-        (p) => p.organizationId == orgId && p.root,
+        (p) => p.teamId == orgId && p.root,
         orElse: () =>
             priorities.firstWhere(
-              (p) => p.organizationId == orgId,
+              (p) => p.teamId == orgId,
               orElse: () => defaultPriority,
             ),
       );
@@ -204,7 +185,7 @@ class ChannelDefaultSuggester {
       }
     }
 
-    // Signal: account email domain matched an organization
+    // Signal: account email domain matched a team
     if (matchedPriority == null) {
       for (final account in accounts) {
         final domain = _extractDomain(account.email);

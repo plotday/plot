@@ -1227,10 +1227,7 @@ class _ThreadLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brightness = context.colour.brightness;
-    final resolved = Thread.resolveIcon(
-      activity.icon,
-      prioritySharing: activity.priority.sharing,
-    );
+    final resolved = Thread.resolveIcon(activity.icon);
     final logoUrl = brightness == Brightness.dark
         ? (resolved.logoDarkUrl ?? resolved.logoUrl)
         : resolved.logoUrl;

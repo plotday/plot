@@ -188,7 +188,7 @@ async function cleanupAllTwistingTags(
 
 /**
  * Process a batched twist update message
- * Handles notes, activities, and priority_twist updates for a single twist
+ * Handles notes, activities, and twist_instance updates for a single twist
  */
 async function processTwistBatch(
   batchData: TwistBatchMessage,
@@ -199,7 +199,7 @@ async function processTwistBatch(
   postHog: PostHog
 ): Promise<void> {
   const {
-    priorityTwistId,
+    twistInstanceId,
     twistId,
     environment,
     version,
@@ -212,11 +212,11 @@ async function processTwistBatch(
     channelNewNotes,
     threadReads,
     threadSchedules,
-    priorityTwist,
+    twistInstance,
   } = batchData;
 
   const logger = createLogger({
-    priority_twist_id: priorityTwistId,
+    twist_instance_id: twistInstanceId,
     twist_id: String(twistId),
     environment,
     version,
@@ -226,48 +226,41 @@ async function processTwistBatch(
   // Fetch priority_twist metadata early so we have owner_id available for the
   // fail-closed Twisting-tag cleanup even on early returns (suspended, quota).
   const twistStatus = await db
-    .selectFrom("priority_twist")
-    .innerJoin("twist", "twist.id", "priority_twist.twist_id")
+    .selectFrom("twist_instance")
+    .innerJoin("twist", "twist.id", "twist_instance.twist_id")
     .select([
-      "priority_twist.suspended_at",
-      "priority_twist.priority_id",
-      "priority_twist.owner_id",
+      "twist_instance.suspended_at",
+      "twist_instance.owner_id",
       "twist.execution_limit",
     ])
-    .where("priority_twist.id", "=", priorityTwistId)
+    .where("twist_instance.id", "=", twistInstanceId)
     .executeTakeFirst();
 
   if (!twistStatus?.owner_id) {
     logger.warn("Could not determine owner_id for twist batch", {
-      priority_twist_id: priorityTwistId,
+      twist_instance_id: twistInstanceId,
     });
     return;
   }
 
   const ownerId = twistStatus.owner_id;
-  // priorityId is the twist's actual priority_id, not the item priority_ids —
-  // items may be in child subpriorities (e.g. Twist Development), which would
-  // incorrectly narrow the twist's scope.
-  const priorityId = twistStatus.priority_id
-    ? String(twistStatus.priority_id)
-    : "";
 
   try {
     if (twistStatus.suspended_at) {
       logger.info("Skipping twist batch for suspended twist", {
-        priority_twist_id: priorityTwistId,
+        twist_instance_id: twistInstanceId,
       });
       return;
     }
 
     // Check execution quota
-    const usage = Usage.Get(env, priorityTwistId);
+    const usage = Usage.Get(env, twistInstanceId);
     const withinQuota = await usage.checkExecutionQuota(
       twistStatus.execution_limit
     );
     if (!withinQuota) {
       logger.info("Skipping twist batch: execution quota exceeded", {
-        priority_twist_id: priorityTwistId,
+        twist_instance_id: twistInstanceId,
       });
       return;
     }
@@ -281,8 +274,7 @@ async function processTwistBatch(
 
     const twistWrapper = await factory({
       version,
-      priorityId,
-      priorityTwistId,
+      twistInstanceId,
     });
 
     // Process new notes (for note.created callback and mention handling)
@@ -309,7 +301,7 @@ async function processTwistBatch(
             {
               sync_depth: syncDepth,
               twist_id: String(twistId),
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               item_type: "note",
               item_id: noteId,
               thread_id: note.thread_id,
@@ -339,7 +331,7 @@ async function processTwistBatch(
         );
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           note_id: noteId,
           thread_id: note.thread_id,
           queue,
@@ -386,7 +378,7 @@ async function processTwistBatch(
         );
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           note_id: noteId,
           thread_id: note.thread_id,
           queue,
@@ -418,7 +410,7 @@ async function processTwistBatch(
             {
               sync_depth: syncDepth,
               twist_id: String(twistId),
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               item_type: "thread",
               item_id: activityId,
               priority_id: activity.priority_id,
@@ -474,7 +466,7 @@ async function processTwistBatch(
         );
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           thread_id: activityId,
           priority_id: activity.priority_id,
           queue,
@@ -510,7 +502,7 @@ async function processTwistBatch(
         });
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           link_id: link.id,
           queue,
         });
@@ -545,7 +537,7 @@ async function processTwistBatch(
         });
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           link_id: link.id,
           queue,
         });
@@ -585,9 +577,9 @@ async function processTwistBatch(
         // This ensures notifications are always delivered even if analysis fails.
         let analysisHandledUnread = false;
         const owner = await db
-          .selectFrom("priority_twist")
+          .selectFrom("twist_instance")
           .select("owner_id")
-          .where("id", "=", priorityTwistId)
+          .where("id", "=", twistInstanceId)
           .executeTakeFirst();
         const ownerId = owner?.owner_id;
 
@@ -601,7 +593,7 @@ async function processTwistBatch(
         if (
           note.content &&
           note.author_id &&
-          note.author_id !== priorityTwistId &&
+          note.author_id !== twistInstanceId &&
           isRecent &&
           ownerId &&
           note.thread_id
@@ -628,14 +620,14 @@ async function processTwistBatch(
             postHog.captureException(
               analysisError instanceof Error ? analysisError : new Error(String(analysisError)),
               undefined,
-              { context: "note-analysis:channelNote", note_id: note.id, priority_twist_id: priorityTwistId }
+              { context: "note-analysis:channelNote", note_id: note.id, twist_instance_id: twistInstanceId }
             );
           }
         }
 
         // Fallback: mark unread with default urgency if analysis didn't handle it
         if (!analysisHandledUnread && note.thread_id && ownerId) {
-          const notePriorityId = note.priority_id || priorityId;
+          const notePriorityId = note.priority_id;
           if (notePriorityId) {
             try {
               await markThreadUnreadForOthers(env, db, notePriorityId, note.thread_id, ownerId);
@@ -648,7 +640,7 @@ async function processTwistBatch(
                 context: "markThreadUnreadForOthers:channelNote",
                 note_id: note.id,
                 thread_id: note.thread_id,
-                priority_twist_id: priorityTwistId,
+                twist_instance_id: twistInstanceId,
               });
             }
           }
@@ -656,7 +648,7 @@ async function processTwistBatch(
 
         // Notify UserSync DOs so the push notification pipeline fires
         if (note.thread_id && ownerId) {
-          const notePriorityId = note.priority_id || priorityId;
+          const notePriorityId = note.priority_id;
           if (notePriorityId) {
             try {
               const usersData = await rpc(db, "get_users_with_priority_access", {
@@ -691,7 +683,7 @@ async function processTwistBatch(
         });
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           note_id: note.id,
           queue,
         });
@@ -714,7 +706,7 @@ async function processTwistBatch(
         });
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           thread_id: threadRead.thread_id,
           queue,
         });
@@ -737,7 +729,7 @@ async function processTwistBatch(
         });
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           schedule_id: scheduleContact.schedule_id,
           queue,
         });
@@ -760,39 +752,39 @@ async function processTwistBatch(
         });
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           thread_id: threadSchedule.thread_id,
           queue,
         });
       }
     }
 
-    // Process priority_twist config changes (no sync_depth for config)
-    if (priorityTwist) {
+    // Process twist_instance config changes (no sync_depth for config)
+    if (twistInstance) {
       try {
-        // Dispatch priority_twist config change to the twist (Plot and Integrations)
+        // Dispatch twist_instance config change to the twist (Plot and Integrations)
         const configDispatchArgs = {
-          itemType: "priority_twist" as const,
-          item: priorityTwist,
+          itemType: "twist_instance" as const,
+          item: twistInstance,
           syncDepth: undefined, // Config changes don't cascade
         };
         await twistWrapper.dispatch("Plot", configDispatchArgs);
         await twistWrapper.dispatch("Integrations", configDispatchArgs);
 
         logger.info("Priority twist config processed", {
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
         });
       } catch (error) {
         logger.error(
-          "Error processing priority_twist in batch",
+          "Error processing twist_instance in batch",
           error as Error,
           {
-            priority_twist_id: priorityTwistId,
+            twist_instance_id: twistInstanceId,
           }
         );
         postHog.captureException(error as Error, undefined, {
           twist_id: String(twistId),
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
           queue,
         });
       }
@@ -809,16 +801,16 @@ async function processTwistBatch(
       thread_read_count: threadReads.length,
       thread_schedule_count: threadSchedules?.length ?? 0,
       schedule_contact_count: batchData.scheduleContacts?.length ?? 0,
-      has_priority_twist_update: !!priorityTwist,
+      has_twist_instance_update: !!twistInstance,
     });
   } catch (error) {
     logger.error("Error processing twist batch", error as Error, {
-      priority_twist_id: priorityTwistId,
+      twist_instance_id: twistInstanceId,
       twist_id: String(twistId),
     });
     postHog.captureException(error as Error, undefined, {
       twist_id: String(twistId),
-      priority_twist_id: priorityTwistId,
+      twist_instance_id: twistInstanceId,
       queue,
     });
   } finally {
@@ -832,7 +824,7 @@ async function processTwistBatch(
       db,
       logger,
       postHog,
-      priorityTwistId,
+      twistInstanceId,
       ownerId,
       newNotes,
       updatedNotes

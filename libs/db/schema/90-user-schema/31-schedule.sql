@@ -1,5 +1,5 @@
 -- User-scoped schedule view
--- Shows shared schedules (user_id IS NULL) to all priority members
+-- Shows shared schedules (user_id IS NULL) to all users with thread_priority
 -- Shows per-user schedules (user_id IS NOT NULL) only to the owning user
 -- Computes range_at/range_on for client-side time-based filtering
 -- Handles both thread_id and link_id paths for priority access
@@ -7,7 +7,7 @@ CREATE OR REPLACE VIEW "user"."schedule"
 --
 AS
 SELECT
-    upe.user_id,
+    tp.user_id,
     s.id,
     s.created_at,
     s.updated_at,
@@ -57,17 +57,16 @@ SELECT
     ) AS contacts
 FROM
     schedule s
-    -- Join via thread when thread_id is set
-    LEFT JOIN thread t_thread ON t_thread.id = s.thread_id
     -- Join via link -> thread when link_id is set
     LEFT JOIN link l ON l.id = s.link_id
-    LEFT JOIN thread t_link ON t_link.id = l.thread_id
-    -- Get priority from whichever path is active
-    JOIN "user".priority_expanded upe ON upe.priority_id = COALESCE(t_thread.priority_id, t_link.priority_id)
+    -- Resolve thread_id from either direct or via link
+    JOIN thread_priority tp ON tp.thread_id = COALESCE(s.thread_id, l.thread_id)
+    -- Get priority path from the user's filing
+    LEFT JOIN "user".priority_expanded upe ON upe.user_id = tp.user_id AND upe.priority_id = tp.priority_id
 WHERE
-    -- Shared schedules visible to all priority members
+    -- Shared schedules visible to all users with thread_priority
     (s.user_id IS NULL
     -- Per-user schedules visible only to the owning user
-    OR s.user_id = upe.user_id);
+    OR s.user_id = tp.user_id);
 
 ALTER VIEW "user"."schedule" OWNER TO postgres;

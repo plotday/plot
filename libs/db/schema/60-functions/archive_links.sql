@@ -1,5 +1,5 @@
 -- Archives links matching the given filter that were created by the specified source
--- (priority_twist_id). For each archived link's thread, if no other active links
+-- (twist_instance_id). For each archived link's thread, if no other active links
 -- remain, the thread is also archived.
 -- Returns affected priority IDs for sync notification.
 CREATE OR REPLACE FUNCTION public.archive_links (
@@ -53,15 +53,20 @@ BEGIN
                 AND other_l.id NOT IN (SELECT link_id FROM matched_links)
         )
     ),
-    -- 3. Archive the threads and collect affected priority IDs
+    -- 3. Archive the threads and collect their IDs
     archived_threads AS (
         UPDATE public.thread t
         SET archived_at = v_now
         FROM threads_to_archive ta
         WHERE t.id = ta.thread_id
-        RETURNING t.priority_id
+        RETURNING t.id
     )
-    SELECT ARRAY(SELECT DISTINCT priority_id FROM archived_threads)
+    -- 4. Collect affected priority IDs from thread_priority
+    SELECT ARRAY(
+        SELECT DISTINCT tp.priority_id
+        FROM archived_threads at
+        JOIN thread_priority tp ON tp.thread_id = at.id
+    )
     INTO v_affected_priority_ids;
 
     RETURN COALESCE(v_affected_priority_ids, ARRAY[]::uuid[]);

@@ -253,7 +253,7 @@ export class SyncRecovery extends DurableObject<Bindings> {
         })
       );
     } catch (error) {
-      logger.error("Error querying stale priority_twist_sync records", error as Error);
+      logger.error("Error querying stale twist_instance_sync records", error as Error);
       return;
     }
 
@@ -271,23 +271,23 @@ export class SyncRecovery extends DurableObject<Bindings> {
     // Parallelize DO notifications using Promise.allSettled
     const notifyStartTime = Date.now();
     // rpc() unwraps single-column TABLE results into raw values
-    const priorityTwistIds = staleTwistSyncs as unknown as string[];
-    const notifyPromises = priorityTwistIds.map(async (priorityTwistId) => {
+    const twistInstanceIds = staleTwistSyncs as unknown as string[];
+    const notifyPromises = twistInstanceIds.map(async (twistInstanceId) => {
       try {
-        const twistSyncId = this.env.TWIST_SYNC.idFromName(priorityTwistId);
+        const twistSyncId = this.env.TWIST_SYNC.idFromName(twistInstanceId);
         const twistSyncDO = this.env.TWIST_SYNC.get(twistSyncId);
         await twistSyncDO.fetch(
           new Request("http://do/notify", {
             method: "POST",
-            body: JSON.stringify({ id: priorityTwistId }),
+            body: JSON.stringify({ id: twistInstanceId }),
           })
         );
-        return { success: true, priority_twist_id: priorityTwistId };
+        return { success: true, twist_instance_id: twistInstanceId };
       } catch (error) {
         logger.error("Error notifying TwistSync DO", error as Error, {
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
         });
-        return { success: false, priority_twist_id: priorityTwistId, error };
+        return { success: false, twist_instance_id: twistInstanceId, error };
       }
     });
 

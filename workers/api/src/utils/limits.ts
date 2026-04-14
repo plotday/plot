@@ -5,32 +5,49 @@ import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import { UserAiUsage } from "../state/user-ai-usage";
 import { FREE_AI_LIMITS } from "./ai-limits";
+export type PlanKey = "free" | "core" | "pro" | "team";
+
+/** twist_admin.twist_package_id for the built-in Plot twist. */
+export const BUILTIN_TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
+
 export const PLAN_LIMITS = {
-  free: { connections: 2, twists: 1 },
-  core: { connections: 5, twists: 2 },
-  pro: { connections: Infinity, twists: Infinity },
-  team: { connections: Infinity, twists: Infinity }, // org pool handled separately
+  free: { connections: 2, twists: 1, syncHistoryDays: 7 },
+  core: { connections: 5, twists: 2, syncHistoryDays: 30 },
+  pro: { connections: Infinity, twists: Infinity, syncHistoryDays: 365 },
+  team: { connections: Infinity, twists: Infinity, syncHistoryDays: 365 }, // team pool handled separately
 };
 
 export const TEAM_CONNECTIONS_PER_GROUP = 50;
+
+/**
+ * Returns the earliest date that should be included in initial sync,
+ * based on the user's plan. Items older than this date (excluding
+ * recurring events) should not be imported during initial sync.
+ */
+export function getSyncHistoryMinDate(plan: PlanKey): Date {
+  const days = PLAN_LIMITS[plan].syncHistoryDays;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return cutoff;
+}
 
 export class PlanLimitError extends Error {
   readonly limitType: "connection" | "twist";
   readonly plan: string;
   readonly currentCount: number;
   readonly limit: number;
-  readonly isOrg: boolean;
+  readonly isTeam: boolean;
   readonly isAdmin: boolean;
-  readonly organizationId: string | null;
+  readonly teamId: string | null;
 
   constructor(opts: {
     limitType: "connection" | "twist";
     plan: string;
     currentCount: number;
     limit: number;
-    isOrg: boolean;
+    isTeam: boolean;
     isAdmin: boolean;
-    organizationId: string | null;
+    teamId: string | null;
   }) {
     const noun = opts.limitType === "connection" ? "connection" : "twist";
     super(`You've reached your ${noun} limit.`);
@@ -39,9 +56,9 @@ export class PlanLimitError extends Error {
     this.plan = opts.plan;
     this.currentCount = opts.currentCount;
     this.limit = opts.limit;
-    this.isOrg = opts.isOrg;
+    this.isTeam = opts.isTeam;
     this.isAdmin = opts.isAdmin;
-    this.organizationId = opts.organizationId;
+    this.teamId = opts.teamId;
   }
 
   toJSON() {
@@ -52,41 +69,34 @@ export class PlanLimitError extends Error {
       plan: this.plan,
       current_count: this.currentCount,
       limit: this.limit,
-      is_org: this.isOrg,
+      is_team: this.isTeam,
       is_admin: this.isAdmin,
-      organization_id: this.organizationId,
+      team_id: this.teamId,
     };
   }
 }
 
 /**
- * Count personal connections: DISTINCT (priority_twist_id, provider, actor_id)
- * tuples where the connection has at least one enabled channel on a personal
- * priority. A "connection" is a connector + account pair, so the same account
- * on two different connectors (e.g. Gmail + Google Drive) counts as two.
+ * Count personal connections: DISTINCT (twist_instance_id, provider, actor_id)
+ * tuples where the connection belongs to a twist_instance owned by this
+ * user personally (team_id IS NULL) and has at least one enabled channel.
  */
 export async function getPersonalConnectionCount(
   db: Kysely<DB>,
   userId: string
 ): Promise<number> {
   const result = await db
-    .selectFrom("priority_twist_connection as ptc")
-    .select(sql<string>`count(DISTINCT (ptc.priority_twist_id, ptc.provider, ptc.actor_id))`.as("count"))
+    .selectFrom("twist_instance_connection as ptc")
+    .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
+    .select(sql<string>`count(DISTINCT (ptc.twist_instance_id, ptc.provider, ptc.actor_id))`.as("count"))
     .where("ptc.user_id", "=", userId)
+    .where("pt.team_id", "is", null)
+    .where("pt.archived_at", "is", null)
     .where(({ exists, selectFrom }) =>
       exists(
-        selectFrom("source_channel as sc")
-          .innerJoin("priority_twist as pt", "pt.id", "sc.priority_twist_id")
-          .leftJoin("priority as p", "p.id", "sc.priority_id")
-          .whereRef("sc.priority_twist_id", "=", "ptc.priority_twist_id")
+        selectFrom("channel as sc")
+          .whereRef("sc.twist_instance_id", "=", "ptc.twist_instance_id")
           .where("sc.enabled", "=", true)
-          .where("pt.archived_at", "is", null)
-          .where((eb) =>
-            eb.or([
-              eb("sc.priority_id", "is", null),
-              eb("p.organization_id", "is", null),
-            ])
-          )
           .select(sql`1`.as("x"))
       )
     )
@@ -96,26 +106,24 @@ export async function getPersonalConnectionCount(
 }
 
 /**
- * Count org connections: DISTINCT (priority_twist_id, provider, actor_id)
- * tuples where the connection has at least one enabled channel on a priority
- * in this org.
+ * Count team connections: DISTINCT (twist_instance_id, provider, actor_id)
+ * tuples for twists owned by the given team with at least one enabled channel.
  */
-export async function getOrgConnectionCount(
+export async function getTeamConnectionCount(
   db: Kysely<DB>,
-  organizationId: string
+  teamId: string
 ): Promise<number> {
   const result = await db
-    .selectFrom("priority_twist_connection as ptc")
-    .select(sql<string>`count(DISTINCT (ptc.priority_twist_id, ptc.provider, ptc.actor_id))`.as("count"))
+    .selectFrom("twist_instance_connection as ptc")
+    .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
+    .select(sql<string>`count(DISTINCT (ptc.twist_instance_id, ptc.provider, ptc.actor_id))`.as("count"))
+    .where("pt.team_id", "=", teamId)
+    .where("pt.archived_at", "is", null)
     .where(({ exists, selectFrom }) =>
       exists(
-        selectFrom("source_channel as sc")
-          .innerJoin("priority_twist as pt", "pt.id", "sc.priority_twist_id")
-          .innerJoin("priority as p", "p.id", "sc.priority_id")
-          .whereRef("sc.priority_twist_id", "=", "ptc.priority_twist_id")
+        selectFrom("channel as sc")
+          .whereRef("sc.twist_instance_id", "=", "ptc.twist_instance_id")
           .where("sc.enabled", "=", true)
-          .where("pt.archived_at", "is", null)
-          .where("p.organization_id", "=", organizationId)
           .select(sql`1`.as("x"))
       )
     )
@@ -125,16 +133,16 @@ export async function getOrgConnectionCount(
 }
 
 /**
- * Get the connection limit for an org based on connection_group_quantity.
+ * Get the connection limit for a team based on connection_group_quantity.
  */
-export async function getOrgConnectionLimit(
+export async function getTeamConnectionLimit(
   db: Kysely<DB>,
-  organizationId: string
+  teamId: string
 ): Promise<number> {
   const sub = await db
-    .selectFrom("organization_subscription")
+    .selectFrom("team_subscription")
     .select("connection_group_quantity")
-    .where("organization_id", "=", organizationId)
+    .where("team_id", "=", teamId)
     .executeTakeFirst();
 
   if (!sub) return TEAM_CONNECTIONS_PER_GROUP; // default 1 group
@@ -142,30 +150,78 @@ export async function getOrgConnectionLimit(
 }
 
 /**
- * Count personal non-source twists: non-archived priority_twist where
- * is_source = false, owner_id = userId, priority's organization_id IS NULL.
+ * Count personal non-source twists: non-archived twist_instance where
+ * is_source = false, owner_id = userId, team_id IS NULL.
  */
 export async function getPersonalTwistCount(
   db: Kysely<DB>,
   userId: string
 ): Promise<number> {
   const result = await db
-    .selectFrom("priority_twist as pt")
+    .selectFrom("twist_instance as pt")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .leftJoin("priority as p", "p.id", "pt.priority_id")
-    .select(sql<string>`count(DISTINCT (pt.twist_id, COALESCE(pt.priority_id::text, '')))`.as("count"))
+    .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
+    .select(sql<string>`count(DISTINCT pt.id)`.as("count"))
     .where("pt.owner_id", "=", userId)
+    .where("pt.team_id", "is", null)
     .where("pt.archived_at", "is", null)
     .where("t.is_source", "=", false)
-    .where((eb) =>
-      eb.or([
-        eb("pt.priority_id", "is", null),
-        eb("p.organization_id", "is", null),
-      ])
-    )
+    .where("pt.draft", "=", false)
+    .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
     .executeTakeFirstOrThrow();
 
   return Number(result.count);
+}
+
+/**
+ * Count team non-source twists.
+ */
+export async function getTeamTwistCount(
+  db: Kysely<DB>,
+  teamId: string
+): Promise<number> {
+  const result = await db
+    .selectFrom("twist_instance as pt")
+    .innerJoin("twist as t", "t.id", "pt.twist_id")
+    .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
+    .select(sql<string>`count(DISTINCT pt.id)`.as("count"))
+    .where("pt.team_id", "=", teamId)
+    .where("pt.archived_at", "is", null)
+    .where("t.is_source", "=", false)
+    .where("pt.draft", "=", false)
+    .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
+    .executeTakeFirstOrThrow();
+
+  return Number(result.count);
+}
+
+/**
+ * Helper: look up the team_id of a twist_instance (null = personal).
+ */
+async function getTwistTeamId(
+  db: Kysely<DB>,
+  twistInstanceId: string
+): Promise<string | null> {
+  const row = await db
+    .selectFrom("twist_instance")
+    .select("team_id")
+    .where("id", "=", twistInstanceId)
+    .executeTakeFirst();
+  return row?.team_id ? String(row.team_id) : null;
+}
+
+async function isTeamAdmin(
+  db: Kysely<DB>,
+  userId: string,
+  teamId: string
+): Promise<boolean> {
+  const member = await db
+    .selectFrom("team_user")
+    .select("role")
+    .where("team_id", "=", teamId)
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  return member?.role === "admin";
 }
 
 /**
@@ -174,7 +230,7 @@ export async function getPersonalTwistCount(
 export async function getPersonalPlan(
   db: Kysely<DB>,
   userId: string
-): Promise<"free" | "core" | "pro" | "team"> {
+): Promise<PlanKey> {
   const sub = await db
     .selectFrom("user_subscription")
     .select(["plan", "status"])
@@ -186,54 +242,21 @@ export async function getPersonalPlan(
     : "free";
 }
 
-/**
- * Check if a user is an admin of an org.
- */
-async function isOrgAdmin(
-  db: Kysely<DB>,
-  userId: string,
-  organizationId: string
-): Promise<boolean> {
-  const member = await db
-    .selectFrom("organization_member")
-    .select("role")
-    .where("organization_id", "=", organizationId)
-    .where("user_id", "=", userId)
-    .executeTakeFirst();
-
-  return member?.role === "admin";
-}
 
 /**
  * Check if enabling a channel would exceed connection limits.
- * A connection is a connector + account pair (priority_twist + provider +
- * actor_id). A slot is consumed the first time a connector has an enabled
- * channel of a given type (personal or org).
+ * Routes to the team-level or personal quota based on
+ * `twist_instance.team_id`.
  */
 export async function checkChannelConnectionLimit(
   db: Kysely<DB>,
   userId: string,
-  priorityTwistId: string,
-  channelPriorityId: string | null
+  twistInstanceId: string
 ): Promise<{ allowed: true } | { allowed: false; error: PlanLimitError }> {
-  // Determine if the channel's target priority is personal or org
-  let organizationId: string | null = null;
-  if (channelPriorityId) {
-    const priority = await db
-      .selectFrom("priority")
-      .select("organization_id")
-      .where("id", "=", channelPriorityId)
-      .executeTakeFirst();
-    organizationId = priority?.organization_id
-      ? String(priority.organization_id)
-      : null;
-  }
-
-  // Look up the connection's (provider, actor_id) for this user on this twist
   const connection = await db
-    .selectFrom("priority_twist_connection")
+    .selectFrom("twist_instance_connection")
     .select(["provider", "actor_id"])
-    .where("priority_twist_id", "=", priorityTwistId)
+    .where("twist_instance_id", "=", twistInstanceId)
     .where("user_id", "=", userId)
     .executeTakeFirst();
 
@@ -242,91 +265,85 @@ export async function checkChannelConnectionLimit(
     return { allowed: true };
   }
 
-  // Check if this connector+account already has an enabled channel of the same
-  // type (personal or org) on this priority_twist. If so, no new slot is consumed.
-  if (organizationId) {
-    const existingOrgChannel = await db
-      .selectFrom("source_channel as sc")
-      .innerJoin("priority_twist as pt", "pt.id", "sc.priority_twist_id")
-      .innerJoin("priority as p", "p.id", "sc.priority_id")
-      .where("sc.priority_twist_id", "=", priorityTwistId)
+  const teamId = await getTwistTeamId(db, twistInstanceId);
+
+  // Team-owned twist: team quota applies
+  if (teamId) {
+    const existingTeamChannel = await db
+      .selectFrom("channel as sc")
+      .innerJoin("twist_instance as pt", "pt.id", "sc.twist_instance_id")
+      .where("sc.twist_instance_id", "=", twistInstanceId)
       .where("sc.enabled", "=", true)
       .where("pt.archived_at", "is", null)
-      .where("p.organization_id", "=", organizationId)
+      .where("pt.team_id", "=", teamId)
       .select(sql`1`.as("x"))
       .executeTakeFirst();
 
-    if (existingOrgChannel) {
+    if (existingTeamChannel) {
       return { allowed: true };
     }
 
-    // First channel of this type for this connection — check org limit
-    const orgSub = await db
-      .selectFrom("organization_subscription")
+    const teamSub = await db
+      .selectFrom("team_subscription")
       .select(["plan", "status"])
-      .where("organization_id", "=", organizationId)
+      .where("team_id", "=", teamId)
       .executeTakeFirst();
 
-    const orgPlan =
-      orgSub && orgSub.status === "active"
-        ? (orgSub.plan as "free" | "core" | "pro" | "team")
+    const teamPlan =
+      teamSub && teamSub.status === "active"
+        ? (teamSub.plan as "free" | "core" | "pro" | "team")
         : "free";
 
-    if (orgPlan === "team") {
-      const count = await getOrgConnectionCount(db, organizationId);
-      const limit = await getOrgConnectionLimit(db, organizationId);
+    if (teamPlan === "pro" || teamPlan === "core") {
+      return { allowed: true };
+    }
+
+    if (teamPlan === "team") {
+      const count = await getTeamConnectionCount(db, teamId);
+      const limit = await getTeamConnectionLimit(db, teamId);
       if (count >= limit) {
-        const admin = await isOrgAdmin(db, userId, organizationId);
+        const admin = await isTeamAdmin(db, userId, teamId);
         return {
           allowed: false,
           error: new PlanLimitError({
             limitType: "connection",
-            plan: orgPlan,
+            plan: teamPlan,
             currentCount: count,
             limit,
-            isOrg: true,
+            isTeam: true,
             isAdmin: admin,
-            organizationId,
+            teamId,
           }),
         };
       }
+      return { allowed: true };
     }
 
-    if (orgPlan === "free") {
-      const count = await getOrgConnectionCount(db, organizationId);
-      const admin = await isOrgAdmin(db, userId, organizationId);
-      return {
-        allowed: false,
-        error: new PlanLimitError({
-          limitType: "connection",
-          plan: orgPlan,
-          currentCount: count,
-          limit: 0,
-          isOrg: true,
-          isAdmin: admin,
-          organizationId,
-        }),
-      };
-    }
-
-    // Pro orgs: unlimited
-    return { allowed: true };
+    // Free team plan: no connections allowed
+    const count = await getTeamConnectionCount(db, teamId);
+    const admin = await isTeamAdmin(db, userId, teamId);
+    return {
+      allowed: false,
+      error: new PlanLimitError({
+        limitType: "connection",
+        plan: teamPlan,
+        currentCount: count,
+        limit: 0,
+        isTeam: true,
+        isAdmin: admin,
+        teamId,
+      }),
+    };
   }
 
-  // Personal channel — check if this connector already has a personal channel
+  // Personal channel — check if this connector already has an enabled channel
   const existingPersonalChannel = await db
-    .selectFrom("source_channel as sc")
-    .innerJoin("priority_twist as pt", "pt.id", "sc.priority_twist_id")
-    .leftJoin("priority as p", "p.id", "sc.priority_id")
-    .where("sc.priority_twist_id", "=", priorityTwistId)
+    .selectFrom("channel as sc")
+    .innerJoin("twist_instance as pt", "pt.id", "sc.twist_instance_id")
+    .where("sc.twist_instance_id", "=", twistInstanceId)
     .where("sc.enabled", "=", true)
+    .where("pt.team_id", "is", null)
     .where("pt.archived_at", "is", null)
-    .where((eb) =>
-      eb.or([
-        eb("sc.priority_id", "is", null),
-        eb("p.organization_id", "is", null),
-      ])
-    )
     .select(sql`1`.as("x"))
     .executeTakeFirst();
 
@@ -334,7 +351,6 @@ export async function checkChannelConnectionLimit(
     return { allowed: true };
   }
 
-  // First personal channel for this connection — check personal limit
   const plan = await getPersonalPlan(db, userId);
   const limits = PLAN_LIMITS[plan];
 
@@ -351,9 +367,9 @@ export async function checkChannelConnectionLimit(
         plan,
         currentCount: count,
         limit: limits.connections,
-        isOrg: false,
+        isTeam: false,
         isAdmin: false,
-        organizationId: null,
+        teamId: null,
       }),
     };
   }
@@ -362,28 +378,46 @@ export async function checkChannelConnectionLimit(
 }
 
 /**
- * Check if adding a non-source twist is allowed.
+ * Check if adding a non-source twist is allowed. When `teamId` is provided
+ * the twist counts against that team's quota; otherwise it counts against
+ * the user's personal quota.
  */
 export async function checkTwistLimit(
   db: Kysely<DB>,
   userId: string,
-  targetPriorityId: string | null
+  teamId?: string | null
 ): Promise<{ allowed: true } | { allowed: false; error: PlanLimitError }> {
-  // Org priorities: twists are unlimited for any paid plan
-  if (targetPriorityId) {
-    const priority = await db
-      .selectFrom("priority")
-      .select("organization_id")
-      .where("id", "=", targetPriorityId)
+  if (teamId) {
+    const teamSub = await db
+      .selectFrom("team_subscription")
+      .select(["plan", "status"])
+      .where("team_id", "=", teamId)
       .executeTakeFirst();
 
-    if (priority?.organization_id) {
-      // Org twists are always unlimited
-      return { allowed: true };
-    }
+    const teamPlan =
+      teamSub && teamSub.status === "active"
+        ? (teamSub.plan as "free" | "core" | "pro" | "team")
+        : "free";
+
+    // Paid team plans have unlimited twists
+    if (teamPlan !== "free") return { allowed: true };
+
+    const count = await getTeamTwistCount(db, teamId);
+    const admin = await isTeamAdmin(db, userId, teamId);
+    return {
+      allowed: false,
+      error: new PlanLimitError({
+        limitType: "twist",
+        plan: teamPlan,
+        currentCount: count,
+        limit: 0,
+        isTeam: true,
+        isAdmin: admin,
+        teamId,
+      }),
+    };
   }
 
-  // Personal twist check
   const plan = await getPersonalPlan(db, userId);
   const limits = PLAN_LIMITS[plan];
 
@@ -400,9 +434,9 @@ export async function checkTwistLimit(
         plan,
         currentCount: count,
         limit: limits.twists,
-        isOrg: false,
+        isTeam: false,
         isAdmin: false,
-        organizationId: null,
+        teamId: null,
       }),
     };
   }
@@ -424,39 +458,36 @@ export async function getUsage(
   const connectionCount = await getPersonalConnectionCount(db, userId);
   const twistCount = await getPersonalTwistCount(db, userId);
 
-  // Get org memberships with connection counts
-  const orgMemberships = await db
-    .selectFrom("organization_member as om")
-    .innerJoin("organization as o", "o.id", "om.organization_id")
-    .leftJoin(
-      "organization_subscription as os",
-      "os.organization_id",
-      "om.organization_id"
-    )
+  // Get team memberships with connection counts
+  const teamMemberships = await db
+    .selectFrom("team_user as tu")
+    .innerJoin("team as t", "t.id", "tu.team_id")
+    .leftJoin("team_subscription as ts", "ts.team_id", "tu.team_id")
     .select([
-      "o.id as organization_id",
-      "o.name as organization_name",
-      "om.role",
-      "os.plan as org_plan",
-      "os.connection_group_quantity",
+      "t.id as team_id",
+      "t.name as team_name",
+      "tu.role",
+      "ts.plan as team_plan",
+      "ts.connection_group_quantity",
     ])
-    .where("om.user_id", "=", userId)
+    .where("tu.user_id", "=", userId)
     .execute();
 
-  const organizations = await Promise.all(
-    orgMemberships.map(async (org) => {
-      const orgId = String(org.organization_id);
-      const orgConnectionCount = await getOrgConnectionCount(db, orgId);
-      const orgConnectionLimit = org.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP;
+  const teams = await Promise.all(
+    teamMemberships.map(async (team) => {
+      const teamId = String(team.team_id);
+      const teamConnectionCount = await getTeamConnectionCount(db, teamId);
+      const teamConnectionLimit =
+        team.connection_group_quantity ?? TEAM_CONNECTIONS_PER_GROUP;
 
       return {
-        id: orgId,
-        name: org.organization_name,
+        id: teamId,
+        name: team.team_name,
         connections: {
-          count: orgConnectionCount,
-          limit: orgConnectionLimit,
+          count: teamConnectionCount,
+          limit: teamConnectionLimit,
         },
-        is_admin: org.role === "admin",
+        is_admin: team.role === "admin",
       };
     })
   );
@@ -483,8 +514,9 @@ export async function getUsage(
         count: twistCount,
         limit: limits.twists === Infinity ? null : limits.twists,
       },
+      syncHistoryDays: limits.syncHistoryDays,
       ...(ai ? { ai } : {}),
     },
-    organizations,
+    teams,
   };
 }

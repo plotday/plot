@@ -16,7 +16,7 @@ class PriorityState extends Equatable {
     bool agendaDoneEnd = false,
     List<Tag> filter = const [],
     String search = '',
-    List<PriorityTwist> twists = const [],
+    List<TwistInstance> twists = const [],
     List<Actor> actors = const [],
     List<(Tag, int)> tags = const [],
     List<Tag> tagSuggestions = const [],
@@ -95,7 +95,7 @@ class PriorityState extends Equatable {
   final bool agendaDoneEnd;
   final List<Tag> filter;
   final String search;
-  final List<PriorityTwist> twists;
+  final List<TwistInstance> twists;
   final List<Actor> actors;
   final List<(Tag, int)> tags;
   final List<Tag> tagSuggestions;
@@ -1039,7 +1039,7 @@ class PriorityState extends Equatable {
     bool? agendaDoneEnd,
     List<Tag>? filter,
     String? search,
-    List<PriorityTwist>? twists,
+    List<TwistInstance>? twists,
     List<Actor>? actors,
     List<(Tag, int)>? tags,
     List<Tag>? tagSuggestions,

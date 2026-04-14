@@ -78,8 +78,8 @@ export async function buildThreadFromDbRecord(
     },
     type: null,
     title: threadRecord.title || "",
-    access: (threadRecord.access as ThreadAccessLevel) ?? "members",
-    accessContacts: await resolveAccessContacts(plot, threadRecord.access_contacts as string[]),
+    access: "members" as ThreadAccessLevel,
+    accessContacts: await resolveAccessContacts(plot, threadRecord.contacts as string[]),
     archived: threadRecord.archived_at !== null,
     tags: (threadRecord.tags as Partial<Record<number, ActorId[]>>) || {},
   };
@@ -113,7 +113,7 @@ export function buildNoteFromDbRecord(noteRecord: EnrichedNote): Note {
       type:
         noteRecord.author_type === "user"
           ? ActorType.User
-          : noteRecord.author_type === "priority_twist"
+          : noteRecord.author_type === "twist_instance"
           ? ActorType.Twist
           : ActorType.Contact,
     },

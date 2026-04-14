@@ -37,18 +37,14 @@ notificationContent.get("/notification-content", async (c) => {
         p.title AS priority_title
       FROM thread_unread tu
       JOIN thread t ON t.id = tu.thread_id
-      JOIN priority p ON p.id = t.priority_id
+      JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
+      JOIN priority p ON p.id = tp.priority_id
       WHERE tu.user_id = ${userId}::uuid
         AND tu.read_at IS NULL
         AND tu.urgency != 'passive'
         AND t.archived_at IS NULL
         AND (t.draft = false OR t.created_by = ${userId}::uuid)
-        AND (
-          t.access = 'public'
-          OR t.created_by = ${userId}::uuid
-          OR (t.access = 'members' AND "user".get_effective_role(${userId}::uuid, t.priority_id) = 'member')
-          OR t.access_contacts && "user".user_contact_ids(${userId}::uuid)
-        )
+        AND t.contacts && "user".user_contact_ids(${userId}::uuid)
       ORDER BY CASE tu.urgency
         WHEN 'interrupt' THEN 0
         WHEN 'inform-requests' THEN 1

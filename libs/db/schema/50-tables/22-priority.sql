@@ -3,27 +3,40 @@ CREATE TABLE "public"."priority" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "created_by" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
+    -- Per-user owner. Single source of truth for who sees this priority.
+    -- Populated automatically by set_priority_user_id BEFORE INSERT
+    -- (trigger defined below) from created_by, so callers don't need to
+    -- pass it explicitly.
+    "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
     -- All fields added below must be handled in handle_user_priority_upsert
     "archived_at" timestamp with time zone,
     "title" text NOT NULL,
     "color" integer,
-    "path" ltree NOT NULL UNIQUE,
+    -- Paths are now scoped per user: two users can each have a priority
+    -- at path 'work', and matches of descendant paths are filtered by
+    -- user_id in priority_expanded / priority_child.
+    "path" ltree NOT NULL,
     "updated_by" integer NOT NULL DEFAULT 0,
     "sync_depth" integer,
     "key" text,
-    "organization_id" bigint REFERENCES public."organization" ON DELETE SET NULL,
+    "team_id" bigint REFERENCES public."team" ON DELETE SET NULL,
+    -- inherit_members is vestigial: with per-user priorities there are no
+    -- cross-user subtree boundaries. It stays in the schema so the Flutter
+    -- app's Drift store doesn't need an immediate migration; the API views
+    -- no longer surface it and upsert_priority doesn't write it.
     "inherit_members" boolean NOT NULL DEFAULT TRUE,
     "default_thread_icon" text
 );
 
+-- Per-user owner lookups
+CREATE INDEX idx_priority_user_id ON "public"."priority" ("user_id");
+
+-- Paths are unique within a user's own tree, not globally.
+CREATE UNIQUE INDEX idx_priority_user_path_unique ON "public"."priority" ("user_id", "path");
+
 -- Index for priority path ltree queries (supports <@ operator)
 -- Used heavily in user_activity view filtering
 CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
-
--- Partial index for efficient inherit_members boundary checks
-CREATE INDEX idx_priority_inherit_members_false ON "public"."priority" ("id")
-WHERE
-    "inherit_members" = FALSE;
 
 -- Ensure keys are unique within each priority root tree
 CREATE UNIQUE INDEX idx_priority_key_per_root ON "public"."priority" ((subltree ("path", 0, 1)), "key")
@@ -44,6 +57,26 @@ CREATE TRIGGER set_priority_created_by
     BEFORE INSERT ON "public"."priority"
     FOR EACH ROW
     EXECUTE FUNCTION update_created_by ();
+
+-- Default priority.user_id to the creator when the caller doesn't set it.
+-- Runs BEFORE INSERT so existing upsert RPCs and direct inserts that
+-- don't know about the new column still satisfy the NOT NULL constraint.
+CREATE OR REPLACE FUNCTION public.default_priority_user_id ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.user_id IS NULL THEN
+        NEW.user_id := NEW.created_by;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER default_priority_user_id
+    BEFORE INSERT ON "public"."priority"
+    FOR EACH ROW
+    EXECUTE FUNCTION public.default_priority_user_id ();
 
 -- Determines who can access a priority and its descendants
 CREATE TABLE "public"."priority_user" (
@@ -92,41 +125,27 @@ CREATE TRIGGER set_priority_user_created_at
     FOR EACH ROW
     EXECUTE FUNCTION set_created_at ();
 
-CREATE OR REPLACE FUNCTION insert_priority_user ()
-    RETURNS TRIGGER
-    AS $$
-BEGIN
-    -- Only create entry for new, top-level priorities, and mark them as personal
-    -- Skip global priorities (those with keys starting with @, except @plot which is user-specific)
-    IF nlevel (NEW.path) = 1 AND (NEW.key IS NULL OR NEW.key = '@plot' OR NOT NEW.key LIKE '@%') THEN
-        INSERT INTO public.priority_user (user_id, priority_id, personal)
-            VALUES (NEW.created_by, NEW.id, TRUE);
-    END IF;
-    RETURN NEW;
-END;
-$$
-LANGUAGE plpgsql;
+-- The old insert_priority_user AFTER INSERT trigger is retired. Priority
+-- ownership is now carried directly on priority.user_id, populated by
+-- the default_priority_user_id BEFORE INSERT trigger above. Nothing
+-- needs to write priority_user anymore — it stays around purely for
+-- legacy readers until Stage 4d removes it.
 
-CREATE TRIGGER priority_insert_trigger
-    AFTER INSERT ON public.priority
-    FOR EACH ROW
-    EXECUTE FUNCTION insert_priority_user ();
-
-CREATE OR REPLACE FUNCTION propagate_organization_id ()
+CREATE OR REPLACE FUNCTION propagate_team_id ()
     RETURNS TRIGGER
     AS $$
 DECLARE
-    v_parent_org_id bigint;
+    v_parent_team_id bigint;
 BEGIN
-    IF NEW.organization_id IS NULL AND nlevel (NEW.path) > 1 THEN
+    IF NEW.team_id IS NULL AND nlevel (NEW.path) > 1 THEN
         SELECT
-            organization_id INTO v_parent_org_id
+            team_id INTO v_parent_team_id
         FROM
             public.priority
         WHERE
             path = subpath (NEW.path, 0, nlevel (NEW.path) - 1);
-        IF v_parent_org_id IS NOT NULL THEN
-            NEW.organization_id := v_parent_org_id;
+        IF v_parent_team_id IS NOT NULL THEN
+            NEW.team_id := v_parent_team_id;
         END IF;
     END IF;
     RETURN NEW;
@@ -134,35 +153,35 @@ END;
 $$
 LANGUAGE plpgsql;
 
-CREATE TRIGGER priority_propagate_org_id
+CREATE TRIGGER priority_propagate_team_id
     BEFORE INSERT ON public.priority
     FOR EACH ROW
-    EXECUTE FUNCTION propagate_organization_id ();
+    EXECUTE FUNCTION propagate_team_id ();
 
--- When organization_id changes on a priority, propagate to all descendants
-CREATE OR REPLACE FUNCTION propagate_organization_id_to_descendants ()
+-- When team_id changes on a priority, propagate to all descendants
+CREATE OR REPLACE FUNCTION propagate_team_id_to_descendants ()
     RETURNS TRIGGER
     AS $$
 BEGIN
-    IF NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+    IF NEW.team_id IS DISTINCT FROM OLD.team_id THEN
         UPDATE
             public.priority
         SET
-            organization_id = NEW.organization_id
+            team_id = NEW.team_id
         WHERE
             path <@ NEW.path
             AND path != NEW.path
-            AND (organization_id IS DISTINCT FROM NEW.organization_id);
+            AND (team_id IS DISTINCT FROM NEW.team_id);
     END IF;
     RETURN NEW;
 END;
 $$
 LANGUAGE plpgsql;
 
-CREATE TRIGGER priority_propagate_org_id_update
-    AFTER UPDATE OF organization_id ON public.priority
+CREATE TRIGGER priority_propagate_team_id_update
+    AFTER UPDATE OF team_id ON public.priority
     FOR EACH ROW
-    EXECUTE FUNCTION propagate_organization_id_to_descendants ();
+    EXECUTE FUNCTION propagate_team_id_to_descendants ();
 
 -- Per-user priority settings (per-key with JSONB values)
 CREATE TABLE "public"."priority_setting" (

@@ -38,6 +38,11 @@ const FAQS = [
       "On the Free plan, you'll be prompted to upgrade to Core or Pro. On Core, you can upgrade to Pro for unlimited connections. On Team plans, you can add another group of 50 connections at any time. On annual plans, additional groups are prorated for the rest of your billing cycle.",
   },
   {
+    question: "How far back does Plot import from my connected services?",
+    answer:
+      "When you first connect a service, Plot imports recent items — 1 week on Free, 30 days on Core, and 1 year on Pro and Team. After that, all new updates sync in real-time regardless of your plan. Everything already in Plot stays forever — the limit only applies to the initial import from external services. If you upgrade, we automatically import the additional history.",
+  },
+  {
     question: "Can I try Plot before committing to a paid plan?",
     answer:
       "Yes. Start with the Free plan — it includes unlimited collaborators and full search and history, so you (or your team) can experience Plot together. When you're ready for more connections or twists, upgrade anytime.",

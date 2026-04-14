@@ -97,23 +97,19 @@ export class PushNotify extends DurableObject<Bindings> {
             MAX(tu.updated_at)::text AS latest_updated_at
           FROM thread_unread tu
           JOIN thread t ON t.id = tu.thread_id
+          JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${userId}::uuid
           LEFT JOIN LATERAL (
             SELECT
               MAX(CASE WHEN key = 'see_within_requests' THEN value::text END)::jsonb AS see_within_requests,
               MAX(CASE WHEN key = 'see_within_updates' THEN value::text END)::jsonb AS see_within_updates
             FROM priority_setting_inherited
-            WHERE user_id = ${userId}::uuid AND priority_id = t.priority_id
+            WHERE user_id = ${userId}::uuid AND priority_id = tp.priority_id
           ) psi ON true
           WHERE tu.user_id = ${userId}::uuid AND tu.read_at IS NULL
             AND tu.urgency != 'passive'
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${userId}::uuid)
-            AND (
-              t.access = 'public'
-              OR t.created_by = ${userId}::uuid
-              OR (t.access = 'members' AND "user".get_effective_role(${userId}::uuid, t.priority_id) = 'member')
-              OR t.access_contacts && "user".user_contact_ids(${userId}::uuid)
-            )
+            AND t.contacts && "user".user_contact_ids(${userId}::uuid)
           GROUP BY tu.urgency, psi.see_within_requests, psi.see_within_updates
           ORDER BY CASE tu.urgency
             WHEN 'interrupt' THEN 0
@@ -271,17 +267,13 @@ export class PushNotify extends DurableObject<Bindings> {
           SELECT MAX(tu.updated_at)::text AS latest
           FROM thread_unread tu
           JOIN thread t ON t.id = tu.thread_id
+          JOIN thread_priority tp ON tp.thread_id = t.id AND tp.user_id = ${this.userId!}::uuid
           WHERE tu.user_id = ${this.userId!}::uuid
             AND tu.read_at IS NULL
             AND tu.urgency != 'passive'
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
-            AND (
-              t.access = 'public'
-              OR t.created_by = ${this.userId!}::uuid
-              OR (t.access = 'members' AND "user".get_effective_role(${this.userId!}::uuid, t.priority_id) = 'member')
-              OR t.access_contacts && "user".user_contact_ids(${this.userId!}::uuid)
-            )
+            AND t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
         `.execute(db);
         latestUnreadAt = result.rows[0]?.latest ?? null;
 

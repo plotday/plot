@@ -44,54 +44,34 @@ BEGIN
         RAISE EXCEPTION 'thread_id or link_id must be provided';
     END IF;
 
-    -- Look up priority and check access + role in a single query
+    -- Look up priority via thread_priority for the calling user
     IF v_thread_id IS NOT NULL THEN
-        SELECT
-            a.priority_id,
-            CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE COALESCE(MAX(pu.role), NULL) END
-        INTO v_priority_id, v_role
-        FROM
-            thread a
-            JOIN priority p ON p.id = a.priority_id
-            LEFT JOIN priority pp ON p.path <@ pp.path
-            LEFT JOIN priority_user pu ON pu.priority_id = pp.id
-                AND pu.user_id = upsert_schedule.user_id
-                AND pu.archived_at IS NULL
-        WHERE
-            a.id = v_thread_id
-        GROUP BY a.priority_id;
+        SELECT tp.priority_id INTO v_priority_id
+        FROM thread_priority tp
+        WHERE tp.thread_id = v_thread_id
+          AND tp.user_id = upsert_schedule.user_id;
         IF v_priority_id IS NULL THEN
-            RAISE EXCEPTION 'Thread not found';
+            IF NOT EXISTS (SELECT 1 FROM thread WHERE id = v_thread_id) THEN
+                RAISE EXCEPTION 'Thread not found';
+            END IF;
+            RAISE EXCEPTION 'User does not have access to this thread';
         END IF;
     ELSIF v_link_id IS NOT NULL THEN
-        SELECT
-            t.priority_id,
-            CASE WHEN bool_or(pu.role = 'member') THEN 'member' ELSE COALESCE(MAX(pu.role), NULL) END
-        INTO v_priority_id, v_role
-        FROM
-            link l
-            JOIN thread t ON t.id = l.thread_id
-            JOIN priority p ON p.id = t.priority_id
-            LEFT JOIN priority pp ON p.path <@ pp.path
-            LEFT JOIN priority_user pu ON pu.priority_id = pp.id
-                AND pu.user_id = upsert_schedule.user_id
-                AND pu.archived_at IS NULL
-        WHERE
-            l.id = v_link_id
-        GROUP BY t.priority_id;
+        SELECT tp.priority_id INTO v_priority_id
+        FROM link l
+        JOIN thread_priority tp ON tp.thread_id = l.thread_id
+          AND tp.user_id = upsert_schedule.user_id
+        WHERE l.id = v_link_id;
         IF v_priority_id IS NULL THEN
-            RAISE EXCEPTION 'Link not found';
+            IF NOT EXISTS (SELECT 1 FROM link WHERE id = v_link_id) THEN
+                RAISE EXCEPTION 'Link not found';
+            END IF;
+            RAISE EXCEPTION 'User does not have access to this link';
         END IF;
     END IF;
 
-    IF v_role IS NULL THEN
+    IF NOT user_has_priority_access(upsert_schedule.user_id, v_priority_id) THEN
         RAISE EXCEPTION 'User does not have access to this priority';
-    END IF;
-    IF v_role = 'viewer' THEN
-        -- Viewers can only create/modify per-user schedules for themselves
-        IF v_schedule_user_id IS NULL OR v_schedule_user_id != upsert_schedule.user_id THEN
-            RAISE EXCEPTION 'Viewer members can only create per-user schedules for themselves';
-        END IF;
     END IF;
 
     -- Per-user schedules can only be created/modified by the owning user

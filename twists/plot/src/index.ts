@@ -59,10 +59,7 @@ class PlotTwist extends Twist<PlotTwist> {
     };
   }
 
-  async activate(
-    _priority: Pick<Priority, "id">,
-    _context?: { actor: Actor }
-  ) {
+  async activate(_context?: { actor: Actor }) {
     // Onboarding (joining @plot.app, scheduling threads) is handled by
     // the activate endpoint in account.ts and the setup_plot_app_priority
     // SQL function.

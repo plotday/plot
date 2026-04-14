@@ -13,16 +13,14 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to affected priorities (including hierarchical access)
+    -- Get all users who have this thread filed via thread_priority
     FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
+        tp.user_id
     FROM
         new_table n
-        JOIN "user".priority_expanded upe ON upe.priority_id = n.priority_id
-    WHERE
-        upe.archived_at IS NULL
+        JOIN thread_priority tp ON tp.thread_id = n.id
     ORDER BY
-        upe.user_id LOOP
+        tp.user_id LOOP
             -- Upsert the sync record
             INSERT INTO user_sync (user_id, entity, last_update_at)
                 VALUES (v_user_id, 'thread', v_max_updated_at)
@@ -48,17 +46,14 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to the parent thread's priority (including hierarchical access)
+    -- Get all users who have the note's thread filed via thread_priority
     FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
+        tp.user_id
     FROM
         new_table n
-        JOIN thread a ON a.id = n.thread_id
-        JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
-    WHERE
-        upe.archived_at IS NULL
+        JOIN thread_priority tp ON tp.thread_id = n.thread_id
     ORDER BY
-        upe.user_id LOOP
+        tp.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
                 VALUES (v_user_id, 'note', v_max_updated_at)
             ON CONFLICT (user_id, entity)
@@ -134,8 +129,8 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for priority_twist changes
-CREATE OR REPLACE FUNCTION public.sync_user_for_priority_twist ()
+-- User sync trigger function for twist_instance changes
+CREATE OR REPLACE FUNCTION public.sync_user_for_twist_instance ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SET search_path TO 'public'
@@ -148,29 +143,15 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to the priority (including hierarchical access)
+    -- Notify the owner of each twist_instance
     FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
-    FROM
-        new_table n
-        JOIN "user".priority_expanded upe ON upe.priority_id = n.priority_id
-    WHERE
-        upe.archived_at IS NULL
-
-    UNION
-
-    -- Source accounts (NULL priority_id): notify the owner directly
-    SELECT DISTINCT
         n.owner_id
     FROM
         new_table n
-    WHERE
-        n.priority_id IS NULL
-
     ORDER BY
         1 LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority_twist', v_max_updated_at)
+                VALUES (v_user_id, 'twist_instance', v_max_updated_at)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
                     last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
@@ -242,58 +223,6 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for priority_contact changes (triggers actor sync only)
--- The actor sync is sufficient because user_actor view includes contact data via priority_contact
-CREATE OR REPLACE FUNCTION public.sync_user_for_priority_contact ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
-DECLARE
-    v_max_updated_at timestamptz;
-    v_user_id uuid;
-BEGIN
-    -- Get max updated_at from priority_contact changes
-    SELECT
-        MAX(updated_at) INTO v_max_updated_at
-    FROM
-        new_table;
-    -- Get all users with access to the priority or its descendants (since ancestor contacts are visible to descendants)
-    FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
-    FROM
-        new_table n
-        JOIN priority_child pch ON pch.priority_id = n.priority_id
-        JOIN "user".priority_expanded upe ON upe.priority_id = pch.child_id
-    WHERE
-        upe.archived_at IS NULL
-    ORDER BY
-        upe.user_id LOOP
-            -- Handle actor entity (priority_contact contributes to actor view)
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'actor', v_max_updated_at)
-            ON CONFLICT (user_id, entity)
-                DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
-            -- Handle priority_member entity only for actual invitations (invited_by IS NOT NULL)
-            IF EXISTS (
-                SELECT
-                    1
-                FROM
-                    new_table n2
-                WHERE
-                    n2.invited_by IS NOT NULL) THEN
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority_member', v_max_updated_at)
-            ON CONFLICT (user_id, entity)
-                DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
-        END IF;
-END LOOP;
-    RETURN NULL;
-END;
-$function$;
-
 -- User sync trigger function for thread_tag changes
 CREATE OR REPLACE FUNCTION public.sync_user_for_thread_tag ()
     RETURNS TRIGGER
@@ -308,17 +237,15 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to the parent thread's priority (including hierarchical access)
+    -- Get all users who have the thread filed via thread_priority
     FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
+        tp.user_id
     FROM
         new_table n
         JOIN thread a ON a.id = n.thread_id
-        JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
-    WHERE
-        upe.archived_at IS NULL
+        JOIN thread_priority tp ON tp.thread_id = a.id
     ORDER BY
-        upe.user_id LOOP
+        tp.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
                 VALUES (v_user_id, 'thread', v_max_updated_at)
             ON CONFLICT (user_id, entity)
@@ -343,18 +270,15 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to the parent note's thread's priority (including hierarchical access)
+    -- Get all users who have the note's thread filed via thread_priority
     FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
+        tp.user_id
     FROM
         new_table n
         JOIN note nt ON nt.id = n.note_id
-        JOIN thread a ON a.id = nt.thread_id
-        JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
-    WHERE
-        upe.archived_at IS NULL
+        JOIN thread_priority tp ON tp.thread_id = nt.thread_id
     ORDER BY
-        upe.user_id LOOP
+        tp.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
                 VALUES (v_user_id, 'note', v_max_updated_at)
             ON CONFLICT (user_id, entity)
@@ -379,18 +303,16 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Contact changes affect all users with access to priorities where this contact is linked or their descendants
+    -- Contact changes affect all users who have visibility of this contact via user_contact
     FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
+        uc.user_id
     FROM
         new_table n
-        JOIN priority_contact pc ON pc.contact_id = n.id
-        JOIN priority_child pch ON pch.priority_id = pc.priority_id
-        JOIN "user".priority_expanded upe ON upe.priority_id = pch.child_id
+        JOIN user_contact uc ON uc.contact_id = n.id
     WHERE
-        upe.archived_at IS NULL
+        uc.archived_at IS NULL
     ORDER BY
-        upe.user_id LOOP
+        uc.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
                 VALUES (v_user_id, 'actor', v_max_updated_at)
             ON CONFLICT (user_id, entity)
@@ -401,7 +323,7 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for priority_user changes (for priority_member sync)
+-- User sync trigger function for priority_user changes
 CREATE OR REPLACE FUNCTION public.sync_user_for_priority_user ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -415,23 +337,7 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to the priority (including hierarchical access)
-    FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
-    FROM
-        new_table n
-        JOIN "user".priority_expanded upe ON upe.priority_id = n.priority_id
-    WHERE
-        upe.archived_at IS NULL
-    ORDER BY
-        upe.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority_member', v_max_updated_at)
-            ON CONFLICT (user_id, entity)
-                DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
-        END LOOP;
-    -- Also sync priority entity so user's accessible priorities update
+    -- Sync priority entity so user's accessible priorities update
     FOR v_user_id IN SELECT DISTINCT
         upe.user_id
     FROM
@@ -451,8 +357,8 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for source_channel changes
-CREATE OR REPLACE FUNCTION public.sync_user_for_source_channel ()
+-- User sync trigger function for channel changes
+CREATE OR REPLACE FUNCTION public.sync_user_for_channel ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SET search_path TO 'public'
@@ -470,11 +376,11 @@ BEGIN
         pt.owner_id
     FROM
         new_table n
-        JOIN priority_twist pt ON pt.id = n.priority_twist_id
+        JOIN twist_instance pt ON pt.id = n.twist_instance_id
     ORDER BY
         pt.owner_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'source_channel', v_max_updated_at)
+                VALUES (v_user_id, 'channel', v_max_updated_at)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
                     last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
@@ -483,9 +389,9 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for priority_twist_connection changes
--- When a user connects/disconnects, notify that user so their priority_twist data refreshes
-CREATE OR REPLACE FUNCTION public.sync_user_for_priority_twist_connection ()
+-- User sync trigger function for twist_instance_connection changes
+-- When a user connects/disconnects, notify that user so their twist_instance data refreshes
+CREATE OR REPLACE FUNCTION public.sync_user_for_twist_instance_connection ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SET search_path TO 'public'
@@ -506,7 +412,7 @@ BEGIN
     ORDER BY
         user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority_twist', v_max_connected_at)
+                VALUES (v_user_id, 'twist_instance', v_max_connected_at)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
                     last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
@@ -529,18 +435,18 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to the link's priority (including hierarchical access)
-    -- Use COALESCE to derive priority from thread when link has no direct priority_id
+    -- Get all users who have the link's thread filed via thread_priority,
+    -- or who own the link's direct priority (for threadless links)
     FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
+        COALESCE(tp.user_id, p.user_id) AS user_id
     FROM
         new_table n
-        LEFT JOIN thread t ON t.id = n.thread_id
-        JOIN "user".priority_expanded upe ON upe.priority_id = COALESCE(n.priority_id, t.priority_id)
+        LEFT JOIN thread_priority tp ON tp.thread_id = n.thread_id
+        LEFT JOIN priority p ON p.id = n.priority_id AND n.thread_id IS NULL
     WHERE
-        upe.archived_at IS NULL
+        tp.user_id IS NOT NULL OR p.user_id IS NOT NULL
     ORDER BY
-        upe.user_id LOOP
+        1 LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
                 VALUES (v_user_id, 'thread', v_max_updated_at)
             ON CONFLICT (user_id, entity)
@@ -565,36 +471,16 @@ BEGIN
         MAX(updated_at) INTO v_max_updated_at
     FROM
         new_table;
-    -- Get all users with access to affected thread's priorities (including hierarchical access)
+    -- Get all users who have the schedule's thread filed via thread_priority
+    -- Handles both direct thread_id and link schedules (via link → thread)
     FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
+        tp.user_id
     FROM
         new_table n
-        JOIN thread a ON a.id = n.thread_id
-        JOIN "user".priority_expanded upe ON upe.priority_id = a.priority_id
-    WHERE
-        upe.archived_at IS NULL
+        LEFT JOIN link l ON l.id = n.link_id
+        JOIN thread_priority tp ON tp.thread_id = COALESCE(n.thread_id, l.thread_id)
     ORDER BY
-        upe.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'schedule', v_max_updated_at)
-            ON CONFLICT (user_id, entity)
-                DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
-        END LOOP;
-    -- Handle link schedules (thread_id is NULL, link_id is set)
-    FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
-    FROM
-        new_table n
-        JOIN link l ON l.id = n.link_id
-        JOIN "user".priority_expanded upe ON upe.priority_id = l.priority_id
-    WHERE
-        n.thread_id IS NULL
-        AND n.link_id IS NOT NULL
-        AND upe.archived_at IS NULL
-    ORDER BY
-        upe.user_id LOOP
+        tp.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
                 VALUES (v_user_id, 'schedule', v_max_updated_at)
             ON CONFLICT (user_id, entity)
@@ -612,6 +498,37 @@ BEGIN
         n.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
                 VALUES (v_user_id, 'schedule', v_max_updated_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+        END LOOP;
+    RETURN NULL;
+END;
+$function$;
+
+-- User sync trigger function for topic changes.
+CREATE OR REPLACE FUNCTION public.sync_user_for_topic ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_max_updated_at timestamptz;
+    v_user_id uuid;
+BEGIN
+    SELECT
+        MAX(updated_at) INTO v_max_updated_at
+    FROM
+        new_table;
+    FOR v_user_id IN SELECT DISTINCT
+        ut.user_id
+    FROM
+        new_table n
+        JOIN "user"."topic" ut ON ut.id = n.id
+    ORDER BY
+        ut.user_id LOOP
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'topic', v_max_updated_at)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
                     last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);

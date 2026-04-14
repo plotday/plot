@@ -74,7 +74,7 @@ threadExceptions.post("/sync/thread-exceptions", async (c) => {
     });
   });
 
-  const priorityId = await getPriorityForThread(c.var.db, body.thread_id);
+  const priorityId = await getPriorityForThread(c.var.db, body.thread_id, c.var.user.id);
   notifySync(c, priorityId);
 
   return c.json(result as any);

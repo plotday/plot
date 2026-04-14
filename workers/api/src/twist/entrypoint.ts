@@ -29,9 +29,9 @@ globalThis.fetch = async function(input, init) {
 };
 
 class ToolShed {
-  constructor(path, priorityTwistId, builtInToolFactory, rootToolShed) {
+  constructor(path, twistInstanceId, builtInToolFactory, rootToolShed) {
     this.path = path || [];
-    this.priorityTwistId = priorityTwistId;
+    this.twistInstanceId = twistInstanceId;
     this.builtInToolFactory = builtInToolFactory;
     this.rootToolShed = rootToolShed || this;
     this.twist = null; // Set by buildTwist() on the root ToolShed only
@@ -99,13 +99,13 @@ class ToolShed {
     // Create nested ToolShed for this tool
     const toolShed = new ToolShed(
       toolPath,
-      this.priorityTwistId,
+      this.twistInstanceId,
       this.builtInToolFactory,
       this.rootToolShed
     );
 
     // Check if this is a built-in tool (empty object after construction)
-    const testInstance = new ToolClass(this.priorityTwistId, options || {});
+    const testInstance = new ToolClass(this.twistInstanceId, options || {});
     const isBuiltIn = Object.keys(testInstance).length === 0;
 
     let tool;
@@ -114,7 +114,7 @@ class ToolShed {
       tool = await this.builtInToolFactory(toolPath, id, options);
     } else {
       // Regular tool: construct with id, options, and toolShed
-      tool = new ToolClass(this.priorityTwistId, options, toolShed);
+      tool = new ToolClass(this.twistInstanceId, options, toolShed);
 
       // Call the tool's build method to get its dependencies
       const buildResult = tool.build(toolShed.build);
@@ -229,7 +229,7 @@ class ToolShed {
   }
 }
 
-async function buildTwist(priorityTwistId, builtInToolFactory) {
+async function buildTwist(twistInstanceId, userId, builtInToolFactory) {
   // Check if the twist is a Connector (has isConnector static property)
   const isConnector = TwistConstructor.isConnector === true;
 
@@ -256,10 +256,17 @@ async function buildTwist(priorityTwistId, builtInToolFactory) {
   };
 
   // Create ToolShed
-  const toolShed = new ToolShed([], priorityTwistId, wrappedFactory);
+  const toolShed = new ToolShed([], twistInstanceId, wrappedFactory);
 
   // Construct twist with toolShed
-  const twist = new TwistConstructor(priorityTwistId, toolShed);
+  const twist = new TwistConstructor(twistInstanceId, toolShed);
+
+  // Populate the workspace-owner user ID exposed to the twist as this.userId.
+  // The SDK declares this field on Twist; the runtime injects it before any
+  // lifecycle method runs.
+  if (userId) {
+    twist.userId = userId;
+  }
 
   // Store twist on root ToolShed so the callbacks.run() intercept
   // can execute twist-level callbacks locally (path=[])
@@ -401,8 +408,8 @@ export default class extends WorkerEntrypoint {
   }
 
   async init(twistInit) {
-    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
-    const { twist } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
+    console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
+    const { twist } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
   }
 
   /**
@@ -414,7 +421,7 @@ export default class extends WorkerEntrypoint {
     const isConnector = TwistConstructor.isConnector === true;
     if (!isConnector) return null;
 
-    const { twist } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
+    const { twist } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
     return {
       provider: twist.provider,
       scopes: twist.scopes,
@@ -427,9 +434,9 @@ export default class extends WorkerEntrypoint {
   }
 
   async activate(twistInit, priority, context) {
-    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
+    console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
     try {
-      const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
+      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
 
       // Pre-phase: deepest tools first
       await callPreLifecycle(tools, 'preActivate', priority, context);
@@ -466,9 +473,9 @@ export default class extends WorkerEntrypoint {
   }
 
   async upgrade(twistInit) {
-    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
+    console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
     try {
-      const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
+      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
 
       // Pre-phase: deepest tools first
       await callPreLifecycle(tools, 'preUpgrade');
@@ -494,9 +501,9 @@ export default class extends WorkerEntrypoint {
   }
 
   async deactivate(twistInit) {
-    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
+    console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
     try {
-      const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
+      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
 
       // Pre-phase: deepest tools first
       await callPreLifecycle(tools, 'preDeactivate');
@@ -522,9 +529,9 @@ export default class extends WorkerEntrypoint {
   }
 
   async callCallback(twistInit, path, functionName, ...args) {
-    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
+    console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
     try {
-      const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
+      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
 
       // If no path, call on twist directly
       if (path.length === 0) {
@@ -620,10 +627,10 @@ export default class extends WorkerEntrypoint {
   }
 
   async dispatchToTool(twistInit, paths, optionPath, ...args) {
-    console.debug(\`[TWIST_CONTEXT] priorityTwistId=\${twistInit.priorityTwistId}\`);
+    console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
     try {
       // Build twist ONCE for all paths
-      const { twist, tools } = await buildTwist(twistInit.priorityTwistId, twistInit.builtInToolFactory);
+      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
 
       // Loop through all paths
       for (const path of paths) {
@@ -736,7 +743,9 @@ type BuiltInToolFactory = (
 ) => ITool;
 
 export interface TwistInit {
-  priorityTwistId: string;
+  twistInstanceId: string;
+  /** The user ID (`twist_instance.owner_id`) that installed this twist. */
+  userId: string;
   builtInToolFactory: BuiltInToolFactory;
 }
 

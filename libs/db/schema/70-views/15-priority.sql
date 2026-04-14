@@ -1,20 +1,26 @@
 CREATE OR REPLACE VIEW "public"."priority_tags" -- for formatting
 AS
 SELECT
-    a.priority_id,
+    tp.priority_id,
     at.tag_id,
     COUNT(*) AS count,
     MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at
 FROM
     "public"."thread_tag" at
     JOIN "public"."thread" a ON at.thread_id = a.id
+    JOIN "public"."thread_priority" tp ON tp.thread_id = a.id
 WHERE
     at.archived_at IS NULL
     AND a.archived_at IS NULL
 GROUP BY
-    a.priority_id,
+    tp.priority_id,
     at.tag_id;
 
+-- Path-based descendant lookup, scoped per user. In the per-user priority
+-- model every tree belongs to a single user, so finding children just
+-- follows ltree containment within the same user_id. The legacy
+-- inherit_members boundary is gone — cross-user boundaries are enforced
+-- by the user_id filter.
 CREATE OR REPLACE VIEW "public"."priority_child" -- for formatting
 AS
 SELECT
@@ -23,19 +29,9 @@ SELECT
     c.archived_at AS archived_at
 FROM
     "public"."priority" p
-    JOIN "public"."priority" c ON c.path <@ p.path
-WHERE
-    c.id = p.id
-    OR NOT EXISTS (
-        SELECT
-            1
-        FROM
-            "public"."priority" blocker
-        WHERE
-            blocker.path <@ p.path
-            AND c.path <@ blocker.path
-            AND blocker.path != p.path
-            AND blocker.inherit_members = FALSE);
+    JOIN "public"."priority" c
+        ON c.path <@ p.path
+       AND c.user_id = p.user_id;
 
 CREATE OR REPLACE VIEW "public"."priority_setting_inherited"
 AS
@@ -52,12 +48,14 @@ WITH all_sources AS (
         0 AS source_type
     FROM priority_setting ps
     JOIN priority parent ON ps.priority_id = parent.id
-    JOIN priority p ON p.path <@ parent.path
+    JOIN priority p ON p.path <@ parent.path AND p.user_id = parent.user_id
     WHERE ps.key IN ('pomodoro', 'color', 'path', 'attention_window', 'see_within_requests', 'see_within_updates')
     UNION ALL
-    -- Priority table color fallback (source_type = 1)
+    -- Priority table color fallback (source_type = 1). Walks up each priority's
+    -- own tree via path; no priority_user join needed because paths are scoped
+    -- per user now.
     SELECT
-        pu.user_id,
+        p.user_id,
         p.id AS priority_id,
         'color'::text AS key,
         to_jsonb(parent.color) AS value,
@@ -65,10 +63,8 @@ WITH all_sources AS (
         parent.updated_at,
         nlevel(p.path) - nlevel(parent.path) AS distance,
         1 AS source_type
-    FROM priority_user pu
-    JOIN priority root ON pu.priority_id = root.id
-    JOIN priority p ON p.path <@ root.path
-    JOIN priority parent ON p.path <@ parent.path
+    FROM priority p
+    JOIN priority parent ON p.path <@ parent.path AND parent.user_id = p.user_id
     WHERE parent.color IS NOT NULL
 )
 SELECT DISTINCT ON (user_id, priority_id, key)

@@ -3,12 +3,40 @@ part of 'store.dart';
 typedef ThreadId = Uuid;
 typedef ThreadWatchResult = ({List<Thread> threads, int rawRowCount});
 
+/// Ephemeral local storage for priority rules.
+/// Rules are created when users move threads with a rule option,
+/// synced to the server via POST /sync/priority-rules, then deleted locally.
+@DataClassName('PriorityRuleRow')
+class PriorityRules extends Table with UuidTable {
+  BlobColumn get userId => blob().map(const UuidConverter())();
+  BlobColumn get priorityId => blob().map(const UuidConverter())();
+  IntColumn get channelId => integer().nullable()();
+  TextColumn get type => text()();
+  TextColumn get embedding => text().nullable()();
+  TextColumn get criteria => text().nullable()();
+  TextColumn get label => text().nullable()();
+  BlobColumn get anchorThreadId =>
+      blob().nullable().map(const UuidConverter())();
+}
+
 @DataClassName('ThreadRow')
 class Threads extends Table
     with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {
+  // Vestigial: the server's per-user thread view still exposes `priority_id`
+  // (joined from thread_priority) so the client keeps this as a denormalized
+  // "my current filing" pointer. Peer filings live in `thread_priorities`.
   BlobColumn get priorityId => blob().map(const UuidConverter())();
-  TextColumn get access => text().withDefault(const Constant('members'))();
-  TextColumn get accessContacts => text().nullable().map(const UuidListConverter())();
+  /// Everyone the thread is shared with, as contact ids. Includes the
+  /// author's primary contact for human-authored threads. Populated from
+  /// `thread.contacts` on the server.
+  TextColumn get contacts => text().nullable().map(const UuidListConverter())();
+
+  /// Topic IDs attached to this thread for dynamic group visibility.
+  TextColumn get topics => text().nullable().map(const UuidListConverter())();
+
+  /// Pending email invitations stored locally until the next sync push.
+  /// The server resolves these to contacts and clears them.
+  TextColumn get inviteEmails => text().nullable()();
 
   TextColumn get title => text().nullable()();
   TextColumn get preview => text().nullable()();
@@ -25,6 +53,11 @@ class Threads extends Table
   DateTimeColumn get bumpedAt =>
       dateTime().nullable().map(const LocalDateTimeConverter())();
   TextColumn get icon => text().nullable()();
+
+  /// Whether the thread has a content embedding on the server.
+  /// Used to decide whether "move similar" rule options are available.
+  BoolColumn get hasEmbedding =>
+      boolean().withDefault(const Constant(false))();
 }
 
 @DataClassName('ScheduleRow')
@@ -185,6 +218,11 @@ class ThreadsBase extends BaseTable {
   final String? priorityPath;
   final bool initial;
 
+  /// Thread IDs that should be auto-filed by the server after push.
+  /// Populated by NewThreadPage when sparkles (auto-file) is selected;
+  /// consumed and cleared during push.
+  static final Set<String> autoFileIds = {};
+
   @override
   Map<String, String> buildParams({
     DateTime? updatedSince,
@@ -221,6 +259,7 @@ class ThreadsBase extends BaseTable {
     json.remove('user_id');
     json.remove('activity_at');
     json.remove('agenda_at');
+    json.remove('invite_emails');
 
     return ThreadRow.fromJson(json);
   }
@@ -296,6 +335,22 @@ class ThreadsBase extends BaseTable {
     // Remove last_note_created_at and last_note_source_created_at - they are calculated fields from notes
     json.remove('last_note_created_at');
     json.remove('last_note_source_created_at');
+
+    // Remove has_embedding - computed server-side from thread.embedding
+    json.remove('has_embedding');
+
+    // Signal server-side auto-filing for sparkles priority selection
+    final id = json['id']?.toString();
+    if (id != null && autoFileIds.remove(id)) {
+      json['auto_file'] = true;
+    }
+
+    // Convert invite_emails from stored string to JSON array for the API,
+    // then clear the local field so it's only sent once.
+    final inviteEmails = json.remove('invite_emails');
+    if (inviteEmails != null && (inviteEmails as String).isNotEmpty) {
+      json['invite_emails'] = jsonDecode(inviteEmails);
+    }
 
     return json;
   }
@@ -2037,7 +2092,6 @@ class Thread extends Equatable implements Comparable<Thread> {
     String? title,
     String? preview,
     bool draft = false,
-    String access = 'public',
     DateTimeRange? at,
     DateRange? on,
     List<Note>? notes,
@@ -2047,13 +2101,13 @@ class Thread extends Equatable implements Comparable<Thread> {
          updatedAt: DateTime.now(),
          priorityId: priority.id,
          draft: draft,
-         access: access,
          title: title,
          preview: preview,
          unread: false,
          importance: 0,
          urgency: null,
          readAt: null,
+         hasEmbedding: false,
        ),
        _schedule = null,
        _userSchedule = null,
@@ -2126,10 +2180,14 @@ class Thread extends Equatable implements Comparable<Thread> {
   DateTime get updatedAt => _thread.updatedAt;
   DateTime? get archivedAt => _thread.archivedAt;
   bool get draft => _thread.draft;
-  String get access => _thread.access;
-  List<Uuid>? get accessContacts => _thread.accessContacts;
-  bool get isPublic => access == 'public';
-  bool get isPrivate => access == 'private';
+  List<Uuid> get contacts => _thread.contacts ?? const [];
+  List<Uuid> get topics => _thread.topics ?? const [];
+  /// Pending email invitations that haven't been synced yet.
+  List<String> get inviteEmails {
+    final raw = _thread.inviteEmails;
+    if (raw == null || raw.isEmpty) return const [];
+    return (jsonDecode(raw) as List<dynamic>).cast<String>();
+  }
   DateTime? get lastNoteCreatedAt => _thread.lastNoteCreatedAt;
   DateTime? get lastNoteSourceCreatedAt => _thread.lastNoteSourceCreatedAt;
   RecurrenceRule? get recurrenceRule =>
@@ -2179,15 +2237,16 @@ class Thread extends Equatable implements Comparable<Thread> {
   String? get title => _thread.title;
   String? get preview => _thread.preview;
   String? get icon => _thread.icon;
+  bool get hasEmbedding => _thread.hasEmbedding;
 
   /// Resolves a thread icon identifier to a logo URL and fallback icon.
   static ({String? logoUrl, String? logoDarkUrl, IconData fallbackIcon})
-  resolveIcon(String? icon, {required bool prioritySharing}) {
+  resolveIcon(String? icon) {
     if (icon == null) {
       return (
         logoUrl: null,
         logoDarkUrl: null,
-        fallbackIcon: prioritySharing ? PlotIcon.messages : PlotIcon.notes,
+        fallbackIcon: PlotIcon.notes,
       );
     }
     if (icon.startsWith('http')) {
@@ -2199,7 +2258,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (icon.startsWith('twist:')) {
       final twistId = BigInt.tryParse(icon.substring(6));
       if (twistId != null) {
-        final pt = PriorityTwist.findByTwistId(twistId);
+        final pt = TwistInstance.findByTwistId(twistId);
         if (pt?.logoUrl != null) {
           return (
             logoUrl: pt!.logoUrl,
@@ -2215,7 +2274,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       final twistId = BigInt.tryParse(parts[0]);
       final type = parts.length > 1 ? parts[1] : null;
       if (twistId != null) {
-        final pt = PriorityTwist.findByTwistId(twistId);
+        final pt = TwistInstance.findByTwistId(twistId);
         if (pt != null) {
           if (type != null) {
             // Check twist-level linkTypes first
@@ -2229,9 +2288,9 @@ class Thread extends Equatable implements Comparable<Thread> {
                 fallbackIcon: PlotIcon.link,
               );
             }
-            // Fall back to source_channel linkTypes (for no-provider connectors
+            // Fall back to channel linkTypes (for no-provider connectors
             // like Attio where linkTypes are only stored per-channel)
-            final channelConfig = SourceChannel.findBySource(pt.id)
+            final channelConfig = Channel.findBySource(pt.id)
                 ?.parsedLinkTypes
                 ?.where((c) => c.type == type)
                 .firstOrNull;
@@ -2261,7 +2320,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     return (
       logoUrl: null,
       logoDarkUrl: null,
-      fallbackIcon: prioritySharing ? PlotIcon.messages : PlotIcon.notes,
+      fallbackIcon: PlotIcon.notes,
     );
   }
 
@@ -2921,8 +2980,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     Priority? priority,
     Order? order,
     bool? draft,
-    String? access,
-    Value<List<Uuid>?> accessContacts = const Value.absent(),
+    Value<List<Uuid>?> contacts = const Value.absent(),
+    Value<List<String>?> inviteEmails = const Value.absent(),
     bool? unread,
     Value<String?> preview = const Value.absent(),
     Value<String?> icon = const Value.absent(),
@@ -2966,8 +3025,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     var activityRemoteDirty = false;
     if (priority != null ||
         draft != null ||
-        access != null ||
-        accessContacts.present ||
+        contacts.present ||
+        inviteEmails.present ||
         unread != null ||
         preview.present ||
         icon.present ||
@@ -2981,8 +3040,8 @@ class Thread extends Equatable implements Comparable<Thread> {
       // dirty when non-read-state fields change.
       activityRemoteDirty = priority != null ||
           draft != null ||
-          access != null ||
-          accessContacts.present ||
+          contacts.present ||
+          inviteEmails.present ||
           preview.present ||
           icon.present ||
           archivedAt.present ||
@@ -2990,8 +3049,12 @@ class Thread extends Equatable implements Comparable<Thread> {
       activity = _thread.copyWith(
         priorityId: priority?.id,
         draft: draft,
-        access: access,
-        accessContacts: accessContacts,
+        contacts: contacts,
+        inviteEmails: inviteEmails.present
+            ? Value(inviteEmails.value != null && inviteEmails.value!.isNotEmpty
+                ? jsonEncode(inviteEmails.value)
+                : null)
+            : const Value.absent(),
         preview: preview,
         icon: icon,
         createdAt: draft == false && _thread.draft ? now : null,
@@ -3243,7 +3306,7 @@ class Thread extends Equatable implements Comparable<Thread> {
           archivedAt: Value(archivedAt == null ? DateTime.now() : null),
         );
       case Tag.private:
-        return copyWith(access: isPrivate ? 'public' : 'private');
+        return this;
       case Tag.todo:
         // Toggle per-user todo (star/unstar)
         if (todo) {
@@ -3588,6 +3651,20 @@ class Thread extends Equatable implements Comparable<Thread> {
               updatedAt: Value(_thread.updatedAt),
             ));
       }
+    } else {
+      // Thread row wasn't written — ensure it exists in the local DB so
+      // the draft filter can correctly exclude child rows (schedules, tags)
+      // from being pushed before the thread itself. Uses insertOrIgnore so
+      // an existing row (and its pending flag) is never overwritten.
+      final hasChildRows = _userSchedule != null ||
+          _tags != null ||
+          (_scheduleDirty && _schedule != null && _schedule.linkId == null);
+      if (hasChildRows) {
+        await Store.get.into(Store.get.threads).insert(
+          _thread.toCompanion(false),
+          mode: InsertMode.insertOrIgnore,
+        );
+      }
     }
     if (_scheduleDirty && _schedule != null) {
       if (_schedule.linkId == null) {
@@ -3665,7 +3742,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       case Tag.archived:
         return archivedAt != null;
       case Tag.private:
-        return isPrivate;
+        return false;
       default:
         final currentTags = tags;
         final users = currentTags[tag];

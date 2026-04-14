@@ -33,8 +33,9 @@ export async function getPriorities(
     includeArchived = false,
   } = options ?? {};
 
-  const effectiveParentId = parentId ?? plot.priorityId;
-  await plot.validatePriorityAccess(effectiveParentId as string);
+  const effectiveParentId =
+    (parentId as string | undefined) ?? (await plot.getDefaultPriorityId());
+  await plot.validatePriorityAccess(effectiveParentId);
 
   if (includeDescendants) {
     // Get all descendants via priority_child
@@ -118,8 +119,8 @@ export async function createPriority(
       parentId = priority.parent.id;
     }
   } else {
-    // Default to twist's priority
-    parentId = plot.priorityId;
+    // Default to the twist owner's root priority
+    parentId = await plot.getDefaultPriorityId();
   }
 
   // Validate access to the parent priority
@@ -137,6 +138,8 @@ export async function createPriority(
   // Build the priority insert object
   const dbPriority: Database["public"]["Tables"]["priority"]["Insert"] = {
     created_by: parentResult.created_by,
+    // Per-user owner matches the parent's owner (the user who the twist is running for).
+    user_id: parentResult.created_by,
     title: priority.title,
     path: path as string,
     updated_by: plot.getUpdatedBy(),

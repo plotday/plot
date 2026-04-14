@@ -131,7 +131,9 @@ export default function Index() {
     >
       <AppHeader />
       <AppShell.Main className={classes.main}>
-        <Outlet />
+        <Box style={{ flex: 1 }}>
+          <Outlet />
+        </Box>
         <AppFooter />
       </AppShell.Main>
     </AppShell>

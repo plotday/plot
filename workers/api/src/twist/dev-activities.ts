@@ -4,8 +4,7 @@ import type { DB } from "../db-types";
 import { withDb } from "../db";
 import type { Bindings, LogMessage, TwistEnvironment } from "../env";
 import { createLogger } from "@plotday/worker-util";
-
-const PLOT_TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
+import { BUILTIN_TWIST_PACKAGE_ID as PLOT_TWIST_PACKAGE_ID } from "../utils/limits";
 
 /**
  * Ensures the Logs activity exists for a twist and environment.
@@ -26,17 +25,29 @@ async function ensureLogsActivity(
     .values({
       key,
       title: `Logs (${environment})`,
-      priority_id: priorityId,
       created_by: createdBy,
       updated_by: 0,
     })
     .onConflict((oc) =>
-      oc.columns(["priority_id", "key"]).doUpdateSet({
+      oc.columns(["created_by", "key"]).doUpdateSet({
         updated_by: 0,
       })
     )
     .returning("id")
     .executeTakeFirstOrThrow();
+
+  // File the thread under the twist's dev priority
+  const priorityOwner = await db
+    .selectFrom("priority")
+    .select("user_id")
+    .where("id", "=", priorityId)
+    .executeTakeFirstOrThrow();
+
+  await db
+    .insertInto("thread_priority")
+    .values({ thread_id: result.id, user_id: priorityOwner.user_id, priority_id: priorityId })
+    .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doUpdateSet({ priority_id: priorityId }))
+    .execute();
 
   return result.id;
 }
@@ -69,25 +80,34 @@ export async function addLogsNote(
         return;
       }
 
-      // Find the Plot twist's priority_twist that covers the target priority
-      // priority_child_twist joins: priority_twist -> priority_child -> twist -> twist_admin
-      const plotPriorityTwist = await db
-        .selectFrom("priority_child_twist")
-        .innerJoin("twist", "twist.id", "priority_child_twist.twist_id")
+      // Find the Plot twist's twist_instance owned by the user who owns
+      // the twist_admin priority. Twists are workspace-level now.
+      const priorityOwner = await db
+        .selectFrom("priority")
+        .select("user_id")
+        .where("id", "=", adminData.priority_id)
+        .executeTakeFirst();
+      if (!priorityOwner?.user_id) {
+        return;
+      }
+      const plotTwistInstance = await db
+        .selectFrom("twist_instance")
+        .innerJoin("twist", "twist.id", "twist_instance.twist_id")
         .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-        .select(["priority_child_twist.id"])
-        .where("priority_child_twist.priority_child_id", "=", adminData.priority_id)
+        .select(["twist_instance.id"])
+        .where("twist_instance.owner_id", "=", priorityOwner.user_id)
         .where("twist_admin.twist_package_id", "=", PLOT_TWIST_PACKAGE_ID)
+        .where("twist_instance.archived_at", "is", null)
         .executeTakeFirst();
 
-      if (!plotPriorityTwist?.id) {
-        // Plot twist not installed in this priority's path, skip silently
+      if (!plotTwistInstance?.id) {
+        // Plot twist not installed for this user, skip silently
         return;
       }
 
-      // Use the Plot twist's priority_twist.id as both created_by and author_id
-      const createdBy = plotPriorityTwist.id;
-      const authorId = plotPriorityTwist.id;
+      // Use the Plot twist's twist_instance.id as both created_by and author_id
+      const createdBy = plotTwistInstance.id;
+      const authorId = plotTwistInstance.id;
 
       // Format logs
       const environment = logs[0]?.environment || "unknown";
@@ -149,20 +169,29 @@ export async function addUpgradeNote(
         return;
       }
 
-      const plotPriorityTwist = await db
-        .selectFrom("priority_child_twist")
-        .innerJoin("twist", "twist.id", "priority_child_twist.twist_id")
+      const priorityOwner = await db
+        .selectFrom("priority")
+        .select("user_id")
+        .where("id", "=", adminData.priority_id)
+        .executeTakeFirst();
+      if (!priorityOwner?.user_id) {
+        return;
+      }
+      const plotTwistInstance = await db
+        .selectFrom("twist_instance")
+        .innerJoin("twist", "twist.id", "twist_instance.twist_id")
         .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-        .select(["priority_child_twist.id"])
-        .where("priority_child_twist.priority_child_id", "=", adminData.priority_id)
+        .select(["twist_instance.id"])
+        .where("twist_instance.owner_id", "=", priorityOwner.user_id)
         .where("twist_admin.twist_package_id", "=", PLOT_TWIST_PACKAGE_ID)
+        .where("twist_instance.archived_at", "is", null)
         .executeTakeFirst();
 
-      if (!plotPriorityTwist?.id) {
+      if (!plotTwistInstance?.id) {
         return;
       }
 
-      const createdBy = plotPriorityTwist.id;
+      const createdBy = plotTwistInstance.id;
 
       const activityId = await ensureLogsActivity(
         db,

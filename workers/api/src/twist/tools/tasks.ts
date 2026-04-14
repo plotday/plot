@@ -27,7 +27,7 @@ function isTransientError(error: unknown): boolean {
 }
 
 export type RunMessage = {
-  priorityTwistId: string;
+  twistInstanceId: string;
   path: string[];
   token: string;
   queuedAt?: number;
@@ -35,7 +35,7 @@ export type RunMessage = {
 
 export class Tasks extends Tool implements IRun {
   private callbacks: DurableObjectStub<CallbacksState>;
-  private priorityTwistId: string;
+  private twistInstanceId: string;
   private twistId: string;
   private environment: TwistEnvironment;
   private path: string[]; // path to the parent tool
@@ -44,23 +44,23 @@ export class Tasks extends Tool implements IRun {
 
   private static GetStub(
     callbacks: DurableObjectNamespace<CallbacksState>,
-    priorityTwistId: string
+    twistInstanceId: string
   ) {
-    const callbacksId = callbacks.idFromName(priorityTwistId);
+    const callbacksId = callbacks.idFromName(twistInstanceId);
     return callbacks.get(callbacksId);
   }
 
   constructor(options: {
     callbacks: DurableObjectNamespace<CallbacksState>;
-    priorityTwistId: string;
+    twistInstanceId: string;
     twistId: string;
     environment: TwistEnvironment;
     path: string[];
     queue: Queue<RunMessage>;
   }) {
     super();
-    this.callbacks = Tasks.GetStub(options.callbacks, options.priorityTwistId);
-    this.priorityTwistId = options.priorityTwistId;
+    this.callbacks = Tasks.GetStub(options.callbacks, options.twistInstanceId);
+    this.twistInstanceId = options.twistInstanceId;
     this.twistId = options.twistId;
     this.environment = options.environment;
     this.selfPath = options.path;
@@ -76,7 +76,7 @@ export class Tasks extends Tool implements IRun {
     if (options?.runAt) {
       // Schedule for later execution
       return await this.callbacks.create({
-        priorityTwistId: this.priorityTwistId,
+        twistInstanceId: this.twistInstanceId,
         path: this.selfPath,
         functionName: "scheduledSend",
         extraArgs: [callback],
@@ -94,14 +94,14 @@ export class Tasks extends Tool implements IRun {
 
   async cancelAllTasks(): Promise<void> {
     await this.callbacks.deleteAll({
-      priorityTwistId: this.priorityTwistId,
+      twistInstanceId: this.twistInstanceId,
       path: this.selfPath,
     });
   }
 
   private async send(token: string) {
     await this.queue.send({
-      priorityTwistId: this.priorityTwistId,
+      twistInstanceId: this.twistInstanceId,
       path: this.path,
       token,
       queuedAt: Date.now(),
@@ -128,7 +128,7 @@ export class Tasks extends Tool implements IRun {
 
         const callbacks = Tasks.GetStub(
           env.CALLBACKS,
-          message.body.priorityTwistId
+          message.body.twistInstanceId
         );
         using _result = await callbacks.callCallback(message.body.token);
         message.ack();
@@ -158,7 +158,7 @@ export class Tasks extends Tool implements IRun {
 
         logger.error("Failed to execute callback", error as Error);
         postHog.captureException(error as Error, undefined, {
-          priority_twist_id: message.body.priorityTwistId,
+          twist_instance_id: message.body.twistInstanceId,
           path: message.body.path.join("/"),
           queue: batch.queue,
         });

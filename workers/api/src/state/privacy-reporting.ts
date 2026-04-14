@@ -198,7 +198,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
 
   /**
    * Find a valid Atlassian OAuth token from any active Jira twist.
-   * Searches priority_twist records for Jira twists, then accesses
+   * Searches twist_instance records for Jira twists, then accesses
    * their Storage DOs for auth tokens keyed by the twist owner's contact.
    */
   private async findAtlassianToken(db: Kysely<DB>): Promise<string | null> {
@@ -209,7 +209,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
 
     // Find active Jira-related priority twists
     const twists = await db
-      .selectFrom("priority_twist")
+      .selectFrom("twist_instance")
       .select(["id", "owner_id"])
       .where("archived_at", "is", null)
       .where("name", "ilike", "%jira%")
@@ -249,7 +249,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
         return tokenData.access_token;
       } catch (err) {
         logger.error("Error finding token for twist", err as Error, {
-          priorityTwistId: twist.id,
+          twistInstanceId: twist.id,
         });
         continue;
       }
@@ -265,7 +265,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
    */
   private async findTokenInTwistStorage(
     db: Kysely<DB>,
-    priorityTwistId: string,
+    twistInstanceId: string,
     ownerId: string
   ): Promise<StoredTokenData | null> {
     // Get all contacts for this user
@@ -277,7 +277,7 @@ export class PrivacyReporting extends DurableObject<Bindings> {
 
     if (contacts.length === 0) return null;
 
-    const storageId = this.env.STORAGE.idFromName(priorityTwistId);
+    const storageId = this.env.STORAGE.idFromName(twistInstanceId);
     const storageDO = this.env.STORAGE.get(storageId);
 
     // Try each contact's auth token key

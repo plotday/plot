@@ -1,4 +1,5 @@
 export 'thread.dart';
+export 'thread_lookup.dart';
 export 'email_sign_in.dart';
 export 'invite.dart';
 export 'loading.dart';

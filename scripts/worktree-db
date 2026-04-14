@@ -59,21 +59,41 @@ if [[ -f "$DB_DIR/.env.development" ]]; then
   echo "Updated libs/db/.env.development to use port $PORT"
 fi
 
-# Update root .env.development DATABASE_PORT
-if [[ -f "$WORKTREE_DIR/.env.development" ]]; then
-  if grep -q "DATABASE_PORT" "$WORKTREE_DIR/.env.development"; then
-    sed -i '' "s|DATABASE_PORT=.*|DATABASE_PORT=${PORT}|" "$WORKTREE_DIR/.env.development"
-  else
-    echo "DATABASE_PORT=${PORT}" >> "$WORKTREE_DIR/.env.development"
-  fi
-  echo "Updated root .env.development DATABASE_PORT=$PORT"
-fi
+# Write overrides to .env.development.local (gitignored, not a committed file)
+LOCAL_ENV="$WORKTREE_DIR/.env.development.local"
+cat > "$LOCAL_ENV" <<LOCALEOF
+DATABASE_PORT=${PORT}
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres
+LOCALEOF
+echo "Wrote $LOCAL_ENV with port $PORT"
 
 # Apply migrations
 echo "Applying migrations..."
 # apply-migrations script appends ?sslmode=disable, so don't include it here
 DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${PORT}/postgres" \
   pnpm --filter @plotday/db run apply-migrations
+
+# Set DATABASE_URL in Claude Code session env so pnpm commands auto-approve
+CLAUDE_SETTINGS="$WORKTREE_DIR/.claude/settings.local.json"
+DB_URL="postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres"
+if [[ -f "$CLAUDE_SETTINGS" ]]; then
+  # Merge env.DATABASE_URL into existing settings
+  jq --arg url "$DB_URL" '.env.DATABASE_URL = $url' "$CLAUDE_SETTINGS" > "${CLAUDE_SETTINGS}.tmp" \
+    && mv "${CLAUDE_SETTINGS}.tmp" "$CLAUDE_SETTINGS"
+  echo "Updated $CLAUDE_SETTINGS with DATABASE_URL"
+elif [[ -d "$WORKTREE_DIR/.claude" ]]; then
+  # Create settings file with just the env block
+  echo "{\"env\":{\"DATABASE_URL\":\"$DB_URL\"}}" | jq . > "$CLAUDE_SETTINGS"
+  echo "Created $CLAUDE_SETTINGS with DATABASE_URL"
+fi
+
+# Update DATABASE_URL in all .dev.vars files that reference it
+while IFS= read -r devvars; do
+  if grep -q "DATABASE_URL" "$devvars"; then
+    sed -i '' "s|DATABASE_URL=.*|DATABASE_URL=${DB_URL}|" "$devvars"
+    echo "Updated DATABASE_URL in ${devvars#$WORKTREE_DIR/}"
+  fi
+done < <(find "$WORKTREE_DIR" -name ".dev.vars*" -not -path "*/node_modules/*" -not -path "*/.worktrees/*")
 
 # Write marker file for cleanup
 cat > "$WORKTREE_DIR/.worktree-db" <<EOF

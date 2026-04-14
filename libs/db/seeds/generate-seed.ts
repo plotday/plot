@@ -31,13 +31,11 @@ if (existsSync(envPath)) {
 }
 
 import type {
-  Contact,
   GeneratedContact,
   GeneratedLink,
   GeneratedNote,
   GeneratedNoteTag,
   GeneratedPriority,
-  GeneratedPriorityContact,
   GeneratedPrioritySettings,
   GeneratedPriorityUser,
   GeneratedSchedule,
@@ -548,7 +546,7 @@ function findLineNumber(yamlContent: string, path: string): number | undefined {
 
   const pathParts: (string | number)[] = [];
   const regex = /([a-zA-Z_]+)|\[(\d+)\]/g;
-  let match;
+  let match: RegExpExecArray | null;
 
   while ((match = regex.exec(path)) !== null) {
     if (match[1]) {
@@ -1073,8 +1071,8 @@ function generateSQL(
   // Build reference maps
   const contactIdMap: RefMap<string> = { user: contactId };
   const priorityIdMap: RefMap<string> = {};
-  const sourceIdMap: RefMap<string> = {}; // source ref -> priority_twist_id
-  const twistIdMap: RefMap<string> = {}; // twist ref -> priority_twist_id
+  const sourceIdMap: RefMap<string> = {}; // source ref -> twist_instance_id
+  const twistIdMap: RefMap<string> = {}; // twist ref -> twist_instance_id
   const threadIdMap: RefMap<string> = {};
 
   // Generated entity arrays
@@ -1082,7 +1080,6 @@ function generateSQL(
   const priorities: GeneratedPriority[] = [];
   const prioritySettings: GeneratedPrioritySettings[] = [];
   const priorityUsers: GeneratedPriorityUser[] = [];
-  const priorityContacts: GeneratedPriorityContact[] = [];
   const threads: GeneratedThread[] = [];
   const threadTags: GeneratedThreadTag[] = [];
   const generatedLinks: GeneratedLink[] = [];
@@ -1130,16 +1127,6 @@ function generateSQL(
     }
   }
 
-  // Link all contacts to the user's root priority for visibility
-  const rootPriority = priorities.find((p) => !p.path.includes("."));
-  if (rootPriority && contacts.length > 0) {
-    for (const contact of contacts) {
-      priorityContacts.push({
-        priority_id: rootPriority.id,
-        contact_id: contact.id,
-      });
-    }
-  }
 
   // Process sources
   if (data.sources) {
@@ -1277,25 +1264,6 @@ function generateSQL(
     lines.push("");
   }
 
-  // Priority contacts
-  if (priorityContacts.length > 0) {
-    lines.push("-- Priority contacts");
-    lines.push(
-      "INSERT INTO priority_contact (priority_id, contact_id, created_at)"
-    );
-    lines.push("VALUES");
-    for (let i = 0; i < priorityContacts.length; i++) {
-      const pc = priorityContacts[i];
-      const comma = i < priorityContacts.length - 1 ? "," : "";
-      lines.push(
-        `  (${sqlString(pc.priority_id)}, ${sqlString(
-          pc.contact_id
-        )}, NOW())${comma}`
-      );
-    }
-    lines.push("ON CONFLICT (priority_id, contact_id) DO NOTHING;");
-    lines.push("");
-  }
 
   // Priority settings (key/value format)
   if (prioritySettings.length > 0) {
@@ -1326,9 +1294,9 @@ function generateSQL(
     lines.push("");
   }
 
-  // Sources (twist_admin + twist + priority_twist)
+  // Sources (twist_admin + twist + twist_instance)
   if (sourceSQLLines.length > 0) {
-    lines.push("-- Sources (twist_admin + twist + priority_twist)");
+    lines.push("-- Sources (twist_admin + twist + twist_instance)");
     lines.push(...sourceSQLLines);
     lines.push("");
   }
@@ -1568,9 +1536,9 @@ function processSource(
   outLines: string[]
 ) {
   const priorityId = priorityIdMap[source.priority_ref];
-  const priorityTwistId = generateUUID();
+  const twistInstanceId = generateUUID();
 
-  sourceIdMap[source.ref] = priorityTwistId;
+  sourceIdMap[source.ref] = twistInstanceId;
 
   // Build permissions JSONB
   const permissions = JSON.stringify({
@@ -1608,16 +1576,16 @@ function processSource(
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
   outLines.push(
-    `  INSERT INTO priority_twist (id, twist_id, owner_id, priority_id, name, config)`
+    `  INSERT INTO twist_instance (id, twist_id, owner_id, priority_id, name, config)`
   );
   outLines.push(
-    `  VALUES (${sqlString(priorityTwistId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(source.name)}, '{}'::jsonb);`
+    `  VALUES (${sqlString(twistInstanceId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(source.name)}, '{}'::jsonb);`
   );
   outLines.push(
-    `  INSERT INTO priority_twist_connection (priority_twist_id, user_id, provider, actor_id)`
+    `  INSERT INTO twist_instance_connection (twist_instance_id, user_id, provider, actor_id)`
   );
   outLines.push(
-    `  VALUES (${sqlString(priorityTwistId)}, ${sqlString(userId)}, 'seed', ${sqlString(userId)});`
+    `  VALUES (${sqlString(twistInstanceId)}, ${sqlString(userId)}, 'seed', ${sqlString(userId)});`
   );
   outLines.push(`END $$;`);
 }
@@ -1630,9 +1598,9 @@ function processTwist(
   outLines: string[]
 ) {
   const priorityId = priorityIdMap[twist.priority_ref];
-  const priorityTwistId = generateUUID();
+  const twistInstanceId = generateUUID();
 
-  twistIdMap[twist.ref] = priorityTwistId;
+  twistIdMap[twist.ref] = twistInstanceId;
 
   // Try to use a public twist if one exists with the same name, otherwise create a personal one
   outLines.push(`DO $$`);
@@ -1656,10 +1624,10 @@ function processTwist(
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
   outLines.push(
-    `  INSERT INTO priority_twist (id, twist_id, owner_id, priority_id, name, config)`
+    `  INSERT INTO twist_instance (id, twist_id, owner_id, priority_id, name, config)`
   );
   outLines.push(
-    `  VALUES (${sqlString(priorityTwistId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(twist.name)}, '{}'::jsonb);`
+    `  VALUES (${sqlString(twistInstanceId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(twist.name)}, '{}'::jsonb);`
   );
   outLines.push(`END $$;`);
 }
@@ -1709,7 +1677,7 @@ function processThread(
     const ptId = twistIdMap[thread.twist_ref];
     if (ptId) {
       outPostInsertSQL.push(
-        `UPDATE thread SET icon = 'twist:' || (SELECT twist_id::text FROM priority_twist WHERE id = ${sqlString(ptId)}) WHERE id = ${sqlString(id)};`
+        `UPDATE thread SET icon = 'twist:' || (SELECT twist_id::text FROM twist_instance WHERE id = ${sqlString(ptId)}) WHERE id = ${sqlString(id)};`
       );
     }
   }
@@ -1722,7 +1690,7 @@ function processThread(
       if (ptId) {
         const linkType = firstLinkWithSource.type ? `:${firstLinkWithSource.type}` : '';
         outPostInsertSQL.push(
-          `UPDATE thread SET icon = 'connector:' || (SELECT twist_id::text FROM priority_twist WHERE id = ${sqlString(ptId)}) || '${linkType}' WHERE id = ${sqlString(id)};`
+          `UPDATE thread SET icon = 'connector:' || (SELECT twist_id::text FROM twist_instance WHERE id = ${sqlString(ptId)}) || '${linkType}' WHERE id = ${sqlString(id)};`
         );
       }
     }

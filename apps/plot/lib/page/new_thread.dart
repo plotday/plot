@@ -1,7 +1,7 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
@@ -14,13 +14,39 @@ import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/store/store.dart';
+import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
-import 'package:plot/util/shortcut.dart';
 import 'package:plot/util/platform.dart';
+import 'package:plot/util/shortcut.dart';
+import 'package:plot/analytics/tracker.dart';
 import 'logging.dart';
 
 enum NewThreadType { note, task, link, chat }
+
+/// Tracks hover state and rebuilds its child via [builder]. Used to apply
+/// a "very muted until hovered" effect to unselected chips.
+class _HoverBuilder extends StatefulWidget {
+  const _HoverBuilder({required this.builder});
+
+  final Widget Function(BuildContext context, bool hovered) builder;
+
+  @override
+  State<_HoverBuilder> createState() => _HoverBuilderState();
+}
+
+class _HoverBuilderState extends State<_HoverBuilder> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: widget.builder(context, _hovered),
+    );
+  }
+}
 
 @RoutePage(name: "NewThreadWrapperRoute")
 class NewThreadWrapper implements AutoRouteWrapper {
@@ -54,26 +80,6 @@ class NewThreadPage extends StatefulWidget {
 }
 
 class NewThreadPageState extends State<NewThreadPage> {
-  static const _typeOrder = [
-    NewThreadType.task, // Cmd/Ctrl+1
-    NewThreadType.note, // Cmd/Ctrl+2
-    NewThreadType.link, // Cmd/Ctrl+3
-    NewThreadType.chat, // Cmd/Ctrl+4
-  ];
-
-  static final _typeShortcuts = [
-    platformSingleActivator(LogicalKeyboardKey.digit1),
-    platformSingleActivator(LogicalKeyboardKey.digit2),
-    platformSingleActivator(LogicalKeyboardKey.digit3),
-    platformSingleActivator(LogicalKeyboardKey.digit4),
-  ];
-
-  static final _twistShortcuts = [
-    platformSingleActivator(LogicalKeyboardKey.digit1, shift: true),
-    platformSingleActivator(LogicalKeyboardKey.digit2, shift: true),
-    platformSingleActivator(LogicalKeyboardKey.digit3, shift: true),
-  ];
-
   final GlobalKey<NoteEditorState> _threadEditorKey =
       GlobalKey<NoteEditorState>();
 
@@ -83,14 +89,23 @@ class NewThreadPageState extends State<NewThreadPage> {
   bool _hasAppliedQueryParams = false;
 
   // Twists for the selected draft priority (may differ from context priority)
-  List<PriorityTwist>? _draftTwists;
+  List<TwistInstance>? _draftTwists;
 
   late NewThreadType _selectedType;
-  bool _hasMembers = false;
-  ThreadSubType? _selectedSubType;
+
+  /// Contacts the user has recently shared threads with, for suggestions.
+  List<Actor> _recentContacts = const [];
+
+  /// Pinned actors shown in the "with" chip row. Only updated when the modal
+  /// changes contacts — tapping a chip toggles selected state without removing
+  /// the chip, so the row stays stable.
+  List<Actor> _pinnedActors = const [];
+
+  /// Pinned email invites shown in the chip row. Same stability rule.
+  List<String> _pinnedEmails = const [];
 
   // Selected twist for chat mode
-  PriorityTwist? _selectedTwist;
+  TwistInstance? _selectedTwist;
 
   @override
   void didChangeDependencies() {
@@ -116,9 +131,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       );
     });
 
-    // Check if priority is shared (has members besides current user)
-    _setHasMembers(context.read<PriorityBloc>().state.draft.priority.sharing);
-
     // Apply query parameters and default type to draft
     if (!_hasAppliedQueryParams) {
       _hasAppliedQueryParams = true;
@@ -131,48 +143,16 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  ThreadSubType _defaultSubType() {
-    if (_selectedType == NewThreadType.task) return ThreadSubType.action;
-    if (_hasMembers) {
-      final priorityId = context
-          .read<PriorityBloc>()
-          .state
-          .draft
-          .priority
-          .id
-          .toString();
-      return context
-          .read<LocalPreferencesBloc>()
-          .getSubTypeMru(priorityId)
-          .first;
-    }
-    return ThreadSubType.forPriority(sharing: false).first;
-  }
-
-  void _setHasMembers(bool sharing) {
-    if (sharing == _hasMembers) return;
-    setState(() {
-      _hasMembers = sharing;
-      // Re-validate sub-type selection after sharing change
-      if (_selectedSubType != null &&
-          _selectedSubType!.sharedOnly &&
-          !_hasMembers) {
-        _selectedSubType = _defaultSubType();
-        final bloc = context.read<PriorityBloc>();
-        bloc.updateDraftLocal(
-          bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
-        );
-      }
-    });
-  }
-
   void _resolveDefaultTwist() {
     final twists = _draftTwists ?? context.read<PriorityBloc>().state.twists;
     if (twists.isEmpty) {
       setState(() => _selectedTwist = null);
       return;
     }
-    final sorted = _sortedTwists;
+    final sorted = context.read<LocalPreferencesBloc>().sortByMentionMru(
+      twists,
+      (t) => t.id.toString(),
+    );
     setState(() => _selectedTwist = sorted.first);
     // Set icon on draft
     final bloc = context.read<PriorityBloc>();
@@ -192,28 +172,15 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!mounted) return;
     _applyDefaultType();
 
-    // Default to private in priorities with viewers (safety measure)
-    if (mounted) {
-      final priority = context.read<PriorityBloc>().state.draft.priority;
-      if (priority.isViewer) {
-        // Viewers: always private
-        final bloc = context.read<PriorityBloc>();
-        if (!bloc.state.draft.isPrivate) {
-          await bloc.updateDraft(bloc.state.draft.copyWith(access: 'private'));
-        }
-      } else if (priority.sharing) {
-        // Members: default to private if priority has viewers
-        final viewers = await PriorityMember.getAcceptedViewersForPriority(
-          priority.id,
-        );
-        if (viewers.isNotEmpty && mounted) {
-          final bloc = context.read<PriorityBloc>();
-          if (!bloc.state.draft.isPrivate) {
-            await bloc.updateDraft(bloc.state.draft.copyWith(access: 'private'));
-          }
-        }
-      }
-    }
+    // Default to auto-organize ON: thread files in the current context
+    // priority immediately, and the server re-files it on sync (via
+    // `auto_file` → `classify_thread_for_user`). Saving EditThread from
+    // the Auto organize line removes the id from this set, turning it OFF.
+    final bloc = context.read<PriorityBloc>();
+    ThreadsBase.autoFileIds.add(bloc.state.draft.id.toString());
+
+    // Load recently shared contacts for suggestion chips
+    _loadRecentContacts();
   }
 
   Future<void> _applyQueryParametersToDraft() async {
@@ -288,19 +255,6 @@ class NewThreadPageState extends State<NewThreadPage> {
       // Load twists for the selected priority if different from context
       if (queryPriority != null) {
         await _loadTwistsForPriority(queryPriority);
-        // queryPriority may come from getOne() which lacks sharing enrichment;
-        // re-fetch enriched to get accurate sharing status
-        final enriched = await Priority.get(
-          id: queryPriority.id,
-          archived: null,
-        );
-        if (mounted) {
-          _setHasMembers(
-            enriched.isNotEmpty
-                ? enriched.first.sharing
-                : queryPriority.sharing,
-          );
-        }
       }
     }
   }
@@ -317,461 +271,461 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   /// Loads twists for the given priority and updates local state.
-  /// If the priority matches the context priority, clears local state to use context twists.
+  /// Twists are workspace-level now, so the same list applies regardless of
+  /// which priority is selected. Kept as a no-op hook so callers don't need to
+  /// branch, and so draft mode still triggers default-twist resolution.
   Future<void> _loadTwistsForPriority(Priority priority) async {
-    final bloc = context.read<PriorityBloc>();
-    if (priority.id == bloc.state.context.id) {
-      // Priority matches context, use context twists (no need to load separately)
-      setState(() {
-        _draftTwists = null;
-      });
-    } else {
-      // Load twists for the selected priority
-      final twists = await PriorityTwist.get(priority: priority);
-      setState(() {
-        _draftTwists = twists;
-      });
-    }
+    setState(() {
+      _draftTwists = null;
+    });
     if (_selectedType == NewThreadType.chat) {
       _resolveDefaultTwist();
     }
   }
 
-  Future<void> _selectPriority(
-    BuildContext context,
-    PriorityState state,
-  ) async {
-    final bloc = context.read<PriorityBloc>();
-    final result = await SelectModal.open<Priority>(
-      context,
-      items: (search) async {
-        final priorities = Priority.excludePlot(
-          await Priority.get(order: PriorityOrder.nested, search: search),
-        );
-        return [SelectGroup(title: null, items: priorities)];
-      },
-      itemBuilder: (priority, _) =>
-          ListTile(body: PriorityLabel(priority: priority)),
-      selectedValue: state.draft.priority,
-      prompt: 'Select Priority',
-      onAdd: (ctx) =>
-          createPriorityInline(ctx, parent: state.draft.priority),
-    );
-
-    if (result.present && result.value.id != state.draft.priority.id) {
-      log.info(
-        '[NewThreadPage._selectPriority] Updating draft priority from ${state.draft.priority.id} (${state.draft.priority.title}) to ${result.value.id} (${result.value.title})',
+  /// Loads contacts the user has recently shared threads with, for suggestion
+  /// chips in the "with" row.
+  Future<void> _loadRecentContacts() async {
+    try {
+      final selfIds = Actor.getCurrentUserActorIds()
+          .map((a) => a.toUuid())
+          .toSet();
+      final threads = await Thread.get(
+        draft: false,
+        archived: false,
+        limit: 30,
       );
-      // Update just the draft's priority without changing the global priority context
-      final updatedDraft = state.draft.copyWith(priority: result.value);
-      await bloc.updateDraft(updatedDraft);
-      bloc.setNewThreadDefaultPriority(result.value);
-
-      // Load twists for the newly selected priority
-      await _loadTwistsForPriority(result.value);
-
-      // Check if the new priority has members (result is enriched from Priority.get)
-      _setHasMembers(result.value.sharing);
-
-      log.info(
-        '[NewThreadPage._selectPriority] Draft priority update complete',
-      );
+      final seen = <Uuid>{};
+      final recent = <Actor>[];
+      for (final thread in threads) {
+        for (final contactId in thread.contacts) {
+          if (!selfIds.contains(contactId) && seen.add(contactId)) {
+            final actor = Actor.fromCache(ActorId.fromUuid(contactId));
+            if (actor != null) recent.add(actor);
+            if (recent.length >= 10) break;
+          }
+        }
+        if (recent.length >= 10) break;
+      }
+      if (mounted) {
+        setState(() => _recentContacts = recent);
+        _refreshPinnedChips();
+      }
+    } catch (e, t) {
+      log.warning('[NewThreadPage._loadRecentContacts] failed', e, t);
     }
   }
 
-  Widget _buildThreadTypeSelector(BuildContext context, PriorityState state) {
-    final spacing = isMobilePlatform() ? 12.0 : 8.0;
+  /// Rebuilds the pinned chip list from current draft state + recent contacts.
+  /// Call after modal changes or initial load — NOT after chip taps.
+  void _refreshPinnedChips() {
+    final bloc = context.read<PriorityBloc>();
+    final draft = bloc.state.draft;
+    final selectedIds = draft.contacts.toSet();
+    final pendingEmails = draft.inviteEmails;
 
+    // Resolve selected contacts to actors
+    final selected = selectedIds
+        .map((id) => Actor.fromCache(ActorId.fromUuid(id)))
+        .where((a) => a != null)
+        .cast<Actor>()
+        .toList();
+
+    // Budget: 3 total chips
+    final selectedChipCount = selected.length.clamp(0, 3);
+    final emailSlots = (3 - selectedChipCount).clamp(0, 3);
+    final emailChipCount = pendingEmails.length.clamp(0, emailSlots);
+    final suggestionSlots = 3 - selectedChipCount - emailChipCount;
+
+    final suggestions = _recentContacts
+        .where((a) => !selectedIds.contains(a.id.toUuid()))
+        .take(suggestionSlots)
+        .toList();
+
+    setState(() {
+      _pinnedActors = [...selected.take(3), ...suggestions];
+      _pinnedEmails = pendingEmails.take(emailSlots).toList();
+    });
+  }
+
+  Widget _buildThreadTypeSelector(BuildContext context, PriorityState state) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Center(
           child: Text(
-            'Start a new thread in',
+            'Start a thread with',
             style: context.theme.typography.sm.copyWith(
               color: context.theme.plotColors.veryMuted,
             ),
           ),
         ),
         SizedBox(height: 8),
-        Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: 300),
-            child: FButton(
-              onPress: () => _selectPriority(context, state),
-              variant: FButtonVariant.secondary,
-              style: FButtonStyleDelta.delta(
-                decoration: FVariantsDelta.delta([
-                  FVariantOperation.all(
-                    DecorationDelta.boxDelta(
-                      borderRadius: const BorderRadius.all(Radius.circular(24)),
-                      border: Border.all(color: context.theme.colors.border),
-                    ),
-                  ),
-                ]),
-                contentStyle: FButtonContentStyleDelta.delta(
-                  padding: EdgeInsetsGeometryDelta.value(
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  ),
-                ),
+        _buildWithSelector(context, state),
+      ],
+    );
+  }
+
+  /// Single inline control that replaces the old action bar. In "Auto
+  /// organize" state (draft id present in [ThreadsBase.autoFileIds]), clicking
+  /// opens [EditThread] so the user can set priority/title/type; saving the
+  /// modal flips off auto-organize and this row shows what the user picked.
+  Widget _buildAutoOrganizeLine(BuildContext context, PriorityState state) {
+    final draft = state.draft;
+    final autoOrganize = ThreadsBase.autoFileIds.contains(draft.id.toString());
+    final child = autoOrganize
+        ? _buildAutoOrganizeButton(context)
+        : _buildOrganizedRow(context, draft);
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, bottom: 4),
+      child: Align(alignment: Alignment.centerLeft, child: child),
+    );
+  }
+
+  Widget _buildAutoOrganizeButton(BuildContext context) {
+    final button = FButton(
+      onPress: () => _openEditThreadFromAutoOrganize(context),
+      variant: FButtonVariant.ghost,
+      style: ghostSizedStyleDelta(
+        context,
+        textStyle: context.theme.typography.sm,
+      ),
+      mainAxisSize: MainAxisSize.min,
+      prefix: const Icon(PlotIcon.sparkles),
+      child: const Text('Auto organize'),
+    );
+    if (!hasPhysicalKeyboard()) return button;
+    return FTooltip(
+      tipBuilder: (context, controller) =>
+          const Text('Set priority, title, and thread type'),
+      child: button,
+    );
+  }
+
+  Widget _buildOrganizedRow(BuildContext context, Thread draft) {
+    final subType =
+        ThreadSubType.fromIcon(draft.icon) ?? ThreadSubType.defaultFor();
+    final hasTitle = draft.title?.isNotEmpty ?? false;
+    final displayTitle = hasTitle ? draft.title! : 'Auto title';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _HoverBuilder(
+          builder: (context, hovered) {
+            final titleColor = hovered
+                ? context.theme.colors.foreground
+                : (hasTitle
+                      ? context.theme.plotColors.muted
+                      : context.theme.plotColors.veryMuted);
+            final mutedColor = hovered
+                ? context.theme.plotColors.muted
+                : context.theme.plotColors.veryMuted;
+            final titleStyle = context.theme.typography.sm.copyWith(
+              color: titleColor,
+              height: 1,
+            );
+            final mutedStyle = context.theme.typography.sm.copyWith(
+              color: mutedColor,
+              height: 1,
+            );
+            return FButton(
+              onPress: () => _openEditThreadFromAutoOrganize(context),
+              variant: FButtonVariant.ghost,
+              style: ghostSizedStyleDelta(
+                context,
+                textStyle: context.theme.typography.sm,
               ),
               mainAxisSize: MainAxisSize.min,
-              suffix: Icon(
-                PlotIcon.verticalExpand,
-                size: 10,
-                color: context.theme.colors.mutedForeground,
-              ),
-              child: Flexible(
-                child: PriorityLabel(
-                  priority: state.draft.priority,
-                  muted: true,
-                ),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(height: 24),
-
-        Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 4,
-            children: [
-              Button.icon(
-                ToggleThreadToDo(
-                  state.draft,
-                  title: 'Start',
-                  onUpdate: (thread) async {
-                    if (!context.mounted) return;
-                    await context.read<PriorityBloc>().updateDraft(thread);
-                  },
-                ),
-                selected: state.draft.todo,
-              ),
-              _buildScheduleButton(context, state.draft, (thread) async {
-                if (!context.mounted) return;
-                await context.read<PriorityBloc>().updateDraft(thread);
-              }),
-              if (_hasMembers) ...[
-                SizedBox(width: 4),
-                Button.icon(
-                  ToggleThreadPrivate(
-                    state.draft,
-                    onUpdate: (thread) async {
-                      if (!context.mounted) return;
-                      await context.read<PriorityBloc>().updateDraft(thread);
-                    },
-                  ),
-                  selected: state.draft.isPrivate,
-                ),
-              ],
-              _buildSubTypeButton(context),
-            ],
-          ),
-        ),
-        SizedBox(height: spacing),
-
-        Builder(
-          builder: (context) {
-            // Hide labels when narrow (single panel)
-            final showLabels = true;
-            return Center(
-              child: Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                alignment: WrapAlignment.center,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 6,
                 children: [
-                  _buildTypeChip(
-                    context,
-                    type: NewThreadType.task,
-                    icon: PlotIcon.selfTask,
-                    label: 'Task',
-                    shortcutIndex: 0,
-                    showLabel: showLabels,
+                  FaIcon(
+                    subType.icon,
+                    size: context.theme.iconSizes.base,
+                    color: titleColor,
                   ),
-                  _buildTypeChip(
-                    context,
-                    type: NewThreadType.note,
-                    icon: _hasMembers ? PlotIcon.message : PlotIcon.note,
-                    label: _hasMembers ? 'Message' : 'Note',
-                    shortcutIndex: 1,
-                    showLabel: showLabels,
-                  ),
-                  _buildTypeChip(
-                    context,
-                    type: NewThreadType.link,
-                    icon: PlotIcon.link,
-                    label: 'Link',
-                    shortcutIndex: 2,
-                    showLabel: showLabels,
-                  ),
-                  _buildTypeChip(
-                    context,
-                    type: NewThreadType.chat,
-                    icon: PlotIcon.twist,
-                    label: 'Twist Chat',
-                    shortcutIndex: 3,
-                    showLabel: showLabels,
+                  Text(displayTitle, style: titleStyle),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('(', style: mutedStyle),
+                      PriorityLabel(
+                        priority: draft.priority,
+                        color: mutedColor,
+                        fontSize: context.theme.typography.sm.fontSize,
+                        height: 1,
+                      ),
+                      Text(')', style: mutedStyle),
+                    ],
                   ),
                 ],
               ),
             );
           },
         ),
+        _buildResetAutoOrganizeButton(context, draft),
       ],
     );
   }
 
-  Widget _buildTwistLogo(
-    BuildContext context,
-    PriorityTwist twist, {
-    double size = 14,
-  }) {
-    final isDark = context.colour.brightness == Brightness.dark;
-    final url = isDark && twist.logoUrlDark != null
-        ? twist.logoUrlDark
-        : twist.logoUrl;
-    if (url != null) {
-      return LogoImage(url: url, size: size);
-    }
-    return Icon(PlotIcon.twist, size: size);
-  }
-
-  List<PriorityTwist> get _sortedTwists {
-    final twists = _draftTwists ?? context.read<PriorityBloc>().state.twists;
-    return context.read<LocalPreferencesBloc>().sortByMentionMru(
-      twists,
-      (t) => t.id.toString(),
+  Widget _buildResetAutoOrganizeButton(BuildContext context, Thread draft) {
+    final button = FButton.icon(
+      onPress: () => _resetAutoOrganize(draft),
+      variant: FButtonVariant.ghost,
+      child: Icon(PlotIcon.close, size: context.theme.iconSizes.sm),
+    );
+    if (!hasPhysicalKeyboard()) return button;
+    return FTooltip(
+      tipBuilder: (context, controller) => const Text('Auto organize'),
+      child: button,
     );
   }
 
-  Widget _buildTwistSelector(BuildContext context) {
-    final sorted = _sortedTwists;
-    if (sorted.isEmpty) return const SizedBox.shrink();
-
-    // Show up to 3 visible chips, plus ellipsis if more exist
-    final visible = sorted.take(3).toList();
-    final hasMore = sorted.length > 3;
-
-    const chipRadius = BorderRadius.all(Radius.circular(24));
-    final chipPadding = EdgeInsets.symmetric(
-      horizontal: 12,
-      vertical: isMobilePlatform() ? 12 : 6,
+  Future<void> _resetAutoOrganize(Thread draft) async {
+    final bloc = context.read<PriorityBloc>();
+    // Clear the user's pick so the organized row reverts to "Auto organize".
+    await bloc.updateDraft(
+      draft.copyWith(
+        priority: bloc.state.context,
+        title: const Value(null),
+        icon: const Value(null),
+      ),
     );
+    if (!mounted) return;
+    setState(() {
+      ThreadsBase.autoFileIds.add(draft.id.toString());
+    });
+  }
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (var i = 0; i < visible.length; i++)
-                _buildTwistChip(
-                  context,
-                  visible[i],
-                  chipRadius,
-                  chipPadding,
-                  shortcutIndex: i,
-                ),
-              if (hasMore)
-                FButton(
-                  onPress: () => _openTwistPicker(context),
-                  variant: FButtonVariant.secondary,
-                  style: FButtonStyleDelta.delta(
-                    decoration: FVariantsDelta.delta([
-                      FVariantOperation.all(
-                        DecorationDelta.boxDelta(borderRadius: chipRadius),
-                      ),
-                    ]),
-                    contentStyle: FButtonContentStyleDelta.delta(
-                      padding: EdgeInsetsGeometryDelta.value(chipPadding),
-                    ),
-                  ),
-                  mainAxisSize: MainAxisSize.min,
-                  child: Text('...'),
-                ),
-            ],
-          ),
-        ],
+  Future<void> _openEditThreadFromAutoOrganize(BuildContext context) async {
+    final priorityBloc = context.read<PriorityBloc>();
+    final draft = priorityBloc.state.draft;
+    final draftId = draft.id.toString();
+    await context.run(
+      EditThread(
+        draft,
+        priorityBloc: priorityBloc,
+        onSaved: () {
+          if (!mounted) return;
+          setState(() {
+            ThreadsBase.autoFileIds.remove(draftId);
+          });
+        },
       ),
     );
   }
 
-  Widget _buildTwistChip(
-    BuildContext context,
-    PriorityTwist twist,
-    BorderRadius chipRadius,
-    EdgeInsets chipPadding, {
-    int? shortcutIndex,
-  }) {
-    final selected = _selectedTwist?.id == twist.id;
-    final chipStyleDelta = FButtonStyleDelta.delta(
-      decoration: FVariantsDelta.delta([
-        FVariantOperation.all(
-          DecorationDelta.boxDelta(borderRadius: chipRadius),
-        ),
-      ]),
-      contentStyle: FButtonContentStyleDelta.delta(
-        padding: EdgeInsetsGeometryDelta.value(chipPadding),
-      ),
-    );
-    Widget chip = FButton(
-      onPress: () => _selectTwist(twist),
-      variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
-      style: chipStyleDelta,
-      mainAxisSize: MainAxisSize.min,
-      prefix: _buildTwistLogo(context, twist),
-      child: Text(twist.name),
-    );
+  /// Build the "With" chip row: the current user can tap recent contacts
+  /// to add or remove them from the thread, or tap the `+` button to open
+  /// a searchable picker modal. Selected contacts flow into
+  /// `state.draft.contacts`. Up to 3 chips are shown (selected actors +
+  /// pending email invites + recent suggestions), plus a more/add button.
+  Widget _buildWithSelector(BuildContext context, PriorityState state) {
+    final selectedIds = state.draft.contacts.toSet();
+    final pendingEmails = state.draft.inviteEmails.toSet();
 
-    if (!kIsWeb &&
-        hasPhysicalKeyboard() &&
-        shortcutIndex != null &&
-        shortcutIndex < _twistShortcuts.length) {
-      chip = FTooltip(
-        tipBuilder: (context, controller) => Column(
+    // Render from pinned lists so chips stay stable when toggled via tap.
+    // _pinnedActors and _pinnedEmails are only updated by _refreshPinnedChips
+    // (called after modal changes and initial load).
+    final hasMore =
+        _pinnedActors.length + _pinnedEmails.length >= 3 ||
+        _recentContacts
+                .where((a) => !selectedIds.contains(a.id.toUuid()))
+                .length >
+            _pinnedActors
+                .where((a) => !selectedIds.contains(a.id.toUuid()))
+                .length;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(twist.name),
-            Text(
-              formatShortcut(_twistShortcuts[shortcutIndex]),
-              style: context.theme.typography.sm.copyWith(
-                color: context.theme.colors.mutedForeground,
-              ),
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final actor in _pinnedActors)
+                  _buildContactChip(
+                    context,
+                    actor,
+                    selected: selectedIds.contains(actor.id.toUuid()),
+                  ),
+                for (final email in _pinnedEmails)
+                  _buildEmailChip(
+                    context,
+                    email,
+                    selected: pendingEmails.contains(email),
+                  ),
+                _buildAddContactChip(context, state, hasMore: hasMore),
+              ],
             ),
           ],
         ),
-        child: chip,
+      ),
+    );
+  }
+
+  Widget _buildContactChip(
+    BuildContext context,
+    Actor actor, {
+    required bool selected,
+  }) {
+    const chipRadius = BorderRadius.all(Radius.circular(24));
+    final chipPadding = EdgeInsets.symmetric(
+      horizontal: 10,
+      vertical: isMobilePlatform() ? 10 : 5,
+    );
+    Widget buildChip(bool hovered) {
+      return FButton(
+        onPress: () => _toggleWithContact(actor),
+        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
+        style: FButtonStyleDelta.delta(
+          decoration: FVariantsDelta.delta([
+            FVariantOperation.all(
+              DecorationDelta.boxDelta(borderRadius: chipRadius),
+            ),
+          ]),
+          contentStyle: FButtonContentStyleDelta.delta(
+            padding: EdgeInsetsGeometryDelta.value(chipPadding),
+          ),
+        ),
+        mainAxisSize: MainAxisSize.min,
+        child: Text(
+          actor.name ?? actor.email ?? 'Unknown',
+          style: (!selected && !hovered)
+              ? TextStyle(color: context.theme.plotColors.veryMuted)
+              : null,
+        ),
       );
     }
 
-    return chip;
+    if (selected) return buildChip(false);
+    return _HoverBuilder(builder: (context, hovered) => buildChip(hovered));
   }
 
-  void _selectTwist(PriorityTwist twist) {
+  Widget _buildEmailChip(
+    BuildContext context,
+    String email, {
+    bool selected = true,
+  }) {
+    const chipRadius = BorderRadius.all(Radius.circular(24));
+    final chipPadding = EdgeInsets.symmetric(
+      horizontal: 10,
+      vertical: isMobilePlatform() ? 10 : 5,
+    );
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(email),
+      child: FButton(
+        onPress: () => _toggleEmailInvite(email),
+        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
+        style: FButtonStyleDelta.delta(
+          decoration: FVariantsDelta.delta([
+            FVariantOperation.all(
+              DecorationDelta.boxDelta(borderRadius: chipRadius),
+            ),
+          ]),
+          contentStyle: FButtonContentStyleDelta.delta(
+            padding: EdgeInsetsGeometryDelta.value(chipPadding),
+          ),
+        ),
+        mainAxisSize: MainAxisSize.min,
+        prefix: FaIcon(
+          FontAwesomeIcons.envelope,
+          size: context.theme.iconSizes.sm,
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 160),
+          child: Text(email, overflow: TextOverflow.ellipsis),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddContactChip(
+    BuildContext context,
+    PriorityState state, {
+    required bool hasMore,
+  }) {
+    return Button.icon(
+      _ShareNewThread(
+        onOpen: () => _openSharedPicker(context),
+        hasMore: hasMore,
+      ),
+    );
+  }
+
+  Future<void> _toggleWithContact(Actor actor) async {
+    final bloc = context.read<PriorityBloc>();
+    final current = bloc.state.draft.contacts.toList();
+    final contactUuid = actor.id.toUuid();
+    if (current.contains(contactUuid)) {
+      current.remove(contactUuid);
+    } else {
+      current.add(contactUuid);
+    }
+    await bloc.updateDraft(bloc.state.draft.copyWith(contacts: Value(current)));
+  }
+
+  /// Toggle an email invite on/off from the chip row (no pin refresh).
+  Future<void> _toggleEmailInvite(String email) async {
+    final bloc = context.read<PriorityBloc>();
+    final thread = bloc.state.draft;
+    final current = thread.inviteEmails;
+    if (current.contains(email)) {
+      final updated = current.where((e) => e != email).toList();
+      await bloc.updateDraft(
+        thread.copyWith(inviteEmails: Value(updated.isEmpty ? null : updated)),
+      );
+    } else {
+      await bloc.updateDraft(
+        thread.copyWith(inviteEmails: Value([...current, email])),
+      );
+    }
+  }
+
+  Future<void> _openSharedPicker(BuildContext context) async {
+    final priorityBloc = context.read<PriorityBloc>();
+    await context.run(
+      PickDraftThreadShared(
+        thread: priorityBloc.state.draft,
+        onUpdate: (thread) async {
+          if (!context.mounted) return;
+          await priorityBloc.updateDraft(thread);
+        },
+      ),
+    );
+    if (!context.mounted) return;
+    _refreshPinnedChips();
+  }
+
+  void _selectTwist(TwistInstance twist) {
     setState(() => _selectedTwist = twist);
     final bloc = context.read<PriorityBloc>();
     bloc.updateDraftLocal(
       bloc.state.draft.copyWith(icon: Value('twist:${twist.twistId}')),
     );
-  }
-
-  Future<void> _openTwistPicker(BuildContext context) async {
-    final sorted = _sortedTwists;
-
-    final result = await SelectModal.open<PriorityTwist>(
-      context,
-      items: (_) async => [SelectGroup(title: null, items: sorted)],
-      itemBuilder: (twist, _) => ListTile(
-        body: Row(
-          spacing: 8,
-          children: [_buildTwistLogo(context, twist), Text(twist.name)],
-        ),
-      ),
-      selectedValue: _selectedTwist,
-      prompt: 'Select Twist',
-    );
-
-    if (!context.mounted || !result.present) return;
-    setState(() => _selectedTwist = result.value);
-    // Set icon on draft
-    final bloc = context.read<PriorityBloc>();
-    bloc.updateDraftLocal(
-      bloc.state.draft.copyWith(icon: Value('twist:${result.value.twistId}')),
-    );
-    // Record MRU so the picked twist appears in the visible chips
     context.read<LocalPreferencesBloc>().recordMentionUsage(
-      result.value.id.toString(),
+      twist.id.toString(),
     );
-  }
-
-  void _selectSubType(ThreadSubType subType) {
-    setState(() => _selectedSubType = subType);
-    final bloc = context.read<PriorityBloc>();
-    bloc.updateDraftLocal(
-      bloc.state.draft.copyWith(icon: Value(subType.value)),
-    );
-  }
-
-  Widget _buildSubTypeButton(BuildContext context) {
-    final subType = _selectedSubType;
-    final disabled =
-        _selectedType == NewThreadType.link ||
-        _selectedType == NewThreadType.chat;
-
-    if (subType == null || disabled) return const SizedBox.shrink();
-
-    return FButton.icon(
-      onPress: () => _showSubTypeOverflow(context),
-      variant: FButtonVariant.ghost,
-      style: FButtonStyleDelta.delta(
-        decoration: FVariantsDelta.delta([
-          FVariantOperation.all(
-            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(24)),
-          ),
-        ]),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 4,
-        children: [
-          Icon(subType.icon, size: context.theme.iconSizes.base),
-          Icon(PlotIcon.verticalExpand, size: context.theme.iconSizes.xs),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showSubTypeOverflow(BuildContext context) async {
-    final types = ThreadSubType.forPriority(sharing: _hasMembers);
-    final priorityId = context
-        .read<PriorityBloc>()
-        .state
-        .draft
-        .priority
-        .id
-        .toString();
-    final localPrefs = context.read<LocalPreferencesBloc>();
-
-    final result = await SelectModal.open<ThreadSubType>(
-      context,
-      items: (_) async => [SelectGroup(title: null, items: types)],
-      itemBuilder: (subType, _) => ListTile(
-        icon: subType.icon,
-        body: Text(subType.label),
-        selected: _selectedSubType == subType,
-      ),
-      selectedValue: _selectedSubType,
-      prompt: 'Select type',
-    );
-
-    if (!context.mounted || !result.present) return;
-    await localPrefs.recordSubTypeMru(priorityId, result.value);
-    _selectSubType(result.value);
   }
 
   String get _editorHint {
-    switch (_selectedType) {
-      case NewThreadType.task:
-        return 'Describe the task';
-      case NewThreadType.chat:
-        return 'Message';
-      default:
-        return 'Write a note';
-    }
+    if (_selectedTwist != null) return "Chat with ${_selectedTwist!.name}";
+    return 'Add a note';
   }
 
-  List<ActorId>? get _chatMentions =>
-      _selectedType == NewThreadType.chat && _selectedTwist != null
-      ? [ActorId(_selectedTwist!.id)]
-      : null;
+  List<ActorId>? get _twistMentions =>
+      _selectedTwist != null ? [ActorId(_selectedTwist!.id)] : null;
 
   void _onChatSubmitted() {
-    if (_selectedType == NewThreadType.chat && _selectedTwist != null) {
+    if (_selectedTwist != null) {
       context.read<LocalPreferencesBloc>().recordMentionUsage(
         _selectedTwist!.id.toString(),
       );
@@ -801,237 +755,50 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (_selectedType == NewThreadType.chat) {
       _resolveDefaultTwist();
     }
-    // Initialize sub-type for note/task types
-    if (_selectedType == NewThreadType.note ||
-        _selectedType == NewThreadType.task) {
-      _selectedSubType = _defaultSubType();
-      bloc.updateDraftLocal(
-        bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
-      );
-    }
-  }
-
-  void _selectType(NewThreadType type) {
-    if (type == _selectedType) return;
-    setState(() => _selectedType = type);
-    context.read<LocalPreferencesBloc>().recordLastNewThreadType(type.name);
-
-    final bloc = context.read<PriorityBloc>();
-    final draft = bloc.state.draft;
-
-    if (type == NewThreadType.task && !draft.todo) {
-      bloc.updateDraft(draft.toggleTag(Tag.todo));
-    } else if (type != NewThreadType.task && draft.todo) {
-      bloc.updateDraft(draft.toggleTag(Tag.todo));
-    }
-
-    if (type == NewThreadType.chat) {
-      _selectedSubType = null;
-      _resolveDefaultTwist();
-    } else if (type == NewThreadType.link) {
-      _selectedSubType = null;
-      final currentDraft = bloc.state.draft;
-      if (currentDraft.icon != null) {
-        bloc.updateDraftLocal(currentDraft.copyWith(icon: const Value(null)));
-      }
-    } else {
-      // Reset sub-type icon for note/task
-      _selectedSubType = _defaultSubType();
-      bloc.updateDraftLocal(
-        bloc.state.draft.copyWith(icon: Value(_selectedSubType!.value)),
-      );
-    }
-  }
-
-  Widget _buildTypeChip(
-    BuildContext context, {
-    required NewThreadType type,
-    required IconData icon,
-    required String label,
-    required int shortcutIndex,
-    bool showLabel = true,
-  }) {
-    final selected = _selectedType == type;
-    const chipRadius = BorderRadius.all(Radius.circular(24));
-
-    Widget chip;
-    if (showLabel && isMobilePlatform()) {
-      // Mobile: stacked icon-above-label (narrower, fits 4 chips in a row)
-      chip = FButton(
-        onPress: () => _selectType(type),
-        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
-        style: FButtonStyleDelta.delta(
-          decoration: FVariantsDelta.delta([
-            FVariantOperation.all(
-              DecorationDelta.boxDelta(borderRadius: chipRadius),
-            ),
-          ]),
-          contentStyle: FButtonContentStyleDelta.delta(
-            padding: EdgeInsetsGeometryDelta.value(
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            ),
-          ),
-        ),
-        mainAxisSize: MainAxisSize.min,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 2,
-          children: [
-            Icon(icon, size: context.theme.iconSizes.base),
-            Text(
-              label,
-              style: context.theme.typography.xs.copyWith(
-                color: context.theme.colors.mutedForeground,
-              ),
-            ),
-          ],
-        ),
-      );
-    } else {
-      // Desktop: side-by-side icon + label
-      final chipPadding = EdgeInsets.symmetric(
-        horizontal: showLabel ? 12 : 10,
-        vertical: isMobilePlatform() ? 12 : 6,
-      );
-      final typeChipStyleDelta = FButtonStyleDelta.delta(
-        decoration: FVariantsDelta.delta([
-          FVariantOperation.all(
-            DecorationDelta.boxDelta(borderRadius: chipRadius),
-          ),
-        ]),
-        contentStyle: FButtonContentStyleDelta.delta(
-          padding: EdgeInsetsGeometryDelta.value(chipPadding),
-        ),
-      );
-      chip = FButton(
-        onPress: () => _selectType(type),
-        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
-        style: typeChipStyleDelta,
-        mainAxisSize: MainAxisSize.min,
-        prefix: showLabel
-            ? Icon(icon, size: context.theme.iconSizes.base)
-            : null,
-        child: showLabel
-            ? Text(label)
-            : Icon(icon, size: context.theme.iconSizes.lg),
-      );
-    }
-
-    if (!kIsWeb && hasPhysicalKeyboard()) {
-      chip = FTooltip(
-        tipBuilder: (context, controller) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label),
-            Text(
-              formatShortcut(_typeShortcuts[shortcutIndex]),
-              style: context.theme.typography.sm.copyWith(
-                color: context.theme.colors.mutedForeground,
-              ),
-            ),
-          ],
-        ),
-        child: chip,
-      );
-    }
-
-    return chip;
-  }
-
-  Widget _buildScheduleButton(
-    BuildContext context,
-    Thread draft,
-    Future<void> Function(Thread thread) onDraftChanged,
-  ) {
-    final isScheduled = draft.on?.start != null;
-    final command = PickScheduleThread(draft, onUpdate: onDraftChanged);
-
-    return Button.icon(command, selected: isScheduled);
-  }
-
-  Widget _buildLinkInput(
-    BuildContext context,
-    PriorityState state, {
-    bool flushToBottom = false,
-  }) {
-    return LinkInput(
-      priority: state.draft.priority,
-      initialUrl: widget.sharedUrl,
-      flushToBottom: flushToBottom,
-      onNavigateToThread: (thread) {
-        context.run(ChangeCurrentThread(thread));
-      },
-      onCreateLink: (url, title, favicon) {
-        context.run(
-          AddThreadWithLink(
-            linkUrl: url,
-            linkTitle: title,
-            linkFavicon: favicon,
-          ),
-        );
-      },
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: kIsWeb
-          ? {}
-          : {
-              for (var i = 0; i < _typeOrder.length; i++)
-                _typeShortcuts[i]: () => _selectType(_typeOrder[i]),
-              if (_selectedType == NewThreadType.chat)
-                for (var i = 0; i < _twistShortcuts.length; i++)
-                  _twistShortcuts[i]: () {
-                    final sorted = _sortedTwists;
-                    if (i < sorted.length) _selectTwist(sorted[i]);
-                  },
-            },
-      child: BlocBuilder<LayoutBloc, LayoutState>(
-        builder: (context, layoutState) {
-          return BlocConsumer<PriorityBloc, PriorityState>(
-            listener: (context, state) {
-              // Sync sharing status when draft changes (e.g. _loadDraft
-              // loads an enriched draft from the database)
-              _setHasMembers(state.draft.priority.sharing);
-            },
-            builder: (context, state) {
-              final priorityBloc = context.read<PriorityBloc>();
+    return BlocBuilder<LayoutBloc, LayoutState>(
+      builder: (context, layoutState) {
+        return BlocBuilder<PriorityBloc, PriorityState>(
+          builder: (context, state) {
+            final priorityBloc = context.read<PriorityBloc>();
 
-              final isViewerMode = state.draft.priority.isViewer;
+            final isViewerMode = state.draft.priority.isViewer;
 
-              if (state.draft.priority.isTwistDev) {
-                return Scaffold(
-                  translucent: true,
-                  scrollable: false,
-                  childPad: false,
-                  body: Center(
-                    child: Text(
-                      'Select a thread',
-                      style: context.theme.typography.sm.copyWith(
-                        color: context.theme.plotColors.muted,
-                      ),
+            if (state.draft.priority.isTwistDev) {
+              return Scaffold(
+                translucent: true,
+                scrollable: false,
+                childPad: false,
+                body: Center(
+                  child: Text(
+                    'Select a thread',
+                    style: context.theme.typography.sm.copyWith(
+                      color: context.theme.plotColors.muted,
                     ),
                   ),
-                );
-              }
+                ),
+              );
+            }
 
-              return PopScope(
-                canPop: false,
-                onPopInvokedWithResult: (didPop, result) {
-                  if (!didPop) {
-                    if (ModalProvider.tryDismissTopModal(context)) return;
-                    final provider = ActivityPanelControllerProvider.maybeOf(
-                      context,
-                    );
-                    if (provider != null && provider.tryCloseSearch()) return;
-                    if (!context.isMultiPanel) {
-                      context.run(ChangeCurrentThread(null));
-                    }
+            return PopScope(
+              canPop: false,
+              onPopInvokedWithResult: (didPop, result) {
+                if (!didPop) {
+                  if (ModalProvider.tryDismissTopModal(context)) return;
+                  final provider = ActivityPanelControllerProvider.maybeOf(
+                    context,
+                  );
+                  if (provider != null && provider.tryCloseSearch()) return;
+                  if (!context.isMultiPanel) {
+                    context.run(ChangeCurrentThread(null));
                   }
-                },
+                }
+              },
+              child: CallbackShortcuts(
+                bindings: _buildThreadShortcuts(context, state),
                 child: Scaffold(
                   translucent: true,
                   scrollable: false,
@@ -1052,49 +819,56 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 ),
                                 child: _buildThreadTypeSelector(context, state),
                               ),
-                              if (_selectedType == NewThreadType.chat)
-                                Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: context.contentPaddingH,
-                                  ),
-                                  child: _buildTwistSelector(context),
-                                ),
                               const SizedBox(height: 16),
                             ],
 
-                            if (!isViewerMode &&
-                                _selectedType == NewThreadType.link)
-                              _buildLinkInput(
-                                context,
-                                state,
-                                flushToBottom: true,
-                              )
-                            else
-                              NoteEditor(
-                                key: _threadEditorKey,
-                                draft: state.draftNote,
-                                thread: state.draft,
-                                twists: _draftTwists ?? state.twists,
-                                actors: state.actors,
-                                onDraftChanged: (thread, {note}) async {
-                                  if (!context.mounted) return;
-                                  await priorityBloc.updateDraft(
-                                    thread,
-                                    note: note,
-                                  );
-                                },
-                                flushToBottom: true,
-                                showScheduleActions: false,
-                                hint: state.draft.priority.isPlotApp
-                                    ? 'Ask for help or share feedback'
-                                    : _editorHint,
-                                additionalMentions: _chatMentions,
-                                onSubmitted: _onChatSubmitted,
-                                assignNote:
-                                    !isViewerMode &&
-                                    _selectedType == NewThreadType.task,
-                                viewerMode: isViewerMode,
+                            if (!isViewerMode)
+                              Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: context.contentPaddingH,
+                                ),
+                                child: _buildAutoOrganizeLine(context, state),
                               ),
+
+                            NoteEditor(
+                              key: _threadEditorKey,
+                              draft: state.draftNote,
+                              thread: state.draft,
+                              twists: _draftTwists ?? state.twists,
+                              actors: state.actors,
+                              onDraftChanged: (thread, {note}) async {
+                                if (!context.mounted) return;
+                                final prevContacts = priorityBloc
+                                    .state
+                                    .draft
+                                    .contacts
+                                    .toSet();
+                                await priorityBloc.updateDraft(
+                                  thread,
+                                  note: note,
+                                );
+                                final nextContacts = thread.contacts.toSet();
+                                if (nextContacts.length !=
+                                        prevContacts.length ||
+                                    !nextContacts.containsAll(prevContacts)) {
+                                  _refreshPinnedChips();
+                                }
+                              },
+                              flushToBottom: true,
+                              showScheduleActions: false,
+                              hint: state.draft.priority.isPlotApp
+                                  ? 'Ask for help or share feedback'
+                                  : _editorHint,
+                              additionalMentions: _twistMentions,
+                              onSubmitted: _onChatSubmitted,
+                              assignNote: !isViewerMode,
+                              viewerMode: isViewerMode,
+                              selectedTwist: _selectedTwist,
+                              onTwistSelected: _selectTwist,
+                              onNavigateToThread: (thread) {
+                                context.run(ChangeCurrentThread(thread));
+                              },
+                            ),
                           ],
                         );
                       }
@@ -1114,9 +888,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                             if (!isViewerMode) ...[
                               _buildThreadTypeSelector(context, state),
 
-                              if (_selectedType == NewThreadType.chat)
-                                _buildTwistSelector(context),
-
                               SizedBox(height: 16),
                             ],
 
@@ -1126,10 +897,13 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 constraints: BoxConstraints(
                                   maxHeight: constraints.maxHeight * 0.5,
                                 ),
-                                child: !isViewerMode &&
-                                        _selectedType == NewThreadType.link
-                                    ? _buildLinkInput(context, state)
-                                    : NoteEditor(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (!isViewerMode)
+                                      _buildAutoOrganizeLine(context, state),
+                                    Flexible(
+                                      child: NoteEditor(
                                         key: _threadEditorKey,
                                         draft: state.draftNote,
                                         thread: state.draft,
@@ -1137,22 +911,47 @@ class NewThreadPageState extends State<NewThreadPage> {
                                         actors: state.actors,
                                         onDraftChanged: (thread, {note}) async {
                                           if (!context.mounted) return;
-                                          await context
-                                              .read<PriorityBloc>()
-                                              .updateDraft(thread, note: note);
+                                          final bloc = context
+                                              .read<PriorityBloc>();
+                                          final prevContacts = bloc
+                                              .state
+                                              .draft
+                                              .contacts
+                                              .toSet();
+                                          await bloc.updateDraft(
+                                            thread,
+                                            note: note,
+                                          );
+                                          final nextContacts = thread.contacts
+                                              .toSet();
+                                          if (nextContacts.length !=
+                                                  prevContacts.length ||
+                                              !nextContacts.containsAll(
+                                                prevContacts,
+                                              )) {
+                                            _refreshPinnedChips();
+                                          }
                                         },
                                         flushToBottom: false,
                                         showScheduleActions: false,
                                         hint: state.draft.priority.isPlotApp
                                             ? 'Ask for help or share feedback'
                                             : _editorHint,
-                                        additionalMentions: _chatMentions,
+                                        additionalMentions: _twistMentions,
                                         onSubmitted: _onChatSubmitted,
-                                        assignNote:
-                                            !isViewerMode &&
-                                            _selectedType == NewThreadType.task,
+                                        assignNote: !isViewerMode,
                                         viewerMode: isViewerMode,
+                                        selectedTwist: _selectedTwist,
+                                        onTwistSelected: _selectTwist,
+                                        onNavigateToThread: (thread) {
+                                          context.run(
+                                            ChangeCurrentThread(thread),
+                                          );
+                                        },
                                       ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
@@ -1161,11 +960,52 @@ class NewThreadPageState extends State<NewThreadPage> {
                     },
                   ),
                 ),
-              );
-            },
-          );
-        },
-      ),
+              ),
+            );
+          },
+        );
+      },
     );
+  }
+
+  /// Builds keyboard shortcut bindings for thread-level actions on the
+  /// NewThreadPage: share (contacts). Note-level shortcuts are handled
+  /// inside NoteEditor. Priority and schedule no longer have pre-save
+  /// shortcuts — those are set via the Auto organize (EditThread) modal or
+  /// after the thread is created.
+  Map<ShortcutActivator, VoidCallback> _buildThreadShortcuts(
+    BuildContext context,
+    PriorityState state,
+  ) {
+    final isViewerMode = state.draft.priority.isViewer;
+    if (isViewerMode) return const {};
+
+    return {
+      // ⌘⇧S — share (contacts)
+      platformSingleActivator(LogicalKeyboardKey.keyS, shift: true): () {
+        context.run(_ShareNewThread(onOpen: () => _openSharedPicker(context)));
+      },
+    };
+  }
+}
+
+/// Opens the contact picker for the new-thread draft. Carries the ⌘⇧S
+/// shortcut metadata so `Button.icon` displays the shortcut hint.
+class _ShareNewThread extends Command {
+  _ShareNewThread({required this.onOpen, bool hasMore = false})
+    : super(
+        title: 'Share with more',
+        icon: hasMore ? PlotIcon.more : PlotIcon.shareAdd,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyS, shift: true),
+      );
+
+  final Future<void> Function() onOpen;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    await onOpen();
+    return const CommandDone();
   }
 }

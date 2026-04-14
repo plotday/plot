@@ -22,8 +22,7 @@ export async function assertPriorityAccess(
 }
 
 /**
- * Assert that a user has access to a thread's priority.
- * Looks up the thread's priority_id and checks access.
+ * Assert that a user has access to a thread via thread_priority membership.
  * Throws a 403 error if access is denied.
  */
 export async function assertThreadAccess(
@@ -31,17 +30,16 @@ export async function assertThreadAccess(
   userId: string,
   threadId: string
 ) {
-  const thread = await trx
-    .selectFrom("thread")
-    .select("priority_id")
-    .where("id", "=", threadId)
+  const row = await trx
+    .selectFrom("thread_priority")
+    .select("thread_id")
+    .where("thread_id", "=", threadId)
+    .where("user_id", "=", userId)
     .executeTakeFirst();
 
-  if (!thread) {
-    throw Object.assign(new Error("Thread not found"), { status: 404 });
+  if (!row) {
+    throw Object.assign(new Error("Access denied"), { status: 403 });
   }
-
-  await assertPriorityAccess(trx, userId, thread.priority_id);
 }
 
 /** @deprecated Use assertThreadAccess */

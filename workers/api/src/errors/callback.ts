@@ -9,7 +9,7 @@ export type CallbackErrorType =
 export interface CallbackErrorContext {
   operation?: string; // e.g., "callCallback", "create"
   token?: string; // Sanitized token (no sensitive data)
-  priorityTwistId?: string;
+  twistInstanceId?: string;
   reason?: string; // Additional context
 }
 

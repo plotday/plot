@@ -155,6 +155,13 @@ class PriorityBloc extends Cubit<PriorityState> {
     _newThreadDefaultPriority = priority;
   }
 
+  /// The priority context the user was viewing before the current one
+  /// (session-only). Used by NewThreadPage to show a quick-pick chip.
+  static Priority? _previousContextPriority;
+
+  /// The previous non-root priority context, if any.
+  Priority? get previousContextPriority => _previousContextPriority;
+
   /// Timestamp of last reorder operation. Used to suppress agenda rebuilds
   /// briefly after a reorder so the optimistic update isn't overwritten.
   DateTime? _reorderTimestamp;
@@ -667,6 +674,10 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> setPriority(Priority newPriority) async {
     if (state.context.id == newPriority.id) return;
+    // Track previous non-root context for new-thread priority chips
+    if (!state.context.root) {
+      _previousContextPriority = state.context;
+    }
     _newThreadDefaultPriority = null;
 
     log.info(
@@ -697,7 +708,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     final existingDraft = drafts.firstOrNull;
 
-    // Enrich the priority so sharing/sharingAncestorId are populated
+    // Enrich the priority so computed fields are populated
     final enrichedList = await Priority.get(id: newPriority.id, archived: null);
     final contextPriority =
         enrichedList.isNotEmpty ? enrichedList.first : newPriority;
@@ -1138,18 +1149,17 @@ class PriorityBloc extends Cubit<PriorityState> {
       emit(state.copyWith(iconCounts: iconCounts));
     });
 
-    // Watch twists for the priority (including ancestors)
+    // Watch all active user twists (workspace-level, no longer per-priority)
     _subscriptions.add(
-      PriorityTwist.watch(priority: priorityToLoad).listen((twists) {
-        log.fine('Priority twists updated: ${twists.length} twists');
+      TwistInstance.watch().listen((twists) {
+        log.fine('Twists updated: ${twists.length} twists');
         emit(state.copyWith(twists: twists));
       }),
     );
 
-    // Watch actors for the priority (users and contacts for mentions)
+    // Watch actors (users and contacts for mentions)
     _subscriptions.add(
       Actor.watch(
-        priorityId: priorityToLoad.id,
         types: [ActorType.user, ActorType.contact],
       ).listen((actors) {
         log.fine('Priority actors updated: ${actors.length} actors');
@@ -1192,7 +1202,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     final existingDraft = await Thread.getDraftByPriority(priority.id);
     if (existingDraft != null) {
       if (_draftModified) return;
-      // Use state.context (enriched in setPriority) so sharing is correct
+      // Use state.context (enriched in setPriority)
       emit(
         state.copyWith(
           draft: existingDraft.copyWith(priority: state.context),

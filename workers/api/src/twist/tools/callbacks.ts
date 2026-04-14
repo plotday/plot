@@ -14,22 +14,22 @@ export * from "@plotday/twister/tools/callbacks";
 
 export class Callbacks extends Tool implements ICallbackTool {
   private callbacks: DurableObjectStub<CallbacksState>;
-  private priorityTwistId: string;
+  private twistInstanceId: string;
   private twistId: string;
   private environment: TwistEnvironment;
   private path: string[];
 
   private static GetStub(
     callbacks: DurableObjectNamespace<CallbacksState>,
-    priorityTwistId: string
+    twistInstanceId: string
   ) {
-    const callbacksId = callbacks.idFromName(priorityTwistId);
+    const callbacksId = callbacks.idFromName(twistInstanceId);
     return callbacks.get(callbacksId);
   }
 
   constructor(options: {
     callbacks: DurableObjectNamespace<CallbacksState>;
-    priorityTwistId: string;
+    twistInstanceId: string;
     twistId: string;
     environment: TwistEnvironment;
     path: string[];
@@ -37,9 +37,9 @@ export class Callbacks extends Tool implements ICallbackTool {
     super();
     this.callbacks = Callbacks.GetStub(
       options.callbacks,
-      options.priorityTwistId
+      options.twistInstanceId
     );
-    this.priorityTwistId = options.priorityTwistId;
+    this.twistInstanceId = options.twistInstanceId;
     this.twistId = options.twistId;
     this.environment = options.environment;
     // Remove this tool
@@ -56,7 +56,7 @@ export class Callbacks extends Tool implements ICallbackTool {
     }
 
     const token = await this.callbacks.create({
-      priorityTwistId: this.priorityTwistId,
+      twistInstanceId: this.twistInstanceId,
       path: this.path,
       functionName,
       extraArgs,
@@ -74,7 +74,7 @@ export class Callbacks extends Tool implements ICallbackTool {
     }
 
     const token = await this.callbacks.create({
-      priorityTwistId: this.priorityTwistId,
+      twistInstanceId: this.twistInstanceId,
       path: this.path.slice(0, -1),
       functionName,
       extraArgs,
@@ -140,7 +140,7 @@ export class Callbacks extends Tool implements ICallbackTool {
 
   async deleteAll(): Promise<void> {
     await this.callbacks.deleteAll({
-      priorityTwistId: this.priorityTwistId,
+      twistInstanceId: this.twistInstanceId,
       path: this.path,
     });
   }

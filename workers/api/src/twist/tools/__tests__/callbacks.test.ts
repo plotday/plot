@@ -21,7 +21,7 @@ describe("Callbacks", () => {
 
     callbacks = new Callbacks({
       callbacks: mockCallbacksNamespace,
-      priorityTwistId: "pa-1",
+      twistInstanceId: "pa-1",
       twistId: "test-twist",
       environment: "production",
       path: ["Tool1", "Callbacks"],
@@ -38,7 +38,7 @@ describe("Callbacks", () => {
 
       expect(token).toBe("cb_test_token_123");
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         path: ["Tool1"],
         functionName: "testCallback",
         extraArgs: [],
@@ -54,7 +54,7 @@ describe("Callbacks", () => {
 
       expect(token).toBe("cb_test_token_123");
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         path: ["Tool1"],
         functionName: "testCallback",
         extraArgs: ["arg1", "arg2"],
@@ -90,7 +90,7 @@ describe("Callbacks", () => {
       expect(token).toBe("cb_test_token_123");
       // extraArgs are passed through as-is
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         path: ["Tool1"],
         functionName: "testCallback",
         extraArgs: ["arg1", "arg2", undefined, undefined],
@@ -113,7 +113,7 @@ describe("Callbacks", () => {
       expect(token).toBe("cb_test_token_123");
       // Middle undefined should be preserved
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         path: ["Tool1"],
         functionName: "testCallback",
         extraArgs: ["arg1", undefined, "arg3"],
@@ -135,7 +135,7 @@ describe("Callbacks", () => {
       expect(token).toBe("cb_test_token_123");
       // extraArgs are passed through as-is
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         path: ["Tool1"],
         functionName: "testCallback",
         extraArgs: [undefined, undefined],
@@ -153,7 +153,7 @@ describe("Callbacks", () => {
 
       expect(token).toBe("cb_test_token_123");
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         path: [], // Parent of ["Tool1"]
         functionName: "parentCallback",
         extraArgs: [],
@@ -168,7 +168,7 @@ describe("Callbacks", () => {
       const _token = await callbacks.createFromParent(testFunction, "data");
 
       expect(mockCallbacksStub.create).toHaveBeenCalledWith({
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         path: [],
         functionName: "parentCallback",
         extraArgs: ["data"],
@@ -220,7 +220,7 @@ describe("Callbacks", () => {
       await callbacks.deleteAll();
 
       expect(mockCallbacksStub.deleteAll).toHaveBeenCalledWith({
-        priorityTwistId: "pa-1",
+        twistInstanceId: "pa-1",
         path: ["Tool1"],
       });
     });

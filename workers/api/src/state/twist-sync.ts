@@ -34,7 +34,7 @@ interface TagChangeRow {
 const MAX_CONSECUTIVE_EMPTY_ALARMS = 5;
 
 export class TwistSync extends DurableObject<Bindings> {
-  private priorityTwistId: string | null = null;
+  private twistInstanceId: string | null = null;
   private state: TwistSyncState;
   private lastFingerprint: string | null = null;
   private repeatCount: number = 0;
@@ -57,7 +57,7 @@ export class TwistSync extends DurableObject<Bindings> {
     });
     postHog.captureException(error, undefined, {
       durable_object: "TwistSync",
-      priority_twist_id: this.priorityTwistId,
+      twist_instance_id: this.twistInstanceId,
       ...properties,
     });
     this.ctx.waitUntil(postHog.shutdown());
@@ -82,11 +82,11 @@ export class TwistSync extends DurableObject<Bindings> {
    * Called when the API receives a sync notification
    * Schedules an alarm based on debouncing rules
    */
-  private async notify(priorityTwistId: string): Promise<void> {
-    // Store priorityTwistId on first notify
-    if (!this.priorityTwistId) {
-      this.priorityTwistId = priorityTwistId;
-      await this.ctx.storage.put("priorityTwistId", priorityTwistId);
+  private async notify(twistInstanceId: string): Promise<void> {
+    // Store twistInstanceId on first notify
+    if (!this.twistInstanceId) {
+      this.twistInstanceId = twistInstanceId;
+      await this.ctx.storage.put("twistInstanceId", twistInstanceId);
     }
 
     const now = Date.now();
@@ -139,20 +139,20 @@ export class TwistSync extends DurableObject<Bindings> {
 
     // Circuit breaker: stop processing if too many consecutive alarms found no items.
     // This prevents runaway cost from feedback loops where triggers create stale
-    // priority_twist_sync state but views correctly filter out self-writes.
+    // twist_instance_sync state but views correctly filter out self-writes.
     // Reset by a fresh notify() call (e.g., from SyncNotify for a real change).
     if (this.consecutiveEmptyAlarms >= MAX_CONSECUTIVE_EMPTY_ALARMS) {
       return;
     }
 
-    // Get priorityTwistId from storage
-    if (!this.priorityTwistId) {
-      const storedId = await this.ctx.storage.get<string>("priorityTwistId");
+    // Get twistInstanceId from storage
+    if (!this.twistInstanceId) {
+      const storedId = await this.ctx.storage.get<string>("twistInstanceId");
       if (storedId) {
-        this.priorityTwistId = storedId;
+        this.twistInstanceId = storedId;
       } else {
         const error = new Error(
-          "TwistSync DO has no stored priorityTwistId - notify() was never called"
+          "TwistSync DO has no stored twistInstanceId - notify() was never called"
         );
         logger.error(error.message);
         this.captureException(error);
@@ -163,34 +163,33 @@ export class TwistSync extends DurableObject<Bindings> {
     try {
       const now = Date.now();
 
-      const priorityTwistId = this.priorityTwistId;
+      const twistInstanceId = this.twistInstanceId;
       await withDb(this.env, async (db) => {
-      // Get the priority_twist with twist info
+      // Get the twist_instance with twist info
       // Read created_at as text to preserve full μs precision for sync cursors
-      const priorityTwist = await db
-        .selectFrom("priority_twist")
+      const twistInstance = await db
+        .selectFrom("twist_instance")
         .select([
-          "priority_twist.priority_id",
-          "priority_twist.twist_id",
-          "priority_twist.archived_at",
-          "priority_twist.suspended_at",
+          "twist_instance.twist_id",
+          "twist_instance.archived_at",
+          "twist_instance.suspended_at",
         ])
-        .select(sql<string>`priority_twist.created_at::text`.as("created_at_text"))
-        .where("priority_twist.id", "=", priorityTwistId)
+        .select(sql<string>`twist_instance.created_at::text`.as("created_at_text"))
+        .where("twist_instance.id", "=", twistInstanceId)
         .executeTakeFirstOrThrow();
 
-      // Skip sync for archived priority_twists
-      if (priorityTwist.archived_at) {
-        logger.info("Skipping sync for archived priority_twist", {
-          priority_twist_id: priorityTwistId,
+      // Skip sync for archived twist_instances
+      if (twistInstance.archived_at) {
+        logger.info("Skipping sync for archived twist_instance", {
+          twist_instance_id: twistInstanceId,
         });
         return;
       }
 
       // Skip sync for suspended twists (timestamps don't advance, enabling catch-up on resume)
-      if (priorityTwist.suspended_at) {
-        logger.info("Skipping sync for suspended priority_twist", {
-          priority_twist_id: priorityTwistId,
+      if (twistInstance.suspended_at) {
+        logger.info("Skipping sync for suspended twist_instance", {
+          twist_instance_id: twistInstanceId,
         });
         return;
       }
@@ -199,28 +198,28 @@ export class TwistSync extends DurableObject<Bindings> {
       const twist = await db
         .selectFrom("twist")
         .select(["version", "environment"])
-        .where("id", "=", priorityTwist.twist_id)
+        .where("id", "=", twistInstance.twist_id)
         .executeTakeFirst();
       if (!twist) {
         const error = new Error("No twist info found");
         logger.error(error.message, error, {
-          priority_twist_id: priorityTwistId,
+          twist_instance_id: twistInstanceId,
         });
         this.captureException(error);
         return;
       }
       // Get sync timestamps as text to preserve full μs precision
       const syncInfos = await db
-        .selectFrom("priority_twist_sync")
+        .selectFrom("twist_instance_sync")
         .select(["entity", "operation"])
         .select(sql<string>`last_sync_at::text`.as("last_sync_at_text"))
         .select(sql<string>`last_update_at::text`.as("last_update_at_text"))
-        .where("priority_twist_id", "=", priorityTwistId)
+        .where("twist_instance_id", "=", twistInstanceId)
         .execute();
 
-      // Use the priority_twist's created_at (as text) as the minimum sync time
+      // Use the twist_instance's created_at (as text) as the minimum sync time
       // This ensures we don't send notifications for items that existed before the twist was added
-      const minSyncAtText = priorityTwist.created_at_text;
+      const minSyncAtText = twistInstance.created_at_text;
 
       // Returns a SQL expression that evaluates to timestamptz with full precision
       // Uses GREATEST in PG to avoid JS Date comparison losing μs digits
@@ -234,52 +233,52 @@ export class TwistSync extends DurableObject<Bindings> {
       };
 
       const viewNames = [
-        "priority_twist_thread_update",
-        "priority_twist_note_create",
-        "priority_twist_note_update",
-        "priority_twist_channel_link_create",
-        "priority_twist_channel_link_update",
-        "priority_twist_channel_note_create",
-        "priority_twist_thread_read",
-        "priority_twist_thread_schedule",
-        "priority_twist_schedule_contact",
+        "twist_instance_thread_update",
+        "twist_instance_note_create",
+        "twist_instance_note_update",
+        "twist_instance_channel_link_create",
+        "twist_instance_channel_link_update",
+        "twist_instance_channel_note_create",
+        "twist_instance_thread_read",
+        "twist_instance_thread_schedule",
+        "twist_instance_schedule_contact",
       ] as const;
 
       const results = await Promise.allSettled([
         // Query updated activities (for activity.updated callback)
-        // Uses priority_twist_activity_update view which filters by created_by = twist_id
+        // Uses twist_instance_activity_update view which filters by created_by = twist_id
         // Note: No created_at filter needed - twists get updates for activities they created,
         // even if they haven't been through a "create" sync (they don't get create callbacks for their own activities)
         db
-          .selectFrom("priority_twist_thread_update")
+          .selectFrom("twist_instance_thread_update")
           .selectAll()
           .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("updated_at", ">", getSyncAtExpr("thread", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
           .execute(),
 
         // Query new notes (for note.created callback and mention handling)
-        // Uses priority_twist_note_create view which filters by:
+        // Uses twist_instance_note_create view which filters by:
         // - twist is mentioned AND note was created on/after first mention
         db
-          .selectFrom("priority_twist_note_create")
+          .selectFrom("twist_instance_note_create")
           .selectAll()
           .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("created_at", ">", getSyncAtExpr("note", "create"))
           .orderBy("created_at", "asc")
           .limit(100)
           .execute(),
 
         // Query updated notes (for notes the twist created)
-        // Uses priority_twist_note_update view which filters by created_by = twist_id
+        // Uses twist_instance_note_update view which filters by created_by = twist_id
         db
-          .selectFrom("priority_twist_note_update")
+          .selectFrom("twist_instance_note_update")
           .selectAll()
           .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("updated_at", ">", getSyncAtExpr("note", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
@@ -287,10 +286,10 @@ export class TwistSync extends DurableObject<Bindings> {
 
         // Query new links from connected source channels (for onLinkCreated callback)
         db
-          .selectFrom("priority_twist_channel_link_create")
+          .selectFrom("twist_instance_channel_link_create")
           .selectAll()
           .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("created_at", ">", getSyncAtExpr("channel_link", "create"))
           .orderBy("created_at", "asc")
           .limit(100)
@@ -298,10 +297,10 @@ export class TwistSync extends DurableObject<Bindings> {
 
         // Query updated links from connected source channels (for onLinkUpdated callback)
         db
-          .selectFrom("priority_twist_channel_link_update")
+          .selectFrom("twist_instance_channel_link_update")
           .selectAll()
           .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("updated_at", ">", getSyncAtExpr("channel_link", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
@@ -309,10 +308,10 @@ export class TwistSync extends DurableObject<Bindings> {
 
         // Query new notes on threads with links from connected channels (for onLinkNoteCreated callback)
         db
-          .selectFrom("priority_twist_channel_note_create")
+          .selectFrom("twist_instance_channel_note_create")
           .selectAll()
           .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("created_at", ">", getSyncAtExpr("channel_note", "create"))
           .orderBy("created_at", "asc")
           .limit(100)
@@ -320,10 +319,10 @@ export class TwistSync extends DurableObject<Bindings> {
 
         // Query thread read status changes (for onThreadRead callback)
         db
-          .selectFrom("priority_twist_thread_read")
+          .selectFrom("twist_instance_thread_read")
           .selectAll()
           .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("updated_at", ">", getSyncAtExpr("thread_read", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
@@ -331,10 +330,10 @@ export class TwistSync extends DurableObject<Bindings> {
 
         // Query thread schedule changes (for onThreadToDo callback)
         db
-          .selectFrom("priority_twist_thread_schedule")
+          .selectFrom("twist_instance_thread_schedule")
           .selectAll()
           .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("updated_at", ">", getSyncAtExpr("thread_schedule", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
@@ -342,10 +341,10 @@ export class TwistSync extends DurableObject<Bindings> {
 
         // Query schedule contact changes (for onScheduleContactUpdated callback)
         db
-          .selectFrom("priority_twist_schedule_contact")
+          .selectFrom("twist_instance_schedule_contact")
           .selectAll()
           .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("updated_at", ">", getSyncAtExpr("schedule_contact", "update"))
           .orderBy("updated_at", "asc")
           .limit(100)
@@ -359,7 +358,7 @@ export class TwistSync extends DurableObject<Bindings> {
         }
         const error = result.reason;
         logger.error(`Failed to query ${viewNames[index]}`, error as Error, {
-          priority_twist_id: priorityTwistId!,
+          twist_instance_id: twistInstanceId!,
           view: viewNames[index],
         });
         this.captureException(error as Error, {
@@ -415,9 +414,9 @@ export class TwistSync extends DurableObject<Bindings> {
       let activityTagChanges: ThreadTagChange[] = [];
       try {
         const tagChanges: TagChangeRow[] = await db
-          .selectFrom("priority_twist_thread_tag_change")
+          .selectFrom("twist_instance_thread_tag_change")
           .select(["thread_id", "occurrence", "tag_id", "actor_id", "change_type"])
-          .where("priority_twist_id", "=", priorityTwistId)
+          .where("twist_instance_id", "=", twistInstanceId)
           .where("updated_at", ">", getSyncAtExpr("thread", "update"))
           .where("updated_at", "<=", currentSyncTimestampText
             ? sql<Date>`${currentSyncTimestampText}::timestamptz`
@@ -441,12 +440,12 @@ export class TwistSync extends DurableObject<Bindings> {
             changeType: tc.change_type as "added" | "removed",
           }));
       } catch (error) {
-        logger.error("Failed to query priority_twist_activity_tag_change", error as Error, {
-          priority_twist_id: priorityTwistId,
-          view: "priority_twist_thread_tag_change",
+        logger.error("Failed to query twist_instance_activity_tag_change", error as Error, {
+          twist_instance_id: twistInstanceId,
+          view: "twist_instance_thread_tag_change",
         });
         this.captureException(error as Error, {
-          view: "priority_twist_thread_tag_change",
+          view: "twist_instance_thread_tag_change",
         });
       }
 
@@ -499,7 +498,7 @@ export class TwistSync extends DurableObject<Bindings> {
         this.repeatCount++;
         if (this.repeatCount >= 3) {
           logger.warn("TwistSync loop detected: same items fetched 3+ consecutive times, skipping", {
-            priority_twist_id: priorityTwistId,
+            twist_instance_id: twistInstanceId,
             repeat_count: this.repeatCount,
             item_count: taggedItems.length,
           });
@@ -560,8 +559,8 @@ export class TwistSync extends DurableObject<Bindings> {
         // so the data is equivalent.
         const message = {
           type: "twist_batch" as const,
-          priorityTwistId: priorityTwistId,
-          twistId: Number(priorityTwist.twist_id),
+          twistInstanceId: twistInstanceId,
+          twistId: Number(twistInstance.twist_id),
           environment: twist.environment,
           version: twist.version,
           newNotes: batchNewNotes,
@@ -574,7 +573,7 @@ export class TwistSync extends DurableObject<Bindings> {
           threadReads: batchThreadReads,
           threadSchedules: batchThreadSchedules,
           scheduleContacts: batchScheduleContacts,
-          priorityTwist: null, // TODO: Handle priority_twist config updates
+          twistInstance: null, // TODO: Handle twist_instance config updates
         } as TwistBatchMessage;
 
         try {
@@ -583,7 +582,7 @@ export class TwistSync extends DurableObject<Bindings> {
           if (batch.length === 1) {
             // Single oversized item — log and skip so other batches can proceed
             logger.error("Queue send failed for oversized single item, skipping", error as Error, {
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               item_array: batch[0].array,
               item_size: batch[0].size,
             });
@@ -617,16 +616,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (activityUpdateMaxTs) {
         syncUpdates.push({
           name: "thread update sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'thread'`,
               operation: sql`'update'`,
               last_sync_at: sql`${activityUpdateMaxTs}::timestamptz`,
               last_update_at: sql`${activityUpdateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${activityUpdateMaxTs}::timestamptz`,
               })
             )
@@ -637,16 +636,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (noteCreateMaxTs) {
         syncUpdates.push({
           name: "note create sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'note'`,
               operation: sql`'create'`,
               last_sync_at: sql`${noteCreateMaxTs}::timestamptz`,
               last_update_at: sql`${noteCreateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${noteCreateMaxTs}::timestamptz`,
               })
             )
@@ -657,16 +656,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (noteUpdateMaxTs) {
         syncUpdates.push({
           name: "note update sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'note'`,
               operation: sql`'update'`,
               last_sync_at: sql`${noteUpdateMaxTs}::timestamptz`,
               last_update_at: sql`${noteUpdateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${noteUpdateMaxTs}::timestamptz`,
               })
             )
@@ -677,16 +676,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (channelLinkCreateMaxTs) {
         syncUpdates.push({
           name: "channel_link create sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'channel_link'`,
               operation: sql`'create'`,
               last_sync_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
               last_update_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
               })
             )
@@ -697,16 +696,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (channelLinkUpdateMaxTs) {
         syncUpdates.push({
           name: "channel_link update sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'channel_link'`,
               operation: sql`'update'`,
               last_sync_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
               last_update_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
               })
             )
@@ -717,16 +716,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (channelNoteCreateMaxTs) {
         syncUpdates.push({
           name: "channel_note create sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'channel_note'`,
               operation: sql`'create'`,
               last_sync_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
               last_update_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
               })
             )
@@ -737,16 +736,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (threadReadUpdateMaxTs) {
         syncUpdates.push({
           name: "thread_read update sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'thread_read'`,
               operation: sql`'update'`,
               last_sync_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
               last_update_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
               })
             )
@@ -757,16 +756,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (threadScheduleUpdateMaxTs) {
         syncUpdates.push({
           name: "thread_schedule update sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'thread_schedule'`,
               operation: sql`'update'`,
               last_sync_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
               last_update_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
               })
             )
@@ -777,16 +776,16 @@ export class TwistSync extends DurableObject<Bindings> {
       if (scheduleContactUpdateMaxTs) {
         syncUpdates.push({
           name: "schedule_contact update sync",
-          promise: db.insertInto("priority_twist_sync")
+          promise: db.insertInto("twist_instance_sync")
             .values({
-              priority_twist_id: priorityTwistId,
+              twist_instance_id: twistInstanceId,
               entity: sql`'schedule_contact'`,
               operation: sql`'update'`,
               last_sync_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
               last_update_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
             })
             .onConflict((oc) =>
-              oc.columns(["priority_twist_id", "entity", "operation"]).doUpdateSet({
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
                 last_sync_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
               })
             )
@@ -808,9 +807,9 @@ export class TwistSync extends DurableObject<Bindings> {
 
         syncUpdates.push({
           name: `${stale.entity} ${stale.operation} stale cursor`,
-          promise: db.updateTable("priority_twist_sync")
+          promise: db.updateTable("twist_instance_sync")
             .set({ last_sync_at: sql`last_update_at` })
-            .where("priority_twist_id", "=", priorityTwistId)
+            .where("twist_instance_id", "=", twistInstanceId)
             .where("entity", "=", stale.entity)
             .where("operation", "=", stale.operation)
             .execute(),
@@ -827,7 +826,7 @@ export class TwistSync extends DurableObject<Bindings> {
         if (result.status === "rejected") {
           const error = result.reason;
           logger.error(`Failed to update ${syncUpdates[i].name}`, error as Error, {
-            priority_twist_id: priorityTwistId!,
+            twist_instance_id: twistInstanceId!,
           });
           this.captureException(error as Error, {
             sync_update: syncUpdates[i].name,
@@ -838,8 +837,8 @@ export class TwistSync extends DurableObject<Bindings> {
       if (taggedItems.length > 0) {
         this.consecutiveEmptyAlarms = 0;
         logger.info("Twist sync completed and queued", {
-          priority_twist_id: priorityTwistId,
-          twist_id: String(priorityTwist.twist_id),
+          twist_instance_id: twistInstanceId,
+          twist_id: String(twistInstance.twist_id),
           new_note_count: newNotes.length,
           updated_note_count: updatedNotes.length,
           updated_activity_count: updatedActivities.length,
@@ -855,7 +854,7 @@ export class TwistSync extends DurableObject<Bindings> {
         this.consecutiveEmptyAlarms++;
         if (this.consecutiveEmptyAlarms >= MAX_CONSECUTIVE_EMPTY_ALARMS) {
           logger.warn("TwistSync circuit breaker: too many consecutive empty alarms, stopping", {
-            priority_twist_id: priorityTwistId,
+            twist_instance_id: twistInstanceId,
             consecutive_empty: this.consecutiveEmptyAlarms,
           });
         }
@@ -865,7 +864,7 @@ export class TwistSync extends DurableObject<Bindings> {
       }); // end withDb
     } catch (error) {
       logger.error("Error in TwistSync alarm", error as Error, {
-        priority_twist_id: this.priorityTwistId,
+        twist_instance_id: this.twistInstanceId,
       });
       this.captureException(error as Error);
     }

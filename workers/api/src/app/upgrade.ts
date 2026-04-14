@@ -11,7 +11,7 @@ import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { getEffectivePlan } from "../utils/plan";
 import { getUsage } from "../utils/limits";
-import { createTeamSetupTask } from "./organization";
+import { createTeamSetupTask } from "./team";
 import { notifySync } from "./sync/notify";
 
 const upgrade = new Hono<{ Bindings: Bindings }>();
@@ -45,12 +45,12 @@ upgrade.get("/upgrade", async (c) => {
 
   // Fetch all orgs the user belongs to with subscription info
   const orgs = await c.var.db
-    .selectFrom("organization_member as om")
-    .innerJoin("organization as o", "o.id", "om.organization_id")
+    .selectFrom("team_user as om")
+    .innerJoin("team as o", "o.id", "om.team_id")
     .leftJoin(
-      "organization_subscription as os",
-      "os.organization_id",
-      "om.organization_id"
+      "team_subscription as os",
+      "os.team_id",
+      "om.team_id"
     )
     .select([
       "o.id",
@@ -66,15 +66,15 @@ upgrade.get("/upgrade", async (c) => {
   let memberCounts: Record<string, number> = {};
   if (orgIds.length > 0) {
     const counts = await c.var.db
-      .selectFrom("organization_member")
-      .select(["organization_id"])
+      .selectFrom("team_user")
+      .select(["team_id"])
       .select((eb: any) => eb.fn.count("id").as("count"))
-      .where("organization_id", "in", orgIds)
-      .groupBy("organization_id")
+      .where("team_id", "in", orgIds)
+      .groupBy("team_id")
       .execute();
 
     for (const row of counts as any[]) {
-      memberCounts[String(row.organization_id)] = Number(row.count);
+      memberCounts[String(row.team_id)] = Number(row.count);
     }
   }
 
@@ -82,7 +82,7 @@ upgrade.get("/upgrade", async (c) => {
     ...base,
     effective_plan: effective.plan,
     effective_source: effective.source,
-    organizations: orgs.map((o) => ({
+    teams: orgs.map((o) => ({
       id: String(o.id),
       name: o.name,
       role: o.role,
@@ -109,8 +109,8 @@ upgrade.post("/upgrade/checkout", async (c) => {
   const body = await c.req.json<{
     priceLookupKey: string;
     quantity?: number;
-    organizationId?: string;
-    organizationName?: string;
+    teamId?: string;
+    teamName?: string;
     domainAutoJoin?: boolean;
   }>();
 
@@ -122,21 +122,21 @@ upgrade.post("/upgrade/checkout", async (c) => {
   const stripe = createStripeClient(c.env.STRIPE_SECRET_KEY);
   const siteRoot = c.env.SITE_ROOT || "https://plot.day";
 
-  // Team plan: route through organization
+  // Team plan: route through team
   if (plan === "team") {
-    let orgId = body.organizationId;
+    let orgId = body.teamId;
 
     if (!orgId) {
-      const orgName = body.organizationName?.trim();
+      const orgName = body.teamName?.trim();
       if (!orgName) {
-        return c.json({ error: "organizationName is required for team plan" }, 400);
+        return c.json({ error: "teamName is required for team plan" }, 400);
       }
 
       // Reuse org from a previous incomplete checkout attempt (has subscription record with free plan)
       const pendingOrg = await c.var.db
-        .selectFrom("organization_member as om")
-        .innerJoin("organization_subscription as os", "os.organization_id", "om.organization_id")
-        .innerJoin("organization as o", "o.id", "om.organization_id")
+        .selectFrom("team_user as om")
+        .innerJoin("team_subscription as os", "os.team_id", "om.team_id")
+        .innerJoin("team as o", "o.id", "om.team_id")
         .select(["o.id", "o.name"])
         .where("om.user_id", "=", user.id)
         .where("om.role", "=", "admin")
@@ -149,20 +149,20 @@ upgrade.post("/upgrade/checkout", async (c) => {
         // Update org name if the user changed it
         if (pendingOrg.name !== orgName) {
           await c.var.db
-            .updateTable("organization")
+            .updateTable("team")
             .set({ name: orgName })
             .where("id", "=", pendingOrg.id)
             .execute();
         }
 
-        logger.info("Reusing pending organization for team checkout", {
-          organization_id: orgId,
+        logger.info("Reusing pending team for team checkout", {
+          team_id: orgId,
           user_id: user.id,
         });
       } else {
         // Create new org
         const org = await c.var.db
-          .insertInto("organization")
+          .insertInto("team")
           .values({ name: orgName })
           .returning(["id"])
           .executeTakeFirstOrThrow();
@@ -171,9 +171,9 @@ upgrade.post("/upgrade/checkout", async (c) => {
 
         // Add user as admin
         await c.var.db
-          .insertInto("organization_member")
+          .insertInto("team_user")
           .values({
-            organization_id: org.id,
+            team_id: org.id,
             user_id: user.id,
             role: "admin",
           })
@@ -187,12 +187,12 @@ upgrade.post("/upgrade/checkout", async (c) => {
             .insertInto("domain")
             .values({
               name: emailDomain,
-              organization_id: org.id,
+              team_id: org.id,
               auto_join: domainAutoJoin,
             })
             .onConflict((oc) =>
               oc.column("name").doUpdateSet({
-                organization_id: org.id,
+                team_id: org.id,
                 auto_join: domainAutoJoin,
               })
             )
@@ -203,37 +203,37 @@ upgrade.post("/upgrade/checkout", async (c) => {
         const priorityId = await createTeamSetupTask(c.var.db, orgName, user.id);
         if (priorityId) notifySync(c, priorityId);
 
-        logger.info("Created organization for team checkout", {
-          organization_id: orgId,
+        logger.info("Created team for team checkout", {
+          team_id: orgId,
           user_id: user.id,
         });
       }
     } else {
       // Verify user is admin of existing org
       const member = await c.var.db
-        .selectFrom("organization_member")
+        .selectFrom("team_user")
         .select("role")
-        .where("organization_id", "=", orgId)
+        .where("team_id", "=", orgId)
         .where("user_id", "=", user.id)
         .executeTakeFirst();
 
       if (!member || member.role !== "admin") {
-        return c.json({ error: "Must be org admin to subscribe" }, 403);
+        return c.json({ error: "Must be team admin to subscribe" }, 403);
       }
     }
 
     // Get or create org Stripe customer
     let orgSub = await c.var.db
-      .selectFrom("organization_subscription")
+      .selectFrom("team_subscription")
       .select("stripe_customer_id")
-      .where("organization_id", "=", orgId)
+      .where("team_id", "=", orgId)
       .executeTakeFirst();
 
     let stripeCustomerId = orgSub?.stripe_customer_id;
 
     if (!stripeCustomerId) {
       const orgRow = await c.var.db
-        .selectFrom("organization")
+        .selectFrom("team")
         .select(["name", "billing_email"])
         .where("id", "=", orgId)
         .executeTakeFirstOrThrow();
@@ -241,15 +241,15 @@ upgrade.post("/upgrade/checkout", async (c) => {
       const customer = await stripe.customers.create({
         name: orgRow.name,
         email: orgRow.billing_email || user.email,
-        metadata: { organization_id: orgId },
+        metadata: { team_id: orgId },
       });
       stripeCustomerId = customer.id;
 
       const { start, end } = createFreeTierBillingCycle();
       await c.var.db
-        .insertInto("organization_subscription")
+        .insertInto("team_subscription")
         .values({
-          organization_id: orgId as any,
+          team_id: orgId as any,
           stripe_customer_id: stripeCustomerId,
           plan: "free",
           status: "active",
@@ -257,7 +257,7 @@ upgrade.post("/upgrade/checkout", async (c) => {
           billing_cycle_end: end.toISOString(),
         })
         .onConflict((oc) =>
-          oc.column("organization_id").doUpdateSet({
+          oc.column("team_id").doUpdateSet({
             stripe_customer_id: stripeCustomerId!,
           })
         )
@@ -286,7 +286,7 @@ upgrade.post("/upgrade/checkout", async (c) => {
         tax_id_collection: { enabled: true },
         customer_update: { address: "auto", name: "auto" },
         subscription_data: {
-          metadata: { plan: "team", organization_id: orgId },
+          metadata: { plan: "team", team_id: orgId },
         },
       });
 
@@ -297,10 +297,10 @@ upgrade.post("/upgrade/checkout", async (c) => {
       if (!isCustomerDeletedError(error)) throw error;
 
       logger.info("Stripe org customer deleted, recreating", {
-        organization_id: orgId,
+        team_id: orgId,
       });
       const orgRow = await c.var.db
-        .selectFrom("organization")
+        .selectFrom("team")
         .select(["name", "billing_email"])
         .where("id", "=", orgId)
         .executeTakeFirstOrThrow();
@@ -308,14 +308,14 @@ upgrade.post("/upgrade/checkout", async (c) => {
       const newCustomer = await stripe.customers.create({
         name: orgRow.name,
         email: orgRow.billing_email || user.email,
-        metadata: { organization_id: orgId },
+        metadata: { team_id: orgId },
       });
       stripeCustomerId = newCustomer.id;
 
       await c.var.db
-        .updateTable("organization_subscription")
+        .updateTable("team_subscription")
         .set({ stripe_customer_id: stripeCustomerId! })
-        .where("organization_id", "=", orgId)
+        .where("team_id", "=", orgId)
         .execute();
 
       session = await createTeamCheckoutSession();
@@ -331,10 +331,10 @@ upgrade.post("/upgrade/checkout", async (c) => {
     c.var.tracker.capture("[User] Checkout Started", {
       plan: "team",
       price_lookup_key: body.priceLookupKey,
-      organization_id: orgId,
+      team_id: orgId,
     });
 
-    return c.json({ url: session.url, organizationId: orgId });
+    return c.json({ url: session.url, teamId: orgId });
   }
 
   // Pro plan: use personal subscription

@@ -51,7 +51,7 @@ threadUnread.post("/sync/thread-unread", async (c) => {
   const priorityIds = new Set<string>();
   for (const threadId of succeededThreadIds) {
     try {
-      const priorityId = await getPriorityForThread(c.var.db, threadId);
+      const priorityId = await getPriorityForThread(c.var.db, threadId, c.var.user.id);
       priorityIds.add(priorityId);
     } catch {
       // Thread may not exist; skip

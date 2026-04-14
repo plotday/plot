@@ -35,6 +35,14 @@ class SyncOrchestrator {
     pullFn: Actor.pull,
   );
 
+  /// Topic entity (read-only, no dependencies)
+  static final topic = SyncEntity(
+    debugName: 'topic',
+    dependsOn: [],
+    pushFn: () async => true, // Read-only, skip push
+    pullFn: Topic.pull,
+  );
+
   /// UserSettings entity (no dependencies, per-user settings)
   static final userSettings = SyncEntity(
     debugName: 'user_settings',
@@ -51,47 +59,23 @@ class SyncOrchestrator {
     pullFn: Priority.pull,
   );
 
-  /// PriorityUser entity (depends on priority and actor)
-  static final priorityUser = SyncEntity(
-    debugName: 'priority_user',
-    dependsOn: [priority, actor],
-    pushFn: PriorityUser.push,
-    pullFn: PriorityUser.pull,
-  );
-
-  /// PriorityMember entity (depends on priority, actor, and priority_user)
-  static final priorityMember = SyncEntity(
-    debugName: 'priority_member',
-    dependsOn: [priority, actor, priorityUser],
-    pushFn: PriorityMember.push,
-    pullFn: PriorityMember.pull,
-  );
-
-  /// PriorityActor entity (read-only, depends on priority and actor)
-  static final priorityActor = SyncEntity(
-    debugName: 'priority_actor',
-    dependsOn: [priority, actor],
-    pushFn: () async => true, // Read-only, skip push
-    pullFn: PriorityActor.pull,
-  );
-
-  /// PriorityTwist entity (depends on priority)
-  static final priorityTwist = SyncEntity(
-    debugName: 'priority_twist',
+  /// TwistInstance entity (depends on priority)
+  static final twistInstance = SyncEntity(
+    debugName: 'twist_instance',
     dependsOn: [priority],
-    pushFn: PriorityTwist.push,
+    pushFn: TwistInstance.push,
     pullFn: () async {
-      await PriorityTwist.pullInitial();
-      await PriorityTwist.pullUpdates();
+      await TwistInstance.pullInitial();
+      await TwistInstance.pullUpdates();
     },
   );
 
-  /// Source channel entity (depends on priority_twist)
-  static final sourceChannel = SyncEntity(
-    debugName: 'source_channel',
-    dependsOn: [priorityTwist],
+  /// Source channel entity (depends on twist_instance)
+  static final channel = SyncEntity(
+    debugName: 'channel',
+    dependsOn: [twistInstance],
     pushFn: () async => false, // Read-only from API
-    pullFn: SourceChannel.pull,
+    pullFn: Channel.pull,
   );
 
   /// Thread entity (depends on priority and actor)
@@ -128,13 +112,11 @@ class SyncOrchestrator {
   /// All syncable entities in dependency order (for iteration)
   static final allEntities = [
     actor,
+    topic,
     userSettings,
     priority,
-    priorityUser,
-    priorityMember,
-    priorityActor,
-    priorityTwist,
-    sourceChannel,
+    twistInstance,
+    channel,
     thread,
     session,
     note,
@@ -161,12 +143,12 @@ class SyncOrchestrator {
     },
   );
 
-  /// PriorityTwist for critical initial sync — initial only, no updates.
-  static final _priorityTwistCritical = SyncEntity(
-    debugName: 'priority_twist_critical',
+  /// TwistInstance for critical initial sync — initial only, no updates.
+  static final _twistInstanceCritical = SyncEntity(
+    debugName: 'twist_instance_critical',
     dependsOn: [priority],
     pushFn: () async => true,
-    pullFn: PriorityTwist.pullInitial,
+    pullFn: TwistInstance.pullInitial,
   );
 
   /// Entities needed for the critical initial sync (minimum to render UI).
@@ -174,9 +156,8 @@ class SyncOrchestrator {
     actor,
     userSettings,
     priority,
-    priorityUser,
     _threadCritical,
-    _priorityTwistCritical,
+    _twistInstanceCritical,
   ];
 
   // ============================================================================
@@ -191,13 +172,11 @@ class SyncOrchestrator {
   static SyncEntity? getEntityByTableName(String table) {
     return switch (table) {
       'user_actor' || 'actor' => actor,
+      'user_topic' || 'topic' => topic,
       'user_settings' => userSettings,
       'user_priority' || 'priority' => priority,
-      'priority_user' => priorityUser,
-      'priority_member' => priorityMember,
-      'user_priority_actor' => priorityActor,
-      'user_twist' || 'priority_twist' => priorityTwist,
-      'user_source_channel' || 'source_channel' => sourceChannel,
+      'user_twist' || 'twist_instance' => twistInstance,
+      'user_channel' || 'channel' => channel,
       'user_thread' || 'user_link' || 'user_schedule' || 'user_thread_tags' ||
       'thread' || 'thread_read' || 'schedule' =>
         thread,
@@ -282,15 +261,13 @@ class SyncOrchestrator {
 
     // Pull non-critical entities in parallel where possible
     await Future.wait([
-      pull(priorityActor),
       pull(session),
-      pull(priorityMember),
-      pull(sourceChannel),
+      pull(channel),
       pull(note),
     ], eagerError: false);
 
-    // Complete priorityTwist updates (initial was done in critical)
-    await pull(priorityTwist);
+    // Complete twistInstance updates (initial was done in critical)
+    await pull(twistInstance);
 
     // Push phase - all entities
     final pushLevels = _computePushLevels();

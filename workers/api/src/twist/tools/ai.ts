@@ -86,11 +86,11 @@ export class AI extends Tool implements IAI {
 
   constructor({
     env,
-    priorityTwistId,
+    twistInstanceId,
     providerConfig,
   }: {
     env: Bindings;
-    priorityTwistId: string;
+    twistInstanceId: string;
     providerConfig?: AiProviderConfig;
   }) {
     super();
@@ -145,7 +145,7 @@ export class AI extends Tool implements IAI {
     this.workersAI = env.AI;
 
     // Initialize usage tracking
-    this.usage = Usage.Get(env, priorityTwistId);
+    this.usage = Usage.Get(env, twistInstanceId);
   }
 
   available(): AICapabilities {

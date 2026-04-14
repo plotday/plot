@@ -80,7 +80,6 @@ class PriorityWidget extends StatelessWidget {
           : null,
       trailingBuilder: (isHovered, hasFocus) {
         final hovered = isHovered || hasFocus;
-        final canShare = !(priority.root && priority.personal);
         final showDragHandle =
             !hasPhysicalKeyboard() && reorderableIndex != null;
 
@@ -97,15 +96,6 @@ class PriorityWidget extends StatelessWidget {
                     ),
                     Button.icon(ShowPriorityCommands(priority)),
                   ],
-                  // Persistent sharing/privacy icon (rightmost)
-                  if (canShare)
-                    Button.icon(
-                      ManagePrioritySharing(priority),
-                      color: hovered
-                          ? buildContext.theme.plotColors.muted
-                          : buildContext.theme.plotColors.veryMuted,
-                      hoverColor: buildContext.theme.colors.foreground,
-                    ),
                 ],
               ),
             ),
@@ -115,7 +105,7 @@ class PriorityWidget extends StatelessWidget {
                 child: Container(
                   color: const Color(0x00000000),
                   padding: EdgeInsets.only(
-                    left: canShare ? 0 : 8,
+                    left: 8,
                     right: leadingH,
                     top: 8,
                     bottom: 8,

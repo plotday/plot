@@ -139,7 +139,7 @@ class RootProviderState extends State<RootProvider> {
             case UserReady _:
               try {
                 await prioritiesBloc.start();
-                await PriorityTwist.start();
+                await TwistInstance.start();
                 await nowBloc.start();
                 _setupNowBlocListener(themeBloc);
                 unawaited(NotificationService.instance.start(userId: state.user.id, userName: state.user.name));
@@ -206,7 +206,7 @@ class RootProviderState extends State<RootProvider> {
               _reAuthSubscription = null;
               prioritiesBloc.stop();
               nowBloc.stop();
-              PriorityTwist.stopGlobalWatch();
+              TwistInstance.stopGlobalWatch();
               Actor.clearCache();
               // Set theme to Catalyst when signed out
               themeBloc.setPriorityColor(ThemeColor(0));

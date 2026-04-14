@@ -4,13 +4,13 @@ import type { Priority } from "@plotday/twister/plot";
  * SimpleTwist - Basic twist with just lifecycle methods
  */
 export class SimpleTwist {
-  private priorityTwistId: string;
+  private twistInstanceId: string;
   private toolShed: any;
   private activateCalled = false;
   private deactivateCalled = false;
 
-  constructor(priorityTwistId: string, toolShed: any) {
-    this.priorityTwistId = priorityTwistId;
+  constructor(twistInstanceId: string, toolShed: any) {
+    this.twistInstanceId = twistInstanceId;
     this.toolShed = toolShed;
   }
 
@@ -46,12 +46,12 @@ export class SimpleTwist {
  * ToolUsingTwist - Twist that uses Plot, Store, and Callbacks tools
  */
 export class ToolUsingTwist {
-  private priorityTwistId: string;
+  private twistInstanceId: string;
   private toolShed: any;
   private tools: any = null;
 
-  constructor(priorityTwistId: string, toolShed: any) {
-    this.priorityTwistId = priorityTwistId;
+  constructor(twistInstanceId: string, toolShed: any) {
+    this.twistInstanceId = twistInstanceId;
     this.toolShed = toolShed;
   }
 
@@ -89,7 +89,7 @@ export class ToolUsingTwist {
  * MockBuiltInTool - Simulates a built-in tool for testing
  */
 class _MockBuiltInTool {
-  constructor(_priorityTwistId: string, _options: any) {
+  constructor(_twistInstanceId: string, _options: any) {
     // Built-in tools have empty constructors
   }
 }
@@ -98,7 +98,7 @@ class _MockBuiltInTool {
  * MockRegularTool - Simulates a regular tool that requests other tools
  */
 export class MockRegularTool {
-  private priorityTwistId: string;
+  private twistInstanceId: string;
   private options: any;
   private toolShed: any;
   private tools: any = null;
@@ -107,8 +107,8 @@ export class MockRegularTool {
   public preDeactivateCalled = false;
   public postDeactivateCalled = false;
 
-  constructor(priorityTwistId: string, options: any, toolShed: any) {
-    this.priorityTwistId = priorityTwistId;
+  constructor(twistInstanceId: string, options: any, toolShed: any) {
+    this.twistInstanceId = twistInstanceId;
     this.options = options;
     this.toolShed = toolShed;
   }
@@ -151,12 +151,12 @@ export class MockRegularTool {
  * NestedToolTwist - Twist that builds a nested tool tree
  */
 export class NestedToolTwist {
-  private priorityTwistId: string;
+  private twistInstanceId: string;
   private toolShed: any;
   private tools: any = null;
 
-  constructor(priorityTwistId: string, toolShed: any) {
-    this.priorityTwistId = priorityTwistId;
+  constructor(twistInstanceId: string, toolShed: any) {
+    this.twistInstanceId = twistInstanceId;
     this.toolShed = toolShed;
   }
 
@@ -189,8 +189,8 @@ export class NestedToolTwist {
 export function generateTestTwistModule(twistClass: string): string {
   return `
     class ${twistClass} {
-      constructor(priorityTwistId, toolShed) {
-        this.priorityTwistId = priorityTwistId;
+      constructor(twistInstanceId, toolShed) {
+        this.twistInstanceId = twistInstanceId;
         this.toolShed = toolShed;
       }
 

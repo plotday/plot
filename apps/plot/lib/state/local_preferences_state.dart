@@ -8,7 +8,7 @@ class LocalPreferencesState extends Equatable {
     this.lastNewThreadType,
   });
 
-  /// Most-recently-used mention IDs (PriorityTwist IDs), ordered with most recent first
+  /// Most-recently-used mention IDs (TwistInstance IDs), ordered with most recent first
   final List<String> mentionMruIds;
 
   /// Whether to show all priorities (active + archived) or active only

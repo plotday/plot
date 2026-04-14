@@ -7,7 +7,6 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   TextColumn get name => text().nullable()();
   TextColumn get email => text().nullable()();
   TextColumn get avatarUrl => text().nullable()();
-  IntColumn get minDepth => integer().nullable()();
   BoolColumn get self => boolean()();
 
   @override
@@ -60,7 +59,7 @@ class Actor extends ActorRow {
 
         // Query 2: Fetch only priority twist actors
         // Typically < 50 actors (one per active twist)
-        await get(types: [ActorType.priorityTwist], archived: null);
+        await get(types: [ActorType.twistInstance], archived: null);
 
         // Both queries automatically populate the cache via get() (lines 84-87)
       }).timeout(const Duration(seconds: 10));
@@ -77,8 +76,6 @@ class Actor extends ActorRow {
 
   static Future<List<Actor>> get({
     ActorId? id,
-    Uuid? priorityId,
-    String? priorityPath,
     List<ActorType>? types,
     String? search,
     int? limit,
@@ -93,16 +90,8 @@ class Actor extends ActorRow {
       await Store.get.pullArchived(table, ActorsBase());
     }
 
-    // Convert priorityId to priorityPath for backward compatibility
-    String? effectivePriorityPath = priorityPath;
-    if (priorityId != null && priorityPath == null) {
-      final priority = await Priority.getOne(priorityId);
-      effectivePriorityPath = priority.path.value;
-    }
-
     final actors = await _get(
       id: id,
-      priorityPath: effectivePriorityPath,
       types: types,
       search: search,
       limit: limit,
@@ -120,8 +109,6 @@ class Actor extends ActorRow {
 
   static Stream<List<Actor>> watch({
     ActorId? id,
-    Uuid? priorityId,
-    String? priorityPath,
     List<ActorType>? types,
     String? search,
     int? limit,
@@ -136,25 +123,8 @@ class Actor extends ActorRow {
       Store.get.pullArchived(table, ActorsBase());
     }
 
-    // Convert priorityId to priorityPath for backward compatibility
-    // This needs to be done asynchronously, so we use a stream transformation
-    if (priorityId != null && priorityPath == null) {
-      return Stream.fromFuture(Priority.getOne(priorityId)).asyncExpand(
-        (priority) => _get(
-          id: id,
-          priorityPath: priority.path.value,
-          types: types,
-          search: search,
-          limit: limit,
-          archived: archived,
-          self: self,
-        ).watch(),
-      );
-    }
-
     return _get(
       id: id,
-      priorityPath: priorityPath,
       types: types,
       search: search,
       limit: limit,
@@ -162,6 +132,10 @@ class Actor extends ActorRow {
       self: self,
     ).watch();
   }
+
+  /// Synchronous cache lookup. Returns null if the actor has not yet
+  /// been fetched into the in-memory cache.
+  static Actor? fromCache(ActorId id) => _cache[id];
 
   static Future<Actor> getOne(ActorId id) async {
     // Check cache first
@@ -231,7 +205,6 @@ class Actor extends ActorRow {
 
   static MultiSelectable<Actor> _get({
     ActorId? id,
-    String? priorityPath,
     List<ActorType>? types,
     String? search,
     int? limit,
@@ -239,32 +212,7 @@ class Actor extends ActorRow {
     bool? self,
   }) {
     final a = Store.get.actors;
-    final pa = Store.get.priorityActors;
-
-    // Build query with optional JOIN for priority filtering
-    final query = priorityPath != null
-        ? Store.get.select(a).join([
-            innerJoin(
-              pa,
-              pa.actorId.equalsExp(a.id) &
-                  pa.archivedAt.isNull() &
-                  (pa.priorityPath.equalsValue(
-                        Path(priorityPath),
-                      ) | // Exact match
-                      pa.priorityPath.likeExp(
-                        Constant('$priorityPath.%'),
-                      ) | // Children of requested path
-                      Constant(priorityPath).likeExp(
-                        pa.priorityPath.dartCast<String>() + Constant('.%'),
-                      )), // Ancestors (requested path is child of pa.priorityPath)
-            ),
-          ])
-        : Store.get.select(a).join([]);
-
-    // Deduplicate actors that match multiple priority paths
-    if (priorityPath != null) {
-      query.groupBy([a.id]);
-    }
+    final query = Store.get.select(a).join([]);
 
     // Apply archived filter
     if (archived == true) {
@@ -306,14 +254,6 @@ class Actor extends ActorRow {
       query.where(a.name.like(searchPattern) | a.email.like(searchPattern));
     }
 
-    // Order by proximity when filtering by priority path
-    if (priorityPath != null) {
-      query.orderBy([
-        OrderingTerm.asc(pa.depth.min()),
-        OrderingTerm.asc(a.name),
-      ]);
-    }
-
     // Apply limit
     if (limit != null) {
       query.limit(limit);
@@ -333,7 +273,6 @@ class Actor extends ActorRow {
         name: row.name,
         email: row.email,
         avatarUrl: row.avatarUrl,
-        minDepth: row.minDepth,
         self: row.self,
       );
 
@@ -347,7 +286,6 @@ class Actor extends ActorRow {
     Value<String?> name = const Value.absent(),
     Value<String?> email = const Value.absent(),
     Value<String?> avatarUrl = const Value.absent(),
-    Value<int?> minDepth = const Value.absent(),
     bool? self,
     Value<int?> pending = const Value.absent(),
   }) => Actor.fromStore(
@@ -360,7 +298,6 @@ class Actor extends ActorRow {
       name: name,
       email: email,
       avatarUrl: avatarUrl,
-      minDepth: minDepth,
       self: self,
       pending: pending,
     ),
@@ -445,12 +382,12 @@ extension ActorIdHelpers on ActorId {
     return actor.self;
   }
 
-  /// Check if this actor is a twist (priorityTwist type).
-  /// Uses PriorityTwist cache for synchronous lookup - returns false if not cached.
-  /// Note: PriorityTwist.id IS the ActorId for twists.
+  /// Check if this actor is a twist (twistInstance type).
+  /// Uses TwistInstance cache for synchronous lookup - returns false if not cached.
+  /// Note: TwistInstance.id IS the ActorId for twists.
   bool get isTwist {
-    // Convert ActorId to Uuid since PriorityTwist._cache uses PriorityTwistId (Uuid)
+    // Convert ActorId to Uuid since TwistInstance._cache uses TwistInstanceId (Uuid)
     final twistId = toUuid();
-    return PriorityTwist._cache.containsKey(twistId);
+    return TwistInstance._cache.containsKey(twistId);
   }
 }

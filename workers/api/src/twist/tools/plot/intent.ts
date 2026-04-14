@@ -86,7 +86,7 @@ Respond only with the intent number (e.g., "1", "2", etc.) or "none".`,
       intentNumber < 1 ||
       intentNumber > allIntents.length
     ) {
-      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
       logger.warn("Invalid intent number", { response_text: responseText });
       return null;
     }
@@ -94,7 +94,7 @@ Respond only with the intent number (e.g., "1", "2", etc.) or "none".`,
     const matchedIntent = allIntents[intentNumber - 1];
     return matchedIntent.description;
   } catch (error) {
-    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
     logger.error("Intent matching error", error as Error);
     return null;
   }
@@ -111,7 +111,7 @@ export async function handleIntent(
 ): Promise<{ optionPath: string[]; args: any[] } | null> {
   const matchedIntent = await matchIntent(plot, note);
 
-  const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+  const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
   logger.info("Intent matching for note", {
     note_id: note.id,
     matched: matchedIntent ?? "none",
@@ -193,7 +193,7 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this twist can
 
       description = response.text.trim();
     } catch (error) {
-      const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+      const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
       logger.error("Error generating capability description", error as Error);
       description = `I can help with: ${customIntents
         .map((i) => i.description)
@@ -210,15 +210,15 @@ Write a brief, friendly paragraph (2-3 sentences) describing what this twist can
 
 /**
  * Handles the "Remove yourself" built-in intent.
- * Soft-deletes the priority_twist by setting archived_at.
+ * Soft-deletes the twist_instance by setting archived_at.
  */
 async function handleRemoveTwist(plot: Plot, note: Note): Promise<void> {
   try {
-    // Set archived_at on the priority_twist record
+    // Set archived_at on the twist_instance record
     await plot.db
-      .updateTable("priority_twist")
+      .updateTable("twist_instance")
       .set({ archived_at: new Date().toISOString() })
-      .where("id", "=", plot.priorityTwistId)
+      .where("id", "=", plot.twistInstanceId)
       .execute();
 
     // Create farewell note
@@ -228,7 +228,7 @@ async function handleRemoveTwist(plot: Plot, note: Note): Promise<void> {
         "I've been removed from this priority. You can add me back anytime if you need me!",
     });
   } catch (error) {
-    const logger = createLogger({ priority_twist_id: plot.priorityTwistId });
+    const logger = createLogger({ twist_instance_id: plot.twistInstanceId });
     logger.error("Error removing twist", error as Error);
 
     // Create error note

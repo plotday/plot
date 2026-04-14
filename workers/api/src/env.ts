@@ -70,7 +70,7 @@ export type ActivityTagChange = ThreadTagChange;
  */
 export type TwistBatchMessage = {
   type: "twist_batch";
-  priorityTwistId: string;
+  twistInstanceId: string;
   twistId: number;
   environment: TwistEnvironment;
   version: string;
@@ -95,7 +95,7 @@ export type TwistBatchMessage = {
   // Schedule contact changes for link schedules created by this twist (for onScheduleContactUpdated callback)
   scheduleContacts: ScheduleContactChange[];
   // Priority twist config changes
-  priorityTwist: any | null;
+  twistInstance: any | null;
 };
 
 /**

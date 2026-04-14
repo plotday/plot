@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW "public"."actor" -- Aggregates contacts and priority_twists into a unified actor view
+CREATE OR REPLACE VIEW "public"."actor" -- Aggregates contacts and twist_instances into a unified actor view
 -- Users are now represented through the contacts table via user_id
 AS
 -- Contacts from public.contact (includes both regular contacts and user-linked contacts)
@@ -18,15 +18,15 @@ SELECT
 FROM
     "public"."contact" c
 UNION ALL
--- Twists from public.priority_twist
+-- Twists from public.twist_instance
 SELECT
     pt.id AS id,
     pt.created_at,
     pt.updated_at,
-    'priority_twist'::text AS type,
+    'twist_instance'::text AS type,
     pt.name,
     NULL::text AS email,
     NULL::text AS avatar_url,
     pt.archived_at
 FROM
-    "public"."priority_twist" pt;
+    "public"."twist_instance" pt;

@@ -225,8 +225,8 @@ class MentionItem {
     this.isContact = false,
   });
 
-  /// Create from a PriorityTwist
-  factory MentionItem.fromTwist(PriorityTwist twist) =>
+  /// Create from a TwistInstance
+  factory MentionItem.fromTwist(TwistInstance twist) =>
       MentionItem(id: twist.id.toString(), name: twist.name, isTwist: true);
 
   /// Create from an Actor
@@ -268,7 +268,7 @@ class Editor extends StatefulWidget {
   /// The callback receives the raw image bytes (PNG format).
   final void Function(Uint8List imageBytes)? onImagePasted;
   final FocusNode? focusNode;
-  final List<PriorityTwist> twists;
+  final List<TwistInstance> twists;
   final List<Actor> actors;
   final bool shrinkWrap;
   final String? initialContent;

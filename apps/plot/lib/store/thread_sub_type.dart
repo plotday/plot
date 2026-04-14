@@ -16,20 +16,8 @@ enum ThreadSubType {
 
   const ThreadSubType(this.value, this.icon, this.label);
 
-  /// Whether this sub-type is only available in shared priorities
-  bool get sharedOnly =>
-      this == discussion || this == announcement || this == ask;
-
   static ThreadSubType? fromIcon(String? icon) =>
       ThreadSubType.values.firstWhereOrNull((t) => t.value == icon);
 
-  static List<ThreadSubType> forPriority({required bool sharing}) => sharing
-      ? [
-          ...ThreadSubType.values.where((t) => t.sharedOnly),
-          ...ThreadSubType.values.where((t) => !t.sharedOnly),
-        ]
-      : ThreadSubType.values.where((t) => !t.sharedOnly).toList();
-
-  static ThreadSubType defaultFor({required bool sharing}) =>
-      sharing ? ThreadSubType.discussion : ThreadSubType.notes;
+  static ThreadSubType defaultFor() => ThreadSubType.notes;
 }

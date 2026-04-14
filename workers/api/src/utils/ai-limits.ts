@@ -31,11 +31,11 @@ export async function checkAiLimit(
 
 /**
  * Priority-aware AI limit check. Checks in order:
- * 1. Org priorities → always allowed (covered by team plan)
+ * 1. Team priorities → always allowed (covered by team plan)
  * 2. Syncing user → if paid or within free limits, use their quota
  * 3. Other priority members → if any has capacity, use their quota
  *
- * Returns the userId to charge usage against (null for org priorities).
+ * Returns the userId to charge usage against (null for team priorities).
  */
 export async function checkAiLimitForPriority(
   env: Bindings,
@@ -44,14 +44,14 @@ export async function checkAiLimitForPriority(
   syncingUserId: string,
   operation: AiOperation
 ): Promise<{ allowed: boolean; chargeUserId: string | null }> {
-  // 1. Org priorities are covered by the team plan
+  // 1. Team priorities are covered by the team plan
   const priority = await db
     .selectFrom("priority")
-    .select("organization_id")
+    .select("team_id")
     .where("id", "=", priorityId)
     .executeTakeFirst();
 
-  if (priority?.organization_id) {
+  if (priority?.team_id) {
     return { allowed: true, chargeUserId: null };
   }
 
@@ -81,7 +81,7 @@ export async function checkAiLimitForPriority(
 
 /**
  * Record AI usage for a user (fire-and-forget, don't block the response).
- * Pass null to skip recording (e.g. for org-covered priorities).
+ * Pass null to skip recording (e.g. for team-covered priorities).
  */
 export function recordAiUsage(
   env: Bindings,
