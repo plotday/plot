@@ -131,6 +131,20 @@ export class CallbacksState extends DurableObject<Bindings> {
           expires INTEGER
         )
       `);
+    // Migrate pre-rename storage: priority_twist_id → twist_instance_id.
+    // DO SQLite state persists locally; older installs still have the old column.
+    try {
+      this.sql.exec(
+        "ALTER TABLE callbacks RENAME COLUMN priority_twist_id TO twist_instance_id",
+      );
+    } catch (e) {
+      // Already renamed (or table freshly created with new name).
+    }
+    try {
+      this.sql.exec("DROP INDEX IF EXISTS idx_callbacks_priority_twist");
+    } catch (e) {
+      // Old index didn't exist.
+    }
     this.sql.exec(`
         CREATE INDEX IF NOT EXISTS idx_callbacks_twist_instance
         ON callbacks(twist_instance_id)
