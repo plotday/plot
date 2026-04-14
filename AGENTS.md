@@ -202,6 +202,7 @@ Do not duplicate that content back into this file — the submodule is kept in s
 
    - This uses Atlas to compare schema files with existing migrations and generates a new timestamped migration file
    - The migration will be created in `libs/db/migrations/`
+   - **IMPORTANT**: If you manually create or edit a migration file in `libs/db/migrations/`, you MUST run `atlas migrate hash --dir file://libs/db/migrations` to update the `atlas.sum` checksum file. Failing to do this will cause CI/CD failures.
 
 3. **Add data migrations if needed (optional)**
 
