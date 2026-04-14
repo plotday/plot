@@ -37,6 +37,12 @@ All types in `twister/src/` with full JSDoc:
 - **Sync Strategies**: `twister/docs/SYNC_STRATEGIES.md`
 - **Working Connector Examples**: `connectors/linear/`, `connectors/google-calendar/`, `connectors/slack/`, `connectors/jira/`
 
+## Changesets: Only for `twister/`
+
+Only changes under `twister/` require a changeset. `@plotday/twister` is the only package published to npm from this repo. Connectors (`@plotday/connector-*`) and twists (`@plotday/twist-*`) are listed under `ignore` in `.changeset/config.json` — they deploy via `plot deploy`, not npm.
+
+**Never add a changeset that targets only a connector or twist package.** Such a changeset never resolves: `changeset version` leaves the file in place on every run, so the release workflow perpetually tries to open an empty release PR and fails. `pnpm validate-changesets` (run in CI on every PR) will reject these. See `RELEASING.md` for the full release flow.
+
 ## Common Pitfalls
 
 1. **❌ Using instance variables for state** — Use `this.set()`/`this.get()` (state doesn't persist between executions)

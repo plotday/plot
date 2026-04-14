@@ -19,12 +19,56 @@ const CATEGORIES = [
 
 const CATEGORY_PATTERN = new RegExp(`^(${CATEGORIES.join("|")}):\\s+`, "i");
 
+// Load the changeset config to check the ignore list. A changeset that
+// targets only ignored packages never triggers a version bump, so it stays
+// pending forever and breaks the release workflow (the changesets action
+// detects it, runs `changeset version` with no diff, then tries to open an
+// empty release PR). Reject these at validation time.
+const configPath = path.join(__dirname, "config.json");
+const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+const IGNORE_PATTERNS = (config.ignore || []).map(glob => {
+  // Convert simple glob ("@plotday/connector-*") to a RegExp.
+  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
+});
+
+function isIgnored(packageName) {
+  return IGNORE_PATTERNS.some(re => re.test(packageName));
+}
+
+function parsePackages(lines) {
+  const packages = [];
+  let inFrontmatter = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "---") {
+      if (!inFrontmatter) {
+        inFrontmatter = true;
+        continue;
+      }
+      break;
+    }
+    if (!inFrontmatter) continue;
+    const match = trimmed.match(/^"?([^"]+)"?\s*:\s*(major|minor|patch)\s*$/);
+    if (match) packages.push(match[1]);
+  }
+  return packages;
+}
+
 /**
  * Validate a single changeset file
  */
 function validateChangeset(filePath) {
   const content = fs.readFileSync(filePath, "utf-8");
   const lines = content.split("\n");
+
+  const packages = parsePackages(lines);
+  if (packages.length > 0 && packages.every(isIgnored)) {
+    return {
+      valid: false,
+      error: `All target packages are in the .changeset/config.json ignore list (${packages.join(", ")}). Only @plotday/twister is published via changesets; connectors and twists are deployed separately and do not take changesets.`
+    };
+  }
 
   // Find the summary line (first non-empty line after the frontmatter)
   let inFrontmatter = false;

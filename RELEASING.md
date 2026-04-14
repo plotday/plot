@@ -1,18 +1,22 @@
 # Releasing Packages
 
-This repository uses [Changesets](https://github.com/changesets/changesets) to manage versioning and publishing of packages. This guide explains how to create releases for builder and tools packages.
+This repository uses [Changesets](https://github.com/changesets/changesets) to manage versioning and publishing of the Twist Creator SDK (`@plotday/twister`) to npm.
 
 ## Package Versioning Strategy
 
-- **Twist Creator** (`@plotday/twister`): Independent versioning
-- **Tools** (`@plotday/tool-*`): Independent versioning
-- **Twists** (`@plotday/twist-*`): Not published, excluded from releases
+Only `@plotday/twister` is published to npm via changesets. Everything else (`@plotday/connector-*`, `@plotday/twist-*`) is listed under `ignore` in `.changeset/config.json`:
 
-Each package maintains its own version and can be released independently.
+- **Twist Creator** (`@plotday/twister`): Published to npm; versioned via changesets
+- **Connectors** (`@plotday/connector-*`): Ignored by changesets — deployed via `plot deploy`, not npm
+- **Twists** (`@plotday/twist-*`): Ignored by changesets — deployed via `plot deploy`, not npm
+
+**Only create changesets for changes to `twister/`.** A changeset that targets only ignored packages will never resolve: `changeset version` leaves the file in place, so every subsequent run of the release workflow treats it as a pending release, produces an empty diff, and fails to open a release PR (`No commits between main and changeset-release/main`). The `pnpm validate-changesets` CI check rejects these up front.
+
+Changes to connectors or twists do **not** need a changeset — the PR-level changeset check (`changeset-check.yml`) only requires one when files under `twister/` are modified.
 
 ## How to Add a Changeset
 
-When you make changes to the builder or any tools package, you need to add a changeset before merging your PR.
+When you make changes under `twister/`, you need to add a changeset before merging your PR.
 
 ### 1. Create a Changeset
 
@@ -24,8 +28,8 @@ This will prompt you with:
 
 1. **Which packages would you like to include?**
 
-   - Select the packages you've modified (use space to select, enter to confirm)
-   - Only builder and tools packages can be selected (twists are excluded)
+   - Select `@plotday/twister` (use space to select, enter to confirm)
+   - Do **not** select any `@plotday/connector-*` or `@plotday/twist-*` package — they are ignored and will block the release workflow
 
 2. **What kind of change is this?**
 
@@ -87,16 +91,12 @@ When packages are published, GitHub releases are automatically created with the 
 
 ### Release Tags
 
-Each package gets its own tag based on its directory structure:
-
-- **Twist Creator**: `twister@0.9.1`
-- **Tools**: `tool-google-calendar@0.1.0`, `tool-outlook-calendar@0.1.0`, etc.
+The Twist Creator release gets a tag of the form `twister@<version>` (e.g. `twister@0.45.0`).
 
 This tagging convention allows you to:
 
-- Track releases for each package independently
-- Easily identify which package a release belongs to
-- Clone or checkout specific package versions
+- Track releases independently from submodule commits
+- Clone or checkout a specific published version
 
 ### Release Notes
 
@@ -110,21 +110,12 @@ Each GitHub release includes:
 
 View all releases at: `https://github.com/plotday/plot/releases`
 
-Or filter by package:
-
-- Builder releases: Search for tags starting with `twister@`
-- Tool releases: Search for tags starting with `tool-`
-
 ### Manual GitHub Release
 
 If you need to create a GitHub release manually after publishing:
 
 ```bash
-# For Twist Creator
-gh release create twister@0.9.1 --title "@plotday/twister@0.9.1" --notes "Release notes here"
-
-# For a tool
-gh release create tool-google-calendar@0.1.0 --title "@plotday/tool-google-calendar@0.1.0" --notes "Release notes here"
+gh release create twister@0.45.0 --title "@plotday/twister@0.45.0" --notes "Release notes here"
 ```
 
 ## Changeset Best Practices
@@ -211,8 +202,13 @@ gh release create twister@0.9.1 --title "@plotday/twister@0.9.1" --notes "Releas
 
 ### Changeset not detecting my package
 
-**Problem:** You modified a twist package.
-**Solution:** Twists are excluded from releases. No changeset needed for twist-only changes.
+**Problem:** You modified a connector or twist package.
+**Solution:** Connectors (`@plotday/connector-*`) and twists (`@plotday/twist-*`) are ignored by changesets — only `@plotday/twister` is published to npm. No changeset is needed for connector/twist-only changes.
+
+### Release workflow fails with "No commits between main and changeset-release/main"
+
+**Cause:** One or more pending changesets target only packages in the `.changeset/config.json` ignore list. `changeset version` consumes them without producing any file changes, so the release PR has an empty diff.
+**Solution:** Delete the offending changesets from `.changeset/` on `main`. The `validate-changesets` CI check should catch these at PR time — if one slipped through, it was likely added before that check existed.
 
 ### Version Packages PR has conflicts
 
