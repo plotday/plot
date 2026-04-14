@@ -10,6 +10,7 @@ docker "postgres" "dev" {
     CREATE SCHEMA IF NOT EXISTS "user";
     CREATE ROLE "api" WITH LOGIN;
     CREATE ROLE "readonly" WITH LOGIN;
+    CREATE ROLE "migrator" WITH LOGIN;
   SQL
 }
 

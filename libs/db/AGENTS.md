@@ -73,6 +73,33 @@
   - User schema views/functions live in `90-user-schema/` (after public views)
   - If you get "relation does not exist" errors during migration generation, move the function to a later directory
 
+## Database Roles and Permissions
+
+The database uses several roles with different privilege levels:
+- **`postgres`**: The owner role used for local development and schema creation.
+- **`migrator`**: The role used by CI/CD (GitHub Actions) to apply migrations to production.
+- **`api`**: The application role used by workers to read and write data.
+- **`readonly`**: A restricted role for internal tools and debugging with SELECT-only access.
+
+### Granting Access to New Tables
+
+To ensure all new tables are accessible to the `api` and `readonly` roles, **`ALTER DEFAULT PRIVILEGES` must be configured for both the `postgres` and `migrator` roles.**
+
+If you add a new schema or a new role that creates objects, you MUST update `libs/db/schema/10-settings/80-grants.sql` and include a migration that applies these grants:
+
+```sql
+-- For existing tables
+GRANT SELECT ON ALL TABLES IN SCHEMA your_new_schema TO readonly;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA your_new_schema TO api;
+
+-- For future tables
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres GRANT SELECT ON TABLES TO readonly;
+ALTER DEFAULT PRIVILEGES FOR ROLE migrator GRANT SELECT ON TABLES TO readonly;
+-- ... and similar for the api role
+```
+
+The `80-grants.sql` file uses global `ALTER DEFAULT PRIVILEGES` (omitting `IN SCHEMA`) to ensure these rules apply across all current and future schemas.
+
 ## Timestamp Precision Boundary (JavaScript ↔ PostgreSQL)
 
 JavaScript `Date` has only **millisecond** precision, but PostgreSQL `timestamptz` has **microsecond** precision. When a client-provided timestamp (which passed through JS Date) is compared against a database-stored timestamp using `>=`, `<=`, or `=`, the sub-millisecond digits cause silent mismatches.
