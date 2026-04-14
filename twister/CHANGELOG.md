@@ -1,5 +1,24 @@
 # @plotday/twister
 
+## 0.45.0
+
+### Added
+
+- `todo` boolean on `LinkTypeConfig.statuses[]` so connectors can indicate which status represents the active/to-do state (e.g. Gmail's "starred", Linear's "To Do"). When a user adds a thread to Plot's agenda, done-status links flip to this status so the link widget and thread tags reflect the active state. ([`fe72bb9`](https://github.com/plotday/plot/commit/fe72bb96e60b3fb9eb8d4ace5afbce32a34a1477))
+- SyncContext parameter to onChannelEnabled with syncHistoryMin hint for plan-based sync limits
+
+### Changed
+
+- `accessContacts` accepts `NewContact[]` (email-based contacts) on write types, returns `Contact[]` on read types. Added `Contact` type for resolved contact identity. ([`e7a57ac`](https://github.com/plotday/plot/commit/e7a57ac589647c19b7f1f513f9eb11acb807d204))
+- `network.createWebhook()` now runs callbacks asynchronously by
+- NewNote.accessContacts now accepts NewContact objects (email-based) in addition to ActorId UUIDs, resolved server-side. Mentions on notes are for twist/connector dispatch routing only — removed person contacts from mentions in Gmail and Slack connectors. ([#115](https://github.com/plotday/plot/pull/115) [`eee1d19`](https://github.com/plotday/plot/commit/eee1d19ee28fdf71687e18dafd1429b2641fb6b4))
+- Twists are now workspace-level (installed by a user, not by a priority). `Twist.activate()` no longer receives a `priority` argument, `Tool.preActivate`/`postActivate` drop their `priority` argument, and `Channel.priorityId` is gone — priority routing happens automatically server-side via `match_priority_for_user` when a twist creates threads or links without an explicit target. Added: `this.userId` on `Twist` (the installing user's ID) and new `Plot.getUserId()` / `Plot.getDefaultPriorityId()` helpers for twists that need to resolve the owner or their root priority explicitly. ([#115](https://github.com/plotday/plot/pull/115) [`25bc1b1`](https://github.com/plotday/plot/commit/25bc1b10520daa82485efaaeb0916f17adc0cd13))
+- Thread and Note visibility model — replaced `private` boolean with `access` enum ('public'|'members'|'private') and `accessContacts` array on Thread, and replaced `private` boolean with `accessContacts` array on Note. Removed `mentions` from Thread type. Note `mentions` now contains only twist/connector IDs for dispatch routing. ([#112](https://github.com/plotday/plot/pull/112) [`31d1c05`](https://github.com/plotday/plot/commit/31d1c058efb3f1ec3df777efa21f17be16db6b56))
+
+### Removed
+
+- `PickPriorityConfig` type and `pickPriority` field from `NewThread` and `NewLink`. Priority matching is now handled by user-defined priority rules on the server. Use `priority` for explicit placement or omit for automatic classification. ([#115](https://github.com/plotday/plot/pull/115) [`0d25528`](https://github.com/plotday/plot/commit/0d25528dde120d45369f56a72460ee692635a159))
+
 ## 0.44.0
 
 ### Added
