@@ -556,19 +556,39 @@ The `activity.source` field is the idempotency key for automatic upserts. Use a 
 <provider>:<namespace>:<id>     — When provider has multiple entity types
 ```
 
-Examples from existing connectors:
+### Source identifier uniqueness (CRITICAL)
+
+`source` is the **cross-user deduplication key** for the Plot runtime. Two instances of the same connector that emit the same `source` string will **converge on a single shared thread** across users — that's how two users on the same Gmail message see one shared thread rather than two parallel ones.
+
+This means your `source` must be globally unique for the logical external item — not merely unique within a single user's account. Before committing a source pattern, ask yourself: *"Could two different users' connector instances emit this exact string for different external items?"* If yes, you must include a qualifier (workspace, tenant, mailbox, project, …).
+
+Safe patterns (globally unique external ids):
 ```
-linear:issue:<issueId>
-asana:task:<taskGid>
-jira:<cloudId>:issue:<issueId>    — Uses immutable ID, NOT mutable key like "PROJ-123"
-google-calendar:<eventId>
-outlook-calendar:<eventId>
-google-drive:file:<fileId>
-https://mail.google.com/mail/u/0/#inbox/<threadId>   — Gmail uses full URL
-https://slack.com/app_redirect?channel=<id>&message_ts=<ts>  — Slack uses full URL
+linear:issue:<uuid>                           — Linear issue UUIDs are globally unique
+github:<owner>/<repo>/issue:<number>          — Scoped by owner+repo
+google-chat:<spaceId>:thread:<threadKey>      — Space id globally unique
+ms-teams:channel:<channelId>:message:<id>     — Teams channel id globally unique
+ms-teams:dm:<chatId>                          — Chat ids globally unique
+https://mail.google.com/mail/u/0/#inbox/<threadId>   — Gmail thread id globally unique
 ```
 
-**Critical:** For services with mutable identifiers (like Jira where issue keys change on project move), use the immutable ID in `source` and store the mutable key in `meta` only.
+Patterns that need disambiguation:
+```
+attio:<workspaceId>:<type>:<recordId>         — Attio record ids are workspace-scoped
+posthog:<projectId>:person:<distinctId>       — distinct_id is project-scoped (often just an email)
+outlook-calendar:<mailboxId>:<eventId>        — Graph event ids are mailbox-local
+fellow:<tenantId>:note:<id>                   — Fellow ids are tenant-scoped
+```
+
+**If you're adding a new connector, pick a source format that encodes the tenant/workspace/mailbox upfront.** Retrofits are possible but require a backfill migration.
+
+**Mutable IDs:** For services where identifiers can change (like Jira issue keys that change on project move), use the immutable ID in `source` and store the mutable key in `meta` only.
+
+### Attestation-based visibility for shared threads
+
+When your connector populates `thread.contacts` from an external item's recipients, listing someone there does NOT automatically admit them to the thread. The runtime requires that each user's own connector instance independently sync the item (proof that it's in their authenticated account) before they gain a `thread_priority` row. Users whose own sync arrives before any other user has attested them land in `thread.pending_contacts` and are promoted to `thread.contacts` on the next attester's sync.
+
+You don't need to do anything special for this — just continue to populate `contacts` with every recipient you see. The runtime's `upsert_thread` enforces attestation; connectors can treat visibility as a server-side concern.
 
 ## Note Key Conventions
 
