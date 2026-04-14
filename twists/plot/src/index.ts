@@ -60,9 +60,8 @@ class PlotTwist extends Twist<PlotTwist> {
   }
 
   async activate(_context?: { actor: Actor }) {
-    // Onboarding (joining @plot.app, scheduling threads) is handled by
-    // the activate endpoint in account.ts and the setup_plot_app_priority
-    // SQL function.
+    // Onboarding threads are created globally and made visible to all users
+    // via the "Everyone" topic.
   }
 
   async onSearchQuery(note: Note): Promise<void> {
