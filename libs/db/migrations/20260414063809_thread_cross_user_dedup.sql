@@ -1,5 +1,3 @@
--- Drop index "thread_created_by_key_unique" from table: "thread"
-DROP INDEX "public"."thread_created_by_key_unique";
 -- Modify "thread" table
 ALTER TABLE "public"."thread" ADD COLUMN "twist_id" bigint NULL, ADD COLUMN "pending_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[];
 

@@ -18,8 +18,6 @@ DROP VIEW "user"."thread";
 ALTER TABLE "public"."thread" DROP CONSTRAINT "thread_access_valid", DROP COLUMN "priority_id" CASCADE, DROP COLUMN "access" CASCADE, DROP COLUMN "access_contacts" CASCADE;
 -- Create index "idx_thread_created_at" to table: "thread"
 CREATE INDEX "idx_thread_created_at" ON "public"."thread" ("created_at" DESC) WHERE (archived_at IS NULL);
--- Create index "thread_created_by_key_unique" to table: "thread"
-CREATE UNIQUE INDEX "thread_created_by_key_unique" ON "public"."thread" ("created_by", "key");
 -- Set comment to column: "key" on table: "thread"
 COMMENT ON COLUMN "public"."thread"."key" IS 'Internal identifier for deduplication within a creator. Used with created_by for upsert behavior. Not synced to clients.';
 -- Modify "archive_links" function
