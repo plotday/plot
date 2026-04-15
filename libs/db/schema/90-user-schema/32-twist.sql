@@ -17,6 +17,7 @@ SELECT
     pt.twist_id,
     t.environment AS twist_environment,
     t.is_source,
+    t.multiple_instances,
     t.shared,
     t.key_option,
     pt.owner_id,

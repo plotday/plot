@@ -2057,6 +2057,7 @@ export type Database = {
           key_option: string | null
           logo_url: string | null
           logo_url_dark: string | null
+          multiple_instances: boolean
           name: string
           options_schema: Json | null
           permissions: Json | null
@@ -2076,6 +2077,7 @@ export type Database = {
           key_option?: string | null
           logo_url?: string | null
           logo_url_dark?: string | null
+          multiple_instances?: boolean
           name: string
           options_schema?: Json | null
           permissions?: Json | null
@@ -2095,6 +2097,7 @@ export type Database = {
           key_option?: string | null
           logo_url?: string | null
           logo_url_dark?: string | null
+          multiple_instances?: boolean
           name?: string
           options_schema?: Json | null
           permissions?: Json | null
@@ -2117,7 +2120,6 @@ export type Database = {
           auto_approve: boolean
           created_at: string
           id: number
-          priority_id: string | null
           publisher_id: number | null
           twist_package_id: string
           updated_at: string
@@ -2127,7 +2129,6 @@ export type Database = {
           auto_approve?: boolean
           created_at?: string
           id?: never
-          priority_id?: string | null
           publisher_id?: number | null
           twist_package_id?: string
           updated_at?: string
@@ -2137,31 +2138,12 @@ export type Database = {
           auto_approve?: boolean
           created_at?: string
           id?: never
-          priority_id?: string | null
           publisher_id?: number | null
           twist_package_id?: string
           updated_at?: string
           user_id?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "twist_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "twist_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "twist_admin_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
           {
             foreignKeyName: "twist_admin_publisher_id_fkey"
             columns: ["publisher_id"]
@@ -3835,7 +3817,7 @@ export type Database = {
       }
       generate_path: { Args: { parent?: unknown }; Returns: unknown }
       get_accessible_twists: {
-        Args: { p_priority_id: string; p_user_id: string }
+        Args: { p_user_id: string }
         Returns: {
           archived_at: string | null
           created_at: string
@@ -3847,6 +3829,7 @@ export type Database = {
           key_option: string | null
           logo_url: string | null
           logo_url_dark: string | null
+          multiple_instances: boolean
           name: string
           options_schema: Json | null
           permissions: Json | null
@@ -3903,7 +3886,7 @@ export type Database = {
       }
       insert_domain: { Args: { email: string }; Returns: number }
       is_accessible_twist: {
-        Args: { p_priority_id: string; p_twist_id: number; p_user_id: string }
+        Args: { p_twist_id: number; p_user_id: string }
         Returns: boolean
       }
       is_finite: { Args: { test: unknown }; Returns: boolean }
@@ -4626,6 +4609,7 @@ export type Database = {
           link_types: Json | null
           logo_url: string | null
           logo_url_dark: string | null
+          multiple_instances: boolean | null
           name: string | null
           options: Json | null
           owner_id: string | null

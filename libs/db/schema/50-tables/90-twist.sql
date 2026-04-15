@@ -25,7 +25,8 @@ CREATE TABLE "public"."twist" (
     "key_option" text,
     "logo_url" text,
     "logo_url_dark" text,
-    "execution_limit" integer
+    "execution_limit" integer,
+    "multiple_instances" boolean NOT NULL DEFAULT false
 );
 
 CREATE INDEX idx_twist_admin_id ON "public"."twist" ("twist_admin_id");
