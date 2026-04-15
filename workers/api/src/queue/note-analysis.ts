@@ -96,23 +96,13 @@ async function gatherContext(
       .executeTakeFirst(),
     db
       .selectFrom("thread")
-      .select(["title"])
+      .select(["title", "contacts"])
       .where("id", "=", threadId)
       .executeTakeFirst(),
   ]);
 
   if (!note?.content || !note.author_id) return null;
   if (!thread) return null;
-
-  // Look up the priority via thread_priority (pick the first filing)
-  const threadPriority = await db
-    .selectFrom("thread_priority")
-    .select("priority_id")
-    .where("thread_id", "=", threadId)
-    .limit(1)
-    .executeTakeFirst();
-
-  if (!threadPriority) return null;
 
   // Fetch remaining context in parallel (all depend on note/thread results)
   const [links, members, author, existingTodos, clearedTodos, existingReplies, recentNotes] =
@@ -124,21 +114,26 @@ async function gatherContext(
         .select(["l.title", "l.status", "l.type", "c.name as assignee_name"])
         .where("l.thread_id", "=", threadId)
         .execute(),
-      // Users with access to the thread's priority (via priority.user_id),
+      // Thread members: all users linked to the thread's contacts,
       // resolved to their primary contact record.
       (async () => {
-        const usersData = await rpc(db, "get_users_with_priority_access", {
-          target_priority_id: threadPriority.priority_id,
-        });
-        const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
+        if (!thread.contacts || thread.contacts.length === 0) return [];
+
+        // Find all users linked to these contacts
+        const users = await db
+          .selectFrom("user_contact")
+          .select("user_id")
+          .where("contact_id", "in", thread.contacts as string[])
+          .where("linked", "=", true)
+          .where("archived_at", "is", null)
+          .execute();
+
+        const userIds = [...new Set(users.map((u) => u.user_id))];
         if (userIds.length === 0) return [];
+
         return db
           .selectFrom("contact")
-          .select([
-            "id",
-            "name",
-            "user_id as userId",
-          ])
+          .select(["id", "name", "user_id as userId"])
           .where("user_id", "in", userIds)
           .where("primary", "=", true)
           .execute();

@@ -128,19 +128,6 @@ CREATE TRIGGER user_sync_contact_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_contact();
 
--- User sync triggers for priority_user table
-CREATE TRIGGER user_sync_priority_user_insert
-  AFTER INSERT ON priority_user
-  REFERENCING NEW TABLE AS new_table
-  FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_user();
-
-CREATE TRIGGER user_sync_priority_user_update
-  AFTER UPDATE ON priority_user
-  REFERENCING NEW TABLE AS new_table
-  FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_priority_user();
-
 -- User sync triggers for channel table
 CREATE TRIGGER user_sync_channel_insert
   AFTER INSERT ON channel

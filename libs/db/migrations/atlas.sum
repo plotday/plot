@@ -1,4 +1,4 @@
-h1:aKN7zFcesB23ohwkOjU5shEndVctsSNLg6hn0e+P3/Y=
+h1:u8s+KmOLjaXk3tybcIntRG2izNxr5Uhk99gvIvg6Qdk=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -246,3 +246,5 @@ h1:aKN7zFcesB23ohwkOjU5shEndVctsSNLg6hn0e+P3/Y=
 20260414180001_single_root_priorities.sql h1:VKMbv1R4Ek+sjukc6v+YxG2WQEOBtSCsZf9BTYfsGv8=
 20260414204208_onboarding_schedule_trigger.sql h1:uBTHd+aRXdVaXzSUAGm24Zl9/eTmNY0LWST2sRS38r8=
 20260414231717_topic_visibility_views.sql h1:feEm1GsorCJ1BBxzpn2M8B4gMNgF1nSGOmvMgYiC1Vc=
+20260414232331_check_sync.sql h1:w9ANLxRmOQRMcKr07U1X8MHwwQfc5MjiIMuOjlYbzyY=
+20260414233015_remove_priority_user.sql h1:iTsdcQCtCxKS4hl+LascBe00pbo+mmPKkX5EJmpgfd0=

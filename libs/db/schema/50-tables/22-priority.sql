@@ -74,42 +74,6 @@ CREATE TRIGGER default_priority_user_id
     FOR EACH ROW
     EXECUTE FUNCTION public.default_priority_user_id ();
 
--- Determines who can access a priority and its descendants
-CREATE TABLE "public"."priority_user" (
-    "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-    "user_id" uuid NOT NULL REFERENCES public."user" ON DELETE CASCADE,
-    "priority_id" uuid NOT NULL REFERENCES public.priority ON DELETE CASCADE,
-    "archived_at" timestamp with time zone,
-    "role" text NOT NULL DEFAULT 'member',
-    PRIMARY KEY (user_id, priority_id)
-);
-
--- Index for user-based priority lookups in user_priority_base view
-CREATE INDEX idx_priority_user_user_id ON "public"."priority_user" ("user_id")
-WHERE
-    archived_at IS NULL;
-
--- Optimized for user_priority_expanded GROUP BY operations
--- Supports efficient aggregation by user_id and priority_id with created_at
-CREATE INDEX idx_priority_user_user_priority_archived ON "public"."priority_user" ("user_id", "priority_id", "created_at")
-WHERE
-    archived_at IS NULL;
-
--- Index for joins on priority_id alone (PK is user_id, priority_id which doesn't help)
--- Used in user_priority view: pu.priority_id = root.id
-CREATE INDEX idx_priority_user_priority_id ON "public"."priority_user" ("priority_id");
-
-CREATE TRIGGER set_priority_user_updated_at
-    BEFORE INSERT OR UPDATE ON "public"."priority_user"
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
-
-CREATE TRIGGER set_priority_user_created_at
-    BEFORE INSERT ON "public"."priority_user"
-    FOR EACH ROW
-    EXECUTE FUNCTION set_created_at ();
-
 -- Per-user priority settings (per-key with JSONB values)
 CREATE TABLE "public"."priority_setting" (
     "updated_at" timestamptz NOT NULL DEFAULT now(),

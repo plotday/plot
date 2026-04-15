@@ -252,44 +252,6 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION "user".upsert_priority_user (
-    user_id uuid,
-    p_priority_id uuid,
-    p_archived_at timestamptz,
-    p_personal boolean
-)
-    RETURNS priority_user
-    LANGUAGE plpgsql
-    SET search_path TO 'public', 'user'
-    AS $function$
-#variable_conflict use_column
-DECLARE
-    v_row priority_user;
-BEGIN
-    IF NOT EXISTS (
-        SELECT
-            1
-        FROM
-            priority_user
-        WHERE
-            user_id = upsert_priority_user.user_id
-            AND priority_id = p_priority_id) THEN
-        RAISE EXCEPTION 'priority_user not found';
-    END IF;
-
-    INSERT INTO priority_user (user_id, priority_id, archived_at, personal)
-        VALUES (upsert_priority_user.user_id, p_priority_id, p_archived_at, COALESCE(p_personal, FALSE))
-    ON CONFLICT (user_id, priority_id)
-        DO UPDATE SET
-            archived_at = EXCLUDED.archived_at,
-            personal = EXCLUDED.personal,
-            updated_at = now()
-    RETURNING * INTO v_row;
-
-    RETURN v_row;
-END;
-$function$;
-
 CREATE OR REPLACE FUNCTION "user".upsert_twist_instance (
     user_id uuid,
     p_id uuid,
@@ -354,13 +316,9 @@ DECLARE
     _priority_id uuid;
     _is_creator boolean;
     _priority_default_color integer;
-    _parent_visual_path ltree;
-    _label text;
-    _parent_actual_path ltree;
-    _actual_path ltree;
     _is_move boolean;
     _priority_exists boolean;
-    _old_actual_path ltree;
+    _old_path ltree;
 BEGIN
     -- Extract input fields from JSONB into the view's row type
     _input := jsonb_populate_record(NULL::"user"."priority", p_priority || jsonb_build_object('user_id', upsert_priority.user_id));
@@ -400,85 +358,29 @@ BEGIN
         WHERE
             up.user_id = upsert_priority.user_id
             AND up.id = _input.id;
+        _old_path := _old.path;
     END IF;
-    -- For existing priorities, compute what the new actual path would be
-    -- This is needed for move detection since global_path is a computed column
-    IF _priority_exists THEN
-        _old_actual_path := _old.global_path;
-        IF _old_actual_path IS NULL THEN
-            SELECT
-                path INTO _old_actual_path
-            FROM
-                priority
-            WHERE
-                id = _input.id;
-        END IF;
-        IF nlevel (_input.path) > 1 THEN
-            -- Extract parent path and label from visual path
-            _parent_visual_path := subpath (_input.path, 0, nlevel (_input.path) - 1);
-            _label := text(subpath (_input.path, nlevel (_input.path) - 1, 1));
-            -- Look up parent's ID and actual path from visual path
-            SELECT
-                global_path INTO _parent_actual_path
-            FROM
-                "user".priority
-            WHERE
-                user_id = upsert_priority.user_id
-                AND path = _parent_visual_path
-            LIMIT 1;
-            IF _parent_actual_path IS NULL THEN
-                RAISE EXCEPTION 'Parent priority not found'
-                    USING HINT = 'parent_visual_path=' || _parent_visual_path::text;
-            END IF;
-            -- Compute what the new actual path would be
-            _actual_path := _parent_actual_path || _label::ltree;
-        ELSE
-            -- Root level priority (nlevel = 1)
-            _actual_path := _input.path;
-        END IF;
-    END IF;
-    -- Detect if this is a move (actual path changed on existing priority)
+    -- Detect if this is a move (path changed on existing priority)
     _is_move := (_priority_exists
-        AND _actual_path IS NOT NULL
-        AND _old_actual_path IS DISTINCT FROM _actual_path);
-    -- If the visual path hasn't changed, this is not a move.
-    -- The visual-to-actual path resolution can produce false positives for shared
-    -- root priorities (where visual path includes personal root prefix or alias).
-    IF _is_move AND _old IS NOT NULL AND _input.path IS NOT DISTINCT FROM _old.path THEN
-        _is_move := FALSE;
-        _actual_path := _old_actual_path;
-    END IF;
+        AND _input.path IS DISTINCT FROM _old_path);
     IF _is_move THEN
         -- Prevent circular reference
-        IF _actual_path <@ _old_actual_path OR _actual_path = _old_actual_path THEN
+        IF _input.path <@ _old_path OR _input.path = _old_path THEN
             RAISE EXCEPTION 'Cannot move priority to be a descendant of itself'
-                USING HINT = 'old_path=' || _old_actual_path::text || ', new_path=' || _actual_path::text;
+                USING HINT = 'old_path=' || _old_path::text || ', new_path=' || _input.path::text;
         END IF;
         -- In the per-user model every priority belongs to a single user's
-        -- tree, so every actual move is a straight ltree relocation. The
-        -- old shared-tree / aliased-tree / visual-alias branches are dead.
-        PERFORM move_priority (_input.id, _parent_actual_path);
-        _actual_path := NULL;
-    END IF;
-    -- Translate visual path to actual path for new sub-priorities
-    IF _is_move IS NOT TRUE AND NOT _priority_exists AND nlevel (_input.path) > 1 THEN
-        _parent_visual_path := subpath (_input.path, 0, nlevel (_input.path) - 1);
-        _label := text(subpath (_input.path, nlevel (_input.path) - 1, 1));
-        SELECT
-            global_path INTO _parent_actual_path
-        FROM
-            "user".priority
-        WHERE
-            user_id = upsert_priority.user_id
-            AND path = _parent_visual_path
-        LIMIT 1;
-        IF _parent_actual_path IS NOT NULL THEN
-            _actual_path := _parent_actual_path || _label::ltree;
-        ELSE
-            _actual_path := _input.path;
-        END IF;
-    ELSIF _is_move IS NOT TRUE THEN
-        _actual_path := _input.path;
+        -- tree, so every move is a straight ltree relocation.
+        DECLARE
+            _parent_path ltree;
+        BEGIN
+            IF nlevel(_input.path) > 1 THEN
+                _parent_path := subpath(_input.path, 0, nlevel(_input.path) - 1);
+            ELSE
+                _parent_path := NULL;
+            END IF;
+            PERFORM move_priority (_input.id, _parent_path);
+        END;
     END IF;
     -- Get the priority's default color for initializing new priority_settings
     SELECT
@@ -488,13 +390,13 @@ BEGIN
     WHERE
         id = _input.id;
     -- Update priority table
-    IF _actual_path IS NOT NULL THEN
+    IF NOT _is_move THEN
         INSERT INTO priority (id, user_id, archived_at, title, color, path, created_by, updated_by)
             VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _actual_path, _input.created_by, _input.updated_by)
+                END, _input.path, _input.created_by, _input.updated_by)
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -508,7 +410,7 @@ BEGIN
             RETURNING
                 id INTO _priority_id;
     ELSE
-        -- For moves, just update non-path fields
+        -- For moves, just update non-path fields (path was already updated by move_priority)
         UPDATE
             priority
         SET

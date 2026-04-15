@@ -44,12 +44,10 @@ export interface Priority {
   archived_at?: string; // Date offset
   settings?: PrioritySettings;
   children?: Priority[]; // Nested child priorities
-  shared_with?: string[]; // Array of user/contact refs
 }
 
 export interface PrioritySettings {
   color?: number; // Color index 0-7, or omit to inherit from parent priority
-  path_override?: string;
   pomodoro_duration?: number; // Minutes
 }
 

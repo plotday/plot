@@ -323,40 +323,6 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for priority_user changes
-CREATE OR REPLACE FUNCTION public.sync_user_for_priority_user ()
-    RETURNS TRIGGER
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
-DECLARE
-    v_max_updated_at timestamptz;
-    v_user_id uuid;
-BEGIN
-    SELECT
-        MAX(updated_at) INTO v_max_updated_at
-    FROM
-        new_table;
-    -- Sync priority entity so user's accessible priorities update
-    FOR v_user_id IN SELECT DISTINCT
-        upe.user_id
-    FROM
-        new_table n
-        JOIN "user".priority_expanded upe ON upe.priority_id = n.priority_id
-    WHERE
-        upe.archived_at IS NULL
-    ORDER BY
-        upe.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority', v_max_updated_at)
-            ON CONFLICT (user_id, entity)
-                DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
-        END LOOP;
-    RETURN NULL;
-END;
-$function$;
-
 -- User sync trigger function for channel changes
 CREATE OR REPLACE FUNCTION public.sync_user_for_channel ()
     RETURNS TRIGGER

@@ -627,34 +627,41 @@ async function processTwistBatch(
 
         // Fallback: mark unread with default urgency if analysis didn't handle it
         if (!analysisHandledUnread && note.thread_id && ownerId) {
-          const notePriorityId = note.priority_id;
-          if (notePriorityId) {
-            try {
-              await markThreadUnreadForOthers(env, db, notePriorityId, note.thread_id, ownerId);
-            } catch (error) {
-              logger.error("Failed to mark thread unread (fallback)", error as Error, {
-                note_id: note.id,
-                thread_id: note.thread_id,
-              });
-              postHog.captureException(error as Error, undefined, {
-                context: "markThreadUnreadForOthers:channelNote",
-                note_id: note.id,
-                thread_id: note.thread_id,
-                twist_instance_id: twistInstanceId,
-              });
-            }
+          try {
+            await markThreadUnreadForOthers(env, db, note.thread_id, ownerId);
+          } catch (error) {
+            logger.error("Failed to mark thread unread (fallback)", error as Error, {
+              note_id: note.id,
+              thread_id: note.thread_id,
+            });
+            postHog.captureException(error as Error, undefined, {
+              context: "markThreadUnreadForOthers:channelNote",
+              note_id: note.id,
+              thread_id: note.thread_id,
+              twist_instance_id: twistInstanceId,
+            });
           }
         }
 
         // Notify UserSync DOs so the push notification pipeline fires
         if (note.thread_id && ownerId) {
-          const notePriorityId = note.priority_id;
-          if (notePriorityId) {
-            try {
-              const usersData = await rpc(db, "get_users_with_priority_access", {
-                target_priority_id: notePriorityId,
-              });
-              const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
+          try {
+            const thread = await db
+              .selectFrom("thread")
+              .select("contacts")
+              .where("id", "=", note.thread_id)
+              .executeTakeFirst();
+
+            if (thread?.contacts && thread.contacts.length > 0) {
+              const users = await db
+                .selectFrom("user_contact")
+                .select("user_id")
+                .where("contact_id", "in", thread.contacts as string[])
+                .where("linked", "=", true)
+                .where("archived_at", "is", null)
+                .execute();
+
+              const userIds = [...new Set(users.map((u) => u.user_id))];
               for (const userId of userIds) {
                 if (userId === ownerId) continue;
                 try {
@@ -670,11 +677,11 @@ async function processTwistBatch(
                   logger.error(`Failed to notify UserSync for user ${userId}`, doError as Error);
                 }
               }
-            } catch (error) {
-              logger.error("Failed to notify UserSync DOs for channel note", error as Error, {
-                note_id: note.id,
-              });
             }
+          } catch (error) {
+            logger.error("Failed to notify UserSync DOs for channel note", error as Error, {
+              note_id: note.id,
+            });
           }
         }
       } catch (error) {

@@ -225,6 +225,21 @@ async function isTeamAdmin(
 }
 
 /**
+ * Check if a user is a member of any team.
+ */
+export async function isUserInAnyTeam(
+  db: Kysely<DB>,
+  userId: string
+): Promise<boolean> {
+  const member = await db
+    .selectFrom("team_user")
+    .select("id")
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  return !!member;
+}
+
+/**
  * Get the user's personal plan.
  */
 export async function getPersonalPlan(

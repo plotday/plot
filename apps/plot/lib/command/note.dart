@@ -685,13 +685,13 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
       SplitNoteToNewThread(note),
     if (note.content != null && note.content!.trim().isNotEmpty)
       CopyNoteContent(note),
-    if ((activityBloc?.state.thread.priority.teamId != null || note.draft) &&
-        (!note.isPrivate || note.authorId.isCurrentUser))
+    if ((!note.isPrivate || note.authorId.isCurrentUser))
       ToggleNotePrivate(
         note,
         isViewer: activityBloc?.state.thread.priority.isViewer ?? false,
       ),
-  ];
+    ];
+
 }
 
 /// Returns up to 6 tag suggestions for quick actions.

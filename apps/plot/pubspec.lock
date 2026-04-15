@@ -1443,10 +1443,10 @@ packages:
     dependency: "direct main"
     description:
       name: posthog_flutter
-      sha256: "4082d692332ae5ffab71a06aa3732d4e8fad2c3d7b95d423648ab4ccd94b8309"
+      sha256: "50a3a41b946635c4dcae289d58a27b76dc41dffeb7b8fa907020c05697c13bcb"
       url: "https://pub.dev"
     source: hosted
-    version: "5.21.0"
+    version: "5.23.1"
   prism:
     dependency: "direct main"
     description:

@@ -8,7 +8,7 @@ import type { Bindings } from "../../env";
 import { analyzeNote } from "../../queue/note-analysis";
 import { rpc, rpcUser } from "../../rpc";
 import {
-  checkAiLimitForPriority,
+  checkAiLimitForContacts,
   isAiEnabled,
   recordAiUsage,
 } from "../../utils/ai-limits";
@@ -228,12 +228,25 @@ notes.post("/sync/notes", async (c) => {
             chargeUserId: string | null;
           } | null = null;
           if (content && content.trim().length > 0) {
+            // Get all thread contacts + note access contacts to check limits against
+            const thread = await db
+              .selectFrom("thread")
+              .select("contacts")
+              .where("id", "=", body.thread_id)
+              .executeTakeFirst();
+            const contactIds = [
+              ...new Set([
+                ...(thread?.contacts ?? []),
+                ...(body.access_contacts ?? []),
+              ]),
+            ];
+
             const [aiEnabled, aiLimit] = await Promise.all([
               isAiEnabled(db, c.var.user.id),
-              checkAiLimitForPriority(
+              checkAiLimitForContacts(
                 c.env,
                 db,
-                priorityId,
+                contactIds,
                 c.var.user.id,
                 "note_processing"
               ),
@@ -303,7 +316,6 @@ notes.post("/sync/notes", async (c) => {
               affectedUserIds = await markThreadUnreadForOthers(
                 c.env,
                 db,
-                priorityId,
                 body.thread_id,
                 c.var.user.id,
                 new Date().toISOString()
@@ -321,23 +333,28 @@ notes.post("/sync/notes", async (c) => {
           } else {
             // Analysis handled unread — still need to collect user IDs for DO notification
             try {
-              const usersData = await rpc(
-                db,
-                "get_users_with_priority_access",
-                {
-                  target_priority_id: priorityId,
-                }
-              );
-              const userIds = (!usersData
-                ? []
-                : Array.isArray(usersData)
-                ? usersData
-                : [usersData]) as unknown as string[];
-              affectedUserIds = userIds.filter((id) => id !== c.var.user.id);
+              const thread = await db
+                .selectFrom("thread")
+                .select("contacts")
+                .where("id", "=", body.thread_id)
+                .executeTakeFirst();
+
+              if (thread?.contacts && thread.contacts.length > 0) {
+                const users = await db
+                  .selectFrom("user_contact")
+                  .select("user_id")
+                  .where("contact_id", "in", thread.contacts as string[])
+                  .where("linked", "=", true)
+                  .where("archived_at", "is", null)
+                  .execute();
+
+                const userIds = [...new Set(users.map((u) => u.user_id))];
+                affectedUserIds = userIds.filter((id) => id !== c.var.user.id);
+              }
             } catch (error) {
               const logger = createLogger({ operation: "sync:notes:getUsers" });
               logger.error(
-                "Failed to get priority users for DO notification",
+                "Failed to get thread users for DO notification",
                 error as Error
               );
               c.var.tracker.captureException(error as Error);
@@ -385,21 +402,29 @@ notes.post("/sync/notes", async (c) => {
 export async function markThreadUnreadForOthers(
   env: Bindings,
   db: Kysely<DB>,
-  priorityId: string,
   threadId: string,
   excludeUserId: string,
   noteCreatedAt?: string
 ): Promise<string[]> {
-  // rpc() unwraps single-column TABLE results, so we get string[] (user IDs) directly
-  // TypeScript still thinks these are { user_id: string } from generated types, but runtime is string
-  const usersData = await rpc(db, "get_users_with_priority_access", {
-    target_priority_id: priorityId,
-  });
-  const userIds = (!usersData
-    ? []
-    : Array.isArray(usersData)
-    ? usersData
-    : [usersData]) as unknown as string[];
+  // Get all thread contacts
+  const thread = await db
+    .selectFrom("thread")
+    .select("contacts")
+    .where("id", "=", threadId)
+    .executeTakeFirst();
+
+  if (!thread?.contacts || thread.contacts.length === 0) return [];
+
+  // Find all users linked to these contacts
+  const users = await db
+    .selectFrom("user_contact")
+    .select("user_id")
+    .where("contact_id", "in", thread.contacts as string[])
+    .where("linked", "=", true)
+    .where("archived_at", "is", null)
+    .execute();
+
+  const userIds = [...new Set(users.map((u) => u.user_id))];
 
   const markedUserIds: string[] = [];
   for (const userId of userIds) {

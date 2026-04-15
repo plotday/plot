@@ -213,20 +213,12 @@ Future<FormData> _buildNewPriorityForm(
       prioritiesBloc.state.root ??
       await Priority.getDefault();
 
-  // Fetch user's teams for team selector
+  // Fetch user's teams for team selector (no longer used for priorities, but might be needed for other things)
   List<Map<String, dynamic>> orgs = [];
   try {
     final orgList = await api.get<List<dynamic>>('/team');
     orgs = orgList.cast<Map<String, dynamic>>();
   } catch (_) {}
-
-  // Determine initial team state from default parent
-  final parentOrgId = defaultParent.teamId;
-  final parentOrg = parentOrgId != null
-      ? orgs.firstWhereOrNull(
-          (o) => int.tryParse(o['id'] as String) == parentOrgId,
-        )
-      : null;
 
   final parentSelect = FormSelect<Priority>(
     key: 'parent',
@@ -240,48 +232,6 @@ Future<FormData> _buildNewPriorityForm(
         : p.title,
   );
 
-  final teamSelect = orgs.isNotEmpty
-      ? FormSelect<Map<String, dynamic>?>(
-          key: 'team',
-          label: 'Team',
-          initialValue: parentOrg,
-          hasInitialValue: true,
-          readonlyMessage: parentOrg != null
-              ? 'Team is inherited from parent priority'
-              : null,
-          items: (search) async =>
-              <Map<String, dynamic>?>[null, ...orgs]
-                  .where(
-                    (o) =>
-                        search == null ||
-                        (o?['name']?.toString().toLowerCase() ??
-                                'personal')
-                            .contains(search.toLowerCase()),
-                  )
-                  .toList(),
-          titleBuilder: (o) => o?['name'] as String? ?? 'Personal',
-        )
-      : null;
-
-  // Update team field when parent selection changes
-  if (teamSelect != null) {
-    parentSelect.addListener(() {
-      final selected = parentSelect.getValue();
-      if (selected != null && selected.teamId != null) {
-        final org = orgs.firstWhereOrNull(
-          (o) =>
-              int.tryParse(o['id'] as String) ==
-              selected.teamId,
-        );
-        teamSelect.setValue(org);
-        teamSelect.readonlyMessage =
-            'Team is inherited from parent priority';
-      } else {
-        teamSelect.readonlyMessage = null;
-      }
-    });
-  }
-
   return FormData(
     title: parent == null ? 'Add a priority' : 'Add a sub-priority',
     groups: [
@@ -293,7 +243,6 @@ Future<FormData> _buildNewPriorityForm(
             required: true,
           ),
           parentSelect,
-          if (teamSelect != null) teamSelect,
           FormSelect<ThemeColor?>(
             key: 'color',
             label: 'Color',
@@ -318,27 +267,14 @@ Future<FormData> _buildNewPriorityForm(
               final title = values['title'] as String;
               final selectedParent = values['parent'] as Priority;
               final color = values['color'] as ThemeColor?;
-              final team = values['team'] as Map<String, dynamic>?;
-              final priority = Priority(
-                title: title,
-                parent: selectedParent,
-                color: color,
-                draft: true,
-              );
-              // Parent's team takes precedence (constructor already
-              // inherits teamId from parent)
-              if (selectedParent.teamId != null) {
-                return submitBuilder(Future.value(priority));
-              }
               return submitBuilder(
                 Future.value(
-                  team != null
-                      ? priority.copyWith(
-                          teamId: Value(
-                            int.parse(team['id'] as String),
-                          ),
-                        )
-                      : priority,
+                  Priority(
+                    title: title,
+                    parent: selectedParent,
+                    color: color,
+                    draft: true,
+                  ),
                 ),
               );
             },
@@ -427,27 +363,18 @@ class EditPriorityCommand extends ShowForm {
             parent = await Priority.getOne(p.parentId!);
           }
 
-          // Fetch user's teams for team selector
+          // Fetch user's teams (no longer used for priorities)
           List<Map<String, dynamic>> orgs = [];
           try {
             final orgList = await api.get<List<dynamic>>('/team');
             orgs = orgList.cast<Map<String, dynamic>>();
           } catch (_) {}
 
-          // Determine team state — use parent's org as fallback for descendants
-          // that haven't synced team_id yet
-          final effectiveOrgId = p.teamId ?? parent?.teamId;
-          final isTeamDescendant = effectiveOrgId != null && !p.root;
-          final currentOrg = orgs.firstWhereOrNull(
-            (o) => int.tryParse(o['id'] as String) == effectiveOrgId,
-          );
-          final isTeamAdmin = currentOrg?['role'] == 'admin';
-
           final parentSelect = FormSelect<Priority>(
             key: 'parent',
             label: 'Parent',
             initialValue: parent,
-            enabled: !isRoot || p.teamId != null,
+            enabled: !isRoot,
             placeholder: 'None',
             items: (search) async {
               final priorities =
@@ -455,20 +382,6 @@ class EditPriorityCommand extends ShowForm {
               return priorities.where((candidate) {
                 if (candidate.id == p.id) return false;
                 if (p.path.isParent(candidate.path)) return false;
-                if (p.teamId == null && candidate.teamId != null) return false;
-                // Team roots can only be placed under personal priorities
-                // or other priorities in the same team
-                if (isRoot &&
-                    p.teamId != null &&
-                    candidate.teamId != null &&
-                    candidate.teamId != effectiveOrgId) {
-                  return false;
-                }
-                // Team descendants can only move within the same team
-                if (isTeamDescendant &&
-                    candidate.teamId != effectiveOrgId) {
-                  return false;
-                }
                 return true;
               }).toList();
             },
@@ -477,55 +390,6 @@ class EditPriorityCommand extends ShowForm {
                 ? '${item.ancestorsLabel()}${Priority.separator}${item.title}'
                 : item.title,
           );
-
-          // Unified team selector — readonly for descendants, editable for
-          // roots (admin only when already in a team)
-          final showTeamSelect = orgs.isNotEmpty || currentOrg != null;
-          final teamSelect = showTeamSelect
-              ? FormSelect<Map<String, dynamic>?>(
-                  key: 'team',
-                  label: 'Team',
-                  initialValue: currentOrg,
-                  hasInitialValue: true,
-                  readonlyMessage: isTeamDescendant
-                      ? 'Team is inherited from parent priority'
-                      : null,
-                  enabled:
-                      isTeamDescendant ||
-                      p.teamId == null ||
-                      isTeamAdmin,
-                  items: (search) async =>
-                      <Map<String, dynamic>?>[null, ...orgs]
-                          .where(
-                            (o) =>
-                                search == null ||
-                                (o?['name']?.toString().toLowerCase() ??
-                                        'personal')
-                                    .contains(search.toLowerCase()),
-                          )
-                          .toList(),
-                  titleBuilder: (o) => o?['name'] as String? ?? 'Personal',
-                )
-              : null;
-
-          // Update team field when parent selection changes
-          if (teamSelect != null) {
-            parentSelect.addListener(() {
-              final newParent = parentSelect.getValue();
-              if (newParent != null && newParent.teamId != null) {
-                final org = orgs.firstWhereOrNull(
-                  (o) =>
-                      int.tryParse(o['id'] as String) ==
-                      newParent.teamId,
-                );
-                teamSelect.setValue(org);
-                teamSelect.readonlyMessage =
-                    'Team is inherited from parent priority';
-              } else if (isTeamAdmin || effectiveOrgId == null) {
-                teamSelect.readonlyMessage = null;
-              }
-            });
-          }
 
           return FormData(
             title: 'Edit priority',
@@ -539,7 +403,6 @@ class EditPriorityCommand extends ShowForm {
                     required: true,
                   ),
                   parentSelect,
-                  if (teamSelect != null) teamSelect,
                   FormSelect<ThemeColor?>(
                     key: 'color',
                     label: 'Color',
@@ -572,25 +435,12 @@ class EditPriorityCommand extends ShowForm {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
-                      final team = values['team'] as Map<String, dynamic>?;
-                      // Parent's team takes precedence
-                      Value<int?> orgId;
-                      if (newParent?.teamId != null) {
-                        orgId = Value(newParent!.teamId);
-                      } else if (showTeamSelect) {
-                        orgId = team != null
-                            ? Value(int.parse(team['id'] as String))
-                            : const Value(null);
-                      } else {
-                        orgId = const Value.absent();
-                      }
                       return EditPriority(
                         Future.value(
                           p.copyWith(
                             title: title,
                             parent: newParent,
                             color: Value(color),
-                            teamId: orgId,
                           ),
                         ),
                       );

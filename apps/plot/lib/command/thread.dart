@@ -2627,7 +2627,7 @@ List<Command> threadCommands(
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent && thread.priority.teamId != null)
+    if (!skipInfrequent)
       ToggleThreadPrivate(thread),
     if (!hideArchive) ArchiveThread(thread),
   ];

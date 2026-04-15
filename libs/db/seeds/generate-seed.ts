@@ -37,7 +37,6 @@ import type {
   GeneratedNoteTag,
   GeneratedPriority,
   GeneratedPrioritySettings,
-  GeneratedPriorityUser,
   GeneratedSchedule,
   GeneratedThread,
   GeneratedThreadTag,
@@ -1061,7 +1060,6 @@ function generateSQL(
   lines.push(
     `DELETE FROM priority_setting WHERE user_id = ${sqlString(userId)};`
   );
-  lines.push(`DELETE FROM priority_user WHERE user_id = ${sqlString(userId)};`);
   lines.push(`DELETE FROM priority WHERE created_by = ${sqlString(userId)};`);
   lines.push(
     `DELETE FROM twist_admin WHERE user_id = ${sqlString(userId)};`
@@ -1079,7 +1077,6 @@ function generateSQL(
   const contacts: GeneratedContact[] = [];
   const priorities: GeneratedPriority[] = [];
   const prioritySettings: GeneratedPrioritySettings[] = [];
-  const priorityUsers: GeneratedPriorityUser[] = [];
   const threads: GeneratedThread[] = [];
   const threadTags: GeneratedThreadTag[] = [];
   const generatedLinks: GeneratedLink[] = [];
@@ -1120,7 +1117,6 @@ function generateSQL(
         priorityIdMap,
         priorities,
         prioritySettings,
-        priorityUsers,
         contactIdMap,
         contacts
       );
@@ -1244,27 +1240,6 @@ function generateSQL(
     lines.push("");
   }
 
-  // Priority users
-  if (priorityUsers.length > 0) {
-    lines.push("-- Priority users");
-    lines.push(
-      "INSERT INTO priority_user (priority_id, user_id, created_at, updated_at)"
-    );
-    lines.push("VALUES");
-    for (let i = 0; i < priorityUsers.length; i++) {
-      const pu = priorityUsers[i];
-      const comma = i < priorityUsers.length - 1 ? "," : "";
-      lines.push(
-        `  (${sqlString(pu.priority_id)}, ${sqlString(
-          pu.user_id
-        )}, NOW() - INTERVAL '1 second', NOW())${comma}`
-      );
-    }
-    lines.push("ON CONFLICT (user_id, priority_id) DO NOTHING;");
-    lines.push("");
-  }
-
-
   // Priority settings (key/value format)
   if (prioritySettings.length > 0) {
     lines.push("-- Priority settings");
@@ -1277,11 +1252,6 @@ function generateSQL(
       if (ps.color !== null) {
         settingRows.push(
           `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, 'color', '${ps.color}'::jsonb, NOW())`
-        );
-      }
-      if (ps.path !== null) {
-        settingRows.push(
-          `  (${sqlString(ps.priority_id)}, ${sqlString(ps.user_id)}, 'path', ${sqlString(JSON.stringify(ps.path))}::jsonb, NOW())`
         );
       }
       if (ps.pomodoro !== null) {
@@ -1461,7 +1431,6 @@ function processPriority(
   idMap: RefMap<string>,
   outPriorities: GeneratedPriority[],
   outSettings: GeneratedPrioritySettings[],
-  outUsers: GeneratedPriorityUser[],
   contactIdMap?: RefMap<string>,
   contacts?: GeneratedContact[]
 ) {
@@ -1482,34 +1451,16 @@ function processPriority(
       : null,
   });
 
-  outUsers.push({
-    priority_id: id,
-    user_id: userId,
-  });
-
   if (priority.settings) {
     outSettings.push({
       priority_id: id,
       user_id: userId,
       color: priority.settings.color ?? null,
-      path: priority.settings.path_override ?? null,
       pomodoro: priority.settings.pomodoro_duration ?? null,
     });
   }
 
-  // Handle shared_with — add priority_user rows for contacts with user_ids
-  if (priority.shared_with && contactIdMap && contacts) {
-    for (const ref of priority.shared_with) {
-      const contact = contacts.find((c) => c.id === contactIdMap[ref]);
-      if (contact?.user_id) {
-        outUsers.push({
-          priority_id: id,
-          user_id: contact.user_id,
-        });
-      }
-    }
-  }
-
+  // Handle priorities (recursive)
   if (priority.children) {
     for (const child of priority.children) {
       processPriority(
@@ -1520,7 +1471,6 @@ function processPriority(
         idMap,
         outPriorities,
         outSettings,
-        outUsers,
         contactIdMap,
         contacts
       );

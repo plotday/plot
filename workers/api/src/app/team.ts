@@ -75,14 +75,6 @@ export async function createTeamSetupTask(
  * access to specific priorities — each user owns their own tree.
  * Team membership is for billing/ownership only.
  */
-export async function addUserToTeamPriorities(
-  _db: any,
-  _orgId: string | number,
-  _userId: string
-): Promise<string[]> {
-  return [];
-}
-
 /**
  * Helper: verify the current user is an admin of the given team.
  * Returns the member row if admin, or null.
@@ -366,10 +358,6 @@ team.post("/team/:id/members", async (c) => {
         )
         .execute();
 
-      // Give member access to all org priorities
-      const priorityIds = await addUserToTeamPriorities(c.var.db, orgId, existingUser.id);
-      for (const pid of priorityIds) notifySync(c, pid);
-
       return c.json({ status: "added", userId: existingUser.id });
     } catch (err) {
       return captureServerError(c, err as Error, "Failed to add member");
@@ -432,13 +420,6 @@ team.delete("/team/:id/members/:userId", async (c) => {
       return c.json({ error: "Cannot remove the last admin" }, 400);
     }
   }
-
-  // Archive user's access to all org priorities before removing membership
-  const orgPriorities = await c.var.db
-    .selectFrom("priority")
-    .select("id")
-    .where("team_id", "=", orgId as any)
-    .execute();
 
   await c.var.db
     .deleteFrom("team_user")

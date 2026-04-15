@@ -23,7 +23,6 @@ class Priorities extends Table
   IntColumn get color =>
       integer().nullable().map(const ThemeColorConverter())();
   TextColumn get key => text().nullable()();
-  IntColumn get teamId => integer().nullable()();
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   TextColumn get role => text().withDefault(const Constant('member'))();
@@ -83,10 +82,6 @@ class PrioritiesBase extends BaseTable {
       json['created_at'] as String,
     ).millisecondsSinceEpoch.toDouble();
     json.remove('inherit_members');
-    // team_id comes as a string from the API (PostgreSQL bigint → JSON string)
-    if (json['team_id'] is String) {
-      json['team_id'] = int.tryParse(json['team_id'] as String);
-    }
 
     return PriorityRow.fromJson(json);
   }
@@ -779,7 +774,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          path: Path.generate(parent: parent.path),
          order: Order(DateTime.now().millisecondsSinceEpoch.toDouble()),
          root: false,
-         teamId: parent.teamId,
          unread: false,
          role: parent.role,
          attentionWindowSet: false,
@@ -843,7 +837,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          pomodoro: row.pomodoro,
          color: row.color,
          key: row.key,
-         teamId: row.teamId ?? parent?.teamId,
          root: row.root,
          path: row.path,
          createdBy: row.createdBy,
@@ -1044,9 +1037,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<Duration?> pomodoro = const Value.absent(),
     Value<ThemeColor?> color = const Value.absent(),
     Value<String?> key = const Value.absent(),
-    Value<int?> teamId = const Value.absent(),
     bool? root,
-    bool? personal,
     Priority? parent,
     Value<int?> pending = const Value.absent(),
     bool? unread,
@@ -1086,7 +1077,6 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         pomodoro: pomodoro,
         color: color,
         key: key,
-        teamId: teamId,
         root: root,
         unread: unread,
         role: role,

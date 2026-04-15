@@ -20,7 +20,6 @@ import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync } from "./sync/notify";
-import { addUserToTeamPriorities } from "./team";
 import { getPlotTwistInstanceId } from "../utils/trial";
 
 const account = new Hono<{ Bindings: Bindings }>();
@@ -475,10 +474,6 @@ account.post("/activate", async (c) => {
         .deleteFrom("team_invitation")
         .where("id", "=", inv.id)
         .execute();
-
-      // Give user access to all team priorities
-      const teamPriorityIds = await addUserToTeamPriorities(c.var.db, inv.team_id, user.id);
-      for (const pid of teamPriorityIds) notifySync(c, pid);
     }
 
     if (invitations.length > 0) {
@@ -521,10 +516,6 @@ account.post("/activate", async (c) => {
             oc.columns(["team_id", "user_id"]).doNothing()
           )
           .execute();
-
-        // Give user access to all team priorities
-        const domainTeamPriorityIds = await addUserToTeamPriorities(c.var.db, domain.team_id, user.id);
-        for (const pid of domainTeamPriorityIds) notifySync(c, pid);
 
         const context = extractRequestContext(c);
         const logger = createLogger(context);

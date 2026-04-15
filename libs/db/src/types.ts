@@ -131,51 +131,6 @@ export type Database = {
           },
         ]
       }
-      atlas_schema_revisions: {
-        Row: {
-          applied: number
-          description: string
-          error: string | null
-          error_stmt: string | null
-          executed_at: string
-          execution_time: number
-          hash: string
-          operator_version: string
-          partial_hashes: Json | null
-          total: number
-          type: number
-          version: string
-        }
-        Insert: {
-          applied?: number
-          description: string
-          error?: string | null
-          error_stmt?: string | null
-          executed_at: string
-          execution_time: number
-          hash: string
-          operator_version: string
-          partial_hashes?: Json | null
-          total?: number
-          type?: number
-          version: string
-        }
-        Update: {
-          applied?: number
-          description?: string
-          error?: string | null
-          error_stmt?: string | null
-          executed_at?: string
-          execution_time?: number
-          hash?: string
-          operator_version?: string
-          partial_hashes?: Json | null
-          total?: number
-          type?: number
-          version?: string
-        }
-        Relationships: []
-      }
       channel: {
         Row: {
           channel_id: string
@@ -813,7 +768,6 @@ export type Database = {
           key: string | null
           path: unknown
           sync_depth: number | null
-          team_id: number | null
           title: string
           updated_at: string
           updated_by: number
@@ -830,7 +784,6 @@ export type Database = {
           key?: string | null
           path: unknown
           sync_depth?: number | null
-          team_id?: number | null
           title: string
           updated_at?: string
           updated_by?: number
@@ -847,7 +800,6 @@ export type Database = {
           key?: string | null
           path?: unknown
           sync_depth?: number | null
-          team_id?: number | null
           title?: string
           updated_at?: string
           updated_by?: number
@@ -858,12 +810,6 @@ export type Database = {
             foreignKeyName: "priority_created_by_fkey"
             columns: ["created_by"]
             referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_team_id_fkey"
-            columns: ["team_id"]
-            referencedRelation: "team"
             referencedColumns: ["id"]
           },
           {
@@ -1008,61 +954,6 @@ export type Database = {
           },
           {
             foreignKeyName: "priority_setting_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      priority_user: {
-        Row: {
-          archived_at: string | null
-          created_at: string
-          personal: boolean
-          priority_id: string
-          role: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          archived_at?: string | null
-          created_at?: string
-          personal?: boolean
-          priority_id: string
-          role?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          archived_at?: string | null
-          created_at?: string
-          personal?: boolean
-          priority_id?: string
-          role?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "priority_user_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_user_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "priority_user_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_user_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
@@ -2014,6 +1905,9 @@ export type Database = {
         Row: {
           archived_at: string | null
           auto_maintained: boolean
+          auto_team_admin_team_id: number | null
+          auto_twist_admin_id: number | null
+          auto_user_id: string | null
           created_at: string
           created_by: string
           id: string
@@ -2026,6 +1920,9 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           auto_maintained?: boolean
+          auto_team_admin_team_id?: number | null
+          auto_twist_admin_id?: number | null
+          auto_user_id?: string | null
           created_at?: string
           created_by: string
           id?: string
@@ -2038,6 +1935,9 @@ export type Database = {
         Update: {
           archived_at?: string | null
           auto_maintained?: boolean
+          auto_team_admin_team_id?: number | null
+          auto_twist_admin_id?: number | null
+          auto_user_id?: string | null
           created_at?: string
           created_by?: string
           id?: string
@@ -2048,6 +1948,24 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "topic_auto_team_admin_team_id_fkey"
+            columns: ["auto_team_admin_team_id"]
+            referencedRelation: "team"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topic_auto_twist_admin_id_fkey"
+            columns: ["auto_twist_admin_id"]
+            referencedRelation: "twist_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topic_auto_user_id_fkey"
+            columns: ["auto_user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "topic_created_by_fkey"
             columns: ["created_by"]
@@ -2635,21 +2553,18 @@ export type Database = {
         Row: {
           ai_enabled: boolean | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
-          onboarding_completed: boolean | null
           updated_at: string
           user_id: string
         }
         Insert: {
           ai_enabled?: boolean | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
-          onboarding_completed?: boolean | null
           updated_at?: string
           user_id: string
         }
         Update: {
           ai_enabled?: boolean | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
-          onboarding_completed?: boolean | null
           updated_at?: string
           user_id?: string
         }
@@ -4044,7 +3959,6 @@ export type Database = {
           title: string
         }[]
       }
-      setup_plot_app_priority: { Args: { p_user_id: string }; Returns: Json }
       share_thread: {
         Args: {
           p_add_contact_ids?: string[]
@@ -4410,7 +4324,6 @@ export type Database = {
           key: string | null
           order: number | null
           path: unknown
-          personal: boolean | null
           pomodoro: number | null
           role: string | null
           root: boolean | null
@@ -4418,7 +4331,6 @@ export type Database = {
           see_within_requests_set: boolean | null
           see_within_updates: Json | null
           see_within_updates_set: boolean | null
-          team_id: number | null
           title: string | null
           top_order: number | null
           unread: boolean | null
@@ -4449,6 +4361,22 @@ export type Database = {
           priority_id: string | null
           role: string | null
           user_id: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          joined_at?: string | null
+          path?: unknown
+          priority_id?: string | null
+          role?: never
+          user_id?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          joined_at?: string | null
+          path?: unknown
+          priority_id?: string | null
+          role?: never
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -4846,7 +4774,6 @@ export type Database = {
           key: string | null
           order: number | null
           path: unknown
-          personal: boolean | null
           pomodoro: number | null
           role: string | null
           root: boolean | null
@@ -4854,7 +4781,6 @@ export type Database = {
           see_within_requests_set: boolean | null
           see_within_updates: Json | null
           see_within_updates_set: boolean | null
-          team_id: number | null
           title: string | null
           top_order: number | null
           unread: boolean | null
@@ -4881,21 +4807,6 @@ export type Database = {
           p_user_id: string
         }
         Returns: undefined
-      }
-      upsert_priority_user: {
-        Args: {
-          p_archived_at: string
-          p_personal: boolean
-          p_priority_id: string
-          user_id: string
-        }
-        Returns: Database["public"]["Tables"]["priority_user"]["Row"]
-        SetofOptions: {
-          from: "*"
-          to: "priority_user"
-          isOneToOne: true
-          isSetofReturn: false
-        }
       }
       upsert_schedule: {
         Args: { p_defaults?: Json; p_schedule: Json; user_id: string }

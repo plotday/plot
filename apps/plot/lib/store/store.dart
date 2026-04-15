@@ -58,7 +58,6 @@ part 'sync.dart';
 part 'sync_orchestrator.dart';
 part 'actor.dart';
 part 'priority.dart';
-part 'priority_user.dart';
 part 'twist_instance.dart';
 part 'user_action.dart';
 part 'thread.dart';
@@ -356,7 +355,6 @@ abstract class BaseTable {
     SyncStates,
     Actors,
     Priorities,
-    PriorityUsers,
     TwistInstances,
     Threads,
     Links,
@@ -2182,7 +2180,6 @@ class Store extends _$Store {
         schedules,
         links,
         sessions,
-        priorityUsers,
         twistInstances,
         channels,
         noteTags,
@@ -2219,7 +2216,6 @@ class Store extends _$Store {
         sessions,
         channels,
         twistInstances,
-        priorityUsers,
         threads,
         priorities,
         actors,

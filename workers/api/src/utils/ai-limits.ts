@@ -4,7 +4,7 @@ import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import { rpc } from "../rpc";
 import { UserAiUsage } from "../state/user-ai-usage";
-import { getPersonalPlan } from "./limits";
+import { getPersonalPlan, isUserInAnyTeam } from "./limits";
 
 export const FREE_AI_LIMITS = {
   note_processing: 100, // embedding + analysis + summary per month
@@ -30,44 +30,56 @@ export async function checkAiLimit(
 }
 
 /**
- * Priority-aware AI limit check. Checks in order:
- * 1. Team priorities → always allowed (covered by team plan)
- * 2. Syncing user → if paid or within free limits, use their quota
- * 3. Other priority members → if any has capacity, use their quota
+ * AI limit check for a set of contacts. AI is free if ANY of the users
+ * linked to these contacts are on a paid plan or part of a team.
  *
- * Returns the userId to charge usage against (null for team priorities).
+ * Otherwise, it uses available free quota from any member, prioritizing
+ * the syncing user.
+ *
+ * Returns the userId to charge usage against (null if skipped).
  */
-export async function checkAiLimitForPriority(
+export async function checkAiLimitForContacts(
   env: Bindings,
   db: Kysely<DB>,
-  priorityId: string,
+  contactIds: string[],
   syncingUserId: string,
   operation: AiOperation
 ): Promise<{ allowed: boolean; chargeUserId: string | null }> {
-  // 1. Team priorities are covered by the team plan
-  const priority = await db
-    .selectFrom("priority")
-    .select("team_id")
-    .where("id", "=", priorityId)
-    .executeTakeFirst();
-
-  if (priority?.team_id) {
-    return { allowed: true, chargeUserId: null };
+  if (contactIds.length === 0) {
+    // If no contacts, just check the syncing user
+    const result = await checkAiLimit(env, db, syncingUserId, operation);
+    return { allowed: result.allowed, chargeUserId: result.allowed ? syncingUserId : null };
   }
 
-  // 2. Check syncing user first
+  // Get all users linked to these contacts
+  const users = await db
+    .selectFrom("user_contact")
+    .select("user_id")
+    .where("contact_id", "in", contactIds)
+    .where("linked", "=", true)
+    .where("archived_at", "is", null)
+    .execute();
+
+  const userIds = [...new Set(users.map((u) => u.user_id))];
+
+  // 1. Skip quota if any user is on a paid plan or part of a team
+  for (const userId of userIds) {
+    const [plan, inTeam] = await Promise.all([
+      getPersonalPlan(db, userId),
+      isUserInAnyTeam(db, userId),
+    ]);
+    if (plan !== "free" || inTeam) {
+      return { allowed: true, chargeUserId: null };
+    }
+  }
+
+  // 2. Otherwise, check if syncing user has free quota
   const syncingResult = await checkAiLimit(env, db, syncingUserId, operation);
   if (syncingResult.allowed) {
     return { allowed: true, chargeUserId: syncingUserId };
   }
 
-  // 3. Check other users in the priority
-  // rpc() unwraps single-column TABLE results, so we get string[] directly
-  const usersData = await rpc(db, "get_users_with_priority_access", {
-    target_priority_id: priorityId,
-  });
-  const userIds = (!usersData ? [] : Array.isArray(usersData) ? usersData : [usersData]) as unknown as string[];
-
+  // 3. Check if any other user has free quota
   for (const userId of userIds) {
     if (userId === syncingUserId) continue;
     const result = await checkAiLimit(env, db, userId, operation);

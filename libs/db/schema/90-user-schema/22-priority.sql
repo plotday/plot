@@ -39,8 +39,6 @@ inherited_settings AS (
         MAX(CASE WHEN key = 'attention_window' THEN value::text END)::jsonb AS attention_window,
         MAX(CASE WHEN key = 'see_within_requests' THEN value::text END)::jsonb AS see_within_requests,
         MAX(CASE WHEN key = 'see_within_updates' THEN value::text END)::jsonb AS see_within_updates,
-        MAX(CASE WHEN key = 'path' THEN value #>> '{}' END) AS path_value,
-        MAX(CASE WHEN key = 'path' THEN text(source_path) END) AS path_source,
         MAX(updated_at) AS updated_at
     FROM priority_setting_inherited
     GROUP BY user_id, priority_id
@@ -61,18 +59,7 @@ SELECT
     -- root is the user's single top-level priority
     p.id = ur.root_id AS root,
     COALESCE(direct.title, p.title) AS title,
-    CASE
-        WHEN inh.path_value IS NOT NULL THEN
-            CASE WHEN inh.path_source IS NOT NULL
-                AND p.path != inh.path_source::ltree
-                AND subpath(p.path, nlevel(inh.path_source::ltree)) != '' THEN
-                inh.path_value::ltree || subpath(p.path, nlevel(inh.path_source::ltree))
-            ELSE
-                inh.path_value::ltree
-            END
-        ELSE
-            p.path
-    END AS path,
+    p.path AS path,
     p.path AS global_path,
     direct.top_order,
     COALESCE(direct."order", extract(epoch FROM p.created_at) * 1000) AS "order",
