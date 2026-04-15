@@ -127,11 +127,11 @@ PODS:
   - path_provider_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
-  - PostHog (3.48.0)
+  - PostHog (3.50.0)
   - posthog_flutter (0.0.1):
     - Flutter
     - FlutterMacOS
-    - PostHog (< 4.0.0, >= 3.47.0)
+    - PostHog (< 4.0.0, >= 3.50.0)
   - PromisesObjC (2.4.0)
   - screen_retriever_macos (0.0.1):
     - FlutterMacOS
@@ -296,8 +296,8 @@ SPEC CHECKSUMS:
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   package_info_plus: f0052d280d17aa382b932f399edf32507174e870
   path_provider_foundation: bb55f6dbba17d0dccd6737fe6f7f34fbd0376880
-  PostHog: c54a468d68921b89508f9ddc84b0d0adfe802085
-  posthog_flutter: 789630788986be1f728624d10f4b4e753f83c39f
+  PostHog: 0e18a35b0fef8f5bfbcdb1cfce22245350b6a401
+  posthog_flutter: 7d1eca9c14e96d1fb31cf35d75a32c31fbc776c5
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   screen_retriever_macos: 452e51764a9e1cdb74b3c541238795849f21557f
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
@@ -308,6 +308,6 @@ SPEC CHECKSUMS:
   window_manager: b729e31d38fb04905235df9ea896128991cad99e
   window_to_front: 9e76fd432e36700a197dac86a0011e49c89abe0a
 
-PODFILE CHECKSUM: b3212c71c698da75b6d8d482d01e460b04f0816a
+PODFILE CHECKSUM: 7931a4c73b3d44cbeccce86b03ea733896106a72
 
 COCOAPODS: 1.16.2
