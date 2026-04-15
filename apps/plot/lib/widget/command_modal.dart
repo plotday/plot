@@ -31,11 +31,7 @@ class CommandModal {
   final bool? showFilter;
   final Future<Commands> Function()? commandsBuilder;
   Future<void> Function()? _refreshCallback;
-  final Map<String, ListTileController> _controllers = {};
-
-  /// Stable key for controller lookup that survives _commands.list() returning new instances.
-  static String _controllerKey(Command command) =>
-      '${command.runtimeType}:${command.title}:${command.subtitle}:${command.eventObject}:${command.eventAction}';
+  final Map<Command, ListTileController> _controllers = Map.identity();
 
   Future<CommandReturn> run(BuildContext context) async {
     if (!context.mounted) return CommandSkipped();
@@ -61,9 +57,12 @@ class CommandModal {
             .toList();
       },
       itemBuilder: (command, _) {
-        // Get or create controller for this command (reuse if it exists)
+        // Get or create controller for this command (reuse if it exists).
+        // Keyed by Command identity so items that share title/subtitle
+        // (e.g. two twist instances with the same name) get distinct
+        // controllers and Enter targets the highlighted row.
         final controller = _controllers.putIfAbsent(
-          _controllerKey(command),
+          command,
           () => ListTileController(),
         );
 
@@ -138,8 +137,7 @@ class CommandModal {
       onSelect: (modalContext, command, searchText) async {
         // Get the controller for this command and call run()
         // This ensures spinner state management for Enter key path
-        final key = _controllerKey(command);
-        final controller = _controllers[key];
+        final controller = _controllers[command];
 
         // Only use controller path if it's attached (ListTile rendered and not disposed)
         if (controller != null && controller.isAttached) {
@@ -178,6 +176,8 @@ class CommandModal {
         _refreshCallback = () async {
           if (commandsBuilder != null) {
             _commands = await commandsBuilder!();
+            // Rebuilt commands are new instances; drop stale controller refs.
+            _controllers.clear();
           }
           await refresh();
         };
