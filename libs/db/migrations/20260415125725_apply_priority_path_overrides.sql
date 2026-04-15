@@ -123,7 +123,8 @@ BEGIN
             SELECT DISTINCT
                 src_child.id   AS child_source_id,
                 src_child.path AS child_source_path,
-                src_child.title AS child_title
+                src_child.title AS child_title,
+                nlevel(src_child.path) AS child_level
             FROM thread_priority tp
             JOIN priority src_child ON src_child.id = tp.priority_id
             WHERE tp.user_id = v_override.setting_user_id
@@ -274,7 +275,7 @@ BEGIN
 END;
 $$;
 -- Create "upsert_priority" function
-CREATE FUNCTION "user"."upsert_priority" ("user_id" uuid, "p_priority" jsonb) RETURNS "user"."priority" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+CREATE OR REPLACE FUNCTION "user"."upsert_priority" ("user_id" uuid, "p_priority" jsonb) RETURNS "user"."priority" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
 #variable_conflict use_column
 DECLARE
     _input "user"."priority";
