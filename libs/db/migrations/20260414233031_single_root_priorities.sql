@@ -231,10 +231,10 @@ BEGIN
 
     -- Backfill Team Admin topics (skip teams with no members to avoid NULL created_by)
     FOR v_team IN
-        SELECT t.id, t.name, MIN(tu.user_id) AS creator_id
+        SELECT DISTINCT ON (t.id) t.id, t.name, tu.user_id AS creator_id
         FROM team t
         JOIN team_user tu ON tu.team_id = t.id
-        GROUP BY t.id, t.name
+        ORDER BY t.id
     LOOP
         INSERT INTO topic (name, type, team_id, auto_team_admin_team_id, created_by, auto_maintained)
         VALUES (v_team.name || ' Admins', 'team', v_team.id, v_team.id, v_team.creator_id, TRUE)
