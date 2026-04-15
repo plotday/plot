@@ -276,13 +276,20 @@ DO $$
 DECLARE
     v_sub_priority RECORD;
 BEGIN
-    FOR v_sub_priority IN 
+    FOR v_sub_priority IN
         SELECT p.id, p.user_id, parent.id as parent_id
         FROM priority p
         JOIN priority parent ON parent.path @> p.path AND parent.id != p.id
         WHERE parent.key = '@plot.twist-dev'
     LOOP
-        UPDATE thread SET priority_id = v_sub_priority.parent_id WHERE priority_id = v_sub_priority.id;
+        -- Re-file threads to parent priority (skip if thread already assigned elsewhere for that user)
+        INSERT INTO thread_priority (thread_id, user_id, priority_id)
+        SELECT thread_id, user_id, v_sub_priority.parent_id
+        FROM thread_priority
+        WHERE priority_id = v_sub_priority.id
+        ON CONFLICT (thread_id, user_id) DO NOTHING;
+
+        -- Delete sub-priority; cascade removes its thread_priority rows
         DELETE FROM priority WHERE id = v_sub_priority.id;
     END LOOP;
 END $$;
