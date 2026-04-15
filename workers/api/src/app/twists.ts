@@ -12,7 +12,7 @@ import {
   deleteTwist,
   getAll as getAllTwists,
   getById as getTwistById,
-  getByPriority as getTwistsByPriority,
+  getByFilter,
   update as updateTwist,
 } from "../twist/management";
 import { resolveOptions } from "../twist/tools/factory";
@@ -21,14 +21,14 @@ import { saveSecureOptions } from "../utils/secure-options";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { handleValidationError } from "../utils/validation";
-import { notifySync, notifyUserSync } from "./sync/notify";
+import { notifyUserSync } from "./sync/notify";
 import { PlanLimitError } from "../utils/limits";
 
 const twists = new Hono<{ Bindings: Bindings }>();
 
 // Schemas
 const TwistRequestSchema = z.object({
-  priorityId: z.string(),
+  priorityId: z.string().optional(),
   twistId: z.coerce.number(), // Accept string or number, coerce to number (twist.id is bigint)
   twistEnvironment: z
     .enum(["personal", "private", "review", "public"])
@@ -222,13 +222,8 @@ twists.get("/sources/summary", async (c) => {
   }
 });
 
-// GET /twists - List all twists accessible to user for a priority
+// GET /twists - List all twists accessible to user
 twists.get("/twists", async (c) => {
-  const priorityId = c.req.query("priorityId");
-  if (!priorityId) {
-    return c.json({ message: "Bad request (missing priorityId)" }, 400);
-  }
-
   const twists = await getAllTwists(c.var.db, c.var.user.id);
   return c.json(twists);
 });
@@ -240,17 +235,22 @@ twists.get("/twist/:id", async (c) => {
   return c.json(twists);
 });
 
-// GET /twist - Get twists by priority
+// GET /twist - Get twists, optionally filtered by teamId
 twists.get("/twist", async (c) => {
-  const priorityId = c.req.query("priorityId");
-  if (!priorityId) {
-    return c.json({ message: "Bad request (missing priorityId)" }, 400);
+  const teamId = c.req.query("teamId");
+  if (teamId) {
+    // Verify user is a member of the team
+    const membership = await c.var.db
+      .selectFrom("team_user")
+      .select("user_id")
+      .where("team_id", "=", teamId)
+      .where("user_id", "=", c.var.user.id)
+      .executeTakeFirst();
+    if (!membership) {
+      return c.json({ message: "Forbidden: you are not a member of this team" }, 403);
+    }
   }
-  const context = extractRequestContext(c);
-  const logger = createLogger(context);
-  logger.debug("Fetching installed twists for priority", { priority_id: priorityId });
-  const twists = await getTwistsByPriority(c.var.db, priorityId);
-  logger.debug("Found installed twists", { priority_id: priorityId, count: twists.length });
+  const twists = await getByFilter(c.var.db, c.var.user.id, teamId);
   return c.json(twists);
 });
 
@@ -266,7 +266,6 @@ twists.post("/twist", async (c) => {
     const dbTwistInstance = await addTwist(
       c.var.db,
       c.var.user.id,
-      body.priorityId,
       body.twistId,
       body.twistEnvironment,
       body.name,
@@ -280,14 +279,13 @@ twists.post("/twist", async (c) => {
       }
     );
 
-    notifySync(c, body.priorityId);
+    notifyUserSync(c, c.var.user.id);
 
     return c.json({ id: dbTwistInstance.id });
   } catch (error) {
     const context = extractRequestContext(c);
     const logger = createLogger(context);
     logger.error("Error adding twist", error as Error, {
-      priority_id: body.priorityId,
       twist_id: String(body.twistId),
       twist_environment: body.twistEnvironment,
     });
@@ -357,9 +355,7 @@ twists.post("/twist/draft/:id/activate", async (c) => {
       body.teamId
     );
 
-    if (body.priorityId) {
-      notifySync(c, body.priorityId);
-    }
+    notifyUserSync(c, c.var.user.id);
 
     return c.json({ success: true });
   } catch (error) {

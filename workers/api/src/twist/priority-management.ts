@@ -160,10 +160,10 @@ export async function getOrCreateTwistPriority(
   db: Kysely<DB>,
   publisherId?: number | null
 ): Promise<{ priorityId: string; twistAdminId: number; isNew: boolean }> {
-  // Query twist_admin to see if this twist already has a priority
+  // Query twist_admin to see if this twist already has an admin entry
   let query = db
     .selectFrom("twist_admin")
-    .select(["id", "priority_id"])
+    .select(["id"])
     .where("twist_package_id", "=", twistPackageId);
 
   if (isPersonal) {
@@ -174,15 +174,7 @@ export async function getOrCreateTwistPriority(
 
   const existingResult = await query.executeTakeFirst();
 
-  if (existingResult?.priority_id) {
-    return {
-      priorityId: existingResult.priority_id,
-      twistAdminId: Number(existingResult.id),
-      isNew: false,
-    };
-  }
-
-  // Not found, need to ensure Twist Development priority exists and use it
+  // Get or create the Twist Development priority for this user
   const twistDevPriorityId = await getOrCreateTwistDevelopmentPriority(
     userId,
     db
@@ -191,24 +183,21 @@ export async function getOrCreateTwistPriority(
   let twistAdminId: number;
 
   if (existingResult) {
-    // twist_admin exists but priority_id was null - update it
-    const updateResult = await db
-      .updateTable("twist_admin")
-      .set({ priority_id: twistDevPriorityId })
-      .where("id", "=", existingResult.id)
-      .returning(["id"])
-      .executeTakeFirstOrThrow();
-    twistAdminId = Number(updateResult.id);
+    // twist_admin already exists — return it directly
+    twistAdminId = Number(existingResult.id);
+    return {
+      priorityId: twistDevPriorityId,
+      twistAdminId,
+      isNew: false,
+    };
   } else {
-    // Create new twist_admin entry
+    // Create new twist_admin entry (no priority_id column)
     const twistAdminData: {
       twist_package_id: string;
-      priority_id: string;
       user_id?: string;
       publisher_id?: number | bigint | string;
     } = {
       twist_package_id: twistPackageId,
-      priority_id: twistDevPriorityId,
     };
 
     if (isPersonal) {
@@ -282,7 +271,6 @@ export async function getAccessiblePublishers(
       "publisher.url",
     ])
     .where("twist_admin.publisher_id", "is not", null)
-    .where("twist_admin.priority_id", "is not", null)
     .execute();
 
   // Filter to unique publishers

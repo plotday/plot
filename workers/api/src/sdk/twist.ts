@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { rpcUser } from "../rpc";
 import type { Bindings } from "../env";
 import { createDb } from "../db";
 import { deployTwist } from "../twist/deployment";
@@ -269,7 +268,6 @@ twist.get("/twist/:id", async (c) => {
     .select([
       "twist_admin.id",
       "twist_admin.twist_package_id",
-      "twist_admin.priority_id",
       "twist_admin.created_at",
       "twist_admin.updated_at",
       "publisher.id as publisher_id",
@@ -288,7 +286,6 @@ twist.get("/twist/:id", async (c) => {
   return c.json({
     id: twistAdmin.id,
     twist_package_id: twistAdmin.twist_package_id,
-    priority_id: twistAdmin.priority_id,
     publisher: twistAdmin.publisher_id
       ? {
           id: twistAdmin.publisher_id,
@@ -425,73 +422,35 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
       // First check if admin entry exists
       const existingAdmin = await db
         .selectFrom("twist_admin")
-        .select(["id", "publisher_id", "priority_id"])
+        .select(["id", "publisher_id"])
         .where("twist_package_id", "=", packageId)
         .where("user_id", "is", null)
         .executeTakeFirst();
 
       if (existingAdmin) {
-        // Admin exists, check if we need to create/update priority
-        if (!existingAdmin.priority_id) {
-          // Priority not set, create it
-          if (!user) {
-            return new Response(
-              "User authentication required to set up twist priority",
-              { status: 401 }
-            );
-          }
+        twistAdminId = Number(existingAdmin.id);
 
-          // For non-personal deployments, publisherId is required
-          if (publisherId === undefined) {
-            return new Response(
-              "Publisher ID is required for non-personal deployments",
-              { status: 400 }
-            );
-          }
+        // If publisherId was provided and differs from current, update it
+        if (
+          publisherId !== undefined &&
+          String(publisherId) !== existingAdmin.publisher_id
+        ) {
+          await db
+            .updateTable("twist_admin")
+            .set({ publisher_id: publisherId })
+            .where("id", "=", existingAdmin.id)
+            .execute();
 
-          const result = await getOrCreateTwistPriority(
-            user.id,
-            packageId,
-            name,
-            false, // isPersonal
-            db,
-            publisherId
-          );
-          twistAdminId = result.twistAdminId;
-
-          // Re-fetch admin to get publisher_id
+          // Re-fetch to get updated publisher_id
           const updatedAdmin = await db
             .selectFrom("twist_admin")
-            .select(["id", "publisher_id", "priority_id"])
-            .where("id", "=", String(result.twistAdminId))
+            .select(["id", "publisher_id"])
+            .where("id", "=", existingAdmin.id)
             .executeTakeFirstOrThrow();
 
           twistAdmin = updatedAdmin;
         } else {
-          twistAdminId = Number(existingAdmin.id);
-
-          // If publisherId was provided and differs from current, update it
-          if (
-            publisherId !== undefined &&
-            String(publisherId) !== existingAdmin.publisher_id
-          ) {
-            await db
-              .updateTable("twist_admin")
-              .set({ publisher_id: publisherId })
-              .where("id", "=", existingAdmin.id)
-              .execute();
-
-            // Re-fetch to get updated publisher_id
-            const updatedAdmin = await db
-              .selectFrom("twist_admin")
-              .select(["id", "publisher_id", "priority_id"])
-              .where("id", "=", existingAdmin.id)
-              .executeTakeFirstOrThrow();
-
-            twistAdmin = updatedAdmin;
-          } else {
-            twistAdmin = existingAdmin;
-          }
+          twistAdmin = existingAdmin;
         }
       } else {
         // Admin doesn't exist, create it
@@ -523,7 +482,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         // Fetch the new admin entry
         const newAdmin = await db
           .selectFrom("twist_admin")
-          .select(["id", "publisher_id", "priority_id"])
+          .select(["id", "publisher_id"])
           .where("id", "=", String(result.twistAdminId))
           .executeTakeFirstOrThrow();
 
@@ -552,17 +511,24 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
       );
     }
 
-    // Integrations check: user token must have access to priority, or publisher token must match
+    // Integrations check: user token must be a topic member, or publisher token must match
     if (userToken && user) {
-      // Check if user has access to the admin priority
-      const hasAccess = await rpcUser(db, "has_priority_access", {
-        user_id: user.id,
-        priority_id: twistAdmin.priority_id!,
-      });
+      // Check if user is a member of the auto-maintained topic for this twist admin
+      const hasAccess = await db
+        .selectFrom("topic as t")
+        .innerJoin("topic_member as tm", "tm.topic_id", "t.id")
+        .innerJoin("user_contact as uc", "uc.contact_id", "tm.contact_id")
+        .select("t.id")
+        .where("t.auto_twist_admin_id", "=", String(twistAdmin.id))
+        .where("t.auto_maintained", "=", true)
+        .where("uc.user_id", "=", user.id)
+        .where("uc.linked", "=", true)
+        .where("uc.archived_at", "is", null)
+        .executeTakeFirst();
 
       if (!hasAccess) {
         return new Response(
-          "Forbidden: you do not have access to this twist's priority",
+          "Forbidden: you do not have access to this twist",
           {
             status: 403,
           }
@@ -798,10 +764,10 @@ twist.get("/twist/:id/logs", async (c) => {
       return new Response("Twist not found", { status: 404 });
     }
   } else {
-    // For non-personal environments, check priority access
+    // For non-personal environments, check topic membership
     const twistAdmin = await db
       .selectFrom("twist_admin")
-      .select(["id", "priority_id"])
+      .select(["id"])
       .where("twist_package_id", "=", twistPackageId)
       .where("user_id", "is", null)
       .executeTakeFirst();
@@ -810,15 +776,18 @@ twist.get("/twist/:id/logs", async (c) => {
       return new Response("Twist not found", { status: 404 });
     }
 
-    if (!twistAdmin.priority_id) {
-      return new Response("Twist has no associated priority", { status: 400 });
-    }
-
-    // Check if user has access to the priority
-    const hasAccess = await rpcUser(db, "has_priority_access", {
-      user_id: user.id,
-      priority_id: twistAdmin.priority_id,
-    });
+    // Check if user is a member of the auto-maintained topic for this twist admin
+    const hasAccess = await db
+      .selectFrom("topic as t")
+      .innerJoin("topic_member as tm", "tm.topic_id", "t.id")
+      .innerJoin("user_contact as uc", "uc.contact_id", "tm.contact_id")
+      .select("t.id")
+      .where("t.auto_twist_admin_id", "=", String(twistAdmin.id))
+      .where("t.auto_maintained", "=", true)
+      .where("uc.user_id", "=", user.id)
+      .where("uc.linked", "=", true)
+      .where("uc.archived_at", "is", null)
+      .executeTakeFirst();
 
     if (!hasAccess) {
       return new Response("Forbidden: you do not have access to this twist", {
