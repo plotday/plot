@@ -229,10 +229,15 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- Backfill Team Admin topics
-    FOR v_team IN SELECT id, name FROM team LOOP
+    -- Backfill Team Admin topics (skip teams with no members to avoid NULL created_by)
+    FOR v_team IN
+        SELECT t.id, t.name, MIN(tu.user_id) AS creator_id
+        FROM team t
+        JOIN team_user tu ON tu.team_id = t.id
+        GROUP BY t.id, t.name
+    LOOP
         INSERT INTO topic (name, type, team_id, auto_team_admin_team_id, created_by, auto_maintained)
-        VALUES (v_team.name || ' Admins', 'team', v_team.id, v_team.id, (SELECT user_id FROM team_user WHERE team_id = v_team.id LIMIT 1), TRUE)
+        VALUES (v_team.name || ' Admins', 'team', v_team.id, v_team.id, v_team.creator_id, TRUE)
         ON CONFLICT (auto_team_admin_team_id) WHERE auto_maintained = TRUE AND auto_team_admin_team_id IS NOT NULL DO NOTHING
         RETURNING id INTO v_topic_id;
 
