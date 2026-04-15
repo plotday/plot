@@ -1645,11 +1645,18 @@ class Store extends _$Store {
   }
 
   Future<void> _syncAll() async {
+    // Snapshot the count before sync. SyncOrchestrator swallows auth errors
+    // (treats them as expected) so syncAll() can return normally even when every
+    // operation got a 401. Only reset if no new auth failures occurred during
+    // this sync — otherwise we'd falsely log "recovered" and reset the backoff.
+    final countBefore = _syncRetryCount;
     try {
       // Use orchestrator for dependency-aware sync
       // This pulls all entities (parents→children), then pushes all (children→parents)
       await SyncOrchestrator.instance.syncAll();
-      _resetAuthFailures();
+      if (_syncRetryCount == countBefore) {
+        _resetAuthFailures();
+      }
     } catch (e, stackTrace) {
       // Check if this is an auth error - if so, schedule retry
       if (_isAuthError(e)) {

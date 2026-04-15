@@ -92,7 +92,36 @@ export async function getUser(
       error: null,
     };
   } catch (error) {
-    console.error("JWT verification failed:", error);
+    // Decode the JWT payload without verifying it so we can log timing details.
+    // This tells us whether the rejection is expiry/clock-skew vs. a signature
+    // or issuer mismatch — without needing to reproduce the failure client-side.
+    try {
+      const payloadB64 = token.split(".")[1];
+      if (payloadB64) {
+        const payload = JSON.parse(atob(payloadB64));
+        const nowSec = Math.floor(Date.now() / 1000);
+        const exp = payload.exp as number | undefined;
+        const nbf = payload.nbf as number | undefined;
+        const iat = payload.iat as number | undefined;
+        const expiredByMs = exp != null ? (nowSec - exp) * 1000 : null;
+        const notYetValidMs = nbf != null ? (nbf - nowSec) * 1000 : null;
+        console.error("JWT verification failed:", {
+          error: String(error),
+          serverTimeMs: Date.now(),
+          iat: iat != null ? new Date(iat * 1000).toISOString() : null,
+          nbf: nbf != null ? new Date(nbf * 1000).toISOString() : null,
+          exp: exp != null ? new Date(exp * 1000).toISOString() : null,
+          // Positive = expired N ms ago. Negative = still valid for N ms.
+          expiredByMs,
+          // Positive = not yet valid for N ms. Negative = already valid.
+          notYetValidMs,
+          sub: payload.sub as string | undefined,
+        });
+      }
+    } catch {
+      // Malformed JWT — log the raw error below.
+    }
+    console.error("JWT verification failed (raw):", error);
     return { user: null, claims: null, error };
   }
 }

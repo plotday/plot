@@ -59,7 +59,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   const access_token = authHeader.replace(/\s*Bearer\s+/, "");
 
   // Validate Clerk JWT using local PEM key (no network call)
-  const { user, claims, error } = await getUser(
+  const { user, claims } = await getUser(
     c.var.db,
     access_token,
     c.env.CLERK_JWT_KEY
@@ -76,9 +76,19 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
     return next();
   }
 
+  if (claims) {
+    // JWT was valid but the user row is missing from the DB. This is unrecoverable
+    // without re-activation (e.g. DB reset, account deletion). Signal the client
+    // to sign out immediately rather than retrying indefinitely.
+    console.warn(
+      `Auth rejected on ${c.req.method} ${c.req.path}: JWT valid but no DB user`,
+      { clerkId: claims.clerkId }
+    );
+    return c.json({ message: "Unauthorized", code: "user_not_found" }, 401);
+  }
+
   console.warn(
-    `Auth rejected on ${c.req.method} ${c.req.path}:`,
-    error ? `JWT error: ${error}` : "no user and no claims"
+    `Auth rejected on ${c.req.method} ${c.req.path}: JWT error (see above)`
   );
   return c.json({ message: "Unauthorized" }, 401);
 };

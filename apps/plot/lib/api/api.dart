@@ -123,9 +123,20 @@ String _getErrorTitle(int statusCode) {
 /// On 401, verify the session with Clerk to distinguish stale-token races
 /// from dead sessions. If the session is definitively invalid, triggers
 /// sign-out via [Base.handleTokenResult].
+///
+/// If the server returns `code: "user_not_found"` (JWT valid but no matching
+/// DB user — e.g. after a DB reset or account deletion), signs out immediately
+/// without consulting Clerk, since no token refresh can fix a missing user row.
 Future<void> _checkAuthError(http.Response response, String url) async {
   if (response.statusCode == 401) {
     log.warning("Auth error from API: 401 Unauthorized $url");
+    if (_parseErrorFields(response).code == 'user_not_found') {
+      log.warning("Auth error: user not found in DB — forcing sign-out");
+      Base.handleTokenResult(
+        (token: null, failure: TokenFailureReason.sessionInvalid),
+      );
+      return;
+    }
     final result = await Base.getSessionTokenWithReason();
     Base.handleTokenResult(result);
   }
