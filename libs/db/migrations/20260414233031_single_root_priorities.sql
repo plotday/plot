@@ -210,8 +210,8 @@ BEGIN
             RETURNING id INTO v_topic_id;
 
             -- Create Priority Rule: Everyone -> Using Plot
-            INSERT INTO priority_rule (user_id, priority_id, type, criteria, precedence)
-            SELECT v_user.id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+            INSERT INTO priority_rule (user_id, priority_id, type, criteria)
+            SELECT v_user.id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
             FROM public.priority p
             CROSS JOIN public.topic t
             WHERE p.user_id = v_user.id AND p.key = '@plot.app'
@@ -220,8 +220,8 @@ BEGIN
 
             -- Create Priority Rule: User Topic -> Using Plot
             IF v_topic_id IS NOT NULL THEN
-                INSERT INTO priority_rule (user_id, priority_id, type, criteria, precedence)
-                SELECT v_user.id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[v_topic_id::text]), 100
+                INSERT INTO priority_rule (user_id, priority_id, type, criteria)
+                SELECT v_user.id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[v_topic_id::text])
                 FROM public.priority p
                 WHERE p.user_id = v_user.id AND p.key = '@plot.app'
                 ON CONFLICT DO NOTHING;
@@ -239,8 +239,8 @@ BEGIN
         IF v_topic_id IS NOT NULL THEN
             -- Rules for team admins
             FOR v_user IN SELECT user_id FROM team_user WHERE team_id = v_team.id AND role = 'admin' LOOP
-                INSERT INTO priority_rule (user_id, priority_id, type, criteria, precedence)
-                SELECT v_user.user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[v_topic_id::text]), 100
+                INSERT INTO priority_rule (user_id, priority_id, type, criteria)
+                SELECT v_user.user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[v_topic_id::text])
                 FROM public.priority p
                 WHERE p.user_id = v_user.user_id AND p.key = '@plot.app'
                 ON CONFLICT DO NOTHING;
@@ -257,8 +257,8 @@ BEGIN
 
         IF v_topic_id IS NOT NULL THEN
             -- Rule for twist admin
-            INSERT INTO priority_rule (user_id, priority_id, type, criteria, precedence)
-            SELECT v_ta.user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[v_topic_id::text]), 100
+            INSERT INTO priority_rule (user_id, priority_id, type, criteria)
+            SELECT v_ta.user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[v_topic_id::text])
             FROM public.priority p
             WHERE p.user_id = v_ta.user_id AND p.key = '@plot.twist-dev'
             ON CONFLICT DO NOTHING;

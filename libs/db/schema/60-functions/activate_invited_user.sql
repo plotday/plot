@@ -42,24 +42,24 @@ BEGIN
 
     -- Add priority rules for auto-filing
     -- 1. Everyone topic -> Using Plot
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria, precedence)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
+    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
     FROM public.priority p
     CROSS JOIN public.topic t
     WHERE p.user_id = p_user_id AND p.key = '@plot.app'
       AND t.auto_maintained = TRUE AND t.team_id IS NULL AND t.name = 'Everyone';
 
     -- 2. User topic -> Using Plot
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria, precedence)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
+    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
     FROM public.priority p
     CROSS JOIN public.topic t
     WHERE p.user_id = p_user_id AND p.key = '@plot.app'
       AND t.auto_user_id = p_user_id;
 
     -- 3. Team admin topics -> Using Plot
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria, precedence)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
+    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
     FROM public.priority p
     CROSS JOIN public.topic t
     JOIN public.team_user tu ON tu.team_id = t.auto_team_admin_team_id AND tu.user_id = p_user_id
@@ -67,8 +67,8 @@ BEGIN
       AND t.auto_team_admin_team_id IS NOT NULL;
 
     -- 4. Twist/Connector admin topics -> Twist Development
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria, precedence)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text]), 100
+    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
+    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
     FROM public.priority p
     CROSS JOIN public.topic t
     JOIN public.twist_admin ta ON ta.id = t.auto_twist_admin_id AND ta.user_id = p_user_id
