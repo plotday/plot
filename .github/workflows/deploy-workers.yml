@@ -37,7 +37,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  refresh-secrets:
+    uses: ./.github/workflows/refresh-secrets.yml
+    secrets: inherit
+
   check-changes:
+    needs: refresh-secrets
     runs-on: ubuntu-latest
     outputs:
       workers: ${{ steps.filter.outputs.workers }}
@@ -107,7 +112,7 @@ jobs:
           fi
 
   migrate:
-    needs: check-changes
+    needs: refresh-secrets
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -116,19 +121,10 @@ jobs:
       - name: Install Atlas
         uses: ariga/setup-atlas@v0
 
-      - name: Load database secrets
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          GCP_SA_KEY: "op://Production/Database/service account/plot-ci-migrator-key.json"
-          MIGRATOR_PASSWORD: op://Production/Database/migrator/password
-
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ env.GCP_SA_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Download and start Cloud SQL Proxy
         run: |
@@ -140,6 +136,8 @@ jobs:
 
       - name: Apply pending migrations
         working-directory: libs/db
+        env:
+          MIGRATOR_PASSWORD: ${{ secrets.MIGRATOR_PASSWORD }}
         run: |
           atlas migrate apply \
             --dir "file://migrations" \
@@ -164,17 +162,6 @@ jobs:
         with:
           submodules: true
 
-      - name: Load secrets
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
-          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
-          POSTHOG_PROJECT: op://Production/PostHog/username
-          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
-
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
@@ -196,38 +183,21 @@ jobs:
       - name: Deploy secrets and variables for ${{ matrix.worker }}
         working-directory: workers/${{ matrix.worker }}
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          WORKER_CONFIGS: ${{ secrets.WORKER_CONFIGS_JSON }}
         run: |
-          # Read deploy_vars from package.json
-          DEPLOY_VARS=$(node -pe "require('./package.json').config?.deploy_vars || ''")
+          WORKER="${{ matrix.worker }}"
+          SECRETS_JSON=$(printf '%s' "$WORKER_CONFIGS" | jq -c ".\"$WORKER\".secrets // {}")
+          VARS_FORMATTED=$(printf '%s' "$WORKER_CONFIGS" | jq -r ".\"$WORKER\".vars // \"\"")
 
-          if [ -z "$DEPLOY_VARS" ]; then
-            echo "No deploy_vars configured for ${{ matrix.worker }}"
-            exit 0
-          fi
-
-          echo "Deploying variables: $DEPLOY_VARS"
-
-          # Generate all variables from .env files + 1Password
-          ALL=$(../../scripts/gen-env production $DEPLOY_VARS)
-
-          # Split into secrets (containing SECRET, KEY, or TOKEN)
-          SECRETS=$(echo "$ALL" | grep -E 'SECRET|KEY|TOKEN' || true)
-          SECRETS_JSON=$(echo "$SECRETS" | ../../scripts/env-to-json)
-
-          # Split into regular variables (not containing SECRET, KEY, or TOKEN)
-          VARS=$(echo "$ALL" | grep -Ev 'SECRET|KEY|TOKEN' || true)
-          VARS_FORMATTED=$(echo "$VARS" | sed 's/=/:/g' | tr '\n' ' ' | sed 's/ $//')
-
-          # Deploy secrets via wrangler secret bulk
-          if [ -n "$SECRETS_JSON" ] && [ "$SECRETS_JSON" != "{}" ]; then
+          if [ "$SECRETS_JSON" != "{}" ] && [ "$SECRETS_JSON" != "null" ]; then
             echo "Deploying secrets..."
-            echo "$SECRETS_JSON" | pnpm wrangler secret bulk --env production
+            printf '%s' "$SECRETS_JSON" | pnpm wrangler secret bulk --env production
           else
             echo "No secrets to deploy"
           fi
 
-          # Export variables for deploy step
           if [ -n "$VARS_FORMATTED" ]; then
             echo "DEPLOY_VARS=$VARS_FORMATTED" >> $GITHUB_ENV
             echo "Variables to deploy: $VARS_FORMATTED"
@@ -236,4 +206,9 @@ jobs:
           fi
 
       - name: Deploy ${{ matrix.worker }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          POSTHOG_PROJECT: ${{ secrets.POSTHOG_PROJECT }}
+          POSTHOG_CLI_KEY: ${{ secrets.POSTHOG_CLI_KEY }}
         run: pnpm exec nx deploy @plotday/${{ matrix.worker }}

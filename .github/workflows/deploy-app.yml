@@ -17,12 +17,15 @@ permissions:
   deployments: write
 
 jobs:
+  refresh-secrets:
+    uses: ./.github/workflows/refresh-secrets.yml
+    secrets: inherit
+
   deploy:
     name: Deploy
+    needs: refresh-secrets
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
-    env:
-      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
     steps:
       - name: Generate GitHub App Token
@@ -60,21 +63,13 @@ jobs:
           echo "Build number: $BUILD_TIMESTAMP"
           echo "Version name: $VERSION_NAME"
 
-      - name: Load secrets
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
-          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
-
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
       - name: Write .env file
-        run: |
-          cd apps/plot && pnpm get-env && pnpm set-env prod
+        env:
+          FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
+        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
 
       - uses: subosito/flutter-action@v2
         with:
@@ -100,8 +95,8 @@ jobs:
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
           command: pages deploy apps/plot/build/web --project-name=app --commit-hash ${{ env.GITHUB_SHA }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 

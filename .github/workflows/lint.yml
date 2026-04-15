@@ -8,8 +8,6 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    env:
-      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
     steps:
       - name: Generate GitHub App Token

@@ -25,6 +25,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  refresh-secrets:
+    uses: ./.github/workflows/refresh-secrets.yml
+    secrets: inherit
+
   prepare-release:
     runs-on: ubuntu-latest
     concurrency:
@@ -111,9 +115,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-ios:
-    needs: prepare-release
+    needs: [prepare-release, refresh-secrets]
     if: inputs.ios
     runs-on: macos-26
+    env:
+      APPLE_DIST_CERT_BASE64: ${{ secrets.APPLE_DIST_CERT_BASE64 }}
+      APPLE_DIST_CERT_PASSWORD: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
 
     steps:
       - name: Generate GitHub App Token
@@ -138,38 +148,24 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-
-          APPLE_DIST_CERT_BASE64: op://Production/Apple/Signing/distribution p12
-          APPLE_DIST_CERT_PASSWORD: op://Production/Apple/Signing/distribution password
-
-          ASC_API_KEY_ID: op://Production/Apple/App Store Connect/key id
-          ASC_API_ISSUER_ID: op://Production/Apple/App Store Connect/issuer id
-
-          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
-
-      - name: Fetch signing files from 1Password
+      - name: Decode signing files
         id: profiles
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          IOS_MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 }}
+          IOS_SHARE_EXT_MOBILEPROVISION_BASE64: ${{ secrets.IOS_SHARE_EXT_MOBILEPROVISION_BASE64 }}
+          FIREBASE_IOS_GOOGLE_SERVICE_INFO: ${{ secrets.FIREBASE_IOS_GOOGLE_SERVICE_INFO }}
         run: |
           # App Store Connect API key
           mkdir -p ~/.appstoreconnect/private_keys
-          op read "op://Production/Apple/App Store Connect/key.p8" \
-            --out-file "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
-            --file-mode 0600
+          echo "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+          chmod 0600 "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
 
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
 
           # iOS App Store provisioning profile (day.plot.app)
-          op read "op://Production/Apple/Signing/ios.mobileprovision" \
-            --out-file "$RUNNER_TEMP/ios.mobileprovision" \
-            --file-mode 0600
+          echo "$IOS_MOBILEPROVISION_BASE64" | base64 --decode > "$RUNNER_TEMP/ios.mobileprovision"
+          chmod 0600 "$RUNNER_TEMP/ios.mobileprovision"
 
           APP_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
           APP_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
@@ -178,9 +174,8 @@ jobs:
           echo "app_profile_name=$APP_PROFILE_NAME" >> "$GITHUB_OUTPUT"
 
           # iOS App Store provisioning profile for ShareExtension (day.plot.app.ShareExtension)
-          op read "op://Production/Apple/Signing/ios-share-extension.mobileprovision" \
-            --out-file "$RUNNER_TEMP/ios-share-extension.mobileprovision" \
-            --file-mode 0600
+          echo "$IOS_SHARE_EXT_MOBILEPROVISION_BASE64" | base64 --decode > "$RUNNER_TEMP/ios-share-extension.mobileprovision"
+          chmod 0600 "$RUNNER_TEMP/ios-share-extension.mobileprovision"
 
           EXT_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios-share-extension.mobileprovision")")
           EXT_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios-share-extension.mobileprovision")")
@@ -189,9 +184,8 @@ jobs:
           echo "ext_profile_name=$EXT_PROFILE_NAME" >> "$GITHUB_OUTPUT"
 
           # Firebase config for iOS
-          op read "op://Production/Firebase Cloud Messaging/apple/GoogleService-Info.plist" \
-            --out-file "$GITHUB_WORKSPACE/apps/plot/ios/Runner/GoogleService-Info.plist" \
-            --file-mode 0600
+          echo "$FIREBASE_IOS_GOOGLE_SERVICE_INFO" | base64 --decode > "$GITHUB_WORKSPACE/apps/plot/ios/Runner/GoogleService-Info.plist"
+          chmod 0600 "$GITHUB_WORKSPACE/apps/plot/ios/Runner/GoogleService-Info.plist"
 
       - name: Import code signing certificates
         run: |
@@ -271,9 +265,8 @@ jobs:
 
       - name: Write .env file
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: |
-          cd apps/plot && pnpm get-env && pnpm set-env prod
+          FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
+        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
@@ -382,9 +375,13 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-android:
-    needs: prepare-release
+    needs: [prepare-release, refresh-secrets]
     if: inputs.android
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
 
     steps:
       - name: Generate GitHub App Token
@@ -409,37 +406,24 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: true
+      - name: Decode signing files
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-
-          ANDROID_KEYSTORE_PASSWORD: op://Production/Android Signing/keystore_password
-          ANDROID_KEY_PASSWORD: op://Production/Android Signing/key_password
-
-          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
-
-      - name: Fetch signing files from 1Password
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PLAY_STORE_SERVICE_KEY: ${{ secrets.PLAY_STORE_SERVICE_KEY }}
+          FIREBASE_ANDROID_GOOGLE_SERVICES: ${{ secrets.FIREBASE_ANDROID_GOOGLE_SERVICES }}
         run: |
           # Android signing keystore
-          op read "op://Production/Android Signing/plot-release.jks" \
-            --out-file "$GITHUB_WORKSPACE/apps/plot/android/plot-release.jks" \
-            --file-mode 0600
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/apps/plot/android/plot-release.jks"
+          chmod 0600 "$GITHUB_WORKSPACE/apps/plot/android/plot-release.jks"
 
           # Google Play API service key
           mkdir -p "$GITHUB_WORKSPACE/apps/plot/android"
-          op read "op://Production/Android Signing/Play Store/play-deployer-service-key.json" \
-            --out-file "$GITHUB_WORKSPACE/apps/plot/android/play-deployer-service-key.json" \
-            --file-mode 0600
+          echo "$PLAY_STORE_SERVICE_KEY" | base64 --decode > "$GITHUB_WORKSPACE/apps/plot/android/play-deployer-service-key.json"
+          chmod 0600 "$GITHUB_WORKSPACE/apps/plot/android/play-deployer-service-key.json"
 
           # Firebase config for Android
-          op read "op://Production/Firebase Cloud Messaging/android/google-services.json" \
-            --out-file "$GITHUB_WORKSPACE/apps/plot/android/app/google-services.json" \
-            --file-mode 0600
+          echo "$FIREBASE_ANDROID_GOOGLE_SERVICES" | base64 --decode > "$GITHUB_WORKSPACE/apps/plot/android/app/google-services.json"
+          chmod 0600 "$GITHUB_WORKSPACE/apps/plot/android/app/google-services.json"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -459,9 +443,8 @@ jobs:
 
       - name: Write .env file
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: |
-          cd apps/plot && pnpm get-env && pnpm set-env prod
+          FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
+        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
 
       - name: Create key.properties
         run: |
@@ -561,9 +544,17 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-macos:
-    needs: prepare-release
+    needs: [prepare-release, refresh-secrets]
     if: inputs.macos
     runs-on: macos-26
+    env:
+      APPLE_DIST_CERT_BASE64: ${{ secrets.APPLE_DIST_CERT_BASE64 }}
+      APPLE_DIST_CERT_PASSWORD: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
+      APPLE_INSTALLER_CERT_BASE64: ${{ secrets.APPLE_INSTALLER_CERT_BASE64 }}
+      APPLE_INSTALLER_CERT_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERT_PASSWORD }}
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
 
     steps:
       - name: Generate GitHub App Token
@@ -588,37 +579,19 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: true
+      - name: Decode signing files
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-
-          APPLE_DIST_CERT_BASE64: op://Production/Apple/Signing/distribution p12
-          APPLE_DIST_CERT_PASSWORD: op://Production/Apple/Signing/distribution password
-          APPLE_INSTALLER_CERT_BASE64: op://Production/Apple/Signing/installer p12
-          APPLE_INSTALLER_CERT_PASSWORD: op://Production/Apple/Signing/installer password
-
-          ASC_API_KEY_ID: op://Production/Apple/App Store Connect/key id
-          ASC_API_ISSUER_ID: op://Production/Apple/App Store Connect/issuer id
-
-          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
-
-      - name: Fetch signing files from 1Password
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          MACOS_PROVISIONPROFILE_BASE64: ${{ secrets.MACOS_PROVISIONPROFILE_BASE64 }}
         run: |
           # App Store Connect API key
           mkdir -p ~/.appstoreconnect/private_keys
-          op read "op://Production/Apple/App Store Connect/key.p8" \
-            --out-file "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
-            --file-mode 0600
+          echo "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+          chmod 0600 "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
 
           # Distribution provisioning profile
-          op read "op://Production/Apple/Signing/macos.provisionprofile" \
-            --out-file "$RUNNER_TEMP/macos.provisionprofile" \
-            --file-mode 0600
+          echo "$MACOS_PROVISIONPROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/macos.provisionprofile"
+          chmod 0600 "$RUNNER_TEMP/macos.provisionprofile"
 
       - name: Import code signing certificates
         run: |
@@ -659,9 +632,8 @@ jobs:
 
       - name: Write .env file
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: |
-          cd apps/plot && pnpm get-env && pnpm set-env prod
+          FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
+        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
@@ -836,9 +808,16 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   release-windows:
-    needs: prepare-release
+    needs: [prepare-release, refresh-secrets]
     if: inputs.windows
     runs-on: windows-latest
+    env:
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+      R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
 
     steps:
       - name: Detect branch and set prerelease flag
@@ -877,34 +856,6 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v3
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-
-          SUPABASE_URL: op://Production/Supabase/API/url
-          SUPABASE_ANON_KEY: op://Production/Supabase/API/public key
-          POSTHOG_HOST: op://Production/PostHog/hostname
-          POSTHOG_PROJECT: op://Production/PostHog/username
-          POSTHOG_CLI_KEY: op://Production/PostHog/sourcemaps/credential
-          POSTHOG_API_KEY: op://Production/PostHog/credential
-          GOOGLE_URL: op://Production/Google OAuth/url
-          GOOGLE_CLIENT_ID: op://Production/Google OAuth/username
-          GOOGLE_IOS_CLIENT_ID: op://Production/Google OAuth/iOS/client ID
-          GOOGLE_ANDROID_CLIENT_ID: op://Production/Google OAuth/Android/client ID
-          MICROSOFT_CLIENT_ID: op://Production/Microsoft OAuth/username
-
-          CLOUDFLARE_ACCOUNT_ID: op://Production/Cloudflare/username
-          CLOUDFLARE_API_TOKEN: op://Production/Cloudflare/credential
-          R2_ACCESS_KEY_ID: op://Production/cloudflare/build uploads/r2 access key id
-          R2_SECRET_ACCESS_KEY: op://Production/cloudflare/build uploads/r2 secret access key
-          R2_BUCKET_NAME: op://Production/cloudflare/build uploads/r2 bucket name
-
-          WINDOWS_CERT_PASSWORD: op://Production/Windows Signing/password
-          SHOREBIRD_TOKEN: op://Production/Shorebird/credential
-
       - name: Update MSIX version in pubspec.yaml
         shell: bash
         run: |
@@ -934,12 +885,11 @@ jobs:
         with:
           package_json_file: package.json
 
-      - name: Create production .env file
+      - name: Write .env file
         shell: bash
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: |
-          cd apps/plot && pnpm get-env && pnpm set-env prod
+          FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
+        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4

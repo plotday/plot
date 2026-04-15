@@ -129,8 +129,13 @@ if [ $fail -eq 1 ]; then
   exit 1
 fi
 
-# Inject 1Password references.
-printf "%s" "$result" | op --account plotco inject
+# Inject 1Password references (skip if none present, so CI works without 1Password
+# for env files that contain only plain values).
+if printf "%s" "$result" | grep -q "op://"; then
+  printf "%s" "$result" | op --account plotco inject
+else
+  printf "%s" "$result"
+fi
 
 # Generate key.properties for Android production builds
 if [ "$ENV" = "production" ]; then
