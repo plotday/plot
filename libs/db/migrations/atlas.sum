@@ -1,4 +1,4 @@
-h1:wVWCwMTsJGColjR0nKFKXoTCu4QyfWSsO/fqgIaskoo=
+h1:sOj2sbr1keC0Tl3ODd9OxS06ZmI8SmBPQS5ODF7DyvA=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -249,3 +249,4 @@ h1:wVWCwMTsJGColjR0nKFKXoTCu4QyfWSsO/fqgIaskoo=
 20260414233030_repair_onboarding_visibility.sql h1:RnfmexU51cAt1s9crS+FMdKeQL9PAr3LEkr6RibsOQQ=
 20260414233031_single_root_priorities.sql h1:iXJNzZolNH9W3dzCvQCRyCRanZZgY2yx2wUzkP0fpq8=
 20260415125725_apply_priority_path_overrides.sql h1:89YVXppPZM25Q5PpieYF9mKypS/jv5EvC/RIcW0/NqI=
+20260415185541_restore_public_connectors.sql h1:Gx6UH8NUVkEvFCusD/sNZUKKVocAIBdUa/cj0nbwMJ4=
