@@ -188,7 +188,8 @@ export async function getOrCreateTwistPriority(
     db
   );
 
-  // Create or update twist_admin entry
+  let twistAdminId: number;
+
   if (existingResult) {
     // twist_admin exists but priority_id was null - update it
     const updateResult = await db
@@ -197,12 +198,7 @@ export async function getOrCreateTwistPriority(
       .where("id", "=", existingResult.id)
       .returning(["id"])
       .executeTakeFirstOrThrow();
-
-    return {
-      priorityId: twistDevPriorityId,
-      twistAdminId: Number(updateResult.id),
-      isNew: true,
-    };
+    twistAdminId = Number(updateResult.id);
   } else {
     // Create new twist_admin entry
     const twistAdminData: {
@@ -232,13 +228,38 @@ export async function getOrCreateTwistPriority(
       .values(twistAdminData)
       .returning(["id"])
       .executeTakeFirstOrThrow();
-
-    return {
-      priorityId: twistDevPriorityId,
-      twistAdminId: Number(createAdminResult.id),
-      isNew: true,
-    };
+    twistAdminId = Number(createAdminResult.id);
   }
+
+  // If this is a personal deployment, ensure there's a priority rule linking its
+  // auto-maintained topic to the Twist Development priority. The topic is
+  // created by the auto_maintain_twist_admin_topic trigger on twist_admin insert.
+  if (isPersonal) {
+    const topic = await db
+      .selectFrom("topic")
+      .select("id")
+      .where("auto_twist_admin_id", "=", String(twistAdminId))
+      .executeTakeFirst();
+
+    if (topic) {
+      await db
+        .insertInto("priority_rule")
+        .values({
+          user_id: userId,
+          priority_id: twistDevPriorityId,
+          type: "contact_topics",
+          criteria: JSON.stringify({ topics: [topic.id] }),
+        })
+        .onConflict((oc) => oc.doNothing())
+        .execute();
+    }
+  }
+
+  return {
+    priorityId: twistDevPriorityId,
+    twistAdminId,
+    isNew: true,
+  };
 }
 
 /**

@@ -486,6 +486,20 @@ export interface PrioritySetting {
   value: Json;
 }
 
+export interface PriorityRule {
+  anchor_thread_id: string | null;
+  channel_id: Int8 | null;
+  created_at: Generated<Timestamp>;
+  criteria: Json | null;
+  embedding: string | null;
+  id: Generated<string>;
+  label: string | null;
+  priority_id: string;
+  type: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface PrioritySettingInherited {
   key: string | null;
   priority_id: string | null;
@@ -763,6 +777,9 @@ export interface Topic {
    * TRUE for system-managed topics (Everyone, team topics). Membership is maintained by triggers and cannot be modified via API.
    */
   auto_maintained: Generated<boolean>;
+  auto_team_admin_team_id: Int8 | null;
+  auto_twist_admin_id: Int8 | null;
+  auto_user_id: string | null;
   created_at: Generated<Timestamp>;
   created_by: string;
   id: Generated<string>;
@@ -1428,6 +1445,7 @@ export interface DB {
   priority: Priority;
   priority_child: PriorityChild;
   priority_child_twist: PriorityChildTwist;
+  priority_rule: PriorityRule;
   priority_setting: PrioritySetting;
   priority_setting_inherited: PrioritySettingInherited;
   priority_tags: PriorityTags;

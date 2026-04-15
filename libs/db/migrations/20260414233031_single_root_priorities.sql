@@ -206,7 +206,7 @@ BEGIN
             -- Create User Topic
             INSERT INTO topic (name, type, auto_user_id, created_by, auto_maintained)
             VALUES ('Account Topic', 'private', v_user.id, v_user.id, TRUE)
-            ON CONFLICT (auto_user_id) WHERE auto_maintained = TRUE DO NOTHING
+            ON CONFLICT (auto_user_id) WHERE auto_maintained = TRUE AND auto_user_id IS NOT NULL DO NOTHING
             RETURNING id INTO v_topic_id;
 
             -- Create Priority Rule: Everyone -> Using Plot
@@ -233,7 +233,7 @@ BEGIN
     FOR v_team IN SELECT id, name FROM team LOOP
         INSERT INTO topic (name, type, team_id, auto_team_admin_team_id, created_by, auto_maintained)
         VALUES (v_team.name || ' Admins', 'team', v_team.id, v_team.id, (SELECT user_id FROM team_user WHERE team_id = v_team.id LIMIT 1), TRUE)
-        ON CONFLICT (auto_team_admin_team_id) WHERE auto_maintained = TRUE DO NOTHING
+        ON CONFLICT (auto_team_admin_team_id) WHERE auto_maintained = TRUE AND auto_team_admin_team_id IS NOT NULL DO NOTHING
         RETURNING id INTO v_topic_id;
 
         IF v_topic_id IS NOT NULL THEN
@@ -252,7 +252,7 @@ BEGIN
     FOR v_ta IN SELECT id, user_id FROM twist_admin WHERE user_id IS NOT NULL LOOP
         INSERT INTO topic (name, type, auto_twist_admin_id, created_by, auto_maintained)
         VALUES ('Twist Admins', 'private', v_ta.id, v_ta.user_id, TRUE)
-        ON CONFLICT (auto_twist_admin_id) WHERE auto_maintained = TRUE DO NOTHING
+        ON CONFLICT (auto_twist_admin_id) WHERE auto_maintained = TRUE AND auto_twist_admin_id IS NOT NULL DO NOTHING
         RETURNING id INTO v_topic_id;
 
         IF v_topic_id IS NOT NULL THEN
