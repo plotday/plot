@@ -1895,6 +1895,26 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
   }
 
   Future<_LoadResult> _loadPriorityWithFallback() async {
+    // PriorityState eagerly creates a Note.draft (which reads Base.actorId!),
+    // so ensure identity is complete before constructing the bloc. An
+    // incomplete identity (userId present but actorId missing) usually means
+    // /activate hasn't completed yet (e.g. first run offline, or legacy
+    // stored identity without contact ID). Try one more resolve here.
+    if (Base.actorIdOrNull == null && Base.signedIn) {
+      try {
+        await Base.resolveIdentity();
+      } catch (e, stackTrace) {
+        log.warning('Could not resolve identity before loading priority',
+            e, stackTrace);
+      }
+      if (Base.actorIdOrNull == null) {
+        return _LoadResult.error(
+          'Your account is still being set up. Please check your '
+          'connection and try again.',
+        );
+      }
+    }
+
     try {
       // Level 1: Try to load requested priority
       final priority = await (widget.priority != null

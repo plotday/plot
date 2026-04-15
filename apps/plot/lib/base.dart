@@ -140,13 +140,19 @@ class Base {
       log.warning("Failed to restore identity from local storage", e, stack);
     }
 
-    // Step 4: If Clerk has a session but local identity wasn't restored,
-    // resolve via API. Skip if using FailedAuthService (no session possible).
-    if (!base._currentUserController.hasValue &&
+    // Step 4: If Clerk has a session but local identity wasn't restored, OR
+    // the restored identity is incomplete (userId present but contactId/
+    // actorId missing — e.g. pre-contact-id app versions), resolve via API.
+    // Skip if using FailedAuthService (no session possible).
+    final localIdentityIncomplete =
+        base._userId != null && base._actorId == null;
+    if ((!base._currentUserController.hasValue || localIdentityIncomplete) &&
         authService is! FailedAuthService &&
         authService.isSignedIn) {
       log.info(
-        'Clerk session found without local identity, resolving identity',
+        localIdentityIncomplete
+            ? 'Local identity missing contact ID, resolving identity'
+            : 'Clerk session found without local identity, resolving identity',
       );
       try {
         await Base.resolveIdentity();

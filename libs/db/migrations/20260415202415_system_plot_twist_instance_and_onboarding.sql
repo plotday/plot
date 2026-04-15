@@ -17,8 +17,9 @@ DO $$
 DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001';
     c_twist_package_id   CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
-    c_kris_user_id       CONSTANT uuid := '019d8efd-12e2-7ba9-98f1-ec08152ea427';
+    c_kris_seed_user_id  CONSTANT uuid := '019d8efd-12e2-7ba9-98f1-ec08152ea427';
 
+    v_kris_user_id   uuid;
     v_publisher_id   bigint;
     v_twist_admin_id bigint;
     v_plot_twist_id  bigint;
@@ -26,10 +27,26 @@ DECLARE
     v_thread_id      uuid;
     v_icon           text;
 BEGIN
-    -- 1. Ensure kris@plot.day exists (owner of the system twist instance)
-    INSERT INTO "user" (id, email, name)
-    VALUES (c_kris_user_id, 'kris@plot.day', 'Kris Braun')
-    ON CONFLICT (email) DO NOTHING;
+    -- 1. Resolve kris@plot.day (owner of the system twist instance).
+    --    If the user already exists (e.g. real production account, or from
+    --    a prior sign-in), use that id verbatim and DO NOT touch the row —
+    --    we must never alter or relink a live user here. Only seed if kris
+    --    is completely absent. When seeding fresh, also create the matching
+    --    primary contact so /activate never sees a user without a contact.
+    SELECT id INTO v_kris_user_id FROM "user" WHERE email = 'kris@plot.day';
+
+    IF v_kris_user_id IS NULL THEN
+        INSERT INTO "user" (id, email, name)
+        VALUES (c_kris_seed_user_id, 'kris@plot.day', 'Kris Braun')
+        RETURNING id INTO v_kris_user_id;
+
+        -- Seed a primary contact so Base.actorId is resolvable on first
+        -- sign-in. The sync_user_contact_from_contact trigger mirrors this
+        -- into user_contact with linked=TRUE, primary=TRUE.
+        INSERT INTO contact (email, name, user_id, "primary")
+        VALUES ('kris@plot.day', 'Kris Braun', v_kris_user_id, TRUE)
+        ON CONFLICT (email) DO NOTHING;
+    END IF;
 
     -- 2. Ensure Plot publisher exists
     INSERT INTO publisher (name, url)
@@ -66,7 +83,7 @@ BEGIN
 
     -- 5. Create the system Plot twist instance (idempotent)
     INSERT INTO twist_instance (id, twist_id, owner_id, name)
-    VALUES (c_system_instance_id, v_plot_twist_id, c_kris_user_id, 'Plot')
+    VALUES (c_system_instance_id, v_plot_twist_id, v_kris_user_id, 'Plot')
     ON CONFLICT (id) DO NOTHING;
 
     -- 6. Ensure the global Everyone topic exists
@@ -77,7 +94,7 @@ BEGIN
 
     IF v_everyone_topic_id IS NULL THEN
         INSERT INTO topic (created_by, name, auto_maintained)
-        VALUES (c_kris_user_id, 'Everyone', TRUE)
+        VALUES (v_kris_user_id, 'Everyone', TRUE)
         RETURNING id INTO v_everyone_topic_id;
     END IF;
 

@@ -422,7 +422,6 @@ account.post("/activate", async (c) => {
         await twistManagement.add(
           c.var.db,
           user.id,
-          priority.id,
           plotTwist.id,
           "public",
           "Plot",
@@ -564,6 +563,46 @@ account.post("/activate", async (c) => {
           user_id: user.id,
           contact_id: anyContact.id,
         });
+      }
+    }
+
+    // Self-healing: if the user has no contact at all, create one. This
+    // recovers existing users whose contact row was never created or was
+    // deleted — e.g. the auth middleware recognized them via Clerk
+    // external_id so /activate skipped the new-user contact creation, yet
+    // no contact exists. Without this the client gets contactId=null and
+    // all Base.actorId call sites crash.
+    if (!contact) {
+      try {
+        const created = await c.var.db
+          .insertInto("contact")
+          .values({
+            email: user.email,
+            name: user.name ?? null,
+            user_id: user.id,
+            primary: true,
+          })
+          .onConflict((oc) =>
+            oc.column("email").doUpdateSet({
+              user_id: user!.id,
+              primary: true,
+            })
+          )
+          .returning("id")
+          .executeTakeFirstOrThrow();
+        contact = { id: created.id };
+        const logger = createLogger(extractRequestContext(c));
+        logger.warn("Self-healed: created missing primary contact", {
+          user_id: user.id,
+          contact_id: created.id,
+        });
+      } catch (healErr) {
+        const logger = createLogger(extractRequestContext(c));
+        logger.error(
+          "Failed to self-heal missing primary contact",
+          healErr as Error,
+          { user_id: user.id }
+        );
       }
     }
 
