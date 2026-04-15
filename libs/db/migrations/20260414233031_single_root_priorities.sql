@@ -86,7 +86,7 @@ FROM priority p
     LEFT JOIN inherited_settings inh ON inh.user_id = p.user_id AND inh.priority_id = p.id
     LEFT JOIN "user".priority_unread upu ON upu.user_id = p.user_id AND upu.priority_id = p.id;
 
--- 3. Enforce single root in priority table
+-- 2. Define validation function
 CREATE OR REPLACE FUNCTION public.validate_priority_root ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
@@ -118,13 +118,7 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS validate_priority_root_trigger ON public.priority;
-CREATE TRIGGER validate_priority_root_trigger
-    BEFORE INSERT OR UPDATE OF path, user_id ON public.priority
-    FOR EACH ROW
-    EXECUTE FUNCTION public.validate_priority_root ();
-
--- 4. Update topic table
+-- 3. Update topic table
 ALTER TABLE "public"."topic" ADD COLUMN IF NOT EXISTS "auto_user_id" uuid REFERENCES public."user" ("id") ON DELETE CASCADE;
 ALTER TABLE "public"."topic" ADD COLUMN IF NOT EXISTS "auto_team_admin_team_id" bigint REFERENCES team ON DELETE CASCADE;
 ALTER TABLE "public"."topic" ADD COLUMN IF NOT EXISTS "auto_twist_admin_id" bigint REFERENCES twist_admin ON DELETE CASCADE;
@@ -159,7 +153,7 @@ WHERE
     AND auto_user_id IS NULL
     AND auto_twist_admin_id IS NULL;
 
--- 5. Backfill topics and rules for existing users
+-- 4. Backfill topics and rules for existing users
 DO $$
 DECLARE
     v_user RECORD;
@@ -272,7 +266,7 @@ BEGIN
     END LOOP;
 END $$;
 
--- 6. Consolidate twist sub-priorities
+-- 5. Consolidate twist sub-priorities
 DO $$
 DECLARE
     v_sub_priority RECORD;
@@ -287,3 +281,10 @@ BEGIN
         DELETE FROM priority WHERE id = v_sub_priority.id;
     END LOOP;
 END $$;
+
+-- 6. Enforce single root in priority table
+DROP TRIGGER IF EXISTS validate_priority_root_trigger ON public.priority;
+CREATE TRIGGER validate_priority_root_trigger
+    BEFORE INSERT OR UPDATE OF path, user_id ON public.priority
+    FOR EACH ROW
+    EXECUTE FUNCTION public.validate_priority_root ();
