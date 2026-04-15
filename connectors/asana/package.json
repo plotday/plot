@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@plotday/twister": "workspace:^",
-    "asana": "^3.0.10"
+    "asana": "^2.0.0"
   },
   "devDependencies": {
     "@types/asana": "^0.18.17",
