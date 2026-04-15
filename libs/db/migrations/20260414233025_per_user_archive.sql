@@ -1,5 +1,5 @@
 -- Create "maybe_archive_thread_last_holder" function
-CREATE FUNCTION "public"."maybe_archive_thread_last_holder" () RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION "public"."maybe_archive_thread_last_holder" () RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     v_thread_id uuid;
 BEGIN
@@ -46,8 +46,10 @@ BEGIN
 END;
 $$;
 -- Create trigger "maybe_archive_thread_after_link_delete"
+DROP TRIGGER IF EXISTS "maybe_archive_thread_after_link_delete" ON "public"."link";
 CREATE TRIGGER "maybe_archive_thread_after_link_delete" AFTER DELETE ON "public"."link" FOR EACH ROW EXECUTE FUNCTION "public"."maybe_archive_thread_last_holder"();
 -- Create trigger "maybe_archive_thread_after_priority_archive"
+DROP TRIGGER IF EXISTS "maybe_archive_thread_after_priority_archive" ON "public"."thread_priority";
 CREATE TRIGGER "maybe_archive_thread_after_priority_archive" AFTER UPDATE OF "archived_at" ON "public"."thread_priority" FOR EACH ROW WHEN ((new.archived_at IS NOT NULL) AND ((old.archived_at IS NULL) OR (old.archived_at IS DISTINCT FROM new.archived_at))) EXECUTE FUNCTION "public"."maybe_archive_thread_last_holder"();
 -- Modify "archive_links" function
 CREATE OR REPLACE FUNCTION "public"."archive_links" ("p_created_by" uuid, "p_filter" jsonb DEFAULT '{}') RETURNS uuid[] LANGUAGE plpgsql AS $$

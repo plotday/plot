@@ -1,11 +1,6 @@
 -- Consolidate priorities to a single root and remove 'personal' flags.
 
--- 1. Remove 'personal' column from priority_user and drop related indexes
-ALTER TABLE "public"."priority_user" DROP COLUMN IF EXISTS "personal";
-DROP INDEX IF EXISTS idx_priority_user_personal_user;
-DROP INDEX IF EXISTS idx_priority_user_personal_priority;
-
--- 2. Update user.priority view to remove 'personal' column
+-- 1. Update user.priority view to remove 'personal' column
 DROP VIEW IF EXISTS "user"."priority" CASCADE;
 CREATE OR REPLACE VIEW "user"."priority"
 AS
@@ -76,7 +71,6 @@ SELECT
     inh.pomodoro,
     inh.color,
     p.key,
-    p.team_id,
     COALESCE(upu.unread, FALSE) AS unread,
     'member'::text AS role,
     inh.attention_window,

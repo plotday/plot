@@ -1,5 +1,5 @@
 -- Modify "thread" table
-ALTER TABLE "public"."thread" ADD COLUMN "twist_id" bigint NULL, ADD COLUMN "pending_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[];
+ALTER TABLE "public"."thread" ADD COLUMN IF NOT EXISTS "twist_id" bigint NULL, ADD COLUMN IF NOT EXISTS "pending_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[];
 
 -- Data migration: backfill thread.twist_id from twist_instance.twist_id via
 -- created_by for twist-created threads. User-created threads keep twist_id
@@ -251,7 +251,7 @@ mapping AS (
 DELETE FROM thread WHERE id IN (SELECT dup_id FROM mapping);
 
 -- Create index "thread_twist_key_unique" to table: "thread"
-CREATE UNIQUE INDEX "thread_twist_key_unique" ON "public"."thread" ("twist_id", "key") WHERE ((twist_id IS NOT NULL) AND (key IS NOT NULL) AND (archived_at IS NULL));
+CREATE UNIQUE INDEX IF NOT EXISTS "thread_twist_key_unique" ON "public"."thread" ("twist_id", "key") WHERE ((twist_id IS NOT NULL) AND (key IS NOT NULL) AND (archived_at IS NULL));
 -- Set comment to column: "key" on table: "thread"
 COMMENT ON COLUMN "public"."thread"."key" IS 'Identifier for cross-user deduplication within a twist. Scoped by twist_id via thread_twist_key_unique. Not synced to clients.';
 -- Set comment to column: "contacts" on table: "thread"
@@ -261,9 +261,9 @@ COMMENT ON COLUMN "public"."thread"."twist_id" IS 'Twist definition that created
 -- Set comment to column: "pending_contacts" on table: "thread"
 COMMENT ON COLUMN "public"."thread"."pending_contacts" IS 'Contacts whose own sync wants to join but who have not yet been attested by another user''s sync. Promoted to contacts (with thread_priority filing) once a subsequent attester includes them.';
 -- Modify "thread_priority" table
-ALTER TABLE "public"."thread_priority" ADD COLUMN "archived_at" timestamptz NULL;
+ALTER TABLE "public"."thread_priority" ADD COLUMN IF NOT EXISTS "archived_at" timestamptz NULL;
 -- Create index "idx_thread_priority_archived" to table: "thread_priority"
-CREATE INDEX "idx_thread_priority_archived" ON "public"."thread_priority" ("thread_id") WHERE (archived_at IS NULL);
+CREATE INDEX IF NOT EXISTS "idx_thread_priority_archived" ON "public"."thread_priority" ("thread_id") WHERE (archived_at IS NULL);
 -- Modify "file_thread_priority_peers" function
 CREATE OR REPLACE FUNCTION "public"."file_thread_priority_peers" () RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE

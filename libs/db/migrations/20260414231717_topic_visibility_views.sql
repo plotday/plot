@@ -1,7 +1,7 @@
 -- Drop "priority_propagate_team_id_update" trigger
 DROP TRIGGER "priority_propagate_team_id_update" ON "public"."priority";
 -- Drop "priority" view
-DROP VIEW "user"."priority";
+DROP VIEW "user"."priority" CASCADE;
 -- Modify "priority" table
 ALTER TABLE "public"."priority" DROP COLUMN "team_id";
 -- Drop "priority_propagate_team_id" trigger
@@ -422,7 +422,7 @@ CREATE VIEW "user"."priority" (
      LEFT JOIN inherited_settings inh ON inh.user_id = p.user_id AND inh.priority_id = p.id
      LEFT JOIN "user".priority_unread upu ON upu.user_id = p.user_id AND upu.priority_id = p.id;
 -- Create "upsert_priority" function
-CREATE FUNCTION "user"."upsert_priority" ("user_id" uuid, "p_priority" jsonb) RETURNS "user"."priority" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+CREATE OR REPLACE FUNCTION "user"."upsert_priority" ("user_id" uuid, "p_priority" jsonb) RETURNS "user"."priority" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
 #variable_conflict use_column
 DECLARE
     _input "user"."priority";
