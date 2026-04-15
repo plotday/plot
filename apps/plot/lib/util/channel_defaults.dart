@@ -142,10 +142,10 @@ class ChannelDefaultSuggester {
 
       // Find the root priority for this org
       final orgPriority = priorities.firstWhere(
-        (p) => p.teamId == orgId && p.root,
+        (p) => p.teamId == BigInt.from(orgId) && p.root,
         orElse: () =>
             priorities.firstWhere(
-              (p) => p.teamId == orgId,
+              (p) => p.teamId == BigInt.from(orgId),
               orElse: () => defaultPriority,
             ),
       );

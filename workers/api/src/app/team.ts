@@ -427,12 +427,6 @@ team.delete("/team/:id/members/:userId", async (c) => {
     .where("user_id", "=", targetUserId)
     .execute();
 
-  // In the per-user priority model, removing a team member doesn't
-  // revoke access to priorities — each user owns their own tree.
-  for (const p of orgPriorities) {
-    notifySync(c, p.id);
-  }
-
   return c.json({ success: true });
 });
 

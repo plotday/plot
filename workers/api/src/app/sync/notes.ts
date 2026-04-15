@@ -6,7 +6,7 @@ import { createLogger } from "@plotday/worker-util";
 import { type DB, type Kysely, createDb, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { analyzeNote } from "../../queue/note-analysis";
-import { rpc, rpcUser } from "../../rpc";
+import { rpcUser } from "../../rpc";
 import {
   checkAiLimitForContacts,
   isAiEnabled,

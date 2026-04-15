@@ -5,7 +5,6 @@ import { createClerkClient } from "@clerk/backend";
 import { sendEmail } from "../email/send";
 import type { Bindings } from "../env";
 import type { AuthUser } from "../utils/auth";
-import { rpc } from "../rpc";
 import { generatePath } from "../utils/path";
 import {
   createFreeSubscription,
@@ -20,7 +19,6 @@ import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync } from "./sync/notify";
-import { getPlotTwistInstanceId } from "../utils/trial";
 
 const account = new Hono<{ Bindings: Bindings }>();
 

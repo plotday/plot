@@ -2,7 +2,6 @@ import type { Kysely } from "kysely";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
-import { rpc } from "../rpc";
 import { UserAiUsage } from "../state/user-ai-usage";
 import { getPersonalPlan, isUserInAnyTeam } from "./limits";
 

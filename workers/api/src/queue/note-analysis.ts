@@ -5,7 +5,7 @@ import type { DB } from "../db";
 import { createDb } from "../db";
 import type { Bindings } from "../env";
 import { createSchedule } from "../app/sync/smart-schedule";
-import { rpc, rpcUser } from "../rpc";
+import { rpcUser } from "../rpc";
 
 /**
  * AI-powered note analysis for auto-tagging todos, reply-needed notes,

@@ -1,10 +1,8 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
-import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/widget/widget.dart';
@@ -213,13 +211,6 @@ Future<FormData> _buildNewPriorityForm(
       prioritiesBloc.state.root ??
       await Priority.getDefault();
 
-  // Fetch user's teams for team selector (no longer used for priorities, but might be needed for other things)
-  List<Map<String, dynamic>> orgs = [];
-  try {
-    final orgList = await api.get<List<dynamic>>('/team');
-    orgs = orgList.cast<Map<String, dynamic>>();
-  } catch (_) {}
-
   final parentSelect = FormSelect<Priority>(
     key: 'parent',
     label: 'Parent',
@@ -362,13 +353,6 @@ class EditPriorityCommand extends ShowForm {
           if (parent == null && p.parentId != null) {
             parent = await Priority.getOne(p.parentId!);
           }
-
-          // Fetch user's teams (no longer used for priorities)
-          List<Map<String, dynamic>> orgs = [];
-          try {
-            final orgList = await api.get<List<dynamic>>('/team');
-            orgs = orgList.cast<Map<String, dynamic>>();
-          } catch (_) {}
 
           final parentSelect = FormSelect<Priority>(
             key: 'parent',

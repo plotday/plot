@@ -5,7 +5,7 @@ import { Tag } from "@plotday/twister/tag";
 
 import { type DB, createDb } from "../db";
 import { type Bindings, type TwistBatchMessage } from "../env";
-import { rpc, rpcUser } from "../rpc";
+import { rpcUser } from "../rpc";
 import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { createLogger } from "@plotday/worker-util";

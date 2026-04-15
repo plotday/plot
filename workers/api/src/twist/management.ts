@@ -531,7 +531,7 @@ export async function update(
           .selectFrom("twist_instance")
           .select(["id"])
           .where("owner_id", "=", currentTwist.owner_id)
-          .where("team_id", teamId ? "=" : "is", teamId ? BigInt(teamId) : null)
+          .where("team_id", teamId ? "=" : "is", (teamId ? BigInt(teamId) : null) as any)
           .where("name", "=", twist.name)
           .where("id", "!=", twist_instance_id)
           .where("archived_at", "is", null)

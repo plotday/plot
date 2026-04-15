@@ -26,6 +26,7 @@ class Priorities extends Table
   BoolColumn get root => boolean().withDefault(const Constant(false))();
   BoolColumn get unread => boolean().withDefault(const Constant(false))();
   TextColumn get role => text().withDefault(const Constant('member'))();
+  Int64Column get teamId => int64().nullable()();
   TextColumn get attentionWindow => text().nullable()();
   TextColumn get seeWithinRequests => text().nullable()();
   TextColumn get seeWithinUpdates => text().nullable()();
@@ -1045,6 +1046,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     Value<String?> attentionWindow = const Value.absent(),
     Value<String?> seeWithinRequests = const Value.absent(),
     Value<String?> seeWithinUpdates = const Value.absent(),
+    Value<BigInt?> teamId = const Value.absent(),
     bool? attentionWindowSet,
     bool? seeWithinRequestsSet,
     bool? seeWithinUpdatesSet,
@@ -1078,6 +1080,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         color: color,
         key: key,
         root: root,
+        teamId: teamId,
         unread: unread,
         role: role,
         attentionWindow: attentionWindow,
