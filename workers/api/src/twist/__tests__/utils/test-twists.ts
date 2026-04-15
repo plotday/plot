@@ -1,4 +1,3 @@
-import type { Priority } from "@plotday/twister/plot";
 
 /**
  * SimpleTwist - Basic twist with just lifecycle methods
@@ -22,7 +21,7 @@ export class SimpleTwist {
     // No tools to wait for
   }
 
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate() {
     this.activateCalled = true;
   }
 
@@ -64,10 +63,9 @@ export class ToolUsingTwist {
     this.tools = this.toolShed.getTools();
   }
 
-  async activate(priority: Pick<Priority, "id">) {
+  async activate() {
     // Use store to save activation state
     await this.tools.store.set("activated", true);
-    await this.tools.store.set("priority_id", priority.id);
   }
 
   async deactivate() {
@@ -122,11 +120,11 @@ export class MockRegularTool {
     this.tools = this.toolShed.getTools();
   }
 
-  async preActivate(_priority: Pick<Priority, "id">) {
+  async preActivate() {
     this.preActivateCalled = true;
   }
 
-  async postActivate(_priority: Pick<Priority, "id">) {
+  async postActivate() {
     this.postActivateCalled = true;
   }
 
@@ -170,7 +168,7 @@ export class NestedToolTwist {
     this.tools = this.toolShed.getTools();
   }
 
-  async activate(_priority: Pick<Priority, "id">) {
+  async activate() {
     // Use the nested tool
   }
 

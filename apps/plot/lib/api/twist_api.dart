@@ -1,5 +1,4 @@
 import 'package:equatable/equatable.dart';
-import 'package:plot/store/store.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'api.dart' as api;
 import 'twist_permission.dart';
@@ -142,11 +141,9 @@ class Twist {
 }
 
 class TwistApi {
-  /// Get all available twists for a priority
-  static Future<List<Twist>> getAllTwists(Priority priority) async {
-    final twistsData = await api.get<List<dynamic>>(
-      '/twists?priorityId=${priority.id.toString()}',
-    );
+  /// Get all available twists
+  static Future<List<Twist>> getAllTwists() async {
+    final twistsData = await api.get<List<dynamic>>('/twists');
     final twists = twistsData
         .map((json) => Twist.fromJson(json as Map<String, dynamic>))
         .toList();

@@ -1185,7 +1185,7 @@ class _SaveAiPreference extends Command {
 
     for (final priority in priorities) {
       try {
-        final twists = await TwistApi.getAllTwists(priority);
+        final twists = await TwistApi.getAllTwists();
         // Find twists that require AI (have _ai_required in permissions)
         final aiTwists = twists.where(
           (t) =>

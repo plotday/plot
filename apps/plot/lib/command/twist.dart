@@ -259,10 +259,9 @@ class ManageConnections extends Command {
 
   /// Fetches data from the network and populates [_dataCache].
   static Future<void> _loadData() async {
-    final defaultPriority = await Priority.getDefault();
     final futures = <Future<dynamic>>[
       TwistApi.getSourcesSummary(),
-      TwistApi.getAllTwists(defaultPriority),
+      TwistApi.getAllTwists(),
       UpgradeApi.getUsage().then<UsageData?>((r) => r).catchError((_) => null),
     ];
     if (_upcomingCache == null) {
@@ -1091,8 +1090,7 @@ class AddSource extends ShowCommands {
       );
 
   static Future<Commands> _getSourceCommands() async {
-    final defaultPriority = await Priority.getDefault();
-    final allTwists = await TwistApi.getAllTwists(defaultPriority);
+    final allTwists = await TwistApi.getAllTwists();
     final sourceTwists = allTwists.where((t) => t.isSource).toList();
 
     sourceTwists.sort(
@@ -1616,10 +1614,9 @@ class ManageTwists extends ShowCommands {
   static Future<Commands> _getTwistCommands(Priority? priority) async {
     // Twists are workspace-level; priority arg is retained for route context
     // but is no longer used to filter which twists are shown.
-    final defaultPriority = priority ?? await Priority.getDefault();
     final results = await Future.wait([
       TwistInstance.get(),
-      TwistApi.getAllTwists(defaultPriority),
+      TwistApi.getAllTwists(),
     ]);
     final twistInstances = results[0] as List<TwistInstance>;
     final allTwists = results[1] as List<Twist>;
@@ -1714,9 +1711,8 @@ class EditTwist extends ShowForm {
   ) async {
     try {
       // Fetch metadata and usage in parallel
-      final defaultPriority = await Priority.getDefault();
       final results = await Future.wait([
-        TwistApi.getAllTwists(defaultPriority),
+        TwistApi.getAllTwists(),
         ManageConnections._dataCache?.usage != null
             ? Future.value(ManageConnections._dataCache!.usage!)
             : UpgradeApi.getUsage(),
