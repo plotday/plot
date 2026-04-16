@@ -1795,9 +1795,11 @@ class EditTwist extends ShowForm {
         ManageConnections._dataCache?.usage != null
             ? Future.value(ManageConnections._dataCache!.usage!)
             : UpgradeApi.getUsage(),
+        TwistInstance.get(),
       ]);
       final allTwists = results[0] as List<Twist>;
       final usage = results[1] as UsageData;
+      final twistInstances = results[2] as List<TwistInstance>;
       final teams = usage.teams;
 
       final matchingTwist = allTwists.firstWhere(
@@ -1852,9 +1854,21 @@ class EditTwist extends ShowForm {
                   key: 'team_id',
                   label: 'Team',
                   initialValue: initialTeamId,
-                  items:
-                      (search) async =>
-                          ['personal', ...teams.map((t) => t.id)],
+                  items: (search) async {
+                    if (!matchingTwist.multipleInstances) {
+                      // For single-instance twists, only offer the current scope
+                      // plus any unoccupied scopes
+                      final otherInstances = twistInstances
+                          .where((i) => i.id != twistInstance.id)
+                          .toList();
+                      return [
+                        initialTeamId,
+                        ..._getAvailableScopes(matchingTwist, otherInstances, teams)
+                            .where((s) => s != initialTeamId),
+                      ];
+                    }
+                    return ['personal', ...teams.map((t) => t.id)];
+                  },
                   titleBuilder:
                       (id) =>
                           id == 'personal'

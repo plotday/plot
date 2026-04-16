@@ -500,6 +500,9 @@ twists.patch("/twist/:id", async (c) => {
 
     return c.json(dbTwist);
   } catch (error) {
+    if (error instanceof SingleInstanceError) {
+      return c.json(error.toJSON(), 409);
+    }
     if (error instanceof Error) {
       return c.json({ message: `Error updating twist: ${error.message}` }, 400);
     }

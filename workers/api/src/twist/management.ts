@@ -545,7 +545,7 @@ export async function update(
 
     const twistDef = await db
       .selectFrom("twist")
-      .select("is_source")
+      .select(["is_source", "multiple_instances", "twist_admin_id"])
       .where("id", "=", String(currentTwist.twist_id))
       .executeTakeFirst();
 
@@ -575,6 +575,28 @@ export async function update(
         );
         if (!limitCheck.allowed) {
           throw limitCheck.error;
+        }
+      }
+
+      // Single-instance conflict check when moving to a new scope
+      if (twistDef?.multiple_instances === false && twistDef?.is_source !== true) {
+        const targetTeamId = twist.teamId ?? null;
+        const existingInTarget = await db
+          .selectFrom("twist_instance")
+          .innerJoin("twist as t2", "t2.id", "twist_instance.twist_id")
+          .select("twist_instance.id")
+          .where("t2.twist_admin_id", "=", twistDef.twist_admin_id)
+          .where("twist_instance.id", "!=", twist_instance_id)
+          .where("twist_instance.archived_at", "is", null)
+          .where("twist_instance.draft", "=", false)
+          .$if(targetTeamId != null, (qb) => qb.where("twist_instance.team_id", "=", targetTeamId!))
+          .$if(targetTeamId == null, (qb) =>
+            qb.where("twist_instance.owner_id", "=", currentTwist.owner_id).where("twist_instance.team_id", "is", null)
+          )
+          .executeTakeFirst();
+
+        if (existingInTarget) {
+          throw new SingleInstanceError(targetTeamId ? "team" : "personal");
         }
       }
     }
