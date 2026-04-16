@@ -35,6 +35,23 @@ import type { InferTools, ToolBuilder, ToolShed } from "./utils/types";
  */
 export abstract class Twist<TSelf> {
   /**
+   * When `true`, users may install multiple instances of this twist within
+   * the same scope (personal workspace or team). Each instance must have a
+   * distinct name.
+   *
+   * Defaults to `false` (single instance per scope).
+   *
+   * @example
+   * ```typescript
+   * class WorkflowTwist extends Twist<WorkflowTwist> {
+   *   static multipleInstances = true;
+   *   // ...
+   * }
+   * ```
+   */
+  static multipleInstances?: boolean;
+
+  /**
    * The user ID (`twist_instance.owner_id`) that installed this twist.
    * Populated by the runtime before any lifecycle method runs.
    */
@@ -324,7 +341,7 @@ export abstract class Twist<TSelf> {
   }
 
   /**
-   * Called when the twist is removed from a priority.
+   * Called when the twist is uninstalled.
    *
    * This method should contain cleanup logic such as removing webhooks,
    * cleaning up external resources, or performing final data operations.
