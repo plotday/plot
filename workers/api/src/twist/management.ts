@@ -432,28 +432,28 @@ export async function getByPriority(
     }
 
     const data = await db
-      .selectFrom("priority_child_twist")
-      .leftJoin("twist", "twist.id", "priority_child_twist.twist_id")
+      .selectFrom("twist_instance_details")
+      .leftJoin("twist", "twist.id", "twist_instance_details.twist_id")
       .select([
-        "priority_child_twist.id",
-        "priority_child_twist.twist_id",
-        "priority_child_twist.name",
-        "priority_child_twist.owner_id",
-        "priority_child_twist.options",
-        "priority_child_twist.archived_at",
-        "priority_child_twist.created_at",
-        "priority_child_twist.updated_at",
-        "priority_child_twist.twist_environment",
-        "priority_child_twist.is_source",
-        "priority_child_twist.version",
-        "priority_child_twist.author_name",
-        "priority_child_twist.author_email",
-        "priority_child_twist.author_url",
+        "twist_instance_details.id",
+        "twist_instance_details.twist_id",
+        "twist_instance_details.name",
+        "twist_instance_details.owner_id",
+        "twist_instance_details.options",
+        "twist_instance_details.archived_at",
+        "twist_instance_details.created_at",
+        "twist_instance_details.updated_at",
+        "twist_instance_details.twist_environment",
+        "twist_instance_details.is_source",
+        "twist_instance_details.version",
+        "twist_instance_details.author_name",
+        "twist_instance_details.author_email",
+        "twist_instance_details.author_url",
         "twist.permissions",
         "twist.options_schema",
       ])
-      .where("priority_child_twist.owner_id", "=", priority.user_id)
-      .where("priority_child_twist.archived_at", "is", null)
+      .where("twist_instance_details.owner_id", "=", priority.user_id)
+      .where("twist_instance_details.archived_at", "is", null)
       .execute();
 
     logger.debug("Query returned rows", { row_count: data?.length || 0 });
@@ -477,39 +477,39 @@ export async function getByFilter(
 ) {
   try {
     let query = db
-      .selectFrom("priority_child_twist")
-      .leftJoin("twist", "twist.id", "priority_child_twist.twist_id")
+      .selectFrom("twist_instance_details")
+      .leftJoin("twist", "twist.id", "twist_instance_details.twist_id")
       .select([
-        "priority_child_twist.id",
-        "priority_child_twist.twist_id",
-        "priority_child_twist.name",
-        "priority_child_twist.owner_id",
-        "priority_child_twist.options",
-        "priority_child_twist.archived_at",
-        "priority_child_twist.created_at",
-        "priority_child_twist.updated_at",
-        "priority_child_twist.twist_environment",
-        "priority_child_twist.is_source",
-        "priority_child_twist.version",
-        "priority_child_twist.author_name",
-        "priority_child_twist.author_email",
-        "priority_child_twist.author_url",
+        "twist_instance_details.id",
+        "twist_instance_details.twist_id",
+        "twist_instance_details.name",
+        "twist_instance_details.owner_id",
+        "twist_instance_details.options",
+        "twist_instance_details.archived_at",
+        "twist_instance_details.created_at",
+        "twist_instance_details.updated_at",
+        "twist_instance_details.twist_environment",
+        "twist_instance_details.is_source",
+        "twist_instance_details.version",
+        "twist_instance_details.author_name",
+        "twist_instance_details.author_email",
+        "twist_instance_details.author_url",
         "twist.permissions",
         "twist.options_schema",
       ])
-      .where("priority_child_twist.archived_at", "is", null);
+      .where("twist_instance_details.archived_at", "is", null);
 
     if (teamId) {
-      query = query.where("priority_child_twist.team_id", "=", BigInt(teamId) as any);
+      query = query.where("twist_instance_details.team_id", "=", BigInt(teamId) as any);
     } else {
       query = query.where((eb) =>
         eb.or([
           eb.and([
-            eb("priority_child_twist.owner_id", "=", userId),
-            eb("priority_child_twist.team_id", "is", null),
+            eb("twist_instance_details.owner_id", "=", userId),
+            eb("twist_instance_details.team_id", "is", null),
           ]),
           eb(
-            "priority_child_twist.team_id",
+            "twist_instance_details.team_id",
             "in",
             eb.selectFrom("team_user").select("team_id").where("user_id", "=", userId)
           ),

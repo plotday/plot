@@ -26,6 +26,6 @@ FROM
     thread_tag at
     JOIN thread a ON a.id = at.thread_id
     -- Only include tags on threads created by the twist itself
-    JOIN priority_child_twist pct ON pct.id = a.created_by
+    JOIN twist_instance_details tid ON tid.id = a.created_by
 WHERE
     a.draft = FALSE;

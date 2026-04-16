@@ -1,4 +1,4 @@
-h1:JCuuMJU3soSaOGKsrLJTZWvcAihaPE0NUB0E9Ojvz6I=
+h1:KGmd/aIK+dPXw+YLp5FV/NAALhVKUYMKWzfrVmzymxE=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -256,3 +256,4 @@ h1:JCuuMJU3soSaOGKsrLJTZWvcAihaPE0NUB0E9Ojvz6I=
 20260415220712_add_twist_multiple_instances.sql h1:mRlK6zdRw/82h+jt+5qDMSOlESW4CaOi1+bTOylELOQ=
 20260416152401_remove_twist_admin.sql h1:wMyU0BMc+CuCG2fusaWVP08r1231BIUzm0t/qFELxpQ=
 20260416153610_verify_sync.sql h1:vGhA3TEdf+4QWLA/kfTL2/xwUfp60MQMfVdbsPlIRpY=
+20260416185027_rename_priority_child_twist_to_twist_instance_details.sql h1:Ez83HQp6cEbAS23/CgGsHcxqG1yfBP7n+Lmy+F8LPRA=

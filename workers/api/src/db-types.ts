@@ -450,26 +450,6 @@ export interface PriorityChild {
   priority_id: string | null;
 }
 
-export interface PriorityChildTwist {
-  archived_at: Timestamp | null;
-  author_email: string | null;
-  author_name: string | null;
-  author_url: string | null;
-  created_at: Timestamp | null;
-  draft: boolean | null;
-  id: string | null;
-  is_source: boolean | null;
-  name: string | null;
-  options: Json | null;
-  owner_id: string | null;
-  suspended_at: Timestamp | null;
-  team_id: Int8 | null;
-  twist_environment: TwistEnvironment | null;
-  twist_id: Int8 | null;
-  updated_at: Timestamp | null;
-  version: string | null;
-}
-
 export interface PriorityRule {
   anchor_thread_id: string | null;
   /**
@@ -952,6 +932,26 @@ export interface TwistInstanceConnection {
   provider: string;
   twist_instance_id: string;
   user_id: string;
+}
+
+export interface TwistInstanceDetails {
+  archived_at: Timestamp | null;
+  author_email: string | null;
+  author_name: string | null;
+  author_url: string | null;
+  created_at: Timestamp | null;
+  draft: boolean | null;
+  id: string | null;
+  is_source: boolean | null;
+  name: string | null;
+  options: Json | null;
+  owner_id: string | null;
+  suspended_at: Timestamp | null;
+  team_id: Int8 | null;
+  twist_environment: TwistEnvironment | null;
+  twist_id: Int8 | null;
+  updated_at: Timestamp | null;
+  version: string | null;
 }
 
 export interface TwistInstanceLinkUpdate {
@@ -1453,7 +1453,6 @@ export interface DB {
   note_tags: NoteTags;
   priority: Priority;
   priority_child: PriorityChild;
-  priority_child_twist: PriorityChildTwist;
   priority_rule: PriorityRule;
   priority_setting: PrioritySetting;
   priority_setting_inherited: PrioritySettingInherited;
@@ -1487,6 +1486,7 @@ export interface DB {
   twist_instance_channel_link_update: TwistInstanceChannelLinkUpdate;
   twist_instance_channel_note_create: TwistInstanceChannelNoteCreate;
   twist_instance_connection: TwistInstanceConnection;
+  twist_instance_details: TwistInstanceDetails;
   twist_instance_link_update: TwistInstanceLinkUpdate;
   twist_instance_note_create: TwistInstanceNoteCreate;
   twist_instance_note_update: TwistInstanceNoteUpdate;

@@ -166,13 +166,13 @@ export type Database = {
           {
             foreignKeyName: "channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -1202,13 +1202,13 @@ export type Database = {
           {
             foreignKeyName: "secure_option_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "secure_option_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -2242,13 +2242,13 @@ export type Database = {
           {
             foreignKeyName: "twist_instance_channel_source_twist_instance_id_fkey"
             columns: ["source_twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "twist_instance_channel_source_twist_instance_id_fkey"
             columns: ["source_twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -2260,13 +2260,13 @@ export type Database = {
           {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -2303,13 +2303,13 @@ export type Database = {
           {
             foreignKeyName: "twist_instance_connection_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "twist_instance_connection_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -2352,13 +2352,13 @@ export type Database = {
           {
             foreignKeyName: "twist_instance_sync_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "twist_instance_sync_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -2429,13 +2429,13 @@ export type Database = {
           {
             foreignKeyName: "usage_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "usage_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -2769,49 +2769,6 @@ export type Database = {
         }
         Relationships: []
       }
-      priority_child_twist: {
-        Row: {
-          archived_at: string | null
-          author_email: string | null
-          author_name: string | null
-          author_url: string | null
-          created_at: string | null
-          draft: boolean | null
-          id: string | null
-          is_source: boolean | null
-          name: string | null
-          options: Json | null
-          owner_id: string | null
-          suspended_at: string | null
-          team_id: number | null
-          twist_environment:
-            | Database["public"]["Enums"]["twist_environment"]
-            | null
-          twist_id: number | null
-          updated_at: string | null
-          version: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "twist_instance_team_id_fkey"
-            columns: ["team_id"]
-            referencedRelation: "team"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "twist_instance_twist_id_fkey"
-            columns: ["twist_id"]
-            referencedRelation: "twist"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       priority_setting_inherited: {
         Row: {
           key: string | null
@@ -3014,13 +2971,13 @@ export type Database = {
           {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -3099,13 +3056,13 @@ export type Database = {
           {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -3214,13 +3171,13 @@ export type Database = {
           {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "priority_child_twist"
+            referencedRelation: "twist_instance"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "twist_instance_channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
-            referencedRelation: "twist_instance"
+            referencedRelation: "twist_instance_details"
             referencedColumns: ["id"]
           },
           {
@@ -3228,6 +3185,49 @@ export type Database = {
             columns: ["twist_instance_id"]
             referencedRelation: "twist_instance_note_create"
             referencedColumns: ["twist_instance_id"]
+          },
+        ]
+      }
+      twist_instance_details: {
+        Row: {
+          archived_at: string | null
+          author_email: string | null
+          author_name: string | null
+          author_url: string | null
+          created_at: string | null
+          draft: boolean | null
+          id: string | null
+          is_source: boolean | null
+          name: string | null
+          options: Json | null
+          owner_id: string | null
+          suspended_at: string | null
+          team_id: number | null
+          twist_environment:
+            | Database["public"]["Enums"]["twist_environment"]
+            | null
+          twist_id: number | null
+          updated_at: string | null
+          version: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "twist_instance_owner_id_fkey"
+            columns: ["owner_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "twist_instance_team_id_fkey"
+            columns: ["team_id"]
+            referencedRelation: "team"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "twist_instance_twist_id_fkey"
+            columns: ["twist_id"]
+            referencedRelation: "twist"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4619,13 +4619,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "topic"
             referencedColumns: ["user_id"]
           },

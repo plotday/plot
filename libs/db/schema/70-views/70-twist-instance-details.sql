@@ -1,8 +1,5 @@
--- All active twist_instances enriched with twist metadata.
--- Twists are now workspace-level (owned by a user), so there is no priority
--- subtree to walk — every twist_instance is visible to its owner across all
--- of their priorities.
-CREATE OR REPLACE VIEW "public"."priority_child_twist" -- for formatting
+-- All active twist_instances enriched with twist metadata and publisher info.
+CREATE OR REPLACE VIEW "public"."twist_instance_details" -- for formatting
 AS
 SELECT
     pt.*,
