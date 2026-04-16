@@ -2174,13 +2174,9 @@ class _ThreadShareContactsGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final actors = await Actor.get(
-      types: [ActorType.user, ActorType.contact],
-      search: search,
-      limit: 50,
-    );
+    final actors = await Actor.getSortedForSharing(search: search);
     final excluded = excludeActorIds.toSet();
-    actors.removeWhere((a) => excluded.contains(a.id) || a.self);
+    actors.removeWhere((a) => excluded.contains(a.id));
 
     final commands = <Command>[
       for (final actor in actors)

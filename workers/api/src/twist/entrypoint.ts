@@ -433,15 +433,15 @@ export default class extends WorkerEntrypoint {
     };
   }
 
-  async activate(twistInit, priority, context) {
+  async activate(twistInit, context) {
     console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
     try {
       const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
 
       // Pre-phase: deepest tools first
-      await callPreLifecycle(tools, 'preActivate', priority, context);
+      await callPreLifecycle(tools, 'preActivate', context);
 
-      // Connector-aware activation: Connectors receive { auth, actor } instead of (priority, context)
+      // Connector-aware activation: Connectors receive { auth, actor } instead of context
       const isConnector = TwistConstructor.isConnector === true;
       if (isConnector && context?.auth) {
         const sourceContext = {
@@ -452,11 +452,11 @@ export default class extends WorkerEntrypoint {
       } else {
         // Regular twist activation
         const twistContext = context ? { actor: { id: context.actor.id, type: context.actor.type } } : undefined;
-        await twist.activate(priority, twistContext);
+        await twist.activate(twistContext);
       }
 
       // Post-phase: top-level tools first
-      await callPostLifecycle(tools, 'postActivate', priority, context);
+      await callPostLifecycle(tools, 'postActivate', context);
     } catch (error) {
       // Wrap in TwistError to preserve stack across RPC boundary
       // Encode all error data in the message since custom properties don't survive RPC

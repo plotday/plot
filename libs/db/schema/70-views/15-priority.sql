@@ -77,7 +77,7 @@ SELECT DISTINCT ON (user_id, priority_id, key)
 FROM all_sources
 ORDER BY user_id, priority_id, key, distance ASC, source_type ASC;
 
-CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid, p_user_id uuid)
+CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_user_id uuid)
     RETURNS SETOF twist
     LANGUAGE sql
     STABLE
@@ -95,11 +95,20 @@ CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_priority_id uuid, p_u
                 AND twist_admin.user_id = p_user_id)
             OR (twist.environment = 'review'
                 AND EXISTS (SELECT 1 FROM twist_reviewer WHERE user_id = p_user_id))
-            OR user_has_priority_access (p_user_id, twist_admin.priority_id)
+            OR EXISTS (
+                SELECT 1 FROM topic t
+                JOIN topic_member tm ON tm.topic_id = t.id
+                JOIN user_contact uc ON uc.contact_id = tm.contact_id
+                WHERE t.auto_twist_admin_id = twist_admin.id
+                  AND t.auto_maintained = TRUE
+                  AND uc.user_id = p_user_id
+                  AND uc.linked = TRUE
+                  AND uc.archived_at IS NULL
+            )
         )
 $function$;
 
-CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_priority_id uuid, p_user_id uuid)
+CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_user_id uuid)
     RETURNS boolean
     LANGUAGE sql
     STABLE
@@ -119,5 +128,14 @@ CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_prio
                         AND twist_admin.user_id = p_user_id)
                     OR (twist.environment = 'review'
                         AND EXISTS (SELECT 1 FROM twist_reviewer WHERE user_id = p_user_id))
-                    OR user_has_priority_access (p_user_id, twist_admin.priority_id)))
+                    OR EXISTS (
+                        SELECT 1 FROM topic t
+                        JOIN topic_member tm ON tm.topic_id = t.id
+                        JOIN user_contact uc ON uc.contact_id = tm.contact_id
+                        WHERE t.auto_twist_admin_id = twist_admin.id
+                          AND t.auto_maintained = TRUE
+                          AND uc.user_id = p_user_id
+                          AND uc.linked = TRUE
+                          AND uc.archived_at IS NULL
+                    )))
 $function$;

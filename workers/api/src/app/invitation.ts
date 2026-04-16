@@ -504,7 +504,6 @@ invitation.post("/invitation/redeem", async (c) => {
           await twistManagement.add(
             c.var.db,
             user.id,
-            rootPriorityId,
             Number(plotTwist.id),
             "public",
             "Plot",

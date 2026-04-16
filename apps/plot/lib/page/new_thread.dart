@@ -283,30 +283,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  /// Loads contacts the user has recently shared threads with, for suggestion
-  /// chips in the "with" row.
+  /// Loads contacts for the "with" suggestion chips, sorted MRU → frequent →
+  /// rest by [Actor.getSortedForSharing].
   Future<void> _loadRecentContacts() async {
     try {
-      final selfIds = Actor.getCurrentUserActorIds()
-          .map((a) => a.toUuid())
-          .toSet();
-      final threads = await Thread.get(
-        draft: false,
-        archived: false,
-        limit: 30,
-      );
-      final seen = <Uuid>{};
-      final recent = <Actor>[];
-      for (final thread in threads) {
-        for (final contactId in thread.contacts) {
-          if (!selfIds.contains(contactId) && seen.add(contactId)) {
-            final actor = Actor.fromCache(ActorId.fromUuid(contactId));
-            if (actor != null) recent.add(actor);
-            if (recent.length >= 10) break;
-          }
-        }
-        if (recent.length >= 10) break;
-      }
+      final sorted = await Actor.getSortedForSharing();
+      final recent = sorted.take(10).toList();
       if (mounted) {
         setState(() => _recentContacts = recent);
         _refreshPinnedChips();

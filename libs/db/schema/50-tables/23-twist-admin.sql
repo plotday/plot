@@ -5,7 +5,6 @@ CREATE TABLE "public"."twist_admin" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "publisher_id" bigint REFERENCES public.publisher ON DELETE CASCADE,
-    "priority_id" uuid REFERENCES public.priority ON DELETE CASCADE,
     "auto_approve" boolean NOT NULL DEFAULT FALSE,
     CONSTRAINT "twist_admin_ownership_check" CHECK (
         (publisher_id IS NOT NULL AND user_id IS NULL)
@@ -30,4 +29,3 @@ CREATE INDEX idx_twist_admin_user_id ON "public"."twist_admin" (user_id);
 
 CREATE INDEX idx_twist_admin_publisher_id ON "public"."twist_admin" (publisher_id);
 
-CREATE INDEX idx_twist_admin_priority_id ON "public"."twist_admin" (priority_id);

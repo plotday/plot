@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 
 import type { DB } from "../db-types";
 import { withDb } from "../db";
@@ -14,7 +14,7 @@ import { BUILTIN_TWIST_PACKAGE_ID as PLOT_TWIST_PACKAGE_ID } from "../utils/limi
 async function ensureLogsActivity(
   db: Kysely<DB>,
   twistPackageId: string,
-  priorityId: string,
+  userId: string,
   environment: string,
   createdBy: string
 ): Promise<string> {
@@ -36,17 +36,26 @@ async function ensureLogsActivity(
     .returning("id")
     .executeTakeFirstOrThrow();
 
-  // File the thread under the twist's dev priority
-  const priorityOwner = await db
+  // File the thread under the user's root priority
+  const rootPriority = await db
     .selectFrom("priority")
-    .select("user_id")
-    .where("id", "=", priorityId)
-    .executeTakeFirstOrThrow();
+    .select(["id", "user_id"])
+    .where("user_id", "=", userId)
+    .where("archived_at", "is", null)
+    .orderBy(sql`nlevel(path)`, "asc")
+    .orderBy("created_at", "asc")
+    .limit(1)
+    .executeTakeFirst();
+
+  if (!rootPriority) {
+    // User has no priorities yet — skip filing this log thread
+    return result.id;
+  }
 
   await db
     .insertInto("thread_priority")
-    .values({ thread_id: result.id, user_id: priorityOwner.user_id, priority_id: priorityId })
-    .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doUpdateSet({ priority_id: priorityId }))
+    .values({ thread_id: result.id, user_id: userId, priority_id: rootPriority.id })
+    .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doUpdateSet({ priority_id: rootPriority.id }))
     .execute();
 
   return result.id;
@@ -66,36 +75,29 @@ export async function addLogsNote(
 
   try {
     await withDb(env, async (db) => {
-      // Get priority_id from twist_admin
+      // Get user_id from twist_admin
       const adminData = await db
         .selectFrom("twist_admin")
-        .select("priority_id")
+        .select("user_id")
         .where("twist_package_id", "=", twistPackageId)
-        .where("priority_id", "is not", null)
+        .where("user_id", "is not", null)
         .limit(1)
         .executeTakeFirst();
 
-      if (!adminData?.priority_id) {
-        // No priority set up yet, skip logging
+      if (!adminData?.user_id) {
+        // publisher-owned twists don't get dev logs
         return;
       }
 
-      // Find the Plot twist's twist_instance owned by the user who owns
-      // the twist_admin priority. Twists are workspace-level now.
-      const priorityOwner = await db
-        .selectFrom("priority")
-        .select("user_id")
-        .where("id", "=", adminData.priority_id)
-        .executeTakeFirst();
-      if (!priorityOwner?.user_id) {
-        return;
-      }
+      const ownerId = adminData.user_id;
+
+      // Find the Plot twist's twist_instance owned by the twist developer.
       const plotTwistInstance = await db
         .selectFrom("twist_instance")
         .innerJoin("twist", "twist.id", "twist_instance.twist_id")
         .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
         .select(["twist_instance.id"])
-        .where("twist_instance.owner_id", "=", priorityOwner.user_id)
+        .where("twist_instance.owner_id", "=", ownerId)
         .where("twist_admin.twist_package_id", "=", PLOT_TWIST_PACKAGE_ID)
         .where("twist_instance.archived_at", "is", null)
         .executeTakeFirst();
@@ -115,7 +117,7 @@ export async function addLogsNote(
       const activityId = await ensureLogsActivity(
         db,
         twistPackageId,
-        adminData.priority_id,
+        ownerId,
         environment,
         createdBy
       );
@@ -159,30 +161,25 @@ export async function addUpgradeNote(
     await withDb(env, async (db) => {
       const adminData = await db
         .selectFrom("twist_admin")
-        .select("priority_id")
+        .select("user_id")
         .where("twist_package_id", "=", twistPackageId)
-        .where("priority_id", "is not", null)
+        .where("user_id", "is not", null)
         .limit(1)
         .executeTakeFirst();
 
-      if (!adminData?.priority_id) {
+      if (!adminData?.user_id) {
+        // publisher-owned twists don't get dev logs
         return;
       }
 
-      const priorityOwner = await db
-        .selectFrom("priority")
-        .select("user_id")
-        .where("id", "=", adminData.priority_id)
-        .executeTakeFirst();
-      if (!priorityOwner?.user_id) {
-        return;
-      }
+      const ownerId = adminData.user_id;
+
       const plotTwistInstance = await db
         .selectFrom("twist_instance")
         .innerJoin("twist", "twist.id", "twist_instance.twist_id")
         .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
         .select(["twist_instance.id"])
-        .where("twist_instance.owner_id", "=", priorityOwner.user_id)
+        .where("twist_instance.owner_id", "=", ownerId)
         .where("twist_admin.twist_package_id", "=", PLOT_TWIST_PACKAGE_ID)
         .where("twist_instance.archived_at", "is", null)
         .executeTakeFirst();
@@ -196,7 +193,7 @@ export async function addUpgradeNote(
       const activityId = await ensureLogsActivity(
         db,
         twistPackageId,
-        adminData.priority_id,
+        ownerId,
         environment,
         createdBy
       );

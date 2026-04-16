@@ -164,6 +164,79 @@ class Actor extends ActorRow {
     });
   }
 
+  /// Returns non-self, non-archived user/contact actors ordered for thread
+  /// sharing:
+  ///   1. MRU — actors who appear on the user's most-recent threads, ordered
+  ///      by the recency of their most-recent thread.
+  ///   2. Frequent — remaining actors on any of the user's threads, ordered
+  ///      by thread count (ties → alphabetical).
+  ///   3. Rest — all other matching actors, alphabetical.
+  ///
+  /// The candidate pool honors [search] via the same LIKE filter as [get].
+  static Future<List<Actor>> getSortedForSharing({
+    String? search,
+    int mruSize = 5,
+    int threadWindow = 200,
+  }) async {
+    final candidates = await get(
+      types: [ActorType.user, ActorType.contact],
+      search: search,
+    );
+    candidates.removeWhere((a) => a.self);
+
+    final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+    final threads = await Thread.get(
+      draft: false,
+      archived: false,
+      order: ThreadOrder.reverse,
+      limit: threadWindow,
+    );
+
+    // Walk threads newest-first; first sighting of a contact is their MRU.
+    final firstSeenIndex = <Uuid, int>{};
+    final counts = <Uuid, int>{};
+    for (var i = 0; i < threads.length; i++) {
+      for (final contactId in threads[i].contacts) {
+        if (selfIds.contains(contactId)) continue;
+        firstSeenIndex.putIfAbsent(contactId, () => i);
+        counts[contactId] = (counts[contactId] ?? 0) + 1;
+      }
+    }
+
+    int byName(Actor a, Actor b) =>
+        a.nameOrEmail.toLowerCase().compareTo(b.nameOrEmail.toLowerCase());
+
+    final seen = <Actor>[];
+    final unseen = <Actor>[];
+    for (final actor in candidates) {
+      if (firstSeenIndex.containsKey(actor.id.toUuid())) {
+        seen.add(actor);
+      } else {
+        unseen.add(actor);
+      }
+    }
+
+    // MRU: order seen actors by first-seen index (lower = more recent).
+    seen.sort((a, b) {
+      final ai = firstSeenIndex[a.id.toUuid()]!;
+      final bi = firstSeenIndex[b.id.toUuid()]!;
+      if (ai != bi) return ai.compareTo(bi);
+      return byName(a, b);
+    });
+
+    final mru = seen.take(mruSize).toList();
+    final frequent = seen.skip(mruSize).toList()
+      ..sort((a, b) {
+        final ca = counts[a.id.toUuid()] ?? 0;
+        final cb = counts[b.id.toUuid()] ?? 0;
+        if (ca != cb) return cb.compareTo(ca);
+        return byName(a, b);
+      });
+    unseen.sort(byName);
+
+    return [...mru, ...frequent, ...unseen];
+  }
+
   /// Returns all actor IDs that belong to the current user.
   /// Uses the Actor cache for synchronous lookup.
   /// Falls back to Base.actorId if cache is empty, or returns empty list
