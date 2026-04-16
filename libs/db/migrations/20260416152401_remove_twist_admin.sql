@@ -18,41 +18,31 @@ DROP INDEX IF EXISTS "public"."twist_admin_environment_unique";
 DROP INDEX IF EXISTS "public"."idx_twist_admin_id";
 
 -- ---------------------------------------------------------------------------
--- Phase 1: Consolidate duplicate "Plot" publishers in production.
--- In prod there are 4 "Plot" publisher rows (ids 1, 2, 3, 4). Repoint every
--- twist_admin onto the lowest Plot id that already has references, then
--- delete the orphans. Uses a general "publishers with the same lowercased
--- name" algorithm so no hard-coded ids leak into the migration.
+-- Phase 1: Consolidate duplicate publishers by name.
+-- In prod there are 4 "Plot" publisher rows (ids 1, 2, 3, 4). Canonicalize
+-- each name to its lowest id so the unique index on lower(name) added below
+-- has a single survivor per name, repoint every twist_admin to that id, then
+-- delete the higher-id siblings.
 -- ---------------------------------------------------------------------------
-WITH dupes AS (
-    SELECT
+WITH canonical AS (
+    SELECT DISTINCT ON (lower(name))
         lower(name) AS lname,
-        id,
-        row_number() OVER (
-            PARTITION BY lower(name)
-            ORDER BY (SELECT count(*) FROM twist_admin ta WHERE ta.publisher_id = publisher.id) DESC, id ASC
-        ) AS rank
+        id AS canonical_id
     FROM publisher
-),
-canonical AS (
-    SELECT lname, id AS canonical_id FROM dupes WHERE rank = 1
-),
-to_repoint AS (
-    SELECT d.id AS dupe_id, c.canonical_id
-    FROM dupes d
-    JOIN canonical c ON c.lname = d.lname AND d.rank > 1
+    ORDER BY lower(name), id ASC
 )
 UPDATE twist_admin ta
-SET publisher_id = r.canonical_id
-FROM to_repoint r
-WHERE ta.publisher_id = r.dupe_id;
+SET publisher_id = c.canonical_id
+FROM publisher p
+JOIN canonical c ON c.lname = lower(p.name)
+WHERE ta.publisher_id = p.id
+  AND p.id <> c.canonical_id;
 
 DELETE FROM publisher p
 WHERE EXISTS (
     SELECT 1 FROM publisher p2
     WHERE lower(p2.name) = lower(p.name) AND p2.id < p.id
-)
-AND NOT EXISTS (SELECT 1 FROM twist_admin ta WHERE ta.publisher_id = p.id);
+);
 
 -- ---------------------------------------------------------------------------
 -- Phase 2: Add new columns (nullable first so existing rows are accepted).
