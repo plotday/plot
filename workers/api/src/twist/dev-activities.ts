@@ -34,7 +34,7 @@ async function ensureLogsThread(
 ): Promise<LogThreadContext | null> {
   const twistRow = await db
     .selectFrom("twist")
-    .select(["user_id", "publisher_id"])
+    .select(["id", "user_id", "publisher_id"])
     .where("twist_package_id", "=", twistPackageId)
     .where("environment", "=", environment as any)
     .executeTakeFirst();
@@ -115,16 +115,24 @@ async function ensureLogsThread(
       created_by: threadOwnerUserId,
       updated_by: 0,
       topic,
+      twist_id: twistRow.id,
       groups: sql`${groupId ? [groupId] : []}::uuid[]` as any,
       contacts: sql`${contactIds}::uuid[]` as any,
     })
     .onConflict((oc) =>
-      oc.columns(["created_by", "key"]).doUpdateSet({
-        updated_by: 0,
-        topic,
-        groups: sql`${groupId ? [groupId] : []}::uuid[]` as any,
-        contacts: sql`${contactIds}::uuid[]` as any,
-      })
+      oc
+        .columns(["twist_id", "key"])
+        // Match the full predicate of thread_twist_key_unique so Postgres
+        // can infer the partial unique index as the conflict arbiter.
+        .where("twist_id", "is not", null)
+        .where("key", "is not", null)
+        .where("archived_at", "is", null)
+        .doUpdateSet({
+          updated_by: 0,
+          topic,
+          groups: sql`${groupId ? [groupId] : []}::uuid[]` as any,
+          contacts: sql`${contactIds}::uuid[]` as any,
+        })
     )
     .returning("id")
     .executeTakeFirstOrThrow();
