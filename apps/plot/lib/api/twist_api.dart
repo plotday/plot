@@ -38,6 +38,7 @@ class Twist {
   final String? logoUrlDark;
   final List<AuthProvider> providers;
   final bool aiRequired;
+  final bool multipleInstances;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -58,6 +59,7 @@ class Twist {
     this.logoUrlDark,
     this.providers = const [],
     this.aiRequired = false,
+    this.multipleInstances = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -130,6 +132,7 @@ class Twist {
       logoUrlDark: json['logo_url_dark'] as String?,
       providers: providers,
       aiRequired: aiRequired,
+      multipleInstances: json['multiple_instances'] as bool? ?? false,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
