@@ -1,7 +1,3 @@
-// Compat routes for clients on apiVersion < 3. They still POST /topic,
-// /topic/:id/members, /topic/:id/admins. Under the hood we call the renamed
-// group_* RPCs / tables. Safe to delete once no apiVersion < 3 traffic
-// remains.
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -10,9 +6,9 @@ import { rpc } from "../rpc";
 import { captureServerError } from "../utils/error-capture";
 import { handleValidationError } from "../utils/validation";
 
-const topic = new Hono<{ Bindings: Bindings }>();
+const group = new Hono<{ Bindings: Bindings }>();
 
-const CreateTopicSchema = z.object({
+const CreateGroupSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["public", "team", "private", "announce"]).default("private"),
   joinPolicy: z.enum(["member", "open", "admin"]).default("member"),
@@ -20,12 +16,12 @@ const CreateTopicSchema = z.object({
   memberContactIds: z.array(z.string().uuid()).default([]),
 });
 
-topic.post("/topic", async (c) => {
+group.post("/group", async (c) => {
   const user = c.var.user;
   if (!user) return c.json({ message: "Unauthorized" }, 401);
 
   const rawBody = await c.req.json();
-  const parseResult = CreateTopicSchema.safeParse(rawBody);
+  const parseResult = CreateGroupSchema.safeParse(rawBody);
   if (!parseResult.success) return handleValidationError(parseResult.error);
 
   const { name, type, joinPolicy, teamId, memberContactIds } = parseResult.data;
@@ -47,7 +43,7 @@ topic.post("/topic", async (c) => {
     if (errMsg.includes("not a member of this team")) {
       return c.json({ message: "Not a member of this team" }, 403);
     }
-    return captureServerError(c, err as Error, "Failed to create topic", {
+    return captureServerError(c, err as Error, "Failed to create group", {
       user_id: user.id,
     });
   }
@@ -57,13 +53,13 @@ const MembersSchema = z.object({
   contactIds: z.array(z.string().uuid()).min(1),
 });
 
-topic.post("/topic/:id/members", async (c) => {
+group.post("/group/:id/members", async (c) => {
   const user = c.var.user;
   if (!user) return c.json({ message: "Unauthorized" }, 401);
 
   const groupId = c.req.param("id");
   const uuidResult = z.string().uuid().safeParse(groupId);
-  if (!uuidResult.success) return c.json({ message: "Invalid topic ID" }, 400);
+  if (!uuidResult.success) return c.json({ message: "Invalid group ID" }, 400);
 
   const rawBody = await c.req.json();
   const parseResult = MembersSchema.safeParse(rawBody);
@@ -81,24 +77,24 @@ topic.post("/topic/:id/members", async (c) => {
   } catch (err) {
     const errMsg = (err as Error).message;
     if (errMsg.includes("auto-maintained")) {
-      return c.json({ message: "Cannot modify auto-maintained topic" }, 403);
+      return c.json({ message: "Cannot modify auto-maintained group" }, 403);
     }
     if (errMsg.includes("Only admins") || errMsg.includes("Only members")) {
       return c.json({ message: errMsg }, 403);
     }
-    return captureServerError(c, err as Error, "Failed to add topic members", {
-      user_id: user.id, topic_id: groupId,
+    return captureServerError(c, err as Error, "Failed to add group members", {
+      user_id: user.id, group_id: groupId,
     });
   }
 });
 
-topic.delete("/topic/:id/members", async (c) => {
+group.delete("/group/:id/members", async (c) => {
   const user = c.var.user;
   if (!user) return c.json({ message: "Unauthorized" }, 401);
 
   const groupId = c.req.param("id");
   const uuidResult = z.string().uuid().safeParse(groupId);
-  if (!uuidResult.success) return c.json({ message: "Invalid topic ID" }, 400);
+  if (!uuidResult.success) return c.json({ message: "Invalid group ID" }, 400);
 
   const rawBody = await c.req.json();
   const parseResult = MembersSchema.safeParse(rawBody);
@@ -118,8 +114,8 @@ topic.delete("/topic/:id/members", async (c) => {
     if (errMsg.includes("auto-maintained") || errMsg.includes("Insufficient permission")) {
       return c.json({ message: errMsg }, 403);
     }
-    return captureServerError(c, err as Error, "Failed to remove topic members", {
-      user_id: user.id, topic_id: groupId,
+    return captureServerError(c, err as Error, "Failed to remove group members", {
+      user_id: user.id, group_id: groupId,
     });
   }
 });
@@ -128,13 +124,13 @@ const AdminSchema = z.object({
   userId: z.string().uuid(),
 });
 
-topic.post("/topic/:id/admins", async (c) => {
+group.post("/group/:id/admins", async (c) => {
   const user = c.var.user;
   if (!user) return c.json({ message: "Unauthorized" }, 401);
 
   const groupId = c.req.param("id");
   const uuidResult = z.string().uuid().safeParse(groupId);
-  if (!uuidResult.success) return c.json({ message: "Invalid topic ID" }, 400);
+  if (!uuidResult.success) return c.json({ message: "Invalid group ID" }, 400);
 
   const rawBody = await c.req.json();
   const parseResult = AdminSchema.safeParse(rawBody);
@@ -157,19 +153,19 @@ topic.post("/topic/:id/admins", async (c) => {
 
     return c.json({ success: true });
   } catch (err) {
-    return captureServerError(c, err as Error, "Failed to add topic admin", {
-      user_id: user.id, topic_id: groupId,
+    return captureServerError(c, err as Error, "Failed to add group admin", {
+      user_id: user.id, group_id: groupId,
     });
   }
 });
 
-topic.delete("/topic/:id/admins", async (c) => {
+group.delete("/group/:id/admins", async (c) => {
   const user = c.var.user;
   if (!user) return c.json({ message: "Unauthorized" }, 401);
 
   const groupId = c.req.param("id");
   const uuidResult = z.string().uuid().safeParse(groupId);
-  if (!uuidResult.success) return c.json({ message: "Invalid topic ID" }, 400);
+  if (!uuidResult.success) return c.json({ message: "Invalid group ID" }, 400);
 
   const rawBody = await c.req.json();
   const parseResult = AdminSchema.safeParse(rawBody);
@@ -192,10 +188,10 @@ topic.delete("/topic/:id/admins", async (c) => {
 
     return c.json({ success: true });
   } catch (err) {
-    return captureServerError(c, err as Error, "Failed to remove topic admin", {
-      user_id: user.id, topic_id: groupId,
+    return captureServerError(c, err as Error, "Failed to remove group admin", {
+      user_id: user.id, group_id: groupId,
     });
   }
 });
 
-export default topic;
+export default group;

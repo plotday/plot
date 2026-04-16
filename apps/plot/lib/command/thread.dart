@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:collection/collection.dart';
 
@@ -1418,64 +1417,46 @@ class MoveToPriorityWithRules extends ShowCommands {
       );
     }
 
-    // Topic rule (only if exactly one topic)
-    final topics = thread.topics;
-    if (topics.length == 1) {
-      final topicRow = await (Store.get.select(
-        Store.get.topics,
-      )..where((t) => t.id.equals(topics.first.toBytes()))).getSingleOrNull();
-      final topicName = topicRow?.name ?? 'this topic';
+    // Topic rule: match any future thread whose `topic` equals this thread's.
+    // Covers the old channel + single-group + contact scenarios because
+    // thread.topic already resolves to the right routing key (channel:<id>,
+    // group uuid, contact uuid, or any explicit string).
+    final threadTopic = thread.topic;
+    if (threadTopic != null && threadTopic.isNotEmpty) {
+      String keyLabel;
+      String title;
+      IconData icon;
+      if (channel != null && connectorLabel != null) {
+        keyLabel = connectorLabel;
+        title = 'Move all threads from $connectorLabel';
+        icon = PlotIcon.connection;
+      } else {
+        final groups = thread.groups;
+        if (groups.length == 1) {
+          final groupRow = await (Store.get.select(
+            Store.get.groups,
+          )..where((g) => g.id.equals(groups.first.toBytes()))).getSingleOrNull();
+          final groupName = groupRow?.name ?? 'this group';
+          keyLabel = groupName;
+          title = '$threadsPrefix with $groupName';
+          icon = PlotIcon.users;
+        } else {
+          keyLabel = 'matching threads';
+          title = '$threadsPrefix matching this one';
+          icon = PlotIcon.note;
+        }
+      }
       options.add(
         _CreatePriorityRule(
           thread: thread,
           targetPriority: targetPriority,
           channel: channel,
-          ruleType: 'contact_topics',
-          title: '$threadsPrefix with $topicName',
-          mutedPrefix: '$threadsPrefix with',
-          keyLabel: topicName,
-          criteria: {
-            'topics': [topics.first.toString()],
-          },
-          icon: PlotIcon.note,
-        ),
-      );
-    }
-
-    // Contact/topics rule (if has contacts or multiple topics)
-    if (thread.contacts.isNotEmpty || topics.length > 1) {
-      options.add(
-        _CreatePriorityRule(
-          thread: thread,
-          targetPriority: targetPriority,
-          channel: channel,
-          ruleType: 'contact_topics',
-          title: '$threadsPrefix with similar people',
-          mutedPrefix: '$threadsPrefix with',
-          keyLabel: 'similar people',
-          criteria: {
-            if (thread.contacts.isNotEmpty)
-              'contacts': thread.contacts.map((c) => c.toString()).toList(),
-            if (topics.isNotEmpty)
-              'topics': topics.map((Uuid t) => t.toString()).toList(),
-          },
-          icon: PlotIcon.users,
-        ),
-      );
-    }
-
-    // Channel rule (only if from a connector)
-    if (channel != null) {
-      options.add(
-        _CreatePriorityRule(
-          thread: thread,
-          targetPriority: targetPriority,
-          channel: channel,
-          ruleType: 'channel',
-          title: 'Move all threads from $connectorLabel',
-          mutedPrefix: 'Move all threads from',
-          keyLabel: connectorLabel!,
-          icon: PlotIcon.connection,
+          ruleType: 'topic',
+          topic: threadTopic,
+          title: title,
+          mutedPrefix: channel != null ? 'Move all threads from' : '$threadsPrefix with',
+          keyLabel: keyLabel,
+          icon: icon,
         ),
       );
     }
@@ -1499,7 +1480,7 @@ class _CreatePriorityRule extends Command {
     required super.title,
     required this.mutedPrefix,
     required this.keyLabel,
-    this.criteria,
+    this.topic,
     IconData? icon,
   }) : super(
          eventObject: EventObject.activity,
@@ -1513,7 +1494,7 @@ class _CreatePriorityRule extends Command {
   final String ruleType;
   final String mutedPrefix;
   final String keyLabel;
-  final Map<String, dynamic>? criteria;
+  final String? topic;
 
   @override
   Widget? buildBody(BuildContext context) =>
@@ -1521,12 +1502,10 @@ class _CreatePriorityRule extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    // Move the thread first
     await thread.copyWith(priority: targetPriority).save();
 
     final ruleId = Uuid.generate();
 
-    // Insert a local priority_rule row for offline resilience.
     await Store.get
         .into(Store.get.priorityRules)
         .insert(
@@ -1534,24 +1513,21 @@ class _CreatePriorityRule extends Command {
             id: Value(ruleId),
             userId: Value(Base.userId),
             priorityId: Value(targetPriority.id),
-            channelId: Value(channel?.id.toInt()),
             type: Value(ruleType),
+            topic: Value(topic),
             label: Value(title),
             anchorThreadId: Value(thread.id),
-            criteria: Value(criteria != null ? jsonEncode(criteria) : null),
           ),
         );
 
-    // Try to push immediately; if offline, the rule will be retried on next sync.
     try {
       await api.post<dynamic>(
         '/sync/priority-rules',
         body: {
           'id': ruleId.toString(),
           'priority_id': targetPriority.id.toString(),
-          'channel_id': channel?.id.toInt(),
           'type': ruleType,
-          'criteria': criteria,
+          'topic': topic,
           'label': title,
           'anchor_thread_id': thread.id.toString(),
         },

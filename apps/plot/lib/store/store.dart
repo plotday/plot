@@ -73,7 +73,7 @@ part 'tag.dart';
 part 'thread_sub_type.dart';
 part 'user_settings.dart';
 part 'channel.dart';
-part 'topic.dart';
+part 'group.dart';
 
 part 'store.g.dart';
 
@@ -367,7 +367,7 @@ abstract class BaseTable {
     Sessions,
     UserSettings,
     Channels,
-    Topics,
+    Groups,
     ThreadAssociations,
     PriorityRules,
   ],
@@ -2025,7 +2025,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 307;
+  int get schemaVersion => 308;
 
   @override
   MigrationStrategy get migration {
@@ -2749,8 +2749,33 @@ class Store extends _$Store {
       await m.alterTable(TableMigration(priorities));
     }
     if (from < 300) {
-      await m.createTable(topics);
-      await m.addColumn(threads, threads.topics);
+      // Historical: created the original `topics` table and thread.topics
+      // column. Both are renamed to `groups`/`groups` in the v308 migration
+      // below; raw SQL here keeps this step compiling against current Dart
+      // classes (which no longer expose Topics / threads.topics).
+      await _safeCustomStatement(
+        m,
+        '''
+        CREATE TABLE IF NOT EXISTS topics (
+          id BLOB NOT NULL PRIMARY KEY,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          archived_at INTEGER,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL,
+          join_policy TEXT NOT NULL,
+          team_id INTEGER,
+          auto_maintained INTEGER NOT NULL DEFAULT 0,
+          is_admin INTEGER NOT NULL DEFAULT 0,
+          is_member INTEGER NOT NULL DEFAULT 0,
+          member_contact_ids TEXT
+        )
+        ''',
+      );
+      await _safeCustomStatement(
+        m,
+        'ALTER TABLE threads ADD COLUMN topics TEXT',
+      );
     }
     if (from < 301) {
       await _safeAddColumn(m, threads, threads.inviteEmails);
@@ -2793,6 +2818,27 @@ class Store extends _$Store {
     }
     if (from < 307) {
       await m.addColumn(twistInstances, twistInstances.multipleInstances);
+    }
+    if (from < 308) {
+      // Split `topic` into `group` (contact grouping) + `thread.topic` (routing key).
+      // Drift builds tables by class name (Topics → "topics"; Groups → "groups"),
+      // so this migration reflects the class rename with SQL table renames.
+      await m.database.customStatement('ALTER TABLE topics RENAME TO groups');
+      // Rename sync state entry so the sync machinery keeps its cursor.
+      await m.database.customStatement(
+        "UPDATE sync_states SET entity = 'groups' WHERE entity = 'topics'",
+      );
+      // thread.topics → thread.groups; add thread.topic.
+      await m.database.customStatement(
+        'ALTER TABLE threads RENAME COLUMN topics TO groups',
+      );
+      await _safeAddColumn(m, threads, threads.topic);
+      // priority_rules: drop channel_id + criteria, add topic. Drop local rows
+      // since the ephemeral table is cleared on successful sync and any
+      // pre-308 rows are incompatible with the new column set.
+      await m.database.customStatement('DELETE FROM priority_rules');
+      // ignore: experimental_member_use
+      await m.alterTable(TableMigration(priorityRules));
     }
   }
 

@@ -40,7 +40,7 @@ WHERE
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
-        OR a.topics && "user".user_topic_ids(tp.user_id)
+        OR a.groups && "user".user_group_ids(tp.user_id)
     );
 
 ALTER VIEW "user"."note" OWNER TO postgres;
@@ -81,7 +81,7 @@ WHERE
     AND (a.draft = FALSE OR a.created_by = tp.user_id)
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
-        OR a.topics && "user".user_topic_ids(tp.user_id)
+        OR a.groups && "user".user_group_ids(tp.user_id)
     )
     -- Hidden by note-level access restriction
     AND (n.access_contacts IS NOT NULL

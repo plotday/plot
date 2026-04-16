@@ -41,49 +41,45 @@ BEGIN
     VALUES (p_user_id, p_user_id, 'Twist Development', v_new_path || generate_path(NULL), 3, '@plot.twist-dev');
 
     -- Add priority rules for auto-filing
-    -- 1. Everyone topic -> Using Plot
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
+    -- 1. Everyone group -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', g.id::text
     FROM public.priority p
-    CROSS JOIN public.topic t
+    CROSS JOIN public."group" g
     WHERE p.user_id = p_user_id AND p.key = '@plot.app'
-      AND t.auto_maintained = TRUE AND t.team_id IS NULL AND t.name = 'Everyone';
+      AND g.auto_maintained = TRUE AND g.team_id IS NULL AND g.auto_publisher_id IS NULL AND g.name = 'Everyone';
 
-    -- 2. User account topic -> Using Plot
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
+    -- 2. User account topic (the user's own uuid) -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', p_user_id::text
     FROM public.priority p
-    CROSS JOIN public.topic t
+    WHERE p.user_id = p_user_id AND p.key = '@plot.app';
+
+    -- 3. Team admin groups -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', g.id::text
+    FROM public.priority p
+    CROSS JOIN public."group" g
+    JOIN public.team_user tu ON tu.team_id = g.auto_team_admin_team_id AND tu.user_id = p_user_id
     WHERE p.user_id = p_user_id AND p.key = '@plot.app'
-      AND t.auto_user_id = p_user_id;
+      AND g.auto_team_admin_team_id IS NOT NULL;
 
-    -- 3. Team admin topics -> Using Plot
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
+    -- 4. Personal twists topic (keyed on "personal-twists:<user_id>") -> Twist Development
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', 'personal-twists:' || p_user_id::text
     FROM public.priority p
-    CROSS JOIN public.topic t
-    JOIN public.team_user tu ON tu.team_id = t.auto_team_admin_team_id AND tu.user_id = p_user_id
-    WHERE p.user_id = p_user_id AND p.key = '@plot.app'
-      AND t.auto_team_admin_team_id IS NOT NULL;
+    WHERE p.user_id = p_user_id AND p.key = '@plot.twist-dev';
 
-    -- 4. Personal twists topic -> Twist Development
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
+    -- 5. Publisher groups (where this user is a member) -> Twist Development
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', g.id::text
     FROM public.priority p
-    CROSS JOIN public.topic t
+    CROSS JOIN public."group" g
+    JOIN public.group_member gm ON gm.group_id = g.id
+    JOIN public.user_contact uc ON uc.contact_id = gm.contact_id
     WHERE p.user_id = p_user_id AND p.key = '@plot.twist-dev'
-      AND t.auto_personal_twist_user_id = p_user_id;
-
-    -- 5. Publisher topics (where this user is a member) -> Twist Development
-    INSERT INTO public.priority_rule (user_id, priority_id, type, criteria)
-    SELECT p_user_id, p.id, 'contact_topics', jsonb_build_object('topics', ARRAY[t.id::text])
-    FROM public.priority p
-    CROSS JOIN public.topic t
-    JOIN public.topic_member tm ON tm.topic_id = t.id
-    JOIN public.user_contact uc ON uc.contact_id = tm.contact_id
-    WHERE p.user_id = p_user_id AND p.key = '@plot.twist-dev'
-      AND t.auto_publisher_id IS NOT NULL
-      AND t.auto_maintained = TRUE
+      AND g.auto_publisher_id IS NOT NULL
+      AND g.auto_maintained = TRUE
       AND uc.user_id = p_user_id
       AND uc.linked = TRUE
       AND uc.archived_at IS NULL;

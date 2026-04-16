@@ -1,6 +1,6 @@
 -- Automatic scheduling for global onboarding threads.
 -- Fires when a user is linked to one of the global onboarding threads
--- (usually via joining the "Everyone" topic).
+-- (usually via joining the "Everyone" group).
 CREATE OR REPLACE FUNCTION public.file_onboarding_schedules ()
     RETURNS TRIGGER
     LANGUAGE plpgsql

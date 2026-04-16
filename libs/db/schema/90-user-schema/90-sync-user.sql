@@ -472,8 +472,8 @@ BEGIN
 END;
 $function$;
 
--- User sync trigger function for topic changes.
-CREATE OR REPLACE FUNCTION public.sync_user_for_topic ()
+-- User sync trigger function for group changes.
+CREATE OR REPLACE FUNCTION public.sync_user_for_group ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SET search_path TO 'public'
@@ -487,14 +487,14 @@ BEGIN
     FROM
         new_table;
     FOR v_user_id IN SELECT DISTINCT
-        ut.user_id
+        ug.user_id
     FROM
         new_table n
-        JOIN "user"."topic" ut ON ut.id = n.id
+        JOIN "user"."group" ug ON ug.id = n.id
     ORDER BY
-        ut.user_id LOOP
+        ug.user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'topic', v_max_updated_at)
+                VALUES (v_user_id, 'group', v_max_updated_at)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
                     last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);

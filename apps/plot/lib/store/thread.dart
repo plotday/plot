@@ -10,10 +10,9 @@ typedef ThreadWatchResult = ({List<Thread> threads, int rawRowCount});
 class PriorityRules extends Table with UuidTable {
   BlobColumn get userId => blob().map(const UuidConverter())();
   BlobColumn get priorityId => blob().map(const UuidConverter())();
-  IntColumn get channelId => integer().nullable()();
   TextColumn get type => text()();
   TextColumn get embedding => text().nullable()();
-  TextColumn get criteria => text().nullable()();
+  TextColumn get topic => text().nullable()();
   TextColumn get label => text().nullable()();
   BlobColumn get anchorThreadId =>
       blob().nullable().map(const UuidConverter())();
@@ -31,8 +30,12 @@ class Threads extends Table
   /// `thread.contacts` on the server.
   TextColumn get contacts => text().nullable().map(const UuidListConverter())();
 
-  /// Topic IDs attached to this thread for dynamic group visibility.
-  TextColumn get topics => text().nullable().map(const UuidListConverter())();
+  /// Group IDs attached to this thread for dynamic visibility.
+  TextColumn get groups => text().nullable().map(const UuidListConverter())();
+
+  /// Routing key used by priority rules. Defaults (server-side) to the first
+  /// group id stringified, or to `channel:<id>` for connection-sourced threads.
+  TextColumn get topic => text().nullable()();
 
   /// Pending email invitations stored locally until the next sync push.
   /// The server resolves these to contacts and clears them.
@@ -2169,7 +2172,8 @@ class Thread extends Equatable implements Comparable<Thread> {
   DateTime? get archivedAt => _thread.archivedAt;
   bool get draft => _thread.draft;
   List<Uuid> get contacts => _thread.contacts ?? const [];
-  List<Uuid> get topics => _thread.topics ?? const [];
+  List<Uuid> get groups => _thread.groups ?? const [];
+  String? get topic => _thread.topic;
   /// Pending email invitations that haven't been synced yet.
   List<String> get inviteEmails {
     final raw = _thread.inviteEmails;

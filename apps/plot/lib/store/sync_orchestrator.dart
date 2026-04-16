@@ -35,12 +35,12 @@ class SyncOrchestrator {
     pullFn: Actor.pull,
   );
 
-  /// Topic entity (read-only, no dependencies)
-  static final topic = SyncEntity(
-    debugName: 'topic',
+  /// Group entity (read-only, no dependencies)
+  static final group = SyncEntity(
+    debugName: 'group',
     dependsOn: [],
     pushFn: () async => true, // Read-only, skip push
-    pullFn: Topic.pull,
+    pullFn: Group.pull,
   );
 
   /// UserSettings entity (no dependencies, per-user settings)
@@ -112,7 +112,7 @@ class SyncOrchestrator {
   /// All syncable entities in dependency order (for iteration)
   static final allEntities = [
     actor,
-    topic,
+    group,
     userSettings,
     priority,
     twistInstance,
@@ -172,7 +172,7 @@ class SyncOrchestrator {
   static SyncEntity? getEntityByTableName(String table) {
     return switch (table) {
       'user_actor' || 'actor' => actor,
-      'user_topic' || 'topic' => topic,
+      'user_group' || 'group' || 'user_topic' || 'topic' => group,
       'user_settings' => userSettings,
       'user_priority' || 'priority' => priority,
       'user_twist' || 'twist_instance' => twistInstance,

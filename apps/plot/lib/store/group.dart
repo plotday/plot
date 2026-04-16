@@ -1,7 +1,7 @@
 part of 'store.dart';
 
-@DataClassName('TopicRow')
-class Topics extends Table with SyncableTable, UuidTable, DeletableTable {
+@DataClassName('GroupRow')
+class Groups extends Table with SyncableTable, UuidTable, DeletableTable {
   TextColumn get name => text()();
   TextColumn get type => text()();
   TextColumn get joinPolicy => text()();
@@ -14,25 +14,25 @@ class Topics extends Table with SyncableTable, UuidTable, DeletableTable {
       text().nullable().map(const UuidListConverter())();
 }
 
-class TopicsBase extends BaseTable {
-  TopicsBase() : super(table: 'user_topic', syncEndpoint: 'topics');
+class GroupsBase extends BaseTable {
+  GroupsBase() : super(table: 'user_group', syncEndpoint: 'groups');
 
   @override
   Map<String, dynamic> toBase(DataClass row) {
-    throw UnsupportedError('Topic is read-only');
+    throw UnsupportedError('Group is read-only');
   }
 
   @override
-  Insertable<TopicRow> fromBase(Map<String, dynamic> json) {
-    return TopicRow.fromJson(json);
+  Insertable<GroupRow> fromBase(Map<String, dynamic> json) {
+    return GroupRow.fromJson(json);
   }
 }
 
-class Topic {
-  static TableInfo<Topics, TopicRow> get table => Store.get.topics;
+class Group {
+  static TableInfo<Groups, GroupRow> get table => Store.get.groups;
 
   static Future<void> pull() async {
-    await Store.get.pull(table, TopicsBase(), initial: true);
-    await Store.get.pull(table, TopicsBase());
+    await Store.get.pull(table, GroupsBase(), initial: true);
+    await Store.get.pull(table, GroupsBase());
   }
 }

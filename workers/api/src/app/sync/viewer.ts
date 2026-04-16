@@ -6,20 +6,20 @@ type TagRow = { id: string | null; tags: unknown };
 type RowType = "thread" | "note";
 
 /**
- * Filter tag actor IDs for threads with announce topics.
+ * Filter tag actor IDs for threads with announce groups.
  *
- * For each row whose thread has an announce topic in `thread.topics`, drop
- * any tag actor whose only relationship to the thread is announce-topic
+ * For each row whose thread has an announce group in `thread.groups`, drop
+ * any tag actor whose only relationship to the thread is announce-group
  * membership. An actor is visible iff:
  *   - in `thread.contacts`, or
- *   - a member of any non-announce topic in `thread.topics`, or
+ *   - a member of any non-announce group in `thread.groups`, or
  *   - one of the requesting user's linked contacts.
  *
  * For apiVersion >= 2 the original count is preserved by replacing the
  * actor array with `{ c: total, a: visibleIds }`. Older clients lose the
  * count but identities still stay private.
  *
- * Mutates rows in place. Skips rows without an announce topic.
+ * Mutates rows in place. Skips rows without an announce group.
  */
 export async function stripAnnounceTagActors(
   db: Kysely<DB>,
@@ -33,19 +33,19 @@ export async function stripAnnounceTagActors(
   const rowIds = rows.map((r) => r.id).filter((id): id is string => id != null);
   if (rowIds.length === 0) return;
 
-  type ThreadInfo = { contacts: string[]; topics: string[] };
+  type ThreadInfo = { contacts: string[]; groups: string[] };
   const rowToThread = new Map<string, ThreadInfo>();
 
   if (type === "thread") {
     const threads = await db
       .selectFrom("thread")
-      .select(["id", "contacts", "topics"])
+      .select(["id", "contacts", "groups"])
       .where("id", "in", rowIds)
       .execute();
     for (const t of threads) {
       rowToThread.set(t.id, {
         contacts: t.contacts ?? [],
-        topics: t.topics ?? [],
+        groups: t.groups ?? [],
       });
     }
   } else {
@@ -55,63 +55,63 @@ export async function stripAnnounceTagActors(
       .select([
         "note.id",
         "thread.contacts",
-        "thread.topics",
+        "thread.groups",
       ])
       .where("note.id", "in", rowIds)
       .execute();
     for (const n of notes) {
       rowToThread.set(n.id, {
         contacts: n.contacts ?? [],
-        topics: n.topics ?? [],
+        groups: n.groups ?? [],
       });
     }
   }
 
-  const allTopicIds = new Set<string>();
+  const allGroupIds = new Set<string>();
   for (const info of rowToThread.values()) {
-    for (const t of info.topics) allTopicIds.add(t);
+    for (const g of info.groups) allGroupIds.add(g);
   }
-  if (allTopicIds.size === 0) return;
+  if (allGroupIds.size === 0) return;
 
-  const topicTypes = await db
-    .selectFrom("topic")
+  const groupTypes = await db
+    .selectFrom("group")
     .select(["id", "type"])
-    .where("id", "in", [...allTopicIds])
+    .where("id", "in", [...allGroupIds])
     .execute();
 
-  const announceTopicIds = new Set<string>();
-  for (const t of topicTypes) {
-    if (t.type === "announce") announceTopicIds.add(t.id);
+  const announceGroupIds = new Set<string>();
+  for (const g of groupTypes) {
+    if (g.type === "announce") announceGroupIds.add(g.id);
   }
-  if (announceTopicIds.size === 0) return;
+  if (announceGroupIds.size === 0) return;
 
   const affectedRowIds = new Set<string>();
-  const nonAnnounceTopicIds = new Set<string>();
+  const nonAnnounceGroupIds = new Set<string>();
   for (const [rowId, info] of rowToThread) {
     let hasAnnounce = false;
-    for (const t of info.topics) {
-      if (announceTopicIds.has(t)) {
+    for (const g of info.groups) {
+      if (announceGroupIds.has(g)) {
         hasAnnounce = true;
       } else {
-        nonAnnounceTopicIds.add(t);
+        nonAnnounceGroupIds.add(g);
       }
     }
     if (hasAnnounce) affectedRowIds.add(rowId);
   }
   if (affectedRowIds.size === 0) return;
 
-  const topicMembers = new Map<string, Set<string>>();
-  if (nonAnnounceTopicIds.size > 0) {
+  const groupMembers = new Map<string, Set<string>>();
+  if (nonAnnounceGroupIds.size > 0) {
     const members = await db
-      .selectFrom("topic_member")
-      .select(["topic_id", "contact_id"])
-      .where("topic_id", "in", [...nonAnnounceTopicIds])
+      .selectFrom("group_member")
+      .select(["group_id", "contact_id"])
+      .where("group_id", "in", [...nonAnnounceGroupIds])
       .execute();
     for (const m of members) {
-      let set = topicMembers.get(m.topic_id);
+      let set = groupMembers.get(m.group_id);
       if (!set) {
         set = new Set();
-        topicMembers.set(m.topic_id, set);
+        groupMembers.set(m.group_id, set);
       }
       set.add(m.contact_id);
     }
@@ -134,9 +134,9 @@ export async function stripAnnounceTagActors(
 
     const visible = new Set<string>(ownContacts);
     for (const c of info.contacts) visible.add(c);
-    for (const t of info.topics) {
-      if (announceTopicIds.has(t)) continue;
-      const members = topicMembers.get(t);
+    for (const g of info.groups) {
+      if (announceGroupIds.has(g)) continue;
+      const members = groupMembers.get(g);
       if (members) for (const m of members) visible.add(m);
     }
 

@@ -1,35 +1,316 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) with archived_at IS NULL — two instances
--- of the same twist that upsert the same key converge on the same thread
--- across users. User-created threads (twist_id IS NULL) do not participate
--- in cross-user dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "activate_invited_user" function
+CREATE OR REPLACE FUNCTION "public"."activate_invited_user" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
+DECLARE
+    v_root_priority_id uuid;
+    v_new_path ltree;
+BEGIN
+    -- Already has a root priority?
+    SELECT id INTO v_root_priority_id
+    FROM public.priority
+    WHERE user_id = p_user_id
+      AND nlevel(path) = 1
+    ORDER BY created_at ASC
+    LIMIT 1;
+
+    IF v_root_priority_id IS NOT NULL THEN
+        RETURN jsonb_build_object('activated', FALSE, 'already_active', TRUE, 'root_priority_id', v_root_priority_id);
+    END IF;
+
+    -- Create the root priority. default_priority_user_id fills user_id
+    -- from created_by, so the new row is fully owned by the user.
+    v_new_path := generate_path(NULL);
+    INSERT INTO public.priority (created_by, user_id, title, path, color)
+        VALUES (p_user_id, p_user_id, 'Everything', v_new_path, 0)
+    RETURNING id INTO v_root_priority_id;
+
+    -- Create Using Plot (@plot.app)
+    INSERT INTO public.priority (created_by, user_id, title, path, color, key, default_thread_icon)
+    VALUES (p_user_id, p_user_id, 'Using Plot', v_new_path || generate_path(NULL), 7, '@plot.app', 'https://plot.day/assets/plot-icon.svg');
+
+    -- Create Twist Development (@plot.twist-dev)
+    INSERT INTO public.priority (created_by, user_id, title, path, color, key)
+    VALUES (p_user_id, p_user_id, 'Twist Development', v_new_path || generate_path(NULL), 3, '@plot.twist-dev');
+
+    -- Add priority rules for auto-filing
+    -- 1. Everyone group -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', g.id::text
+    FROM public.priority p
+    CROSS JOIN public."group" g
+    WHERE p.user_id = p_user_id AND p.key = '@plot.app'
+      AND g.auto_maintained = TRUE AND g.team_id IS NULL AND g.auto_publisher_id IS NULL AND g.name = 'Everyone';
+
+    -- 2. User account topic (the user's own uuid) -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', p_user_id::text
+    FROM public.priority p
+    WHERE p.user_id = p_user_id AND p.key = '@plot.app';
+
+    -- 3. Team admin groups -> Using Plot
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', g.id::text
+    FROM public.priority p
+    CROSS JOIN public."group" g
+    JOIN public.team_user tu ON tu.team_id = g.auto_team_admin_team_id AND tu.user_id = p_user_id
+    WHERE p.user_id = p_user_id AND p.key = '@plot.app'
+      AND g.auto_team_admin_team_id IS NOT NULL;
+
+    -- 4. Personal twists topic (keyed on "personal-twists:<user_id>") -> Twist Development
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', 'personal-twists:' || p_user_id::text
+    FROM public.priority p
+    WHERE p.user_id = p_user_id AND p.key = '@plot.twist-dev';
+
+    -- 5. Publisher groups (where this user is a member) -> Twist Development
+    INSERT INTO public.priority_rule (user_id, priority_id, type, topic)
+    SELECT p_user_id, p.id, 'topic', g.id::text
+    FROM public.priority p
+    CROSS JOIN public."group" g
+    JOIN public.group_member gm ON gm.group_id = g.id
+    JOIN public.user_contact uc ON uc.contact_id = gm.contact_id
+    WHERE p.user_id = p_user_id AND p.key = '@plot.twist-dev'
+      AND g.auto_publisher_id IS NOT NULL
+      AND g.auto_maintained = TRUE
+      AND uc.user_id = p_user_id
+      AND uc.linked = TRUE
+      AND uc.archived_at IS NULL;
+
+    RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
+END;
+$$;
+-- Modify "classify_thread_for_user" function
+CREATE OR REPLACE FUNCTION "public"."classify_thread_for_user" ("p_user_id" uuid, "p_thread_id" uuid DEFAULT NULL::uuid, "p_embedding" public.halfvec DEFAULT NULL::public.halfvec, "p_topic" text DEFAULT NULL::text) RETURNS uuid LANGUAGE plpgsql AS $$
+DECLARE
+    v_embedding halfvec;
+    v_topic text;
+    v_matched_priority_id uuid;
+    v_root_priority_id uuid;
+BEGIN
+    -- 1. Load thread data from DB when thread exists, then apply overrides.
+    IF p_thread_id IS NOT NULL THEN
+        SELECT t.embedding, t.topic
+        INTO v_embedding, v_topic
+        FROM public.thread t
+        WHERE t.id = p_thread_id;
+    END IF;
+
+    v_embedding := COALESCE(p_embedding, v_embedding);
+    v_topic     := COALESCE(p_topic, v_topic);
+
+    -- 2a. Content rules (highest precedence).
+    IF v_embedding IS NOT NULL THEN
+        SELECT pr.priority_id INTO v_matched_priority_id
+        FROM public.priority_rule pr
+        WHERE pr.user_id = p_user_id
+          AND pr.type = 'content'
+          AND pr.embedding IS NOT NULL
+          AND (1 - (pr.embedding <=> v_embedding)) >= 0.7
+        ORDER BY (1 - (pr.embedding <=> v_embedding)) DESC
+        LIMIT 1;
+
+        IF v_matched_priority_id IS NOT NULL THEN
+            RETURN v_matched_priority_id;
+        END IF;
+    END IF;
+
+    -- 2b. Topic rules.
+    IF v_topic IS NOT NULL THEN
+        SELECT pr.priority_id INTO v_matched_priority_id
+        FROM public.priority_rule pr
+        WHERE pr.user_id = p_user_id
+          AND pr.type = 'topic'
+          AND pr.topic = v_topic
+        ORDER BY pr.created_at ASC
+        LIMIT 1;
+
+        IF v_matched_priority_id IS NOT NULL THEN
+            RETURN v_matched_priority_id;
+        END IF;
+    END IF;
+
+    -- 3. Fall back to the user's root priority.
+    SELECT p.id INTO v_root_priority_id
+    FROM public.priority p
+    WHERE p.user_id = p_user_id
+      AND nlevel(p.path) = 1
+      AND p.archived_at IS NULL
+    ORDER BY p.created_at ASC
+    LIMIT 1;
+
+    RETURN v_root_priority_id;
+END;
+$$;
+-- Modify "apply_priority_rule" function
+CREATE OR REPLACE FUNCTION "public"."apply_priority_rule" ("p_rule_id" uuid, "p_max_moves" integer DEFAULT 100) RETURNS TABLE ("thread_id" uuid, "old_priority_id" uuid) LANGUAGE plpgsql AS $$
+DECLARE
+    v_rule RECORD;
+BEGIN
+    -- Load the rule.
+    SELECT * INTO v_rule
+    FROM public.priority_rule
+    WHERE id = p_rule_id;
+
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    WITH matched AS (
+        SELECT tp.thread_id, tp.priority_id AS current_priority_id
+        FROM public.thread_priority tp
+        JOIN public.thread t ON t.id = tp.thread_id
+        WHERE tp.user_id = v_rule.user_id
+          AND tp.priority_id IS DISTINCT FROM v_rule.priority_id
+          AND t.archived_at IS NULL
+          AND t.draft = FALSE
+          AND CASE v_rule.type
+              WHEN 'content' THEN
+                  t.embedding IS NOT NULL
+                  AND v_rule.embedding IS NOT NULL
+                  AND (1 - (t.embedding <=> v_rule.embedding)) >= 0.7
+              WHEN 'topic' THEN
+                  v_rule.topic IS NOT NULL
+                  AND t.topic = v_rule.topic
+          END
+        LIMIT p_max_moves
+    ),
+    -- Only move if no higher-precedence rule already classifies this thread
+    -- into a different priority.
+    filtered AS (
+        SELECT m.thread_id, m.current_priority_id
+        FROM matched m
+        WHERE public.classify_thread_for_user(
+            v_rule.user_id,
+            m.thread_id
+        ) IS NOT DISTINCT FROM v_rule.priority_id
+    ),
+    moved AS (
+        UPDATE public.thread_priority tp
+        SET priority_id = v_rule.priority_id
+        FROM filtered f
+        WHERE tp.thread_id = f.thread_id
+          AND tp.user_id = v_rule.user_id
+        RETURNING tp.thread_id, f.current_priority_id AS old_priority_id
+    )
+    SELECT moved.thread_id, moved.old_priority_id FROM moved;
+END;
+$$;
+-- Modify "file_thread_priority_on_group_member_change" function
+CREATE OR REPLACE FUNCTION "public"."file_thread_priority_on_group_member_change" () RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    r_thread RECORD;
+    v_peer_user_id uuid;
+    v_peer_priority_id uuid;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        SELECT uc.user_id INTO v_peer_user_id
+        FROM public.user_contact uc
+        WHERE uc.contact_id = NEW.contact_id
+          AND uc.linked = TRUE
+          AND uc.archived_at IS NULL
+        LIMIT 1;
+
+        IF v_peer_user_id IS NULL THEN
+            RETURN NEW;
+        END IF;
+
+        FOR r_thread IN
+            SELECT t.id AS thread_id
+            FROM public.thread t
+            WHERE NEW.group_id = ANY(t.groups)
+              AND t.archived_at IS NULL
+        LOOP
+            v_peer_priority_id := public.classify_thread_for_user(v_peer_user_id, r_thread.thread_id);
+            IF v_peer_priority_id IS NULL THEN
+                CONTINUE;
+            END IF;
+
+            INSERT INTO thread_priority (thread_id, user_id, priority_id)
+            VALUES (r_thread.thread_id, v_peer_user_id, v_peer_priority_id)
+            ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
+
+            INSERT INTO thread_unread (user_id, thread_id, urgency, importance)
+            VALUES (v_peer_user_id, r_thread.thread_id, 'inform-updates', 50)
+            ON CONFLICT (user_id, thread_id) DO NOTHING;
+        END LOOP;
+
+        RETURN NEW;
+
+    ELSIF TG_OP = 'DELETE' THEN
+        SELECT uc.user_id INTO v_peer_user_id
+        FROM public.user_contact uc
+        WHERE uc.contact_id = OLD.contact_id
+          AND uc.linked = TRUE
+          AND uc.archived_at IS NULL
+        LIMIT 1;
+
+        IF v_peer_user_id IS NULL THEN
+            RETURN OLD;
+        END IF;
+
+        FOR r_thread IN
+            SELECT t.id AS thread_id
+            FROM public.thread t
+            WHERE OLD.group_id = ANY(t.groups)
+              AND t.archived_at IS NULL
+        LOOP
+            IF NOT EXISTS (
+                SELECT 1 FROM public.thread t2
+                WHERE t2.id = r_thread.thread_id
+                  AND (
+                    t2.contacts && "user".user_contact_ids(v_peer_user_id)
+                    OR EXISTS (
+                        SELECT 1 FROM unnest(t2.groups) AS gid
+                        JOIN group_member gm2 ON gm2.group_id = gid
+                        JOIN user_contact uc2 ON uc2.contact_id = gm2.contact_id
+                            AND uc2.linked = TRUE AND uc2.archived_at IS NULL
+                        WHERE uc2.user_id = v_peer_user_id
+                          AND gm2.group_id != OLD.group_id
+                    )
+                  )
+            ) THEN
+                DELETE FROM thread_priority
+                WHERE thread_id = r_thread.thread_id
+                  AND user_id = v_peer_user_id;
+
+                DELETE FROM thread_unread
+                WHERE thread_id = r_thread.thread_id
+                  AND user_id = v_peer_user_id;
+            END IF;
+        END LOOP;
+
+        RETURN OLD;
+    END IF;
+END;
+$$;
+-- Modify "sync_user_for_group" function
+CREATE OR REPLACE FUNCTION "public"."sync_user_for_group" () RETURNS trigger LANGUAGE plpgsql SET "search_path" = public AS $$
+DECLARE
+    v_max_updated_at timestamptz;
+    v_user_id uuid;
+BEGIN
+    SELECT
+        MAX(updated_at) INTO v_max_updated_at
+    FROM
+        new_table;
+    FOR v_user_id IN SELECT DISTINCT
+        ug.user_id
+    FROM
+        new_table n
+        JOIN "user"."group" ug ON ug.id = n.id
+    ORDER BY
+        ug.user_id LOOP
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'group', v_max_updated_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+        END LOOP;
+    RETURN NULL;
+END;
+$$;
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -457,4 +738,55 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
+-- Modify "group" table
+ALTER TABLE "public"."group" DROP CONSTRAINT "topic_auto_publisher_id_fkey", DROP CONSTRAINT "topic_auto_team_admin_team_id_fkey", DROP CONSTRAINT "topic_created_by_fkey", DROP CONSTRAINT "topic_team_id_fkey", ADD CONSTRAINT "group_auto_publisher_id_fkey" FOREIGN KEY ("auto_publisher_id") REFERENCES "public"."publisher" ("id") ON UPDATE NO ACTION ON DELETE CASCADE, ADD CONSTRAINT "group_auto_team_admin_team_id_fkey" FOREIGN KEY ("auto_team_admin_team_id") REFERENCES "public"."team" ("id") ON UPDATE NO ACTION ON DELETE CASCADE, ADD CONSTRAINT "group_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."user" ("id") ON UPDATE NO ACTION ON DELETE CASCADE, ADD CONSTRAINT "group_team_id_fkey" FOREIGN KEY ("team_id") REFERENCES "public"."team" ("id") ON UPDATE NO ACTION ON DELETE SET NULL;
+-- Modify "group_admin" table
+ALTER TABLE "public"."group_admin" DROP CONSTRAINT "topic_admin_topic_id_fkey", DROP CONSTRAINT "topic_admin_user_id_fkey", ADD CONSTRAINT "group_admin_group_id_fkey" FOREIGN KEY ("group_id") REFERENCES "public"."group" ("id") ON UPDATE NO ACTION ON DELETE CASCADE, ADD CONSTRAINT "group_admin_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."user" ("id") ON UPDATE NO ACTION ON DELETE CASCADE;
+-- Modify "group_member" table
+ALTER TABLE "public"."group_member" DROP CONSTRAINT "topic_member_contact_id_fkey", DROP CONSTRAINT "topic_member_topic_id_fkey", ADD CONSTRAINT "group_member_contact_id_fkey" FOREIGN KEY ("contact_id") REFERENCES "public"."contact" ("id") ON UPDATE NO ACTION ON DELETE CASCADE, ADD CONSTRAINT "group_member_group_id_fkey" FOREIGN KEY ("group_id") REFERENCES "public"."group" ("id") ON UPDATE NO ACTION ON DELETE CASCADE;
+-- Drop "thread_x" view
+DROP VIEW "public"."thread_x";
+-- Create "thread_x" view
+CREATE VIEW "public"."thread_x" (
+  "id",
+  "created_at",
+  "updated_at",
+  "created_by",
+  "updated_by",
+  "archived_at",
+  "draft",
+  "contacts",
+  "title",
+  "preview",
+  "last_note_created_at",
+  "sync_depth",
+  "last_note_source_created_at",
+  "key",
+  "icon",
+  "groups",
+  "topic",
+  "embedding",
+  "twist_id",
+  "pending_contacts"
+) AS SELECT id,
+    created_at,
+    updated_at,
+    created_by,
+    updated_by,
+    archived_at,
+    draft,
+    contacts,
+    title,
+    preview,
+    last_note_created_at,
+    sync_depth,
+    last_note_source_created_at,
+    key,
+    icon,
+    groups,
+    topic,
+    embedding,
+    twist_id,
+    pending_contacts
+   FROM public.thread a;

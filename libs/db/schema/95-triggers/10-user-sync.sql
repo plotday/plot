@@ -180,15 +180,15 @@ CREATE TRIGGER user_sync_schedule_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_schedule();
 
--- User sync triggers for topic table
-CREATE TRIGGER user_sync_topic_insert
-  AFTER INSERT ON topic
+-- User sync triggers for group table
+CREATE TRIGGER user_sync_group_insert
+  AFTER INSERT ON "group"
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_topic();
+  EXECUTE FUNCTION sync_user_for_group();
 
-CREATE TRIGGER user_sync_topic_update
-  AFTER UPDATE ON topic
+CREATE TRIGGER user_sync_group_update
+  AFTER UPDATE ON "group"
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
-  EXECUTE FUNCTION sync_user_for_topic();
+  EXECUTE FUNCTION sync_user_for_group();

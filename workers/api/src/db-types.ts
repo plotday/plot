@@ -22,6 +22,10 @@ export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
 
+export type GroupJoinPolicy = "admin" | "member" | "open";
+
+export type GroupType = "announce" | "private" | "public" | "team";
+
 export type Int8 = ColumnType<string, bigint | number | string, bigint | number | string>;
 
 export type Interval = ColumnType<IPostgresInterval, IPostgresInterval | number | string, IPostgresInterval | number | string>;
@@ -49,10 +53,6 @@ export type SyncOperation = "create" | "update";
 export type TeamRole = "admin" | "member";
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
-
-export type TopicJoinPolicy = "admin" | "member" | "open";
-
-export type TopicType = "announce" | "private" | "public" | "team";
 
 export type TwistEnvironment = "personal" | "private" | "public" | "review";
 
@@ -286,6 +286,37 @@ export interface ExtensionsTapFunky {
   volatility: string | null;
 }
 
+export interface Group {
+  archived_at: Timestamp | null;
+  /**
+   * TRUE for system-managed groups (Everyone, team groups). Membership is maintained by triggers and cannot be modified via API.
+   */
+  auto_maintained: Generated<boolean>;
+  auto_publisher_id: Int8 | null;
+  auto_team_admin_team_id: Int8 | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  id: Generated<string>;
+  join_policy: Generated<GroupJoinPolicy>;
+  name: string;
+  team_id: Int8 | null;
+  type: Generated<GroupType>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface GroupAdmin {
+  created_at: Generated<Timestamp>;
+  group_id: string;
+  user_id: string;
+}
+
+export interface GroupMember {
+  contact_id: string;
+  created_at: Generated<Timestamp>;
+  group_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Link {
   actions: Json | null;
   assignee_id: string | null;
@@ -452,15 +483,7 @@ export interface PriorityChild {
 
 export interface PriorityRule {
   anchor_thread_id: string | null;
-  /**
-   * FK to channel.id (bigint). NULL means this rule applies to user-created threads (no connector). Non-null scopes to threads arriving from that specific channel.
-   */
-  channel_id: Int8 | null;
   created_at: Generated<Timestamp>;
-  /**
-   * Match criteria for contact_topics rules. JSON object with optional "topics" (uuid[]) and "contacts" (uuid[]) arrays. Thread matches if it shares any listed topic or contact.
-   */
-  criteria: Json | null;
   /**
    * Frozen embedding snapshot for content rules. Compared against thread.embedding using cosine similarity with a 0.7 threshold.
    */
@@ -468,6 +491,10 @@ export interface PriorityRule {
   id: Generated<string>;
   label: string | null;
   priority_id: string;
+  /**
+   * Exact-string match target for thread.topic. Examples: channel:42 (connector channel), a group uuid, or any caller-supplied string.
+   */
+  topic: string | null;
   type: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
@@ -628,6 +655,10 @@ export interface Thread {
    * Content embedding (384-dim halfvec) generated at creation from title + initial notes. Used by classify_thread_for_user for content-based priority rule matching.
    */
   embedding: string | null;
+  /**
+   * Group IDs attached to this thread. Members of referenced groups gain visibility dynamically — new members automatically see past threads.
+   */
+  groups: Generated<string[]>;
   icon: string | null;
   id: Generated<string>;
   /**
@@ -650,9 +681,9 @@ export interface Thread {
   sync_depth: number | null;
   title: string | null;
   /**
-   * Topic IDs attached to this thread. Members of referenced topics gain visibility dynamically — new members automatically see past threads.
+   * Routing key used by priority rules. On INSERT defaults to, in order: explicit input, channel:<channel.id> when the thread comes from a connection, or groups[1]::text.
    */
-  topics: Generated<string[]>;
+  topic: string | null;
   /**
    * Twist definition that created this thread. Scopes (twist_id, key) dedup so all instances of the same twist share the same thread per external item. Immutable after creation.
    */
@@ -728,6 +759,7 @@ export interface ThreadX {
   created_by: string | null;
   draft: boolean | null;
   embedding: string | null;
+  groups: string[] | null;
   icon: string | null;
   id: string | null;
   key: string | null;
@@ -737,7 +769,7 @@ export interface ThreadX {
   preview: string | null;
   sync_depth: number | null;
   title: string | null;
-  topics: string[] | null;
+  topic: string | null;
   twist_id: Int8 | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
@@ -753,39 +785,6 @@ export interface Token {
   token: string;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
-}
-
-export interface Topic {
-  archived_at: Timestamp | null;
-  /**
-   * TRUE for system-managed topics (Everyone, team topics). Membership is maintained by triggers and cannot be modified via API.
-   */
-  auto_maintained: Generated<boolean>;
-  auto_personal_twist_user_id: string | null;
-  auto_publisher_id: Int8 | null;
-  auto_team_admin_team_id: Int8 | null;
-  auto_user_id: string | null;
-  created_at: Generated<Timestamp>;
-  created_by: string;
-  id: Generated<string>;
-  join_policy: Generated<TopicJoinPolicy>;
-  name: string;
-  team_id: Int8 | null;
-  type: Generated<TopicType>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface TopicAdmin {
-  created_at: Generated<Timestamp>;
-  topic_id: string;
-  user_id: string;
-}
-
-export interface TopicMember {
-  contact_id: string;
-  created_at: Generated<Timestamp>;
-  topic_id: string;
-  updated_at: Generated<Timestamp>;
 }
 
 export interface Twist {
@@ -1167,6 +1166,22 @@ export interface UserContact {
   user_id: string;
 }
 
+export interface UserGroup {
+  archived_at: Timestamp | null;
+  auto_maintained: boolean | null;
+  created_at: Timestamp | null;
+  id: string | null;
+  is_admin: boolean | null;
+  is_member: boolean | null;
+  join_policy: GroupJoinPolicy | null;
+  member_contact_ids: string[] | null;
+  name: string | null;
+  team_id: Int8 | null;
+  type: GroupType | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface UserLink {
   actions: Json | null;
   assignee_id: string | null;
@@ -1349,6 +1364,7 @@ export interface UserThread {
   contacts: string[] | null;
   created_at: Timestamp | null;
   draft: boolean | null;
+  groups: string[] | null;
   has_embedding: boolean | null;
   icon: string | null;
   id: string | null;
@@ -1359,7 +1375,7 @@ export interface UserThread {
   priority_id: string | null;
   priority_path: string | null;
   title: string | null;
-  topics: string[] | null;
+  topic: string | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
@@ -1385,22 +1401,6 @@ export interface UserThreadTags {
   priority_id: string | null;
   priority_path: string | null;
   tags: Json | null;
-  updated_at: Timestamp | null;
-  user_id: string | null;
-}
-
-export interface UserTopic {
-  archived_at: Timestamp | null;
-  auto_maintained: boolean | null;
-  created_at: Timestamp | null;
-  id: string | null;
-  is_admin: boolean | null;
-  is_member: boolean | null;
-  join_policy: TopicJoinPolicy | null;
-  member_contact_ids: string[] | null;
-  name: string | null;
-  team_id: Int8 | null;
-  type: TopicType | null;
   updated_at: Timestamp | null;
   user_id: string | null;
 }
@@ -1446,6 +1446,9 @@ export interface DB {
   "extensions.pg_stat_statements": ExtensionsPgStatStatements;
   "extensions.pg_stat_statements_info": ExtensionsPgStatStatementsInfo;
   "extensions.tap_funky": ExtensionsTapFunky;
+  group: Group;
+  group_admin: GroupAdmin;
+  group_member: GroupMember;
   link: Link;
   link_x: LinkX;
   note: Note;
@@ -1476,9 +1479,6 @@ export interface DB {
   thread_unread: ThreadUnread;
   thread_x: ThreadX;
   token: Token;
-  topic: Topic;
-  topic_admin: TopicAdmin;
-  topic_member: TopicMember;
   twist: Twist;
   twist_instance: TwistInstance;
   twist_instance_channel: TwistInstanceChannel;
@@ -1505,6 +1505,7 @@ export interface DB {
   user_sync: UserSync;
   "user.actor": UserActor;
   "user.channel": UserChannel;
+  "user.group": UserGroup;
   "user.link": UserLink;
   "user.note": UserNote;
   "user.note_redacted": UserNoteRedacted;
@@ -1516,6 +1517,5 @@ export interface DB {
   "user.thread": UserThread;
   "user.thread_association": UserThreadAssociation;
   "user.thread_tags": UserThreadTags;
-  "user.topic": UserTopic;
   "user.twist": UserTwist;
 }

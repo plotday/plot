@@ -15,6 +15,7 @@ import callbacks from "./app/callbacks";
 import connections from "./app/connections";
 import linkEmail from "./app/link-email";
 import threadShare from "./app/thread-share";
+import groupRoutes from "./app/group";
 import topicRoutes from "./app/topic";
 import { corsMiddleware as appCorsMiddleware } from "./app/cors";
 import favicon from "./app/favicon";
@@ -184,6 +185,7 @@ appSection.route("/", teamRoutes);
 appSection.route("/", aiKeyRoutes);
 appSection.route("/", linkEmail);
 appSection.route("/", threadShare);
+appSection.route("/", groupRoutes);
 appSection.route("/", topicRoutes);
 // Note: /app/sync routes are mounted separately with appSyncRateLimiter.
 

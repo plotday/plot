@@ -7,21 +7,22 @@ import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/widget/widget.dart';
-/// Share a thread with one or more topics.
-class ShareThreadWithTopics extends Command {
-  ShareThreadWithTopics({
+
+/// Share a thread with one or more groups.
+class ShareThreadWithGroups extends Command {
+  ShareThreadWithGroups({
     required this.threadId,
-    required this.addTopicIds,
-    this.removeTopicIds = const [],
+    required this.addGroupIds,
+    this.removeGroupIds = const [],
   }) : super(
-          title: 'Share thread with topics',
+          title: 'Share thread with groups',
           eventObject: EventObject.activity,
           eventAction: EventAction.updated,
         );
 
   final String threadId;
-  final List<String> addTopicIds;
-  final List<String> removeTopicIds;
+  final List<String> addGroupIds;
+  final List<String> removeGroupIds;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -29,12 +30,12 @@ class ShareThreadWithTopics extends Command {
       await api.post<Map<String, dynamic>>(
         '/thread/$threadId/share',
         body: {
-          'addTopics': addTopicIds,
-          'removeTopics': removeTopicIds,
+          'addGroups': addGroupIds,
+          'removeGroups': removeGroupIds,
         },
       );
       unawaited(SyncOrchestrator.instance.pull(SyncOrchestrator.thread));
-      return const CommandDone(message: 'Shared with topics');
+      return const CommandDone(message: 'Shared with groups');
     } on ApiException catch (e) {
       return CommandMessage(e.description, title: e.title, isError: true);
     } on NetworkException {
@@ -46,28 +47,28 @@ class ShareThreadWithTopics extends Command {
   }
 }
 
-/// Add contacts to a topic's member list.
-class AddTopicMembers extends Command {
-  AddTopicMembers({
-    required this.topicId,
+/// Add contacts to a group's member list.
+class AddGroupMembers extends Command {
+  AddGroupMembers({
+    required this.groupId,
     required this.contactIds,
   }) : super(
-          title: 'Add topic members',
+          title: 'Add group members',
           eventObject: EventObject.activity,
           eventAction: EventAction.added,
         );
 
-  final String topicId;
+  final String groupId;
   final List<String> contactIds;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
       await api.post<Map<String, dynamic>>(
-        '/topic/$topicId/members',
+        '/group/$groupId/members',
         body: {'contactIds': contactIds},
       );
-      unawaited(SyncOrchestrator.instance.pull(SyncOrchestrator.topic));
+      unawaited(SyncOrchestrator.instance.pull(SyncOrchestrator.group));
       return const CommandDone(message: 'Members added');
     } on ApiException catch (e) {
       return CommandMessage(e.description, title: e.title, isError: true);
@@ -80,28 +81,28 @@ class AddTopicMembers extends Command {
   }
 }
 
-/// Remove contacts from a topic's member list.
-class RemoveTopicMembers extends Command {
-  RemoveTopicMembers({
-    required this.topicId,
+/// Remove contacts from a group's member list.
+class RemoveGroupMembers extends Command {
+  RemoveGroupMembers({
+    required this.groupId,
     required this.contactIds,
   }) : super(
-          title: 'Remove topic members',
+          title: 'Remove group members',
           eventObject: EventObject.activity,
           eventAction: EventAction.deleted,
         );
 
-  final String topicId;
+  final String groupId;
   final List<String> contactIds;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
       await api.deleteWithBody<Map<String, dynamic>>(
-        '/topic/$topicId/members',
+        '/group/$groupId/members',
         body: {'contactIds': contactIds},
       );
-      unawaited(SyncOrchestrator.instance.pull(SyncOrchestrator.topic));
+      unawaited(SyncOrchestrator.instance.pull(SyncOrchestrator.group));
       return const CommandDone(message: 'Members removed');
     } on ApiException catch (e) {
       return CommandMessage(e.description, title: e.title, isError: true);

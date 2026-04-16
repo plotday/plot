@@ -11,7 +11,7 @@ DECLARE
     v_kris_id uuid := '019d8efd-12e2-7ba9-98f1-ec08152ea427';
 BEGIN
     -- 1. Kris Braun — must exist before publisher INSERT so that
-    --    auto_maintain_publisher_topic trigger can seed the publisher topic
+    --    auto_maintain_publisher_group trigger can seed the publisher group
     --    with a valid created_by.
     INSERT INTO "public"."user" (id, email, name)
     VALUES (v_kris_id, 'kris@plot.day', 'Kris Braun')

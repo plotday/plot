@@ -88,21 +88,21 @@ BEGIN
 END;
 $function$;
 
--- Add or remove topics from a thread's topic list.
-CREATE OR REPLACE FUNCTION public.share_thread_with_topics (
+-- Add or remove groups from a thread's group list.
+CREATE OR REPLACE FUNCTION public.share_thread_with_groups (
     p_user_id uuid,
     p_thread_id uuid,
-    p_add_topic_ids uuid[] DEFAULT ARRAY[]::uuid[],
-    p_remove_topic_ids uuid[] DEFAULT ARRAY[]::uuid[]
+    p_add_group_ids uuid[] DEFAULT ARRAY[]::uuid[],
+    p_remove_group_ids uuid[] DEFAULT ARRAY[]::uuid[]
 )
     RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $function$
 DECLARE
-    v_current_topics uuid[];
-    v_new_topics uuid[];
-    v_topic RECORD;
+    v_current_groups uuid[];
+    v_new_groups uuid[];
+    v_group RECORD;
 BEGIN
     IF NOT EXISTS (
         SELECT 1
@@ -113,55 +113,55 @@ BEGIN
         RAISE EXCEPTION 'User does not have access to this thread';
     END IF;
 
-    FOR v_topic IN
-        SELECT t.id, t.type
-        FROM unnest(p_add_topic_ids) AS arr(id)
-        JOIN topic t ON t.id = arr.id
-        WHERE t.archived_at IS NULL
+    FOR v_group IN
+        SELECT g.id, g.type
+        FROM unnest(p_add_group_ids) AS arr(id)
+        JOIN "group" g ON g.id = arr.id
+        WHERE g.archived_at IS NULL
     LOOP
-        IF v_topic.type = 'announce' THEN
+        IF v_group.type = 'announce' THEN
             IF NOT EXISTS (
-                SELECT 1 FROM topic_admin
-                WHERE topic_id = v_topic.id AND user_id = p_user_id
+                SELECT 1 FROM group_admin
+                WHERE group_id = v_group.id AND user_id = p_user_id
             ) THEN
-                RAISE EXCEPTION 'Only admins can add announce topics to threads';
+                RAISE EXCEPTION 'Only admins can add announce groups to threads';
             END IF;
-        ELSIF v_topic.type IN ('private', 'team') THEN
+        ELSIF v_group.type IN ('private', 'team') THEN
             IF NOT EXISTS (
-                SELECT 1 FROM topic_admin
-                WHERE topic_id = v_topic.id AND user_id = p_user_id
+                SELECT 1 FROM group_admin
+                WHERE group_id = v_group.id AND user_id = p_user_id
             ) AND NOT EXISTS (
-                SELECT 1 FROM topic_member tm
-                JOIN user_contact uc ON uc.contact_id = tm.contact_id
+                SELECT 1 FROM group_member gm
+                JOIN user_contact uc ON uc.contact_id = gm.contact_id
                     AND uc.linked = TRUE AND uc.archived_at IS NULL
-                WHERE tm.topic_id = v_topic.id AND uc.user_id = p_user_id
+                WHERE gm.group_id = v_group.id AND uc.user_id = p_user_id
             ) THEN
-                RAISE EXCEPTION 'User does not have permission to add this topic';
+                RAISE EXCEPTION 'User does not have permission to add this group';
             END IF;
         END IF;
     END LOOP;
 
-    SELECT topics INTO v_current_topics
+    SELECT groups INTO v_current_groups
     FROM thread
     WHERE id = p_thread_id;
 
-    IF v_current_topics IS NULL THEN
-        v_current_topics := ARRAY[]::uuid[];
+    IF v_current_groups IS NULL THEN
+        v_current_groups := ARRAY[]::uuid[];
     END IF;
 
-    SELECT COALESCE(array_agg(DISTINCT tid), ARRAY[]::uuid[])
-    INTO v_new_topics
+    SELECT COALESCE(array_agg(DISTINCT gid), ARRAY[]::uuid[])
+    INTO v_new_groups
     FROM (
-        SELECT unnest(v_current_topics) AS tid
+        SELECT unnest(v_current_groups) AS gid
         UNION
-        SELECT unnest(p_add_topic_ids)
-    ) all_topics
-    WHERE tid != ALL(COALESCE(p_remove_topic_ids, ARRAY[]::uuid[]));
+        SELECT unnest(p_add_group_ids)
+    ) all_groups
+    WHERE gid != ALL(COALESCE(p_remove_group_ids, ARRAY[]::uuid[]));
 
     UPDATE thread
-    SET topics = v_new_topics
+    SET groups = v_new_groups
     WHERE id = p_thread_id;
 
-    RETURN jsonb_build_object('topics', to_jsonb(v_new_topics));
+    RETURN jsonb_build_object('groups', to_jsonb(v_new_groups));
 END;
 $function$;

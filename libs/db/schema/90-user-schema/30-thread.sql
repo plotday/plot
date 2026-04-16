@@ -33,7 +33,8 @@ SELECT
     upe.path AS priority_path,
     a.draft,
     a.contacts,
-    a.topics,
+    a.groups,
+    a.topic,
     a.title,
     a.preview,
     a.icon,
@@ -161,7 +162,7 @@ WHERE
     (a.draft = FALSE OR a.created_by = tp.user_id)
     AND (
         a.contacts && "user".user_contact_ids(tp.user_id)
-        OR a.topics && "user".user_topic_ids(tp.user_id)
+        OR a.groups && "user".user_group_ids(tp.user_id)
     );
 
 ALTER VIEW "user"."thread" OWNER TO postgres;

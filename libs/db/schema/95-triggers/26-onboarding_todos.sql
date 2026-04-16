@@ -1,8 +1,8 @@
 -- Per-user Tag.Todo on the actionable "task" notes inside the four onboarding
 -- threads that ask the user to take an action (priorities, connections, twists,
 -- notifications). Fires on the same event as file_onboarding_schedules: the
--- thread_priority insert that happens when a user joins the Everyone topic and
--- the file_thread_priority_on_topic_member_change trigger files them in.
+-- thread_priority insert that happens when a user joins the Everyone group and
+-- the file_thread_priority_on_group_member_change trigger files them in.
 --
 -- Without this trigger, no user ever has a todo on these threads, so
 -- schedule.outstanding_tasks stays false and the agenda items can't be marked

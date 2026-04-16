@@ -67,15 +67,15 @@ export class Twists extends Tool implements ITwists {
 
     const hasPublisher = await this.db
       .selectFrom("twist")
-      .innerJoin("topic", (join) =>
+      .innerJoin("group", (join) =>
         join
-          .onRef("topic.auto_publisher_id", "=", "twist.publisher_id")
-          .on("topic.auto_maintained", "=", true)
+          .onRef("group.auto_publisher_id", "=", "twist.publisher_id")
+          .on("group.auto_maintained", "=", true)
       )
-      .innerJoin("topic_member", "topic_member.topic_id", "topic.id")
+      .innerJoin("group_member", "group_member.group_id", "group.id")
       .innerJoin("user_contact", (join) =>
         join
-          .onRef("user_contact.contact_id", "=", "topic_member.contact_id")
+          .onRef("user_contact.contact_id", "=", "group_member.contact_id")
           .on("user_contact.linked", "=", true)
           .on("user_contact.archived_at", "is", null)
       )

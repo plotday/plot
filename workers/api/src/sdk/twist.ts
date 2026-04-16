@@ -396,14 +396,14 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         targetPublisherId = Number(publisherId);
       }
 
-      // Verify the user is a member of the publisher's auto-maintained topic.
+      // Verify the user is a member of the publisher's auto-maintained group.
       const hasAccess = await db
-        .selectFrom("topic as t")
-        .innerJoin("topic_member as tm", "tm.topic_id", "t.id")
-        .innerJoin("user_contact as uc", "uc.contact_id", "tm.contact_id")
-        .select("t.id")
-        .where("t.auto_publisher_id", "=", targetPublisherId as any)
-        .where("t.auto_maintained", "=", true)
+        .selectFrom("group as g")
+        .innerJoin("group_member as gm", "gm.group_id", "g.id")
+        .innerJoin("user_contact as uc", "uc.contact_id", "gm.contact_id")
+        .select("g.id")
+        .where("g.auto_publisher_id", "=", targetPublisherId as any)
+        .where("g.auto_maintained", "=", true)
         .where("uc.user_id", "=", user.id)
         .where("uc.linked", "=", true)
         .where("uc.archived_at", "is", null)
@@ -693,12 +693,12 @@ twist.get("/twist/:id/logs", async (c) => {
     }
 
     const hasAccess = await db
-      .selectFrom("topic as t")
-      .innerJoin("topic_member as tm", "tm.topic_id", "t.id")
-      .innerJoin("user_contact as uc", "uc.contact_id", "tm.contact_id")
-      .select("t.id")
-      .where("t.auto_publisher_id", "=", twistRow.publisher_id)
-      .where("t.auto_maintained", "=", true)
+      .selectFrom("group as g")
+      .innerJoin("group_member as gm", "gm.group_id", "g.id")
+      .innerJoin("user_contact as uc", "uc.contact_id", "gm.contact_id")
+      .select("g.id")
+      .where("g.auto_publisher_id", "=", twistRow.publisher_id)
+      .where("g.auto_maintained", "=", true)
       .where("uc.user_id", "=", user.id)
       .where("uc.linked", "=", true)
       .where("uc.archived_at", "is", null)

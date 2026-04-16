@@ -1,15 +1,12 @@
-// Compat route for clients on apiVersion < 3. The old-named view `user.topic`
-// is gone; serve the same shape from `user.group`. Safe to delete once no
-// apiVersion < 3 traffic remains.
 import { Hono } from "hono";
 
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 
-const topics = new Hono<{ Bindings: Bindings }>();
+const groups = new Hono<{ Bindings: Bindings }>();
 
-topics.get("/sync/topics", async (c) => {
+groups.get("/sync/groups", async (c) => {
   const userId = c.var.user.id;
   const { updatedSince, cursorId, archived, limit, sortBy, sortDir } = parseReadParams(c);
 
@@ -42,4 +39,4 @@ topics.get("/sync/topics", async (c) => {
   return c.json(rows as any);
 });
 
-export default topics;
+export default groups;

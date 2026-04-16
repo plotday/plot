@@ -14,7 +14,8 @@ CREATE TABLE "public"."thread" (
     "last_note_source_created_at" timestamp with time zone,
     "key" text,
     "icon" text,
-    "topics" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
+    "groups" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
+    "topic" text,
     "embedding" halfvec(384),
     -- Twist definition that owns this thread's dedup scope. Set by the twist
     -- runtime on creation and never changed afterward. NULL for user-created
@@ -68,13 +69,19 @@ WHERE
 
 CREATE INDEX idx_thread_contacts ON "public"."thread" USING gin ("contacts");
 
-CREATE INDEX idx_thread_topics ON "public"."thread" USING gin ("topics");
+CREATE INDEX idx_thread_groups ON "public"."thread" USING gin ("groups");
+
+CREATE INDEX idx_thread_topic ON "public"."thread" ("topic")
+WHERE
+    topic IS NOT NULL;
 
 CREATE INDEX idx_thread_embedding ON "public"."thread" USING hnsw ("embedding" halfvec_cosine_ops);
 
 COMMENT ON COLUMN "public"."thread"."embedding" IS 'Content embedding (384-dim halfvec) generated at creation from title + initial notes. Used by classify_thread_for_user for content-based priority rule matching.';
 
-COMMENT ON COLUMN "public"."thread"."topics" IS 'Topic IDs attached to this thread. Members of referenced topics gain visibility dynamically — new members automatically see past threads.';
+COMMENT ON COLUMN "public"."thread"."groups" IS 'Group IDs attached to this thread. Members of referenced groups gain visibility dynamically — new members automatically see past threads.';
+
+COMMENT ON COLUMN "public"."thread"."topic" IS 'Routing key used by priority rules. On INSERT defaults to, in order: explicit input, channel:<channel.id> when the thread comes from a connection, or groups[1]::text.';
 
 COMMENT ON COLUMN "public"."thread"."contacts" IS 'Attested contact_ids on this thread. For twist-created threads, a user only gains visibility when their linked contact appears here via another attester''s sync (or via share_thread). Users who attempted to join before attestation land in pending_contacts and are promoted when an attester confirms them. User-created threads do not require attestation.';
 

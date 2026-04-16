@@ -193,7 +193,7 @@ Future<Map<String, String>> getHeaders() async {
     if (token != null) 'Authorization': 'Bearer $token',
     'X-Plot-Client':
         '${AppInfo.version}/${AppInfo.buildNumber} (${AppInfo.platform})',
-    'X-Plot-API-Version': '2',
+    'X-Plot-API-Version': '3',
   };
 }
 

@@ -4,7 +4,7 @@ import type { DB } from "../db-types";
 
 /**
  * Gets all publishers that the user has access to — i.e. publishers whose
- * auto-maintained publisher topic lists one of the user's linked contacts as
+ * auto-maintained publisher group lists one of the user's linked contacts as
  * a member.
  */
 export async function getAccessiblePublishers(
@@ -13,15 +13,15 @@ export async function getAccessiblePublishers(
 ): Promise<Array<{ id: number; name: string; email: string | null; url: string | null }>> {
   const results = await db
     .selectFrom("publisher")
-    .innerJoin("topic", (join) =>
+    .innerJoin("group", (join) =>
       join
-        .onRef("topic.auto_publisher_id", "=", "publisher.id")
-        .on("topic.auto_maintained", "=", true)
+        .onRef("group.auto_publisher_id", "=", "publisher.id")
+        .on("group.auto_maintained", "=", true)
     )
-    .innerJoin("topic_member", "topic_member.topic_id", "topic.id")
+    .innerJoin("group_member", "group_member.group_id", "group.id")
     .innerJoin("user_contact", (join) =>
       join
-        .onRef("user_contact.contact_id", "=", "topic_member.contact_id")
+        .onRef("user_contact.contact_id", "=", "group_member.contact_id")
         .on("user_contact.linked", "=", true)
         .on("user_contact.archived_at", "is", null)
     )

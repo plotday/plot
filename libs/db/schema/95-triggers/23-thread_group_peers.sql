@@ -1,6 +1,6 @@
--- When thread.topics changes, create thread_priority + thread_unread rows
--- for all members of the referenced topics.
-CREATE OR REPLACE FUNCTION public.file_thread_priority_for_topic_members ()
+-- When thread.groups changes, create thread_priority + thread_unread rows
+-- for all members of the referenced groups.
+CREATE OR REPLACE FUNCTION public.file_thread_priority_for_group_members ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     AS $$
@@ -9,7 +9,7 @@ DECLARE
     v_peer_priority_id uuid;
     v_author_user_id uuid;
 BEGIN
-    IF NEW.topics IS NULL OR cardinality(NEW.topics) = 0 THEN
+    IF NEW.groups IS NULL OR cardinality(NEW.groups) = 0 THEN
         RETURN NEW;
     END IF;
 
@@ -23,10 +23,10 @@ BEGIN
 
     FOR r IN
         SELECT DISTINCT uc.user_id AS peer_user_id
-        FROM unnest(NEW.topics) AS arr(topic_id)
-        JOIN public.topic_member tm ON tm.topic_id = arr.topic_id
+        FROM unnest(NEW.groups) AS arr(group_id)
+        JOIN public.group_member gm ON gm.group_id = arr.group_id
         JOIN public.user_contact uc
-          ON uc.contact_id = tm.contact_id
+          ON uc.contact_id = gm.contact_id
          AND uc.linked = TRUE
          AND uc.archived_at IS NULL
         WHERE uc.user_id IS DISTINCT FROM v_author_user_id
@@ -47,15 +47,15 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER file_thread_priority_for_topic_members
-    AFTER INSERT OR UPDATE OF topics
+CREATE TRIGGER file_thread_priority_for_group_members
+    AFTER INSERT OR UPDATE OF groups
     ON public.thread
     FOR EACH ROW
-    EXECUTE FUNCTION public.file_thread_priority_for_topic_members ();
+    EXECUTE FUNCTION public.file_thread_priority_for_group_members ();
 
--- When a contact is added to or removed from a topic, cascade to
--- thread_priority/thread_unread for all threads that reference the topic.
-CREATE OR REPLACE FUNCTION public.file_thread_priority_on_topic_member_change ()
+-- When a contact is added to or removed from a group, cascade to
+-- thread_priority/thread_unread for all threads that reference the group.
+CREATE OR REPLACE FUNCTION public.file_thread_priority_on_group_member_change ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     AS $$
@@ -79,7 +79,7 @@ BEGIN
         FOR r_thread IN
             SELECT t.id AS thread_id
             FROM public.thread t
-            WHERE NEW.topic_id = ANY(t.topics)
+            WHERE NEW.group_id = ANY(t.groups)
               AND t.archived_at IS NULL
         LOOP
             v_peer_priority_id := public.classify_thread_for_user(v_peer_user_id, r_thread.thread_id);
@@ -113,7 +113,7 @@ BEGIN
         FOR r_thread IN
             SELECT t.id AS thread_id
             FROM public.thread t
-            WHERE OLD.topic_id = ANY(t.topics)
+            WHERE OLD.group_id = ANY(t.groups)
               AND t.archived_at IS NULL
         LOOP
             IF NOT EXISTS (
@@ -122,12 +122,12 @@ BEGIN
                   AND (
                     t2.contacts && "user".user_contact_ids(v_peer_user_id)
                     OR EXISTS (
-                        SELECT 1 FROM unnest(t2.topics) AS tid
-                        JOIN topic_member tm2 ON tm2.topic_id = tid
-                        JOIN user_contact uc2 ON uc2.contact_id = tm2.contact_id
+                        SELECT 1 FROM unnest(t2.groups) AS gid
+                        JOIN group_member gm2 ON gm2.group_id = gid
+                        JOIN user_contact uc2 ON uc2.contact_id = gm2.contact_id
                             AND uc2.linked = TRUE AND uc2.archived_at IS NULL
                         WHERE uc2.user_id = v_peer_user_id
-                          AND tm2.topic_id != OLD.topic_id
+                          AND gm2.group_id != OLD.group_id
                     )
                   )
             ) THEN
@@ -146,7 +146,7 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER file_thread_priority_on_topic_member_change
-    AFTER INSERT OR DELETE ON public.topic_member
+CREATE TRIGGER file_thread_priority_on_group_member_change
+    AFTER INSERT OR DELETE ON public.group_member
     FOR EACH ROW
-    EXECUTE FUNCTION public.file_thread_priority_on_topic_member_change ();
+    EXECUTE FUNCTION public.file_thread_priority_on_group_member_change ();

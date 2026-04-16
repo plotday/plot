@@ -111,6 +111,18 @@ threads.get("/sync/threads", async (c) => {
     return query.execute();
   });
 
+  // Version-gated serialization: apiVersion < 3 clients expect a `topics`
+  // array (the legacy name for what is now `groups`). Map groups → topics
+  // and drop the new `topic` / `groups` fields for those clients.
+  const apiVersion = c.var.apiVersion ?? 0;
+  if (apiVersion < 3) {
+    const legacyRows = rows.map((row: any) => {
+      const { groups, topic: _topic, ...rest } = row;
+      return { ...rest, topics: groups ?? [] };
+    });
+    return c.json(legacyRows as any);
+  }
+
   return c.json(rows as any);
 });
 
@@ -182,6 +194,13 @@ threads.post("/sync/threads", async (c) => {
   // by upsert_thread and the peer-promotion logic.
   delete threadData.twist_id;
   delete threadData.pending_contacts;
+
+  // Translate legacy `topics` field (apiVersion < 3) to `groups` so
+  // upsert_thread sees the new shape. If both are present, `groups` wins.
+  if (threadData.topics !== undefined && threadData.groups === undefined) {
+    threadData.groups = threadData.topics;
+  }
+  delete threadData.topics;
 
   const userId = c.var.user.id;
 

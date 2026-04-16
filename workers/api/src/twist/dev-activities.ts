@@ -13,20 +13,25 @@ type LogThreadContext = {
 
 /**
  * Ensures the shared Logs thread exists for a twist deployment and returns
- * the context needed to append a note. The thread is tagged with the
- * publisher topic (non-personal) or the per-user personal-twist topic so the
- * contact_topics priority_rule routes it into each member's @plot.twist-dev
- * priority.
+ * the context needed to append a note.
+ *
+ * Routing (who the thread files under, for whom):
+ *   - Personal env: thread.topic = `personal-twists:<owner_user_id>`. The
+ *     activate_invited_user-installed priority_rule routes it into the
+ *     owner's @plot.twist-dev priority. Only the owner sees the thread.
+ *   - Non-personal env: thread is tagged with the publisher group id as its
+ *     topic, so everyone in the publisher group sees it through their
+ *     @plot.twist-dev rule. thread.groups is populated with the publisher
+ *     group id, so the peer-filing trigger handles thread_priority for them.
  *
  * Returns null when the thread cannot be materialized (e.g. no Plot twist
- * installed for the thread owner, or no auto-maintained topic yet).
+ * installed for the thread owner, or no auto-maintained publisher group).
  */
 async function ensureLogsThread(
   db: Kysely<DB>,
   twistPackageId: string,
   environment: TwistEnvironment | string
 ): Promise<LogThreadContext | null> {
-  // Resolve the twist row for this package + environment to find the owner.
   const twistRow = await db
     .selectFrom("twist")
     .select(["user_id", "publisher_id"])
@@ -37,19 +42,13 @@ async function ensureLogsThread(
   if (!twistRow) return null;
 
   let threadOwnerUserId: string;
-  let topicId: string | null = null;
+  let groupId: string | null = null;
+  let topic: string;
 
   if (environment === "personal") {
     if (!twistRow.user_id) return null;
     threadOwnerUserId = twistRow.user_id;
-
-    const topic = await db
-      .selectFrom("topic")
-      .select("id")
-      .where("auto_personal_twist_user_id", "=", threadOwnerUserId)
-      .where("auto_maintained", "=", true)
-      .executeTakeFirst();
-    topicId = topic?.id ?? null;
+    topic = `personal-twists:${threadOwnerUserId}`;
   } else {
     if (twistRow.publisher_id === null || twistRow.publisher_id === undefined) {
       return null;
@@ -62,26 +61,40 @@ async function ensureLogsThread(
     if (!publisher?.created_by) return null;
     threadOwnerUserId = publisher.created_by;
 
-    const topic = await db
-      .selectFrom("topic")
+    const group = await db
+      .selectFrom("group")
       .select("id")
       .where("auto_publisher_id", "=", twistRow.publisher_id)
       .where("auto_maintained", "=", true)
       .executeTakeFirst();
-    topicId = topic?.id ?? null;
+    if (!group?.id) return null;
+    groupId = group.id;
+    topic = group.id;
   }
 
-  if (!topicId) return null;
+  const contactIds: string[] = [];
+  if (groupId) {
+    const memberRows = await db
+      .selectFrom("group_member")
+      .select("contact_id")
+      .where("group_id", "=", groupId)
+      .execute();
+    for (const r of memberRows) contactIds.push(r.contact_id);
+  } else {
+    // Personal logs thread: contact set is just the owner's primary contact
+    // so the peer-filing trigger has nothing extra to do (classify does
+    // the filing on insert via the upsert path).
+    const primary = await db
+      .selectFrom("user_contact")
+      .select("contact_id")
+      .where("user_id", "=", threadOwnerUserId)
+      .where("primary", "=", true)
+      .where("linked", "=", true)
+      .where("archived_at", "is", null)
+      .executeTakeFirst();
+    if (primary?.contact_id) contactIds.push(primary.contact_id);
+  }
 
-  const memberRows = await db
-    .selectFrom("topic_member")
-    .select("contact_id")
-    .where("topic_id", "=", topicId)
-    .execute();
-  const contactIds = memberRows.map((r) => r.contact_id);
-
-  // Need the owner's Plot twist_instance to attribute the log note as coming
-  // from the Plot runtime.
   const plotTwistInstance = await db
     .selectFrom("twist_instance")
     .innerJoin("twist", "twist.id", "twist_instance.twist_id")
@@ -94,8 +107,6 @@ async function ensureLogsThread(
 
   const key = `logs:${twistPackageId}:${environment}`;
 
-  // Upsert the thread. created_by is the owner user so file_thread_priority_peers
-  // (which only runs for user-authored threads) files peer topic members.
   const threadRow = await db
     .insertInto("thread")
     .values({
@@ -103,37 +114,51 @@ async function ensureLogsThread(
       title: `Logs (${environment})`,
       created_by: threadOwnerUserId,
       updated_by: 0,
-      topics: sql`${[topicId]}::uuid[]` as any,
+      topic,
+      groups: sql`${groupId ? [groupId] : []}::uuid[]` as any,
       contacts: sql`${contactIds}::uuid[]` as any,
     })
     .onConflict((oc) =>
       oc.columns(["created_by", "key"]).doUpdateSet({
         updated_by: 0,
-        topics: sql`${[topicId]}::uuid[]` as any,
+        topic,
+        groups: sql`${groupId ? [groupId] : []}::uuid[]` as any,
         contacts: sql`${contactIds}::uuid[]` as any,
       })
     )
     .returning("id")
     .executeTakeFirstOrThrow();
 
-  // Explicitly file the thread into each topic member's @plot.twist-dev
-  // priority via classify_thread_for_user. The peer trigger skips the author
-  // and only runs on INSERT, so we file everyone here to cover both fresh and
-  // repeat deployments.
-  await sql`
-    INSERT INTO thread_priority (thread_id, user_id, priority_id)
-    SELECT DISTINCT
-      ${threadRow.id}::uuid,
-      uc.user_id,
-      classify_thread_for_user(uc.user_id, ${threadRow.id}::uuid)
-    FROM topic_member tm
-    JOIN user_contact uc ON uc.contact_id = tm.contact_id
-    WHERE tm.topic_id = ${topicId}::uuid
-      AND uc.linked = TRUE
-      AND uc.archived_at IS NULL
-      AND classify_thread_for_user(uc.user_id, ${threadRow.id}::uuid) IS NOT NULL
-    ON CONFLICT (thread_id, user_id) DO NOTHING
-  `.execute(db);
+  // File the thread for everyone who should see it. For personal env that's
+  // just the owner; for publisher env it's every group member. classify
+  // picks up the priority_rule that matches thread.topic.
+  if (groupId) {
+    await sql`
+      INSERT INTO thread_priority (thread_id, user_id, priority_id)
+      SELECT DISTINCT
+        ${threadRow.id}::uuid,
+        uc.user_id,
+        classify_thread_for_user(uc.user_id, ${threadRow.id}::uuid)
+      FROM group_member gm
+      JOIN user_contact uc ON uc.contact_id = gm.contact_id
+      WHERE gm.group_id = ${groupId}::uuid
+        AND uc.linked = TRUE
+        AND uc.archived_at IS NULL
+        AND classify_thread_for_user(uc.user_id, ${threadRow.id}::uuid) IS NOT NULL
+      ON CONFLICT (thread_id, user_id) DO NOTHING
+    `.execute(db);
+  } else {
+    // Personal: file for the single owner.
+    await sql`
+      INSERT INTO thread_priority (thread_id, user_id, priority_id)
+      SELECT
+        ${threadRow.id}::uuid,
+        ${threadOwnerUserId}::uuid,
+        classify_thread_for_user(${threadOwnerUserId}::uuid, ${threadRow.id}::uuid)
+      WHERE classify_thread_for_user(${threadOwnerUserId}::uuid, ${threadRow.id}::uuid) IS NOT NULL
+      ON CONFLICT (thread_id, user_id) DO NOTHING
+    `.execute(db);
+  }
 
   return {
     threadId: threadRow.id,
@@ -141,9 +166,6 @@ async function ensureLogsThread(
   };
 }
 
-/**
- * Adds log output to the shared Logs thread for a twist deployment.
- */
 export async function addLogsNote(
   env: Bindings,
   twistPackageId: string,
@@ -179,9 +201,6 @@ export async function addLogsNote(
   }
 }
 
-/**
- * Adds an upgrade marker note to the Logs thread for a twist deployment.
- */
 export async function addUpgradeNote(
   env: Bindings,
   twistPackageId: string,

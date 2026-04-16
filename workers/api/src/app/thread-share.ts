@@ -19,8 +19,12 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ShareRequestSchema = z.object({
   add: z.array(z.string()).default([]),
   remove: z.array(z.string().uuid()).default([]),
-  addTopics: z.array(z.string().uuid()).default([]),
-  removeTopics: z.array(z.string().uuid()).default([]),
+  // Accept new `addGroups`/`removeGroups` (apiVersion >= 3) or old
+  // `addTopics`/`removeTopics` (apiVersion < 3) — both map to the same RPC.
+  addGroups: z.array(z.string().uuid()).optional(),
+  removeGroups: z.array(z.string().uuid()).optional(),
+  addTopics: z.array(z.string().uuid()).optional(),
+  removeTopics: z.array(z.string().uuid()).optional(),
 });
 
 // POST /thread/:id/share - Share a thread with other users/contacts
@@ -47,9 +51,11 @@ threadShare.post("/thread/:id/share", async (c) => {
     return handleValidationError(parseResult.error);
   }
 
-  const { add, remove, addTopics, removeTopics } = parseResult.data;
+  const { add, remove } = parseResult.data;
+  const addGroups = parseResult.data.addGroups ?? parseResult.data.addTopics ?? [];
+  const removeGroups = parseResult.data.removeGroups ?? parseResult.data.removeTopics ?? [];
 
-  if (add.length === 0 && remove.length === 0 && addTopics.length === 0 && removeTopics.length === 0) {
+  if (add.length === 0 && remove.length === 0 && addGroups.length === 0 && removeGroups.length === 0) {
     return c.json({ message: "No changes to make" }, 400);
   }
 
@@ -164,26 +170,26 @@ threadShare.post("/thread/:id/share", async (c) => {
     }
   }
 
-  // Share thread with topics
-  if (addTopics.length > 0 || removeTopics.length > 0) {
+  // Share thread with groups
+  if (addGroups.length > 0 || removeGroups.length > 0) {
     try {
       await c.var.db.transaction().execute(async (trx) => {
-        return rpc(trx, "share_thread_with_topics", {
+        return rpc(trx, "share_thread_with_groups", {
           p_user_id: user.id,
           p_thread_id: threadId,
-          p_add_topic_ids: `{${addTopics.join(",")}}` as any,
-          p_remove_topic_ids: `{${removeTopics.join(",")}}` as any,
+          p_add_group_ids: `{${addGroups.join(",")}}` as any,
+          p_remove_group_ids: `{${removeGroups.join(",")}}` as any,
         });
       });
-    } catch (topicError) {
-      const errMsg = (topicError as Error).message;
+    } catch (groupError) {
+      const errMsg = (groupError as Error).message;
       if (errMsg.includes("does not have access") || errMsg.includes("does not have permission") || errMsg.includes("Only admins")) {
         return c.json({ message: errMsg }, 403);
       }
       return captureServerError(
         c,
-        topicError as Error,
-        "Failed to share thread with topics",
+        groupError as Error,
+        "Failed to share thread with groups",
         { thread_id: threadId, user_id: user.id }
       );
     }

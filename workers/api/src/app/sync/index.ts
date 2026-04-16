@@ -18,6 +18,7 @@ import userSettings from "./user-settings";
 import priorityAttention from "./priority-attention";
 import threadAssociations from "./thread-associations";
 import threadUnread from "./thread-unread";
+import groups from "./groups";
 import topics from "./topics";
 import priorityRules from "./priority-rules";
 
@@ -39,6 +40,7 @@ sync.route("/", threadRead);
 sync.route("/", threadUnread);
 sync.route("/", priorityAttention);
 sync.route("/", threadAssociations);
+sync.route("/", groups);
 sync.route("/", topics);
 sync.route("/", priorityRules);
 
