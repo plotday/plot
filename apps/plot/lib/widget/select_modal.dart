@@ -614,7 +614,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     if (_error != null) {
       errorBox = Container(
         padding: const EdgeInsets.all(8),
-        child: Text(_error!),
+        child: Text(
+          _error!,
+          style: TextStyle(
+            color: context.theme.colors.mutedForeground,
+            fontSize: context.theme.typography.sm.fontSize,
+          ),
+        ),
       );
     }
 
