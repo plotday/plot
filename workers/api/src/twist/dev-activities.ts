@@ -34,12 +34,15 @@ async function ensureLogsThread(
 ): Promise<LogThreadContext | null> {
   const twistRow = await db
     .selectFrom("twist")
-    .select(["id", "user_id", "publisher_id"])
+    .select(["id", "user_id", "publisher_id", "name", "is_source"])
     .where("twist_package_id", "=", twistPackageId)
     .where("environment", "=", environment as any)
     .executeTakeFirst();
 
   if (!twistRow) return null;
+
+  const kind = twistRow.is_source ? "connector" : "twist";
+  const title = `${twistRow.name} ${kind} logs (${environment})`;
 
   let threadOwnerUserId: string;
   let groupId: string | null = null;
@@ -111,7 +114,7 @@ async function ensureLogsThread(
     .insertInto("thread")
     .values({
       key,
-      title: `Logs (${environment})`,
+      title,
       created_by: threadOwnerUserId,
       updated_by: 0,
       topic,
@@ -128,6 +131,7 @@ async function ensureLogsThread(
         .where("key", "is not", null)
         .where("archived_at", "is", null)
         .doUpdateSet({
+          title,
           updated_by: 0,
           topic,
           groups: sql`${groupId ? [groupId] : []}::uuid[]` as any,
