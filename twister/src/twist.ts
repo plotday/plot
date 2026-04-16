@@ -44,12 +44,12 @@ export abstract class Twist<TSelf> {
    * @example
    * ```typescript
    * class WorkflowTwist extends Twist<WorkflowTwist> {
-   *   static multipleInstances = true;
+   *   static readonly multipleInstances = true;
    *   // ...
    * }
    * ```
    */
-  static multipleInstances?: boolean;
+  static readonly multipleInstances?: boolean;
 
   /**
    * The user ID (`twist_instance.owner_id`) that installed this twist.
