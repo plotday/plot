@@ -53,27 +53,39 @@ export class Twists extends Tool implements ITwists {
       throw new Error("User not authenticated");
     }
 
-    // Verify user has access to this twist via twist_admin
-    // For personal twists, check with user_id; for non-personal, user_id is NULL
-    // Try personal first
-    let twistAdmin = await this.db
-      .selectFrom("twist_admin")
-      .select(["user_id", "publisher_id"])
+    // Check ownership: personal twist owned by this user, or non-personal
+    // twist whose publisher topic this user is a member of.
+    const hasPersonal = await this.db
+      .selectFrom("twist")
+      .select("id")
       .where("twist_package_id", "=", twistPackageId)
+      .where("environment", "=", "personal")
       .where("user_id", "=", userId)
       .executeTakeFirst();
 
-    // If not found, try non-personal (user_id is NULL)
-    if (!twistAdmin) {
-      twistAdmin = await this.db
-        .selectFrom("twist_admin")
-        .select(["user_id", "publisher_id"])
-        .where("twist_package_id", "=", twistPackageId)
-        .where("user_id", "is", null)
-        .executeTakeFirst();
-    }
+    if (hasPersonal) return;
 
-    if (!twistAdmin) {
+    const hasPublisher = await this.db
+      .selectFrom("twist")
+      .innerJoin("topic", (join) =>
+        join
+          .onRef("topic.auto_publisher_id", "=", "twist.publisher_id")
+          .on("topic.auto_maintained", "=", true)
+      )
+      .innerJoin("topic_member", "topic_member.topic_id", "topic.id")
+      .innerJoin("user_contact", (join) =>
+        join
+          .onRef("user_contact.contact_id", "=", "topic_member.contact_id")
+          .on("user_contact.linked", "=", true)
+          .on("user_contact.archived_at", "is", null)
+      )
+      .select("twist.id")
+      .where("twist.twist_package_id", "=", twistPackageId)
+      .where("twist.environment", "!=", "personal")
+      .where("user_contact.user_id", "=", userId)
+      .executeTakeFirst();
+
+    if (!hasPublisher) {
       throw new Error(
         "Access denied: You do not have permission to access this twist"
       );
@@ -94,20 +106,10 @@ export class Twists extends Tool implements ITwists {
       throw new Error("User not authenticated");
     }
 
-    // Generate a new twist package UUID
-    const twistPackageId = crypto.randomUUID();
-
-    // Insert into twist_admin table (with user_id for personal twist)
-    await this.db
-      .insertInto("twist_admin")
-      .values({
-        twist_package_id: twistPackageId,
-        user_id: userId,
-        publisher_id: null,
-      })
-      .execute();
-
-    return twistPackageId;
+    // Generate a new twist package UUID. The package id is claimed lazily on
+    // first deploy — the twist row for this package_id + environment is what
+    // pins ownership. No upfront registration is required.
+    return crypto.randomUUID();
   }
 
   async generate(spec: string): Promise<TwistSource> {
@@ -165,6 +167,7 @@ export class Twists extends Tool implements ITwists {
 
     // Get user_id for personal environment
     let userId: string | null = null;
+    let publisherId: number | null = null;
     if (environment === "personal") {
       const twistInstanceOwner = await this.db
         .selectFrom("twist_instance")
@@ -173,39 +176,35 @@ export class Twists extends Tool implements ITwists {
         .executeTakeFirstOrThrow();
       userId = twistInstanceOwner.owner_id;
       if (!userId) throw new Error("User not authenticated");
-    }
-
-    // Get twist_admin_id based on environment
-    let twistAdminId: number;
-    if (environment === "personal") {
-      // For personal, look up by twist_package_id and user_id
-      const twistAdmin = await this.db
-        .selectFrom("twist_admin")
-        .select("id")
-        .where("twist_package_id", "=", twistPackageId)
-        .where("user_id", "=", userId!)
-        .executeTakeFirstOrThrow();
-
-      twistAdminId = Number(twistAdmin.id);
     } else {
-      // For non-personal, user_id should be NULL
-      const twistAdmin = await this.db
-        .selectFrom("twist_admin")
-        .select("id")
+      // Look up the existing twist row to find the publisher that owns this
+      // package. verifyTwistAccess already confirmed the caller is a member.
+      const existing = await this.db
+        .selectFrom("twist")
+        .select("publisher_id")
         .where("twist_package_id", "=", twistPackageId)
-        .where("user_id", "is", null)
-        .executeTakeFirstOrThrow();
-
-      twistAdminId = Number(twistAdmin.id);
+        .where("environment", "!=", "personal")
+        .where("publisher_id", "is not", null)
+        .limit(1)
+        .executeTakeFirst();
+      if (!existing?.publisher_id) {
+        throw new Error(
+          "This twist package has no publisher yet — use the CLI to do the first non-personal deploy."
+        );
+      }
+      publisherId = Number(existing.publisher_id);
     }
 
     // Check if twist already exists to determine if name is required
-    const existingTwist = await this.db
+    let existingQuery = this.db
       .selectFrom("twist")
       .select(["name", "description"])
-      .where("twist_admin_id", "=", String(twistAdminId))
-      .where("environment", "=", environment)
-      .executeTakeFirst();
+      .where("twist_package_id", "=", twistPackageId)
+      .where("environment", "=", environment);
+    if (environment === "personal") {
+      existingQuery = existingQuery.where("user_id", "=", userId);
+    }
+    const existingTwist = await existingQuery.executeTakeFirst();
 
     // Require name for first deployment
     if (!existingTwist && !name) {
@@ -217,12 +216,13 @@ export class Twists extends Tool implements ITwists {
       env: this.env,
       ctx: this.ctx,
       db: this.db,
-      twistAdminId,
+      twistPackageId,
+      publisherId,
+      userId,
       input: _module !== undefined ? { module: _module } : { source: _source! },
       environment,
       name: name || existingTwist?.name || "",
       description,
-      userId,
       dryRun,
     });
 

@@ -56,10 +56,9 @@ export async function getTwist({
 
     const twistId = twistInstanceData.twist_id;
 
-    // Get twist metadata and twist_admin_id
     const twistData = await db
       .selectFrom("twist")
-      .select(["version", "twist_admin_id", "environment"])
+      .select(["version", "twist_package_id", "environment"])
       .where("id", "=", twistId)
       .executeTakeFirst();
 
@@ -71,21 +70,7 @@ export async function getTwist({
 
     version ??= twistData.version;
     environment = twistData.environment;
-
-    // Get twist_package_id for R2 module loading
-    const adminData = await db
-      .selectFrom("twist_admin")
-      .select("twist_package_id")
-      .where("id", "=", twistData.twist_admin_id)
-      .executeTakeFirst();
-
-    if (!adminData) {
-      throw new Error(
-        `Failed to fetch twist_package_id: No data found`
-      );
-    }
-
-    id = adminData.twist_package_id;
+    id = twistData.twist_package_id;
   }
 
   // TypeScript check: ensure id and environment are defined

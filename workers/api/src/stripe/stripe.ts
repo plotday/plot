@@ -597,12 +597,11 @@ async function enforceDowngradeLimits(
       const excessTwists = await db
         .selectFrom("twist_instance as pt")
         .innerJoin("twist as t", "t.id", "pt.twist_id")
-        .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
         .select("pt.id")
         .where("pt.owner_id", "=", userSub.user_id)
         .where("pt.archived_at", "is", null)
         .where("t.is_source", "=", false)
-        .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
+        .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
         .orderBy("pt.created_at", "desc")
         .offset(limits.twists)
         .execute();
@@ -680,9 +679,8 @@ async function triggerHistoryResync(
       const twistInfo = await db
         .selectFrom("twist_instance")
         .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-        .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
         .select([
-          "twist_admin.twist_package_id as twistPackageId",
+          "twist.twist_package_id as twistPackageId",
           "twist.version",
         ])
         .where("twist_instance.id", "=", twistInstanceId)

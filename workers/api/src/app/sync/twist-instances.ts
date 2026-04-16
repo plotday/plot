@@ -63,8 +63,7 @@ twistInstances.get("/sync/twist-instances", async (c) => {
         try {
           const twistInfo = await c.var.db
             .selectFrom("twist")
-            .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-            .select(["twist_admin.twist_package_id", "twist.version"])
+            .select(["twist.twist_package_id", "twist.version"])
             .where("twist.id", "=", row.twist_id)
             .executeTakeFirst();
           if (!twistInfo) continue;

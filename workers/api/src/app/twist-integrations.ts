@@ -47,7 +47,6 @@ async function resolveTwistInfo(db: Kysely<DB>, twistInstanceId: string) {
   const row = await db
     .selectFrom("twist_instance")
     .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-    .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
     .select([
       "twist_instance.twist_id as twistId",
       "twist.version",
@@ -55,7 +54,7 @@ async function resolveTwistInfo(db: Kysely<DB>, twistInstanceId: string) {
       "twist.options_schema as twistOptions",
       "twist.shared",
       "twist.key_option as keyOption",
-      "twist_admin.twist_package_id as twistPackageId",
+      "twist.twist_package_id as twistPackageId",
     ])
     .where("twist_instance.id", "=", twistInstanceId)
     .where("twist_instance.archived_at", "is", null)

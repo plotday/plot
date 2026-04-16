@@ -77,8 +77,7 @@ twists.get("/sources", async (c) => {
     const sources = await c.var.db
       .selectFrom("twist_instance")
       .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-      .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-      .leftJoin("publisher", "publisher.id", "twist_admin.publisher_id")
+      .leftJoin("publisher", "publisher.id", "twist.publisher_id")
       .select([
         "twist_instance.id",
         "twist_instance.twist_id",

@@ -7,7 +7,6 @@ import { deployTwist } from "../twist/deployment";
 import {
   createPublisher,
   getAccessiblePublishers,
-  getOrCreateTwistPriority,
 } from "../twist/priority-management";
 import { SSEStream, acceptsSSE } from "../utils/sse";
 import { handleValidationError } from "../utils/validation";
@@ -142,7 +141,7 @@ twist.post("/twist/publishers", async (c) => {
   const db = c.var.db;
 
   try {
-    const publisher = await createPublisher(name, url || null, db);
+    const publisher = await createPublisher(name, url || null, user.id, db);
     return c.json(publisher);
   } catch (error) {
     const logger = createLogger();
@@ -248,8 +247,8 @@ twist.post("/twist/generate", async (c) => {
 });
 
 // GET /twist/:id - Get published twist information
-// Returns twist_admin info for non-personal deployments
-// Returns 404 if twist is not published (no non-personal twist_admin exists)
+// Returns publisher info for any non-personal deployment of this package.
+// Returns 404 if the package has no non-personal twist rows.
 twist.get("/twist/:id", async (c) => {
   const twistPackageId = c.req.param("id");
   const userToken = c.var.userToken;
@@ -260,42 +259,39 @@ twist.get("/twist/:id", async (c) => {
 
   const db = c.var.db;
 
-  // Query twist_admin for non-personal deployment (user_id IS NULL)
-  // Need a JOIN for publisher relation
-  const twistAdmin = await db
-    .selectFrom("twist_admin")
-    .leftJoin("publisher", "publisher.id", "twist_admin.publisher_id")
+  const twistRow = await db
+    .selectFrom("twist")
+    .leftJoin("publisher", "publisher.id", "twist.publisher_id")
     .select([
-      "twist_admin.id",
-      "twist_admin.twist_package_id",
-      "twist_admin.created_at",
-      "twist_admin.updated_at",
+      "twist.twist_package_id",
+      "twist.created_at",
+      "twist.updated_at",
       "publisher.id as publisher_id",
       "publisher.name as publisher_name",
       "publisher.email as publisher_email",
       "publisher.url as publisher_url",
     ])
-    .where("twist_admin.twist_package_id", "=", twistPackageId)
-    .where("twist_admin.user_id", "is", null)
+    .where("twist.twist_package_id", "=", twistPackageId)
+    .where("twist.environment", "!=", "personal")
+    .orderBy("twist.created_at", "asc")
     .executeTakeFirst();
 
-  if (!twistAdmin) {
+  if (!twistRow) {
     return new Response("Twist not published", { status: 404 });
   }
 
   return c.json({
-    id: twistAdmin.id,
-    twist_package_id: twistAdmin.twist_package_id,
-    publisher: twistAdmin.publisher_id
+    twist_package_id: twistRow.twist_package_id,
+    publisher: twistRow.publisher_id
       ? {
-          id: twistAdmin.publisher_id,
-          name: twistAdmin.publisher_name,
-          email: twistAdmin.publisher_email,
-          url: twistAdmin.publisher_url,
+          id: Number(twistRow.publisher_id),
+          name: twistRow.publisher_name,
+          email: twistRow.publisher_email,
+          url: twistRow.publisher_url,
         }
       : null,
-    created_at: twistAdmin.created_at,
-    updated_at: twistAdmin.updated_at,
+    created_at: twistRow.created_at,
+    updated_at: twistRow.updated_at,
   });
 });
 
@@ -341,185 +337,72 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     return new Response("Bad request: name is required", { status: 400 });
   }
 
-  let packageId: string | null = null;
+  if (!urlPackageId) {
+    return new Response("Bad request: twist package ID required", {
+      status: 400,
+    });
+  }
+  const packageId: string = urlPackageId;
+
   let userId: string | null = null;
-  let twistAdminId: number | null = null;
+  let resolvedPublisherId: number | null = null;
 
   if (environment === "personal") {
-    // Personal environment: require user token
+    // Personal environment: require user token.
     if (!userToken || !user) {
       return new Response(
         "Unauthorized: user token required for personal environment",
-        {
-          status: 401,
-        }
+        { status: 401 }
       );
     }
     userId = user.id;
-
-    // Validate package_id is provided
-    if (!urlPackageId) {
-      return new Response("Bad request: twist package ID required", {
-        status: 400,
-      });
-    }
-
-    packageId = urlPackageId;
-
-    // Get or create twist priority and admin entry
-    try {
-      const result = await getOrCreateTwistPriority(
-        userId,
-        packageId,
-        name,
-        true, // isPersonal
-        db
-      );
-      twistAdminId = result.twistAdminId;
-    } catch (error) {
-      const logger = createLogger();
-      logger.error("Error setting up twist priority", error as Error, {
-        user_id: userId,
-        package_id: packageId,
-        twist_name: name
-      });
-      return new Response(
-        `Error setting up twist priority: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-        {
-          status: 500,
-        }
-      );
-    }
   } else {
-    // Non-personal environment: require package_id and validate access
-    if (!urlPackageId) {
-      return new Response(
-        "Bad request: twist package ID required for non-personal environment",
-        {
-          status: 400,
-        }
-      );
-    }
-
-    // Validate description for non-personal
+    // Non-personal environment: description required.
     if (!description) {
       return new Response(
         "Bad request: description is required for non-personal deployments",
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    packageId = urlPackageId;
+    // Determine the publisher that owns this package. If any non-personal
+    // twist row already exists for this package, its publisher_id pins the
+    // publisher for this deploy.
+    const existing = await db
+      .selectFrom("twist")
+      .select(["publisher_id"])
+      .where("twist_package_id", "=", packageId)
+      .where("environment", "!=", "personal")
+      .where("publisher_id", "is not", null)
+      .limit(1)
+      .executeTakeFirst();
 
-    // Get or create twist priority and admin entry for non-personal
-    // This requires a user to set up the priority structure
-    let twistAdmin;
-    try {
-      // First check if admin entry exists
-      const existingAdmin = await db
-        .selectFrom("twist_admin")
-        .select(["id", "publisher_id"])
-        .where("twist_package_id", "=", packageId)
-        .where("user_id", "is", null)
-        .executeTakeFirst();
+    const pinnedPublisherId =
+      existing?.publisher_id !== undefined && existing?.publisher_id !== null
+        ? Number(existing.publisher_id)
+        : null;
 
-      if (existingAdmin) {
-        twistAdminId = Number(existingAdmin.id);
-
-        // If publisherId was provided and differs from current, update it
-        if (
-          publisherId !== undefined &&
-          String(publisherId) !== existingAdmin.publisher_id
-        ) {
-          await db
-            .updateTable("twist_admin")
-            .set({ publisher_id: publisherId })
-            .where("id", "=", existingAdmin.id)
-            .execute();
-
-          // Re-fetch to get updated publisher_id
-          const updatedAdmin = await db
-            .selectFrom("twist_admin")
-            .select(["id", "publisher_id"])
-            .where("id", "=", existingAdmin.id)
-            .executeTakeFirstOrThrow();
-
-          twistAdmin = updatedAdmin;
-        } else {
-          twistAdmin = existingAdmin;
-        }
+    if (userToken && user) {
+      let targetPublisherId: number;
+      if (pinnedPublisherId !== null) {
+        targetPublisherId = pinnedPublisherId;
       } else {
-        // Admin doesn't exist, create it
-        if (!user) {
-          return new Response(
-            "User authentication required to set up new twist",
-            { status: 401 }
-          );
-        }
-
-        // For non-personal deployments, publisherId is required
         if (publisherId === undefined) {
           return new Response(
             "Publisher ID is required for non-personal deployments",
             { status: 400 }
           );
         }
-
-        const result = await getOrCreateTwistPriority(
-          user.id,
-          packageId,
-          name,
-          false, // isPersonal
-          db,
-          publisherId
-        );
-        twistAdminId = result.twistAdminId;
-
-        // Fetch the new admin entry
-        const newAdmin = await db
-          .selectFrom("twist_admin")
-          .select(["id", "publisher_id"])
-          .where("id", "=", String(result.twistAdminId))
-          .executeTakeFirstOrThrow();
-
-        twistAdmin = newAdmin;
+        targetPublisherId = Number(publisherId);
       }
-    } catch (error) {
-      const logger = createLogger();
-      logger.error("Error setting up twist for non-personal", error as Error, {
-        package_id: packageId,
-        twist_name: name,
-        environment
-      });
-      return new Response(
-        `Error setting up twist: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-        { status: 500 }
-      );
-    }
 
-    // Validate that publisher_id is set for non-personal deployments
-    if (twistAdmin.publisher_id === null) {
-      return new Response(
-        "Publisher is required for non-personal deployments. Use the CLI to set up a publisher.",
-        { status: 400 }
-      );
-    }
-
-    // Integrations check: user token must be a topic member, or publisher token must match
-    if (userToken && user) {
-      // Check if user is a member of the auto-maintained topic for this twist admin
+      // Verify the user is a member of the publisher's auto-maintained topic.
       const hasAccess = await db
         .selectFrom("topic as t")
         .innerJoin("topic_member as tm", "tm.topic_id", "t.id")
         .innerJoin("user_contact as uc", "uc.contact_id", "tm.contact_id")
         .select("t.id")
-        .where("t.auto_twist_admin_id", "=", String(twistAdmin.id))
+        .where("t.auto_publisher_id", "=", targetPublisherId as any)
         .where("t.auto_maintained", "=", true)
         .where("uc.user_id", "=", user.id)
         .where("uc.linked", "=", true)
@@ -528,22 +411,20 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
 
       if (!hasAccess) {
         return new Response(
-          "Forbidden: you do not have access to this twist",
-          {
-            status: 403,
-          }
+          "Forbidden: you do not have access to this publisher",
+          { status: 403 }
         );
       }
+
+      resolvedPublisherId = targetPublisherId;
     } else if (publisherToken && publisher) {
-      // Check if publisher matches
-      if (String(publisher.id) !== twistAdmin.publisher_id) {
+      if (pinnedPublisherId !== null && publisher.id !== pinnedPublisherId) {
         return new Response(
           "Forbidden: publisher token does not match twist publisher",
-          {
-            status: 403,
-          }
+          { status: 403 }
         );
       }
+      resolvedPublisherId = publisher.id;
     } else {
       return new Response("Unauthorized", { status: 401 });
     }
@@ -569,7 +450,9 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           env: c.env,
           ctx: c.executionCtx as ExecutionContext,
           db: sseDb,
-          twistAdminId: twistAdminId!,
+          twistPackageId: packageId,
+          publisherId: resolvedPublisherId,
+          userId,
           input:
             module !== undefined ? { module, sourcemap } : { source: source! },
           environment,
@@ -577,7 +460,6 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           description,
           logoUrl,
           logoUrlDark,
-          userId,
           userName: user?.name || user?.email?.split("@")[0],
           userEmail: user?.email,
           dryRun,
@@ -597,12 +479,15 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
 
         // Fetch the final twist to return
         try {
-          const finalTwist = await sseDb
+          let finalQuery = sseDb
             .selectFrom("twist")
             .selectAll()
-            .where("twist_admin_id", "=", String(twistAdminId))
-            .where("environment", "=", environment)
-            .executeTakeFirstOrThrow();
+            .where("twist_package_id", "=", packageId)
+            .where("environment", "=", environment);
+          if (environment === "personal") {
+            finalQuery = finalQuery.where("user_id", "=", userId);
+          }
+          const finalTwist = await finalQuery.executeTakeFirstOrThrow();
 
           stream.sendResult({
             ...finalTwist,
@@ -612,7 +497,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         } catch (fetchError) {
           const logger = createLogger();
           logger.error("Error fetching deployed twist", fetchError as Error, {
-            twist_admin_id: twistAdminId,
+            twist_package_id: packageId,
             environment
           });
           stream.sendError(
@@ -622,8 +507,16 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         }
       } catch (error) {
         const logger = createLogger();
+        // Translate the publisher-consistency trigger violation into a 403-style
+        // message for the user.
+        const translated = translateCheckViolation(error);
+        if (translated) {
+          stream.sendError(translated);
+          resultSent = true;
+          return;
+        }
         logger.error("Error deploying twist", error as Error, {
-          twist_admin_id: twistAdminId,
+          twist_package_id: packageId,
           environment,
           twist_name: name
         });
@@ -639,7 +532,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         if (!resultSent) {
           const logger = createLogger();
           logger.error("Deployment completed without sending result or error", new Error("No result sent"), {
-            twist_admin_id: twistAdminId,
+            twist_package_id: packageId,
             environment
           });
           stream.sendError(
@@ -663,7 +556,9 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         env: c.env,
         ctx: c.executionCtx as ExecutionContext,
         db,
-        twistAdminId: twistAdminId!,
+        twistPackageId: packageId,
+        publisherId: resolvedPublisherId,
+        userId,
         input:
           module !== undefined ? { module, sourcemap } : { source: source! },
         environment,
@@ -671,15 +566,18 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         description,
         logoUrl,
         logoUrlDark,
-        userId,
         userName: user?.name || user?.email?.split("@")[0],
         userEmail: user?.email,
         dryRun,
       });
     } catch (error) {
+      const translated = translateCheckViolation(error);
+      if (translated) {
+        return new Response(translated, { status: 403 });
+      }
       const logger = createLogger();
       logger.error("Error deploying twist", error as Error, {
-        twist_admin_id: twistAdminId,
+        twist_package_id: packageId,
         environment,
         twist_name: name
       });
@@ -704,12 +602,15 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
 
     // Fetch the final twist to return
     try {
-      const finalTwist = await db
+      let finalQuery = db
         .selectFrom("twist")
         .selectAll()
-        .where("twist_admin_id", "=", String(twistAdminId))
-        .where("environment", "=", environment)
-        .executeTakeFirstOrThrow();
+        .where("twist_package_id", "=", packageId)
+        .where("environment", "=", environment);
+      if (environment === "personal") {
+        finalQuery = finalQuery.where("user_id", "=", userId);
+      }
+      const finalTwist = await finalQuery.executeTakeFirstOrThrow();
 
       return c.json({
         ...finalTwist,
@@ -718,7 +619,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     } catch (error) {
       const logger = createLogger();
       logger.error("Error fetching deployed twist", error as Error, {
-        twist_admin_id: twistAdminId,
+        twist_package_id: packageId,
         environment
       });
       return new Response(
@@ -730,6 +631,20 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     }
   }
 });
+
+/**
+ * Translates the enforce_twist_package_publisher_consistency trigger's
+ * check_violation into a user-facing forbidden message. Returns null if
+ * the error isn't a publisher mismatch.
+ */
+function translateCheckViolation(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const msg = error.message ?? "";
+  if (msg.includes("twist_package_id") && msg.includes("is already owned by publisher")) {
+    return "Forbidden: this twist package is already owned by a different publisher.";
+  }
+  return null;
+}
 
 // GET /twist/:id/logs - Stream twist logs via SSE
 twist.get("/twist/:id/logs", async (c) => {
@@ -749,40 +664,40 @@ twist.get("/twist/:id/logs", async (c) => {
 
   const db = c.var.db;
 
-  // For personal environment, verify twist exists and user owns it
-  // For other environments, verify user has access to the twist's priority
+  // For personal environment, verify twist exists and user owns it.
+  // For other environments, verify user is a member of the publisher's topic.
   if (environment === "personal") {
-    // Check if twist_admin exists for this user and package
-    const twistAdmin = await db
-      .selectFrom("twist_admin")
+    const twistRow = await db
+      .selectFrom("twist")
       .select(["id"])
       .where("twist_package_id", "=", twistPackageId)
+      .where("environment", "=", "personal")
       .where("user_id", "=", user.id)
       .executeTakeFirst();
 
-    if (!twistAdmin) {
+    if (!twistRow) {
       return new Response("Twist not found", { status: 404 });
     }
   } else {
-    // For non-personal environments, check topic membership
-    const twistAdmin = await db
-      .selectFrom("twist_admin")
-      .select(["id"])
+    const twistRow = await db
+      .selectFrom("twist")
+      .select(["publisher_id"])
       .where("twist_package_id", "=", twistPackageId)
-      .where("user_id", "is", null)
+      .where("environment", "!=", "personal")
+      .where("publisher_id", "is not", null)
+      .limit(1)
       .executeTakeFirst();
 
-    if (!twistAdmin) {
+    if (!twistRow || twistRow.publisher_id === null) {
       return new Response("Twist not found", { status: 404 });
     }
 
-    // Check if user is a member of the auto-maintained topic for this twist admin
     const hasAccess = await db
       .selectFrom("topic as t")
       .innerJoin("topic_member as tm", "tm.topic_id", "t.id")
       .innerJoin("user_contact as uc", "uc.contact_id", "tm.contact_id")
       .select("t.id")
-      .where("t.auto_twist_admin_id", "=", String(twistAdmin.id))
+      .where("t.auto_publisher_id", "=", twistRow.publisher_id)
       .where("t.auto_maintained", "=", true)
       .where("uc.user_id", "=", user.id)
       .where("uc.linked", "=", true)
