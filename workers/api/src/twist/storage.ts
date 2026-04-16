@@ -52,7 +52,7 @@ export async function storeTwistModule({
 
     await env.TWIST_CONFIG.put(
       `${id}:${version}`,
-      JSON.stringify({ permissions, toolPermissions, providers, integrationsMap, sourceProvider, optionsSchema })
+      JSON.stringify({ permissions, toolPermissions, providers, integrationsMap, sourceProvider, optionsSchema, multipleInstances })
     );
   }
 

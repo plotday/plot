@@ -154,7 +154,7 @@ export async function deployTwist({
     permissions = storeResult.permissions;
     optionsSchema = storeResult.optionsSchema;
     const { aiRequired } = storeResult;
-    multipleInstances = storeResult.multipleInstances ?? false;
+    multipleInstances = storeResult.multipleInstances;
 
     // Store _ai_required in permissions for Flutter app access
     if (aiRequired) {
