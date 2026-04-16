@@ -346,6 +346,12 @@ CREATE TRIGGER auto_rename_personal_twist_topic
 -- ---------------------------------------------------------------------------
 -- Phase 8: Topic index churn.
 -- ---------------------------------------------------------------------------
+-- Drop any auto-maintained topics tied to the twist_admin table. Phase 13
+-- drops the auto_twist_admin_id column, which would otherwise leave these
+-- rows as orphans that match the new idx_topic_auto_everyone predicate with
+-- every column NULL.
+DELETE FROM public.topic WHERE auto_twist_admin_id IS NOT NULL;
+
 DROP INDEX IF EXISTS "public"."idx_topic_auto_everyone";
 
 CREATE UNIQUE INDEX "idx_topic_auto_publisher"
