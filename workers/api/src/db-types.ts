@@ -330,7 +330,7 @@ export interface Link {
   thread_id: string | null;
   title: string | null;
   /**
-   * The twist definition ID (twist_admin.id) that created this link. Null for user-created links.
+   * The twist definition ID (twist.id) that created this link. Null for user-created links.
    */
   twist_id: Int8 | null;
   /**
@@ -519,6 +519,7 @@ export interface PriorityTags {
 
 export interface Publisher {
   created_at: Generated<Timestamp>;
+  created_by: string;
   email: string | null;
   id: Generated<Int8>;
   name: string;
@@ -780,8 +781,9 @@ export interface Topic {
    * TRUE for system-managed topics (Everyone, team topics). Membership is maintained by triggers and cannot be modified via API.
    */
   auto_maintained: Generated<boolean>;
+  auto_personal_twist_user_id: string | null;
+  auto_publisher_id: Int8 | null;
   auto_team_admin_team_id: Int8 | null;
-  auto_twist_admin_id: Int8 | null;
   auto_user_id: string | null;
   created_at: Generated<Timestamp>;
   created_by: string;
@@ -808,6 +810,7 @@ export interface TopicMember {
 
 export interface Twist {
   archived_at: Timestamp | null;
+  auto_approve: Generated<boolean>;
   created_at: Generated<Timestamp>;
   description: string | null;
   environment: Generated<TwistEnvironment>;
@@ -821,20 +824,12 @@ export interface Twist {
   name: string;
   options_schema: Json | null;
   permissions: Json | null;
-  shared: Generated<boolean>;
-  twist_admin_id: Int8;
-  updated_at: Generated<Timestamp>;
-  version: string;
-}
-
-export interface TwistAdmin {
-  auto_approve: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  id: Generated<Int8>;
   publisher_id: Int8 | null;
-  twist_package_id: Generated<string>;
+  shared: Generated<boolean>;
+  twist_package_id: string;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
+  version: string;
 }
 
 export interface TwistInstance {
@@ -1486,7 +1481,6 @@ export interface DB {
   topic_admin: TopicAdmin;
   topic_member: TopicMember;
   twist: Twist;
-  twist_admin: TwistAdmin;
   twist_instance: TwistInstance;
   twist_instance_channel: TwistInstanceChannel;
   twist_instance_channel_link_create: TwistInstanceChannelLinkCreate;

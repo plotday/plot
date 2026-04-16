@@ -77,6 +77,11 @@ SELECT DISTINCT ON (user_id, priority_id, key)
 FROM all_sources
 ORDER BY user_id, priority_id, key, distance ASC, source_type ASC;
 
+-- Returns twists accessible to a user across all environments.
+-- Personal: twist.user_id = p_user_id.
+-- Review: any twist_reviewer user.
+-- Public: all users.
+-- Private/review (non-public): members of the publisher topic.
 CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_user_id uuid)
     RETURNS SETOF twist
     LANGUAGE sql
@@ -86,25 +91,24 @@ CREATE OR REPLACE FUNCTION public.get_accessible_twists (p_user_id uuid)
         twist.*
     FROM
         twist
-        JOIN twist_admin ON twist.twist_admin_id = twist_admin.id
     WHERE
         twist.archived_at IS NULL
         AND (
             twist.environment = 'public'
             OR (twist.environment = 'personal'
-                AND twist_admin.user_id = p_user_id)
+                AND twist.user_id = p_user_id)
             OR (twist.environment = 'review'
                 AND EXISTS (SELECT 1 FROM twist_reviewer WHERE user_id = p_user_id))
-            OR EXISTS (
+            OR (twist.publisher_id IS NOT NULL AND EXISTS (
                 SELECT 1 FROM topic t
                 JOIN topic_member tm ON tm.topic_id = t.id
                 JOIN user_contact uc ON uc.contact_id = tm.contact_id
-                WHERE t.auto_twist_admin_id = twist_admin.id
+                WHERE t.auto_publisher_id = twist.publisher_id
                   AND t.auto_maintained = TRUE
                   AND uc.user_id = p_user_id
                   AND uc.linked = TRUE
                   AND uc.archived_at IS NULL
-            )
+            ))
         )
 $function$;
 
@@ -115,27 +119,26 @@ CREATE OR REPLACE FUNCTION public.is_accessible_twist (p_twist_id bigint, p_user
     AS $function$
     SELECT
         EXISTS (
-            SELECT
-                1
-            FROM
-                twist
-                JOIN twist_admin ON twist.twist_admin_id = twist_admin.id
-            WHERE
-                twist.id = p_twist_id
-                AND twist.archived_at IS NULL
-                AND (twist.environment = 'public'
-                    OR (twist.environment = 'personal'
-                        AND twist_admin.user_id = p_user_id)
-                    OR (twist.environment = 'review'
-                        AND EXISTS (SELECT 1 FROM twist_reviewer WHERE user_id = p_user_id))
-                    OR EXISTS (
-                        SELECT 1 FROM topic t
-                        JOIN topic_member tm ON tm.topic_id = t.id
-                        JOIN user_contact uc ON uc.contact_id = tm.contact_id
-                        WHERE t.auto_twist_admin_id = twist_admin.id
-                          AND t.auto_maintained = TRUE
-                          AND uc.user_id = p_user_id
-                          AND uc.linked = TRUE
-                          AND uc.archived_at IS NULL
-                    )))
+            SELECT 1
+            FROM twist
+            WHERE twist.id = p_twist_id
+              AND twist.archived_at IS NULL
+              AND (
+                  twist.environment = 'public'
+                  OR (twist.environment = 'personal'
+                      AND twist.user_id = p_user_id)
+                  OR (twist.environment = 'review'
+                      AND EXISTS (SELECT 1 FROM twist_reviewer WHERE user_id = p_user_id))
+                  OR (twist.publisher_id IS NOT NULL AND EXISTS (
+                      SELECT 1 FROM topic t
+                      JOIN topic_member tm ON tm.topic_id = t.id
+                      JOIN user_contact uc ON uc.contact_id = tm.contact_id
+                      WHERE t.auto_publisher_id = twist.publisher_id
+                        AND t.auto_maintained = TRUE
+                        AND uc.user_id = p_user_id
+                        AND uc.linked = TRUE
+                        AND uc.archived_at IS NULL
+                  ))
+              )
+        )
 $function$;

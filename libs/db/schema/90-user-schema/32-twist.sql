@@ -49,8 +49,7 @@ SELECT
                   AND ptc.user_id = pt.owner_id
             )
     END AS user_connected,
-    (ta.twist_package_id = '0199b6f4-ae64-7718-8a02-44716f30358f') AS is_builtin
+    (t.twist_package_id = '0199b6f4-ae64-7718-8a02-44716f30358f') AS is_builtin
 FROM
     twist_instance pt
-    JOIN twist t ON pt.twist_id = t.id
-    JOIN twist_admin ta ON t.twist_admin_id = ta.id;
+    JOIN twist t ON pt.twist_id = t.id;

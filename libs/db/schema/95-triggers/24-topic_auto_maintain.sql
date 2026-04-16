@@ -89,7 +89,6 @@ BEGIN
             VALUES (v_topic_id, v_user_id)
             ON CONFLICT DO NOTHING;
         END IF;
-
     ELSIF TG_OP = 'DELETE' THEN
         IF v_contact_id IS NOT NULL THEN
             DELETE FROM topic_member
@@ -97,7 +96,6 @@ BEGIN
         END IF;
         DELETE FROM topic_admin
         WHERE topic_id = v_topic_id AND user_id = v_user_id;
-
     ELSIF TG_OP = 'UPDATE' THEN
         IF NEW.role = 'admin' AND OLD.role != 'admin' THEN
             INSERT INTO topic_admin (topic_id, user_id)
@@ -107,28 +105,28 @@ BEGIN
             DELETE FROM topic_admin
             WHERE topic_id = v_topic_id AND user_id = v_user_id;
         END IF;
-        END IF;
+    END IF;
 
-        RETURN COALESCE(NEW, OLD);
-        END;
-        $$;
+    RETURN COALESCE(NEW, OLD);
+END;
+$$;
 
-        CREATE TRIGGER auto_maintain_team_topic_members
-        AFTER INSERT OR DELETE OR UPDATE ON public.team_user
-        FOR EACH ROW
-        EXECUTE FUNCTION public.auto_maintain_team_topic_members ();
+CREATE TRIGGER auto_maintain_team_topic_members
+    AFTER INSERT OR DELETE OR UPDATE ON public.team_user
+    FOR EACH ROW
+    EXECUTE FUNCTION public.auto_maintain_team_topic_members ();
 
-        -- Auto-create and maintain team-admin topics.
-        CREATE OR REPLACE FUNCTION public.auto_maintain_team_admin_topic ()
-        RETURNS TRIGGER
-        LANGUAGE plpgsql
-        AS $$
-        DECLARE
-        v_topic_id uuid;
-        v_contact_id uuid;
-        BEGIN
-        -- Only handle team admins
-        IF (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') AND NEW.role != 'admin' THEN
+-- Auto-create and maintain team-admin topics.
+CREATE OR REPLACE FUNCTION public.auto_maintain_team_admin_topic ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_topic_id uuid;
+    v_contact_id uuid;
+BEGIN
+    -- Only handle team admins
+    IF (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') AND NEW.role != 'admin' THEN
         -- If user is no longer an admin, remove from topic
         SELECT id INTO v_topic_id FROM topic WHERE auto_team_admin_team_id = NEW.team_id;
         IF v_topic_id IS NOT NULL THEN
@@ -139,118 +137,217 @@ BEGIN
             DELETE FROM topic_admin WHERE topic_id = v_topic_id AND user_id = NEW.user_id;
         END IF;
         RETURN NEW;
-        END IF;
+    END IF;
 
-        -- Get or create topic
-        SELECT id INTO v_topic_id FROM topic WHERE auto_team_admin_team_id = COALESCE(NEW.team_id, OLD.team_id);
-        IF v_topic_id IS NULL AND TG_OP != 'DELETE' THEN
+    -- Get or create topic
+    SELECT id INTO v_topic_id FROM topic WHERE auto_team_admin_team_id = COALESCE(NEW.team_id, OLD.team_id);
+    IF v_topic_id IS NULL AND TG_OP != 'DELETE' THEN
         INSERT INTO topic (name, type, team_id, auto_team_admin_team_id, created_by, auto_maintained)
         SELECT t.name || ' Admins', 'team', t.id, t.id, NEW.user_id, TRUE
         FROM team t WHERE t.id = NEW.team_id
         RETURNING id INTO v_topic_id;
-        END IF;
+    END IF;
 
-        IF v_topic_id IS NULL THEN
+    IF v_topic_id IS NULL THEN
         RETURN COALESCE(NEW, OLD);
-        END IF;
+    END IF;
 
-        SELECT contact_id INTO v_contact_id FROM user_contact WHERE user_id = COALESCE(NEW.user_id, OLD.user_id) AND "primary" = TRUE;
+    SELECT contact_id INTO v_contact_id FROM user_contact WHERE user_id = COALESCE(NEW.user_id, OLD.user_id) AND "primary" = TRUE;
 
-        IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.role = 'admin') THEN
+    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.role = 'admin') THEN
         IF v_contact_id IS NOT NULL THEN
             INSERT INTO topic_member (topic_id, contact_id) VALUES (v_topic_id, v_contact_id) ON CONFLICT DO NOTHING;
         END IF;
         INSERT INTO topic_admin (topic_id, user_id) VALUES (v_topic_id, COALESCE(NEW.user_id, OLD.user_id)) ON CONFLICT DO NOTHING;
-        ELSIF TG_OP = 'DELETE' THEN
+    ELSIF TG_OP = 'DELETE' THEN
         IF v_contact_id IS NOT NULL THEN
             DELETE FROM topic_member WHERE topic_id = v_topic_id AND contact_id = v_contact_id;
         END IF;
         DELETE FROM topic_admin WHERE topic_id = v_topic_id AND user_id = OLD.user_id;
-        END IF;
+    END IF;
 
-        RETURN COALESCE(NEW, OLD);
-        END;
-        $$;
+    RETURN COALESCE(NEW, OLD);
+END;
+$$;
 
-        CREATE TRIGGER auto_maintain_team_admin_topic
-        AFTER INSERT OR DELETE OR UPDATE OF role ON public.team_user
-        FOR EACH ROW
-        EXECUTE FUNCTION public.auto_maintain_team_admin_topic ();
+CREATE TRIGGER auto_maintain_team_admin_topic
+    AFTER INSERT OR DELETE OR UPDATE OF role ON public.team_user
+    FOR EACH ROW
+    EXECUTE FUNCTION public.auto_maintain_team_admin_topic ();
 
-        -- Auto-create and maintain user topics.
-        CREATE OR REPLACE FUNCTION public.auto_maintain_user_topic ()
-        RETURNS TRIGGER
-        LANGUAGE plpgsql
-        AS $$
-        DECLARE
-        v_topic_id uuid;
-        v_contact_id uuid;
-        BEGIN
-        SELECT id INTO v_topic_id FROM topic WHERE auto_user_id = NEW.user_id;
-        IF v_topic_id IS NULL THEN
+-- Auto-create and maintain user account topics.
+CREATE OR REPLACE FUNCTION public.auto_maintain_user_topic ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_topic_id uuid;
+    v_contact_id uuid;
+    v_user_name text;
+    v_user_email text;
+BEGIN
+    SELECT id INTO v_topic_id FROM topic WHERE auto_user_id = NEW.user_id;
+    IF v_topic_id IS NULL THEN
+        SELECT "name", email INTO v_user_name, v_user_email FROM "user" WHERE id = NEW.user_id;
         INSERT INTO topic (name, type, auto_user_id, created_by, auto_maintained)
-        VALUES ('Account Topic', 'private', NEW.user_id, NEW.user_id, TRUE)
+        VALUES (COALESCE(NULLIF(v_user_name, ''), split_part(v_user_email, '@', 1)) || '''s Account', 'private', NEW.user_id, NEW.user_id, TRUE)
         RETURNING id INTO v_topic_id;
-        END IF;
+    END IF;
 
-        SELECT contact_id INTO v_contact_id FROM user_contact WHERE user_id = NEW.user_id AND "primary" = TRUE AND linked = TRUE AND archived_at IS NULL;
+    SELECT contact_id INTO v_contact_id FROM user_contact WHERE user_id = NEW.user_id AND "primary" = TRUE AND linked = TRUE AND archived_at IS NULL;
 
-        IF v_contact_id IS NOT NULL THEN
+    IF v_contact_id IS NOT NULL THEN
         INSERT INTO topic_member (topic_id, contact_id) VALUES (v_topic_id, v_contact_id) ON CONFLICT DO NOTHING;
-        END IF;
-        INSERT INTO topic_admin (topic_id, user_id) VALUES (v_topic_id, NEW.user_id) ON CONFLICT DO NOTHING;
+    END IF;
+    INSERT INTO topic_admin (topic_id, user_id) VALUES (v_topic_id, NEW.user_id) ON CONFLICT DO NOTHING;
 
-        RETURN NEW;
-        END;
-        $$;
+    RETURN NEW;
+END;
+$$;
 
-        CREATE TRIGGER auto_maintain_user_topic
-        AFTER INSERT OR UPDATE OF "primary", linked, archived_at ON public.user_contact
-        FOR EACH ROW
-        EXECUTE FUNCTION public.auto_maintain_user_topic ();
+CREATE TRIGGER auto_maintain_user_topic
+    AFTER INSERT OR UPDATE OF "primary", linked, archived_at ON public.user_contact
+    FOR EACH ROW
+    EXECUTE FUNCTION public.auto_maintain_user_topic ();
 
-        -- Auto-create and maintain twist-admin topics.
-        CREATE OR REPLACE FUNCTION public.auto_maintain_twist_admin_topic ()
-        RETURNS TRIGGER
-        LANGUAGE plpgsql
-        AS $$
-        DECLARE
-        v_topic_id uuid;
-        v_contact_id uuid;
-        BEGIN
-        SELECT id INTO v_topic_id FROM topic WHERE auto_twist_admin_id = COALESCE(NEW.id, OLD.id);
-        IF v_topic_id IS NULL AND TG_OP != 'DELETE' THEN
-        INSERT INTO topic (name, type, auto_twist_admin_id, created_by, auto_maintained)
-        VALUES ('Twist Admins', 'private', NEW.id, COALESCE(NEW.user_id, (SELECT id FROM "user" LIMIT 1)), TRUE)
+-- Keep the user's account topic name in sync when their name or email changes.
+CREATE OR REPLACE FUNCTION public.auto_rename_user_topic ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE topic
+    SET name = COALESCE(NULLIF(NEW."name", ''), split_part(NEW.email, '@', 1)) || '''s Account'
+    WHERE auto_user_id = NEW.id
+      AND auto_maintained = TRUE;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER auto_rename_user_topic
+    AFTER UPDATE OF "name", email ON public."user"
+    FOR EACH ROW
+    WHEN (OLD."name" IS DISTINCT FROM NEW."name" OR OLD.email IS DISTINCT FROM NEW.email)
+    EXECUTE FUNCTION public.auto_rename_user_topic ();
+
+-- Auto-create and maintain the per-user "Personal Twists" topic.
+-- This topic groups logs/threads for twists the user has deployed to their
+-- personal environment. Priority rules route it to the user's
+-- "Twist Development" priority.
+CREATE OR REPLACE FUNCTION public.auto_maintain_personal_twist_topic ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_topic_id uuid;
+    v_contact_id uuid;
+    v_user_name text;
+    v_user_email text;
+BEGIN
+    SELECT id INTO v_topic_id FROM topic WHERE auto_personal_twist_user_id = NEW.user_id;
+    IF v_topic_id IS NULL THEN
+        SELECT "name", email INTO v_user_name, v_user_email FROM "user" WHERE id = NEW.user_id;
+        INSERT INTO topic (name, type, auto_personal_twist_user_id, created_by, auto_maintained)
+        VALUES (COALESCE(NULLIF(v_user_name, ''), split_part(v_user_email, '@', 1)) || '''s Personal Twists', 'private', NEW.user_id, NEW.user_id, TRUE)
         RETURNING id INTO v_topic_id;
-        END IF;
+    END IF;
 
-        IF v_topic_id IS NULL THEN
+    SELECT contact_id INTO v_contact_id FROM user_contact WHERE user_id = NEW.user_id AND "primary" = TRUE AND linked = TRUE AND archived_at IS NULL;
+
+    IF v_contact_id IS NOT NULL THEN
+        INSERT INTO topic_member (topic_id, contact_id) VALUES (v_topic_id, v_contact_id) ON CONFLICT DO NOTHING;
+    END IF;
+    INSERT INTO topic_admin (topic_id, user_id) VALUES (v_topic_id, NEW.user_id) ON CONFLICT DO NOTHING;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER auto_maintain_personal_twist_topic
+    AFTER INSERT OR UPDATE OF "primary", linked, archived_at ON public.user_contact
+    FOR EACH ROW
+    EXECUTE FUNCTION public.auto_maintain_personal_twist_topic ();
+
+-- Keep the personal-twists topic name in sync when the user's name/email changes.
+CREATE OR REPLACE FUNCTION public.auto_rename_personal_twist_topic ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE topic
+    SET name = COALESCE(NULLIF(NEW."name", ''), split_part(NEW.email, '@', 1)) || '''s Personal Twists'
+    WHERE auto_personal_twist_user_id = NEW.id
+      AND auto_maintained = TRUE;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER auto_rename_personal_twist_topic
+    AFTER UPDATE OF "name", email ON public."user"
+    FOR EACH ROW
+    WHEN (OLD."name" IS DISTINCT FROM NEW."name" OR OLD.email IS DISTINCT FROM NEW.email)
+    EXECUTE FUNCTION public.auto_rename_personal_twist_topic ();
+
+-- Auto-create and maintain publisher topics.
+-- A publisher topic's members are the users allowed to deploy twists under
+-- that publisher. The publisher's creator becomes the first member + admin;
+-- additional members are added via API.
+CREATE OR REPLACE FUNCTION public.auto_maintain_publisher_topic ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_topic_id uuid;
+    v_contact_id uuid;
+BEGIN
+    SELECT id INTO v_topic_id FROM topic WHERE auto_publisher_id = COALESCE(NEW.id, OLD.id);
+    IF v_topic_id IS NULL AND TG_OP != 'DELETE' THEN
+        INSERT INTO topic (name, type, auto_publisher_id, created_by, auto_maintained)
+        VALUES (NEW.name || ' Publisher', 'private', NEW.id, NEW.created_by, TRUE)
+        RETURNING id INTO v_topic_id;
+    END IF;
+
+    IF v_topic_id IS NULL THEN
         RETURN COALESCE(NEW, OLD);
+    END IF;
+
+    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.created_by IS DISTINCT FROM OLD.created_by) THEN
+        SELECT contact_id INTO v_contact_id FROM user_contact WHERE user_id = NEW.created_by AND "primary" = TRUE AND linked = TRUE AND archived_at IS NULL;
+        IF v_contact_id IS NOT NULL THEN
+            INSERT INTO topic_member (topic_id, contact_id) VALUES (v_topic_id, v_contact_id) ON CONFLICT DO NOTHING;
         END IF;
+        INSERT INTO topic_admin (topic_id, user_id) VALUES (v_topic_id, NEW.created_by) ON CONFLICT DO NOTHING;
+    END IF;
+    -- DELETE: CASCADE on auto_publisher_id handles topic cleanup.
 
-        IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
-        IF NEW.user_id IS NOT NULL THEN
-            SELECT contact_id INTO v_contact_id FROM user_contact WHERE user_id = NEW.user_id AND "primary" = TRUE;
-            IF v_contact_id IS NOT NULL THEN
-                INSERT INTO topic_member (topic_id, contact_id) VALUES (v_topic_id, v_contact_id) ON CONFLICT DO NOTHING;
-            END IF;
-            INSERT INTO topic_admin (topic_id, user_id) VALUES (v_topic_id, NEW.user_id) ON CONFLICT DO NOTHING;
-        END IF;
-        -- Handle publisher_id if needed, but for now we focus on user_id
-        ELSIF TG_OP = 'DELETE' THEN
-        -- Cascades take care of it
-        END IF;
+    RETURN COALESCE(NEW, OLD);
+END;
+$$;
 
-        RETURN COALESCE(NEW, OLD);
-        END;
-        $$;
+CREATE TRIGGER auto_maintain_publisher_topic
+    AFTER INSERT OR DELETE OR UPDATE OF created_by ON public.publisher
+    FOR EACH ROW
+    EXECUTE FUNCTION public.auto_maintain_publisher_topic ();
 
-        CREATE TRIGGER auto_maintain_twist_admin_topic
-        AFTER INSERT OR DELETE OR UPDATE OF user_id, publisher_id ON public.twist_admin
-        FOR EACH ROW
-        EXECUTE FUNCTION public.auto_maintain_twist_admin_topic ();
+-- Keep the publisher topic name in sync with the publisher's name.
+CREATE OR REPLACE FUNCTION public.auto_rename_publisher_topic ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE topic
+    SET name = NEW.name || ' Publisher'
+    WHERE auto_publisher_id = NEW.id
+      AND auto_maintained = TRUE;
+    RETURN NEW;
+END;
+$$;
 
+CREATE TRIGGER auto_rename_publisher_topic
+    AFTER UPDATE OF name ON public.publisher
+    FOR EACH ROW
+    WHEN (OLD.name IS DISTINCT FROM NEW.name)
+    EXECUTE FUNCTION public.auto_rename_publisher_topic ();
 
 -- Auto-add new users to the "Everyone" topic.
 CREATE OR REPLACE FUNCTION public.auto_maintain_everyone_topic ()

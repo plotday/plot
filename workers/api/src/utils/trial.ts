@@ -24,10 +24,9 @@ export async function getPlotTwistInstanceId(
   const row = await db
     .selectFrom("twist_instance")
     .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-    .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
     .select("twist_instance.id")
     .where("twist_instance.owner_id", "=", priority.user_id)
-    .where("twist_admin.twist_package_id", "=", BUILTIN_TWIST_PACKAGE_ID)
+    .where("twist.twist_package_id", "=", BUILTIN_TWIST_PACKAGE_ID)
     .where("twist_instance.archived_at", "is", null)
     .executeTakeFirst();
   return row?.id ?? null;
@@ -71,12 +70,11 @@ export async function getExcessTwistNames(
   const excess = await db
     .selectFrom("twist_instance as pt")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
     .select("t.name")
     .where("pt.owner_id", "=", userId)
     .where("pt.archived_at", "is", null)
     .where("t.is_source", "=", false)
-    .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
+    .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
     .orderBy("pt.created_at", "desc")
     .offset(PLAN_LIMITS.free.twists)
     .execute();
@@ -368,12 +366,11 @@ export async function expireTrial(
       const excessPts = await db
         .selectFrom("twist_instance as pt")
         .innerJoin("twist as t", "t.id", "pt.twist_id")
-        .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
         .select("pt.id")
         .where("pt.owner_id", "=", userId)
         .where("pt.archived_at", "is", null)
         .where("t.is_source", "=", false)
-        .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
+        .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
         .orderBy("pt.created_at", "desc")
         .offset(limits.twists)
         .execute();

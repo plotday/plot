@@ -7,7 +7,7 @@ import { UserAiUsage } from "../state/user-ai-usage";
 import { FREE_AI_LIMITS } from "./ai-limits";
 export type PlanKey = "free" | "core" | "pro" | "team";
 
-/** twist_admin.twist_package_id for the built-in Plot twist. */
+/** twist.twist_package_id for the built-in Plot twist. */
 export const BUILTIN_TWIST_PACKAGE_ID = "0199b6f4-ae64-7718-8a02-44716f30358f";
 
 export const PLAN_LIMITS = {
@@ -182,14 +182,13 @@ export async function getPersonalTwistCount(
   const result = await db
     .selectFrom("twist_instance as pt")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
     .select(sql<string>`count(DISTINCT pt.id)`.as("count"))
     .where("pt.owner_id", "=", userId)
     .where("pt.team_id", "is", null)
     .where("pt.archived_at", "is", null)
     .where("t.is_source", "=", false)
     .where("pt.draft", "=", false)
-    .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
+    .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
     .executeTakeFirstOrThrow();
 
   return Number(result.count);
@@ -205,13 +204,12 @@ export async function getTeamTwistCount(
   const result = await db
     .selectFrom("twist_instance as pt")
     .innerJoin("twist as t", "t.id", "pt.twist_id")
-    .innerJoin("twist_admin as ta", "ta.id", "t.twist_admin_id")
     .select(sql<string>`count(DISTINCT pt.id)`.as("count"))
     .where("pt.team_id", "=", teamId)
     .where("pt.archived_at", "is", null)
     .where("t.is_source", "=", false)
     .where("pt.draft", "=", false)
-    .where("ta.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
+    .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
     .executeTakeFirstOrThrow();
 
   return Number(result.count);

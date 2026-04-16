@@ -15,7 +15,7 @@ CREATE TABLE "public"."link" (
     "related_source" text,
     -- Actor ID to credit with creating this link
     "author_id" uuid,
-    -- Twist definition ID (twist_admin.id) that created this link
+    -- Twist definition ID (twist.id) that created this link
     "twist_id" bigint,
     -- User ID or twist_instance_id that created this link
     "created_by" uuid,
@@ -53,7 +53,7 @@ COMMENT ON COLUMN "public"."link"."related_source" IS 'Cross-connector thread bu
 
 COMMENT ON COLUMN "public"."link"."author_id" IS 'The actor to credit with creating this link. For links created by twists on behalf of contacts or users, this is the contact/user.';
 
-COMMENT ON COLUMN "public"."link"."twist_id" IS 'The twist definition ID (twist_admin.id) that created this link. Null for user-created links.';
+COMMENT ON COLUMN "public"."link"."twist_id" IS 'The twist definition ID (twist.id) that created this link. Null for user-created links.';
 
 COMMENT ON COLUMN "public"."link"."created_by" IS 'The user_id or twist_instance_id that actually created this link. Used for filtering callbacks and permissions.';
 

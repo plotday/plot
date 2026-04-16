@@ -1,14 +1,5 @@
--- Ensures a user has their own root priority. Idempotent — safe to call
--- multiple times. In the per-user model the root is just a priority
--- with nlevel(path) = 1 and user_id = the user, so we don't touch
--- priority_user at all.
-CREATE OR REPLACE FUNCTION public.activate_invited_user (
-    p_user_id uuid
-)
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "activate_invited_user" function
+CREATE OR REPLACE FUNCTION "public"."activate_invited_user" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     v_root_priority_id uuid;
     v_new_path ltree;
@@ -90,4 +81,100 @@ BEGIN
 
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
-$function$;
+$$;
+-- Modify "auto_maintain_publisher_topic" function
+CREATE OR REPLACE FUNCTION "public"."auto_maintain_publisher_topic" () RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    v_topic_id uuid;
+    v_contact_id uuid;
+BEGIN
+    SELECT id INTO v_topic_id FROM topic WHERE auto_publisher_id = COALESCE(NEW.id, OLD.id);
+    IF v_topic_id IS NULL AND TG_OP != 'DELETE' THEN
+        INSERT INTO topic (name, type, auto_publisher_id, created_by, auto_maintained)
+        VALUES (NEW.name || ' Publisher', 'private', NEW.id, NEW.created_by, TRUE)
+        RETURNING id INTO v_topic_id;
+    END IF;
+
+    IF v_topic_id IS NULL THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
+
+    IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.created_by IS DISTINCT FROM OLD.created_by) THEN
+        SELECT contact_id INTO v_contact_id FROM user_contact WHERE user_id = NEW.created_by AND "primary" = TRUE AND linked = TRUE AND archived_at IS NULL;
+        IF v_contact_id IS NOT NULL THEN
+            INSERT INTO topic_member (topic_id, contact_id) VALUES (v_topic_id, v_contact_id) ON CONFLICT DO NOTHING;
+        END IF;
+        INSERT INTO topic_admin (topic_id, user_id) VALUES (v_topic_id, NEW.created_by) ON CONFLICT DO NOTHING;
+    END IF;
+    -- DELETE: CASCADE on auto_publisher_id handles topic cleanup.
+
+    RETURN COALESCE(NEW, OLD);
+END;
+$$;
+-- Drop "twist_instance_thread_tag_change" view
+DROP VIEW "public"."twist_instance_thread_tag_change";
+-- Drop "priority_child_twist" view
+DROP VIEW "public"."priority_child_twist";
+-- Create "priority_child_twist" view
+CREATE VIEW "public"."priority_child_twist" (
+  "id",
+  "twist_id",
+  "owner_id",
+  "team_id",
+  "name",
+  "options",
+  "draft",
+  "created_at",
+  "updated_at",
+  "archived_at",
+  "suspended_at",
+  "version",
+  "twist_environment",
+  "is_source",
+  "author_name",
+  "author_email",
+  "author_url"
+) AS SELECT pt.id,
+    pt.twist_id,
+    pt.owner_id,
+    pt.team_id,
+    pt.name,
+    pt.options,
+    pt.draft,
+    pt.created_at,
+    pt.updated_at,
+    pt.archived_at,
+    pt.suspended_at,
+    t.version,
+    t.environment AS twist_environment,
+    t.is_source,
+    p.name AS author_name,
+    p.email AS author_email,
+    p.url AS author_url
+   FROM public.twist_instance pt
+     JOIN public.twist t ON pt.twist_id = t.id
+     LEFT JOIN public.publisher p ON t.publisher_id = p.id
+  WHERE pt.archived_at IS NULL;
+-- Create "twist_instance_thread_tag_change" view
+CREATE VIEW "public"."twist_instance_thread_tag_change" (
+  "twist_instance_id",
+  "thread_id",
+  "occurrence",
+  "tag_id",
+  "actor_id",
+  "updated_at",
+  "change_type"
+) AS SELECT a.created_by AS twist_instance_id,
+    at.thread_id,
+    at.occurrence,
+    at.tag_id,
+    at.actor_id,
+    at.updated_at,
+        CASE
+            WHEN at.archived_at IS NULL THEN 'added'::text
+            ELSE 'removed'::text
+        END AS change_type
+   FROM public.thread_tag at
+     JOIN public.thread a ON a.id = at.thread_id
+     JOIN public.priority_child_twist pct ON pct.id = a.created_by
+  WHERE a.draft = false;

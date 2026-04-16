@@ -17,14 +17,15 @@ export interface DeployTwistOptions {
   env: Bindings;
   ctx: { exports: ExecutionContext["exports"] };
   db: Kysely<DB>;
-  twistAdminId: number;
+  twistPackageId: string;
+  publisherId: number | null;
+  userId: string | null;
   input: DeploymentInput;
   environment: Exclude<TwistEnvironment, "public">;
   name: string;
   description?: string;
   logoUrl?: string;
   logoUrlDark?: string;
-  userId?: string | null;
   userName?: string;
   userEmail?: string;
   dryRun?: boolean;
@@ -52,18 +53,22 @@ export async function deployTwist({
   env,
   ctx,
   db,
-  twistAdminId,
+  twistPackageId,
+  publisherId,
+  userId,
   input,
   environment,
   name,
   description,
   logoUrl,
   logoUrlDark,
-  userId,
   dryRun = false,
   onProgress,
 }: DeployTwistOptions): Promise<DeployTwistResult> {
-  const logger = createLogger({ twist_admin_id: twistAdminId, environment });
+  const logger = createLogger({
+    twist_package_id: twistPackageId,
+    environment,
+  });
 
   // Validate input: exactly one of module or source must be provided
   if (input.module === undefined && input.source === undefined) {
@@ -124,21 +129,12 @@ export async function deployTwist({
   let isNoProviderConnector = false;
   let multipleInstances = false;
   let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string } | null = null;
-  let twistPackageId: string;
   try {
     if (dryRun) {
       onProgress?.("Analyzing permissions");
     } else {
       onProgress?.("Deploying twist");
     }
-
-    // Get twist_package_id for storage
-    const adminData = await db
-      .selectFrom("twist_admin")
-      .select("twist_package_id")
-      .where("id", "=", String(twistAdminId))
-      .executeTakeFirstOrThrow();
-    twistPackageId = adminData.twist_package_id;
 
     const storeResult = await storeTwistModule({
       env,
@@ -199,13 +195,17 @@ export async function deployTwist({
     };
   }
 
-  // Check if twist already exists for this admin+environment
-  const existingTwist = await db
+  // Check if a twist row already exists for this (twist_package_id, environment)
+  // (and user_id for personal).
+  let existingTwistQuery = db
     .selectFrom("twist")
     .select(["id", "name", "version"])
-    .where("twist_admin_id", "=", String(twistAdminId))
-    .where("environment", "=", environment)
-    .executeTakeFirst();
+    .where("twist_package_id", "=", twistPackageId)
+    .where("environment", "=", environment);
+  if (environment === "personal") {
+    existingTwistQuery = existingTwistQuery.where("user_id", "=", userId);
+  }
+  const existingTwist = await existingTwistQuery.executeTakeFirst();
 
   // Free tier: limit to 10 unique deployed twists
   if (!existingTwist && !dryRun && userId) {
@@ -213,9 +213,8 @@ export async function deployTwist({
     if (plan === "free") {
       const { count } = await db
         .selectFrom("twist")
-        .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
         .select(sql<string>`count(distinct twist.id)`.as("count"))
-        .where("twist_admin.user_id", "=", userId)
+        .where("twist.user_id", "=", userId)
         .executeTakeFirstOrThrow();
       if (Number(count) >= 10) {
         throw new Error(
@@ -268,7 +267,9 @@ export async function deployTwist({
     twist = await db
       .insertInto("twist")
       .values({
-        twist_admin_id: twistAdminId,
+        twist_package_id: twistPackageId,
+        publisher_id: environment === "personal" ? null : publisherId,
+        user_id: environment === "personal" ? userId : null,
         environment,
         name,
         description,
@@ -356,27 +357,37 @@ export async function deployTwist({
     logger.error("Error during upgrade callback processing (continuing with deployment)", upgradeError as Error);
   }
 
-  // If deploying to review and auto_approve is true, also deploy to public
-  if (environment === "review") {
-    const twistAdmin = await db
-      .selectFrom("twist_admin")
-      .select("auto_approve")
-      .where("id", "=", String(twistAdminId))
-      .executeTakeFirst();
+  // If deploying to review and the review row has auto_approve = true,
+  // also deploy to public.
+  if (environment === "review" && twist.auto_approve) {
+    logger.info("Auto-approving twist to public environment");
 
-    if (twistAdmin?.auto_approve) {
-      logger.info("Auto-approving twist to public environment");
-
-      // Get or create the public twist - need to fetch ID for callback upgrade
-      const publicPermissions = providers.length > 0
-        ? { ...permissions, _providers: providers }
-        : permissions;
-      try {
-        const publicTwist = await db
-          .insertInto("twist")
-          .values({
-            twist_admin_id: twistAdminId,
-            environment: "public",
+    // Get or create the public twist - need to fetch ID for callback upgrade
+    const publicPermissions = providers.length > 0
+      ? { ...permissions, _providers: providers }
+      : permissions;
+    try {
+      const publicTwist = await db
+        .insertInto("twist")
+        .values({
+          twist_package_id: twistPackageId,
+          publisher_id: publisherId,
+          user_id: null,
+          environment: "public",
+          name,
+          description,
+          version,
+          permissions: JSON.stringify(publicPermissions),
+          options_schema: optionsSchema ? JSON.stringify(optionsSchema) : null,
+          is_source: providers.length > 0 || isNoProviderConnector,
+          shared: sourceProvider?.shared ?? false,
+          key_option: sourceProvider?.keyOption ?? null,
+          logo_url: logoUrl ?? null,
+          logo_url_dark: logoUrlDark ?? null,
+          multiple_instances: multipleInstances,
+        })
+        .onConflict((oc) =>
+          oc.columns(["twist_package_id", "environment"]).doUpdateSet({
             name,
             description,
             version,
@@ -389,70 +400,55 @@ export async function deployTwist({
             logo_url_dark: logoUrlDark ?? null,
             multiple_instances: multipleInstances,
           })
-          .onConflict((oc) =>
-            oc.columns(["twist_admin_id", "environment"]).doUpdateSet({
-              name,
-              description,
-              version,
-              permissions: JSON.stringify(publicPermissions),
-              options_schema: optionsSchema ? JSON.stringify(optionsSchema) : null,
-              is_source: providers.length > 0 || isNoProviderConnector,
-              shared: sourceProvider?.shared ?? false,
-              key_option: sourceProvider?.keyOption ?? null,
-              logo_url: logoUrl ?? null,
-              logo_url_dark: logoUrlDark ?? null,
-              multiple_instances: multipleInstances,
+        )
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      logger.info("Successfully auto-deployed twist to public environment");
+
+      // Upgrade callbacks for PUBLIC twist_instances too
+      // This ensures webhooks execute with the new twist version
+      try {
+        const publicTwistInstances = await db
+          .selectFrom("twist_instance")
+          .select(["id", "twist_id"])
+          .where("twist_id", "=", publicTwist.id)
+          .where("archived_at", "is", null)
+          .execute();
+
+        if (publicTwistInstances.length > 0) {
+          logger.info("Upgrading callbacks for public priority twists", {
+            count: publicTwistInstances.length,
+          });
+
+          // Upgrade callbacks for public installations
+          const publicCallbackUpgradeResults = await Promise.allSettled(
+            publicTwistInstances.map(async (pa) => {
+              const callbacksId = env.CALLBACKS.idFromName(pa.id);
+              const callbacksStub = env.CALLBACKS.get(callbacksId);
+              return callbacksStub.upgradeCallbacks(pa.id, version);
             })
-          )
-          .returningAll()
-          .executeTakeFirstOrThrow();
+          );
 
-        logger.info("Successfully auto-deployed twist to public environment");
-
-        // Upgrade callbacks for PUBLIC twist_instances too
-        // This ensures webhooks execute with the new twist version
-        try {
-          const publicTwistInstances = await db
-            .selectFrom("twist_instance")
-            .select(["id", "twist_id"])
-            .where("twist_id", "=", publicTwist.id)
-            .where("archived_at", "is", null)
-            .execute();
-
-          if (publicTwistInstances.length > 0) {
-            logger.info("Upgrading callbacks for public priority twists", {
-              count: publicTwistInstances.length,
-            });
-
-            // Upgrade callbacks for public installations
-            const publicCallbackUpgradeResults = await Promise.allSettled(
-              publicTwistInstances.map(async (pa) => {
-                const callbacksId = env.CALLBACKS.idFromName(pa.id);
-                const callbacksStub = env.CALLBACKS.get(callbacksId);
-                return callbacksStub.upgradeCallbacks(pa.id, version);
-              })
-            );
-
-            // Log any failures
-            publicCallbackUpgradeResults.forEach((result, index) => {
-              if (result.status === "rejected") {
-                logger.error(
-                  "Failed to upgrade callbacks for public twist_instance",
-                  result.reason as Error,
-                  {
-                    twist_instance_id: publicTwistInstances[index].id,
-                  }
-                );
-              }
-            });
-          }
-        } catch (publicUpgradeError) {
-          // Log error but continue with deployment
-          logger.error("Error during public callback upgrade (continuing with deployment)", publicUpgradeError as Error);
+          // Log any failures
+          publicCallbackUpgradeResults.forEach((result, index) => {
+            if (result.status === "rejected") {
+              logger.error(
+                "Failed to upgrade callbacks for public twist_instance",
+                result.reason as Error,
+                {
+                  twist_instance_id: publicTwistInstances[index].id,
+                }
+              );
+            }
+          });
         }
-      } catch (upsertPublicError) {
-        logger.error("Error auto-deploying to public", upsertPublicError as Error);
+      } catch (publicUpgradeError) {
+        // Log error but continue with deployment
+        logger.error("Error during public callback upgrade (continuing with deployment)", publicUpgradeError as Error);
       }
+    } catch (upsertPublicError) {
+      logger.error("Error auto-deploying to public", upsertPublicError as Error);
     }
   }
 

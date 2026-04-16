@@ -147,7 +147,7 @@ export async function add(
     // Check if twist requires AI and user has it disabled
     const twistRecord = await db
       .selectFrom("twist")
-      .select(["permissions", "is_source", "multiple_instances", "twist_admin_id"])
+      .select(["permissions", "is_source", "multiple_instances", "twist_package_id"])
       .where("id", "=", String(twist_id))
       .executeTakeFirst();
 
@@ -198,7 +198,7 @@ export async function add(
         .selectFrom("twist_instance")
         .innerJoin("twist as t2", "t2.id", "twist_instance.twist_id")
         .select("twist_instance.id")
-        .where("t2.twist_admin_id", "=", twistRecord.twist_admin_id)
+        .where("t2.twist_package_id", "=", twistRecord.twist_package_id)
         .where("twist_instance.archived_at", "is", null)
         .where("twist_instance.draft", "=", false)
         .$if(team_id != null, (qb) => qb.where("twist_instance.team_id", "=", team_id!))
@@ -339,25 +339,24 @@ export async function getAll(
           };
         }
 
-        // For other environments, get publisher info via twist_admin
-        const adminData = await db
-          .selectFrom("twist_admin")
-          .leftJoin("publisher", "publisher.id", "twist_admin.publisher_id")
+        // For other environments, get publisher info directly from twist.
+        const publisherData = await db
+          .selectFrom("twist")
+          .leftJoin("publisher", "publisher.id", "twist.publisher_id")
           .select([
-            "twist_admin.id",
             "publisher.name as publisher_name",
             "publisher.email as publisher_email",
             "publisher.url as publisher_url",
           ])
-          .where("twist_admin.id", "=", twist.twist_admin_id)
+          .where("twist.id", "=", String(twist.id))
           .executeTakeFirst();
 
         // Always return author fields, even if null
         return {
           ...twist,
-          author_name: adminData?.publisher_name || null,
-          author_email: adminData?.publisher_email || null,
-          author_url: adminData?.publisher_url || null,
+          author_name: publisherData?.publisher_name || null,
+          author_email: publisherData?.publisher_email || null,
+          author_url: publisherData?.publisher_url || null,
         };
       })
     );
@@ -545,7 +544,7 @@ export async function update(
 
     const twistDef = await db
       .selectFrom("twist")
-      .select(["is_source", "multiple_instances", "twist_admin_id"])
+      .select(["is_source", "multiple_instances", "twist_package_id"])
       .where("id", "=", String(currentTwist.twist_id))
       .executeTakeFirst();
 
@@ -585,7 +584,7 @@ export async function update(
           .selectFrom("twist_instance")
           .innerJoin("twist as t2", "t2.id", "twist_instance.twist_id")
           .select("twist_instance.id")
-          .where("t2.twist_admin_id", "=", twistDef.twist_admin_id)
+          .where("t2.twist_package_id", "=", twistDef.twist_package_id)
           .where("twist_instance.id", "!=", twist_instance_id)
           .where("twist_instance.archived_at", "is", null)
           .where("twist_instance.draft", "=", false)
@@ -668,8 +667,7 @@ export async function deleteTwist(
     const twistMeta = await db
       .selectFrom("twist_instance")
       .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-      .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-      .select("twist_admin.twist_package_id")
+      .select("twist.twist_package_id")
       .where("twist_instance.id", "=", twist_instance_id)
       .executeTakeFirst();
     if (twistMeta?.twist_package_id === BUILTIN_TWIST_PACKAGE_ID) {
@@ -680,14 +678,13 @@ export async function deleteTwist(
     if (deactivate) {
       try {
         // Get twist metadata needed to create wrapper
-        // Need to join with twist table to get environment and twist_admin_id
         const twistInstance = await db
           .selectFrom("twist_instance")
           .innerJoin("twist", "twist.id", "twist_instance.twist_id")
           .select([
             "twist_instance.twist_id",
             "twist.environment",
-            "twist.twist_admin_id",
+            "twist.twist_package_id",
           ])
           .where("twist_instance.id", "=", twist_instance_id)
           .where("twist_instance.archived_at", "is", null)
@@ -698,23 +695,12 @@ export async function deleteTwist(
         if (!twistInstance) {
           logger.warn("Could not fetch twist_instance for deactivation");
         } else {
-          // Get twist_package_id from twist_admin
-          const adminData = await db
-            .selectFrom("twist_admin")
-            .select(["twist_package_id"])
-            .where("id", "=", twistInstance.twist_admin_id)
-            .executeTakeFirst();
-
-          if (!adminData) {
-            logger.warn("Could not fetch twist_package_id for deactivation");
-          } else {
-            const twistWrapper = await deactivate.twistFactory({
-              id: adminData.twist_package_id,
-              environment: twistInstance.environment,
-              twistInstanceId: twist_instance_id,
-            });
-            await twistWrapper.deactivate();
-          }
+          const twistWrapper = await deactivate.twistFactory({
+            id: twistInstance.twist_package_id,
+            environment: twistInstance.environment,
+            twistInstanceId: twist_instance_id,
+          });
+          await twistWrapper.deactivate();
         }
       } catch (deactivateError) {
         // Log deactivation errors but continue with deletion
@@ -847,7 +833,7 @@ export async function activateDraft(
   // Check if twist requires AI and user has it disabled
   const twistRecord = await db
     .selectFrom("twist")
-    .select(["permissions", "is_source", "multiple_instances", "twist_admin_id", "name"])
+    .select(["permissions", "is_source", "multiple_instances", "twist_package_id", "name"])
     .where("id", "=", String(draft.twist_id))
     .executeTakeFirst();
 
@@ -898,7 +884,7 @@ export async function activateDraft(
       .selectFrom("twist_instance")
       .innerJoin("twist as t2", "t2.id", "twist_instance.twist_id")
       .select("twist_instance.id")
-      .where("t2.twist_admin_id", "=", twistRecord.twist_admin_id)
+      .where("t2.twist_package_id", "=", twistRecord.twist_package_id)
       .where("twist_instance.id", "!=", draftId)
       .where("twist_instance.archived_at", "is", null)
       .where("twist_instance.draft", "=", false)
@@ -1006,10 +992,9 @@ export async function activateDraft(
     const twistInfo = await db
       .selectFrom("twist_instance")
       .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-      .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
       .select([
         "twist.version",
-        "twist_admin.twist_package_id as twistPackageId",
+        "twist.twist_package_id as twistPackageId",
       ])
       .where("twist_instance.id", "=", draftId)
       .executeTakeFirst();
@@ -1153,8 +1138,7 @@ export async function archiveAndDeleteTwist(
     const twistMeta = await db
       .selectFrom("twist_instance")
       .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-      .innerJoin("twist_admin", "twist_admin.id", "twist.twist_admin_id")
-      .select("twist_admin.twist_package_id")
+      .select("twist.twist_package_id")
       .where("twist_instance.id", "=", twist_instance_id)
       .executeTakeFirst();
     if (twistMeta?.twist_package_id === BUILTIN_TWIST_PACKAGE_ID) {
