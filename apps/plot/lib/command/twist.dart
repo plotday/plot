@@ -1583,6 +1583,39 @@ class AddSourceDetail extends ShowForm {
 // Manage Twists (non-source only)
 // ============================================================================
 
+/// Returns true if [twist] is a single-instance twist that is already active
+/// in every scope available to the user (personal + all teams), making it
+/// unavailable for additional installation.
+bool _isFullyInstalled(
+  Twist twist,
+  List<TwistInstance> instances,
+  List<TeamUsage> teams,
+) {
+  if (twist.multipleInstances) return false;
+
+  // Check personal scope
+  final inPersonal = instances.any(
+    (i) =>
+        i.twistId.toString() == twist.id &&
+        i.teamId == null &&
+        i.archivedAt == null,
+  );
+  if (!inPersonal) return false;
+
+  // Check all team scopes
+  for (final team in teams) {
+    final inTeam = instances.any(
+      (i) =>
+          i.twistId.toString() == twist.id &&
+          i.teamId?.toString() == team.id &&
+          i.archivedAt == null,
+    );
+    if (!inTeam) return false;
+  }
+
+  return true;
+}
+
 class ManageTwists extends ShowCommands {
   ManageTwists([Priority? priority])
     : super(
@@ -1650,7 +1683,9 @@ class ManageTwists extends ShowCommands {
       );
     });
 
+    final teams = usage?.teams ?? [];
     final addCommands = twistOnlyAvailable
+        .where((twist) => !_isFullyInstalled(twist, twistOnlyTwistInstances, teams))
         .map((twist) => ShowTwistInfo(twist))
         .toList();
 
@@ -2131,6 +2166,15 @@ class SetupTwist extends ShowForm {
     final setupSourceController = FormChannelListController();
     final setupLinkController = FormChannelListController();
 
+    // Only show a divider before the Add button when there's visible content
+    // above it (team select, integrations, options, or link channels).
+    // When the user has no teams and the twist has no integrations/options, the
+    // form only shows the name field — a divider would look out of place.
+    final hasVisibleContentAboveAddButton = teams.isNotEmpty ||
+        integrations.providers.isNotEmpty ||
+        optionItems != null ||
+        hasLinkPermission;
+
     return FormData(
       title: 'Set up ${twist.name}',
       groups: [
@@ -2222,10 +2266,7 @@ class SetupTwist extends ShowForm {
                   },
                 ),
               ),
-          ],
-        ),
-        StaticFormGroup(
-          items: [
+            if (hasVisibleContentAboveAddButton) FormDivider(key: 'divider'),
             FormButton(
               key: 'add',
               buildCommand: (values) {
@@ -2233,10 +2274,6 @@ class SetupTwist extends ShowForm {
 
                 // Check twist limit for non-sources
                 if (!twist.isSource) {
-                  // Team twists have no limit (or 0 for free team plan, but team plan check is handled on backend)
-                  // Wait, limits.ts says "Paid team plans have unlimited twists. Free team plan: 0 twists".
-                  // Let's check team twist limit. Actually, UpgradeApi doesn't have team twist usage yet.
-                  // I'll stick to checking personal limits.
                   final atLimit =
                       owner == 'personal' && usage.personal.twists.isAtLimit;
                   if (atLimit) {
