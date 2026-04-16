@@ -8,39 +8,30 @@
 DO $$
 DECLARE
     v_publisher_id bigint;
-    v_twist_admin_id bigint;
+    v_kris_id uuid := '019d8efd-12e2-7ba9-98f1-ec08152ea427';
 BEGIN
-    -- 1. Kris Braun — must exist before twist_admin INSERT so that the
-    --    auto_maintain_twist_admin_topic trigger can use a valid created_by.
-    --    Fixed UUID matches production; clerk_id left NULL for dev-only seed.
+    -- 1. Kris Braun — must exist before publisher INSERT so that
+    --    auto_maintain_publisher_topic trigger can seed the publisher topic
+    --    with a valid created_by.
     INSERT INTO "public"."user" (id, email, name)
-    VALUES ('019d8efd-12e2-7ba9-98f1-ec08152ea427', 'kris@plot.day', 'Kris Braun')
+    VALUES (v_kris_id, 'kris@plot.day', 'Kris Braun')
     ON CONFLICT (email) DO NOTHING;
 
-    -- 2. Plot publisher
-    INSERT INTO "public"."publisher" (name, url)
-    VALUES ('Plot', 'https://plot.day')
-    ON CONFLICT DO NOTHING;
+    -- 2. Plot publisher (keyed by lowercased name)
+    INSERT INTO "public"."publisher" (name, url, created_by)
+    VALUES ('Plot', 'https://plot.day', v_kris_id)
+    ON CONFLICT (lower(name)) DO NOTHING;
 
-    SELECT id INTO v_publisher_id FROM "public"."publisher" WHERE name = 'Plot' LIMIT 1;
+    SELECT id INTO v_publisher_id FROM "public"."publisher" WHERE lower(name) = 'plot' LIMIT 1;
 
-    -- 2. Plot twist admin (keyed by twist_package_id from twists/plot/package.json)
-    INSERT INTO "public"."twist_admin" (twist_package_id, publisher_id, auto_approve)
-    VALUES ('0199b6f4-ae64-7718-8a02-44716f30358f', v_publisher_id, false)
-    ON CONFLICT (twist_package_id, user_id) DO NOTHING;
+    -- 3. Plot twist definitions (review + public environments, keyed on
+    --    twist_package_id from twists/plot/package.json)
+    INSERT INTO "public"."twist" (twist_package_id, publisher_id, environment, name, version, is_source, shared, logo_url, auto_approve)
+    VALUES ('0199b6f4-ae64-7718-8a02-44716f30358f', v_publisher_id, 'review', 'Plot', '0.1.0', false, false, 'https://plot.day/assets/plot-icon.svg', true)
+    ON CONFLICT (twist_package_id, environment) WHERE environment <> 'personal' DO NOTHING;
 
-    SELECT id INTO v_twist_admin_id
-    FROM "public"."twist_admin"
-    WHERE twist_package_id = '0199b6f4-ae64-7718-8a02-44716f30358f'
-    LIMIT 1;
-
-    -- 3. Plot twist definitions (review + public environments)
-    INSERT INTO "public"."twist" (twist_admin_id, environment, name, version, is_source, shared, logo_url)
-    VALUES (v_twist_admin_id, 'review', 'Plot', '0.1.0', false, false, 'https://plot.day/assets/plot-icon.svg')
-    ON CONFLICT (twist_admin_id, environment) DO NOTHING;
-
-    INSERT INTO "public"."twist" (twist_admin_id, environment, name, version, is_source, shared, logo_url)
-    VALUES (v_twist_admin_id, 'public', 'Plot', '0.1.0', false, false, 'https://plot.day/assets/plot-icon.svg')
-    ON CONFLICT (twist_admin_id, environment) DO NOTHING;
+    INSERT INTO "public"."twist" (twist_package_id, publisher_id, environment, name, version, is_source, shared, logo_url, auto_approve)
+    VALUES ('0199b6f4-ae64-7718-8a02-44716f30358f', v_publisher_id, 'public', 'Plot', '0.1.0', false, false, 'https://plot.day/assets/plot-icon.svg', false)
+    ON CONFLICT (twist_package_id, environment) WHERE environment <> 'personal' DO NOTHING;
 
 END $$;

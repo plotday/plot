@@ -963,6 +963,7 @@ export type Database = {
       publisher: {
         Row: {
           created_at: string
+          created_by: string
           email: string | null
           id: number
           name: string
@@ -971,6 +972,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          created_by: string
           email?: string | null
           id?: never
           name: string
@@ -979,13 +981,21 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          created_by?: string
           email?: string | null
           id?: never
           name?: string
           updated_at?: string
           url?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "publisher_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       schedule: {
         Row: {
@@ -1905,8 +1915,9 @@ export type Database = {
         Row: {
           archived_at: string | null
           auto_maintained: boolean
+          auto_personal_twist_user_id: string | null
+          auto_publisher_id: number | null
           auto_team_admin_team_id: number | null
-          auto_twist_admin_id: number | null
           auto_user_id: string | null
           created_at: string
           created_by: string
@@ -1920,8 +1931,9 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           auto_maintained?: boolean
+          auto_personal_twist_user_id?: string | null
+          auto_publisher_id?: number | null
           auto_team_admin_team_id?: number | null
-          auto_twist_admin_id?: number | null
           auto_user_id?: string | null
           created_at?: string
           created_by: string
@@ -1935,8 +1947,9 @@ export type Database = {
         Update: {
           archived_at?: string | null
           auto_maintained?: boolean
+          auto_personal_twist_user_id?: string | null
+          auto_publisher_id?: number | null
           auto_team_admin_team_id?: number | null
-          auto_twist_admin_id?: number | null
           auto_user_id?: string | null
           created_at?: string
           created_by?: string
@@ -1949,15 +1962,21 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "topic_auto_team_admin_team_id_fkey"
-            columns: ["auto_team_admin_team_id"]
-            referencedRelation: "team"
+            foreignKeyName: "topic_auto_personal_twist_user_id_fkey"
+            columns: ["auto_personal_twist_user_id"]
+            referencedRelation: "user"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "topic_auto_twist_admin_id_fkey"
-            columns: ["auto_twist_admin_id"]
-            referencedRelation: "twist_admin"
+            foreignKeyName: "topic_auto_publisher_id_fkey"
+            columns: ["auto_publisher_id"]
+            referencedRelation: "publisher"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "topic_auto_team_admin_team_id_fkey"
+            columns: ["auto_team_admin_team_id"]
+            referencedRelation: "team"
             referencedColumns: ["id"]
           },
           {
@@ -2048,6 +2067,7 @@ export type Database = {
       twist: {
         Row: {
           archived_at: string | null
+          auto_approve: boolean
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
@@ -2061,13 +2081,16 @@ export type Database = {
           name: string
           options_schema: Json | null
           permissions: Json | null
+          publisher_id: number | null
           shared: boolean
-          twist_admin_id: number
+          twist_package_id: string
           updated_at: string
+          user_id: string | null
           version: string
         }
         Insert: {
           archived_at?: string | null
+          auto_approve?: boolean
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
@@ -2081,13 +2104,16 @@ export type Database = {
           name: string
           options_schema?: Json | null
           permissions?: Json | null
+          publisher_id?: number | null
           shared?: boolean
-          twist_admin_id: number
+          twist_package_id: string
           updated_at?: string
+          user_id?: string | null
           version: string
         }
         Update: {
           archived_at?: string | null
+          auto_approve?: boolean
           created_at?: string
           description?: string | null
           environment?: Database["public"]["Enums"]["twist_environment"]
@@ -2101,57 +2127,22 @@ export type Database = {
           name?: string
           options_schema?: Json | null
           permissions?: Json | null
+          publisher_id?: number | null
           shared?: boolean
-          twist_admin_id?: number
+          twist_package_id?: string
           updated_at?: string
+          user_id?: string | null
           version?: string
         }
         Relationships: [
           {
-            foreignKeyName: "twist_twist_admin_id_fkey"
-            columns: ["twist_admin_id"]
-            referencedRelation: "twist_admin"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      twist_admin: {
-        Row: {
-          auto_approve: boolean
-          created_at: string
-          id: number
-          publisher_id: number | null
-          twist_package_id: string
-          updated_at: string
-          user_id: string | null
-        }
-        Insert: {
-          auto_approve?: boolean
-          created_at?: string
-          id?: never
-          publisher_id?: number | null
-          twist_package_id?: string
-          updated_at?: string
-          user_id?: string | null
-        }
-        Update: {
-          auto_approve?: boolean
-          created_at?: string
-          id?: never
-          publisher_id?: number | null
-          twist_package_id?: string
-          updated_at?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "twist_admin_publisher_id_fkey"
+            foreignKeyName: "twist_publisher_id_fkey"
             columns: ["publisher_id"]
             referencedRelation: "publisher"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "twist_admin_user_id_fkey"
+            foreignKeyName: "twist_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "user"
             referencedColumns: ["id"]
@@ -3820,6 +3811,7 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: {
           archived_at: string | null
+          auto_approve: boolean
           created_at: string
           description: string | null
           environment: Database["public"]["Enums"]["twist_environment"]
@@ -3833,9 +3825,11 @@ export type Database = {
           name: string
           options_schema: Json | null
           permissions: Json | null
+          publisher_id: number | null
           shared: boolean
-          twist_admin_id: number
+          twist_package_id: string
           updated_at: string
+          user_id: string | null
           version: string
         }[]
         SetofOptions: {

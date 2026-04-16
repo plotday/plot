@@ -1,6 +1,6 @@
 -- All twists start in the 'personal' environment, which is the development environment.
 -- They can be promoted to 'private' for private use, then to 'review'.
--- Only Plot can promot from 'review' to 'public'.
+-- Only Plot can promote from 'review' to 'public'.
 CREATE TYPE twist_environment AS ENUM (
     'personal',
     'private',
@@ -10,7 +10,9 @@ CREATE TYPE twist_environment AS ENUM (
 
 CREATE TABLE "public"."twist" (
     "id" bigint NOT NULL GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    "twist_admin_id" bigint NOT NULL REFERENCES public.twist_admin (id) ON DELETE CASCADE,
+    "twist_package_id" uuid NOT NULL,
+    "publisher_id" bigint REFERENCES public.publisher (id) ON DELETE CASCADE,
+    "user_id" uuid REFERENCES public."user" ("id") ON DELETE CASCADE,
     "environment" twist_environment NOT NULL DEFAULT 'personal' ::twist_environment,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
@@ -26,14 +28,28 @@ CREATE TABLE "public"."twist" (
     "logo_url" text,
     "logo_url_dark" text,
     "execution_limit" integer,
-    "multiple_instances" boolean NOT NULL DEFAULT false
+    "multiple_instances" boolean NOT NULL DEFAULT false,
+    "auto_approve" boolean NOT NULL DEFAULT FALSE,
+    CONSTRAINT "twist_owner_check" CHECK (
+        (environment = 'personal' AND user_id IS NOT NULL AND publisher_id IS NULL)
+        OR
+        (environment <> 'personal' AND publisher_id IS NOT NULL AND user_id IS NULL)
+    )
 );
 
-CREATE INDEX idx_twist_admin_id ON "public"."twist" ("twist_admin_id");
+CREATE INDEX idx_twist_publisher_id ON "public"."twist" ("publisher_id") WHERE publisher_id IS NOT NULL;
+CREATE INDEX idx_twist_user_id ON "public"."twist" ("user_id") WHERE user_id IS NOT NULL;
 CREATE INDEX idx_twist_environment ON "public"."twist" ("environment");
+CREATE INDEX idx_twist_package_id ON "public"."twist" ("twist_package_id");
 
--- Ensure each twist_admin can only have one twist per environment
-CREATE UNIQUE INDEX twist_admin_environment_unique ON "public"."twist" ("twist_admin_id", "environment");
+-- Personal twists: one per (package, user). Each user has their own personal deployment of a package.
+CREATE UNIQUE INDEX twist_personal_package_user_unique ON "public"."twist" ("twist_package_id", "user_id")
+    WHERE environment = 'personal';
+
+-- Non-personal twists: one per (package, environment). All non-personal rows for a given package
+-- must share the same publisher_id (enforced by the enforce_twist_package_publisher_consistency trigger).
+CREATE UNIQUE INDEX twist_non_personal_package_environment_unique ON "public"."twist" ("twist_package_id", "environment")
+    WHERE environment <> 'personal';
 
 CREATE TRIGGER set_twist_updated_at
     BEFORE INSERT OR UPDATE ON "public"."twist"
@@ -45,4 +61,38 @@ CREATE TRIGGER set_twist_created_at
     FOR EACH ROW
     EXECUTE FUNCTION set_created_at ();
 
--- Function to get twists accessible to a user for a given priority
+-- Enforce that all non-personal rows for the same twist_package_id share the same publisher_id.
+-- A user attempting to deploy a package that's already "claimed" by another publisher will be
+-- rejected here; the API-layer topic check determines whether the user can claim an unclaimed package.
+CREATE OR REPLACE FUNCTION public.enforce_twist_package_publisher_consistency ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_existing_publisher_id bigint;
+BEGIN
+    IF NEW.environment = 'personal' THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT publisher_id INTO v_existing_publisher_id
+    FROM twist
+    WHERE twist_package_id = NEW.twist_package_id
+      AND environment <> 'personal'
+      AND id <> COALESCE(NEW.id, -1)
+    LIMIT 1;
+
+    IF v_existing_publisher_id IS NOT NULL AND v_existing_publisher_id <> NEW.publisher_id THEN
+        RAISE EXCEPTION 'twist_package_id % is already owned by publisher %, cannot assign to publisher %',
+            NEW.twist_package_id, v_existing_publisher_id, NEW.publisher_id
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER enforce_twist_package_publisher_consistency
+    BEFORE INSERT OR UPDATE OF twist_package_id, publisher_id, environment ON "public"."twist"
+    FOR EACH ROW
+    EXECUTE FUNCTION public.enforce_twist_package_publisher_consistency ();

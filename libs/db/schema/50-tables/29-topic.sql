@@ -11,7 +11,8 @@ CREATE TABLE "public"."topic" (
     "auto_maintained" boolean NOT NULL DEFAULT FALSE,
     "auto_user_id" uuid REFERENCES public."user" ("id") ON DELETE CASCADE,
     "auto_team_admin_team_id" bigint REFERENCES team ON DELETE CASCADE,
-    "auto_twist_admin_id" bigint REFERENCES twist_admin ON DELETE CASCADE
+    "auto_publisher_id" bigint REFERENCES publisher ON DELETE CASCADE,
+    "auto_personal_twist_user_id" uuid REFERENCES public."user" ("id") ON DELETE CASCADE
 );
 
 CREATE INDEX idx_topic_team_id ON "public"."topic" ("team_id")
@@ -36,17 +37,23 @@ WHERE
     auto_maintained = TRUE
     AND auto_user_id IS NOT NULL;
 
-CREATE UNIQUE INDEX idx_topic_auto_twist_admin ON "public"."topic" ("auto_twist_admin_id")
+CREATE UNIQUE INDEX idx_topic_auto_publisher ON "public"."topic" ("auto_publisher_id")
 WHERE
     auto_maintained = TRUE
-    AND auto_twist_admin_id IS NOT NULL;
+    AND auto_publisher_id IS NOT NULL;
+
+CREATE UNIQUE INDEX idx_topic_auto_personal_twist_user ON "public"."topic" ("auto_personal_twist_user_id")
+WHERE
+    auto_maintained = TRUE
+    AND auto_personal_twist_user_id IS NOT NULL;
 
 CREATE UNIQUE INDEX idx_topic_auto_everyone ON "public"."topic" ("auto_maintained")
 WHERE
     auto_maintained = TRUE
     AND team_id IS NULL
     AND auto_user_id IS NULL
-    AND auto_twist_admin_id IS NULL;
+    AND auto_publisher_id IS NULL
+    AND auto_personal_twist_user_id IS NULL;
 
 CREATE TRIGGER set_topic_updated_at
     BEFORE INSERT OR UPDATE ON "public"."topic"

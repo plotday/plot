@@ -15,8 +15,6 @@ SELECT
 FROM
     twist_instance pt
     JOIN twist t ON pt.twist_id = t.id
-    JOIN twist_admin ta ON t.twist_admin_id = ta.id
-    LEFT JOIN publisher p ON ta.publisher_id = p.id
+    LEFT JOIN publisher p ON t.publisher_id = p.id
 WHERE
     pt.archived_at IS NULL;
-
