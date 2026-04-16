@@ -2,155 +2,155 @@ import type { Kysely } from "kysely";
 
 import type { DB } from "../../db-types";
 
-const COUNT_TAG_MIN = 1000;
+type TagRow = { id: string | null; tags: unknown };
+type RowType = "thread" | "note";
 
 /**
- * Stub: viewer role is removed in the per-user priority model.
- * Always returns null (no viewer priorities).
+ * Filter tag actor IDs for threads with announce topics.
+ *
+ * For each row whose thread has an announce topic in `thread.topics`, drop
+ * any tag actor whose only relationship to the thread is announce-topic
+ * membership. An actor is visible iff:
+ *   - in `thread.contacts`, or
+ *   - a member of any non-announce topic in `thread.topics`, or
+ *   - one of the requesting user's linked contacts.
+ *
+ * For apiVersion >= 2 the original count is preserved by replacing the
+ * actor array with `{ c: total, a: visibleIds }`. Older clients lose the
+ * count but identities still stay private.
+ *
+ * Mutates rows in place. Skips rows without an announce topic.
  */
-async function getViewerPriorityIds(
-  _db: Kysely<DB>,
-  _userId: string
-): Promise<Set<string> | null> {
-  return null;
-}
-
-/**
- * Get the contact IDs of members on the given priorities, plus the requesting
- * user's own contact ID. Members are a small set; viewers can be very large.
- * Returns a map of priorityId → Set<allowedContactId>.
- */
-async function getAllowedActorsByPriority(
+export async function stripAnnounceTagActors(
   db: Kysely<DB>,
   userId: string,
-  viewerPriorityIds: Set<string>
-): Promise<Map<string, Set<string>>> {
-  const priorityIdArray = [...viewerPriorityIds];
-
-  // Get the requesting user's own contact ID
-  const selfContact = await db
-    .selectFrom("contact")
-    .select("id")
-    .where("user_id", "=", userId)
-    .where("primary", "=", true)
-    .executeTakeFirst();
-
-  const selfContactId = selfContact?.id;
-
-  // In the per-user priority model, all priorities are owned by the user —
-  // there are no shared "member" contacts to enumerate.
-  const memberContacts: { contact_id: string; priority_id: string }[] = [];
-
-  // Build priorityId → Set<allowedContactId>
-  const result = new Map<string, Set<string>>();
-  for (const priorityId of priorityIdArray) {
-    const allowed = new Set<string>();
-    if (selfContactId) allowed.add(selfContactId);
-    result.set(priorityId, allowed);
-  }
-  for (const row of memberContacts) {
-    const allowed = result.get(row.priority_id as string);
-    if (allowed) allowed.add(row.contact_id);
-  }
-
-  return result;
-}
-
-/**
- * Strip count tag actor IDs for rows under viewer priorities.
- * Filters to allowed actors (members + self). For apiVersion >= 2,
- * replaces arrays with { c: totalCount, a: filteredActors }.
- * Mutates rows in place.
- */
-function stripTags(
-  rows: { id: string | null; tags: unknown }[],
-  viewerRowIds: Set<string>,
-  rowIdToAllowedActors: Map<string, Set<string>>,
-  apiVersion: number
-): void {
-  for (const row of rows) {
-    if (!row.id || !row.tags || !viewerRowIds.has(row.id)) continue;
-
-    const allowed = rowIdToAllowedActors.get(row.id);
-    if (!allowed) continue;
-
-    const tags = row.tags as Record<string, unknown>;
-    for (const [tagId, actorIds] of Object.entries(tags)) {
-      if (Number(tagId) >= COUNT_TAG_MIN && Array.isArray(actorIds)) {
-        const filtered = actorIds.filter((id: string) => allowed.has(id));
-        if (apiVersion >= 2) {
-          tags[tagId] = { c: actorIds.length, a: filtered };
-        } else {
-          tags[tagId] = filtered;
-        }
-      }
-    }
-  }
-}
-
-/**
- * Strip actor IDs from count tags for thread/note tag rows under viewer priorities.
- * Looks up thread -> priority_id to determine which rows are viewer.
- * Mutates rows in place. No-op if user has no viewer priorities.
- */
-export async function stripCountTagActors(
-  db: Kysely<DB>,
-  userId: string,
-  rows: { id: string | null; tags: unknown }[],
-  type: "thread" | "note" = "thread",
-  apiVersion: number = 0
+  rows: TagRow[],
+  type: RowType = "thread",
+  apiVersion: number = 0,
 ): Promise<void> {
   if (rows.length === 0) return;
-
-  const viewerPriorityIds = await getViewerPriorityIds(db, userId);
-  if (!viewerPriorityIds) return;
 
   const rowIds = rows.map((r) => r.id).filter((id): id is string => id != null);
   if (rowIds.length === 0) return;
 
-  let idToPriority: Map<string, string>;
+  type ThreadInfo = { contacts: string[]; topics: string[] };
+  const rowToThread = new Map<string, ThreadInfo>();
 
   if (type === "thread") {
     const threads = await db
-      .selectFrom("thread_priority")
-      .select(["thread_id as id", "priority_id"])
-      .where("thread_id", "in", rowIds)
-      .where("user_id", "=", userId)
+      .selectFrom("thread")
+      .select(["id", "contacts", "topics"])
+      .where("id", "in", rowIds)
       .execute();
-    idToPriority = new Map(threads.map((t) => [t.id, t.priority_id]));
+    for (const t of threads) {
+      rowToThread.set(t.id, {
+        contacts: t.contacts ?? [],
+        topics: t.topics ?? [],
+      });
+    }
   } else {
-    // note: look up note -> thread_priority -> priority_id
     const notes = await db
       .selectFrom("note")
-      .innerJoin("thread_priority", "thread_priority.thread_id", "note.thread_id")
-      .select(["note.id", "thread_priority.priority_id"])
+      .innerJoin("thread", "thread.id", "note.thread_id")
+      .select([
+        "note.id",
+        "thread.contacts",
+        "thread.topics",
+      ])
       .where("note.id", "in", rowIds)
-      .where("thread_priority.user_id", "=", userId)
       .execute();
-    idToPriority = new Map(notes.map((n) => [n.id, n.priority_id]));
-  }
-
-  const viewerRowIds = new Set<string>();
-  for (const [rowId, priorityId] of idToPriority) {
-    if (viewerPriorityIds.has(priorityId)) {
-      viewerRowIds.add(rowId);
+    for (const n of notes) {
+      rowToThread.set(n.id, {
+        contacts: n.contacts ?? [],
+        topics: n.topics ?? [],
+      });
     }
   }
 
-  if (viewerRowIds.size === 0) return;
+  const allTopicIds = new Set<string>();
+  for (const info of rowToThread.values()) {
+    for (const t of info.topics) allTopicIds.add(t);
+  }
+  if (allTopicIds.size === 0) return;
 
-  // Look up allowed actor IDs (members + self) per priority
-  const allowedByPriority = await getAllowedActorsByPriority(db, userId, viewerPriorityIds);
+  const topicTypes = await db
+    .selectFrom("topic")
+    .select(["id", "type"])
+    .where("id", "in", [...allTopicIds])
+    .execute();
 
-  // Map row IDs to their allowed actors set
-  const rowIdToAllowedActors = new Map<string, Set<string>>();
-  for (const rowId of viewerRowIds) {
-    const priorityId = idToPriority.get(rowId);
-    if (priorityId) {
-      const allowed = allowedByPriority.get(priorityId);
-      if (allowed) rowIdToAllowedActors.set(rowId, allowed);
+  const announceTopicIds = new Set<string>();
+  for (const t of topicTypes) {
+    if (t.type === "announce") announceTopicIds.add(t.id);
+  }
+  if (announceTopicIds.size === 0) return;
+
+  const affectedRowIds = new Set<string>();
+  const nonAnnounceTopicIds = new Set<string>();
+  for (const [rowId, info] of rowToThread) {
+    let hasAnnounce = false;
+    for (const t of info.topics) {
+      if (announceTopicIds.has(t)) {
+        hasAnnounce = true;
+      } else {
+        nonAnnounceTopicIds.add(t);
+      }
+    }
+    if (hasAnnounce) affectedRowIds.add(rowId);
+  }
+  if (affectedRowIds.size === 0) return;
+
+  const topicMembers = new Map<string, Set<string>>();
+  if (nonAnnounceTopicIds.size > 0) {
+    const members = await db
+      .selectFrom("topic_member")
+      .select(["topic_id", "contact_id"])
+      .where("topic_id", "in", [...nonAnnounceTopicIds])
+      .execute();
+    for (const m of members) {
+      let set = topicMembers.get(m.topic_id);
+      if (!set) {
+        set = new Set();
+        topicMembers.set(m.topic_id, set);
+      }
+      set.add(m.contact_id);
     }
   }
 
-  stripTags(rows, viewerRowIds, rowIdToAllowedActors, apiVersion);
+  const ownContacts = new Set<string>();
+  const userContacts = await db
+    .selectFrom("user_contact")
+    .select("contact_id")
+    .where("user_id", "=", userId)
+    .where("linked", "=", true)
+    .where("archived_at", "is", null)
+    .execute();
+  for (const c of userContacts) ownContacts.add(c.contact_id);
+
+  for (const row of rows) {
+    if (!row.id || !row.tags || !affectedRowIds.has(row.id)) continue;
+    const info = rowToThread.get(row.id);
+    if (!info) continue;
+
+    const visible = new Set<string>(ownContacts);
+    for (const c of info.contacts) visible.add(c);
+    for (const t of info.topics) {
+      if (announceTopicIds.has(t)) continue;
+      const members = topicMembers.get(t);
+      if (members) for (const m of members) visible.add(m);
+    }
+
+    const tags = row.tags as Record<string, unknown>;
+    for (const [tagId, actorIds] of Object.entries(tags)) {
+      if (!Array.isArray(actorIds)) continue;
+      const original = actorIds as string[];
+      const filtered = original.filter((id) => visible.has(id));
+      if (filtered.length === original.length) continue;
+      if (apiVersion >= 2) {
+        tags[tagId] = { c: original.length, a: filtered };
+      } else {
+        tags[tagId] = filtered;
+      }
+    }
+  }
 }

@@ -762,12 +762,34 @@ class Note extends Equatable implements Comparable<Note> {
     ...(_tags?.tags ?? const {}),
   };
 
-  /// Get all actors who have Tag.todo or Tag.done on this note (i.e., assignees)
+  /// Get all actors who have Tag.todo or Tag.done on this note (i.e., assignees).
+  ///
+  /// Only includes actors whose identity the viewer is allowed to see —
+  /// announce-topic-only assignees are filtered out by the API. Use
+  /// [assigneeCount] for the true total.
   List<ActorId> get assignees {
     final actors = <ActorId>{};
     if (tags[Tag.todo] != null) actors.addAll(tags[Tag.todo]!);
     if (tags[Tag.done] != null) actors.addAll(tags[Tag.done]!);
     return actors.toList();
+  }
+
+  /// Total number of distinct assignees, including any hidden by privacy
+  /// filtering (announce-topic-only members the viewer can't see).
+  int get assigneeCount {
+    final activeTotal = TagActors.countOf(tags[Tag.todo]);
+    final doneTotal = TagActors.countOf(tags[Tag.done]);
+    final activeVisible = tags[Tag.todo] ?? const [];
+    final doneVisible = tags[Tag.done] ?? const [];
+    final visibleOverlap = doneVisible
+        .where(activeVisible.contains)
+        .length;
+    final visibleUnion = activeVisible.length + doneVisible.length - visibleOverlap;
+    final hiddenActive = activeTotal - activeVisible.length;
+    final hiddenDone = doneTotal - doneVisible.length;
+    // Hidden actors may overlap between todo/done. Without identities we
+    // can't dedupe them, so assume worst case (no overlap) for the count.
+    return visibleUnion + hiddenActive + hiddenDone;
   }
 
   /// Get actors currently working on this note (have Tag.todo)
@@ -780,12 +802,15 @@ class Note extends Equatable implements Comparable<Note> {
     return await Note.get(id) ?? this;
   }
 
-  /// Check if all assignees have marked the note as done
+  /// Check if all assignees have marked the note as done.
+  ///
+  /// Returns false when there are still active todo assignees, including
+  /// hidden ones (announce-topic-only) — we can't claim completion on
+  /// behalf of assignees we can't see.
   bool get isComplete {
-    final allAssignees = assignees;
-    if (allAssignees.isEmpty) return false;
-    final completed = completedAssignees;
-    return allAssignees.every((actor) => completed.contains(actor));
+    if (TagActors.countOf(tags[Tag.todo]) > 0) return false;
+    if (TagActors.countOf(tags[Tag.done]) == 0) return false;
+    return true;
   }
 
   /// Check if a specific actor has a given tag

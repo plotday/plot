@@ -416,19 +416,24 @@ class PickNoteAssignee extends ShowCommands {
 
   final Note note;
 
-  /// Whether there are other assignees (not the current user)
-  bool get hasOtherAssignees => note.assignees.any((id) => id != Base.actorId);
-
-  static String _computeTitle(Note note) {
-    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
-    if (otherAssignees.isEmpty) return 'Assign';
-    return 'Assigned';
+  /// Whether anyone other than the current user is assigned, including
+  /// hidden assignees (announce-topic-only members the viewer can't see).
+  bool get hasOtherAssignees {
+    final selfAssigned = note.activeAssignees.contains(Base.actorId) ||
+        note.completedAssignees.contains(Base.actorId);
+    return note.assigneeCount > (selfAssigned ? 1 : 0);
   }
 
-  static IconData _computeIcon(Note note) {
-    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
-    if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
-    return PlotIcon.othersTask;
+  static String _computeTitle(Note note) =>
+      _hasOtherAssignees(note) ? 'Assigned' : 'Assign';
+
+  static IconData _computeIcon(Note note) =>
+      _hasOtherAssignees(note) ? PlotIcon.othersTask : PlotIcon.assignAdd;
+
+  static bool _hasOtherAssignees(Note note) {
+    final selfAssigned = note.activeAssignees.contains(Base.actorId) ||
+        note.completedAssignees.contains(Base.actorId);
+    return note.assigneeCount > (selfAssigned ? 1 : 0);
   }
 
   static Future<Commands> _getAssigneeCommands(Note note) async {
@@ -441,6 +446,13 @@ class PickNoteAssignee extends ShowCommands {
     final assignedActors = assigneeIds.isNotEmpty
         ? await Future.wait(assigneeIds.map(Actor.getOne))
         : <Actor>[];
+
+    // Hidden active assignees (announce-topic-only) — count only, no identity
+    final hiddenActiveCount =
+        TagActors.countOf(freshNote.tags[Tag.todo]) - assigneeIds.length;
+    final assignedSubtitle = hiddenActiveCount > 0
+        ? '+$hiddenActiveCount hidden'
+        : null;
 
     // Resolve thread contacts for the "With" section
     final contactActors = <Actor>[];
@@ -468,6 +480,7 @@ class PickNoteAssignee extends ShowCommands {
         if (assignedActors.isNotEmpty)
           StaticCommandGroup(
             title: 'Assigned',
+            subtitle: assignedSubtitle,
             commands: assignedActors
                 .map((actor) => AssignNoteActor(freshNote, actor))
                 .toList(),
@@ -818,16 +831,16 @@ class PickDraftNoteAssignee extends ShowCommands {
   final Uuid priorityId;
   final Future<void> Function(Note note, {Thread? thread}) onUpdate;
 
-  static String _computeTitle(Note note) {
-    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
-    if (otherAssignees.isEmpty) return 'Assign';
-    return 'Assigned';
-  }
+  static String _computeTitle(Note note) =>
+      _hasOtherAssignees(note) ? 'Assigned' : 'Assign';
 
-  static IconData _computeIcon(Note note) {
-    final otherAssignees = note.assignees.where((id) => id != Base.actorId);
-    if (otherAssignees.isEmpty) return PlotIcon.assignAdd;
-    return PlotIcon.othersTask;
+  static IconData _computeIcon(Note note) =>
+      _hasOtherAssignees(note) ? PlotIcon.othersTask : PlotIcon.assignAdd;
+
+  static bool _hasOtherAssignees(Note note) {
+    final selfAssigned = note.activeAssignees.contains(Base.actorId) ||
+        note.completedAssignees.contains(Base.actorId);
+    return note.assigneeCount > (selfAssigned ? 1 : 0);
   }
 
   static Future<Commands> _getAssigneeCommands(
@@ -842,6 +855,13 @@ class PickDraftNoteAssignee extends ShowCommands {
     final assignedActors = assigneeIds.isNotEmpty
         ? await Future.wait(assigneeIds.map(Actor.getOne))
         : <Actor>[];
+
+    // Hidden active assignees (announce-topic-only) — count only, no identity
+    final hiddenActiveCount =
+        TagActors.countOf(note.tags[Tag.todo]) - assigneeIds.length;
+    final assignedSubtitle = hiddenActiveCount > 0
+        ? '+$hiddenActiveCount hidden'
+        : null;
 
     // Resolve thread contacts for the "With" section
     final contactActors = <Actor>[];
@@ -869,6 +889,7 @@ class PickDraftNoteAssignee extends ShowCommands {
         if (assignedActors.isNotEmpty)
           StaticCommandGroup(
             title: 'Assigned',
+            subtitle: assignedSubtitle,
             commands: assignedActors
                 .map(
                   (actor) =>

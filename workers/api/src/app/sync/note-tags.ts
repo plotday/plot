@@ -6,7 +6,7 @@ import { rpcUser } from "../../rpc";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { notifySync, getPriorityForNote } from "./notify";
 import { createSchedule } from "./smart-schedule";
-import { stripCountTagActors } from "./viewer";
+import { stripAnnounceTagActors } from "./viewer";
 
 const noteTags = new Hono<{ Bindings: Bindings }>();
 
@@ -78,7 +78,7 @@ noteTags.get("/sync/note-tags", async (c) => {
     return query.execute();
   });
 
-  await stripCountTagActors(c.var.db, userId, rows as any, "note", c.var.apiVersion ?? 0);
+  await stripAnnounceTagActors(c.var.db, userId, rows as any, "note", c.var.apiVersion ?? 0);
 
   return c.json(rows as any);
 });
