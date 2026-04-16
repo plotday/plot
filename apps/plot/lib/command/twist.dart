@@ -1616,6 +1616,41 @@ bool _isFullyInstalled(
   return true;
 }
 
+/// Returns the list of scope IDs where [twist] can still be installed.
+/// For multi-instance twists, returns all scopes (personal + all teams).
+/// For single-instance twists, returns only scopes without an active instance.
+List<String> _getAvailableScopes(
+  Twist twist,
+  List<TwistInstance> instances,
+  List<TeamUsage> teams,
+) {
+  if (twist.multipleInstances) {
+    return ['personal', ...teams.map((t) => t.id)];
+  }
+
+  final scopes = <String>[];
+
+  final inPersonal = instances.any(
+    (i) =>
+        i.twistId.toString() == twist.id &&
+        i.teamId == null &&
+        i.archivedAt == null,
+  );
+  if (!inPersonal) scopes.add('personal');
+
+  for (final team in teams) {
+    final inTeam = instances.any(
+      (i) =>
+          i.twistId.toString() == twist.id &&
+          i.teamId?.toString() == team.id &&
+          i.archivedAt == null,
+    );
+    if (!inTeam) scopes.add(team.id);
+  }
+
+  return scopes;
+}
+
 class ManageTwists extends ShowCommands {
   ManageTwists([Priority? priority])
     : super(
@@ -2139,10 +2174,13 @@ class SetupTwist extends ShowForm {
       ManageConnections._dataCache?.usage != null
           ? Future.value(ManageConnections._dataCache!.usage!)
           : UpgradeApi.getUsage(),
+      TwistInstance.get(),
     ]);
     final integrations = results[0] as TwistIntegrations;
     final usage = results[1] as UsageData;
+    final twistInstances = results[2] as List<TwistInstance>;
     final teams = usage.teams;
+    final availableScopes = _getAvailableScopes(twist, twistInstances, teams);
 
     final refreshNotifier = ValueNotifier<int>(0);
 
@@ -2180,25 +2218,35 @@ class SetupTwist extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            FormTextInput(
-              key: 'name',
-              label: 'Name',
-              initialValue: twist.name,
-              required: true,
-            ),
+            // Name field — hidden for single-instance twists
+            if (twist.multipleInstances)
+              FormTextInput(
+                key: 'name',
+                label: 'Name',
+                initialValue: twist.name,
+                required: true,
+              ),
+
+            // Scope select — shown only when user has teams
             if (teams.isNotEmpty)
               FormSelect<String>(
                 key: 'team_id',
-                label: 'Team',
-                initialValue: teams.first.id,
-                items:
-                    (search) async =>
-                        ['personal', ...teams.map((t) => t.id)],
+                label: 'Scope',
+                initialValue: availableScopes.isNotEmpty
+                    ? availableScopes.first
+                    : 'personal',
+                items: (search) async => availableScopes,
                 titleBuilder:
                     (id) =>
                         id == 'personal'
                             ? 'Personal'
                             : teams.firstWhere((t) => t.id == id).name,
+                // For single-instance twists with only one available scope,
+                // show readonly so the user can see where it will be installed
+                readonlyMessage:
+                    !twist.multipleInstances && availableScopes.length == 1
+                        ? 'Already active in all other scopes'
+                        : null,
               ),
             FormChannelList(
               key: 'integrations',
@@ -2281,7 +2329,9 @@ class SetupTwist extends ShowForm {
                   }
                 }
 
-                final name = values['name'] as String;
+                final name = twist.multipleInstances
+                    ? (values['name'] as String? ?? twist.name)
+                    : twist.name;
                 // Convert IntegrationChanges to SelectedChannel list
                 final selectedChannels = integrationChanges.selectedChannels
                     .map((key) {
