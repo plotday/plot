@@ -1,7 +1,6 @@
 import type { Kysely } from "kysely";
 
 import type { OptionsSchema } from "@plotday/twister/options";
-import { type Priority } from "@plotday/twister/plot";
 import { createLogger } from "@plotday/worker-util";
 
 import type { DB } from "../db-types";
@@ -421,6 +420,7 @@ export function twistFactory({
     let aiRequired = false;
     let defaultMentionCreated = false;
     let defaultMentionMentioned = false;
+    let multipleInstances = false;
 
     if (!checkPermissions) {
       // DEPLOYMENT: Initialize twist to build tools and collect permissions
@@ -553,6 +553,9 @@ export function twistFactory({
       if (sourceProvider?.handleReplies) {
         defaultMentionCreated = true;
       }
+
+      // Read static multipleInstances flag from the twist class
+      multipleInstances = (twist.constructor as { multipleInstances?: boolean }).multipleInstances ?? false;
     } else {
       // RUNTIME: Tools are validated per-path in builtInToolFactory as they're created
       // Use stored permissions without rebuilding twist
@@ -569,8 +572,8 @@ export function twistFactory({
       aiRequired,
       defaultMentionCreated,
       defaultMentionMentioned,
+      multipleInstances,
       activate: async (
-        priority: Pick<Priority, "id">,
         context?: {
           actor: { id: string; type: number };
           /** Authorization for source activation (Sources only). */
@@ -588,7 +591,7 @@ export function twistFactory({
       ) => {
         await handleTwistOperation(
           "activate",
-          () => twist.activate(twistInit, priority, context),
+          () => twist.activate(twistInit, context),
           { env, id, version, environment }
         );
       },

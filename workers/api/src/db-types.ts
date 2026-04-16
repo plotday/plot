@@ -299,13 +299,8 @@ export interface Link {
    * The user_id or twist_instance_id that actually created this link. Used for filtering callbacks and permissions.
    */
   created_by: string | null;
-  embedding: string | null;
   id: Generated<string>;
   logo: string | null;
-  /**
-   * The PickPriorityConfig used to automatically select this link's priority. Null if priority was explicitly specified. Used when moving links to find similar links to move.
-   */
-  match: Json | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
   preview: string | null;
@@ -353,10 +348,8 @@ export interface LinkX {
   channel_id: string | null;
   created_at: Timestamp | null;
   created_by: string | null;
-  embedding: string | null;
   id: string | null;
   logo: string | null;
-  match: Json | null;
   merged_from_thread_id: string | null;
   meta: Json | null;
   preview: string | null;
@@ -445,7 +438,6 @@ export interface Priority {
   key: string | null;
   path: string;
   sync_depth: number | null;
-  team_id: Int8 | null;
   title: string;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
@@ -478,19 +470,20 @@ export interface PriorityChildTwist {
   version: string | null;
 }
 
-export interface PrioritySetting {
-  key: string;
-  priority_id: string;
-  updated_at: Generated<Timestamp>;
-  user_id: string;
-  value: Json;
-}
-
 export interface PriorityRule {
   anchor_thread_id: string | null;
+  /**
+   * FK to channel.id (bigint). NULL means this rule applies to user-created threads (no connector). Non-null scopes to threads arriving from that specific channel.
+   */
   channel_id: Int8 | null;
   created_at: Generated<Timestamp>;
+  /**
+   * Match criteria for contact_topics rules. JSON object with optional "topics" (uuid[]) and "contacts" (uuid[]) arrays. Thread matches if it shares any listed topic or contact.
+   */
   criteria: Json | null;
+  /**
+   * Frozen embedding snapshot for content rules. Compared against thread.embedding using cosine similarity with a 0.7 threshold.
+   */
   embedding: string | null;
   id: Generated<string>;
   label: string | null;
@@ -498,6 +491,14 @@ export interface PriorityRule {
   type: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
+}
+
+export interface PrioritySetting {
+  key: string;
+  priority_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  value: Json;
 }
 
 export interface PrioritySettingInherited {
@@ -514,16 +515,6 @@ export interface PriorityTags {
   priority_id: string | null;
   tag_id: number | null;
   updated_at: Timestamp | null;
-}
-
-export interface PriorityUser {
-  archived_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  personal: Generated<boolean>;
-  priority_id: string;
-  role: Generated<string>;
-  updated_at: Generated<Timestamp>;
-  user_id: string;
 }
 
 export interface Publisher {
@@ -643,7 +634,7 @@ export interface TeamUser {
 export interface Thread {
   archived_at: Timestamp | null;
   /**
-   * Canonical list of contact_ids with access to this thread, including the author's primary contact for human-created threads. A user can access the thread if any of their linked (user_contact.linked=true) contacts appears in this array.
+   * Attested contact_ids on this thread. For twist-created threads, a user only gains visibility when their linked contact appears here via another attester's sync (or via share_thread). Users who attempted to join before attestation land in pending_contacts and are promoted when an attester confirms them. User-created threads do not require attestation.
    */
   contacts: Generated<string[]>;
   created_at: Generated<Timestamp>;
@@ -652,10 +643,14 @@ export interface Thread {
    */
   created_by: string;
   draft: Generated<boolean>;
+  /**
+   * Content embedding (384-dim halfvec) generated at creation from title + initial notes. Used by classify_thread_for_user for content-based priority rule matching.
+   */
+  embedding: string | null;
   icon: string | null;
   id: Generated<string>;
   /**
-   * Internal identifier for deduplication within a creator. Used with created_by for upsert behavior. Not synced to clients.
+   * Identifier for cross-user deduplication within a twist. Scoped by twist_id via thread_twist_key_unique. Not synced to clients.
    */
   key: string | null;
   /**
@@ -666,6 +661,10 @@ export interface Thread {
    * Cached MAX(note.source_created_at) for non-draft, non-archived notes. Maintained by trigger. Used for display, sorting, and range_at computation in user_thread view.
    */
   last_note_source_created_at: Timestamp | null;
+  /**
+   * Contacts whose own sync wants to join but who have not yet been attested by another user's sync. Promoted to contacts (with thread_priority filing) once a subsequent attester includes them.
+   */
+  pending_contacts: Generated<string[]>;
   preview: string | null;
   sync_depth: number | null;
   title: string | null;
@@ -673,6 +672,10 @@ export interface Thread {
    * Topic IDs attached to this thread. Members of referenced topics gain visibility dynamically — new members automatically see past threads.
    */
   topics: Generated<string[]>;
+  /**
+   * Twist definition that created this thread. Scopes (twist_id, key) dedup so all instances of the same twist share the same thread per external item. Immutable after creation.
+   */
+  twist_id: Int8 | null;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
 }
@@ -688,11 +691,8 @@ export interface ThreadAssociation {
 }
 
 export interface ThreadPriority {
+  archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
-  /**
-   * TRUE if this filing was assigned by the priority matching algorithm (vs explicitly chosen by the user or inherited from the author).
-   */
-  matched: Generated<boolean>;
   priority_id: string;
   thread_id: string;
   updated_at: Generated<Timestamp>;
@@ -746,15 +746,18 @@ export interface ThreadX {
   created_at: Timestamp | null;
   created_by: string | null;
   draft: boolean | null;
+  embedding: string | null;
   icon: string | null;
   id: string | null;
   key: string | null;
   last_note_created_at: Timestamp | null;
   last_note_source_created_at: Timestamp | null;
+  pending_contacts: string[] | null;
   preview: string | null;
   sync_depth: number | null;
   title: string | null;
   topics: string[] | null;
+  twist_id: Int8 | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
 }
@@ -814,6 +817,7 @@ export interface Twist {
   key_option: string | null;
   logo_url: string | null;
   logo_url_dark: string | null;
+  multiple_instances: Generated<boolean>;
   name: string;
   options_schema: Json | null;
   permissions: Json | null;
@@ -827,7 +831,6 @@ export interface TwistAdmin {
   auto_approve: Generated<boolean>;
   created_at: Generated<Timestamp>;
   id: Generated<Int8>;
-  priority_id: string | null;
   publisher_id: Int8 | null;
   twist_package_id: Generated<string>;
   updated_at: Generated<Timestamp>;
@@ -1139,7 +1142,6 @@ export interface UserActor {
   created_at: Timestamp | null;
   email: string | null;
   id: string | null;
-  min_depth: number | null;
   name: string | null;
   self: boolean | null;
   type: string | null;
@@ -1174,6 +1176,7 @@ export interface UserLink {
   actions: Json | null;
   assignee_id: string | null;
   author_id: string | null;
+  channel_id: string | null;
   created_at: Timestamp | null;
   created_by: string | null;
   id: string | null;
@@ -1217,6 +1220,26 @@ export interface UserNote {
   user_id: string | null;
 }
 
+export interface UserNoteRedacted {
+  access_contacts: string[] | null;
+  actions: Json | null;
+  archived_at: Timestamp | null;
+  author_id: string | null;
+  content: string | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  draft: boolean | null;
+  id: string | null;
+  mentions: string[] | null;
+  merged_from_thread_id: string | null;
+  re_note_id: string | null;
+  source_created_at: Timestamp | null;
+  thread_id: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+  user_id: string | null;
+}
+
 export interface UserNoteTags {
   archived_at: Timestamp | null;
   id: string | null;
@@ -1240,7 +1263,6 @@ export interface UserPriority {
   key: string | null;
   order: number | null;
   path: string | null;
-  personal: boolean | null;
   pomodoro: number | null;
   role: string | null;
   root: boolean | null;
@@ -1248,22 +1270,11 @@ export interface UserPriority {
   see_within_requests_set: boolean | null;
   see_within_updates: Json | null;
   see_within_updates_set: boolean | null;
-  team_id: Int8 | null;
   title: string | null;
   top_order: number | null;
   unread: boolean | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
-  user_id: string | null;
-}
-
-export interface UserPriorityActor {
-  actor_id: string | null;
-  archived_at: Timestamp | null;
-  created_at: Timestamp | null;
-  depth: number | null;
-  priority_path: string | null;
-  updated_at: Timestamp | null;
   user_id: string | null;
 }
 
@@ -1343,6 +1354,7 @@ export interface UserThread {
   contacts: string[] | null;
   created_at: Timestamp | null;
   draft: boolean | null;
+  has_embedding: boolean | null;
   icon: string | null;
   id: string | null;
   importance: number | null;
@@ -1404,11 +1416,13 @@ export interface UserTwist {
   default_mention_created: boolean | null;
   default_mention_mentioned: boolean | null;
   id: string | null;
+  is_builtin: boolean | null;
   is_source: boolean | null;
   key_option: string | null;
   link_types: Json | null;
   logo_url: string | null;
   logo_url_dark: string | null;
+  multiple_instances: boolean | null;
   name: string | null;
   options: Json | null;
   owner_id: string | null;
@@ -1449,7 +1463,6 @@ export interface DB {
   priority_setting: PrioritySetting;
   priority_setting_inherited: PrioritySettingInherited;
   priority_tags: PriorityTags;
-  priority_user: PriorityUser;
   publisher: Publisher;
   schedule: Schedule;
   schedule_contact: ScheduleContact;
@@ -1500,10 +1513,9 @@ export interface DB {
   "user.channel": UserChannel;
   "user.link": UserLink;
   "user.note": UserNote;
-  "user.note_redacted": UserNote;
+  "user.note_redacted": UserNoteRedacted;
   "user.note_tags": UserNoteTags;
   "user.priority": UserPriority;
-  "user.priority_actor": UserPriorityActor;
   "user.priority_expanded": UserPriorityExpanded;
   "user.priority_unread": UserPriorityUnread;
   "user.schedule": UserSchedule;

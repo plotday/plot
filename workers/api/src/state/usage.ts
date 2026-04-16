@@ -334,7 +334,7 @@ export class Usage extends DurableObject<Bindings> {
 
         await db
           .insertInto("thread_priority")
-          .values({ thread_id: activity.id, user_id: pt.owner_id, priority_id: helpPriority.id, matched: false })
+          .values({ thread_id: activity.id, user_id: pt.owner_id, priority_id: helpPriority.id })
           .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doNothing())
           .execute();
 
@@ -426,7 +426,7 @@ export class Usage extends DurableObject<Bindings> {
 
           await db
             .insertInto("thread_priority")
-            .values({ thread_id: activity.id, user_id: pt.owner_id, priority_id: helpPriority.id, matched: false })
+            .values({ thread_id: activity.id, user_id: pt.owner_id, priority_id: helpPriority.id })
             .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doNothing())
             .execute();
 

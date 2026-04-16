@@ -460,7 +460,7 @@ export async function updateThread(
       // Update thread_priority instead of thread.priority_id
       await plot.db
         .insertInto("thread_priority")
-        .values({ thread_id: activityId, user_id: userId, priority_id: targetPriorityId, matched: false })
+        .values({ thread_id: activityId, user_id: userId, priority_id: targetPriorityId })
         .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doUpdateSet({ priority_id: targetPriorityId }))
         .execute();
     }

@@ -122,6 +122,7 @@ export async function deployTwist({
   let providers: Array<{ provider: string; scopes: string[] }> = [];
   let optionsSchema: Record<string, unknown> | undefined;
   let isNoProviderConnector = false;
+  let multipleInstances = false;
   let sourceProvider: { provider?: string; scopes?: string[]; linkTypes?: any[]; handleReplies?: boolean; shared?: boolean; keyOption?: string } | null = null;
   let twistPackageId: string;
   try {
@@ -153,6 +154,7 @@ export async function deployTwist({
     permissions = storeResult.permissions;
     optionsSchema = storeResult.optionsSchema;
     const { aiRequired } = storeResult;
+    multipleInstances = storeResult.multipleInstances ?? false;
 
     // Store _ai_required in permissions for Flutter app access
     if (aiRequired) {
@@ -251,6 +253,7 @@ export async function deployTwist({
         key_option: sourceProvider?.keyOption ?? null,
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
+        multiple_instances: multipleInstances,
       })
       .where("id", "=", existingTwist.id)
       .returningAll()
@@ -277,6 +280,7 @@ export async function deployTwist({
         key_option: sourceProvider?.keyOption ?? null,
         logo_url: logoUrl ?? null,
         logo_url_dark: logoUrlDark ?? null,
+        multiple_instances: multipleInstances,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -383,6 +387,7 @@ export async function deployTwist({
             key_option: sourceProvider?.keyOption ?? null,
             logo_url: logoUrl ?? null,
             logo_url_dark: logoUrlDark ?? null,
+            multiple_instances: multipleInstances,
           })
           .onConflict((oc) =>
             oc.columns(["twist_admin_id", "environment"]).doUpdateSet({
@@ -396,6 +401,7 @@ export async function deployTwist({
               key_option: sourceProvider?.keyOption ?? null,
               logo_url: logoUrl ?? null,
               logo_url_dark: logoUrlDark ?? null,
+              multiple_instances: multipleInstances,
             })
           )
           .returningAll()

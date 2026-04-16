@@ -7,7 +7,6 @@ import type { Kysely } from "kysely";
 
 import type { DB } from "../../db-types";
 import { type TwistEnvironment, type Bindings } from "../../env";
-import { rpcUser } from "../../rpc";
 import { type LogSubscriptions } from "../../state/log-subscriptions";
 import { deployTwist } from "../deployment";
 import { generateTwist } from "../generator";
@@ -59,7 +58,7 @@ export class Twists extends Tool implements ITwists {
     // Try personal first
     let twistAdmin = await this.db
       .selectFrom("twist_admin")
-      .select(["priority_id", "user_id", "publisher_id"])
+      .select(["user_id", "publisher_id"])
       .where("twist_package_id", "=", twistPackageId)
       .where("user_id", "=", userId)
       .executeTakeFirst();
@@ -68,7 +67,7 @@ export class Twists extends Tool implements ITwists {
     if (!twistAdmin) {
       twistAdmin = await this.db
         .selectFrom("twist_admin")
-        .select(["priority_id", "user_id", "publisher_id"])
+        .select(["user_id", "publisher_id"])
         .where("twist_package_id", "=", twistPackageId)
         .where("user_id", "is", null)
         .executeTakeFirst();
@@ -78,20 +77,6 @@ export class Twists extends Tool implements ITwists {
       throw new Error(
         "Access denied: You do not have permission to access this twist"
       );
-    }
-
-    // Check if user can access the twist's priority (if it has one)
-    if (twistAdmin.priority_id) {
-      const hasAccess = await rpcUser(this.db, "has_priority_access", {
-        user_id: userId,
-        priority_id: twistAdmin.priority_id!,
-      });
-
-      if (!hasAccess) {
-        throw new Error(
-          "Access denied: You do not have permission to access this twist's priority"
-        );
-      }
     }
   }
 
@@ -119,7 +104,6 @@ export class Twists extends Tool implements ITwists {
         twist_package_id: twistPackageId,
         user_id: userId,
         publisher_id: null,
-        priority_id: null,
       })
       .execute();
 
