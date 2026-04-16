@@ -266,11 +266,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // Active tag toggles (when thread is visible)
       if (thread != null) ..._buildActiveTagToggles(context, thread),
 
+      // Todo toggle (when thread is visible)
+      if (thread != null) _buildTodoToggle(context, thread),
+
       // Edit thread (when thread is visible)
       if (thread != null) Button.icon(EditThread(thread)),
 
-      // Todo toggle (when thread is visible)
-      if (thread != null) _buildTodoToggle(context, thread),
+      // Share thread (when thread is visible)
+      if (thread != null) Button.icon(PickThreadShared(thread)),
 
       // New Thread button (multiPanel only, since bottom nav has it otherwise)
       if (layoutState.multiPanel && !state.context.isTwistDev)
@@ -283,6 +286,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // Windows window control padding
       if (resolvedToolbarPadding.right != 0)
         SizedBox(width: resolvedToolbarPadding.right),
+
+      // Keep suffixes non-empty so forui's _FRootHeader does not insert its
+      // 44 px empty-case placeholder — let the title row drive header height.
+      const SizedBox.shrink(),
     ];
 
     Widget header = FTheme(
@@ -363,6 +370,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                         style: context.theme.typography.sm.copyWith(
                           fontWeight: FontWeight.w600,
                           color: context.theme.colors.foreground,
+                          height: 1,
                         ),
                       ),
                     ),
@@ -571,7 +579,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [calendarIcon, todoIcon],
+      children: [todoIcon, calendarIcon],
     );
   }
 

@@ -521,7 +521,19 @@ class _ListTileState extends State<ListTile> {
                   color: context.theme.plotColors.muted,
                 );
               }
-              return customIcon;
+              // Provide an ambient IconTheme so any Icon/FaIcon inside the
+              // custom widget picks up the same muted/primary color used by
+              // the IconData fallback below. Custom icons that set their
+              // own color (e.g. avatars, logos) override this.
+              return IconTheme.merge(
+                data: IconThemeData(
+                  size: iconSize,
+                  color: widget.command?.on == true
+                      ? context.theme.colors.primary
+                      : context.theme.plotColors.muted,
+                ),
+                child: customIcon,
+              );
             }
 
             // Fall back to IconData icon

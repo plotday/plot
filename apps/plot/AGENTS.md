@@ -61,6 +61,7 @@ MUST use incremental migrations to preserve user data.
 - **Error handling**: Use nullable types and provide proper error states
 - **State management**: Use Flutter Bloc for state management. Use StatelessWidgets where possible, and StatefulWidgets only for local UI state. Use Bloc only in pages and commands, not widgets.
 - **UI**: Use forui widgets wherever possible. Only use `flutter/widgets.dart` and `forui/forui.dart` imports, but never `flutter/material.dart`.
+- **Modals & dialogs**: Always use the project's `Modal` widget (`lib/widget/modal.dart`) or a subclass of it (e.g. `ConfirmModal`, `FormModal`, `SelectModal`, `EditorLinkModal`). Never call `showFDialog` or `showDialog` directly and never render `FDialog` as the outermost modal — those bypass `ModalProvider`, so they render behind existing Plot modals and don't route through `Modal.handleCommandResult`. For yes/no confirmations, use `ConfirmModal(...).run(context)`.
 - **Commands**: Every user action affecting state is defined as a command in "apps/plot/libs/commands/".
 - **Documentation**: Include documentation comments for public APIs
 - **File structure**: Keep files focused on a single responsibility

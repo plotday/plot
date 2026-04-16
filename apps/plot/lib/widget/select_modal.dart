@@ -49,6 +49,7 @@ class SelectModal<T> extends Modal {
     required this.items,
     required this.itemBuilder,
     this.selectedValue,
+    this.title,
     this.prompt,
     this.subtitle,
     this.onSelect,
@@ -64,6 +65,7 @@ class SelectModal<T> extends Modal {
            items: items,
            itemBuilder: itemBuilder,
            selectedValue: selectedValue,
+           title: title,
            prompt: prompt,
            subtitle: subtitle,
            onSelect: onSelect,
@@ -85,6 +87,11 @@ class SelectModal<T> extends Modal {
 
   /// The currently selected value (will be highlighted in the list).
   final T? selectedValue;
+
+  /// Optional title rendered on the top row (same row as the back button when
+  /// nested). Useful when the modal is a confirmation or dialog whose primary
+  /// content is a question rather than a list of searchable items.
+  final String? title;
 
   /// The placeholder text for the search input.
   /// When null, displays a search icon with "Search..." placeholder.
@@ -127,6 +134,7 @@ class SelectModal<T> extends Modal {
     required Future<List<SelectGroup<T>>> Function(String? search) items,
     required Widget Function(T, bool isLoading) itemBuilder,
     T? selectedValue,
+    String? title,
     String? prompt,
     String? subtitle,
     Future<bool> Function(BuildContext context, T item, String searchText)?
@@ -153,6 +161,7 @@ class SelectModal<T> extends Modal {
       items: items,
       itemBuilder: itemBuilder,
       selectedValue: selectedValue,
+      title: title,
       prompt: prompt,
       subtitle: subtitle,
       onSelect: onSelect,
@@ -172,6 +181,7 @@ class _SelectModal<T> extends StatefulWidget {
     required this.items,
     required this.itemBuilder,
     this.selectedValue,
+    this.title,
     this.prompt,
     this.subtitle,
     this.onSelect,
@@ -185,6 +195,7 @@ class _SelectModal<T> extends StatefulWidget {
   final Future<List<SelectGroup<T>>> Function(String? search) items;
   final Widget Function(T, bool isLoading) itemBuilder;
   final T? selectedValue;
+  final String? title;
   final String? prompt;
   final String? subtitle;
   final Future<bool> Function(BuildContext context, T item, String searchText)?
@@ -768,19 +779,39 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                               context,
                             ).modalStackNotifier,
                             builder: (context, stackLength, _) {
-                              if (stackLength <= 1) {
+                              final nested = stackLength > 1;
+                              if (!nested && widget.title == null) {
                                 return const SizedBox.shrink();
                               }
-                              return Container(
+                              return Padding(
                                 padding: context.theme.spacing.paddingSm,
-                                alignment: Alignment.centerLeft,
-                                child: FButton.icon(
-                                  variant: FButtonVariant.ghost,
-                                  onPress: _cancel,
-                                  child: Icon(
-                                    PlotIcon.left,
-                                    size: context.theme.iconSizes.sm,
-                                  ),
+                                child: Row(
+                                  children: [
+                                    if (nested)
+                                      FButton.icon(
+                                        variant: FButtonVariant.ghost,
+                                        onPress: _cancel,
+                                        child: Icon(
+                                          PlotIcon.left,
+                                          size: context.theme.iconSizes.sm,
+                                        ),
+                                      ),
+                                    if (widget.title != null) ...[
+                                      if (nested)
+                                        SizedBox(
+                                          width: context.theme.spacing.sm,
+                                        ),
+                                      Expanded(
+                                        child: Text(
+                                          widget.title!,
+                                          style: context.theme.typography.md
+                                              .copyWith(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               );
                             },
@@ -790,12 +821,24 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                     ),
                   if (widget.subtitle != null)
                     Padding(
-                      padding: context.theme.spacing.paddingSm,
-                      child: Text(
-                        widget.subtitle!,
-                        style: TextStyle(
-                          color: context.theme.colors.mutedForeground,
-                          fontSize: context.theme.typography.sm.fontSize,
+                      // Left padding = 20 so the subtitle lines up with
+                      // ListTile's default content indent (see ListTile's
+                      // leading SizedBox width default).
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        context.theme.spacing.sm,
+                        context.theme.spacing.lg,
+                        context.theme.spacing.sm,
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          widget.subtitle!,
+                          textAlign: TextAlign.start,
+                          style: TextStyle(
+                            color: context.theme.colors.mutedForeground,
+                            fontSize: context.theme.typography.sm.fontSize,
+                          ),
                         ),
                       ),
                     ),

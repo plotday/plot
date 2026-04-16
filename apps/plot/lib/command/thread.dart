@@ -10,6 +10,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
 import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
@@ -1660,8 +1661,9 @@ class MoveThreadToPriority extends ShowCommands {
 
   static Future<Commands> _getMoveCommands(Thread thread) async {
     final priorities = await Priority.get(order: PriorityOrder.recent);
-    final filteredPriorities =
-        priorities.where((p) => p.id != thread.priority.id).toList();
+    final filteredPriorities = priorities
+        .where((p) => p.id != thread.priority.id)
+        .toList();
 
     return Commands(
       prompt: 'Move thread to priority',
@@ -2050,6 +2052,18 @@ class PickThreadShared extends ShowCommands {
 
   final Thread thread;
 
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    final iconData = icon;
+    if (iconData == null) return null;
+    final count = _sharedCount(thread);
+    if (count < 2) return null;
+    return CountBadge(
+      count: count,
+      child: FaIcon(iconData, size: context.theme.iconSizes.base),
+    );
+  }
+
   static Future<Commands> _getSharedCommands(Thread thread) async {
     final fresh = await Thread.getOne(thread.id);
     return _buildSharedCommands(fresh, onUpdate: null);
@@ -2117,20 +2131,53 @@ bool _hasOtherShared(Thread thread) {
   return thread.contacts.any((id) => !selfUuids.contains(id));
 }
 
+int _sharedCount(Thread thread) {
+  final selfUuids = Actor.getCurrentUserActorIds()
+      .map((a) => a.toUuid())
+      .toSet();
+  final others = thread.contacts.where((id) => !selfUuids.contains(id)).length;
+  // The current user always counts as one, whether or not they appear in
+  // thread.contacts (legacy threads may not include self).
+  return 1 + others + thread.inviteEmails.length;
+}
+
 Future<Commands> _buildSharedCommands(
   Thread thread, {
   required Future<void> Function(Thread)? onUpdate,
 }) async {
-  // Resolve shared actors (excluding self).
+  // Resolve shared actors, deduping by actor id so a user with multiple
+  // linked contacts doesn't appear twice.
   final sharedActors = <Actor>[];
+  final seenActorIds = <ActorId>{};
   for (final contactId in thread.contacts) {
     try {
       final actor = await Actor.getOne(ActorId.fromUuid(contactId));
-      if (!actor.self) sharedActors.add(actor);
+      if (seenActorIds.add(actor.id)) sharedActors.add(actor);
     } catch (_) {
       // Skip contacts whose actors can't be resolved
     }
   }
+
+  // Self should always appear in the shared list. If not already present
+  // (legacy threads, or thread authored before self was added), prepend.
+  final selfIndex = sharedActors.indexWhere((a) => a.self);
+  if (selfIndex < 0) {
+    final selfIds = Actor.getCurrentUserActorIds();
+    if (selfIds.isNotEmpty) {
+      try {
+        final selfActor = await Actor.getOne(selfIds.first);
+        sharedActors.insert(0, selfActor);
+        seenActorIds.add(selfActor.id);
+      } catch (_) {
+        // No self actor available, skip
+      }
+    }
+  } else if (selfIndex > 0) {
+    // Move self to the top so the current user is always listed first.
+    final self = sharedActors.removeAt(selfIndex);
+    sharedActors.insert(0, self);
+  }
+
   final sharedActorIds = sharedActors.map((a) => a.id).toList();
 
   Command toggleActor(Actor actor) => onUpdate != null
@@ -2204,19 +2251,57 @@ class _ThreadShareContactsGroup extends CommandGroup {
   }
 }
 
+/// Gatekeeps self-removal from a shared thread.
+///
+/// Returns a [CommandReturn] the caller should return immediately (to block
+/// or cancel the removal), or null to proceed.
+Future<CommandReturn?> _checkSelfRemoval(
+  BuildContext context,
+  Thread thread,
+) async {
+  if (!_hasOtherShared(thread)) {
+    return CommandMessage(
+      'Add someone else before removing yourself.',
+      isError: true,
+    );
+  }
+  if (!context.mounted) return const CommandSkipped();
+  final confirmed = await ConfirmModal(
+    title: 'Remove yourself from this thread?',
+    message: "You won't be able to access it anymore.",
+    confirmLabel: 'Remove',
+    destructive: true,
+  ).run(context);
+  if (!confirmed) return const CommandSkipped();
+  return null;
+}
+
+/// Removes all of the current user's linked contacts from [thread.contacts].
+List<Uuid> _contactsWithoutSelf(Thread thread) {
+  final selfUuids = Actor.getCurrentUserActorIds()
+      .map((a) => a.toUuid())
+      .toSet();
+  return thread.contacts.where((id) => !selfUuids.contains(id)).toList();
+}
+
+/// Whether [actor] is currently effectively shared on [thread]. Self is
+/// always treated as shared so they appear fully added in the modal — the
+/// actual [thread.contacts] row is only mutated when self-removal is
+/// explicitly confirmed.
+bool _actorShared(Thread thread, Actor actor) =>
+    actor.self || thread.contacts.contains(actor.id.toUuid());
+
 class ShareThreadActor extends Command {
   ShareThreadActor(this.thread, this.actor)
-    : _isShared = thread.contacts.contains(actor.id.toUuid()),
+    : _isShared = _actorShared(thread, actor),
       super(
         title: actor.nameOrEmail,
         eventObject: EventObject.activity,
-        eventAction: thread.contacts.contains(actor.id.toUuid())
+        eventAction: _actorShared(thread, actor)
             ? EventAction.updated
             : EventAction.shared,
-        icon: thread.contacts.contains(actor.id.toUuid())
-            ? PlotIcon.user
-            : PlotIcon.shareAdd,
-        on: thread.contacts.contains(actor.id.toUuid()),
+        icon: _actorShared(thread, actor) ? PlotIcon.user : PlotIcon.shareAdd,
+        on: _actorShared(thread, actor),
       );
 
   final Thread thread;
@@ -2229,6 +2314,14 @@ class ShareThreadActor extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
+      if (actor.self) {
+        final blocker = await _checkSelfRemoval(context, thread);
+        if (blocker != null) return blocker;
+        await thread
+            .copyWith(contacts: Value(_contactsWithoutSelf(thread)))
+            .save();
+        return const CommandRefresh();
+      }
       final contactUuid = actor.id.toUuid();
       final newContacts = _isShared
           ? thread.contacts.where((id) => id != contactUuid).toList()
@@ -2244,17 +2337,15 @@ class ShareThreadActor extends Command {
 
 class _ShareDraftThreadActor extends Command {
   _ShareDraftThreadActor(this.thread, this.actor, {required this.onUpdate})
-    : _isShared = thread.contacts.contains(actor.id.toUuid()),
+    : _isShared = _actorShared(thread, actor),
       super(
         title: actor.nameOrEmail,
         eventObject: EventObject.activity,
-        eventAction: thread.contacts.contains(actor.id.toUuid())
+        eventAction: _actorShared(thread, actor)
             ? EventAction.updated
             : EventAction.shared,
-        icon: thread.contacts.contains(actor.id.toUuid())
-            ? PlotIcon.user
-            : PlotIcon.shareAdd,
-        on: thread.contacts.contains(actor.id.toUuid()),
+        icon: _actorShared(thread, actor) ? PlotIcon.user : PlotIcon.shareAdd,
+        on: _actorShared(thread, actor),
       );
 
   final Thread thread;
@@ -2268,6 +2359,14 @@ class _ShareDraftThreadActor extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
+      if (actor.self) {
+        final blocker = await _checkSelfRemoval(context, thread);
+        if (blocker != null) return blocker;
+        await onUpdate(
+          thread.copyWith(contacts: Value(_contactsWithoutSelf(thread))),
+        );
+        return const CommandRefresh();
+      }
       final contactUuid = actor.id.toUuid();
       final newContacts = _isShared
           ? thread.contacts.where((id) => id != contactUuid).toList()
@@ -2622,8 +2721,7 @@ List<Command> threadCommands(
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
-    if (!skipInfrequent)
-      ToggleThreadPrivate(thread),
+    if (!skipInfrequent) ToggleThreadPrivate(thread),
     if (!hideArchive) ArchiveThread(thread),
   ];
 }

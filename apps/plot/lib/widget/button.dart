@@ -165,31 +165,32 @@ class _ButtonState extends State<Button> {
             ButtonStyle.ghost => context.theme.buttonStyles.ghost,
           }).md.iconContentStyle.padding.resolve(TextDirection.ltr).left;
 
+          Widget? iconChild;
+          if (customIcon != null) {
+            iconChild = customIcon;
+          } else if (icon != null) {
+            iconChild = FaIcon(icon, size: iconSize);
+          }
+
           return widget.iconOnly
               ? FButton.icon(
                   variant: variant,
                   style: styleDelta,
                   onPress: onPress,
-                  child: customIcon ??
-                      (icon != null
-                          ? SizedBox(
-                              width: iconSize + iconPadH * 2,
-                              height: iconSize,
-                              child: Center(
-                                child: FaIcon(
-                                  icon,
-                                  size: iconSize,
-                                ),
+                  child: iconChild != null
+                      ? SizedBox(
+                          width: iconSize + iconPadH * 2,
+                          height: iconSize,
+                          child: Center(child: iconChild),
+                        )
+                      : (widget.command.buildBody(context) ??
+                            Text(
+                              widget.command.title,
+                              style: context.theme.typography.md.copyWith(
+                                height: 1,
+                                textBaseline: TextBaseline.ideographic,
                               ),
-                            )
-                          : (widget.command.buildBody(context) ??
-                                Text(
-                                  widget.command.title,
-                                  style: context.theme.typography.md.copyWith(
-                                    height: 1,
-                                    textBaseline: TextBaseline.ideographic,
-                                  ),
-                                ))),
+                            )),
                 )
               : FButton(
                   variant: variant,
