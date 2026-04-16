@@ -226,8 +226,16 @@ class MentionItem {
   });
 
   /// Create from a TwistInstance
-  factory MentionItem.fromTwist(TwistInstance twist) =>
-      MentionItem(id: twist.id.toString(), name: twist.name, isTwist: true);
+  factory MentionItem.fromTwist(
+    TwistInstance twist, {
+    required List<TwistInstance> allInstances,
+    String? teamName,
+  }) =>
+      MentionItem(
+        id: twist.id.toString(),
+        name: twist.displayName(allInstances: allInstances, teamName: teamName),
+        isTwist: true,
+      );
 
   /// Create from an Actor
   factory MentionItem.fromActor(Actor actor) => MentionItem(
@@ -1118,7 +1126,11 @@ class EditorState extends State<Editor> {
     // Twists first, then actors (excluding actors that are already represented by twists)
     final twistActorIds = mentionableTwists.map((t) => t.id.toString()).toSet();
     return [
-      ...mentionableTwists.map(MentionItem.fromTwist),
+      ...mentionableTwists.map((twist) => MentionItem.fromTwist(
+        twist,
+        allInstances: widget.twists,
+        teamName: null,
+      )),
       ...widget.actors
           .where((actor) => !twistActorIds.contains(actor.id.toString()))
           .map(MentionItem.fromActor),

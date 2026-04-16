@@ -233,6 +233,38 @@ class TwistInstance extends TwistInstanceRow {
     }
   }
 
+  /// Returns the display name for this twist instance.
+  ///
+  /// For single-instance twists, if the user has the same twist (same [twistId])
+  /// installed in multiple scopes (e.g. Personal + a team), appends a scope
+  /// suffix so the user can distinguish them:
+  ///   - Personal scope → "Claude (Personal)"
+  ///   - Team scope     → "Claude (Acme)"
+  ///
+  /// [allInstances] should be all active, non-archived TwistInstance rows for
+  /// the current user. [teamName] is the display name of the team that owns
+  /// this instance (null for personal).
+  String displayName({
+    required List<TwistInstance> allInstances,
+    String? teamName,
+  }) {
+    // Multi-instance twists always use their configured name as-is
+    if (multipleInstances) return name;
+
+    // Check if any sibling instance shares the same twist package
+    final hasSibling = allInstances.any(
+      (other) =>
+          other.id != id &&
+          other.twistId == twistId &&
+          other.archivedAt == null,
+    );
+
+    if (!hasSibling) return name;
+
+    final scopeLabel = teamId == null ? 'Personal' : (teamName ?? 'Team');
+    return '$name ($scopeLabel)';
+  }
+
   Future<void> save() async {
     await Store.get.save(
       table,

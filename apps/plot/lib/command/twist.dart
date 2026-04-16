@@ -1700,8 +1700,19 @@ class ManageTwists extends ShowCommands {
         .toList();
     final twistOnlyAvailable = allTwists.where((t) => !t.isSource).toList();
 
-    final editCommands =
-        twistOnlyTwistInstances.map((twist) => EditTwist(twist)).toList();
+    final teams = usage?.teams ?? [];
+    final editCommands = twistOnlyTwistInstances.map((twist) {
+      final teamName = twist.teamId != null
+          ? teams.firstWhereOrNull((t) => t.id == twist.teamId.toString())?.name
+          : null;
+      return EditTwist(
+        twist,
+        displayName: twist.displayName(
+          allInstances: twistOnlyTwistInstances,
+          teamName: teamName,
+        ),
+      );
+    }).toList();
 
     // Sort active twists by name, then environment
     editCommands.sort((a, b) {
@@ -1717,8 +1728,6 @@ class ManageTwists extends ShowCommands {
         b.twistInstance.twistEnvironment,
       );
     });
-
-    final teams = usage?.teams ?? [];
     final addCommands = twistOnlyAvailable
         .where((twist) => !_isFullyInstalled(twist, twistOnlyTwistInstances, teams))
         .map((twist) => ShowTwistInfo(twist))
@@ -1754,9 +1763,9 @@ class ManageTwists extends ShowCommands {
 // ============================================================================
 
 class EditTwist extends ShowForm {
-  EditTwist(this.twistInstance)
+  EditTwist(this.twistInstance, {String? displayName})
     : super(
-        title: twistInstance.name,
+        title: displayName ?? twistInstance.name,
         icon: PlotIcon.settings,
         form: (context) => _buildForm(context, twistInstance),
       );

@@ -1003,7 +1003,7 @@ class NoteEditorState extends State<NoteEditor> {
                 LogoImage(url: logoUrl, size: 14)
               else
                 Icon(PlotIcon.twist, size: 14),
-              Text(twist.name),
+              Text(twist.displayName(allInstances: twists, teamName: null)),
             ],
           ),
         );
@@ -1059,7 +1059,7 @@ class NoteEditorState extends State<NoteEditor> {
                 LogoImage(url: logoUrl, size: 14)
               else
                 Icon(PlotIcon.twist, size: 14),
-              Text(twist.name),
+              Text(twist.displayName(allInstances: twists, teamName: null)),
             ],
           ),
         );
