@@ -22,6 +22,7 @@ class TwistInstances extends Table
   BoolColumn get defaultMentionMentioned => boolean().withDefault(const Constant(false))();
   BoolColumn get userConnected => boolean().withDefault(const Constant(false))();
   BoolColumn get isBuiltin => boolean().withDefault(const Constant(false))();
+  BoolColumn get multipleInstances => boolean().withDefault(const Constant(false))();
 }
 
 class TwistInstancesBase extends BaseTable {
@@ -211,6 +212,7 @@ class TwistInstance extends TwistInstanceRow {
         defaultMentionMentioned: row.defaultMentionMentioned,
         userConnected: row.userConnected,
         isBuiltin: row.isBuiltin,
+        multipleInstances: row.multipleInstances,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         archivedAt: row.archivedAt,

@@ -2025,7 +2025,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 306;
+  int get schemaVersion => 307;
 
   @override
   MigrationStrategy get migration {
@@ -2790,6 +2790,9 @@ class Store extends _$Store {
       );
       // Remove minDepth column from actors (was priority-scoped depth)
       await m.alterTable(TableMigration(actors));
+    }
+    if (from < 307) {
+      await m.addColumn(twistInstances, twistInstances.multipleInstances);
     }
   }
 
