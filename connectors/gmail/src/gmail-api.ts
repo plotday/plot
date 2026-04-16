@@ -229,14 +229,16 @@ export class GmailApi {
       messagesAdded?: Array<{ message: GmailMessage }>;
       messagesDeleted?: Array<{ message: { id: string } }>;
       labelsAdded?: Array<{ message: GmailMessage }>;
-      labelsRemoved?: Array<{ message: { id: string } }>;
+      labelsRemoved?: Array<{ message: GmailMessage }>;
     }>;
     historyId: string;
     nextPageToken?: string;
   }> {
     const params: any = {
       startHistoryId,
-      historyTypes: ["messageAdded", "messageDeleted"],
+      // Include label changes so starring (STARRED) or archiving (INBOX)
+      // triggers a re-sync of the thread, not just new/deleted messages.
+      historyTypes: ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"],
     };
 
     if (labelId) {
@@ -624,6 +626,14 @@ async function syncGmailChannelIncremental(
     }
     for (const deleted of entry.messagesDeleted ?? []) {
       // Deleted messages only have id, not threadId — skip
+    }
+    // Label changes (STARRED add/remove, INBOX add/remove for archive, etc.)
+    // carry the message's threadId so we can refetch the thread's current state.
+    for (const labeled of entry.labelsAdded ?? []) {
+      if (labeled.message.threadId) changedThreadIds.add(labeled.message.threadId);
+    }
+    for (const labeled of entry.labelsRemoved ?? []) {
+      if (labeled.message.threadId) changedThreadIds.add(labeled.message.threadId);
     }
   }
 

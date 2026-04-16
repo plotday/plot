@@ -483,23 +483,22 @@ export class Gmail extends Connector<Gmail> {
 
         const wasStarred = await this.get<boolean>(`starred:${thread.id}`);
 
+        // Echo suppression relies entirely on the `starred` state: when
+        // Plot→Gmail writes STARRED, onThreadToDo/onLinkUpdated update this
+        // state *before* the API call. The resulting Gmail webhook sees
+        // isStarred === wasStarred and this branch doesn't run.
         if (isStarred !== !!wasStarred) {
-          // Skip if this change originated from Plot todo writeback
-          if (await this.get(`skip_star_sync:${thread.id}`)) {
-            await this.clear(`skip_star_sync:${thread.id}`);
-          } else {
-            const actorId = await this.get<ActorId>("auth_actor_id");
-            // Use the canonical Gmail thread URL as the source identifier
-            const sourceUrl = `https://mail.google.com/mail/u/0/#inbox/${thread.id}`;
-            if (actorId) {
-              await this.tools.integrations.setThreadToDo(
-                sourceUrl,
-                actorId,
-                isStarred
-              );
-              // Prevent the onThreadToDo callback from echoing back
-              await this.set(`skip_todo_writeback:${thread.id}`, true);
-            }
+          const actorId = await this.get<ActorId>("auth_actor_id");
+          // Use the canonical Gmail thread URL as the source identifier
+          const sourceUrl = `https://mail.google.com/mail/u/0/#inbox/${thread.id}`;
+          if (actorId) {
+            await this.tools.integrations.setThreadToDo(
+              sourceUrl,
+              actorId,
+              isStarred
+            );
+            // Prevent the onThreadToDo callback from echoing back
+            await this.set(`skip_todo_writeback:${thread.id}`, true);
           }
           await this.set(`starred:${thread.id}`, isStarred);
         }
@@ -645,6 +644,10 @@ export class Gmail extends Connector<Gmail> {
       return;
     }
 
+    // Update local state BEFORE calling Gmail, so the webhook fired by our
+    // own write sees isStarred === wasStarred and doesn't re-propagate.
+    await this.set(`starred:${threadId}`, todo);
+
     const api = await this.getApi(channelId);
     if (todo) {
       // Add STARRED, and re-add INBOX so an archived email returns to the
@@ -653,11 +656,6 @@ export class Gmail extends Connector<Gmail> {
     } else {
       await api.modifyThread(threadId, undefined, ["STARRED"]);
     }
-
-    // Prevent the Gmail webhook from echoing this change back
-    await this.set(`skip_star_sync:${threadId}`, true);
-    // Update local state to match
-    await this.set(`starred:${threadId}`, todo);
   }
 
   async onLinkUpdated(link: Link): Promise<void> {
@@ -674,6 +672,11 @@ export class Gmail extends Connector<Gmail> {
     }
 
     const status = link.status;
+
+    // Update local state BEFORE calling Gmail, so the webhook fired by our
+    // own write sees isStarred === wasStarred and doesn't re-propagate.
+    await this.set(`starred:${threadId}`, status === "starred");
+
     const api = await this.getApi(channelId);
 
     if (status === "starred") {
@@ -685,11 +688,6 @@ export class Gmail extends Connector<Gmail> {
       // Back to inbox, unstar.
       await api.modifyThread(threadId, ["INBOX"], ["STARRED"]);
     }
-
-    // Prevent the Gmail webhook from echoing this change back
-    await this.set(`skip_star_sync:${threadId}`, true);
-    // Update local state to match
-    await this.set(`starred:${threadId}`, status === "starred");
   }
 
   async onGmailWebhook(
@@ -739,9 +737,20 @@ export class Gmail extends Connector<Gmail> {
 
     // Don't interrupt an in-progress full sync (has pageToken for pagination).
     // The full sync will pick up any new changes when it completes.
+    //
+    // If the full sync is stale (hasn't advanced in 10 minutes), treat it as
+    // stuck and overwrite with incremental state. Otherwise a crashed or
+    // abandoned batch blocks every subsequent webhook indefinitely.
     const existingState = await this.get<SyncState>(`sync_state_${channelId}`);
     if (existingState?.pageToken) {
-      return;
+      const lastAdvance = existingState.lastSyncTime
+        ? new Date(existingState.lastSyncTime).getTime()
+        : 0;
+      const stale = Date.now() - lastAdvance > 10 * 60 * 1000;
+      if (!stale) return;
+      console.warn(
+        `Gmail full sync appears stuck on channel ${channelId} (lastSyncTime=${existingState.lastSyncTime}) — switching to incremental`
+      );
     }
 
     // Use the stored historyId from the last sync if available, falling back
