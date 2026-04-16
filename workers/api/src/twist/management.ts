@@ -223,6 +223,7 @@ export async function add(
         )
         .where("name", "=", name)
         .where("archived_at", "is", null)
+        .where("draft", "=", false)
         .executeTakeFirst();
       if (existingTwist) {
         throw new Error(

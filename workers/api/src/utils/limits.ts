@@ -77,6 +77,8 @@ export class PlanLimitError extends Error {
 }
 
 export class SingleInstanceError extends Error {
+  readonly scope: "personal" | "team";
+
   constructor(scope: "personal" | "team") {
     super(
       scope === "team"
@@ -84,6 +86,15 @@ export class SingleInstanceError extends Error {
         : "This twist is already active in your personal workspace."
     );
     this.name = "SingleInstanceError";
+    this.scope = scope;
+  }
+
+  toJSON() {
+    return {
+      message: this.message,
+      code: "single_instance_conflict",
+      scope: this.scope,
+    };
   }
 }
 
