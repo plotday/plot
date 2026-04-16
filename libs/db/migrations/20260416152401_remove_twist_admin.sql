@@ -445,8 +445,11 @@ ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- Phase 12: Mint publisher token for Plot (CI deploy token).
--- Raw token is surfaced via RAISE NOTICE so the operator can capture it
--- during the migration run.
+-- The raw token is stored in token.token for retrieval via direct DB query
+-- after the migration runs:
+--   SELECT token FROM token
+--   WHERE name = 'Plot Publisher (CI)' AND archived_at IS NULL;
+-- It is intentionally NOT surfaced via RAISE NOTICE to keep it out of CI logs.
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -478,7 +481,7 @@ BEGIN
     INSERT INTO token (publisher_id, token, name)
     VALUES (v_plot_id, v_token, 'Plot Publisher (CI)');
 
-    RAISE NOTICE 'PLOT_PUBLISHER_TOKEN=%', v_token;
+    RAISE NOTICE 'Plot publisher CI token minted; retrieve via SELECT on token table';
 END $$;
 
 -- ---------------------------------------------------------------------------
