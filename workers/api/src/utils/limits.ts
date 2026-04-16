@@ -76,6 +76,17 @@ export class PlanLimitError extends Error {
   }
 }
 
+export class SingleInstanceError extends Error {
+  constructor(scope: "personal" | "team") {
+    super(
+      scope === "team"
+        ? "This twist is already active for this team."
+        : "This twist is already active in your personal workspace."
+    );
+    this.name = "SingleInstanceError";
+  }
+}
+
 /**
  * Count personal connections: DISTINCT (twist_instance_id, provider, actor_id)
  * tuples where the connection belongs to a twist_instance owned by this

@@ -1,12 +1,11 @@
-import { sql, type Kysely } from "kysely";
-import type { Uuid } from "@plotday/twister/plot";
+import { type Kysely } from "kysely";
 
 import type { twistFactory } from ".";
 import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
 import { rpc } from "../rpc";
 import { createLogger } from "@plotday/worker-util";
-import { BUILTIN_TWIST_PACKAGE_ID, checkTwistLimit } from "../utils/limits";
+import { BUILTIN_TWIST_PACKAGE_ID, checkTwistLimit, SingleInstanceError } from "../utils/limits";
 import { getEffectivePlan } from "../utils/plan";
 
 /**
@@ -90,7 +89,6 @@ async function cleanupFailedInstallation(
 export async function add(
   db: Kysely<DB>,
   userId: string,
-  priority_id: string,
   twist_id: number,
   twist_environment: TwistEnvironment,
   name?: string,
@@ -102,9 +100,6 @@ export async function add(
   team_id?: string | null
 ) {
   try {
-    if (!priority_id || typeof priority_id !== "string") {
-      throw new Error("priority_id is required and must be a string");
-    }
     if (twist_id === undefined || twist_id === null || typeof twist_id !== "number") {
       throw new Error("twist_id is required and must be a number");
     }
@@ -115,12 +110,11 @@ export async function add(
     // Verify user has access to this twist
     const hasAccess = await rpc(db, "is_accessible_twist", {
       p_twist_id: twist_id,
-      p_priority_id: priority_id,
       p_user_id: userId,
     });
     if (!hasAccess) {
       throw new Error(
-        `You do not have access to twist ${twist_id} for this priority`
+        `You do not have access to twist ${twist_id}`
       );
     }
 
@@ -153,7 +147,7 @@ export async function add(
     // Check if twist requires AI and user has it disabled
     const twistRecord = await db
       .selectFrom("twist")
-      .select(["permissions", "is_source"])
+      .select(["permissions", "is_source", "multiple_instances", "twist_admin_id"])
       .where("id", "=", String(twist_id))
       .executeTakeFirst();
 
@@ -194,10 +188,32 @@ export async function add(
       }
     }
 
-    // Twists are workspace-level: name uniqueness is per owner (personal)
-    // or per team for team-owned twists. Sources (connectors) are exempt
-    // because users can add multiple connections from the same connector.
-    if (twistRecord?.is_source !== true) {
+    // Single-instance enforcement and name handling
+    if (twistRecord?.multiple_instances === false && twistRecord?.is_source !== true) {
+      // For single-instance twists, always use the package name
+      name = twistName;
+
+      // Check for existing active instance in the same scope (same package, same scope)
+      const existingInstance = await db
+        .selectFrom("twist_instance")
+        .innerJoin("twist as t2", "t2.id", "twist_instance.twist_id")
+        .select("twist_instance.id")
+        .where("t2.twist_admin_id", "=", twistRecord.twist_admin_id)
+        .where("twist_instance.archived_at", "is", null)
+        .where("twist_instance.draft", "=", false)
+        .$if(team_id != null, (qb) => qb.where("twist_instance.team_id", "=", team_id!))
+        .$if(team_id == null, (qb) =>
+          qb.where("twist_instance.owner_id", "=", userId).where("twist_instance.team_id", "is", null)
+        )
+        .executeTakeFirst();
+
+      if (existingInstance) {
+        throw new SingleInstanceError(team_id ? "team" : "personal");
+      }
+    }
+
+    // Name uniqueness — only for multi-instance twists (single-instance always uses package name)
+    if (twistRecord?.is_source !== true && twistRecord?.multiple_instances !== false) {
       const existingTwist = await db
         .selectFrom("twist_instance")
         .select(["id"])
@@ -253,7 +269,7 @@ export async function add(
           .where("user_id", "=", userId)
           .executeTakeFirst();
 
-        await twistWrapper.activate({ id: priority_id as Uuid }, {
+        await twistWrapper.activate({
           actor: {
             id: actorContact?.id ?? userId,
             type: 0 /* ActorType.User */,
@@ -293,7 +309,7 @@ export async function add(
 
     return twistInstance;
   } catch (error) {
-    const logger = createLogger({ twist_id: String(twist_id), environment: twist_environment, priority_id });
+    const logger = createLogger({ twist_id: String(twist_id), environment: twist_environment });
     logger.error("Error adding twist", error as Error);
     throw error;
   }
@@ -304,22 +320,7 @@ export async function getAll(
   userId: string
 ) {
   try {
-    // Query twists the user has access to install. The legacy
-    // get_accessible_twists RPC still takes a priority_id for access
-    // scoping; pass the user's root priority as a stable anchor since
-    // twists are now workspace-level.
-    const rootPriority = await db
-      .selectFrom("priority")
-      .select("id")
-      .where("user_id", "=", userId)
-      .where("archived_at", "is", null)
-      .orderBy(sql`nlevel(path)`, "asc")
-      .orderBy("created_at", "asc")
-      .limit(1)
-      .executeTakeFirstOrThrow();
-
     const data = await rpc(db, "get_accessible_twists", {
-      p_priority_id: rootPriority.id,
       p_user_id: userId,
     });
 
@@ -459,6 +460,66 @@ export async function getByPriority(
     return data;
   } catch (error) {
     const logger = createLogger({ priority_id });
+    logger.error("Error fetching twists", error as Error);
+    throw error;
+  }
+}
+
+/**
+ * Returns active twist_instances accessible to the given user.
+ * If teamId is provided, returns only twists for that team.
+ * Otherwise returns personal twists + twists for all teams the user belongs to.
+ */
+export async function getByFilter(
+  db: Kysely<DB>,
+  userId: string,
+  teamId?: string
+) {
+  try {
+    let query = db
+      .selectFrom("priority_child_twist")
+      .leftJoin("twist", "twist.id", "priority_child_twist.twist_id")
+      .select([
+        "priority_child_twist.id",
+        "priority_child_twist.twist_id",
+        "priority_child_twist.name",
+        "priority_child_twist.owner_id",
+        "priority_child_twist.options",
+        "priority_child_twist.archived_at",
+        "priority_child_twist.created_at",
+        "priority_child_twist.updated_at",
+        "priority_child_twist.twist_environment",
+        "priority_child_twist.is_source",
+        "priority_child_twist.version",
+        "priority_child_twist.author_name",
+        "priority_child_twist.author_email",
+        "priority_child_twist.author_url",
+        "twist.permissions",
+        "twist.options_schema",
+      ])
+      .where("priority_child_twist.archived_at", "is", null);
+
+    if (teamId) {
+      query = query.where("priority_child_twist.team_id", "=", BigInt(teamId) as any);
+    } else {
+      query = query.where((eb) =>
+        eb.or([
+          eb.and([
+            eb("priority_child_twist.owner_id", "=", userId),
+            eb("priority_child_twist.team_id", "is", null),
+          ]),
+          eb(
+            "priority_child_twist.team_id",
+            "in",
+            eb.selectFrom("team_user").select("team_id").where("user_id", "=", userId)
+          ),
+        ])
+      );
+    }
+
+    return await query.execute();
+  } catch (error) {
+    const logger = createLogger({ user_id: userId, team_id: teamId });
     logger.error("Error fetching twists", error as Error);
     throw error;
   }
@@ -763,7 +824,7 @@ export async function activateDraft(
   // Check if twist requires AI and user has it disabled
   const twistRecord = await db
     .selectFrom("twist")
-    .select(["permissions", "is_source"])
+    .select(["permissions", "is_source", "multiple_instances", "twist_admin_id", "name"])
     .where("id", "=", String(draft.twist_id))
     .executeTakeFirst();
 
@@ -804,8 +865,33 @@ export async function activateDraft(
     }
   }
 
-  // Name uniqueness per owner (sources exempt — multiple connections allowed)
-  if (twistRecord?.is_source !== true) {
+  // Single-instance enforcement and name override
+  if (twistRecord?.multiple_instances === false && twistRecord?.is_source !== true) {
+    // Always use package name for single-instance twists
+    name = twistRecord.name;
+
+    // Check for existing active instance in the same scope (excluding the draft itself)
+    const existingInstance = await db
+      .selectFrom("twist_instance")
+      .innerJoin("twist as t2", "t2.id", "twist_instance.twist_id")
+      .select("twist_instance.id")
+      .where("t2.twist_admin_id", "=", twistRecord.twist_admin_id)
+      .where("twist_instance.id", "!=", draftId)
+      .where("twist_instance.archived_at", "is", null)
+      .where("twist_instance.draft", "=", false)
+      .$if(teamId != null, (qb) => qb.where("twist_instance.team_id", "=", teamId!))
+      .$if(teamId == null, (qb) =>
+        qb.where("twist_instance.owner_id", "=", draft.owner_id).where("twist_instance.team_id", "is", null)
+      )
+      .executeTakeFirst();
+
+    if (existingInstance) {
+      throw new SingleInstanceError(teamId ? "team" : "personal");
+    }
+  }
+
+  // Name uniqueness — only for multi-instance twists (single-instance always uses package name)
+  if (twistRecord?.is_source !== true && twistRecord?.multiple_instances !== false) {
     const existingTwist = await db
       .selectFrom("twist_instance")
       .select(["id"])
@@ -868,21 +954,7 @@ export async function activateDraft(
       };
     }
 
-    // Twists are workspace-level, so the activate callback gets the
-    // owner user's root priority as the stable anchor.
-    const rootPriority = await db
-      .selectFrom("priority")
-      .select("id")
-      .where("user_id", "=", draft.owner_id)
-      .where("archived_at", "is", null)
-      .orderBy(sql`nlevel(path)`, "asc")
-      .orderBy("created_at", "asc")
-      .limit(1)
-      .executeTakeFirstOrThrow();
-    await twistWrapper.activate(
-      { id: rootPriority.id as Uuid },
-      actorContext,
-    );
+    await twistWrapper.activate(actorContext);
   } catch (activationError) {
     logger.error("Twist activation failed during draft activation", activationError as Error);
 
