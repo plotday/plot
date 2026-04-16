@@ -1830,12 +1830,14 @@ class EditTwist extends ShowForm {
         groups: [
           StaticFormGroup(
             items: [
-              FormTextInput(
-                key: 'name',
-                label: 'Name',
-                initialValue: twistInstance.name,
-                required: true,
-              ),
+              // Name is hidden and not editable for single-instance twists
+              if (matchingTwist.multipleInstances)
+                FormTextInput(
+                  key: 'name',
+                  label: 'Name',
+                  initialValue: twistInstance.name,
+                  required: true,
+                ),
               if (teams.isNotEmpty)
                 FormSelect<String>(
                   key: 'team_id',
@@ -1882,7 +1884,9 @@ class EditTwist extends ShowForm {
                     // but backend will enforce them (0 for free team plan).
                   }
 
-                  final name = values['name'] as String;
+                  final name = matchingTwist.multipleInstances
+                      ? (values['name'] as String? ?? twistInstance.name)
+                      : twistInstance.name;
                   return SaveTwistSettings(
                     twistInstance: twistInstance,
                     name: name,
