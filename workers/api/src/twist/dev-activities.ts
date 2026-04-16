@@ -7,11 +7,11 @@ import { createLogger } from "@plotday/worker-util";
 import { BUILTIN_TWIST_PACKAGE_ID as PLOT_TWIST_PACKAGE_ID } from "../utils/limits";
 
 /**
- * Ensures the Logs activity exists for a twist and environment.
+ * Ensures the Logs thread exists for a twist and environment.
  * Uses direct insert to bypass user-level permission checks (the twist dev
  * priority owner is a viewer who can't create non-private threads via upsert_thread).
  */
-async function ensureLogsActivity(
+async function ensureLogsThread(
   db: Kysely<DB>,
   twistPackageId: string,
   userId: string,
@@ -114,7 +114,7 @@ export async function addLogsNote(
       // Format logs
       const environment = logs[0]?.environment || "unknown";
 
-      const activityId = await ensureLogsActivity(
+      const threadId = await ensureLogsThread(
         db,
         twistPackageId,
         ownerId,
@@ -129,7 +129,7 @@ export async function addLogsNote(
       const content = ["```", formattedLogs, "```"].join("\n");
 
       await db.insertInto("note").values({
-        thread_id: activityId,
+        thread_id: threadId,
         author_id: authorId,
         created_by: createdBy,
         content,
@@ -144,7 +144,7 @@ export async function addLogsNote(
 }
 
 /**
- * Adds an upgrade note to the Logs activity for a twist deployment.
+ * Adds an upgrade note to the Logs thread for a twist deployment.
  */
 export async function addUpgradeNote(
   env: Bindings,
@@ -190,7 +190,7 @@ export async function addUpgradeNote(
 
       const createdBy = plotTwistInstance.id;
 
-      const activityId = await ensureLogsActivity(
+      const threadId = await ensureLogsThread(
         db,
         twistPackageId,
         ownerId,
@@ -199,7 +199,7 @@ export async function addUpgradeNote(
       );
 
       await db.insertInto("note").values({
-        thread_id: activityId,
+        thread_id: threadId,
         author_id: createdBy,
         created_by: createdBy,
         content: `Upgraded to v${version}`,

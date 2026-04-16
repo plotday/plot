@@ -12,9 +12,9 @@ Supported platforms:
 
 ## Definitions
 
-- Activity: A single item in Plot, containing notes. An activity might be just notes, or it might be an event or action (task).
-- Note: Content associated with an activity, such as Markdown notes and links.
-- Priority: Similar to a project or folder for Activity. Priorities are nested using paths, and display all Activity related to them and their descendants.
+- Thread: A single item in Plot, containing notes. A thread might be just notes, or it might be an event or action (task). (Previously called "activity".)
+- Note: Content associated with a thread, such as Markdown notes and links.
+- Priority: Similar to a project or folder for threads. Priorities are nested using paths, and display all threads related to them and their descendants.
 - Twist: The Plot version of an extension/plugin/app/agent. Users install them at the workspace level, where they operate across the user's priorities. They tend to implement opinionated workflows (e.g. create tasks from emails).
 - Connection: One source system (e.g. Google Calendar) paired with one account (e.g. <kris@plot.day>). Connections are provided by connectors that expose channels that users can enable/disable.
 - Twist Creator aka Twister: The SDK for building twists and connectors. Sometimes represented with 🌪️.

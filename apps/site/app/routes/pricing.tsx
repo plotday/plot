@@ -80,7 +80,7 @@ export function meta(_: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Simple pricing with no per-seat fees. Free for individuals, Pro for power users, Team for organizations.",
+        "Simple pricing with no per-seat fees. Free for individuals, Pro for power users, Team for growing teams.",
     },
     { property: "og:title", content: "Plot Pricing" },
     { property: "og:description", content: "Simple pricing. No per-seat fees. Unlimited collaboration." },

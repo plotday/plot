@@ -67,13 +67,13 @@ export type EnrichedActivity = EnrichedThread;
 
 /**
  * Link from twist_instance_channel_link_create view.
- * Used for new link notifications from connected source channels.
+ * Used for new link notifications from connected channels.
  */
 export type ChannelLinkCreate = Database["public"]["Views"]["twist_instance_channel_link_create"]["Row"];
 
 /**
  * Link from twist_instance_channel_link_update view.
- * Used for updated link notifications from connected source channels.
+ * Used for updated link notifications from connected channels.
  */
 export type ChannelLinkUpdate = Database["public"]["Views"]["twist_instance_channel_link_update"]["Row"];
 

@@ -40,7 +40,7 @@ class ChannelsBase extends BaseTable {
 }
 
 class Channel extends Equatable {
-  /// Cache for looking up source channels by (twistInstanceId, channelId).
+  /// Cache for looking up channels by (twistInstanceId, channelId).
   /// Populated during sync.
   static final Map<String, Channel> _cache = {};
 
@@ -48,11 +48,11 @@ class Channel extends Equatable {
   static String _cacheKey(Uuid ptId, String channelId) =>
       '${ptId.toString()}:$channelId';
 
-  /// Look up a source channel by twistInstanceId and channelId.
+  /// Look up a channel by twistInstanceId and channelId.
   static Channel? findByChannel(Uuid ptId, String channelId) =>
       _cache[_cacheKey(ptId, channelId)];
 
-  /// Find any source channel for a given source account that has linkTypes.
+  /// Find any channel for a given connection account that has linkTypes.
   /// Used when a link doesn't have a channelId (legacy links synced before
   /// channel-level linkTypes were added).
   static Channel? findBySource(Uuid ptId) {
@@ -65,7 +65,7 @@ class Channel extends Equatable {
     return null;
   }
 
-  /// Populate the cache from a list of source channels.
+  /// Populate the cache from a list of channels.
   static void populateCache(List<Channel> channels) {
     for (final sc in channels) {
       _cache[_cacheKey(sc.twistInstanceId, sc.channelId)] = sc;

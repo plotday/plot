@@ -26,7 +26,7 @@ MUST use incremental migrations to preserve user data.
 2. Add a migration step in `Store.migration.onUpgrade` for the new version:
    ```dart
    if (from < 244) {
-     await m.addColumn(activities, activities.newColumn);
+     await m.addColumn(threads, threads.newColumn);
    }
    ```
 3. Bump `Store.schemaVersion` (e.g. 243 → 244)
@@ -92,9 +92,9 @@ ls ~/Library/Containers/day.plot.app/Data/Documents/plot-e71c60e9-2e89-49bb-a038
 # List tables
 sqlite3 ~/Library/Containers/day.plot.app/Data/Documents/plot-{user_id}.sqlite ".tables"
 
-# Query activities
+# Query threads
 sqlite3 ~/Library/Containers/day.plot.app/Data/Documents/plot-{user_id}.sqlite \
-  "SELECT hex(id), title, archived_at, updated_at FROM activities LIMIT 10;"
+  "SELECT hex(id), title, archived_at, updated_at FROM threads LIMIT 10;"
 
 # Check sync state
 sqlite3 ~/Library/Containers/day.plot.app/Data/Documents/plot-{user_id}.sqlite \

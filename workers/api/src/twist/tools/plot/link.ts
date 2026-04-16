@@ -447,7 +447,7 @@ export async function createLinkOnly(
 }
 
 /**
- * Queries links from connected source channels for this twist.
+ * Queries links from connected channels for this twist.
  * Returns links with their associated notes.
  */
 export async function getLinks(

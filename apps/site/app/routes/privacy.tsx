@@ -34,7 +34,7 @@ export default function Terms() {
         <h3 id="content-you-add">Content you add</h3>
         <p>
           You may add content to Plot. Most content you add is private to you.
-          However, Priorities (organizational containers for your activities)
+          However, Priorities (containers for your threads)
           can be shared with other users. All content within a shared Priority
           is visible to its members, unless you mark specific items as private.
           Private items within a shared Priority are only visible to you.

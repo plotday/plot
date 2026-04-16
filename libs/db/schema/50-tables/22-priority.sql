@@ -31,7 +31,7 @@ CREATE INDEX idx_priority_user_id ON "public"."priority" ("user_id");
 CREATE UNIQUE INDEX idx_priority_user_path_unique ON "public"."priority" ("user_id", "path");
 
 -- Index for priority path ltree queries (supports <@ operator)
--- Used heavily in user_activity view filtering
+-- Used heavily in user_thread view filtering
 CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
 
 -- Ensure keys are unique within each priority root tree

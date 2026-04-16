@@ -424,9 +424,9 @@ class Base {
 /// Represents a unique user, contact, or twist in Plot.
 ///
 /// ActorIds are used throughout Plot for:
-/// - Activity authors and assignees
-/// - Tag creators (actor_id in activity_tag/note_tag)
-/// - Mentions in activities and notes
+/// - Thread authors and assignees
+/// - Tag creators (actor_id in thread_tag/note_tag)
+/// - Mentions in threads and notes
 /// - Any entity that can perform actions in Plot
 ///
 /// Note: This can be a ContactId OR TwistId, never a UserId directly.

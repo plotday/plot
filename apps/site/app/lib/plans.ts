@@ -107,14 +107,14 @@ export const PLANS: Plan[] = [
     description:
       "Provide your teams with the connections and automations to do their best work.",
     features: [
-      "50+ connections shared across your org",
+      "50+ connections shared across your team",
       "Unlimited Twists (optional AI usage extra)",
       "Import 1 year of historical items from connections",
       "No-code Twist builder",
       "Automated organization and prioritization (unlimited)",
       "Unlimited team members",
       "Full search and history of all your work in Plot",
-      "Organization-level controls",
+      "Team-level controls",
     ],
     cta: "Get started",
     ctaLink: (billing) => `/upgrade?plan=team&billing=${billing}`,

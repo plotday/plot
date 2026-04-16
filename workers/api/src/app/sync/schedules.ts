@@ -187,9 +187,9 @@ schedules.post("/sync/schedules", async (c) => {
           (async () => {
             const db = createDb(c.env);
             try {
-              // Check if created_by is a connector (has source_channel rows)
+              // Check if created_by is a connector (has channel rows)
               const isConnector = await (db as any)
-                .selectFrom("source_channel")
+                .selectFrom("channel")
                 .select("twist_instance_id")
                 .where("twist_instance_id", "=", createdBy)
                 .limit(1)

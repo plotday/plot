@@ -17,12 +17,12 @@
    ```
    - Uses Atlas to compare schema with existing migrations
    - Creates timestamped migration in `migrations/`
-   - Example: `pnpm gen-migration -- add_activity_order_column`
+   - Example: `pnpm gen-migration -- add_thread_order_column`
 
 3. **Add data migrations if needed (optional)**
    - Open the generated migration file
    - Add SQL for data transformations after the schema changes
-   - Example: `UPDATE activity SET order_value = created_at;`
+   - Example: `UPDATE thread SET order_value = created_at;`
    - Keep data migrations minimal and focused
 
 4. **Apply migration to LOCAL database**

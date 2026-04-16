@@ -123,7 +123,7 @@ Entities tracked in `user_sync` for app client notifications:
 | `priority_twist`   | Twist instances on priorities                   | `twist_instance`                     |
 | `thread_read`      | Read status for threads                         | `thread_read`                        |
 | `actor`            | Combined view of contacts and twists            | `user_contact`, `contact`            |
-| `source_channel`   | Source channels for twist integrations          | `channel`                            |
+| `channel`          | Connection channels for twist integrations      | `channel`                            |
 | `schedule`         | Thread schedules                                | `schedule`                           |
 | `user_settings`    | Per-user settings                               | `user_settings`                      |
 
