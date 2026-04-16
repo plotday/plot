@@ -50,6 +50,7 @@ import type { Plot } from "./plot/index";
 import type { Store } from "./store";
 import { Tool } from "./tool";
 import { createSchedule } from "../../app/sync/smart-schedule";
+import { unarchiveDoneLinksOnThread } from "../../app/sync/link-tags";
 
 /** Internal provider config used by the Integrations tool. */
 type IntegrationProviderConfig = {
@@ -614,6 +615,27 @@ export class Integrations extends Tool implements IAuth {
         user_id: contact.user_id,
         p_schedule: dbSchedule as Json,
       });
+
+      // Lift this user's per-user archive so the thread appears in their agenda.
+      await this.db
+        .updateTable("thread_priority")
+        .set({ archived_at: null })
+        .where("thread_id", "=", link.thread_id)
+        .where("user_id", "=", contact.user_id)
+        .where("archived_at", "is not", null)
+        .execute();
+
+      // Flip any done-status links (e.g. "archived") back to a non-done
+      // status so the link widget stops saying "Archived" and Tag.Done is
+      // cleared from the thread.
+      try {
+        await unarchiveDoneLinksOnThread(this.db, link.thread_id);
+      } catch (error) {
+        logger.warn("setThreadToDo: unarchiveDoneLinksOnThread failed", {
+          thread_id: link.thread_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     } else {
       // Archive the per-user schedule for this thread
       await this.db
@@ -624,6 +646,26 @@ export class Integrations extends Tool implements IAuth {
         .where("occurrence", "is", null)
         .where("archived_at", "is", null)
         .execute();
+    }
+
+    // Notify the user's sync DO so the Flutter client picks up the change
+    // in real time. setThreadToDo is called from the twist runtime (e.g.
+    // Gmail processing a star from its webhook); without this the user only
+    // sees the update on the next scheduled pull.
+    const tp = await this.db
+      .selectFrom("thread_priority")
+      .select("priority_id")
+      .where("thread_id", "=", link.thread_id)
+      .where("user_id", "=", contact.user_id)
+      .executeTakeFirst();
+    if (tp?.priority_id) {
+      try {
+        await this.getPlot().notifySyncDOs(new Set([tp.priority_id]));
+      } catch (error) {
+        logger.error("setThreadToDo: failed to notify sync DOs", error as Error, {
+          thread_id: link.thread_id,
+        });
+      }
     }
   }
 
@@ -1028,6 +1070,88 @@ export class Integrations extends Tool implements IAuth {
       };
 
       return [{ sourceMethod: "onNoteCreated", args: [note, thread], deferredNoteKeyUpdate: { noteId: item.id as string } }];
+    }
+
+    // Handle thread_schedule dispatch — route to connector's onThreadToDo.
+    // The Plot-tool dispatch path requires plotOptions.thread.access, which
+    // connectors don't declare, so dispatch from here for connector-owned threads.
+    if (dispatchItem?.itemType === "thread_schedule" && this.sourceProvider) {
+      const { item } = dispatchItem;
+      if (!item?.thread_id) return [];
+
+      // Only dispatch for threads this connector created
+      const link = await this.db
+        .selectFrom("link")
+        .select(["meta", "channel_id", "source"])
+        .where("thread_id", "=", item.thread_id as string)
+        .where("created_by", "=", this.twistInstanceId)
+        .executeTakeFirst();
+      if (!link) return [];
+
+      const threadRow = await this.db
+        .selectFrom("thread")
+        .select(["id", "title", "archived_at"])
+        .where("id", "=", item.thread_id as string)
+        .executeTakeFirst();
+      if (!threadRow) return [];
+
+      const meta: ThreadMeta = {
+        ...((link.meta as Record<string, unknown>) ?? {}),
+        channelId: link.channel_id ?? null,
+        linkSource: link.source ?? null,
+      } as ThreadMeta;
+
+      // Resolve actor from the schedule's user_id via the user's primary linked contact
+      let actor: Actor = {
+        id: (item.user_id as ActorId) ?? ("" as ActorId),
+        type: ActorType.User,
+        name: null,
+      };
+      if (item.user_id) {
+        const contact = await this.db
+          .selectFrom("user_contact as uc")
+          .innerJoin("contact as c", "c.id", "uc.contact_id")
+          .select(["c.id", "c.name"])
+          .where("uc.user_id", "=", item.user_id as string)
+          .where("uc.linked", "=", true)
+          .where("uc.primary", "=", true)
+          .where("uc.archived_at", "is", null)
+          .executeTakeFirst();
+        if (contact) {
+          actor = {
+            id: contact.id as ActorId,
+            name: contact.name ?? null,
+            type: ActorType.User,
+          };
+        }
+      }
+
+      // todo=true if schedule is active (on/at set); false if cleared
+      const todo = item.on != null || item.at != null;
+
+      // Extract date from schedule's on (daterange) or at (tstzrange)
+      let date: Date | undefined;
+      if (item.on != null) {
+        // daterange format: [start,end) — extract start date
+        const match = String(item.on).match(/[[(](\d{4}-\d{2}-\d{2})/);
+        if (match) date = new Date(match[1]);
+      } else if (item.at != null) {
+        // tstzrange format: ["start","end") — extract start timestamp
+        const match = String(item.at).match(/[[("]([\d\-T:.+Z]+)/);
+        if (match) date = new Date(match[1]);
+      }
+
+      const thread: Partial<Thread> = {
+        id: threadRow.id as Uuid,
+        title: threadRow.title ?? "",
+        archived: threadRow.archived_at !== null,
+        meta,
+      };
+
+      return [{
+        sourceMethod: "onThreadToDo",
+        args: [thread, actor, todo, { date }],
+      }];
     }
 
     if (dispatchItem?.itemType !== "link" && dispatchItem?.itemType !== "channel_link") return [];

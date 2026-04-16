@@ -748,10 +748,14 @@ async function processTwistBatch(
       if (!threadSchedule.thread_id) continue;
 
       try {
-        await twistWrapper.dispatch("Plot", {
+        const dispatchArgs = {
           itemType: "thread_schedule" as const,
           item: threadSchedule,
-        });
+        };
+        // Plot-tool path for twists that declare plotOptions.thread.access,
+        // Integrations path for connectors (which don't declare Plot).
+        await twistWrapper.dispatch("Plot", dispatchArgs);
+        await twistWrapper.dispatch("Integrations", dispatchArgs);
       } catch (error) {
         logger.error("Error processing thread schedule", error as Error, {
           thread_id: threadSchedule.thread_id,

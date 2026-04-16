@@ -2388,8 +2388,8 @@ class Thread extends Equatable implements Comparable<Thread> {
     return (_schedule?.startAt != null
             ? DateTimeRange(_schedule!.startAt!, _schedule.endAt)
             : null) ??
-        (_userSchedule?.startAt != null
-            ? DateTimeRange(_userSchedule!.startAt!, _userSchedule.endAt)
+        (_userSchedule?.startAt != null && _userSchedule!.archivedAt == null
+            ? DateTimeRange(_userSchedule.startAt!, _userSchedule.endAt)
             : null) ??
         on?.toDateTimeRange();
   }
@@ -2404,7 +2404,8 @@ class Thread extends Equatable implements Comparable<Thread> {
             ? CustomDateRange(_schedule!.startOn!, _schedule.endOn)
             : null) ??
         (_userSchedule?.startOn != null &&
-                _userSchedule!.startOn != Thread.todoNowDate
+                _userSchedule!.archivedAt == null &&
+                _userSchedule.startOn != Thread.todoNowDate
             ? CustomDateRange(_userSchedule.startOn!, _userSchedule.endOn)
             : null);
   }
