@@ -1,4 +1,5 @@
 import { type Kysely, sql } from "kysely";
+import { PostHog } from "posthog-node";
 
 import type { DB } from "../db-types";
 import { type TwistEnvironment, type Bindings } from "../env";
@@ -387,19 +388,22 @@ export async function deployTwist({
           multiple_instances: multipleInstances,
         })
         .onConflict((oc) =>
-          oc.columns(["twist_package_id", "environment"]).doUpdateSet({
-            name,
-            description,
-            version,
-            permissions: JSON.stringify(publicPermissions),
-            options_schema: optionsSchema ? JSON.stringify(optionsSchema) : null,
-            is_source: providers.length > 0 || isNoProviderConnector,
-            shared: sourceProvider?.shared ?? false,
-            key_option: sourceProvider?.keyOption ?? null,
-            logo_url: logoUrl ?? null,
-            logo_url_dark: logoUrlDark ?? null,
-            multiple_instances: multipleInstances,
-          })
+          oc
+            .columns(["twist_package_id", "environment"])
+            .where("environment", "<>", "personal")
+            .doUpdateSet({
+              name,
+              description,
+              version,
+              permissions: JSON.stringify(publicPermissions),
+              options_schema: optionsSchema ? JSON.stringify(optionsSchema) : null,
+              is_source: providers.length > 0 || isNoProviderConnector,
+              shared: sourceProvider?.shared ?? false,
+              key_option: sourceProvider?.keyOption ?? null,
+              logo_url: logoUrl ?? null,
+              logo_url_dark: logoUrlDark ?? null,
+              multiple_instances: multipleInstances,
+            })
         )
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -449,6 +453,18 @@ export async function deployTwist({
       }
     } catch (upsertPublicError) {
       logger.error("Error auto-deploying to public", upsertPublicError as Error);
+      const postHog = new PostHog(env.POSTHOG_API_KEY, {
+        host: env.POSTHOG_HOST,
+        flushAt: 1,
+        flushInterval: 0,
+      });
+      postHog.captureException(upsertPublicError as Error, undefined, {
+        context: "twist:auto-approve:public-upsert",
+        twist_package_id: twistPackageId,
+        environment,
+        version,
+      });
+      await postHog.shutdown();
     }
   }
 
