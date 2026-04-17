@@ -3880,6 +3880,135 @@ class Thread extends Equatable implements Comparable<Thread> {
     return earliestUpcoming ?? latestPast;
   }
 
+  /// Resolves a Thread to its representative occurrence for the activity
+  /// feed. For non-recurring calendar events returns a Thread with the
+  /// same single schedule wrapped as a link schedule instance. For
+  /// recurring events, generates instances within
+  /// `[now - lookBack, now + lookAhead]`, merges persisted overrides,
+  /// and selects the earliest upcoming (else latest past) as the
+  /// representative. Returns null if the base thread isn't a feed-eligible
+  /// calendar event, or if no qualifying occurrence lies within the
+  /// lookup window.
+  static Future<Thread?> loadRepresentativeForFeed(
+    Thread base, {
+    required DateTime now,
+    Duration lookAhead = const Duration(days: 90),
+    Duration lookBack = const Duration(days: 30),
+  }) async {
+    // Gate 1: must be a calendar event (link schedule).
+    if (!base.hasLinkSchedule) return null;
+
+    // Gate 2: todo base — a todo thread that isn't already an instance
+    // is not a calendar event for RSVP purposes.
+    if (base.todo && !base.isLinkScheduleInstance) return null;
+
+    final schedule = base._schedule;
+    if (schedule == null) return null;
+
+    // Non-recurring: the one schedule IS the occurrence. Wrap as an
+    // instance so the widget gating treats it as a calendar event.
+    if (!base.recurring) {
+      return Thread._fromStore(
+        activity: base._thread,
+        priority: base.priority,
+        schedule: schedule,
+        userSchedule: base._userSchedule,
+        tags: base._tags,
+        active: base._active,
+        unreadComputed: base._unreadComputed,
+        isLinkScheduleInstance: true,
+        rsvpInheritedFromSeries: false,
+        linkSourceCreatedAt: base._linkSourceCreatedAt,
+      );
+    }
+
+    // Recurring: generate instances in a bounded window.
+    // CustomBoundedDateRange takes Date objects — use DateTime.toDate() extension.
+    final window = CustomBoundedDateRange(
+      now.subtract(lookBack).toDate(),
+      now.add(lookAhead).toDate(),
+    );
+
+    List<Thread> generated;
+    try {
+      generated = base.generateOccurrences(window);
+    } catch (_) {
+      generated = const [];
+    }
+    final generatedRows =
+        generated.map((t) => t._schedule!).toList(growable: false);
+
+    // Load all schedule rows for the same link (overrides + base), filter
+    // to override rows (occurrence != null), partition by archived.
+    final linkId = schedule.linkId;
+    List<ScheduleRow> allRows;
+    if (linkId != null) {
+      allRows = await (Store.get.select(Store.get.schedules)
+            ..where((s) => s.linkId.equals(linkId.toBytes())))
+          .get();
+    } else {
+      allRows = await (Store.get.select(Store.get.schedules)
+            ..where((s) => s.threadId.equals(base.id.toBytes())))
+          .get();
+    }
+
+    final overrideRows = <ScheduleRow>[];
+    final archivedOverrideKeys = <String>{};
+    for (final row in allRows) {
+      if (row.occurrence == null) continue; // skip base series row
+      if (row.archivedAt != null) {
+        archivedOverrideKeys.add(row.occurrence!);
+        continue;
+      }
+      overrideRows.add(row);
+    }
+
+    final picked = selectRepresentativeOccurrence(
+      generatedInstances: generatedRows,
+      overrideRows: overrideRows,
+      archivedOverrideKeys: archivedOverrideKeys,
+      now: now,
+    );
+
+    if (picked == null) return null;
+
+    // rsvpInheritedFromSeries:
+    //   - Generated row: always true (its contacts are a copy of the series).
+    //   - Override row: check whether any ScheduleContact on the override
+    //     belongs to the current user. If none, the visible status was
+    //     inherited from the series.
+    final userIdStr = Base.userId.toString();
+    bool overrideHasUserContact(ScheduleRow row) {
+      final json = row.contacts;
+      if (json == null || json.isEmpty) return false;
+      try {
+        final list = jsonDecode(json) as List<dynamic>;
+        return list.any((e) {
+          final m = e as Map<String, dynamic>;
+          return m['contact_user_id'] == userIdStr;
+        });
+      } catch (_) {
+        return false;
+      }
+    }
+
+    final inherited =
+        !picked.isOverride || !overrideHasUserContact(picked.row);
+
+    return Thread._fromStore(
+      activity: base._thread,
+      priority: base.priority,
+      schedule: picked.row,
+      userSchedule: base._userSchedule,
+      tags: base._tags,
+      active: base._active,
+      unreadComputed: base._unreadComputed,
+      isLinkScheduleInstance: true,
+      rsvpInheritedFromSeries: inherited,
+      linkSourceCreatedAt: base._linkSourceCreatedAt,
+    );
+  }
+
   List<Thread> generateOccurrences(BoundedDateRange range) {
     // For non-recurring activities, return just this activity
     if (!recurring) {
