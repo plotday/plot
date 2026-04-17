@@ -49,10 +49,10 @@ function createInsertQuery(result: any) {
   });
   query.onConflict = vi.fn((cb: (oc: any) => void) => {
     if (cb) {
-      const action: any = {
-        doUpdateSet: vi.fn(() => query),
-        doNothing: vi.fn(() => query),
-      };
+      const action: any = {};
+      action.doUpdateSet = vi.fn(() => action);
+      action.doNothing = vi.fn(() => action);
+      action.where = vi.fn(() => action);
       const ocBuilder: any = {
         columns: vi.fn((cols: string[]) => {
           query._onConflictColumns = cols;
@@ -79,7 +79,15 @@ function createInsertQuery(result: any) {
 // Helper to create a chainable mock for Kysely queries
 function createDbMock() {
   return {
-    selectFrom: vi.fn(() => createSelectQuery(null)),
+    selectFrom: vi.fn((table: string) => {
+      if (table === "twist_instance") {
+        return createSelectQuery({ owner_id: "user-1" });
+      }
+      if (table === "priority") {
+        return createSelectQuery({ id: "priority-1", path: "priority_1" });
+      }
+      return createSelectQuery(null);
+    }),
     insertInto: vi.fn(() => createInsertQuery(null)),
     updateTable: vi.fn(),
     deleteFrom: vi.fn(),
@@ -383,6 +391,12 @@ describe("Plot", () => {
         if (table === "thread") {
           return createSelectQuery({ priority_id: "priority-1" });
         }
+        if (table === "twist_instance") {
+          return createSelectQuery({ owner_id: "user-1" });
+        }
+        if (table === "priority") {
+          return createSelectQuery({ id: "priority-1", path: "priority_1" });
+        }
         return createSelectQuery(null);
       });
 
@@ -433,6 +447,12 @@ describe("Plot", () => {
       dbMock.selectFrom = vi.fn((table: string) => {
         if (table === "thread") {
           return createSelectQuery({ priority_id: "priority-1" });
+        }
+        if (table === "twist_instance") {
+          return createSelectQuery({ owner_id: "user-1" });
+        }
+        if (table === "priority") {
+          return createSelectQuery({ id: "priority-1", path: "priority_1" });
         }
         return createSelectQuery(null);
       });
