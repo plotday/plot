@@ -3936,6 +3936,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       log.warning(
         "Error generating occurrences for feed representative of ${base.id}: $e\n$t",
       );
+      Tracker.captureException(e, t);
       generated = const [];
     }
     final generatedRows =
