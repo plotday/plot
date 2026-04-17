@@ -3699,6 +3699,10 @@ export type Database = {
         }
         Returns: string
       }
+      ensure_twist_dev_priority: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
       expand_contacts: { Args: { p_contacts: string[] }; Returns: string[] }
       generate_path: { Args: { parent?: unknown }; Returns: unknown }
       get_accessible_twists: {
@@ -4522,13 +4526,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
