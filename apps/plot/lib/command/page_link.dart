@@ -27,8 +27,15 @@ class CopyPageLink extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     log.info('CopyPageLink command executed');
     try {
-      final currentPath = context.router.currentPath;
-      final fullUrl = '${Env.appBaseUrl}$currentPath';
+      // Prefer the canonical `/t/:threadId` form when a thread is open so the
+      // copied link is shareable between users regardless of how each files
+      // the thread. Walk the router's segment tree (rather than reading
+      // `router.current`) because this command runs from a high context where
+      // `current` reports the outer stack, not the nested ThreadRoute.
+      final path =
+          _sharePathForActiveRoute(context.router.root) ??
+          context.router.currentPath;
+      final fullUrl = '${Env.appBaseUrl}$path';
 
       await Clipboard.setData(ClipboardData(text: fullUrl));
       return CommandMessage('Page link copied to clipboard');
@@ -37,6 +44,20 @@ class CopyPageLink extends Command {
       return CommandMessage('Failed to copy page link', isError: true);
     }
   }
+}
+
+/// Returns `/t/:threadId` if a [ThreadRoute] is the deepest segment of the
+/// router's URL state, otherwise null.
+String? _sharePathForActiveRoute(StackRouter root) {
+  final segments = root.navigationHistory.urlState.segments;
+  if (segments.isEmpty) return null;
+  RouteMatch<dynamic> leaf = segments.last;
+  while (leaf.hasChildren) {
+    leaf = leaf.children!.last;
+  }
+  if (leaf.name != ThreadRoute.name) return null;
+  final threadId = leaf.params.getString('threadId');
+  return '/t/$threadId';
 }
 
 /// Parsed result of a Plot internal URL.

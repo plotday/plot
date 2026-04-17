@@ -59,6 +59,7 @@ class RootProviderState extends State<RootProvider> {
     routerConfig = router.config(
       reevaluateListenable: ReevaluateListenable.stream(userBloc.stream),
     );
+    installThreadUrlOverride(router);
     super.initState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {

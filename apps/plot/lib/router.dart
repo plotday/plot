@@ -10,6 +10,7 @@ import 'state/now.dart';
 import 'state/user.dart';
 import 'state/priority.dart';
 import 'page/page.dart';
+import 'util/url_override.dart';
 import 'widget/app_shell.dart';
 import 'widget/priorities_shell.dart';
 import 'analytics/tracker.dart';
@@ -19,6 +20,56 @@ export 'package:auto_route/auto_route.dart';
 part 'router.gr.dart';
 
 final Logger _logger = Logger('plot.route');
+
+/// Wires the browser URL override so a thread page displays as the shareable
+/// `/t/:threadId` form even though the internal router stack still carries
+/// the nested `/p/:priorityId/:threadId` shape (which is what keeps the
+/// priority shell stable across thread/new-thread transitions and makes
+/// back-navigation return to the priority). Must be invoked once on the
+/// configured root router.
+void installThreadUrlOverride(StackRouter router) {
+  final history = router.navigationHistory;
+  String? previousThreadId;
+  void sync() {
+    final threadId = _activeThreadId(history.urlState.segments);
+    if (threadId != null) {
+      // Push a new browser history frame when first entering a thread from a
+      // non-thread URL so the browser back button returns the user to that
+      // previous URL. When hopping between threads, replace in-place so the
+      // history doesn't grow a frame per thread.
+      setBrowserUrl('/t/$threadId', push: previousThreadId == null);
+    }
+    previousThreadId = threadId;
+  }
+
+  history.addListener(sync);
+  // Handle the initial URL so a cold-load of `/p/:pid/:tid` rewrites too.
+  sync();
+}
+
+/// Matches nested thread URLs (`/p/:priorityId/:threadId` and not the
+/// reserved `/p/:priorityId/new`). Used to suppress auto_route's emission so
+/// the browser URL stays pinned to the canonical `/t/:threadId` form we set
+/// ourselves in [installThreadUrlOverride].
+final _nestedThreadUrlPattern = RegExp(r'^/p/[^/]+/(?!new(?:$|/))[^/]+/?$');
+
+bool _neglectNestedThreadPath(String? location) {
+  if (location == null) return false;
+  final path = Uri.parse(location).path;
+  return _nestedThreadUrlPattern.hasMatch(path);
+}
+
+/// Returns the threadId short-string if a [ThreadRoute] is the deepest
+/// segment in [segments], otherwise null.
+String? _activeThreadId(List<RouteMatch<dynamic>> segments) {
+  if (segments.isEmpty) return null;
+  RouteMatch<dynamic> current = segments.last;
+  while (current.hasChildren) {
+    current = current.children!.last;
+  }
+  if (current.name != ThreadRoute.name) return null;
+  return current.params.getString('threadId');
+}
 
 @AutoRouterConfig(generateForDir: ['lib', 'lib/page'])
 class AppRouter extends RootStackRouter {
@@ -175,7 +226,10 @@ class AppRouter extends RootStackRouter {
         ...navigatorObservers(),
       ],
       includePrefixMatches: includePrefixMatches,
-      neglectWhen: neglectWhen,
+      // Suppress auto_route's own URL emission for nested thread paths so our
+      // listener (in [installThreadUrlOverride]) can publish the canonical
+      // shareable `/t/:threadId` URL without being clobbered a frame later.
+      neglectWhen: neglectWhen ?? _neglectNestedThreadPath,
       rebuildStackOnDeepLink: rebuildStackOnDeepLink,
       reevaluateListenable: reevaluateListenable,
       clipBehavior: clipBehavior,
