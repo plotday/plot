@@ -3985,7 +3985,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         final list = jsonDecode(json) as List<dynamic>;
         return list.any((e) {
           final m = e as Map<String, dynamic>;
-          return m['contact_user_id'] == userIdStr;
+          return m['contact_user_id'] == userIdStr && m['status'] != null;
         });
       } catch (_) {
         return false;
