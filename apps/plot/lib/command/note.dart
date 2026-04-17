@@ -183,7 +183,7 @@ class ToggleSelfTask extends NoteCommand {
             ? EventAction.untagged
             : EventAction.tagged,
         icon: PlotIcon.selfTask,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyT, shift: true),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyX, shift: true),
       );
 
   @override

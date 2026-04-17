@@ -1082,8 +1082,8 @@ class NoteEditorState extends State<NoteEditor> {
   ) {
     final bindings = <ShortcutActivator, VoidCallback>{};
 
-    // ⌘⇧T — toggle self task
-    bindings[platformSingleActivator(LogicalKeyboardKey.keyT, shift: true)] =
+    // ⌘⇧X — toggle self task
+    bindings[platformSingleActivator(LogicalKeyboardKey.keyX, shift: true)] =
         () => _shortcutToggleSelfTask(context);
 
     // ⌘⇧A — assign
