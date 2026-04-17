@@ -3811,6 +3811,75 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
   }
 
+  /// Picks the representative occurrence schedule row from a set of
+  /// candidates. Returns the earliest whose end is `>= now` (next
+  /// upcoming); if none, returns the latest whose end is `< now` (most
+  /// recent past). Returns null when no candidate qualifies.
+  ///
+  /// `generatedInstances` are rrule-generated rows (their currentUserStatus
+  /// is copied from the series base). `overrideRows` are persisted
+  /// schedule rows with `occurrence IS NOT NULL`. Overrides replace
+  /// generated instances at matching occurrence keys, and archived
+  /// override rows remove the matching entry instead.
+  /// `archivedOverrideKeys` is the set of occurrence strings whose
+  /// generated instances should also be filtered out (cancelled instances
+  /// with no surviving override).
+  ///
+  /// The returned `isOverride` distinguishes a persisted-override row
+  /// from a generated instance — used by the caller to decide the
+  /// default value of `rsvpInheritedFromSeries`.
+  @visibleForTesting
+  static ({ScheduleRow row, bool isOverride})? selectRepresentativeOccurrence({
+    required List<ScheduleRow> generatedInstances,
+    required List<ScheduleRow> overrideRows,
+    required Set<String> archivedOverrideKeys,
+    required DateTime now,
+  }) {
+    final merged = <String, ({ScheduleRow row, bool isOverride})>{};
+
+    for (final row in generatedInstances) {
+      final key = row.occurrence;
+      if (key == null) continue;
+      if (archivedOverrideKeys.contains(key)) continue;
+      merged[key] = (row: row, isOverride: false);
+    }
+
+    for (final override in overrideRows) {
+      final key = override.occurrence;
+      if (key == null) continue;
+      if (override.archivedAt != null) {
+        merged.remove(key);
+        continue;
+      }
+      merged[key] = (row: override, isOverride: true);
+    }
+
+    if (merged.isEmpty) return null;
+
+    DateTime? rowEnd(ScheduleRow r) =>
+        r.endAt ?? r.endOn?.toDateTime() ?? r.startAt ?? r.startOn?.toDateTime();
+
+    ({ScheduleRow row, bool isOverride})? earliestUpcoming;
+    ({ScheduleRow row, bool isOverride})? latestPast;
+
+    for (final candidate in merged.values) {
+      final end = rowEnd(candidate.row);
+      if (end == null) continue;
+      if (!end.isBefore(now)) {
+        if (earliestUpcoming == null ||
+            end.isBefore(rowEnd(earliestUpcoming.row)!)) {
+          earliestUpcoming = candidate;
+        }
+      } else {
+        if (latestPast == null || end.isAfter(rowEnd(latestPast.row)!)) {
+          latestPast = candidate;
+        }
+      }
+    }
+
+    return earliestUpcoming ?? latestPast;
+  }
+
   List<Thread> generateOccurrences(BoundedDateRange range) {
     // For non-recurring activities, return just this activity
     if (!recurring) {

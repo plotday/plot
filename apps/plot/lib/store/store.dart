@@ -9,7 +9,8 @@ import 'package:flutter/widgets.dart'
         Brightness,
         IconData,
         WidgetsBinding,
-        WidgetsBindingObserver;
+        WidgetsBindingObserver,
+        visibleForTesting;
 import 'package:logging/logging.dart';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
