@@ -348,7 +348,7 @@ export class Integrations extends Tool implements IAuth {
 
     // No token - create auth request for this actor
     // @ts-ignore - TS2589: Type instantiation is excessively deep and possibly infinite
-    using callbackFunctionName = await getRpcFunctionName(callback);
+    const callbackFunctionName = await getRpcFunctionName(callback);
     if (!callbackFunctionName) {
       throw new Error(
         "Cannot create callback: function has no name. Use named functions or methods."
@@ -1153,6 +1153,82 @@ export class Integrations extends Tool implements IAuth {
       return [{
         sourceMethod: "onThreadToDo",
         args: [thread, actor, todo, { date }],
+      }];
+    }
+
+    // Handle schedule_contact dispatch — route to connector's onScheduleContactUpdated.
+    // The Plot-tool dispatch path requires plotOptions.thread.access, which
+    // connectors don't declare, so dispatch from here for connector-owned link schedules.
+    if (dispatchItem?.itemType === "schedule_contact" && this.sourceProvider) {
+      const { item } = dispatchItem;
+      if (!item || item.archived_at) return [];
+
+      // Only dispatch when the contact is one of the twist owner's linked contacts.
+      // Other attendees' rows come from sync, not user action, and write-back only
+      // makes sense for the user who connected the external account.
+      const ownerLinked = await this.db
+        .selectFrom("twist_instance as pt")
+        .innerJoin("user_contact as uc", (join) =>
+          join
+            .onRef("uc.user_id", "=", "pt.owner_id")
+            .on("uc.contact_id", "=", item.contact_id as string)
+        )
+        .select("pt.id")
+        .where("pt.id", "=", this.twistInstanceId)
+        .where("uc.linked", "=", true)
+        .where("uc.archived_at", "is", null)
+        .executeTakeFirst();
+      if (!ownerLinked) return [];
+
+      // Resolve link (and thread_id) for this schedule_contact. Link schedules
+      // have schedule.thread_id = NULL, so we look up via link_id when available.
+      let link = item.link_id
+        ? await this.db
+            .selectFrom("link")
+            .select(["thread_id", "meta", "channel_id", "source"])
+            .where("id", "=", item.link_id)
+            .where("created_by", "=", this.twistInstanceId)
+            .executeTakeFirst()
+        : undefined;
+      if (!link && item.thread_id) {
+        link = await this.db
+          .selectFrom("link")
+          .select(["thread_id", "meta", "channel_id", "source"])
+          .where("thread_id", "=", item.thread_id as string)
+          .where("created_by", "=", this.twistInstanceId)
+          .executeTakeFirst();
+      }
+      if (!link?.thread_id) return [];
+
+      const threadRow = await this.db
+        .selectFrom("thread")
+        .select(["id", "title", "archived_at"])
+        .where("id", "=", link.thread_id as string)
+        .executeTakeFirst();
+      if (!threadRow) return [];
+
+      const meta: ThreadMeta = {
+        ...((link.meta as Record<string, unknown>) ?? {}),
+        channelId: link.channel_id ?? null,
+        linkSource: link.source ?? null,
+      } as ThreadMeta;
+
+      const thread: Partial<Thread> = {
+        id: threadRow.id as Uuid,
+        title: threadRow.title ?? "",
+        archived: threadRow.archived_at !== null,
+        meta,
+      };
+
+      const actor: Actor = {
+        id: item.contact_id as ActorId,
+        type: ActorType.Contact,
+        name: null,
+      };
+
+      return [{
+        sourceMethod: "onScheduleContactUpdated",
+        args: [thread, item.schedule_id, item.contact_id, item.status ?? null, actor],
       }];
     }
 

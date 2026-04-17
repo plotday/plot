@@ -772,32 +772,45 @@ export class Plot extends Tool implements IPlot {
     if (dispatchItem.itemType === "schedule_contact") {
       const { item } = dispatchItem;
       if (this.plotOptions?.thread?.access && !item.archived_at) {
-        const thread = await this.getThread({ id: item.thread_id as Uuid });
-        if (thread) {
-          let actor: Actor;
-          if (this.plotOptions?.contact?.access !== undefined && this.plotOptions.contact.access >= ContactAccess.Read) {
-            const actors = await contactsOps.getActors(this, [item.contact_id as ActorId]);
-            actor = actors[0];
-          } else {
-            actor = { id: item.contact_id as ActorId, type: ActorType.Contact, name: null };
-          }
-          if (actor) {
-            // Populate thread.meta from link row
-            const link = await this.db
+        // Link schedules have schedule.thread_id = NULL; resolve via link.
+        let link = item.link_id
+          ? await this.db
               .selectFrom("link")
-              .select(["meta", "channel_id", "source"])
-              .where("thread_id", "=", item.thread_id!)
+              .select(["thread_id", "meta", "channel_id", "source"])
+              .where("id", "=", item.link_id)
               .where("created_by", "=", this.twistInstanceId)
-              .executeTakeFirst();
-            thread.meta = {
-              ...(link?.meta as Record<string, unknown> ?? {}),
-              channelId: link?.channel_id ?? null,
-              linkSource: link?.source ?? null,
-            };
-            callbacks.push({
-              sourceMethod: "onScheduleContactUpdated",
-              args: [thread, item.schedule_id, item.contact_id as ActorId, item.status ?? null, actor],
-            });
+              .executeTakeFirst()
+          : undefined;
+        const threadId = (item.thread_id ?? link?.thread_id ?? null) as Uuid | null;
+        if (threadId) {
+          const thread = await this.getThread({ id: threadId });
+          if (thread) {
+            let actor: Actor;
+            if (this.plotOptions?.contact?.access !== undefined && this.plotOptions.contact.access >= ContactAccess.Read) {
+              const actors = await contactsOps.getActors(this, [item.contact_id as ActorId]);
+              actor = actors[0];
+            } else {
+              actor = { id: item.contact_id as ActorId, type: ActorType.Contact, name: null };
+            }
+            if (actor) {
+              if (!link) {
+                link = await this.db
+                  .selectFrom("link")
+                  .select(["thread_id", "meta", "channel_id", "source"])
+                  .where("thread_id", "=", threadId)
+                  .where("created_by", "=", this.twistInstanceId)
+                  .executeTakeFirst();
+              }
+              thread.meta = {
+                ...(link?.meta as Record<string, unknown> ?? {}),
+                channelId: link?.channel_id ?? null,
+                linkSource: link?.source ?? null,
+              };
+              callbacks.push({
+                sourceMethod: "onScheduleContactUpdated",
+                args: [thread, item.schedule_id, item.contact_id as ActorId, item.status ?? null, actor],
+              });
+            }
           }
         }
       }

@@ -725,10 +725,14 @@ async function processTwistBatch(
       if (!scheduleContact.schedule_id) continue;
 
       try {
-        await twistWrapper.dispatch("Plot", {
+        const scheduleContactDispatchArgs = {
           itemType: "schedule_contact" as const,
           item: scheduleContact,
-        });
+        };
+        // Plot-tool path for twists that declare plotOptions.thread.access,
+        // Integrations path for connectors (which don't declare Plot).
+        await twistWrapper.dispatch("Plot", scheduleContactDispatchArgs);
+        await twistWrapper.dispatch("Integrations", scheduleContactDispatchArgs);
       } catch (error) {
         logger.error("Error processing schedule contact", error as Error, {
           schedule_id: scheduleContact.schedule_id,
