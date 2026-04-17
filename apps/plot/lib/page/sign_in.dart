@@ -299,11 +299,12 @@ class _SignInPageState extends State<SignInPage> {
                               );
                             },
                             onRedirectAuth: () async {
-                              if (mounted) {
-                                setState(() {
-                                  _isLoading = true;
-                                });
-                              }
+                              // Don't swap the page for LoadingPage here —
+                              // Google's OAuth brand policy expects the flow
+                              // from click → consent screen to be direct, and
+                              // the AuthButton already shows its own spinner
+                              // during the redirect prep. Page state is lost
+                              // once the browser navigates to Google anyway.
                               try {
                                 await Base.auth.signInWithRedirect(
                                   provider: IdTokenProvider.google,
@@ -320,9 +321,6 @@ class _SignInPageState extends State<SignInPage> {
                                     message: e.toString(),
                                     isError: true,
                                   );
-                                  setState(() {
-                                    _isLoading = false;
-                                  });
                                 }
                               } catch (e, t) {
                                 log.warning(

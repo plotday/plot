@@ -488,24 +488,38 @@ class _AuthButtonState extends State<AuthButton> {
   @override
   Widget build(BuildContext context) {
     final config = getAuthProviderConfig(widget.provider);
+    // Always render the provider's branded icon and label at their correct
+    // size/position — Google's Sign-In brand policy prohibits modifying the
+    // "G" logo, and reserving space for a loading indicator inside the button
+    // would shift content. Instead, while loading we dim the entire button
+    // uniformly and overlay a centered spinner via a Stack. The spinner uses
+    // the button's text color so it has guaranteed contrast whether the
+    // background is light (Google, Apple, Microsoft) or dark (Slack, GitHub,
+    // Linear, Monday, Discord).
+    final button = FButton(
+      mainAxisSize: .min,
+      onPress: _isLoading ? null : _onPress,
+      style: buildAuthButtonStyle(context, config),
+      prefix: _ProviderIcon(provider: widget.provider, size: config.iconSize),
+      child: Text(
+        config.buttonText,
+        style: context.theme.typography.md.copyWith(
+          fontWeight: config.fontWeight,
+          fontFamily: config.fontFamily,
+          color: config.textColor,
+          height: 1,
+        ),
+      ),
+    );
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 300),
-      child: FButton(
-        mainAxisSize: .min,
-        onPress: _isLoading ? null : _onPress,
-        style: buildAuthButtonStyle(context, config),
-        prefix: _isLoading
-            ? Spinner(color: config.textColor, size: config.iconSize)
-            : _ProviderIcon(provider: widget.provider, size: config.iconSize),
-        child: Text(
-          config.buttonText,
-          style: context.theme.typography.md.copyWith(
-            fontWeight: config.fontWeight,
-            fontFamily: config.fontFamily,
-            color: _isLoading ? config.disabledTextColor : config.textColor,
-            height: 1,
-          ),
-        ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (_isLoading) Opacity(opacity: 0.4, child: button) else button,
+          if (_isLoading)
+            Spinner(color: config.textColor, size: config.iconSize),
+        ],
       ),
     );
   }
@@ -612,6 +626,7 @@ class _AuthButtonState extends State<AuthButton> {
         if (widget._link != null) {
           _startOAuth();
         } else if (widget._onRedirectAuth != null) {
+          setState(() => _isLoading = true);
           widget._onRedirectAuth!();
         } else {
           _startOAuth();
