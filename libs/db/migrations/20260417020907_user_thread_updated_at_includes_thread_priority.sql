@@ -1,3 +1,8 @@
+-- Take temporary ownership so migrator can CREATE OR REPLACE. Migration
+-- 20260416205018 transferred the view to postgres; CREATE OR REPLACE VIEW
+-- requires the current user to be the owner, so migrator must reclaim it
+-- before modifying and hand it back to postgres afterward.
+ALTER VIEW "user"."thread" OWNER TO migrator;
 -- Modify "thread" view
 CREATE OR REPLACE VIEW "user"."thread" (
   "user_id",
@@ -118,3 +123,5 @@ CREATE OR REPLACE VIEW "user"."thread" (
      LEFT JOIN public.thread_unread tu ON tu.user_id = tp.user_id AND tu.thread_id = a.id
      LEFT JOIN link_agg la ON la.thread_id = a.id
   WHERE (a.draft = false OR a.created_by = tp.user_id) AND (a.contacts && "user".user_contact_ids(tp.user_id) OR a.groups && "user".user_group_ids(tp.user_id));
+-- Restore the ownership transfer from migration 20260416205018.
+ALTER VIEW "user"."thread" OWNER TO postgres;
