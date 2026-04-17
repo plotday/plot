@@ -1,5 +1,19 @@
 # @plotday/twister
 
+## 0.46.0
+
+### Added
+
+- `static multipleInstances` property on `Twist` — set to `true` to allow multiple instances per scope; default is single-instance ([`22e4b0e`](https://github.com/plotday/plot/commit/22e4b0e5f406566a0da62a0cdc99593c0c1234ef))
+
+### Changed
+
+- `source` is now cross-user-scoped — two instances of the same connector emitting the same `source` converge on a single shared thread across users. Documented the requirement that `source` must be globally unique for the logical external item, and called out connectors whose external ids are workspace/tenant-scoped (attio, posthog, outlook-calendar, fellow) and need qualifiers. ([#118](https://github.com/plotday/plot/pull/118) [`969663d`](https://github.com/plotday/plot/commit/969663d59c88489fb5379a9abc427ef8fb92fb7a))
+
+### Fixed
+
+- qualify `source` strings in workspace/tenant/mailbox-scoped connectors so they stay globally unique under cross-user thread dedup. attio now uses `attio:<workspaceId>:<type>:<recordId>`; posthog uses `posthog:<projectId>:person:<distinctId>`; outlook-calendar uses `outlook-calendar:<calendarId>:<eventId>`; fellow uses `fellow:<subdomain>:note:<id>`. google-calendar now uses the event's `iCalUID` (shared across attendees' copies) in place of the per-calendar event id, so the same meeting converges into one thread across users. ([#118](https://github.com/plotday/plot/pull/118) [`44db2b0`](https://github.com/plotday/plot/commit/44db2b05529eb5f2f9e0ffaa5a06c854d037c7ea))
+
 ## 0.45.0
 
 ### Added
