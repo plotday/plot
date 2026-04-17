@@ -640,6 +640,14 @@ export async function update(
     if (twist.teamId !== undefined)
       dbUpdate.team_id = twist.teamId ? BigInt(twist.teamId) : null;
 
+    if (Object.keys(dbUpdate).length === 0) {
+      return await db
+        .selectFrom("twist_instance")
+        .selectAll()
+        .where("id", "=", twist_instance_id)
+        .executeTakeFirstOrThrow();
+    }
+
     return await db
       .updateTable("twist_instance")
       .set(dbUpdate)
