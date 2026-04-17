@@ -898,12 +898,6 @@ class EditSource extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            FormTextInput(
-              key: 'name',
-              label: 'Name',
-              initialValue: name,
-              required: true,
-            ),
             if (teams.isNotEmpty)
               FormSelect<String>(
                 key: 'team_id',
@@ -965,10 +959,9 @@ class EditSource extends ShowForm {
                   }
                 }
 
-                final updatedName = values['name'] as String? ?? name;
                 return SaveSource(
                   twistInstanceId: twistInstanceId,
-                  name: updatedName,
+                  name: name,
                   initialEnabled: initialEnabled,
                   changes: integrationChanges,
                   optionItems: optionItems,
@@ -3144,14 +3137,13 @@ class SaveSource extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // 0. Save updated metadata (name, teamId)
+      // 0. Save updated metadata (teamId only — source names are server-computed)
       await TwistApi.updateTwist(
         twistInstanceId: twistInstanceId,
-        name: name,
         teamId: teamId,
       );
 
-      // Update local database to immediately reflect name and team changes.
+      // Update local database to immediately reflect team change.
       final id = Uuid.fromString(twistInstanceId);
       TwistInstanceRow? twist = TwistInstance.fromCache(id);
       twist ??= await (Store.get.select(
@@ -3162,7 +3154,6 @@ class SaveSource extends Command {
             .update(TwistInstance.table)
             .replace(
               twist.copyWith(
-                name: name,
                 teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
               ),
             );

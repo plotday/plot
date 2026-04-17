@@ -601,9 +601,11 @@ export async function update(
     }
 
     if (twist.name !== undefined) {
-      // Per-user name uniqueness: check other active instances for this owner.
-      // Sources (connectors) are exempt — users can have multiple connections.
-      if (twist.name !== currentTwist.name && twistDef?.is_source !== true) {
+      // Source (connection) names are server-computed as "ConnectorName (account)".
+      // Ignore client-supplied name updates for sources.
+      if (twistDef?.is_source === true) {
+        twist = { ...twist, name: undefined };
+      } else if (twist.name !== currentTwist.name) {
         const teamId =
           twist.teamId !== undefined
             ? twist.teamId
@@ -897,6 +899,38 @@ export async function activateDraft(
     if (existingInstance) {
       throw new SingleInstanceError(teamId ? "team" : "personal");
     }
+  }
+
+  // Source (connection) name override: "ConnectorName (account)"
+  if (twistRecord?.is_source === true) {
+    let accountName: string | null = null;
+
+    // OAuth connectors: derive from twist_instance_connection → contact
+    const connectionContact = await db
+      .selectFrom("twist_instance_connection as tic")
+      .innerJoin("contact as c", "c.id", "tic.actor_id")
+      .select(["c.name", "c.email"])
+      .where("tic.twist_instance_id", "=", draftId)
+      .executeTakeFirst();
+    if (connectionContact) {
+      accountName = connectionContact.name ?? connectionContact.email ?? null;
+    }
+
+    // No-provider connectors: fall back to _accountName stored in options
+    if (!accountName) {
+      const opts = config
+        ?? (typeof draft.options === "string"
+          ? JSON.parse(draft.options)
+          : (draft.options as Record<string, any> | null));
+      const fromOptions = opts?._accountName;
+      if (typeof fromOptions === "string" && fromOptions) {
+        accountName = fromOptions;
+      }
+    }
+
+    name = accountName
+      ? `${twistRecord.name} (${accountName})`
+      : twistRecord.name;
   }
 
   // Name uniqueness — only for multi-instance twists (single-instance always uses package name)
