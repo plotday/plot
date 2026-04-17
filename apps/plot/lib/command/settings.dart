@@ -355,6 +355,14 @@ class ManageTeams extends Command {
   }
 }
 
+Uri _upgradeUri(BuildContext context) {
+  final userState = context.read<UserBloc>().state;
+  final email = userState is UserReady ? userState.user.primaryEmail : null;
+  return Uri.parse(
+    '${Env.siteRoot}/upgrade',
+  ).replace(queryParameters: email != null ? {'email': email} : null);
+}
+
 class UpgradePlan extends Command {
   UpgradePlan()
     : super(
@@ -367,7 +375,7 @@ class UpgradePlan extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     await launchUrl(
-      Uri.parse('${Env.siteRoot}/upgrade'),
+      _upgradeUri(context),
       mode: LaunchMode.externalApplication,
     );
     return const CommandDone();
@@ -386,7 +394,7 @@ class ManageSubscription extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     await launchUrl(
-      Uri.parse('${Env.siteRoot}/upgrade'),
+      _upgradeUri(context),
       mode: LaunchMode.externalApplication,
     );
     return const CommandDone();

@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -11,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'command.dart';
 
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/state/user.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/widget/auth_button.dart'
     show getAuthProviderConfig, buildAuthButtonStyle;
@@ -25,7 +27,6 @@ import 'package:plot/env.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/setup_link_channels.dart';
-import 'package:plot/widget/select_tile.dart';
 import 'package:plot/widget/widget.dart';
 import 'logging.dart';
 
@@ -764,7 +765,12 @@ class _UpgradeCommand extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    launchUrl(Uri.parse('${Env.siteRoot}/upgrade'));
+    final userState = context.read<UserBloc>().state;
+    final email = userState is UserReady ? userState.user.primaryEmail : null;
+    final uri = Uri.parse(
+      '${Env.siteRoot}/upgrade',
+    ).replace(queryParameters: email != null ? {'email': email} : null);
+    launchUrl(uri);
     return const CommandSkipped();
   }
 }
@@ -869,13 +875,12 @@ class EditSource extends ShowForm {
     // Look up the current twist instance to get its current team_id
     final currentTwistId = Uuid.fromString(twistInstanceId);
     TwistInstanceRow? twistInstance = TwistInstance.fromCache(currentTwistId);
-    twistInstance ??= await (Store.get.select(TwistInstance.table)
-          ..where((t) => t.id.equals(currentTwistId.toBytes())))
-        .getSingleOrNull();
-    final initialTeamId =
-        twistInstance?.teamId != null
-            ? twistInstance!.teamId.toString()
-            : 'personal';
+    twistInstance ??= await (Store.get.select(
+      TwistInstance.table,
+    )..where((t) => t.id.equals(currentTwistId.toBytes()))).getSingleOrNull();
+    final initialTeamId = twistInstance?.teamId != null
+        ? twistInstance!.teamId.toString()
+        : 'personal';
 
     // Build option form items for no-provider connectors
     final hasOptions =
@@ -904,14 +909,13 @@ class EditSource extends ShowForm {
                 key: 'team_id',
                 label: 'Team',
                 initialValue: initialTeamId,
-                items:
-                    (search) async =>
-                        ['personal', ...teams.map((t) => t.id)],
-                titleBuilder:
-                    (id) =>
-                        id == 'personal'
-                            ? 'Personal'
-                            : teams.firstWhere((t) => t.id == id).name,
+                items: (search) async => [
+                  'personal',
+                  ...teams.map((t) => t.id),
+                ],
+                titleBuilder: (id) => id == 'personal'
+                    ? 'Personal'
+                    : teams.firstWhere((t) => t.id == id).name,
               ),
             if (optionItems != null) ...optionItems.items,
             if (isNewlyActivated &&
@@ -952,10 +956,9 @@ class EditSource extends ShowForm {
                 // Check connection limit if owner changes
                 if (owner != initialTeamId) {
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit =
-                      team != null
-                          ? team.connections.isAtLimit
-                          : usage.personal.connections.isAtLimit;
+                  final atLimit = team != null
+                      ? team.connections.isAtLimit
+                      : usage.personal.connections.isAtLimit;
 
                   if (atLimit) {
                     return _UpgradeCommand('Upgrade to add more connections');
@@ -1051,10 +1054,11 @@ class _ArchiveSourceCommand extends Command {
       // Try cache first, fall back to DB query if cache misses.
       final id = Uuid.fromString(twistInstanceId);
       var twist = TwistInstance.fromCache(id);
-      twist ??= await (Store.get.select(TwistInstance.table)
-            ..where((t) => t.id.equals(id.toBytes())))
-          .getSingleOrNull()
-          .then((row) => row == null ? null : TwistInstance(row));
+      twist ??=
+          await (Store.get.select(TwistInstance.table)
+                ..where((t) => t.id.equals(id.toBytes())))
+              .getSingleOrNull()
+              .then((row) => row == null ? null : TwistInstance(row));
 
       if (twist != null) {
         await Store.get.save(
@@ -1257,11 +1261,9 @@ class AddSourceDetail extends ShowForm {
         label: 'Team',
         initialValue: teams.first.id,
         items: (search) async => ['personal', ...teams.map((t) => t.id)],
-        titleBuilder:
-            (id) =>
-                id == 'personal'
-                    ? 'Personal'
-                    : teams.firstWhere((t) => t.id == id).name,
+        titleBuilder: (id) => id == 'personal'
+            ? 'Personal'
+            : teams.firstWhere((t) => t.id == id).name,
       );
     }
 
@@ -1296,30 +1298,31 @@ class AddSourceDetail extends ShowForm {
             if (buildTeamSelect() != null) buildTeamSelect()!,
             if (twist.description != null)
               FormInfo(key: 'description', text: twist.description!),
-            ...refreshed.providers.map(
-              (provider) => FormInfo(
+            ...refreshed.providers.map((provider) {
+              final initialOwner = teams.isNotEmpty
+                  ? teams.first.id
+                  : 'personal';
+              final initialTeam = teams.firstWhereOrNull(
+                (t) => t.id == initialOwner,
+              );
+              final initialAtLimit = initialTeam != null
+                  ? initialTeam.connections.isAtLimit
+                  : usage.personal.connections.isAtLimit;
+
+              if (initialAtLimit) {
+                return FormButton(
+                  key: 'upgrade_${provider.provider.name}',
+                  buildCommand: (_) =>
+                      _UpgradeCommand('Upgrade to add more connections'),
+                );
+              }
+
+              return FormInfo(
                 key: 'auth_${provider.provider.name}',
                 divider: false,
                 builder: (formContext) {
                   final values = FormScope.of(formContext)?.values ?? {};
-                  final owner = values['team_id'] as String? ?? 'personal';
-                  final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit =
-                      team != null
-                          ? team.connections.isAtLimit
-                          : usage.personal.connections.isAtLimit;
-
-                  if (atLimit) {
-                    return SelectTile(
-                      label: 'Connect ${provider.provider.name}',
-                      placeholder: 'Upgrade to add more connections',
-                      onSelect:
-                          () =>
-                              _UpgradeCommand('Upgrade to add more connections')
-                                  .run(formContext),
-                    );
-                  }
-
+                  final owner = values['team_id'] as String? ?? initialOwner;
                   return Padding(
                     padding: formContext.theme.spacing.padding.copyWith(top: 0),
                     child: _AuthWithScopeToggles(
@@ -1341,8 +1344,8 @@ class AddSourceDetail extends ShowForm {
                     ),
                   );
                 },
-              ),
-            ),
+              );
+            }),
             if (optionItems != null &&
                 (refreshed.providers.isNotEmpty || refreshed.isEmpty))
               ...optionItems.items,
@@ -1354,10 +1357,9 @@ class AddSourceDetail extends ShowForm {
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit =
-                      team != null
-                          ? team.connections.isAtLimit
-                          : usage.personal.connections.isAtLimit;
+                  final atLimit = team != null
+                      ? team.connections.isAtLimit
+                      : usage.personal.connections.isAtLimit;
 
                   if (atLimit) {
                     return _UpgradeCommand('Upgrade to add more connections');
@@ -1416,30 +1418,31 @@ class AddSourceDetail extends ShowForm {
             if (buildTeamSelect() != null) buildTeamSelect()!,
             if (twist.description != null)
               FormInfo(key: 'description', text: twist.description!),
-            ...integrations.providers.map(
-              (provider) => FormInfo(
+            ...integrations.providers.map((provider) {
+              final initialOwner = teams.isNotEmpty
+                  ? teams.first.id
+                  : 'personal';
+              final initialTeam = teams.firstWhereOrNull(
+                (t) => t.id == initialOwner,
+              );
+              final initialAtLimit = initialTeam != null
+                  ? initialTeam.connections.isAtLimit
+                  : usage.personal.connections.isAtLimit;
+
+              if (initialAtLimit) {
+                return FormButton(
+                  key: 'upgrade_${provider.provider.name}',
+                  buildCommand: (_) =>
+                      _UpgradeCommand('Upgrade to add more connections'),
+                );
+              }
+
+              return FormInfo(
                 key: 'auth_${provider.provider.name}',
                 divider: false,
                 builder: (formContext) {
                   final values = FormScope.of(formContext)?.values ?? {};
-                  final owner = values['team_id'] as String? ?? 'personal';
-                  final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit =
-                      team != null
-                          ? team.connections.isAtLimit
-                          : usage.personal.connections.isAtLimit;
-
-                  if (atLimit) {
-                    return SelectTile(
-                      label: 'Connect ${provider.provider.name}',
-                      placeholder: 'Upgrade to add more connections',
-                      onSelect:
-                          () =>
-                              _UpgradeCommand('Upgrade to add more connections')
-                                  .run(formContext),
-                    );
-                  }
-
+                  final owner = values['team_id'] as String? ?? initialOwner;
                   return Padding(
                     padding: formContext.theme.spacing.padding.copyWith(top: 0),
                     child: _AuthWithScopeToggles(
@@ -1461,8 +1464,8 @@ class AddSourceDetail extends ShowForm {
                     ),
                   );
                 },
-              ),
-            ),
+              );
+            }),
             if (optionItems != null &&
                 (integrations.providers.isNotEmpty || integrations.isEmpty))
               ...optionItems.items,
@@ -1475,10 +1478,9 @@ class AddSourceDetail extends ShowForm {
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit =
-                      team != null
-                          ? team.connections.isAtLimit
-                          : usage.personal.connections.isAtLimit;
+                  final atLimit = team != null
+                      ? team.connections.isAtLimit
+                      : usage.personal.connections.isAtLimit;
 
                   if (atLimit) {
                     return _UpgradeCommand('Upgrade to add more connections');
@@ -1729,7 +1731,9 @@ class ManageTwists extends ShowCommands {
       );
     });
     final addCommands = twistOnlyAvailable
-        .where((twist) => !_isFullyInstalled(twist, twistOnlyTwistInstances, teams))
+        .where(
+          (twist) => !_isFullyInstalled(twist, twistOnlyTwistInstances, teams),
+        )
         .map((twist) => ShowTwistInfo(twist))
         .toList();
 
@@ -1831,10 +1835,9 @@ class EditTwist extends ShowForm {
       var linkChannelSelection = const LinkChannelSelection();
       final linkChannelListController = FormChannelListController();
 
-      final initialTeamId =
-          twistInstance.teamId != null
-              ? twistInstance.teamId.toString()
-              : 'personal';
+      final initialTeamId = twistInstance.teamId != null
+          ? twistInstance.teamId.toString()
+          : 'personal';
 
       return FormData(
         title: 'Edit ${twistInstance.name}',
@@ -1863,17 +1866,18 @@ class EditTwist extends ShowForm {
                           .toList();
                       return [
                         initialTeamId,
-                        ..._getAvailableScopes(matchingTwist, otherInstances, teams)
-                            .where((s) => s != initialTeamId),
+                        ..._getAvailableScopes(
+                          matchingTwist,
+                          otherInstances,
+                          teams,
+                        ).where((s) => s != initialTeamId),
                       ];
                     }
                     return ['personal', ...teams.map((t) => t.id)];
                   },
-                  titleBuilder:
-                      (id) =>
-                          id == 'personal'
-                              ? 'Personal'
-                              : teams.firstWhere((t) => t.id == id).name,
+                  titleBuilder: (id) => id == 'personal'
+                      ? 'Personal'
+                      : teams.firstWhere((t) => t.id == id).name,
                 ),
               if (hasLinkPermission)
                 FormChannelList(
@@ -1900,7 +1904,8 @@ class EditTwist extends ShowForm {
                   // Check twist limit if owner changes (for non-sources)
                   if (owner != initialTeamId && !matchingTwist.isSource) {
                     // Check personal limits
-                    if (owner == 'personal' && usage.personal.twists.isAtLimit) {
+                    if (owner == 'personal' &&
+                        usage.personal.twists.isAtLimit) {
                       return _UpgradeCommand('Upgrade to add more twists');
                     }
                     // Note: team twist limits are not yet tracked in UsageData (UI side),
@@ -2235,7 +2240,8 @@ class SetupTwist extends ShowForm {
     // above it (team select, integrations, options, or link channels).
     // When the user has no teams and the twist has no integrations/options, the
     // form only shows the name field — a divider would look out of place.
-    final hasVisibleContentAboveAddButton = teams.isNotEmpty ||
+    final hasVisibleContentAboveAddButton =
+        teams.isNotEmpty ||
         integrations.providers.isNotEmpty ||
         optionItems != null ||
         hasLinkPermission;
@@ -2263,17 +2269,15 @@ class SetupTwist extends ShowForm {
                     ? availableScopes.first
                     : 'personal',
                 items: (search) async => availableScopes,
-                titleBuilder:
-                    (id) =>
-                        id == 'personal'
-                            ? 'Personal'
-                            : teams.firstWhere((t) => t.id == id).name,
+                titleBuilder: (id) => id == 'personal'
+                    ? 'Personal'
+                    : teams.firstWhere((t) => t.id == id).name,
                 // For single-instance twists with only one available scope,
                 // show readonly so the user can see where it will be installed
                 readonlyMessage:
                     !twist.multipleInstances && availableScopes.length == 1
-                        ? 'Already active in all other scopes'
-                        : null,
+                    ? 'Already active in all other scopes'
+                    : null,
               ),
             FormChannelList(
               key: 'integrations',
@@ -2309,10 +2313,9 @@ class SetupTwist extends ShowForm {
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit =
-                      team != null
-                          ? team.connections.isAtLimit
-                          : usage.personal.connections.isAtLimit;
+                  final atLimit = team != null
+                      ? team.connections.isAtLimit
+                      : usage.personal.connections.isAtLimit;
 
                   if (atLimit) {
                     return _UpgradeCommand('Upgrade to add more connections');
@@ -3151,16 +3154,18 @@ class SaveSource extends Command {
       // Update local database to immediately reflect name and team changes.
       final id = Uuid.fromString(twistInstanceId);
       TwistInstanceRow? twist = TwistInstance.fromCache(id);
-      twist ??= await (Store.get.select(TwistInstance.table)
-            ..where((t) => t.id.equals(id.toBytes())))
-          .getSingleOrNull();
+      twist ??= await (Store.get.select(
+        TwistInstance.table,
+      )..where((t) => t.id.equals(id.toBytes()))).getSingleOrNull();
       if (twist != null) {
-        await Store.get.update(TwistInstance.table).replace(
-          twist.copyWith(
-            name: name,
-            teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
-          ),
-        );
+        await Store.get
+            .update(TwistInstance.table)
+            .replace(
+              twist.copyWith(
+                name: name,
+                teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
+              ),
+            );
       }
 
       // 1. Save updated options if present (no-provider connectors)
@@ -3263,12 +3268,14 @@ class SaveTwistSettings extends Command {
       );
 
       // Update local database to immediately reflect name and team changes.
-      await Store.get.update(TwistInstance.table).replace(
-        twistInstance.copyWith(
-          name: name!,
-          teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
-        ),
-      );
+      await Store.get
+          .update(TwistInstance.table)
+          .replace(
+            twistInstance.copyWith(
+              name: name!,
+              teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
+            ),
+          );
 
       // Save link channel selections if provided
       if (linkChannels != null) {
@@ -3329,12 +3336,14 @@ class SaveTwist extends Command {
       );
 
       // Update local database to immediately reflect name and team changes.
-      await Store.get.update(TwistInstance.table).replace(
-        twistInstance.copyWith(
-          name: name!,
-          teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
-        ),
-      );
+      await Store.get
+          .update(TwistInstance.table)
+          .replace(
+            twistInstance.copyWith(
+              name: name!,
+              teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
+            ),
+          );
 
       // 2. Compute providers being removed (skip their channel changes)
       final removedProviders = changes.removedAccounts

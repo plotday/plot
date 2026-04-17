@@ -119,7 +119,12 @@ export async function createLink(
       }
     }
 
-    let { id: threadId, priorityId: threadPriorityId } = await createThread(plot, threadData);
+    // Pass skipNotify=true so we can fire a single notifySyncDOs after the
+    // link row (and any schedules) are committed. Otherwise clients see the
+    // thread with no link yet and activity_at falls back to created_at=now(),
+    // briefly placing the thread at the top of today before it settles to the
+    // link's source_created_at.
+    let { id: threadId, priorityId: threadPriorityId } = await createThread(plot, threadData, true);
 
     // Step 2: Create the link row (priority_id returned from createThread)
 
@@ -325,6 +330,12 @@ export async function createLink(
         link.scheduleOccurrences
       );
     }
+
+    // Single notify after thread + link (+ schedules) are all written so the
+    // first sync push the client receives already has the link row, and
+    // activity_at computes from link.source_created_at instead of falling
+    // back to thread.created_at = now().
+    await plot.notifySyncDOs(new Set([threadPriorityId]));
 
     return threadId;
   } catch (error) {

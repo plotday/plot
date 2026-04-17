@@ -43,6 +43,12 @@ class ToolShed {
     this.toolPromises = null;
     this.resolvedTools = null;
     this.initComplete = false;
+    // Track every built-in tool RPC stub created under this twist build so
+    // they can be released after the entrypoint method returns. Without this,
+    // the Workers runtime emits "An RPC stub was not disposed properly" once
+    // the GC eventually collects them. Only the root ToolShed owns the list;
+    // child sheds reference the same array.
+    this.disposables = rootToolShed ? rootToolShed.disposables : [];
 
     // Bind build method so it can be passed around
     this.build = this._buildTool.bind(this);
@@ -112,6 +118,7 @@ class ToolShed {
     if (isBuiltIn) {
       // Built-in tool: use factory
       tool = await this.builtInToolFactory(toolPath, id, options);
+      this.rootToolShed.disposables.push(tool);
     } else {
       // Regular tool: construct with id, options, and toolShed
       tool = new ToolClass(this.twistInstanceId, options, toolShed);
@@ -134,7 +141,9 @@ class ToolShed {
 
   async _buildBuiltIn(id, options) {
     const toolPath = this.path.concat([id]);
-    return await this.builtInToolFactory(toolPath, id, options);
+    const tool = await this.builtInToolFactory(toolPath, id, options);
+    this.rootToolShed.disposables.push(tool);
+    return tool;
   }
 
   async waitForReady() {
@@ -226,6 +235,25 @@ class ToolShed {
       throw new Error("Tools not ready. Call waitForReady() first.");
     }
     return this.resolvedTools;
+  }
+
+  // Release every built-in tool RPC stub captured during this build. Safe to
+  // call once at the end of an entrypoint method (success or error path).
+  disposeAll() {
+    if (this.rootToolShed !== this) {
+      return this.rootToolShed.disposeAll();
+    }
+    for (const stub of this.disposables) {
+      try {
+        if (stub && typeof stub.dispose === 'function') {
+          stub.dispose();
+        }
+      } catch {
+        // Disposing a stub that's already been disposed (or whose connection
+        // dropped) shouldn't break the lifecycle method. Swallow silently.
+      }
+    }
+    this.disposables.length = 0;
   }
 }
 
@@ -409,7 +437,12 @@ export default class extends WorkerEntrypoint {
 
   async init(twistInit) {
     console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
-    const { twist } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
+    let tools;
+    try {
+      ({ tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory));
+    } finally {
+      tools?.disposeAll();
+    }
   }
 
   /**
@@ -421,22 +454,31 @@ export default class extends WorkerEntrypoint {
     const isConnector = TwistConstructor.isConnector === true;
     if (!isConnector) return null;
 
-    const { twist } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
-    return {
-      provider: twist.provider,
-      scopes: twist.scopes,
-      linkTypes: twist.linkTypes || [],
-      ...(TwistConstructor.handleReplies ? { handleReplies: true } : {}),
-      ...(twist.singleChannel ? { singleChannel: true } : {}),
-      ...(twist.shared ? { shared: true } : {}),
-      ...(twist.keyOption ? { keyOption: twist.keyOption } : {}),
-    };
+    let tools;
+    try {
+      const built = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
+      tools = built.tools;
+      const twist = built.twist;
+      return {
+        provider: twist.provider,
+        scopes: twist.scopes,
+        linkTypes: twist.linkTypes || [],
+        ...(TwistConstructor.handleReplies ? { handleReplies: true } : {}),
+        ...(twist.singleChannel ? { singleChannel: true } : {}),
+        ...(twist.shared ? { shared: true } : {}),
+        ...(twist.keyOption ? { keyOption: twist.keyOption } : {}),
+      };
+    } finally {
+      tools?.disposeAll();
+    }
   }
 
   async activate(twistInit, context) {
     console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
+    let tools;
     try {
-      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
+      let twist;
+      ({ twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory));
 
       // Pre-phase: deepest tools first
       await callPreLifecycle(tools, 'preActivate', context);
@@ -469,13 +511,17 @@ export default class extends WorkerEntrypoint {
       const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
       twistError.name = 'TwistError';
       throw twistError;
+    } finally {
+      tools?.disposeAll();
     }
   }
 
   async upgrade(twistInit) {
     console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
+    let tools;
     try {
-      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
+      let twist;
+      ({ twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory));
 
       // Pre-phase: deepest tools first
       await callPreLifecycle(tools, 'preUpgrade');
@@ -497,13 +543,17 @@ export default class extends WorkerEntrypoint {
       const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
       twistError.name = 'TwistError';
       throw twistError;
+    } finally {
+      tools?.disposeAll();
     }
   }
 
   async deactivate(twistInit) {
     console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
+    let tools;
     try {
-      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
+      let twist;
+      ({ twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory));
 
       // Pre-phase: deepest tools first
       await callPreLifecycle(tools, 'preDeactivate');
@@ -525,13 +575,17 @@ export default class extends WorkerEntrypoint {
       const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
       twistError.name = 'TwistError';
       throw twistError;
+    } finally {
+      tools?.disposeAll();
     }
   }
 
   async callCallback(twistInit, path, functionName, ...args) {
     console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
+    let tools;
     try {
-      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
+      let twist;
+      ({ twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory));
 
       // If no path, call on twist directly
       if (path.length === 0) {
@@ -623,14 +677,18 @@ export default class extends WorkerEntrypoint {
       const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
       twistError.name = 'TwistError';
       throw twistError;
+    } finally {
+      tools?.disposeAll();
     }
   }
 
   async dispatchToTool(twistInit, paths, optionPath, ...args) {
     console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
+    let tools;
     try {
+      let twist;
       // Build twist ONCE for all paths
-      const { twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory);
+      ({ twist, tools } = await buildTwist(twistInit.twistInstanceId, twistInit.userId, twistInit.builtInToolFactory));
 
       // Loop through all paths
       for (const path of paths) {
@@ -731,6 +789,8 @@ export default class extends WorkerEntrypoint {
       const twistError = new Error("__TWIST_ERROR__" + JSON.stringify(errorData));
       twistError.name = 'TwistError';
       throw twistError;
+    } finally {
+      tools?.disposeAll();
     }
   }
 }

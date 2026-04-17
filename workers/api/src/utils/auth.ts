@@ -51,14 +51,17 @@ export async function getUser(
       // Fast path: UUID is in the JWT metadata
       const row = await db
         .selectFrom("user")
-        .select(["email", "name"])
+        .select(["email", "name", "clerk_id"])
         .where("id", "=", userId)
         .executeTakeFirst();
-      if (row) {
+      if (row && row.clerk_id) {
         email = row.email;
         name = row.name;
       } else {
-        // external_id is stale or missing in DB; fall back to clerk_id lookup
+        // Either the external_id is stale/missing, or the row is a seed
+        // placeholder with no clerk_id yet (e.g. kris@plot.day from the
+        // system twist_instance seed). Fall through so /activate runs the
+        // full new-user branch and links clerk_id.
         userId = undefined;
       }
     }

@@ -92,7 +92,8 @@ export type { PreparedThread as PreparedActivity } from "./thread-helpers";
 
 export async function createThread(
   plot: Plot,
-  activity: NewThread | NewThreadWithNotes
+  activity: NewThread | NewThreadWithNotes,
+  skipNotify = false
 ): Promise<{ id: Uuid; priorityId: string }> {
   try {
     // Use shared helper for all preparation logic
@@ -290,8 +291,13 @@ export async function createThread(
     }
     // unread === true: do nothing (explicitly unread for all)
 
-    // Notify sync DOs since triggers skip HTTP calls for twist writes
-    await plot.notifySyncDOs(new Set([priorityId]));
+    // Notify sync DOs since triggers skip HTTP calls for twist writes.
+    // createLink passes skipNotify=true so it can batch one notify after the
+    // link row exists — otherwise clients receive the thread with no link yet
+    // and activity_at falls back to created_at=now() until the link arrives.
+    if (!skipNotify) {
+      await plot.notifySyncDOs(new Set([priorityId]));
+    }
 
     return { id: dbResult.id as Uuid, priorityId };
   } catch (error) {

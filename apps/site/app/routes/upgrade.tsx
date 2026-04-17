@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-import { SignIn, useAuth, useUser } from "@clerk/react-router";
+import { SignIn, useAuth, useClerk, useUser } from "@clerk/react-router";
 import { Link, useSearchParams } from "react-router";
 
 import {
@@ -86,7 +86,26 @@ export async function loader({ context }: Route.LoaderArgs) {
 export default function Upgrade({ loaderData }: Route.ComponentProps) {
   const { isSignedIn, isLoaded, getToken } = useAuth();
   const { user } = useUser();
+  const { signOut } = useClerk();
   const [searchParams] = useSearchParams();
+  const expectedEmail = searchParams.get("email")?.toLowerCase() || null;
+  const currentEmail =
+    user?.primaryEmailAddress?.emailAddress?.toLowerCase() || null;
+  const emailMismatch =
+    isLoaded &&
+    isSignedIn &&
+    expectedEmail !== null &&
+    currentEmail !== null &&
+    expectedEmail !== currentEmail;
+
+  // If the Clerk session is for a different user than the app opened this page
+  // for (e.g. website signed in as a personal account, app signed in as work),
+  // sign out so the user can sign in with the correct account.
+  useEffect(() => {
+    if (emailMismatch) {
+      signOut();
+    }
+  }, [emailMismatch, signOut]);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(
     null
   );
@@ -118,7 +137,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
 
   // Fetch subscription status
   useEffect(() => {
-    if (!isSignedIn) {
+    if (!isSignedIn || emailMismatch) {
       setLoading(false);
       return;
     }
@@ -139,7 +158,7 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
       }
     }
     fetchSubscription();
-  }, [isSignedIn, getToken, loaderData.apiUrl]);
+  }, [isSignedIn, emailMismatch, getToken, loaderData.apiUrl]);
 
   const handleCheckout = async (plan: "core" | "pro" | "team") => {
     setLoadingPlan(plan);
@@ -255,19 +274,24 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
         <Stack gap="md" align="center" ta="center">
           <Title order={2}>Amplify your progress</Title>
           <Text c="dimmed">
-            Sign in to upgrade to {planLabel}.
+            {expectedEmail
+              ? `Sign in as ${expectedEmail} to upgrade to ${planLabel}.`
+              : `Sign in to upgrade to ${planLabel}.`}
           </Text>
           <SignIn
             forceRedirectUrl={returnUrl}
             signUpForceRedirectUrl={returnUrl}
+            initialValues={
+              expectedEmail ? { emailAddress: expectedEmail } : undefined
+            }
           />
         </Stack>
       </Container>
     );
   }
 
-  // Loading
-  if (loading) {
+  // Loading (or waiting for signOut after detecting wrong Clerk account)
+  if (loading || emailMismatch) {
     return (
       <Container size="sm" mt="xl" mb="xl">
         <Stack align="center" gap="md">
