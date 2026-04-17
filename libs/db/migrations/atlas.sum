@@ -1,4 +1,4 @@
-h1:Hq+tPAaCuKKOOe4FzCtcEcdXc9tQ6V3rHL+Vu/OjwR0=
+h1:FTUyUX/8hGXT9Qph4DY56W6j6vmzu+OxWuz8lTnAjsg=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -270,5 +270,5 @@ h1:Hq+tPAaCuKKOOe4FzCtcEcdXc9tQ6V3rHL+Vu/OjwR0=
 20260417013604_topic_short_circuit_in_classify.sql h1:h6FG5rbfQoy67gPzlzWsWwxoTjMO0zMRStNUNxzvhlM=
 20260417014227_channel_topic_uses_channel_pk.sql h1:uDFV+HlhdTJZHK5NrylkXWEluCqu3VoQkyUldecQyJQ=
 20260417020207_reclassify_on_channel_topic_set.sql h1:K0iwiDmN/oMJYoDjWaNg/vd5OgJ6wCLmhi+c93IXufQ=
-20260417020907_user_thread_updated_at_includes_thread_priority.sql h1:hgEB1vcaYi0ZGLMrCAgy5l6jYUeuA7qKv0jViUR346Q=
-20260417021519_sync_user_for_thread_priority.sql h1:nCTuCAwCYeQ2T5qw/lNNGPVHVuaWWnP/kJy9rEoX3oA=
+20260417020907_user_thread_updated_at_includes_thread_priority.sql h1:CCQJzhXpD+Xh4ME+LqnhGHsc70wVHiHofuo25u3z8Ew=
+20260417021519_sync_user_for_thread_priority.sql h1:3jteWaCPWd8+Ktf9HIJtNp45Z9oszgBrygcCYtDv95o=
