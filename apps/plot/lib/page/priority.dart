@@ -2089,7 +2089,9 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
   void didUpdateWidget(covariant _ActivityFeedItem oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.baseThread.id != widget.baseThread.id ||
-        oldWidget.baseThread.scheduleId != widget.baseThread.scheduleId) {
+        oldWidget.baseThread.scheduleId != widget.baseThread.scheduleId ||
+        oldWidget.baseThread.currentUserRsvp !=
+            widget.baseThread.currentUserRsvp) {
       _representative = Thread.loadRepresentativeForFeed(
         widget.baseThread,
         now: DateTime.now(),

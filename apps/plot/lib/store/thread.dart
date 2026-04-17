@@ -3932,7 +3932,10 @@ class Thread extends Equatable implements Comparable<Thread> {
     List<Thread> generated;
     try {
       generated = base.generateOccurrences(window);
-    } catch (_) {
+    } catch (e, t) {
+      log.warning(
+        "Error generating occurrences for feed representative of ${base.id}: $e\n$t",
+      );
       generated = const [];
     }
     final generatedRows =
