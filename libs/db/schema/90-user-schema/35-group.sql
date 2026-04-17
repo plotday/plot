@@ -65,4 +65,3 @@ WHERE
         ))
     );
 
-ALTER VIEW "user"."group" OWNER TO postgres;

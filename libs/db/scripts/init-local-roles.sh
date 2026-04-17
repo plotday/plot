@@ -10,7 +10,10 @@ BEGIN
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'readonly') THEN 
         CREATE ROLE readonly; 
     END IF; 
-    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'api') THEN 
-        CREATE ROLE api; 
-    END IF; 
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'api') THEN
+        CREATE ROLE api;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'migrator') THEN
+        CREATE ROLE migrator;
+    END IF;
 END \$\$;"

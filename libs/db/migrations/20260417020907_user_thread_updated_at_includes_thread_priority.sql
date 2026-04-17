@@ -1,7 +1,3 @@
--- Migration 20260416205018 transferred "user"."thread" to postgres.
--- CREATE OR REPLACE VIEW requires the caller to be the owner, and migrator
--- is a NOINHERIT member of postgres — so SET ROLE to act as owner.
-SET ROLE postgres;
 -- Modify "thread" view
 CREATE OR REPLACE VIEW "user"."thread" (
   "user_id",
@@ -122,4 +118,3 @@ CREATE OR REPLACE VIEW "user"."thread" (
      LEFT JOIN public.thread_unread tu ON tu.user_id = tp.user_id AND tu.thread_id = a.id
      LEFT JOIN link_agg la ON la.thread_id = a.id
   WHERE (a.draft = false OR a.created_by = tp.user_id) AND (a.contacts && "user".user_contact_ids(tp.user_id) OR a.groups && "user".user_group_ids(tp.user_id));
-RESET ROLE;

@@ -41,4 +41,3 @@ FROM
 WHERE
     tp.user_id IS NOT NULL OR p.user_id IS NOT NULL;
 
-ALTER VIEW "user"."link" OWNER TO postgres;

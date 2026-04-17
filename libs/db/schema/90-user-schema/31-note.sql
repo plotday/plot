@@ -43,7 +43,6 @@ WHERE
         OR a.groups && "user".user_group_ids(tp.user_id)
     );
 
-ALTER VIEW "user"."note" OWNER TO postgres;
 
 -- user.note_redacted — stub rows for notes the user can no longer see.
 --
@@ -88,7 +87,6 @@ WHERE
         AND n.created_by != tp.user_id
         AND NOT (COALESCE(n.access_contacts, ARRAY[]::uuid[]) && "user".user_contact_ids(tp.user_id)));
 
-ALTER VIEW "user"."note_redacted" OWNER TO postgres;
 
 -- User-accessible note tags
 CREATE OR REPLACE VIEW "user"."note_tags"
@@ -112,4 +110,3 @@ WHERE
         OR n.created_by = ua.user_id
         OR n.access_contacts && "user".user_contact_ids(ua.user_id));
 
-ALTER VIEW "user"."note_tags" OWNER TO postgres;

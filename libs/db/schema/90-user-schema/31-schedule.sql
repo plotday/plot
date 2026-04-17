@@ -69,4 +69,3 @@ WHERE
     -- Per-user schedules visible only to the owning user
     OR s.user_id = tp.user_id);
 
-ALTER VIEW "user"."schedule" OWNER TO postgres;

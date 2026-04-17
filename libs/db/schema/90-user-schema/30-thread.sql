@@ -169,7 +169,6 @@ WHERE
         OR a.groups && "user".user_group_ids(tp.user_id)
     );
 
-ALTER VIEW "user"."thread" OWNER TO postgres;
 
 CREATE OR REPLACE VIEW "user"."thread_tags"
 --
@@ -207,4 +206,3 @@ FROM
         GROUP BY
             sq.occurrence) tt ON true;
 
-ALTER VIEW "user"."thread_tags" OWNER TO postgres;
