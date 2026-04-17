@@ -2081,16 +2081,26 @@ class Store extends _$Store {
         // Validate critical tables have expected columns. On web, OPFS may
         // survive "Clear site data" leaving a stale schema that passes
         // migration (CREATE TABLE IF NOT EXISTS) but fails at query time.
-        try {
-          await customSelect(
-            'SELECT id, archived_at, root, created_at FROM priorities LIMIT 0',
-          ).get();
-        } catch (e) {
-          log.warning('Database schema validation failed, rebuilding: $e');
-          await _dropAllUserObjects(this);
-          await Migrator(this).createAll();
-          await ThreadFts.createTable(this);
-          await NoteFts.createTable(this);
+        // Probe one column from each recently-changed table so drift in
+        // twist_instances (v302/v307), groups (v308), or threads.topic
+        // (v308) triggers a rebuild alongside priorities drift.
+        const probes = [
+          'SELECT id, archived_at, root, created_at FROM priorities LIMIT 0',
+          'SELECT id, updated_at, multiple_instances, is_builtin FROM twist_instances LIMIT 0',
+          'SELECT id, updated_at FROM groups LIMIT 0',
+          'SELECT id, topic, groups FROM threads LIMIT 0',
+        ];
+        for (final sql in probes) {
+          try {
+            await customSelect(sql).get();
+          } catch (e) {
+            log.warning('Database schema validation failed, rebuilding: $e');
+            await _dropAllUserObjects(this);
+            await Migrator(this).createAll();
+            await ThreadFts.createTable(this);
+            await NoteFts.createTable(this);
+            break;
+          }
         }
       },
     );
