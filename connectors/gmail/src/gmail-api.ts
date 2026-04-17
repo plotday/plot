@@ -62,6 +62,17 @@ export type SyncState = {
   watchExpiration?: Date;
 };
 
+export class GmailApiError extends Error {
+  constructor(
+    public status: number,
+    public statusText: string,
+    body: string,
+  ) {
+    super(`Gmail API error: ${status} ${statusText} - ${body}`);
+    this.name = "GmailApiError";
+  }
+}
+
 export class GmailApi {
   private baseUrl = "https://gmail.googleapis.com/gmail/v1/users/me";
 
@@ -106,9 +117,7 @@ export class GmailApi {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
-        `Gmail API error: ${response.status} ${response.statusText} - ${errorText}`
-      );
+      throw new GmailApiError(response.status, response.statusText, errorText);
     }
 
     return await response.json();
@@ -586,7 +595,7 @@ export async function syncGmailChannel(
   // Incremental sync: use History API to fetch only changed threads since last historyId.
   // This avoids re-listing all threads in the label on every webhook notification.
   if (state.historyId && !state.pageToken) {
-    return syncGmailChannelIncremental(api, state);
+    return syncGmailChannelIncremental(api, state, batchSize);
   }
 
   // Full sync (initial or paginated): list all threads in the label
@@ -599,7 +608,8 @@ export async function syncGmailChannel(
  */
 async function syncGmailChannelIncremental(
   api: GmailApi,
-  state: SyncState
+  state: SyncState,
+  batchSize: number
 ): Promise<{
   threads: GmailThread[];
   state: SyncState;
@@ -610,8 +620,26 @@ async function syncGmailChannelIncremental(
     labelId = "INBOX";
   }
 
-  // Fetch history entries since last sync
-  const historyResult = await api.getHistory(state.historyId!, labelId);
+  // Fetch history entries since last sync. Gmail returns 404 when the stored
+  // historyId is outside the available history window (expired after ~7 days
+  // of inactivity, or mailbox was reset). Per Gmail API docs, the client must
+  // recover by performing a full sync.
+  let historyResult;
+  try {
+    historyResult = await api.getHistory(state.historyId!, labelId);
+  } catch (error) {
+    if (error instanceof GmailApiError && error.status === 404) {
+      console.warn(
+        `Gmail history expired for channel ${state.channelId}; falling back to full sync`
+      );
+      return syncGmailChannelFull(
+        api,
+        { channelId: state.channelId, lastSyncTime: state.lastSyncTime },
+        batchSize
+      );
+    }
+    throw error;
+  }
 
   // Extract unique thread IDs from history entries
   const changedThreadIds = new Set<string>();
