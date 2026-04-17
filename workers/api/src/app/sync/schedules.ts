@@ -86,6 +86,24 @@ schedules.post("/sync/schedules", async (c) => {
     }
   }
 
+  // Capture pre-upsert activeness so we can detect a transition from
+  // inactive → active below (only in that case should we unarchive the
+  // thread). Without this, any re-save of an already-active user schedule
+  // — including the implicit push triggered when Thread.save() runs while
+  // _userSchedule is non-null — unarchives the thread the user just archived.
+  const preUpsertId = schedule?.id as string | undefined;
+  const preUpsert = preUpsertId
+    ? await (c.var.db as any)
+        .selectFrom("schedule")
+        .select(["user_id", "archived_at", "on", "at"])
+        .where("id", "=", preUpsertId)
+        .executeTakeFirst()
+    : undefined;
+  const preWasActiveUserSchedule =
+    preUpsert?.user_id != null &&
+    preUpsert.archived_at == null &&
+    (preUpsert.on != null || preUpsert.at != null);
+
   const result = await withUserDb(c.var.db, c.var.user.id, async (trx) => {
     const scheduleResult = await rpcUser(trx, "upsert_schedule", {
       user_id: c.var.user.id,
@@ -132,13 +150,17 @@ schedules.post("/sync/schedules", async (c) => {
     }
 
     // Adding a thread to the agenda should lift archive state so the user
-    // sees it where they expect to act. Only clears archive for user-owned
-    // schedules that are active (on/at set) and not themselves archived.
+    // sees it where they expect to act. Only clears archive when this upsert
+    // transitions the user schedule from inactive → active — not on every
+    // no-op re-save. Thread.save() pushes _userSchedule unconditionally when
+    // it's non-null, so archiving a thread with outstanding tasks otherwise
+    // fires this path and re-unarchives the thread.
     const isActiveUserSchedule =
       updated?.user_id != null &&
       updated.archived_at == null &&
       (updated.on != null || updated.at != null);
-    if (threadId && isActiveUserSchedule) {
+    const justBecameActive = isActiveUserSchedule && !preWasActiveUserSchedule;
+    if (threadId && justBecameActive) {
       await (c.var.db as any)
         .updateTable("thread")
         .set({ archived_at: null })
