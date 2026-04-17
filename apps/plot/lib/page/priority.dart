@@ -1824,34 +1824,14 @@ class _PriorityPageState extends State<PriorityPage> {
               activity: (agendaActivity) {
                 final baseThread = agendaActivity.thread;
                 return [
-                  FutureBuilder<Thread?>(
-                    key: ValueKey(
-                      'feed_activitywidget_${baseThread.id}',
-                    ),
-                    future: Thread.loadRepresentativeForFeed(
-                      baseThread,
-                      now: DateTime.now(),
-                    ),
-                    builder: (context, snapshot) {
-                      final rep = snapshot.data;
-                      final display = rep ?? baseThread;
-                      return ThreadWidget(
-                        key: ValueKey(
-                          'feed_activitywidget_${baseThread.id}_'
-                          '${rep?.scheduleId ?? baseThread.scheduleId}',
-                        ),
-                        activity: display,
-                        selected:
-                            state.thread != null &&
-                            baseThread.id == state.thread!.id,
-                        now: agendaActivity.now,
-                        focusNode: focusNode,
-                        context: state.context,
-                        showSubPriority: true,
-                        bump: false,
-                        showEventTiming: rep != null,
-                      );
-                    },
+                  _ActivityFeedItem(
+                    key: ValueKey('feed_activitywidget_${baseThread.id}'),
+                    baseThread: baseThread,
+                    selected: state.thread != null &&
+                        baseThread.id == state.thread!.id,
+                    now: agendaActivity.now,
+                    focusNode: focusNode,
+                    priorityContext: state.context,
                   ),
                 ];
               },
@@ -2069,6 +2049,76 @@ class _NotificationButtonState extends State<_NotificationButton> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ActivityFeedItem extends StatefulWidget {
+  const _ActivityFeedItem({
+    super.key,
+    required this.baseThread,
+    required this.selected,
+    required this.now,
+    required this.focusNode,
+    required this.priorityContext,
+  });
+
+  final Thread baseThread;
+  final bool selected;
+  final bool now;
+  final FocusNode focusNode;
+  final Priority priorityContext;
+
+  @override
+  State<_ActivityFeedItem> createState() => _ActivityFeedItemState();
+}
+
+class _ActivityFeedItemState extends State<_ActivityFeedItem> {
+  late Future<Thread?> _representative;
+
+  @override
+  void initState() {
+    super.initState();
+    _representative = Thread.loadRepresentativeForFeed(
+      widget.baseThread,
+      now: DateTime.now(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActivityFeedItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.baseThread.id != widget.baseThread.id ||
+        oldWidget.baseThread.scheduleId != widget.baseThread.scheduleId) {
+      _representative = Thread.loadRepresentativeForFeed(
+        widget.baseThread,
+        now: DateTime.now(),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Thread?>(
+      future: _representative,
+      builder: (context, snapshot) {
+        final rep = snapshot.data;
+        final display = rep ?? widget.baseThread;
+        return ThreadWidget(
+          key: ValueKey(
+            'feed_activitywidget_${widget.baseThread.id}_'
+            '${rep?.scheduleId ?? widget.baseThread.scheduleId}',
+          ),
+          activity: display,
+          selected: widget.selected,
+          now: widget.now,
+          focusNode: widget.focusNode,
+          context: widget.priorityContext,
+          showSubPriority: true,
+          bump: false,
+          showEventTiming: rep != null,
+        );
+      },
     );
   }
 }
