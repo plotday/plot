@@ -117,8 +117,8 @@ Outside the activity feed, `rsvpInheritedFromSeries` is `false` by default on ag
 ```dart
 final rep = agendaActivity.thread.representativeForFeed(
   now: agendaActivity.now,
-  lookAhead: const Duration(days: 60),
-  lookBack: const Duration(days: 60),
+  lookAhead: const Duration(days: 90),
+  lookBack: const Duration(days: 30),
 );
 // If rep is null (no qualifying occurrence), fall back to the base thread
 // without showEventTiming — the thread still shows, just no RSVP UI.
@@ -164,7 +164,7 @@ When the user has skipped the series:
 | Non-recurring event, user already responded | `ToggleRsvp`, same as agenda |
 | Recurring, upcoming instance exists | Representative = earliest upcoming; RSVP UI acts on it (series or occurrence per origin rule) |
 | Recurring, only past instances within window | Representative = latest past; RSVP UI acts on it |
-| Recurring, nothing in ±60d window | `rep = null` → no RSVP UI; thread still shows in feed |
+| Recurring, nothing in [-30d, +90d] window | `rep = null` → no RSVP UI; thread still shows in feed |
 | Whole series declined | Thread visible in feed; `ToggleRsvp(Attend)` re-accepts series (no `occurrence` sent) |
 | One occurrence override has occurrence-level RSVP; series is "attend" | On that representative: `rsvpInheritedFromSeries=false`; `ToggleRsvp` targets that occurrence |
 | Upcoming occurrence is archived (cancelled), past instances exist | Representative = latest past (archived upcoming excluded during merge) |
@@ -205,6 +205,6 @@ No schema, no server, no data migration. Client-only change, shippable in a stan
 
 ## Out-of-scope follow-ups
 
-- **Dynamic window.** ±60d is a reasonable default for "events that show up in the feed". If users regularly see stale recurring threads whose last instance was >60 days ago and no upcoming instances land in the next 60 days, we could widen the window per-thread or extend to "latest persisted override" as a fallback. Not doing it now; easy to add if it comes up.
+- **Dynamic window.** The default ([-30d, +90d]) is asymmetric because recently-past instances matter less than upcoming ones — the feed is primarily a forward-looking RSVP surface. If users regularly see stale recurring threads whose last instance was >30 days ago and no upcoming instances land in the next 90 days, we could widen per-thread or extend to "latest persisted override" as a fallback. Not doing it now; easy to add if it comes up.
 - **Attendee count indicator.** The layout doc already supports schedule-date metadata. Adding a "N attendees" badge near the title is out of scope — the existing RSVP buttons already communicate that there are other attendees when Attend/Skip is visible.
 - **Feed sort side effects.** Representative-occurrence resolution is render-only and does NOT feed back into the activity feed's sort key (which uses thread activity time, not schedule time). If future work wants "next upcoming event bubbles up in the feed", that's a separate change to the sort logic.
