@@ -100,10 +100,13 @@ export default function Upgrade({ loaderData }: Route.ComponentProps) {
 
   // If the Clerk session is for a different user than the app opened this page
   // for (e.g. website signed in as a personal account, app signed in as work),
-  // sign out so the user can sign in with the correct account.
+  // sign out so the user can sign in with the correct account. Pass redirectUrl
+  // so Clerk doesn't navigate to "/" by default and drop us on the home page.
   useEffect(() => {
     if (emailMismatch) {
-      signOut();
+      signOut({
+        redirectUrl: `${window.location.pathname}${window.location.search}`,
+      });
     }
   }, [emailMismatch, signOut]);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(
