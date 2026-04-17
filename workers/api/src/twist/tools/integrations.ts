@@ -45,6 +45,7 @@ import { rpc, rpcUser } from "../../rpc";
 import { getEffectivePlan } from "../../utils/plan";
 import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
 import { getRpcFunctionName } from "../../utils/rpc";
+import { invokeCallback } from "../invoke-callback";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
 import type { Store } from "./store";
@@ -341,8 +342,17 @@ export class Integrations extends Tool implements IAuth {
     const token = await this.getActorToken(provider, actorId);
 
     if (token) {
-      // Actor has a valid token - call immediately
-      await callback(token, ...extraArgs);
+      // Actor has a valid token — invoke immediately via the rebuild-and-bind
+      // dispatch path so `this` inside the connector method binds to the full
+      // connector instance. See workers/api/src/twist/CALLBACKS.md.
+      await invokeCallback(
+        this.callbacks,
+        this.twistInstanceId,
+        callback,
+        this.path.slice(0, -1),
+        extraArgs,
+        token
+      );
       return;
     }
 
