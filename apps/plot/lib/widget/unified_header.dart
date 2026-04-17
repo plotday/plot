@@ -367,10 +367,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
                       child: Text(
                         thread.displayTitle,
                         overflow: TextOverflow.ellipsis,
+                        textHeightBehavior: const TextHeightBehavior(),
                         style: context.theme.typography.sm.copyWith(
                           fontWeight: FontWeight.w600,
                           color: context.theme.colors.foreground,
-                          height: 1,
                         ),
                       ),
                     ),
