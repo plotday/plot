@@ -31,6 +31,25 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
     _tabNotifier.addListener(_onTabChanged);
   }
 
+  Widget _buildNavLabel(String text) {
+    return Builder(
+      builder: (context) {
+        final width = MediaQuery.sizeOf(context).width;
+        final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+        if (width < 360 * textScale) {
+          return const SizedBox.shrink();
+        }
+        return DefaultTextStyle(
+          style: context.theme.typography.xs,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          child: Text(text),
+        );
+      },
+    );
+  }
+
   void _onTabChanged() {
     // Defer setState — the notifier may fire during a build frame
     // (e.g. when PriorityPage.didChangeDependencies forces the viewer tab).
@@ -242,21 +261,11 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                           items: [
                             FBottomNavigationBarItem(
                               icon: Icon(PlotIcon.priorities),
-                              label: Builder(
-                                builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.xs,
-                                  child: const Text('Priorities'),
-                                ),
-                              ),
+                              label: _buildNavLabel('Priorities'),
                             ),
                             FBottomNavigationBarItem(
                               icon: Icon(PlotIcon.agenda),
-                              label: Builder(
-                                builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.xs,
-                                  child: const Text('Agenda'),
-                                ),
-                              ),
+                              label: _buildNavLabel('Agenda'),
                             ),
                             FBottomNavigationBarItem(
                               icon: BlocBuilder<PrioritiesBloc, PrioritiesState>(
@@ -297,30 +306,15 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                                   );
                                 },
                               ),
-                              label: Builder(
-                                builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.xs,
-                                  child: const Text('Activity'),
-                                ),
-                              ),
+                              label: _buildNavLabel('Activity'),
                             ),
                             FBottomNavigationBarItem(
                               icon: Icon(PlotIcon.addNote),
-                              label: Builder(
-                                builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.xs,
-                                  child: const Text('New'),
-                                ),
-                              ),
+                              label: _buildNavLabel('New'),
                             ),
                             FBottomNavigationBarItem(
                               icon: Icon(PlotIcon.menu),
-                              label: Builder(
-                                builder: (context) => DefaultTextStyle(
-                                  style: context.theme.typography.xs,
-                                  child: const Text('More'),
-                                ),
-                              ),
+                              label: _buildNavLabel('More'),
                             ),
                           ],
                         ),
