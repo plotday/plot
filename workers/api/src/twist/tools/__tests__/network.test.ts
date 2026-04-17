@@ -130,7 +130,7 @@ describe("Network", () => {
 
       const webhookUrl = await network.createWebhook({}, callback);
 
-      expect(webhookUrl).toContain("https://api.plot.com/hook-async/");
+      expect(webhookUrl).toContain("https://api.plot.com/hook/");
       expect(mockCallbacksStub.create).toHaveBeenCalled();
     });
   });

@@ -716,19 +716,21 @@ export class Network extends Tool implements INetwork {
   }
 
   private tokenToUrl(token: string, async: boolean = false): string {
-    return `${this.baseUrl}/${async ? "hook-async" : "hook"}/${token}`;
+    return `${this.baseUrl}/${async ? "hook" : "hook-sync"}/${token}`;
   }
 
   private urlToToken(url: string): string | null {
     if (!this.baseUrl) return null;
 
-    const asyncPrefix = `${this.baseUrl}/hook-async/`;
-    if (url.startsWith(asyncPrefix)) {
-      return url.substring(asyncPrefix.length);
-    }
-    const webhookPrefix = `${this.baseUrl}/hook/`;
-    if (url.startsWith(webhookPrefix)) {
-      return url.substring(webhookPrefix.length);
+    const prefixes = [
+      `${this.baseUrl}/hook-async/`,
+      `${this.baseUrl}/hook-sync/`,
+      `${this.baseUrl}/hook/`,
+    ];
+    for (const prefix of prefixes) {
+      if (url.startsWith(prefix)) {
+        return url.substring(prefix.length);
+      }
     }
     return null;
   }

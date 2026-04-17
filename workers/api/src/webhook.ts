@@ -748,7 +748,12 @@ function respondToCallbackError(
 // (`workers/api/src/queue/webhook.ts`) dispatches each message into the
 // CallbacksState DO with bounded concurrency, so bursts of webhook traffic
 // can't exhaust Postgres connections.
-webhook.all(Network.PATH, webhookAsyncRateLimiter, async (c) => {
+//
+// Also mounted at `/hook-async/:token` as a legacy alias: an earlier version
+// of `Network.tokenToUrl` emitted `/hook-async/` URLs that external providers
+// (Google Calendar push, etc.) stored. Those registrations keep arriving until
+// the connector re-subscribes, so route them here rather than 404.
+const enqueueWebhookHandler = async (c: any) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
@@ -775,7 +780,10 @@ webhook.all(Network.PATH, webhookAsyncRateLimiter, async (c) => {
   } catch (error) {
     return captureServerError(c, error, "Error enqueueing webhook");
   }
-});
+};
+
+webhook.all(Network.PATH, webhookAsyncRateLimiter, enqueueWebhookHandler);
+webhook.all("/hook-async/:token", webhookAsyncRateLimiter, enqueueWebhookHandler);
 
 // Synchronous webhook endpoint — callers opt in by passing `{ async: false }`
 // to `network.createWebhook()`. Used by connectors that must return a
