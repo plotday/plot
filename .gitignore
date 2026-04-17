@@ -38,6 +38,7 @@ coverage
 
 # Claude Code - personal/ephemeral only
 **/.claude/settings.local.json
+.claude/scheduled_tasks.lock
 .claude/plans/
 .claude/.cache/
 .claude/worktrees/
