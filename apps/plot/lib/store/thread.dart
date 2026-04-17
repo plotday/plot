@@ -1777,6 +1777,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         active: activeIds.contains(activityRow.id),
         unreadComputed: unreadIds.contains(activityRow.id),
         linkSourceCreatedAt: linkSourceCreatedAt,
+        rsvpInheritedFromSeries: false,
       );
 
       // Collect link schedules upfront so we can decide whether to include
@@ -1849,6 +1850,7 @@ class Thread extends Equatable implements Comparable<Thread> {
                 active: activeIds.contains(activityRow.id),
                 unreadComputed: unreadIds.contains(activityRow.id),
                 linkSourceCreatedAt: linkSourceCreatedAt,
+                rsvpInheritedFromSeries: false,
               );
               occurrences[scheduleRow.occurrence!] = activity;
             }
@@ -1909,6 +1911,7 @@ class Thread extends Equatable implements Comparable<Thread> {
               unreadComputed: unreadIds.contains(activityRow.id),
               isLinkScheduleInstance: true,
               linkSourceCreatedAt: linkSourceCreatedAt,
+              rsvpInheritedFromSeries: false,
             );
             final occurrences = <String, Thread>{};
             try {
@@ -1940,6 +1943,7 @@ class Thread extends Equatable implements Comparable<Thread> {
                   unreadComputed: unreadIds.contains(activityRow.id),
                   isLinkScheduleInstance: true,
                   linkSourceCreatedAt: linkSourceCreatedAt,
+                  rsvpInheritedFromSeries: false,
                 );
               }
             }
@@ -1959,6 +1963,7 @@ class Thread extends Equatable implements Comparable<Thread> {
                 unreadComputed: unreadIds.contains(activityRow.id),
                 isLinkScheduleInstance: true,
                 linkSourceCreatedAt: linkSourceCreatedAt,
+                rsvpInheritedFromSeries: false,
               );
               if (linkThread.isDeclinedByUser) continue;
               if (range.bounded == true) {
@@ -2024,6 +2029,7 @@ class Thread extends Equatable implements Comparable<Thread> {
                 tags: tagRow,
                 priority: thread.priority,
                 isLinkScheduleInstance: thread.isLinkScheduleInstance,
+                rsvpInheritedFromSeries: thread.rsvpInheritedFromSeries,
                 active: thread._active,
                 unreadComputed: thread._unreadComputed,
                 linkSourceCreatedAt: thread._linkSourceCreatedAt,
@@ -2095,7 +2101,8 @@ class Thread extends Equatable implements Comparable<Thread> {
        _activityDirty = true,
        _activityRemoteDirty = true,
        _scheduleDirty = true,
-       isLinkScheduleInstance = false;
+       isLinkScheduleInstance = false,
+       rsvpInheritedFromSeries = false;
 
   Thread._fromStore({
     required ThreadRow activity,
@@ -2107,6 +2114,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool? active,
     bool? unreadComputed,
     this.isLinkScheduleInstance = false,
+    this.rsvpInheritedFromSeries = false,
     DateTime? linkSourceCreatedAt,
     bool activityDirty = false,
     bool activityRemoteDirty = false,
@@ -2144,6 +2152,14 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// Whether this instance represents a link schedule (event from a linked item).
   /// Link schedule instances appear at their event time and are not reorderable.
   final bool isLinkScheduleInstance;
+
+  /// Whether the RSVP status shown on [_schedule] was inherited from the
+  /// series row rather than set on this specific occurrence. Used by
+  /// [ToggleRsvp] to decide whether a toggle should target the series or
+  /// the occurrence. Defaults to false. Set to true only by
+  /// [loadRepresentativeForFeed] when it resolves a recurring event to a
+  /// representative occurrence whose RSVP is a series-level copy.
+  final bool rsvpInheritedFromSeries;
 
   final Priority priority;
 
@@ -2668,6 +2684,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       priority: priority,
       notes: _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
+      rsvpInheritedFromSeries: rsvpInheritedFromSeries,
       scheduleDirty: true,
     );
   }
@@ -2684,6 +2701,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       priority: priority,
       notes: _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
+      rsvpInheritedFromSeries: rsvpInheritedFromSeries,
     );
   }
 
@@ -2699,6 +2717,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       priority: priority,
       notes: _notes,
       isLinkScheduleInstance: false,
+      rsvpInheritedFromSeries: false,
     );
   }
 
@@ -3269,6 +3288,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       priority: priority ?? this.priority,
       notes: notes.present ? notes.value : _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
+      rsvpInheritedFromSeries: rsvpInheritedFromSeries,
       unreadComputed: unread != null ? null : _unreadComputed,
       activityDirty: activityDirty,
       activityRemoteDirty: activityRemoteDirty,
@@ -3394,6 +3414,7 @@ class Thread extends Equatable implements Comparable<Thread> {
             tagsUpdated: currentTagUpdates.isEmpty ? null : currentTagUpdates,
           ),
       priority: priority,
+      rsvpInheritedFromSeries: rsvpInheritedFromSeries,
     );
     return newActivity;
   }
@@ -3578,6 +3599,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       priority: priority,
       notes: _notes,
       isLinkScheduleInstance: isLinkScheduleInstance,
+      rsvpInheritedFromSeries: rsvpInheritedFromSeries,
       activityDirty: wasArchived,
       activityRemoteDirty: wasArchived,
     );
@@ -3877,6 +3899,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         priority: priority,
         tags: _tags,
         isLinkScheduleInstance: isLinkScheduleInstance,
+        rsvpInheritedFromSeries: rsvpInheritedFromSeries,
       );
 
       occurrences.add(occurrence);
