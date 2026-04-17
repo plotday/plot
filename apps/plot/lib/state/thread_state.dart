@@ -45,9 +45,11 @@ class ThreadState extends Equatable {
   final NoteId? threadNoteId;
   final bool hasOtherAuthors;
 
-  /// Twists mentioned across notes in this thread.
-  /// Collects mentions from all notes and filters to twist-type actors,
-  /// resolving them to TwistInstance objects via the global cache.
+  /// Twists associated with this thread: those mentioned on any note, plus
+  /// those that created a link (source connectors). Including link creators
+  /// ensures connectors with `defaultMentionCreated` appear here so replies
+  /// route back to their `onNoteCreated` — without this, a user's reply to
+  /// a synced Google Chat / Slack / Gmail thread never reaches the source.
   List<TwistInstance> get threadTwists {
     final mentionIds = <Uuid>{};
     for (final note in notes) {
@@ -56,6 +58,10 @@ class ThreadState extends Equatable {
           mentionIds.add(actorId.toUuid());
         }
       }
+    }
+    for (final link in links) {
+      final createdBy = link.createdBy;
+      if (createdBy != null) mentionIds.add(createdBy);
     }
     if (mentionIds.isEmpty) return const [];
     final twists = <TwistInstance>[];
