@@ -260,59 +260,48 @@ export class GmailApi {
 }
 
 /**
- * Parses an email address header into name and email
- * Handles formats like "John Doe <john@example.com>" or "john@example.com"
+ * Parses an email address header into name and email.
+ * Handles formats like "John Doe <john@example.com>" or "john@example.com".
+ * Returns null for non-email values like "undisclosed-recipients:;".
  */
-export function parseEmailAddress(headerValue: string): EmailAddress {
-  const match = headerValue.match(/^(?:"?([^"]*)"?\s)?<?([^@]+@[^>]+)>?$/);
-
-  if (match) {
-    return {
-      name: match[1]?.trim() || null,
-      email: match[2].trim(),
-    };
-  }
-
-  // Fallback: treat entire string as email
+export function parseEmailAddress(headerValue: string): EmailAddress | null {
+  const match = headerValue.match(/^(?:"?([^"]*)"?\s)?<?([^@\s]+@[^>\s]+)>?$/);
+  if (!match) return null;
   return {
-    name: null,
-    email: headerValue.trim(),
+    name: match[1]?.trim() || null,
+    email: match[2].trim(),
   };
 }
 
 
 /**
  * Parses a comma-separated email header value into an array of email address strings.
+ * Skips entries that are not valid email addresses (e.g. "undisclosed-recipients:;").
  */
 export function parseEmailAddresses(headerValue: string | null): string[] {
   if (!headerValue) return [];
   return headerValue
     .split(",")
-    .map((addr) => {
-      const parsed = parseEmailAddress(addr.trim());
-      return parsed.email;
-    })
-    .filter((email) => email.length > 0);
+    .map((addr) => parseEmailAddress(addr.trim())?.email)
+    .filter((email): email is string => !!email);
 }
 
 /**
  * Parses email addresses from a header value into NewContact objects.
  * Used for thread/note accessContacts (visibility control).
+ * Skips entries that are not valid email addresses.
  */
 function parseEmailAddressesToContacts(headerValue: string | null): NewContact[] {
   if (!headerValue) return [];
 
   return headerValue
     .split(",")
-    .map((addr) => addr.trim())
-    .filter((addr) => addr.length > 0)
-    .map((addr) => {
-      const parsed = parseEmailAddress(addr);
-      return {
-        email: parsed.email,
-        name: parsed.name || undefined,
-      };
-    });
+    .map((addr) => parseEmailAddress(addr.trim()))
+    .filter((parsed): parsed is EmailAddress => parsed !== null)
+    .map((parsed) => ({
+      email: parsed.email,
+      name: parsed.name || undefined,
+    }));
 }
 
 /**
@@ -491,19 +480,25 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
     const from = getHeader(message, "From");
     const to = getHeader(message, "To");
     const cc = getHeader(message, "Cc");
-    for (const actors of [
-      from ? [parseEmailAddress(from)].filter(Boolean) : [],
-      parseEmailAddressesToContacts(to),
-      parseEmailAddressesToContacts(cc),
-    ]) {
-      for (const actor of actors) {
-        const email = (actor as any).email?.toLowerCase();
-        if (email && !participantsByEmail.has(email)) {
-          participantsByEmail.set(email, {
-            email: (actor as any).email,
-            name: (actor as any).name || undefined,
-          });
-        }
+    const fromContact = from ? parseEmailAddress(from) : null;
+    const contacts: { email: string; name: string | null }[] = [
+      ...(fromContact ? [fromContact] : []),
+      ...parseEmailAddressesToContacts(to).map((c) => ({
+        email: c.email!,
+        name: c.name ?? null,
+      })),
+      ...parseEmailAddressesToContacts(cc).map((c) => ({
+        email: c.email!,
+        name: c.name ?? null,
+      })),
+    ];
+    for (const actor of contacts) {
+      const email = actor.email.toLowerCase();
+      if (!participantsByEmail.has(email)) {
+        participantsByEmail.set(email, {
+          email: actor.email,
+          name: actor.name || undefined,
+        });
       }
     }
   }
