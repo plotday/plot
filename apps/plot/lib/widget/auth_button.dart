@@ -153,7 +153,8 @@ class AuthButton extends StatefulWidget {
   State<AuthButton> createState() => _AuthButtonState();
 }
 
-class _AuthButtonState extends State<AuthButton> {
+class _AuthButtonState extends State<AuthButton>
+    with WidgetsBindingObserver {
   bool _isLoading = false;
 
   /// Pre-computed nonce so GoogleSignIn is ready when the user taps.
@@ -163,6 +164,13 @@ class _AuthButtonState extends State<AuthButton> {
   @override
   void initState() {
     super.initState();
+    // On web, the Google auth flow navigates the browser away and `_isLoading`
+    // never resolves in Dart. If the user comes back (browser back, bfcache
+    // restore, tab regaining focus), we'd be stuck showing a loading spinner
+    // forever. Listen for lifecycle resume events and clear `_isLoading` so
+    // the button is usable again.
+    WidgetsBinding.instance.addObserver(this);
+
     if (widget.provider == AuthProvider.google) {
       if (AuthButton._useNativeGoogleSignIn) {
         final GoogleSignIn signIn = GoogleSignIn.instance;
@@ -182,6 +190,19 @@ class _AuthButtonState extends State<AuthButton> {
           _preInitGoogleSignIn();
         }
       }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isLoading && mounted) {
+      setState(() => _isLoading = false);
     }
   }
 
