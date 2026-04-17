@@ -108,7 +108,9 @@ class _SpeechDictationButtonState extends State<SpeechDictationButton> {
     if (_isListening) {
       // Stop listening
       await _speech.stop();
-      setState(() => _isListening = false);
+      if (mounted) {
+        setState(() => _isListening = false);
+      }
     } else {
       // Start listening
       setState(() => _isListening = true);
