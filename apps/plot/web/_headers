@@ -1,6 +1,23 @@
 /*
   Cross-Origin-Opener-Policy: same-origin-allow-popups
 
+# Flutter's top-level JS bundles keep the same filename across builds but
+# their contents change every deploy. Cloudflare Pages' default cache for
+# JS is max-age=14400 (4 hours), which means every returning user within
+# that window sees stale code until their browser cache expires. Override
+# to require revalidation on every request — the response carries an etag,
+# so unchanged files return 304 Not Modified and cost almost nothing.
+/main.dart.js
+  Cache-Control: public, max-age=0, must-revalidate
+/flutter.js
+  Cache-Control: public, max-age=0, must-revalidate
+/flutter_bootstrap.js
+  Cache-Control: public, max-age=0, must-revalidate
+/flutter_service_worker.js
+  Cache-Control: public, max-age=0, must-revalidate
+/drift_worker.js
+  Cache-Control: public, max-age=0, must-revalidate
+
 /.well-known/apple-app-site-association
   Content-Type: application/json
   Access-Control-Allow-Origin: *
