@@ -1822,20 +1822,36 @@ class _PriorityPageState extends State<PriorityPage> {
                 ];
               },
               activity: (agendaActivity) {
+                final baseThread = agendaActivity.thread;
                 return [
-                  ThreadWidget(
+                  FutureBuilder<Thread?>(
                     key: ValueKey(
-                      'feed_activitywidget_${agendaActivity.thread.id}',
+                      'feed_activitywidget_${baseThread.id}',
                     ),
-                    activity: agendaActivity.thread,
-                    selected:
-                        state.thread != null &&
-                        agendaActivity.thread.id == state.thread!.id,
-                    now: agendaActivity.now,
-                    focusNode: focusNode,
-                    context: state.context,
-                    showSubPriority: true,
-                    bump: false,
+                    future: Thread.loadRepresentativeForFeed(
+                      baseThread,
+                      now: DateTime.now(),
+                    ),
+                    builder: (context, snapshot) {
+                      final rep = snapshot.data;
+                      final display = rep ?? baseThread;
+                      return ThreadWidget(
+                        key: ValueKey(
+                          'feed_activitywidget_${baseThread.id}_'
+                          '${rep?.scheduleId ?? baseThread.scheduleId}',
+                        ),
+                        activity: display,
+                        selected:
+                            state.thread != null &&
+                            baseThread.id == state.thread!.id,
+                        now: agendaActivity.now,
+                        focusNode: focusNode,
+                        context: state.context,
+                        showSubPriority: true,
+                        bump: false,
+                        showEventTiming: rep != null,
+                      );
+                    },
                   ),
                 ];
               },
