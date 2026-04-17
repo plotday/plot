@@ -81,7 +81,7 @@ COMMENT ON COLUMN "public"."thread"."embedding" IS 'Content embedding (384-dim h
 
 COMMENT ON COLUMN "public"."thread"."groups" IS 'Group IDs attached to this thread. Members of referenced groups gain visibility dynamically — new members automatically see past threads.';
 
-COMMENT ON COLUMN "public"."thread"."topic" IS 'Routing key used by priority rules. On INSERT defaults to, in order: explicit input, channel:<channel.id> when the thread comes from a connection, or groups[1]::text.';
+COMMENT ON COLUMN "public"."thread"."topic" IS 'Routing key used by classify_thread_for_user. Two conventions: (1) priority:{KEY}[:{SUB_TOPIC}] defaults the thread into the user''s priority with that key when no user_moved example wins; (2) any other string acts as the topic filter over user_moved training examples. On INSERT defaults to, in order: explicit input, or groups[1]::text when unset.';
 
 COMMENT ON COLUMN "public"."thread"."contacts" IS 'Attested contact_ids on this thread. For twist-created threads, a user only gains visibility when their linked contact appears here via another attester''s sync (or via share_thread). Users who attempted to join before attestation land in pending_contacts and are promoted when an attester confirms them. User-created threads do not require attestation.';
 

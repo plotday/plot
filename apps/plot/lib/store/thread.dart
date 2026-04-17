@@ -3,21 +3,6 @@ part of 'store.dart';
 typedef ThreadId = Uuid;
 typedef ThreadWatchResult = ({List<Thread> threads, int rawRowCount});
 
-/// Ephemeral local storage for priority rules.
-/// Rules are created when users move threads with a rule option,
-/// synced to the server via POST /sync/priority-rules, then deleted locally.
-@DataClassName('PriorityRuleRow')
-class PriorityRules extends Table with UuidTable {
-  BlobColumn get userId => blob().map(const UuidConverter())();
-  BlobColumn get priorityId => blob().map(const UuidConverter())();
-  TextColumn get type => text()();
-  TextColumn get embedding => text().nullable()();
-  TextColumn get topic => text().nullable()();
-  TextColumn get label => text().nullable()();
-  BlobColumn get anchorThreadId =>
-      blob().nullable().map(const UuidConverter())();
-}
-
 @DataClassName('ThreadRow')
 class Threads extends Table
     with SyncableTable, UuidTable, CreatedTable, DraftTable, DeletableTable {

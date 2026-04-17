@@ -13,12 +13,15 @@ BEGIN
         RETURN NEW;
     END IF;
 
+    -- Only exclude the author from group filing when the thread was authored
+    -- by a real user (upsert_thread already filed them). For twist-instance-
+    -- authored threads the instance owner is a consumer too (system onboarding
+    -- threads are the canonical example), so leave v_author_user_id NULL and
+    -- IS DISTINCT FROM NULL lets everyone through.
     IF EXISTS (SELECT 1 FROM "public"."user" WHERE id = NEW.created_by) THEN
         v_author_user_id := NEW.created_by;
     ELSE
-        SELECT pt.owner_id INTO v_author_user_id
-        FROM public.twist_instance pt
-        WHERE pt.id = NEW.created_by;
+        v_author_user_id := NULL;
     END IF;
 
     FOR r IN

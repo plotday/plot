@@ -955,88 +955,6 @@ export type Database = {
           },
         ]
       }
-      priority_rule: {
-        Row: {
-          anchor_thread_id: string | null
-          created_at: string
-          embedding: unknown
-          id: string
-          label: string | null
-          priority_id: string
-          topic: string | null
-          type: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          anchor_thread_id?: string | null
-          created_at?: string
-          embedding?: unknown
-          id?: string
-          label?: string | null
-          priority_id: string
-          topic?: string | null
-          type: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          anchor_thread_id?: string | null
-          created_at?: string
-          embedding?: unknown
-          id?: string
-          label?: string | null
-          priority_id?: string
-          topic?: string | null
-          type?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "priority_rule_anchor_thread_id_fkey"
-            columns: ["anchor_thread_id"]
-            referencedRelation: "thread"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_rule_anchor_thread_id_fkey"
-            columns: ["anchor_thread_id"]
-            referencedRelation: "thread_x"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_rule_anchor_thread_id_fkey"
-            columns: ["anchor_thread_id"]
-            referencedRelation: "twist_instance_thread_update"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_rule_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "priority_rule_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "priority_rule_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-          {
-            foreignKeyName: "priority_rule_user_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "user"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       priority_setting: {
         Row: {
           key: string
@@ -1770,6 +1688,7 @@ export type Database = {
           thread_id: string
           updated_at: string
           user_id: string
+          user_moved: boolean
         }
         Insert: {
           archived_at?: string | null
@@ -1778,6 +1697,7 @@ export type Database = {
           thread_id: string
           updated_at?: string
           user_id: string
+          user_moved?: boolean
         }
         Update: {
           archived_at?: string | null
@@ -1786,6 +1706,7 @@ export type Database = {
           thread_id?: string
           updated_at?: string
           user_id?: string
+          user_moved?: boolean
         }
         Relationships: [
           {
@@ -3751,20 +3672,15 @@ export type Database = {
         Args: { p_contact_ids: string[]; p_group_id: string; p_user_id: string }
         Returns: undefined
       }
-      apply_priority_rule: {
-        Args: { p_max_moves?: number; p_rule_id: string }
-        Returns: {
-          old_priority_id: string
-          thread_id: string
-        }[]
-      }
       archive_links: {
         Args: { p_created_by: string; p_filter?: Json }
         Returns: string[]
       }
       classify_thread_for_user: {
         Args: {
+          p_contacts?: string[]
           p_embedding?: unknown
+          p_groups?: string[]
           p_thread_id?: string
           p_topic?: string
           p_user_id: string
@@ -3783,6 +3699,7 @@ export type Database = {
         }
         Returns: string
       }
+      expand_contacts: { Args: { p_contacts: string[] }; Returns: string[] }
       generate_path: { Args: { parent?: unknown }; Returns: unknown }
       get_accessible_twists: {
         Args: { p_user_id: string }
@@ -3879,6 +3796,14 @@ export type Database = {
       }
       order_first: { Args: never; Returns: number }
       parent_path: { Args: { p: unknown }; Returns: unknown }
+      reclassify_user_threads: {
+        Args: {
+          p_anchor_thread_id: string
+          p_max_candidates?: number
+          p_user_id: string
+        }
+        Returns: number
+      }
       recompute_outstanding_tasks: {
         Args: { p_thread_id: string; p_user_id: string }
         Returns: undefined
@@ -4597,13 +4522,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

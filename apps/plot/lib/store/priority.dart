@@ -311,7 +311,11 @@ class Priority extends PriorityRow implements Comparable<Priority> {
       archived: null,
       ancestors: ancestors,
       order: PriorityOrder.nested,
-    ).watch().map((priorities) => asNested(priorities, id: id).first);
+    )
+        .watch()
+        .map((priorities) => asNested(priorities, id: id))
+        .where((nested) => nested.isNotEmpty)
+        .map((nested) => nested.first);
   }
 
   static Future<bool> hasDefault() async {

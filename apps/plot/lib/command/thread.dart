@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:collection/collection.dart';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -8,7 +7,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
-import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
@@ -1343,252 +1341,24 @@ class MoveToPriority extends PriorityCommand {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     await thread.copyWith(priority: priority!).save();
-    return const CommandDone();
-  }
-}
-
-/// Moves a thread to a priority, then shows rule creation options.
-/// Wraps MoveToPriority + a second ShowCommands step for rules.
-class MoveToPriorityWithRules extends ShowCommands {
-  MoveToPriorityWithRules(this.thread, this.targetPriority)
-    : super(
-        title: targetPriority.title,
-        icon: PlotIcon.move,
-        showFilter: false,
-        commandsBuilder: (context) =>
-            _buildRuleCommands(thread, targetPriority),
-      );
-
-  final Thread thread;
-  final Priority targetPriority;
-
-  @override
-  Widget? buildBody(BuildContext context) =>
-      PriorityLabel(priority: targetPriority);
-
-  static Future<Commands> _buildRuleCommands(
-    Thread thread,
-    Priority targetPriority,
-  ) async {
-    final options = <Command>[];
-
-    // Resolve the thread's channel from its links
-    final links = await Link.getForThread(thread.id);
-    final channelLink = links.firstWhereOrNull(
-      (Link l) => l.channelId != null && l.createdBy != null,
-    );
-    Channel? channel;
-    if (channelLink != null) {
-      channel = Channel.findByChannel(
-        channelLink.createdBy!,
-        channelLink.channelId!,
-      );
-    }
-
-    // Resolve connector name for display
-    String? connectorLabel;
-    if (channel != null) {
-      final twist = TwistInstance.fromCache(channelLink!.createdBy!);
-      connectorLabel = twist != null
-          ? '${twist.name} > ${channel.title}'
-          : channel.title;
-    }
-
-    final threadsPrefix = connectorLabel != null
-        ? 'Move all $connectorLabel threads'
-        : 'Move all threads';
-
-    // Content match rule — show when thread has content for embedding.
-    // hasEmbedding may be false for threads that haven't re-synced yet;
-    // the server generates embeddings on the fly when applying rules.
-    if (thread.hasEmbedding ||
-        (thread.title != null && thread.title!.isNotEmpty)) {
-      options.add(
-        _CreatePriorityRule(
-          thread: thread,
-          targetPriority: targetPriority,
-          channel: channel,
-          ruleType: 'content',
-          title: '$threadsPrefix about something similar',
-          mutedPrefix: threadsPrefix,
-          keyLabel: 'about something similar',
-          icon: PlotIcon.note,
-        ),
-      );
-    }
-
-    // Topic rule: match any future thread whose `topic` equals this thread's.
-    // Covers the old channel + single-group + contact scenarios because
-    // thread.topic already resolves to the right routing key (channel:<id>,
-    // group uuid, contact uuid, or any explicit string).
-    final threadTopic = thread.topic;
-    if (threadTopic != null && threadTopic.isNotEmpty) {
-      String keyLabel;
-      String title;
-      IconData icon;
-      if (channel != null && connectorLabel != null) {
-        keyLabel = connectorLabel;
-        title = 'Move all threads from $connectorLabel';
-        icon = PlotIcon.connection;
-      } else {
-        final groups = thread.groups;
-        if (groups.length == 1) {
-          final groupRow = await (Store.get.select(
-            Store.get.groups,
-          )..where((g) => g.id.equals(groups.first.toBytes()))).getSingleOrNull();
-          final groupName = groupRow?.name ?? 'this group';
-          keyLabel = groupName;
-          title = '$threadsPrefix with $groupName';
-          icon = PlotIcon.users;
-        } else {
-          keyLabel = 'matching threads';
-          title = '$threadsPrefix matching this one';
-          icon = PlotIcon.note;
-        }
-      }
-      options.add(
-        _CreatePriorityRule(
-          thread: thread,
-          targetPriority: targetPriority,
-          channel: channel,
-          ruleType: 'topic',
-          topic: threadTopic,
-          title: title,
-          mutedPrefix: channel != null ? 'Move all threads from' : '$threadsPrefix with',
-          keyLabel: keyLabel,
-          icon: icon,
-        ),
-      );
-    }
-
-    // Always show "just this thread"
-    options.add(_MoveJustThisThread(thread, targetPriority));
-
-    return Commands(
-      prompt: 'Also move matching threads?',
-      groups: [StaticCommandGroup(commands: options)],
-    );
-  }
-}
-
-class _CreatePriorityRule extends Command {
-  _CreatePriorityRule({
-    required this.thread,
-    required this.targetPriority,
-    required this.channel,
-    required this.ruleType,
-    required super.title,
-    required this.mutedPrefix,
-    required this.keyLabel,
-    this.topic,
-    IconData? icon,
-  }) : super(
-         eventObject: EventObject.activity,
-         eventAction: EventAction.moved,
-         icon: icon ?? PlotIcon.move,
-       );
-
-  final Thread thread;
-  final Priority targetPriority;
-  final Channel? channel;
-  final String ruleType;
-  final String mutedPrefix;
-  final String keyLabel;
-  final String? topic;
-
-  @override
-  Widget? buildBody(BuildContext context) =>
-      _RuleLabel(mutedPrefix: mutedPrefix, keyLabel: keyLabel);
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await thread.copyWith(priority: targetPriority).save();
-
-    final ruleId = Uuid.generate();
-
-    await Store.get
-        .into(Store.get.priorityRules)
-        .insert(
-          PriorityRulesCompanion(
-            id: Value(ruleId),
-            userId: Value(Base.userId),
-            priorityId: Value(targetPriority.id),
-            type: Value(ruleType),
-            topic: Value(topic),
-            label: Value(title),
-            anchorThreadId: Value(thread.id),
-          ),
-        );
-
+    // Record the explicit move so the server can learn from it and
+    // retroactively re-file similar threads. The thread_priority.priority_id
+    // is already in sync via the save() call above; this endpoint sets
+    // user_moved = TRUE and triggers reclassify_user_threads. Best-effort:
+    // a failure here leaves the thread move intact.
     try {
       await api.post<dynamic>(
-        '/sync/priority-rules',
+        '/sync/priority-moves',
         body: {
-          'id': ruleId.toString(),
-          'priority_id': targetPriority.id.toString(),
-          'type': ruleType,
-          'topic': topic,
-          'label': title,
-          'anchor_thread_id': thread.id.toString(),
+          'thread_id': thread.id.toString(),
+          'priority_id': priority!.id.toString(),
         },
       );
-      // Success — delete the local row
-      await (Store.get.delete(
-        Store.get.priorityRules,
-      )..where((r) => r.id.equals(ruleId.toBytes()))).go();
     } catch (_) {
-      // Offline or error — rule stays local for retry
+      // Offline / transient — the move itself is already synced via
+      // thread save; the learning signal will be re-sent next time.
     }
-
     return const CommandDone();
-  }
-}
-
-class _MoveJustThisThread extends Command {
-  _MoveJustThisThread(this.thread, this.targetPriority)
-    : super(
-        title: 'Move just this thread',
-        eventObject: EventObject.activity,
-        eventAction: EventAction.moved,
-        icon: PlotIcon.move,
-      );
-
-  final Thread thread;
-  final Priority targetPriority;
-
-  @override
-  Widget? buildBody(BuildContext context) =>
-      _RuleLabel(mutedPrefix: 'Move', keyLabel: 'just this thread');
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    await thread.copyWith(priority: targetPriority).save();
-    return const CommandDone();
-  }
-}
-
-class _RuleLabel extends StatelessWidget {
-  const _RuleLabel({required this.mutedPrefix, required this.keyLabel});
-
-  final String mutedPrefix;
-  final String keyLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = context.theme.typography.md;
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '$mutedPrefix ',
-            style: style.copyWith(color: context.theme.plotColors.muted),
-          ),
-          TextSpan(text: keyLabel, style: style),
-        ],
-      ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-    );
   }
 }
 
@@ -1647,7 +1417,7 @@ class MoveThreadToPriority extends ShowCommands {
         StaticCommandGroup(
           title: 'Priorities',
           commands: filteredPriorities
-              .map((priority) => MoveToPriorityWithRules(thread, priority))
+              .map((priority) => MoveToPriority(thread, priority))
               .toList(),
         ),
       ],

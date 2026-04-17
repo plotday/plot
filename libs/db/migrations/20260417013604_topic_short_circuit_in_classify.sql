@@ -1,45 +1,5 @@
--- Classify a thread into a priority for a specific user by scoring it against
--- the user's explicitly-moved threads (thread_priority.user_moved = TRUE).
---
--- Algorithm:
---   1. Load the thread's current signals (topic, embedding, contacts, groups)
---      from the thread row when p_thread_id is provided. Non-NULL explicit
---      parameters override what was loaded.
---   2. Topic short-circuit: if the candidate thread has a topic AND any of
---      the user's moved threads share that topic, the user has already
---      answered "threads with this topic belong here." Return the most-used
---      priority among those same-topic moves (mode; ties broken by most
---      recent). Topic match alone is a strong enough signal — we don't need
---      to also require contact/group/embedding overlap. This is the path
---      that carries siblings from a connector channel into the same priority
---      after one explicit user move.
---   3. When no user_moved example shares the topic, score every moved thread:
---        sem = cosine similarity, thresholded at 0.5, scaled to [0,1], squared
---        con = Jaccard on expanded contacts (linked-alias-aware), squared
---        grp = Jaccard on groups, squared
---        combined = 0.5*sem + 0.35*con + 0.15*grp
---      Each per-signal score is squared so weak signals contribute near-zero.
---      Return the highest-scoring priority when its combined score >= 0.15.
---   4. If neither path matched and thread.topic starts with
---      'priority:{KEY}[:...]', resolve that priority by (user_id, key). This
---      gives a caller-specified default (onboarding threads, twist logs)
---      that the user's own moves always override via the topic short-circuit.
---   5. Final fallback: the user's root priority (oldest non-archived depth-1).
---
--- All signals are read live — nothing is frozen. Linking a new email alias
--- or updating a thread's contacts immediately shifts future classifications.
-CREATE OR REPLACE FUNCTION public.classify_thread_for_user (
-    p_user_id uuid,
-    p_thread_id uuid DEFAULT NULL,
-    p_embedding halfvec DEFAULT NULL,
-    p_topic text DEFAULT NULL,
-    p_contacts uuid[] DEFAULT NULL,
-    p_groups uuid[] DEFAULT NULL
-)
-    RETURNS uuid
-    LANGUAGE plpgsql
-    STABLE
-    AS $function$
+-- Modify "classify_thread_for_user" function
+CREATE OR REPLACE FUNCTION "public"."classify_thread_for_user" ("p_user_id" uuid, "p_thread_id" uuid DEFAULT NULL::uuid, "p_embedding" public.halfvec DEFAULT NULL::public.halfvec, "p_topic" text DEFAULT NULL::text, "p_contacts" uuid[] DEFAULT NULL::uuid[], "p_groups" uuid[] DEFAULT NULL::uuid[]) RETURNS uuid LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_embedding halfvec;
     v_topic text;
@@ -187,6 +147,6 @@ BEGIN
 
     RETURN v_matched;
 END;
-$function$;
-
-COMMENT ON FUNCTION public.classify_thread_for_user IS 'Classify a thread into a priority by looking up the user''s explicitly-moved threads (thread_priority.user_moved = TRUE). Topic match is a direct short-circuit (mode of same-topic moves). Otherwise scores by contact/group/embedding overlap (weights 0.35/0.15/0.5 after squaring) and keeps the best match above 0.15. Falls back to the priority:{KEY} prefix lookup, then to the user''s root priority.';
+$$;
+-- Set comment to function: "classify_thread_for_user"
+COMMENT ON FUNCTION "public"."classify_thread_for_user" IS 'Classify a thread into a priority by looking up the user''s explicitly-moved threads (thread_priority.user_moved = TRUE). Topic match is a direct short-circuit (mode of same-topic moves). Otherwise scores by contact/group/embedding overlap (weights 0.35/0.15/0.5 after squaring) and keeps the best match above 0.15. Falls back to the priority:{KEY} prefix lookup, then to the user''s root priority.';

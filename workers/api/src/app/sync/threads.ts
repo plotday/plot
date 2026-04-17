@@ -211,8 +211,12 @@ threads.post("/sync/threads", async (c) => {
       p_defaults: (body.defaults || {}) as any,
     });
 
-    // Auto-classify: when the client signals auto_file, use classify_thread_for_user
-    // to re-file the thread based on user-defined priority rules.
+    // Auto-classify: when the client signals auto_file, score the thread
+    // against the user's explicitly-moved training threads via
+    // classify_thread_for_user. The function reads topic/contacts/groups
+    // directly from the thread row (via p_thread_id), so no extra params
+    // are needed. We guard the UPDATE on user_moved = FALSE so the user's
+    // own filing choice is never overwritten by an auto-classify pass.
     if (body.auto_file && !threadData.draft && upsertResult) {
       try {
         const textToEmbed = threadData.title || threadData.preview;
@@ -223,7 +227,6 @@ threads.post("/sync/threads", async (c) => {
           })) as { data: number[][] };
           queryEmbedding = JSON.stringify(response.data[0]);
 
-          // Store embedding on the thread for future rule matching
           await sql`UPDATE thread SET embedding = ${sql.val(queryEmbedding!)}::halfvec
                     WHERE id = ${sql.val(upsertResult.id)}`.execute(trx);
         }
@@ -234,10 +237,11 @@ threads.post("/sync/threads", async (c) => {
         });
         if (matched && matched !== threadData.priority_id) {
           await sql`UPDATE thread_priority SET priority_id = ${sql.val(matched)}
-                    WHERE thread_id = ${sql.val(upsertResult.id)} AND user_id = ${sql.val(userId)}`.execute(trx);
+                    WHERE thread_id = ${sql.val(upsertResult.id)}
+                      AND user_id = ${sql.val(userId)}
+                      AND user_moved = FALSE`.execute(trx);
         }
       } catch (error) {
-        // Auto-classification is non-critical — log but don't fail the thread save
         console.error("[sync/threads] Auto-classification failed:", error);
         c.var.tracker.captureException(error as Error);
       }

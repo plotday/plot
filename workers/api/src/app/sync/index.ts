@@ -20,7 +20,7 @@ import threadAssociations from "./thread-associations";
 import threadUnread from "./thread-unread";
 import groups from "./groups";
 import topics from "./topics";
-import priorityRules from "./priority-rules";
+import priorityMoves from "./priority-moves";
 
 const sync = new Hono<{ Bindings: Bindings }>();
 
@@ -42,7 +42,7 @@ sync.route("/", priorityAttention);
 sync.route("/", threadAssociations);
 sync.route("/", groups);
 sync.route("/", topics);
-sync.route("/", priorityRules);
+sync.route("/", priorityMoves);
 
 sync.onError((err, c) => {
   // Handle authorization errors from assertPriorityAccess/assertThreadAccess

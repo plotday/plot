@@ -369,7 +369,6 @@ abstract class BaseTable {
     Channels,
     Groups,
     ThreadAssociations,
-    PriorityRules,
   ],
   include: {'priority.drift'},
 )
@@ -2025,7 +2024,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 308;
+  int get schemaVersion => 309;
 
   @override
   MigrationStrategy get migration {
@@ -2788,7 +2787,9 @@ class Store extends _$Store {
         m,
         'ALTER TABLE threads ADD COLUMN has_embedding INTEGER NOT NULL DEFAULT 0',
       );
-      await _safeCreateTable(m, priorityRules);
+      // priority_rules table was created here previously. Removed — the
+      // table is dropped unconditionally in the from<309 migration below,
+      // and new installs don't need it (routing is now server-side).
     }
     if (from < 304) {
       // Re-sync links to pick up channel_id now included in user.link view.
@@ -2833,12 +2834,14 @@ class Store extends _$Store {
         'ALTER TABLE threads RENAME COLUMN topics TO groups',
       );
       await _safeAddColumn(m, threads, threads.topic);
-      // priority_rules: drop channel_id + criteria, add topic. Drop local rows
-      // since the ephemeral table is cleared on successful sync and any
-      // pre-308 rows are incompatible with the new column set.
-      await m.database.customStatement('DELETE FROM priority_rules');
-      // ignore: experimental_member_use
-      await m.alterTable(TableMigration(priorityRules));
+      // priority_rules clean-up (drop channel_id + criteria, add topic)
+      // from this migration moved to from<309 which drops the table
+      // outright.
+    }
+    if (from < 309) {
+      // Priority rules replaced by server-side user_moved flag on thread_priority.
+      // Drop the ephemeral local table; routing is now learned from moves, not rules.
+      await m.database.customStatement('DROP TABLE IF EXISTS priority_rules');
     }
   }
 

@@ -160,6 +160,44 @@ BEGIN
 END;
 $function$;
 
+-- User sync trigger function for thread_priority changes.
+-- The user.thread view rolls thread + thread_priority into one row per user,
+-- so any thread_priority insert/update/delete changes what that user sees
+-- (priority_id, archived_at, user_moved). Bump the affected user's `thread`
+-- entity so UserSync broadcasts and the client repulls.
+CREATE OR REPLACE FUNCTION public.sync_user_for_thread_priority ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $function$
+DECLARE
+    v_max_updated_at timestamptz;
+    v_user_id uuid;
+BEGIN
+    SELECT
+        MAX(updated_at) INTO v_max_updated_at
+    FROM
+        new_table;
+    -- Fall back to now() for DELETE (which has no updated_at column).
+    IF v_max_updated_at IS NULL THEN
+        v_max_updated_at := now();
+    END IF;
+    FOR v_user_id IN SELECT DISTINCT
+        user_id
+    FROM
+        new_table
+    ORDER BY
+        user_id LOOP
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'thread', v_max_updated_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+        END LOOP;
+    RETURN NULL;
+END;
+$function$;
+
 -- User sync trigger function for thread_read changes
 CREATE OR REPLACE FUNCTION public.sync_user_for_thread_read ()
     RETURNS TRIGGER

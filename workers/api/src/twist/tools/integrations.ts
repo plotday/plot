@@ -595,14 +595,16 @@ export class Integrations extends Tool implements IAuth {
     }
 
     if (todo) {
-      // Upsert a per-user schedule with the given date (default: today)
+      // Upsert a per-user schedule. With no explicit date, use the epoch
+      // "Now" sentinel (1970-01-01) so the thread lands in the current
+      // to-do bucket rather than being scheduled for a specific day.
       let dateStr: string;
       if (options?.date) {
         dateStr = typeof options.date === "string"
           ? options.date
           : options.date.toISOString().slice(0, 10);
       } else {
-        dateStr = new Date().toISOString().slice(0, 10);
+        dateStr = "1970-01-01";
       }
 
       const dbSchedule: Record<string, unknown> = {

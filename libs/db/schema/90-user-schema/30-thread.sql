@@ -22,8 +22,12 @@ SELECT
     tp.user_id,
     a.id,
     a.created_at,
-    -- updated_at: use the latest of thread, last note, and thread_unread timestamps
+    -- updated_at: use the latest of thread, last note, thread_priority,
+    -- and thread_unread timestamps. Including tp.updated_at is required so
+    -- reclassifications (priority_id / archived_at changes on thread_priority
+    -- without a matching thread update) propagate through the sync cursor.
     GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz),
+        tp.updated_at,
         COALESCE(tu.updated_at, 'epoch'::timestamptz)) AS updated_at,
     a.updated_by,
     -- User-visible archived_at is the first of: global thread archive,

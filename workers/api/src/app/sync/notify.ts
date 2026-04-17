@@ -36,25 +36,29 @@ export function notifySync(c: Context<{ Bindings: Bindings }>, priorityId: strin
  * Fire-and-forget via waitUntil to avoid blocking the response.
  */
 export function notifyUserSync(c: Context<{ Bindings: Bindings }>, userId: string) {
-  c.executionCtx.waitUntil(
-    (async () => {
-      try {
-        const userSyncId = c.env.USER_SYNC.idFromName(userId);
-        const userSyncDO = c.env.USER_SYNC.get(userSyncId);
-        await userSyncDO.fetch(
-          new Request("http://do/notify", {
-            method: "POST",
-            body: JSON.stringify({ id: userId }),
-          })
-        );
-      } catch (error) {
-        const logger = createLogger({ operation: "notifyUserSync" });
-        logger.error("Error notifying UserSync DO", error as Error, {
-          user_id: userId,
-        });
-      }
-    })()
-  );
+  c.executionCtx.waitUntil(notifyUserSyncByEnv(c.env, userId));
+}
+
+/**
+ * Notify a user's UserSync DO from a non-Hono context (queue handlers, twist
+ * runtime, deploy flow). Awaitable; safe to call in Promise.allSettled.
+ */
+export async function notifyUserSyncByEnv(env: Bindings, userId: string): Promise<void> {
+  try {
+    const userSyncId = env.USER_SYNC.idFromName(userId);
+    const userSyncDO = env.USER_SYNC.get(userSyncId);
+    await userSyncDO.fetch(
+      new Request("http://do/notify", {
+        method: "POST",
+        body: JSON.stringify({ id: userId }),
+      })
+    );
+  } catch (error) {
+    const logger = createLogger({ operation: "notifyUserSyncByEnv" });
+    logger.error("Error notifying UserSync DO", error as Error, {
+      user_id: userId,
+    });
+  }
 }
 
 /**

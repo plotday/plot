@@ -186,10 +186,12 @@ export class UserSync extends DurableObject<Bindings> {
 
       const userId = this.userId;
       await withDb(this.env, async (db) => {
-        // Query pending updates using RPC to compare columns
-        let pendingUpdates: Awaited<ReturnType<typeof rpc<"get_pending_user_sync">>>;
+        // rpc() unwraps single-row TABLE results into a bare object, so a
+        // single pending entity (the common case) would slip past an
+        // Array.isArray check. Normalize to an array.
+        let pendingUpdatesRaw: Awaited<ReturnType<typeof rpc<"get_pending_user_sync">>>;
         try {
-          pendingUpdates = await rpc(db, "get_pending_user_sync", {
+          pendingUpdatesRaw = await rpc(db, "get_pending_user_sync", {
             p_user_id: userId,
           });
         } catch (error) {
@@ -200,8 +202,13 @@ export class UserSync extends DurableObject<Bindings> {
           return;
         }
 
-        if (!pendingUpdates || !Array.isArray(pendingUpdates) || pendingUpdates.length === 0) {
-          // No pending updates
+        const pendingUpdates = Array.isArray(pendingUpdatesRaw)
+          ? pendingUpdatesRaw
+          : pendingUpdatesRaw
+            ? [pendingUpdatesRaw]
+            : [];
+
+        if (pendingUpdates.length === 0) {
           this.state.lastSyncTime = now;
           return;
         }

@@ -63,6 +63,25 @@ CREATE TRIGGER user_sync_twist_instance_update
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_twist_instance();
 
+-- User sync triggers for thread_priority table
+CREATE TRIGGER user_sync_thread_priority_insert
+  AFTER INSERT ON thread_priority
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_thread_priority();
+
+CREATE TRIGGER user_sync_thread_priority_update
+  AFTER UPDATE ON thread_priority
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_thread_priority();
+
+CREATE TRIGGER user_sync_thread_priority_delete
+  AFTER DELETE ON thread_priority
+  REFERENCING OLD TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_thread_priority();
+
 -- User sync triggers for thread_read table
 CREATE TRIGGER user_sync_thread_read_insert
   AFTER INSERT ON thread_read

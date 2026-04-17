@@ -1,14 +1,5 @@
--- Ensures a user has their own root priority. Idempotent — safe to call
--- multiple times. In the per-user model the root is just a priority
--- with nlevel(path) = 1 and user_id = the user, so we don't touch
--- priority_user at all.
-CREATE OR REPLACE FUNCTION public.activate_invited_user (
-    p_user_id uuid
-)
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "activate_invited_user" function
+CREATE OR REPLACE FUNCTION "public"."activate_invited_user" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     v_root_priority_id uuid;
     v_new_path ltree;
@@ -47,4 +38,4 @@ BEGIN
 
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
-$function$;
+$$;
