@@ -298,6 +298,14 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         final Widget todoIcon;
         final hasPending = activity.outstandingTasks;
         final isAssoc = widget.isAssociated;
+        final String leadingTitle;
+        if (isAssoc && !hasPending) {
+          leadingTitle = 'Remove from event';
+        } else if (!isTodo && !isAssoc) {
+          leadingTitle = 'Add to agenda';
+        } else {
+          leadingTitle = isScheduled ? 'Reschedule' : 'Remove from agenda';
+        }
         if (isAssoc && !hasPending) {
           // Associated thread without outstanding tasks: show association icon
           todoIcon = Button.icon(
@@ -310,7 +318,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                   ? buildContext.colour.foreground
                   : null,
               hoverIcon: Value(FontAwesomeIcons.xmark),
-              title: 'Remove from event',
+              title: leadingTitle,
             ),
             selected: true,
             selectedColor: threadColor,
@@ -331,7 +339,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                   ? buildContext.colour.foreground
                   : null,
               hoverIcon: Value(PlotIcon.todo),
-              title: 'Start',
+              title: leadingTitle,
             ),
             forceHover: isHovered,
             onLongPress: longPress,
@@ -362,7 +370,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                   ? buildContext.colour.foreground
                   : null,
               hoverIcon: Value(hoverActionIcon),
-              title: isScheduled ? 'Reschedule' : 'Finish',
+              title: leadingTitle,
             ),
             selected: true,
             selectedColor: threadColor,
@@ -386,10 +394,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                   child: MouseRegion(
                     onEnter: (_) => setState(() => _leadingHovered = true),
                     onExit: (_) => setState(() => _leadingHovered = false),
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => buildContext.run(leadingCommand),
-                      onLongPress: longPress,
+                    child: FTooltip(
+                      tipBuilder: (context, controller) => Text(leadingTitle),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => buildContext.run(leadingCommand),
+                        onLongPress: longPress,
+                      ),
                     ),
                   ),
                 ),
@@ -1045,8 +1056,7 @@ class ThreadCommands extends HookWidget {
     // When the user has been invited to an event and hasn't responded,
     // show explicit Attend + Skip buttons side-by-side. Otherwise show
     // the single ToggleRsvp button (solo events, or already-RSVP'd events).
-    final isCalendarEvent =
-        showEventButtons && activity.isLinkScheduleInstance;
+    final isCalendarEvent = showEventButtons && activity.isLinkScheduleInstance;
     final needsRsvp =
         isCalendarEvent &&
         activity.currentUserRsvp == null &&

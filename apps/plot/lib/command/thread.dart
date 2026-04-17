@@ -1,6 +1,5 @@
 import 'dart:async';
 
-
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -531,7 +530,8 @@ class ToggleRsvp extends _UpdateThreadCommand {
     // this specific occurrence (not inherited from the series). Initial
     // RSVPs and toggles of series-inherited RSVPs target the series.
     final hasExistingRsvp = thread.currentUserRsvp != null;
-    final targetsOccurrence = hasExistingRsvp &&
+    final targetsOccurrence =
+        hasExistingRsvp &&
         thread.occurrence != null &&
         !thread.rsvpInheritedFromSeries;
 
@@ -757,7 +757,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
     bool stateIcon = false,
     String? title,
   }) : super(
-         title: title ?? (thread.todo ? 'Finish' : 'Start'),
+         title: title ?? (thread.todo ? 'Remove from agenda' : 'Add to agenda'),
          eventObject: EventObject.activity,
          eventAction: EventAction.started,
          icon: stateIcon
@@ -777,7 +777,7 @@ class ToggleThreadToDo extends _UpdateThreadCommand {
 class StartThread extends _UpdateThreadCommand {
   StartThread(super.thread, {super.onUpdate, bool stateIcon = false})
     : super(
-        title: 'Start',
+        title: 'Add to agenda',
         eventObject: EventObject.activity,
         eventAction: EventAction.started,
         icon: stateIcon ? PlotIcon.note : PlotIcon.todo,
@@ -795,7 +795,7 @@ class StartThread extends _UpdateThreadCommand {
 class DisassociateThread extends Command {
   DisassociateThread(this.thread, {this.finish = false, this.onBeforeRun})
     : super(
-        title: finish ? 'Finish' : 'Remove from event',
+        title: finish ? 'Remove from agenda' : 'Remove from event',
         eventObject: EventObject.activity,
         eventAction: finish ? EventAction.finished : EventAction.updated,
         icon: finish ? FontAwesomeIcons.circleCheck : FontAwesomeIcons.xmark,
@@ -850,7 +850,7 @@ class FinishThread extends _UpdateThreadCommand {
     this.bump = true,
     this.onBeforeRun,
   }) : super(
-         title: 'Finish',
+         title: 'Remove from agenda',
          eventObject: EventObject.activity,
          eventAction: EventAction.finished,
          icon: stateIcon && thread.todo
