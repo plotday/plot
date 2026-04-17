@@ -527,18 +527,20 @@ class ToggleRsvp extends _UpdateThreadCommand {
     final updated = thread.withRsvpStatus(_targetStatus);
     await saveOptimistically(context, updated);
 
-    // Determine whether this is an occurrence-level or series-level RSVP.
-    // Initial accept (no prior RSVP) always targets the series.
-    // Subsequent toggles on recurring occurrences target the occurrence.
+    // Target the occurrence only when the user has an existing RSVP on
+    // this specific occurrence (not inherited from the series). Initial
+    // RSVPs and toggles of series-inherited RSVPs target the series.
     final hasExistingRsvp = thread.currentUserRsvp != null;
-    final isOccurrenceLevel = hasExistingRsvp && thread.occurrence != null;
+    final targetsOccurrence = hasExistingRsvp &&
+        thread.occurrence != null &&
+        !thread.rsvpInheritedFromSeries;
 
     api
         .post<dynamic>(
           '/sync/schedule/status',
           body: {
             'thread_id': thread.id.toString(),
-            if (isOccurrenceLevel) 'occurrence': thread.occurrence,
+            if (targetsOccurrence) 'occurrence': thread.occurrence,
             'status': _targetStatus,
           },
         )
