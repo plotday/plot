@@ -2092,8 +2092,12 @@ class Thread extends Equatable implements Comparable<Thread> {
          hasEmbedding: false,
          // Seed topic + auto-attached group from the priority's config so
          // any thread composed here inherits the routing key and the locked
-         // group chip before the user types.
-         topic: priority.priorityConfig.topic,
+         // group chip before the user types. When no explicit
+         // config.topic is set, fall back to the priority id itself for
+         // non-root priorities, so sibling threads filed in the same
+         // sub-priority share a topic filter for classify_thread_for_user.
+         topic: priority.priorityConfig.topic ??
+             (priority.path.isRoot ? null : priority.id.toString()),
          groups: priority.priorityConfig.group != null
              ? [priority.priorityConfig.group!]
              : null,
