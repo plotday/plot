@@ -37,6 +37,7 @@ import {
   type StoredTokenData,
 } from "../../provider";
 import { CallbacksState } from "../../state/callbacks";
+import { classifyInviteable } from "../../state/contact-classifier";
 import superjson from "superjson";
 
 import type { Storage } from "../../state/storage";
@@ -2317,6 +2318,7 @@ export class Integrations extends Tool implements IAuth {
             user_id: userId,
             name: null,
             avatar_url: null,
+            inviteable: classifyInviteable(email, null),
           })
           .returning(["id", "name"])
           .executeTakeFirst();

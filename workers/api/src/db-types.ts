@@ -62,6 +62,7 @@ export interface Actor {
   created_at: Timestamp | null;
   email: string | null;
   id: string | null;
+  inviteable: boolean | null;
   name: string | null;
   type: string | null;
   updated_at: Timestamp | null;
@@ -130,6 +131,7 @@ export interface Contact {
   created_at: Generated<Timestamp>;
   email: string | null;
   id: Generated<string>;
+  inviteable: Generated<boolean>;
   name: string | null;
   primary: Generated<boolean>;
   updated_at: Generated<Timestamp>;
@@ -461,6 +463,7 @@ export interface NoteTags {
 export interface Priority {
   archived_at: Timestamp | null;
   color: number | null;
+  config: Json | null;
   created_at: Generated<Timestamp>;
   created_by: string;
   default_thread_icon: string | null;
@@ -479,25 +482,6 @@ export interface PriorityChild {
   archived_at: Timestamp | null;
   child_id: string | null;
   priority_id: string | null;
-}
-
-export interface PriorityRule {
-  anchor_thread_id: string | null;
-  created_at: Generated<Timestamp>;
-  /**
-   * Frozen embedding snapshot for content rules. Compared against thread.embedding using cosine similarity with a 0.7 threshold.
-   */
-  embedding: string | null;
-  id: Generated<string>;
-  label: string | null;
-  priority_id: string;
-  /**
-   * Exact-string match target for thread.topic. Examples: channel:42 (connector channel), a group uuid, or any caller-supplied string.
-   */
-  topic: string | null;
-  type: string;
-  updated_at: Generated<Timestamp>;
-  user_id: string;
 }
 
 export interface PrioritySetting {
@@ -681,7 +665,7 @@ export interface Thread {
   sync_depth: number | null;
   title: string | null;
   /**
-   * Routing key used by priority rules. On INSERT defaults to, in order: explicit input, channel:<channel.id> when the thread comes from a connection, or groups[1]::text.
+   * Routing key used by classify_thread_for_user. Two conventions: (1) priority:{KEY}[:{SUB_TOPIC}] defaults the thread into the user's priority with that key when no user_moved example wins; (2) any other string acts as the topic filter over user_moved training examples. On INSERT defaults to, in order: explicit input, or groups[1]::text when unset.
    */
   topic: string | null;
   /**
@@ -709,6 +693,7 @@ export interface ThreadPriority {
   thread_id: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
+  user_moved: Generated<boolean>;
 }
 
 export interface ThreadRead {
@@ -1136,6 +1121,7 @@ export interface UserActor {
   created_at: Timestamp | null;
   email: string | null;
   id: string | null;
+  inviteable: boolean | null;
   name: string | null;
   self: boolean | null;
   type: string | null;
@@ -1265,6 +1251,7 @@ export interface UserPriority {
   attention_window: Json | null;
   attention_window_set: boolean | null;
   color: number | null;
+  config: Json | null;
   created_at: Timestamp | null;
   created_by: string | null;
   global_path: string | null;
@@ -1456,7 +1443,6 @@ export interface DB {
   note_tags: NoteTags;
   priority: Priority;
   priority_child: PriorityChild;
-  priority_rule: PriorityRule;
   priority_setting: PrioritySetting;
   priority_setting_inherited: PrioritySettingInherited;
   priority_tags: PriorityTags;

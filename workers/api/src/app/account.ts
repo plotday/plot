@@ -17,6 +17,7 @@ import { twistFactory } from "../twist";
 import * as twistManagement from "../twist/management";
 import { captureServerError } from "../utils/error-capture";
 import { extractRequestContext } from "../utils/log-context";
+import { classifyInviteable } from "../state/contact-classifier";
 import { createLogger } from "@plotday/worker-util";
 import { notifySync } from "./sync/notify";
 
@@ -125,6 +126,7 @@ account.post("/activate", async (c) => {
           name: name ?? null,
           user_id: user.id,
           primary: true,
+          inviteable: classifyInviteable(email, name ?? null),
         })
         .onConflict((oc) => oc.column("email").doUpdateSet({
           name: name ?? null,
@@ -581,6 +583,7 @@ account.post("/activate", async (c) => {
             name: user.name ?? null,
             user_id: user.id,
             primary: true,
+            inviteable: classifyInviteable(user.email, user.name ?? null),
           })
           .onConflict((oc) =>
             oc.column("email").doUpdateSet({

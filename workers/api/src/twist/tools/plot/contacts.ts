@@ -3,6 +3,7 @@ import { ContactAccess } from "@plotday/twister/tools/plot";
 import { createLogger } from "@plotday/worker-util";
 
 import { rpc } from "../../../rpc";
+import { classifyInviteable } from "../../../state/contact-classifier";
 import type { Plot } from "./index";
 
 function normalizeName(name: string | undefined | null): string | undefined {
@@ -202,6 +203,7 @@ export async function addContacts(
             email: null,
             name: normalizedName || null,
             avatar_url: contact.avatar || null,
+            inviteable: classifyInviteable(null, normalizedName || null),
           })
           .returning(["id", "name"])
           .executeTakeFirstOrThrow();

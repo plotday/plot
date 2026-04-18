@@ -7,6 +7,7 @@ import { createLogger } from "@plotday/worker-util";
 import type { Bindings } from "../env";
 import { sendEmail } from "../email/send";
 import { captureServerError } from "../utils/error-capture";
+import { classifyInviteable } from "../state/contact-classifier";
 import { extractRequestContext } from "../utils/log-context";
 
 const linkEmail = new Hono<{ Bindings: Bindings }>();
@@ -418,6 +419,7 @@ linkEmail.post("/link-email/verify", async (c) => {
           user_id: user.id,
           name: null,
           avatar_url: null,
+          inviteable: classifyInviteable(email, null),
         })
         .execute();
       logger.info("Created new contact for linked email", {
