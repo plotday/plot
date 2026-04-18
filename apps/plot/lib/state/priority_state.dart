@@ -14,6 +14,7 @@ class PriorityState extends Equatable {
     bool showArchived = false,
     List<AgendaItem>? agendaItems,
     bool agendaDoneEnd = false,
+    bool agendaLoaded = false,
     List<Tag> filter = const [],
     String search = '',
     List<TwistInstance> twists = const [],
@@ -38,6 +39,7 @@ class PriorityState extends Equatable {
           ? List.unmodifiable(agendaItems)
           : agendaItems ?? const [],
       agendaDoneEnd: agendaDoneEnd,
+      agendaLoaded: agendaLoaded,
       showArchived: showArchived,
       filter: filter.isNotEmpty ? List.unmodifiable(filter) : filter,
       search: search,
@@ -71,6 +73,7 @@ class PriorityState extends Equatable {
     required this.draftNote,
     required this.agendaItems,
     this.agendaDoneEnd = false,
+    this.agendaLoaded = false,
     this.showArchived = false,
     this.filter = const [],
     this.search = '',
@@ -93,6 +96,7 @@ class PriorityState extends Equatable {
   final bool showArchived;
   final List<AgendaItem> agendaItems;
   final bool agendaDoneEnd;
+  final bool agendaLoaded;
   final List<Tag> filter;
   final String search;
   final List<TwistInstance> twists;
@@ -404,8 +408,7 @@ class PriorityState extends Equatable {
       bool current = false,
       DateTime? scheduleAt,
     }) {
-      final isOutside =
-          outsidePriorityIds?.contains(event.id) == true;
+      final isOutside = outsidePriorityIds?.contains(event.id) == true;
 
       final startOfDay =
           event.draft && event.at?.start == event.at?.start?.startOfDay;
@@ -429,11 +432,9 @@ class PriorityState extends Equatable {
           ),
         );
         // Add the event as a thread widget below the header
-        items.add(AgendaThreadItem(
-          event,
-          now: current,
-          isOutsidePriority: isOutside,
-        ));
+        items.add(
+          AgendaThreadItem(event, now: current, isOutsidePriority: isOutside),
+        );
       }
 
       // Insert associated threads below the event.
@@ -453,12 +454,14 @@ class PriorityState extends Equatable {
             if (!addedAssociations.add(dedupeKey)) continue;
             final child = threadById[assoc.childThreadId];
             if (child != null) {
-              items.add(AgendaThreadItem(
-                child,
-                isAssociated: true,
-                associationParentId: parentKey,
-                associationOrder: assoc.order,
-              ));
+              items.add(
+                AgendaThreadItem(
+                  child,
+                  isAssociated: true,
+                  associationParentId: parentKey,
+                  associationOrder: assoc.order,
+                ),
+              );
             }
           }
         }
@@ -476,7 +479,8 @@ class PriorityState extends Equatable {
       // Split threads into todos vs notes/done.
       // Exclude threads that are associated with this event — they are
       // already shown via the association injection above.
-      final eventAssocChildIds = associationsByParentId?[event.id]
+      final eventAssocChildIds =
+          associationsByParentId?[event.id]
               ?.map((a) => a.childThreadId)
               .toSet() ??
           const <Uuid>{};
@@ -497,24 +501,25 @@ class PriorityState extends Equatable {
       // For link-scheduled events, only associations control which threads
       // appear under them — skip both priority and time-based matching.
       // For non-link events, use priority match and time match as before.
-      final isLinkEvent =
-          event.isLinkScheduleInstance || event.hasLinkSchedule;
+      final isLinkEvent = event.isLinkScheduleInstance || event.hasLinkSchedule;
       final (matchingTodos, remainingTodos) = isLinkEvent
           ? (<Thread>[], todos) // All todos remain for the gap
           : todos.partition(
               (Thread a) =>
                   !a.hasLinkSchedule &&
-                  (// Priority match: same or descendant priority
+                  ( // Priority match: same or descendant priority
                   ((event.priority.id == a.priority.id ||
-                          event.priority.isParent(a.priority)) &&
-                      !(a.at?.start != null &&
-                          event.at?.start != null &&
-                          event.at?.end != null &&
-                          a.at!.start!.isSameOrAfter(event.at!.end!))) ||
-                  // Time match: todo explicitly pinned to this event's start
-                  (event.at?.start != null &&
-                      (a.pinnedAfterTime ?? a.at?.start) != null &&
-                      (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(event.at!.start!))),
+                              event.priority.isParent(a.priority)) &&
+                          !(a.at?.start != null &&
+                              event.at?.start != null &&
+                              event.at?.end != null &&
+                              a.at!.start!.isSameOrAfter(event.at!.end!))) ||
+                      // Time match: todo explicitly pinned to this event's start
+                      (event.at?.start != null &&
+                          (a.pinnedAfterTime ?? a.at?.start) != null &&
+                          (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(
+                            event.at!.start!,
+                          ))),
             );
 
       // Filter notes/done by time (agendaAt within event's time range)
@@ -536,7 +541,9 @@ class PriorityState extends Equatable {
                 (a.todo &&
                     event.at?.start != null &&
                     (a.pinnedAfterTime ?? a.at?.start) != null &&
-                    (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(event.at!.start!)),
+                    (a.pinnedAfterTime ?? a.at!.start!).isAtSameMomentAs(
+                      event.at!.start!,
+                    )),
           )
           .toList();
 
@@ -1050,6 +1057,7 @@ class PriorityState extends Equatable {
     bool? showArchived,
     List<AgendaItem>? agendaItems,
     bool? agendaDoneEnd,
+    bool? agendaLoaded,
     List<Tag>? filter,
     String? search,
     List<TwistInstance>? twists,
@@ -1071,6 +1079,7 @@ class PriorityState extends Equatable {
       showArchived: showArchived ?? this.showArchived,
       agendaItems: agendaItems ?? this.agendaItems,
       agendaDoneEnd: agendaDoneEnd ?? this.agendaDoneEnd,
+      agendaLoaded: agendaLoaded ?? this.agendaLoaded,
       reorderViewItems: reorderViewItems.or(this.reorderViewItems),
       filter: filter != null
           ? (filter.isNotEmpty ? List.unmodifiable(filter) : filter)
@@ -1115,6 +1124,7 @@ class PriorityState extends Equatable {
     showArchived,
     agendaItems,
     agendaDoneEnd,
+    agendaLoaded,
     filter,
     search,
     twists,
@@ -1229,8 +1239,14 @@ class AgendaThreadItem extends AgendaItem {
   final Order? associationOrder;
 
   @override
-  List<Object?> get props =>
-      [thread, now, isNext, isAssociated, isOutsidePriority, associationParentId];
+  List<Object?> get props => [
+    thread,
+    now,
+    isNext,
+    isAssociated,
+    isOutsidePriority,
+    associationParentId,
+  ];
 
   @override
   String toString() =>

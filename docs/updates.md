@@ -1,3 +1,4 @@
+- Priorities with nothing on the agenda now open straight to the activity feed — and opening a thread that isn't on the agenda also switches to the feed, so you always land on a list that has your thread in it
 - Keyboard shortcut updates: Cmd+Shift+A focuses the current list and switches between agenda and activity on a second press, Cmd+T makes the focused note a task, Cmd+Shift+T assigns it, and new thread on web is now Cmd+Option+N (so browsers stop stealing Cmd+Shift+N)
 - Contact pickers and @mentions no longer suggest notification-only addresses like no-reply@, mailer-daemon@, or bounces@ — pick from real people only
 - The Using Plot and Twist Development priorities now show only the activity feed — the agenda tab is hidden on these feedback-style priorities. Messages you start in Using Plot are also automatically tagged as feedback and shared with the Plot team.

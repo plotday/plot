@@ -26,9 +26,11 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// unread→read and falls outside the SQL LIMIT (the ORDER BY puts read
   /// threads after unreads, so the newly-read thread can be pushed past the
   /// row limit), the cached thread can be injected into the feed results.
-  final Map<ThreadId,
-          ({int urgencyRank, int importance, DateTime activityAt, Thread thread})>
-      _stickyUnreadIds = {};
+  final Map<
+    ThreadId,
+    ({int urgencyRank, int importance, DateTime activityAt, Thread thread})
+  >
+  _stickyUnreadIds = {};
   ThreadHeaderNotifier? headerNotifier;
 
   /// Persisted scroll offsets for scroll restoration across route changes.
@@ -191,7 +193,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Updated via a separate stream subscription.
   Map<Uuid, List<ThreadAssociationRow>>? _associations;
   StreamSubscription<Map<Uuid, List<ThreadAssociationRow>>>?
-      _associationsSubscription;
+  _associationsSubscription;
 
   /// Data-driven suppression for association changes: keeps reorderViewItems
   /// until _associations confirms the child is under the expected parent.
@@ -351,19 +353,18 @@ class PriorityBloc extends Cubit<PriorityState> {
             return item.when(
               header: (_) => item,
               activity: (a) => a.thread.id == id
-                  ? AgendaThreadItem(
-                      a.thread.copyWith(todo: false),
-                      now: a.now,
-                    )
+                  ? AgendaThreadItem(a.thread.copyWith(todo: false), now: a.now)
                   : item,
             );
           }).toList()
         : null;
 
-    emit(state.copyWith(
-      agendaItems: updatedItems,
-      activityFeedItems: updatedFeedItems,
-    ));
+    emit(
+      state.copyWith(
+        agendaItems: updatedItems,
+        activityFeedItems: updatedFeedItems,
+      ),
+    );
   }
 
   /// Optimistically remove associated copies of a thread from the agenda.
@@ -375,8 +376,9 @@ class PriorityBloc extends Cubit<PriorityState> {
     if (_associations != null) {
       final updated = <Uuid, List<ThreadAssociationRow>>{};
       for (final entry in _associations!.entries) {
-        final filtered =
-            entry.value.where((a) => a.childThreadId != id).toList();
+        final filtered = entry.value
+            .where((a) => a.childThreadId != id)
+            .toList();
         if (filtered.isNotEmpty) {
           updated[entry.key] = filtered;
         }
@@ -608,10 +610,7 @@ class PriorityBloc extends Cubit<PriorityState> {
             if (insertIndex == -1) {
               insertIndex = updatedAgendaItems.isNotEmpty ? 1 : 0;
             }
-            updatedAgendaItems.insert(
-              insertIndex,
-              AgendaThreadItem(baseTodo),
-            );
+            updatedAgendaItems.insert(insertIndex, AgendaThreadItem(baseTodo));
           }
         }
       }
@@ -713,8 +712,9 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Enrich the priority so computed fields are populated
     final enrichedList = await Priority.get(id: newPriority.id, archived: null);
-    final contextPriority =
-        enrichedList.isNotEmpty ? enrichedList.first : newPriority;
+    final contextPriority = enrichedList.isNotEmpty
+        ? enrichedList.first
+        : newPriority;
 
     Thread newDraft;
     if (existingDraft != null) {
@@ -790,6 +790,7 @@ class PriorityBloc extends Cubit<PriorityState> {
         agendaItems: const [],
         activityFeedItems: const [],
         agendaDoneEnd: false,
+        agendaLoaded: false,
         activityFeedDoneEnd: false,
         activityFeedLoaded: false,
       ),
@@ -889,7 +890,10 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     emit(state.copyWith(draft: thread));
 
-    final noteChanged = note != null && note.id == state.draftNote.id && note != state.draftNote;
+    final noteChanged =
+        note != null &&
+        note.id == state.draftNote.id &&
+        note != state.draftNote;
     if (note != null) {
       if (note.id == state.draftNote.id) {
         emit(state.copyWith(draftNote: note));
@@ -1120,7 +1124,9 @@ class PriorityBloc extends Cubit<PriorityState> {
       (tags) {
         // Common tags (excluding action tags)
         final commonTagsFiltered = tags
-            .where((tagData) => tagData.$1.type != .compute && tagData.$1.addable)
+            .where(
+              (tagData) => tagData.$1.type != .compute && tagData.$1.addable,
+            )
             .map((tagData) => tagData.$1)
             .toList();
 
@@ -1139,18 +1145,17 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Watch icon counts for the priority
     _iconCountsSubscription?.cancel();
-    _iconCountsSubscription = Thread.watchIconCountsForPriority(
-      priorityToLoad.path,
-    ).listen((counts) {
-      final iconCounts = counts
-          .map((c) {
-            final subType = ThreadSubType.fromIcon(c.$1);
-            return subType != null ? (subType, c.$2) : null;
-          })
-          .whereType<(ThreadSubType, int)>()
-          .toList();
-      emit(state.copyWith(iconCounts: iconCounts));
-    });
+    _iconCountsSubscription =
+        Thread.watchIconCountsForPriority(priorityToLoad.path).listen((counts) {
+          final iconCounts = counts
+              .map((c) {
+                final subType = ThreadSubType.fromIcon(c.$1);
+                return subType != null ? (subType, c.$2) : null;
+              })
+              .whereType<(ThreadSubType, int)>()
+              .toList();
+          emit(state.copyWith(iconCounts: iconCounts));
+        });
 
     // Watch all active user twists (workspace-level, no longer per-priority)
     _subscriptions.add(
@@ -1296,7 +1301,8 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Only fetch cross-priority link events when no active filters/search
     // (filters are priority-scoped, cross-priority events don't match).
-    final hasActiveFilters = state.filter.isNotEmpty ||
+    final hasActiveFilters =
+        state.filter.isNotEmpty ||
         state.iconFilter.isNotEmpty ||
         state.search.isNotEmpty;
     final crossPriorityStream = hasActiveFilters
@@ -1309,86 +1315,84 @@ class PriorityBloc extends Cubit<PriorityState> {
             range: dateRange,
           ).map((result) => result.threads);
 
-    _agendaSubscription = Rx.combineLatest3<ThreadWatchResult, List<Thread>,
-                List<Thread>, (ThreadWatchResult, Set<Uuid>)>(
-              agendaStream,
-              associatedStream,
-              crossPriorityStream,
-              (agendaResult, associatedThreads, crossPriorityThreads) {
-                final agendaIds =
-                    agendaResult.threads.map((t) => t.id).toSet();
+    _agendaSubscription =
+        Rx.combineLatest3<
+              ThreadWatchResult,
+              List<Thread>,
+              List<Thread>,
+              (ThreadWatchResult, Set<Uuid>)
+            >(agendaStream, associatedStream, crossPriorityStream, (
+              agendaResult,
+              associatedThreads,
+              crossPriorityThreads,
+            ) {
+              final agendaIds = agendaResult.threads.map((t) => t.id).toSet();
 
-                // Merge associated threads that aren't already in the agenda.
-                // Only include associated threads whose parent event is in the
-                // current priority — prevents threads from other priorities
-                // leaking into the agenda.
-                final currentPriorityEventIds = agendaResult.threads
-                    .where(
-                      (t) => t.isLinkScheduleInstance || t.hasLinkSchedule,
-                    )
-                    .map((t) => t.id)
-                    .toSet();
-                final extra = associatedThreads.where((t) {
-                  if (agendaIds.contains(t.id)) return false;
-                  // Check if this thread is associated with an event in the
-                  // current priority (via _associations map)
-                  if (_associations != null) {
-                    for (final entry in _associations!.entries) {
-                      if (currentPriorityEventIds.contains(entry.key) &&
-                          entry.value.any((a) => a.childThreadId == t.id)) {
-                        return true;
-                      }
+              // Merge associated threads that aren't already in the agenda.
+              // Only include associated threads whose parent event is in the
+              // current priority — prevents threads from other priorities
+              // leaking into the agenda.
+              final currentPriorityEventIds = agendaResult.threads
+                  .where((t) => t.isLinkScheduleInstance || t.hasLinkSchedule)
+                  .map((t) => t.id)
+                  .toSet();
+              final extra = associatedThreads.where((t) {
+                if (agendaIds.contains(t.id)) return false;
+                // Check if this thread is associated with an event in the
+                // current priority (via _associations map)
+                if (_associations != null) {
+                  for (final entry in _associations!.entries) {
+                    if (currentPriorityEventIds.contains(entry.key) &&
+                        entry.value.any((a) => a.childThreadId == t.id)) {
+                      return true;
                     }
                   }
-                  return false;
-                }).toList();
-
-                // Merge cross-priority link events not already in agenda.
-                // Track which thread IDs are outside the current priority.
-                // Only include actual link schedule instances from the
-                // cross-priority stream — base threads (e.g. todos that
-                // happen to have a link) should not leak through.
-                final outsidePriorityIds = <Uuid>{};
-                final crossExtra = <Thread>[];
-                for (final t in crossPriorityThreads) {
-                  if (!agendaIds.contains(t.id) &&
-                      t.isLinkScheduleInstance) {
-                    crossExtra.add(t);
-                    outsidePriorityIds.add(t.id);
-                  }
                 }
+                return false;
+              }).toList();
 
-                final allThreads = [
-                  ...agendaResult.threads,
-                  ...extra,
-                  ...crossExtra,
-                ];
+              // Merge cross-priority link events not already in agenda.
+              // Track which thread IDs are outside the current priority.
+              // Only include actual link schedule instances from the
+              // cross-priority stream — base threads (e.g. todos that
+              // happen to have a link) should not leak through.
+              final outsidePriorityIds = <Uuid>{};
+              final crossExtra = <Thread>[];
+              for (final t in crossPriorityThreads) {
+                if (!agendaIds.contains(t.id) && t.isLinkScheduleInstance) {
+                  crossExtra.add(t);
+                  outsidePriorityIds.add(t.id);
+                }
+              }
 
-                return (
-                  (
-                    threads: allThreads,
-                    rawRowCount: agendaResult.rawRowCount,
-                  ),
-                  outsidePriorityIds,
-                );
-              },
-            )
+              final allThreads = [
+                ...agendaResult.threads,
+                ...extra,
+                ...crossExtra,
+              ];
+
+              return (
+                (threads: allThreads, rawRowCount: agendaResult.rawRowCount),
+                outsidePriorityIds,
+              );
+            })
             .map((combined) {
               // Compute a cheap signature so identical re-emissions can be
               // dropped before we pay the _makeAgenda cost. Drift streams
               // re-fire on every table change, so repeated syncs of unrelated
               // tables produce many identical emissions.
               final (result, outsidePriorityIds) = combined;
-              final threadSig = (result.threads
-                      .map(
-                        (t) =>
-                            '${t.id}:${t.updatedAt.microsecondsSinceEpoch}'
-                            ':${t.occurrence ?? ''}'
-                            ':${t.isLinkScheduleInstance ? 1 : 0}',
-                      )
-                      .toList()
-                    ..sort())
-                  .join(',');
+              final threadSig =
+                  (result.threads
+                          .map(
+                            (t) =>
+                                '${t.id}:${t.updatedAt.microsecondsSinceEpoch}'
+                                ':${t.occurrence ?? ''}'
+                                ':${t.isLinkScheduleInstance ? 1 : 0}',
+                          )
+                          .toList()
+                        ..sort())
+                      .join(',');
               final outsideSig =
                   (outsidePriorityIds.map((u) => u.toString()).toList()..sort())
                       .join(',');
@@ -1486,11 +1490,10 @@ class PriorityBloc extends Cubit<PriorityState> {
               if (_pendingAssociation != null) {
                 final (childId, parentId) = _pendingAssociation!;
                 final children = _associations?[parentId];
-                final assocExists = children != null &&
+                final assocExists =
+                    children != null &&
                     children.any((a) => a.childThreadId == childId);
-                final stillTodo = threads.any(
-                  (t) => t.id == childId && t.todo,
-                );
+                final stillTodo = threads.any((t) => t.id == childId && t.todo);
                 final settled = assocExists && !stillTodo;
                 suppressAssociation = !settled;
                 if (settled) {
@@ -1506,7 +1509,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               final bool suppressDisassociation;
               if (_pendingDisassociation != null) {
                 final childId = _pendingDisassociation!;
-                final stillAssociated = _associations?.values.any(
+                final stillAssociated =
+                    _associations?.values.any(
                       (children) =>
                           children.any((a) => a.childThreadId == childId),
                     ) ??
@@ -1526,7 +1530,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               // disassociation involve multiple DB writes (association +
               // schedule). Keep reorderViewItems for at least 500ms so all
               // writes settle before _makeAgenda takes over.
-              final suppressReorderTime = _reorderTimestamp != null &&
+              final suppressReorderTime =
+                  _reorderTimestamp != null &&
                   now.difference(_reorderTimestamp!) <
                       const Duration(milliseconds: 500);
 
@@ -1539,7 +1544,8 @@ class PriorityBloc extends Cubit<PriorityState> {
                 _reorderTimestamp = null;
               }
 
-              final suppressRebuild = suppressReorder ||
+              final suppressRebuild =
+                  suppressReorder ||
                   suppressAssociation ||
                   suppressDisassociation ||
                   suppressReorderTime ||
@@ -1569,6 +1575,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                 state.copyWith(
                   agendaItems: agendaItems,
                   agendaDoneEnd: false,
+                  agendaLoaded: true,
                   // Keep reorderViewItems during suppress, clear when real data arrives
                   reorderViewItems: suppressRebuild
                       ? const Value.absent()
@@ -1626,9 +1633,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       final syncBoundary = syncState?.last != null
           ? DateTime.fromMicrosecondsSinceEpoch(syncState!.last!, isUtc: true)
           : null;
-      final lastItemDate =
-          localThreads.isNotEmpty ? localThreads.last.agendaAt : null;
-      final syncedPastLastItem = syncBoundary != null &&
+      final lastItemDate = localThreads.isNotEmpty
+          ? localThreads.last.agendaAt
+          : null;
+      final syncedPastLastItem =
+          syncBoundary != null &&
           lastItemDate != null &&
           !syncBoundary.isBefore(lastItemDate);
 
@@ -1711,8 +1720,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           final unreadThreads = <Thread>[];
           final readThreads = <Thread>[];
           for (final thread in allThreads) {
-            if (thread.unread ||
-                _stickyUnreadIds.containsKey(thread.id)) {
+            if (thread.unread || _stickyUnreadIds.containsKey(thread.id)) {
               unreadThreads.add(thread);
             } else {
               readThreads.add(thread);
@@ -1807,9 +1815,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       final syncBoundary = syncState?.last != null
           ? DateTime.fromMicrosecondsSinceEpoch(syncState!.last!, isUtc: true)
           : null;
-      final lastItemDate =
-          localThreads.isNotEmpty ? localThreads.last.activityAt : null;
-      final syncedPastLastItem = syncBoundary != null &&
+      final lastItemDate = localThreads.isNotEmpty
+          ? localThreads.last.activityAt
+          : null;
+      final syncedPastLastItem =
+          syncBoundary != null &&
           lastItemDate != null &&
           !syncBoundary.isAfter(lastItemDate);
 
@@ -1934,8 +1944,11 @@ class PriorityBlocProviderState extends State<PriorityBlocProvider> {
       try {
         await Base.resolveIdentity();
       } catch (e, stackTrace) {
-        log.warning('Could not resolve identity before loading priority',
-            e, stackTrace);
+        log.warning(
+          'Could not resolve identity before loading priority',
+          e,
+          stackTrace,
+        );
       }
       if (Base.actorIdOrNull == null) {
         return _LoadResult.error(

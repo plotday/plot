@@ -90,56 +90,112 @@ class PriorityWrapper implements AutoRouteWrapper {
 
     return PriorityBlocProvider(
       priorityId: priorityId,
-      child: _PriorityCommandScope(
-        child: _PriorityShortcutsProvider(
-          priorityId: priorityId,
-          child: ThreadHeaderNotifierProvider(
-            child: BlocBuilder<LayoutBloc, LayoutState>(
-              builder: (context, layoutState) {
-                Widget body = Column(
-                  children: [
-                    const UnifiedHeader(),
-                    Expanded(
-                      child: ResizablePanelLayout(
-                        left: PrioritiesPage(),
-                        middle: PriorityPage(
-                          priorityId: priorityId,
-                          initialTab: tab == 'activity'
-                              ? PriorityTab.activityFeed
-                              : null,
-                        ),
-                        child: BlocSelector<PriorityBloc, PriorityState, int>(
-                          selector: (state) =>
-                              (state.thread?.priority.displayColor ??
-                                      state.draft.priority.displayColor)
-                                  .index,
-                          builder: (context, threadColorIndex) {
-                            final threadColor = ThemeColor(threadColorIndex);
-                            final brightness = context.colour.brightness;
-                            return ProxyProvider0<ColourSchemeData>(
-                              update: (_, _) => ColourSchemeData(
-                                themeColor: threadColor,
-                                brightness: brightness,
-                              ),
-                              child: AutoRouter(
-                                key: _routerKey,
-                                placeholder: (context) => const LoadingPage(),
-                                clipBehavior: Clip.none,
-                              ),
-                            );
-                          },
+      child: _AutoTabSwitcher(
+        child: _PriorityCommandScope(
+          child: _PriorityShortcutsProvider(
+            priorityId: priorityId,
+            child: ThreadHeaderNotifierProvider(
+              child: BlocBuilder<LayoutBloc, LayoutState>(
+                builder: (context, layoutState) {
+                  Widget body = Column(
+                    children: [
+                      const UnifiedHeader(),
+                      Expanded(
+                        child: ResizablePanelLayout(
+                          left: PrioritiesPage(),
+                          middle: PriorityPage(
+                            priorityId: priorityId,
+                            initialTab: tab == 'activity'
+                                ? PriorityTab.activityFeed
+                                : null,
+                          ),
+                          child: BlocSelector<PriorityBloc, PriorityState, int>(
+                            selector: (state) =>
+                                (state.thread?.priority.displayColor ??
+                                        state.draft.priority.displayColor)
+                                    .index,
+                            builder: (context, threadColorIndex) {
+                              final threadColor = ThemeColor(threadColorIndex);
+                              final brightness = context.colour.brightness;
+                              return ProxyProvider0<ColourSchemeData>(
+                                update: (_, _) => ColourSchemeData(
+                                  themeColor: threadColor,
+                                  brightness: brightness,
+                                ),
+                                child: AutoRouter(
+                                  key: _routerKey,
+                                  placeholder: (context) => const LoadingPage(),
+                                  clipBehavior: Clip.none,
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                );
+                    ],
+                  );
 
-                return body;
-              },
+                  return body;
+                },
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Auto-switches `PriorityTab` to `activityFeed` when the current priority's
+/// agenda is empty, or when the open thread isn't part of the agenda.
+/// Only ever switches *to* activityFeed — manual user choices stick.
+class _AutoTabSwitcher extends StatelessWidget {
+  const _AutoTabSwitcher({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<PriorityBloc, PriorityState>(
+      listenWhen: (prev, current) {
+        if (prev.context.id != current.context.id) return true;
+        if (!prev.agendaLoaded && current.agendaLoaded) return true;
+        if (prev.thread?.id != current.thread?.id && current.thread != null) {
+          return true;
+        }
+        return false;
+      },
+      listener: (context, state) {
+        if (!state.agendaLoaded) return;
+        if (state.context.isActivityOnly) return;
+        final notifier = PriorityTabProvider.maybeOf(context);
+        if (notifier == null || notifier.value != PriorityTab.agenda) return;
+
+        // Items from outside the current priority are shown dimmed but
+        // don't make the agenda meaningfully populated for this priority.
+        final agendaIsEmpty = !state.agendaItems.any(
+          (item) => item.when(
+            header: (_) => false,
+            activity: (a) => !a.isOutsidePriority,
+          ),
+        );
+        final thread = state.thread;
+        final threadInAgenda =
+            thread == null ||
+            state.agendaItems.any(
+              (item) => item.when(
+                header: (_) => false,
+                activity: (a) => a.thread.id == thread.id,
+              ),
+            );
+
+        if (agendaIsEmpty || !threadInAgenda) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            notifier.value = PriorityTab.activityFeed;
+          });
+        }
+      },
+      child: child,
     );
   }
 }
@@ -387,8 +443,7 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
     final targetTab = targetSource == ThreadListSource.agenda
         ? PriorityTab.agenda
         : PriorityTab.activityFeed;
-    final tabChanged =
-        tabNotifier != null && tabNotifier.value != targetTab;
+    final tabChanged = tabNotifier != null && tabNotifier.value != targetTab;
     if (tabChanged) {
       tabNotifier.value = targetTab;
       // After a tab switch the target list's items load asynchronously via
@@ -511,21 +566,22 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                         // Trust the visible tab (what the user sees), not the
                         // bloc's inferred source — they can drift when no
                         // thread is open or the open thread isn't in agenda.
-                        final tabNotifier =
-                            PriorityTabProvider.maybeOf(context);
+                        final tabNotifier = PriorityTabProvider.maybeOf(
+                          context,
+                        );
                         final visibleSource =
                             tabNotifier?.value == PriorityTab.activityFeed
-                                ? ThreadListSource.activityFeed
-                                : ThreadListSource.agenda;
-                        final controller = visibleSource ==
-                                ThreadListSource.activityFeed
+                            ? ThreadListSource.activityFeed
+                            : ThreadListSource.agenda;
+                        final controller =
+                            visibleSource == ThreadListSource.activityFeed
                             ? _priorityActivityFeedController
                             : _priorityListController;
                         if (controller?.hasPrimaryFocus != true) {
                           _focusListSource(context, visibleSource);
                         } else {
-                          final target = visibleSource ==
-                                  ThreadListSource.agenda
+                          final target =
+                              visibleSource == ThreadListSource.agenda
                               ? ThreadListSource.activityFeed
                               : ThreadListSource.agenda;
                           _focusListSource(context, target);
@@ -725,7 +781,9 @@ class _PriorityPageState extends State<PriorityPage> {
       // Defer setState — the notifier may fire during a build frame
       // (e.g. when didChangeDependencies forces the viewer tab).
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _tabNotifier != null && _tabNotifier!.value != _currentTab) {
+        if (mounted &&
+            _tabNotifier != null &&
+            _tabNotifier!.value != _currentTab) {
           setState(() {
             _currentTab = _tabNotifier!.value;
           });
@@ -1627,7 +1685,8 @@ class _PriorityPageState extends State<PriorityPage> {
                 bool useAssociation = false;
 
                 // Check if dropping immediately after a link-scheduled event
-                final droppingOnLinkEvent = !passedGap &&
+                final droppingOnLinkEvent =
+                    !passedGap &&
                     targetEvent != null &&
                     targetEvent.isLinkScheduleInstance;
 
@@ -1703,8 +1762,10 @@ class _PriorityPageState extends State<PriorityPage> {
                   if (targetDate != null ||
                       activity.on?.start != null ||
                       activity.at?.start != null) {
-                    updatedActivity =
-                        activity.reorderTo(newOrder, date: targetDate);
+                    updatedActivity = activity.reorderTo(
+                      newOrder,
+                      date: targetDate,
+                    );
                   } else {
                     updatedActivity = activity.reorder(newOrder);
                   }
@@ -1729,8 +1790,9 @@ class _PriorityPageState extends State<PriorityPage> {
                               targetEvent?.occurrence ?? 'base',
                         )
                       : AgendaThreadItem(updatedActivity, now: nowFlag),
-                  associatingWithParent:
-                      useAssociation ? targetEvent!.id : null,
+                  associatingWithParent: useAssociation
+                      ? targetEvent!.id
+                      : null,
                   disassociating: isAssociated && !droppingOnLinkEvent,
                 );
 
@@ -1744,14 +1806,11 @@ class _PriorityPageState extends State<PriorityPage> {
                 } else if (isAssociated && !droppingOnLinkEvent) {
                   // Optimistically clear association so _makeAgenda doesn't
                   // re-add the thread under the event on next rebuild.
-                  context
-                      .read<PriorityBloc>()
-                      .optimisticallyDisassociate(activity.id);
-                  // Remove association and restore user schedule
-                  activity.disassociate(
-                    order: newOrder,
-                    date: targetDate,
+                  context.read<PriorityBloc>().optimisticallyDisassociate(
+                    activity.id,
                   );
+                  // Remove association and restore user schedule
+                  activity.disassociate(order: newOrder, date: targetDate);
                 } else if (needsFullSave) {
                   updatedActivity.save();
                 } else {
@@ -1848,7 +1907,8 @@ class _PriorityPageState extends State<PriorityPage> {
                   _ActivityFeedItem(
                     key: ValueKey('feed_activitywidget_${baseThread.id}'),
                     baseThread: baseThread,
-                    selected: state.thread != null &&
+                    selected:
+                        state.thread != null &&
                         baseThread.id == state.thread!.id,
                     now: agendaActivity.now,
                     focusNode: focusNode,
