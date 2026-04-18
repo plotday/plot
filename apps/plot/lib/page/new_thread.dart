@@ -87,6 +87,9 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Save reference to provider to avoid looking it up in dispose()
   PriorityShortcutsProviderState? _provider;
   ThreadHeaderNotifier? _headerNotifier;
+  // Cached so callbacks triggered during deactivate() (e.g. NoteEditor
+  // saving its draft) don't call context.read once ancestors are detached.
+  PriorityBloc? _priorityBloc;
   bool _hasAppliedQueryParams = false;
 
   // Twists for the selected draft priority (may differ from context priority)
@@ -114,6 +117,7 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     // Save the provider reference
     _provider = ActivityPanelControllerProvider.maybeOf(context);
+    _priorityBloc = context.read<PriorityBloc>();
     // Register with ThreadHeaderNotifier so unified header knows NewThreadPage is visible
     _headerNotifier = ThreadHeaderNotifierProvider.read(context);
     // Prefer middle panel on resize while NewThreadPage is visible
@@ -1047,8 +1051,10 @@ class NewThreadPageState extends State<NewThreadPage> {
       _selectedTwist != null ? [ActorId(_selectedTwist!.id)] : null;
 
   Future<void> _handleDraftChanged(Thread thread, {Note? note}) async {
-    if (!mounted) return;
-    final bloc = context.read<PriorityBloc>();
+    // Use the cached bloc: this callback can fire from NoteEditor.deactivate()
+    // after ancestors are detached, so context.read would throw.
+    final bloc = _priorityBloc;
+    if (bloc == null) return;
 
     // Always use the latest state from the bloc as our base. This prevents
     // rapid typing in NoteEditor from regressing the contact list or twist icon
@@ -1099,7 +1105,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Update the bloc and persist changes.
     await bloc.updateDraft(updatedThread, note: note);
 
-    if (contactsChanged) {
+    if (contactsChanged && mounted) {
       _refreshPinnedChips();
     }
   }
