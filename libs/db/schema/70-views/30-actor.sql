@@ -14,7 +14,8 @@ SELECT
     c.name,
     c.email,
     c.avatar_url,
-    c.archived_at
+    c.archived_at,
+    c.inviteable
 FROM
     "public"."contact" c
 UNION ALL
@@ -27,6 +28,7 @@ SELECT
     pt.name,
     NULL::text AS email,
     NULL::text AS avatar_url,
-    pt.archived_at
+    pt.archived_at,
+    true AS inviteable
 FROM
     "public"."twist_instance" pt;

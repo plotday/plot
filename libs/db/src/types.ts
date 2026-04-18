@@ -190,6 +190,7 @@ export type Database = {
           created_at: string
           email: string | null
           id: string
+          inviteable: boolean
           name: string | null
           primary: boolean
           updated_at: string
@@ -201,6 +202,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          inviteable?: boolean
           name?: string | null
           primary?: boolean
           updated_at?: string
@@ -212,6 +214,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          inviteable?: boolean
           name?: string | null
           primary?: boolean
           updated_at?: string
@@ -2536,6 +2539,7 @@ export type Database = {
           created_at: string | null
           email: string | null
           id: string | null
+          inviteable: boolean | null
           name: string | null
           type: string | null
           updated_at: string | null
@@ -3933,6 +3937,7 @@ export type Database = {
           created_at: string | null
           email: string | null
           id: string | null
+          inviteable: boolean | null
           name: string | null
           self: boolean | null
           type: string | null

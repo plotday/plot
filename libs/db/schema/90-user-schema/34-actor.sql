@@ -20,7 +20,8 @@ SELECT
         FROM contact c
         WHERE c.id = a.id
             AND c.user_id = uc.user_id
-    ) AS self
+    ) AS self,
+    a.inviteable
 FROM
     user_contact uc
     JOIN contact c ON c.id = uc.contact_id
@@ -41,7 +42,8 @@ SELECT
     a.name,
     a.email,
     a.avatar_url,
-    (c.user_id = uc_primary.user_id) AS self
+    (c.user_id = uc_primary.user_id) AS self,
+    a.inviteable
 FROM
     contact c
     JOIN actor a ON a.id = c.id
@@ -61,7 +63,8 @@ SELECT
     a.name,
     a.email,
     a.avatar_url,
-    false AS self
+    false AS self,
+    a.inviteable
 FROM
     "public"."user" u
     JOIN twist_instance pt ON pt.owner_id = u.id

@@ -8,6 +8,7 @@ CREATE TABLE "public"."contact" (
     "avatar_url" text,
     "user_id" uuid REFERENCES "public"."user" ("id") ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
     "primary" boolean NOT NULL DEFAULT false,
+    "inviteable" boolean NOT NULL DEFAULT true,
     CONSTRAINT contact_email_unique UNIQUE (email),
     CONSTRAINT contact_primary_requires_user CHECK (NOT "primary" OR user_id IS NOT NULL)
 );
