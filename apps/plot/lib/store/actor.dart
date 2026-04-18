@@ -8,6 +8,7 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   TextColumn get email => text().nullable()();
   TextColumn get avatarUrl => text().nullable()();
   BoolColumn get self => boolean()();
+  BoolColumn get inviteable => boolean().withDefault(const Constant(true))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -347,6 +348,7 @@ class Actor extends ActorRow {
         email: row.email,
         avatarUrl: row.avatarUrl,
         self: row.self,
+        inviteable: row.inviteable,
       );
 
   @override
@@ -360,6 +362,7 @@ class Actor extends ActorRow {
     Value<String?> email = const Value.absent(),
     Value<String?> avatarUrl = const Value.absent(),
     bool? self,
+    bool? inviteable,
     Value<int?> pending = const Value.absent(),
   }) => Actor.fromStore(
     super.copyWith(
@@ -372,6 +375,7 @@ class Actor extends ActorRow {
       email: email,
       avatarUrl: avatarUrl,
       self: self,
+      inviteable: inviteable,
       pending: pending,
     ),
   );

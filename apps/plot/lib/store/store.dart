@@ -2025,7 +2025,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 310;
+  int get schemaVersion => 311;
 
   @override
   MigrationStrategy get migration {
@@ -2858,6 +2858,9 @@ class Store extends _$Store {
       // Sparse per-priority config (topic/group/view behaviours), populated
       // by the server and read-only on the client.
       await _safeAddColumn(m, priorities, priorities.config);
+    }
+    if (from < 311) {
+      await _safeAddColumn(m, actors, actors.inviteable);
     }
   }
 
