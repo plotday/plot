@@ -47,6 +47,17 @@ class InfiniteListController extends ChangeNotifier {
     return null;
   }
 
+  /// Whether one of this list's items currently holds primary keyboard focus.
+  /// Unlike [focusedIndex], this is false when focus has moved elsewhere
+  /// (e.g. into a note editor) even if a list item's FocusNode reports
+  /// [FocusNode.hasFocus] via a descendant.
+  bool get hasPrimaryFocus {
+    for (final node in _focusNodes.values) {
+      if (node.hasPrimaryFocus) return true;
+    }
+    return false;
+  }
+
   /// Get or create a FocusNode for the given index.
   FocusNode getFocusNode(int index) {
     if (!_focusNodes.containsKey(index)) {
@@ -350,6 +361,14 @@ class InfiniteListState extends State<InfiniteList> {
   Map<int, String> _visibleKeySnapshot = {};
   int _lastSnapshotCount = 0;
 
+  /// Largest per-item extent observed from scroll metrics. Flutter does not
+  /// always re-run the sliver's `performLayout` when only `childCount` changes,
+  /// which leaves `maxScrollExtent` stale. Using `extentTotal / totalItems`
+  /// directly then shrinks as `totalItems` grows, inflating the computed
+  /// visible range and causing a runaway fetch loop. Tracking the max
+  /// observed average floors the estimate at its most trustworthy value.
+  double _maxObservedItemExtent = 0;
+
   (int, int) estimateVisibleIndexes() {
     if (!_scrollController.hasClients ||
         _scrollController.position.viewportDimension <= 0) {
@@ -357,8 +376,14 @@ class InfiniteListState extends State<InfiniteList> {
     }
     final totalItems = widget.count;
     if (totalItems == 0) return (0, 0);
-    final averageItemExtent =
+    final rawItemExtent =
         _scrollController.position.extentTotal / totalItems;
+    if (rawItemExtent > _maxObservedItemExtent) {
+      _maxObservedItemExtent = rawItemExtent;
+    }
+    final averageItemExtent = _maxObservedItemExtent > 0
+        ? _maxObservedItemExtent
+        : widget.estimatedItemExtent.toDouble();
     var first = (_scrollController.offset / averageItemExtent).floor();
     var last =
         ((_scrollController.offset +
@@ -651,25 +676,27 @@ class InfiniteListState extends State<InfiniteList> {
     final offset = _prefixCount;
     final count = widget.count - offset;
 
-    // When reordering is not needed and itemKey is available, use SliverList
-    // with findChildIndexCallback for key-based element reuse. This prevents
-    // widget state loss (e.g. image reload) when items shift indices.
-    if (widget.onReorder == null && widget.itemKey != null) {
+    // When reordering is not needed, use a plain SliverList. When itemKey is
+    // also provided, findChildIndexCallback enables key-based element reuse
+    // so widget state (e.g. loaded images) isn't lost when items shift.
+    if (widget.onReorder == null) {
       return SliverList(
         key: _listKey,
         delegate: SliverChildBuilderDelegate(
           _buildItem,
           childCount: count,
-          findChildIndexCallback: (Key key) {
-            if (key is ValueKey<String>) {
-              for (var i = 0; i < count; i++) {
-                if (widget.itemKey!(i + offset) == key.value) {
-                  return i;
-                }
-              }
-            }
-            return null;
-          },
+          findChildIndexCallback: widget.itemKey == null
+              ? null
+              : (Key key) {
+                  if (key is ValueKey<String>) {
+                    for (var i = 0; i < count; i++) {
+                      if (widget.itemKey!(i + offset) == key.value) {
+                        return i;
+                      }
+                    }
+                  }
+                  return null;
+                },
         ),
       );
     }
