@@ -271,12 +271,15 @@ class PriorityBloc extends Cubit<PriorityState> {
 
   Future<void> fetchMoreAgendaItems(int first, int count) async {
     final needed = first + count;
+    final currentItems = state.agendaItems.length;
     if (needed > _agendaLimit) {
       _agendaLimit = needed;
       _agendaHorizonDays += 90;
       _loadAgenda(triggerSync: !_agendaSyncNoMore);
-    } else if (!state.agendaDoneEnd) {
-      // JOIN multiplication: need more raw rows to get enough unique threads
+    } else if (!state.agendaDoneEnd && currentItems < needed) {
+      // JOIN multiplication: need more raw rows to get enough unique threads.
+      // Only bump when we actually don't have enough items — spurious fetcher
+      // calls during first-frame layout (pageSize=1) should not inflate limits.
       _agendaLimit += 50;
       _agendaHorizonDays += 90;
       _loadAgenda(triggerSync: !_agendaSyncNoMore);
@@ -1370,6 +1373,32 @@ class PriorityBloc extends Cubit<PriorityState> {
                 );
               },
             )
+            .map((combined) {
+              // Compute a cheap signature so identical re-emissions can be
+              // dropped before we pay the _makeAgenda cost. Drift streams
+              // re-fire on every table change, so repeated syncs of unrelated
+              // tables produce many identical emissions.
+              final (result, outsidePriorityIds) = combined;
+              final threadSig = (result.threads
+                      .map(
+                        (t) =>
+                            '${t.id}:${t.updatedAt.microsecondsSinceEpoch}'
+                            ':${t.occurrence ?? ''}'
+                            ':${t.isLinkScheduleInstance ? 1 : 0}',
+                      )
+                      .toList()
+                    ..sort())
+                  .join(',');
+              final outsideSig =
+                  (outsidePriorityIds.map((u) => u.toString()).toList()..sort())
+                      .join(',');
+              final sig =
+                  '${result.rawRowCount}|${result.threads.length}|'
+                  '$threadSig|$outsideSig';
+              return (sig, combined);
+            })
+            .distinct((a, b) => a.$1 == b.$1)
+            .map((tagged) => tagged.$2)
             .transform(
               ExpiringStreamTransformer((result) {
                 // Re-evaluate every minute on the minute to update time-dependent UI

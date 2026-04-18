@@ -981,17 +981,30 @@ class PriorityState extends Equatable {
       );
     }
 
-    // Fill in date headers for every day from today through the horizon
-    final horizon = today.addDays(horizonDays);
+    // Fill in date headers so users see contiguous days they can schedule
+    // into. Cap the fill to the last date with real content (plus a small
+    // buffer) rather than the full query horizon — there is no value in
+    // materializing ~90 empty-day headers when the user only has content in
+    // the next two weeks.
     final existingDates = <Date>{};
+    Date? lastContentDate;
     for (final item in items) {
       if (item is AgendaHeaderItem && item.date != null) {
         existingDates.add(item.date!);
+        if (lastContentDate == null || item.date! > lastContentDate) {
+          lastContentDate = item.date!;
+        }
       }
     }
 
+    const emptyDayBufferDays = 14;
+    final horizon = today.addDays(horizonDays);
+    final contentEnd = lastContentDate ?? today;
+    var fillUntil = contentEnd.addDays(emptyDayBufferDays);
+    if (fillUntil > horizon) fillUntil = horizon;
+
     final missingHeaders = <AgendaHeaderItem>[];
-    for (var date = today; date <= horizon; date = date.addDays(1)) {
+    for (var date = today; date <= fillUntil; date = date.addDays(1)) {
       if (!existingDates.contains(date)) {
         final nineAM = date.toStart().add(const Duration(hours: 9));
         missingHeaders.add(AgendaHeaderItem(date: date, scheduleAt: nineAM));
