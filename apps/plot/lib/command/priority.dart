@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -116,7 +117,10 @@ class PickCurrentPriority extends ShowCommands {
     : super(
         title: 'Switch priorities',
         icon: PlotIcon.priority,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyJ),
+        shortcut: platformSingleActivator(
+          LogicalKeyboardKey.keyP,
+          alt: kIsWeb,
+        ),
         commands: ChangeCurrentPriorityCommands(),
       );
 }

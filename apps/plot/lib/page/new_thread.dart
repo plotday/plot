@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:auto_route/auto_route.dart';
@@ -172,12 +173,17 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!mounted) return;
     _applyDefaultType();
 
-    // Default to auto-organize ON: thread files in the current context
-    // priority immediately, and the server re-files it on sync (via
-    // `auto_file` → `classify_thread_for_user`). Saving EditThread from
-    // the Auto organize line removes the id from this set, turning it OFF.
+    // Auto-organize is ON by default only in the root ("Everything") priority
+    // context and when the user has not explicitly picked or carried over a
+    // priority. In a non-root context, the default is the most recent picker
+    // priority (session-remembered) or the current context priority — never
+    // auto — so the thread goes where the user is working.
     final bloc = context.read<PriorityBloc>();
-    ThreadsBase.autoFileIds.add(bloc.state.draft.id.toString());
+    final hasExplicitPriority =
+        widget.priorityId != null || bloc.newThreadDefaultPriority != null;
+    if (bloc.state.context.root && !hasExplicitPriority) {
+      ThreadsBase.autoFileIds.add(bloc.state.draft.id.toString());
+    }
 
     // Load recently shared contacts for suggestion chips
     _loadRecentContacts();
@@ -339,83 +345,298 @@ class NewThreadPageState extends State<NewThreadPage> {
       children: [
         Center(
           child: Text(
-            'Start a thread with',
+            'Start a thread in',
             style: context.theme.typography.sm.copyWith(
               color: context.theme.plotColors.veryMuted,
             ),
           ),
         ),
-        SizedBox(height: 8),
+        const SizedBox(height: 8),
+        _buildPriorityChipRow(context, state),
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            'with',
+            style: context.theme.typography.sm.copyWith(
+              color: context.theme.plotColors.veryMuted,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
         _buildWithSelector(context, state),
       ],
     );
   }
 
-  /// Single inline control that replaces the old action bar. In "Auto
-  /// organize" state (draft id present in [ThreadsBase.autoFileIds]), clicking
-  /// opens [EditThread] so the user can set priority/title/type; saving the
-  /// modal flips off auto-organize and this row shows what the user picked.
-  Widget _buildAutoOrganizeLine(BuildContext context, PriorityState state) {
-    final draft = state.draft;
-    final autoOrganize = ThreadsBase.autoFileIds.contains(draft.id.toString());
-    final child = autoOrganize
-        ? _buildAutoOrganizeButton(context)
-        : _buildOrganizedRow(context, draft);
-    return Padding(
-      padding: const EdgeInsets.only(left: 6, bottom: 4),
-      child: Align(alignment: Alignment.centerLeft, child: child),
+  /// Row containing the priority picker chip. In non-root contexts when the
+  /// thread is not already in Auto mode, a leading veryMuted sparkles icon
+  /// is shown that toggles the priority to Auto.
+  Widget _buildPriorityChipRow(BuildContext context, PriorityState state) {
+    final draftIdStr = state.draft.id.toString();
+    final auto = ThreadsBase.autoFileIds.contains(draftIdStr);
+    final showLeadingSparkles = !state.context.root && !auto;
+    return Center(
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        runSpacing: 8,
+        children: [
+          if (showLeadingSparkles) _buildAutoSparklesToggle(context),
+          _buildPriorityChip(context, state, auto: auto),
+        ],
+      ),
     );
   }
 
-  Widget _buildAutoOrganizeButton(BuildContext context) {
+  Widget _buildAutoSparklesToggle(BuildContext context) {
+    final button = FButton.icon(
+      onPress: _switchToAuto,
+      variant: FButtonVariant.ghost,
+      child: Icon(
+        PlotIcon.sparkles,
+        size: context.theme.iconSizes.base,
+        color: context.theme.plotColors.veryMuted,
+      ),
+    );
+    if (!hasPhysicalKeyboard()) return button;
+    return FTooltip(
+      tipBuilder: (context, controller) => const Text('Auto organize'),
+      child: button,
+    );
+  }
+
+  /// Tooltip shown on the priority/title/type chips. Shows the label on one
+  /// line and the platform-formatted shortcut below it when a physical
+  /// keyboard is available.
+  Widget _buildChipTooltip({
+    required BuildContext context,
+    required String label,
+    required ShortcutActivator shortcut,
+  }) {
+    final shortcutText = formatShortcut(shortcut);
+    if (shortcutText.isEmpty) return Text(label);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label),
+        Text(
+          shortcutText,
+          style: context.theme.typography.xs.copyWith(
+            color: context.theme.colors.mutedForeground,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPriorityChip(
+    BuildContext context,
+    PriorityState state, {
+    required bool auto,
+  }) {
+    const chipRadius = BorderRadius.all(Radius.circular(24));
+    final chipPadding = EdgeInsets.symmetric(
+      horizontal: 12,
+      vertical: isMobilePlatform() ? 10 : 6,
+    );
+    final styleDelta = FButtonStyleDelta.delta(
+      decoration: FVariantsDelta.delta([
+        FVariantOperation.all(
+          DecorationDelta.boxDelta(borderRadius: chipRadius),
+        ),
+      ]),
+      contentStyle: FButtonContentStyleDelta.delta(
+        padding: EdgeInsetsGeometryDelta.value(chipPadding),
+      ),
+    );
+
+    final Widget label = auto
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 6,
+            children: [
+              Icon(PlotIcon.sparkles, size: context.theme.iconSizes.base),
+              const Text('Auto'),
+            ],
+          )
+        : PriorityLabel(priority: state.draft.priority);
+
     final button = FButton(
-      onPress: () => _openEditThreadFromAutoOrganize(context),
+      onPress: () => _selectPriority(context, state),
+      variant: FButtonVariant.secondary,
+      style: styleDelta,
+      mainAxisSize: MainAxisSize.min,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 6,
+        children: [
+          label,
+          Icon(
+            PlotIcon.verticalExpand,
+            size: context.theme.iconSizes.xs,
+            color: context.theme.plotColors.muted,
+          ),
+        ],
+      ),
+    );
+    if (!hasPhysicalKeyboard()) return button;
+    return FTooltip(
+      tipBuilder: (context, controller) => _buildChipTooltip(
+        context: context,
+        label: 'Change priority',
+        shortcut: platformSingleActivator(
+          LogicalKeyboardKey.keyP,
+          shift: true,
+          alt: kIsWeb,
+        ),
+      ),
+      child: button,
+    );
+  }
+
+  Future<void> _selectPriority(
+    BuildContext context,
+    PriorityState state,
+  ) async {
+    final result = await SelectModal.open<Priority>(
+      context,
+      items: (search) async {
+        final priorities = await Priority.get(
+          order: PriorityOrder.nested,
+          search: search,
+        );
+        return [SelectGroup(title: null, items: priorities)];
+      },
+      itemBuilder: (priority, _) =>
+          ListTile(body: PriorityLabel(priority: priority)),
+      selectedValue: state.draft.priority,
+      prompt: 'Select priority',
+      onAdd: (ctx) =>
+          createPriorityInline(ctx, parent: state.draft.priority),
+    );
+    if (!result.present) return;
+    final picked = result.value;
+    await _switchToPriority(picked);
+  }
+
+  Future<void> _switchToAuto() async {
+    final bloc = context.read<PriorityBloc>();
+    final draft = bloc.state.draft;
+    setState(() {
+      ThreadsBase.autoFileIds.add(draft.id.toString());
+    });
+    // Auto-filed threads live in the root priority until the server re-files.
+    final root = await Priority.getDefault();
+    if (!mounted) return;
+    if (draft.priority.id != root.id) {
+      await bloc.updateDraft(bloc.state.draft.copyWith(priority: root));
+    }
+  }
+
+  Future<void> _switchToPriority(Priority priority) async {
+    final bloc = context.read<PriorityBloc>();
+    final draft = bloc.state.draft;
+    setState(() {
+      ThreadsBase.autoFileIds.remove(draft.id.toString());
+    });
+    if (priority.id != draft.priority.id) {
+      await bloc.updateDraft(draft.copyWith(priority: priority));
+    }
+    bloc.setNewThreadDefaultPriority(priority);
+    await _loadTwistsForPriority(priority);
+  }
+
+  /// Row showing the draft's thread type (with a chevron to change it) and
+  /// either "Auto title" (sparkles → pencil on hover) or the title the user
+  /// set (with an X to clear).
+  Widget _buildAutoOrganizeLine(BuildContext context, PriorityState state) {
+    final draft = state.draft;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, bottom: 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildTypeChip(context, draft),
+            _buildTitleChip(context, draft),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTypeChip(BuildContext context, Thread draft) {
+    final subType =
+        ThreadSubType.fromIcon(draft.icon) ?? ThreadSubType.defaultFor();
+    final button = FButton(
+      onPress: () => _openTypeModal(context, draft, subType),
       variant: FButtonVariant.ghost,
       style: ghostSizedStyleDelta(
         context,
         textStyle: context.theme.typography.sm,
       ),
       mainAxisSize: MainAxisSize.min,
-      prefix: const Icon(PlotIcon.sparkles),
-      child: const Text('Auto organize'),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
+        children: [
+          FaIcon(
+            subType.icon,
+            size: context.theme.iconSizes.base,
+            color: context.theme.plotColors.veryMuted,
+          ),
+          Icon(
+            PlotIcon.verticalExpand,
+            size: context.theme.iconSizes.xs,
+            color: context.theme.plotColors.veryMuted,
+          ),
+        ],
+      ),
     );
     if (!hasPhysicalKeyboard()) return button;
     return FTooltip(
-      tipBuilder: (context, controller) =>
-          const Text('Set priority, title, and thread type'),
+      tipBuilder: (context, controller) => _buildChipTooltip(
+        context: context,
+        label: subType.label,
+        shortcut: platformSingleActivator(
+          LogicalKeyboardKey.keyI,
+          shift: true,
+        ),
+      ),
       child: button,
     );
   }
 
-  Widget _buildOrganizedRow(BuildContext context, Thread draft) {
-    final subType =
-        ThreadSubType.fromIcon(draft.icon) ?? ThreadSubType.defaultFor();
+  Widget _buildTitleChip(BuildContext context, Thread draft) {
     final hasTitle = draft.title?.isNotEmpty ?? false;
-    final displayTitle = hasTitle ? draft.title! : 'Auto title';
     return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _HoverBuilder(
           builder: (context, hovered) {
-            final titleColor = hovered
-                ? context.theme.colors.foreground
-                : (hasTitle
-                      ? context.theme.plotColors.muted
-                      : context.theme.plotColors.veryMuted);
-            final mutedColor = hovered
-                ? context.theme.plotColors.muted
-                : context.theme.plotColors.veryMuted;
-            final titleStyle = context.theme.typography.sm.copyWith(
-              color: titleColor,
-              height: 1,
-            );
-            final mutedStyle = context.theme.typography.sm.copyWith(
-              color: mutedColor,
-              height: 1,
-            );
-            return FButton(
-              onPress: () => _openEditThreadFromAutoOrganize(context),
+            final IconData icon;
+            final String label;
+            final Color color;
+            if (hasTitle) {
+              icon = FontAwesomeIcons.pen;
+              label = draft.title!;
+              color = hovered
+                  ? context.theme.colors.foreground
+                  : context.theme.plotColors.muted;
+            } else if (hovered) {
+              icon = FontAwesomeIcons.pen;
+              label = 'Set title';
+              color = context.theme.plotColors.muted;
+            } else {
+              icon = PlotIcon.sparkles;
+              label = 'Auto title';
+              color = context.theme.plotColors.veryMuted;
+            }
+            final button = FButton(
+              onPress: () => _openTitleModal(context, draft),
               variant: FButtonVariant.ghost,
               style: ghostSizedStyleDelta(
                 context,
@@ -426,77 +647,106 @@ class NewThreadPageState extends State<NewThreadPage> {
                 mainAxisSize: MainAxisSize.min,
                 spacing: 6,
                 children: [
-                  FaIcon(
-                    subType.icon,
-                    size: context.theme.iconSizes.base,
-                    color: titleColor,
-                  ),
-                  Text(displayTitle, style: titleStyle),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('(', style: mutedStyle),
-                      PriorityLabel(
-                        priority: draft.priority,
-                        color: mutedColor,
-                        fontSize: context.theme.typography.sm.fontSize,
-                        height: 1,
-                      ),
-                      Text(')', style: mutedStyle),
-                    ],
+                  FaIcon(icon, size: context.theme.iconSizes.base, color: color),
+                  Text(
+                    label,
+                    style: context.theme.typography.sm.copyWith(
+                      color: color,
+                      height: 1,
+                    ),
                   ),
                 ],
               ),
             );
+            if (!hasPhysicalKeyboard()) return button;
+            return FTooltip(
+              tipBuilder: (context, controller) => _buildChipTooltip(
+                context: context,
+                label: hasTitle ? 'Edit title' : 'Set title',
+                shortcut: platformSingleActivator(
+                  LogicalKeyboardKey.keyH,
+                  shift: true,
+                ),
+              ),
+              child: button,
+            );
           },
         ),
-        _buildResetAutoOrganizeButton(context, draft),
+        if (hasTitle) _buildClearTitleButton(context, draft),
       ],
     );
   }
 
-  Widget _buildResetAutoOrganizeButton(BuildContext context, Thread draft) {
+  Widget _buildClearTitleButton(BuildContext context, Thread draft) {
     final button = FButton.icon(
-      onPress: () => _resetAutoOrganize(draft),
+      onPress: () => _clearTitle(draft),
       variant: FButtonVariant.ghost,
       child: Icon(PlotIcon.close, size: context.theme.iconSizes.sm),
     );
     if (!hasPhysicalKeyboard()) return button;
     return FTooltip(
-      tipBuilder: (context, controller) => const Text('Auto organize'),
+      tipBuilder: (context, controller) => const Text('Clear title'),
       child: button,
     );
   }
 
-  Future<void> _resetAutoOrganize(Thread draft) async {
+  Future<void> _clearTitle(Thread draft) async {
     final bloc = context.read<PriorityBloc>();
-    // Clear the user's pick so the organized row reverts to "Auto organize".
-    await bloc.updateDraft(
-      draft.copyWith(
-        priority: bloc.state.context,
-        title: const Value(null),
-        icon: const Value(null),
-      ),
-    );
-    if (!mounted) return;
-    setState(() {
-      ThreadsBase.autoFileIds.add(draft.id.toString());
-    });
+    await bloc.updateDraft(draft.copyWith(title: const Value(null)));
   }
 
-  Future<void> _openEditThreadFromAutoOrganize(BuildContext context) async {
+  Future<void> _openTypeModal(
+    BuildContext context,
+    Thread draft,
+    ThreadSubType current,
+  ) async {
+    final bloc = context.read<PriorityBloc>();
+    final result = await SelectModal.open<ThreadSubType>(
+      context,
+      items: (_) async =>
+          [SelectGroup(title: null, items: ThreadSubType.values)],
+      itemBuilder: (subType, _) => ListTile(
+        icon: subType.icon,
+        body: Text(subType.label),
+        selected: current == subType,
+      ),
+      selectedValue: current,
+      prompt: 'Select type',
+    );
+    if (!result.present) return;
+    await bloc.updateDraft(
+      bloc.state.draft.copyWith(icon: Value(result.value.value)),
+    );
+  }
+
+  Future<void> _openTitleModal(BuildContext context, Thread draft) async {
     final priorityBloc = context.read<PriorityBloc>();
-    final draft = priorityBloc.state.draft;
-    final draftId = draft.id.toString();
     await context.run(
-      EditThread(
-        draft,
-        priorityBloc: priorityBloc,
-        onSaved: () {
-          if (!mounted) return;
-          setState(() {
-            ThreadsBase.autoFileIds.remove(draftId);
-          });
+      ShowForm(
+        title: 'Title',
+        icon: FontAwesomeIcons.pen,
+        form: (ctx) async {
+          return FormData(
+            title: 'Title',
+            groups: [
+              StaticFormGroup(
+                items: [
+                  FormTextInput(
+                    key: 'title',
+                    label: 'Title',
+                    initialValue: draft.title,
+                  ),
+                  FormButton(
+                    key: 'save',
+                    buildCommand: (values) => _SaveDraftTitle(
+                      (values['title'] as String?) ?? '',
+                      priorityBloc: priorityBloc,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
         },
       ),
     );
@@ -1036,9 +1286,9 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Builds keyboard shortcut bindings for thread-level actions on the
   /// NewThreadPage: share (contacts). Note-level shortcuts are handled
-  /// inside NoteEditor. Priority and schedule no longer have pre-save
-  /// shortcuts — those are set via the Auto organize (EditThread) modal or
-  /// after the thread is created.
+  /// inside NoteEditor. Priority, title, type, and schedule are set via
+  /// the priority chip / type chip / title chip or after the thread is
+  /// created.
   Map<ShortcutActivator, VoidCallback> _buildThreadShortcuts(
     BuildContext context,
     PriorityState state,
@@ -1051,7 +1301,50 @@ class NewThreadPageState extends State<NewThreadPage> {
       platformSingleActivator(LogicalKeyboardKey.keyS, shift: true): () {
         context.run(_ShareNewThread(onOpen: () => _openSharedPicker(context)));
       },
+      // ⌘⇧P (⌘⌥⇧P on web) — change priority
+      platformSingleActivator(
+        LogicalKeyboardKey.keyP,
+        shift: true,
+        alt: kIsWeb,
+      ): () {
+        _selectPriority(context, state);
+      },
+      // ⌘⇧H — change title (heading)
+      platformSingleActivator(LogicalKeyboardKey.keyH, shift: true): () {
+        _openTitleModal(context, state.draft);
+      },
+      // ⌘⇧I — change icon / type
+      platformSingleActivator(LogicalKeyboardKey.keyI, shift: true): () {
+        final draft = state.draft;
+        final subType =
+            ThreadSubType.fromIcon(draft.icon) ?? ThreadSubType.defaultFor();
+        _openTypeModal(context, draft, subType);
+      },
     };
+  }
+}
+
+/// Saves (or clears) the draft title from the title modal.
+class _SaveDraftTitle extends Command {
+  _SaveDraftTitle(this.newTitle, {required this.priorityBloc})
+    : super(
+        title: 'Save',
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+      );
+
+  final String newTitle;
+  final PriorityBloc priorityBloc;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final trimmed = newTitle.trim();
+    await priorityBloc.updateDraft(
+      priorityBloc.state.draft.copyWith(
+        title: Value(trimmed.isEmpty ? null : trimmed),
+      ),
+    );
+    return const CommandDone();
   }
 }
 

@@ -90,7 +90,7 @@ jobs:
           flutter build web --release --source-maps --base-href=/ --build-number="${{ steps.version.outputs.build_number }}"
 
       - name: Install wrangler
-        run: pnpm install -w wrangler
+        run: pnpm install -w wrangler --ignore-scripts
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
