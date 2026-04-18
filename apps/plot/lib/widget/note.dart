@@ -362,7 +362,6 @@ class NoteCommands extends StatelessWidget {
     final todoActors = note.tags[Tag.todo] ?? [];
     final doneActors = note.tags[Tag.done] ?? [];
     final othersTodo = todoActors.where((id) => id != actorId).toList();
-    final othersDone = doneActors.where((id) => id != actorId).toList();
     final totalDone = doneActors.length;
 
     // Resolve assignee names for tooltip (async)
@@ -469,44 +468,23 @@ class NoteCommands extends StatelessWidget {
                 selected: true,
               ),
             ),
-          // Any done: check icon with count if > 1
-          if (totalDone == 1 && othersDone.isEmpty)
-            Button.icon(
-              ToggleNoteTag(note, Tag.done, actorId),
-              key: ValueKey(Object.hash(note.id, Tag.done.id)),
-              selected: true,
-            ),
-          if (totalDone == 1 && othersDone.isNotEmpty)
-            Button.icon(
-              CommandWrapper(
-                assigneeNames.isNotEmpty
-                    ? CommandWrapper(
-                        PickNoteAssignee(note),
-                        subtitle: Value(assigneeNames),
-                      )
-                    : PickNoteAssignee(note),
-                icon: const Value(PlotIcon.selfTaskDone),
-              ),
-              key: ValueKey(Object.hash(note.id, Tag.done.id)),
-              selected: true,
-            ),
-          if (totalDone >= 2)
-            CountBadge(
-              count: totalDone,
-              child: Button.icon(
-                CommandWrapper(
-                  assigneeNames.isNotEmpty
-                      ? CommandWrapper(
-                          PickNoteAssignee(note),
-                          subtitle: Value(assigneeNames),
-                        )
-                      : PickNoteAssignee(note),
-                  icon: const Value(PlotIcon.selfTaskDone),
-                ),
+          // Any done: single check icon labelled "Done", count badge if > 1.
+          // Clicking always toggles the viewer's own Tag.done.
+          if (totalDone >= 1)
+            (() {
+              Command cmd = ToggleNoteTag(note, Tag.done, actorId);
+              if (assigneeNames.isNotEmpty) {
+                cmd = CommandWrapper(cmd, subtitle: Value(assigneeNames));
+              }
+              final btn = Button.icon(
+                cmd,
                 key: ValueKey(Object.hash(note.id, Tag.done.id)),
                 selected: true,
-              ),
-            ),
+              );
+              return totalDone > 1
+                  ? CountBadge(count: totalDone, child: btn)
+                  : btn;
+            })(),
         ];
 
         // Build command buttons (only if showCommands is true)
@@ -523,7 +501,8 @@ class NoteCommands extends StatelessWidget {
                       icon: const Value(PlotIcon.assignAdd),
                     ),
                   ),
-                if (!note.hasTag(Tag.todo, actorId) &&
+                if (totalDone == 0 &&
+                    !note.hasTag(Tag.todo, actorId) &&
                     !note.hasTag(Tag.done, actorId))
                   Button.icon(ToggleNoteTag(note, Tag.done, actorId)),
 
