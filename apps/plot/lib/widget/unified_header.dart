@@ -150,6 +150,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
     final isThreadVisible = notifier?.isThreadVisible ?? false;
     final hasActivity = state.thread != null || isThreadVisible;
+    // PriorityPage panel is considered hidden when we're in single-panel mode
+    // or when the middle panel isn't visible in multi-panel mode.
+    final priorityPageHidden =
+        !layoutState.multiPanel || !layoutState.middlePanelVisible;
 
     // --- Build title children ---
     final titleChildren = <Widget>[
@@ -157,44 +161,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (resolvedToolbarPadding.left != 0)
         SizedBox(width: resolvedToolbarPadding.left),
 
-      // Single-panel with thread: back button
+      // Single-panel with thread: back button clears the thread.
       if (hasActivity && !layoutState.multiPanel)
         Button.icon(
           CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
           color: context.theme.colors.foreground,
         )
-      // Right-only with thread (960–1309px): back button
-      else if (hasActivity &&
-          layoutState.multiPanel &&
-          !layoutState.leftPanelVisible &&
-          !layoutState.middlePanelVisible &&
-          context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
-        Button.icon(
-          CommandWrapper(ChangeCurrentThread(null), icon: Value(PlotIcon.back)),
-          color: context.theme.colors.foreground,
-        )
       // Single-panel without thread: back to Priorities tab
-      else if (!layoutState.multiPanel && !hasActivity)
+      else if (!layoutState.multiPanel)
         Button.icon(
           BackToPrioritiesTabCommand(),
           color: context.theme.colors.foreground,
-        )
-      // 2-panel with thread (960–1309px): cycle + priorities slide
-      else if (hasActivity &&
-          layoutState.isTwoPanel &&
-          context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Button.icon(CyclePanelsCommand(layoutState: layoutState)),
-            Button.icon(
-              CommandWrapper(
-                ChangeCurrentThread(null),
-                icon: Value(PlotIcon.priorities),
-                title: 'Open priorities',
-              ),
-            ),
-          ],
         )
       // 2-panel browsing (960–1309px): cycle
       else if (layoutState.isTwoPanel &&
@@ -256,6 +233,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           layoutState,
           state,
           hasActivity,
+          priorityPageHidden,
           notifier,
         ),
     ];
@@ -341,13 +319,18 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     LayoutState layoutState,
     PriorityState state,
     bool hasActivity,
+    bool priorityPageHidden,
     ThreadHeaderNotifier? notifier,
   ) {
     final search = _searchButton();
 
-    // In single panel with a thread visible, show activity title
-    if (!layoutState.multiPanel && hasActivity && state.thread != null) {
-      final thread = state.thread!;
+    // Thread open while the PriorityPage panel is hidden: show thread title
+    // (or hide the title when the thread is a new draft without a title).
+    if (priorityPageHidden && hasActivity) {
+      final thread = state.thread;
+      if (thread == null) {
+        return const Expanded(child: SizedBox.shrink());
+      }
 
       return Expanded(
         child: Row(
@@ -389,11 +372,6 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           ],
         ),
       );
-    }
-
-    // In single panel with new thread visible, hide priority and search
-    if (!layoutState.multiPanel && hasActivity) {
-      return const Expanded(child: SizedBox.shrink());
     }
 
     // Single panel: tap priority to open menu
