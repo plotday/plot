@@ -382,18 +382,39 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
 
     if (targetIndex == null) return;
 
-    controller.requestFocus(targetIndex);
     priorityBloc.threadListSource = targetSource;
-
-    // Switch desktop/mobile tab to match the focused source
     final tabNotifier = PriorityTabProvider.maybeOf(context);
-    if (tabNotifier != null) {
-      final targetTab = targetSource == ThreadListSource.agenda
-          ? PriorityTab.agenda
-          : PriorityTab.activityFeed;
-      if (tabNotifier.value != targetTab) {
-        tabNotifier.value = targetTab;
-      }
+    final targetTab = targetSource == ThreadListSource.agenda
+        ? PriorityTab.agenda
+        : PriorityTab.activityFeed;
+    final tabChanged =
+        tabNotifier != null && tabNotifier.value != targetTab;
+    if (tabChanged) {
+      tabNotifier.value = targetTab;
+      // After a tab switch the target list's items load asynchronously via
+      // the InfiniteList fetcher, so FocusNodes at targetIndex aren't
+      // attached yet. Poll-retry requestFocus until it sticks or we give
+      // up, so the very first tab switch still lands focus on the list.
+      _pollRequestFocus(controller, targetIndex);
+    } else {
+      controller.requestFocus(targetIndex);
+    }
+  }
+
+  /// Repeatedly calls [controller.requestFocus] until primary focus lands on
+  /// one of the list's items, or we hit the attempt budget. Needed when the
+  /// target list's FocusNodes haven't attached yet (async item fetcher).
+  void _pollRequestFocus(
+    InfiniteListController controller,
+    int index, {
+    int attempts = 30,
+    Duration interval = const Duration(milliseconds: 16),
+  }) async {
+    for (var i = 0; i < attempts; i++) {
+      controller.requestFocus(index);
+      await Future<void>.delayed(interval);
+      if (!mounted) return;
+      if (controller.hasPrimaryFocus) return;
     }
   }
 
@@ -487,17 +508,26 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                 FocusOrToggleAgendaActivityIntent:
                     CallbackAction<FocusOrToggleAgendaActivityIntent>(
                       onInvoke: (_) {
-                        final priorityBloc = context.read<PriorityBloc>();
-                        final currentSource =
-                            priorityBloc.resolveThreadListSource();
-                        final controller = _resolveController(context);
-                        if (controller?.focusedIndex == null) {
-                          _focusListSource(context, currentSource);
+                        // Trust the visible tab (what the user sees), not the
+                        // bloc's inferred source — they can drift when no
+                        // thread is open or the open thread isn't in agenda.
+                        final tabNotifier =
+                            PriorityTabProvider.maybeOf(context);
+                        final visibleSource =
+                            tabNotifier?.value == PriorityTab.activityFeed
+                                ? ThreadListSource.activityFeed
+                                : ThreadListSource.agenda;
+                        final controller = visibleSource ==
+                                ThreadListSource.activityFeed
+                            ? _priorityActivityFeedController
+                            : _priorityListController;
+                        if (controller?.hasPrimaryFocus != true) {
+                          _focusListSource(context, visibleSource);
                         } else {
-                          final target =
-                              currentSource == ThreadListSource.agenda
-                                  ? ThreadListSource.activityFeed
-                                  : ThreadListSource.agenda;
+                          final target = visibleSource ==
+                                  ThreadListSource.agenda
+                              ? ThreadListSource.activityFeed
+                              : ThreadListSource.agenda;
                           _focusListSource(context, target);
                         }
                         return null;
