@@ -845,6 +845,7 @@ class _LinkAssigneeBadge extends StatelessWidget {
           search: search,
           types: [ActorType.user, ActorType.contact],
           limit: 50,
+          inviteable: true,
         );
         // Sort self actors to the top, preserving existing depth-based order
         actors.sort((a, b) {

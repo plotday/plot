@@ -1032,6 +1032,7 @@ class ActorGroup extends CommandGroup {
       types: [ActorType.user, ActorType.contact],
       search: search,
       limit: 50,
+      inviteable: true,
     );
     if (excludeActorIds != null && excludeActorIds!.isNotEmpty) {
       final excluded = excludeActorIds!.toSet();

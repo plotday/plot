@@ -82,6 +82,7 @@ class Actor extends ActorRow {
     int? limit,
     bool? archived = false,
     bool? self,
+    bool? inviteable,
   }) async {
     // Trigger archived sync if needed
     if (archived == true) {
@@ -98,6 +99,7 @@ class Actor extends ActorRow {
       limit: limit,
       archived: archived,
       self: self,
+      inviteable: inviteable,
     ).get();
 
     // Cache all fetched actors for synchronous lookups
@@ -115,6 +117,7 @@ class Actor extends ActorRow {
     int? limit,
     bool? archived = false,
     bool? self,
+    bool? inviteable,
   }) {
     // Trigger archived sync if needed
     if (archived == true) {
@@ -131,6 +134,7 @@ class Actor extends ActorRow {
       limit: limit,
       archived: archived,
       self: self,
+      inviteable: inviteable,
     ).watch();
   }
 
@@ -182,6 +186,7 @@ class Actor extends ActorRow {
     final candidates = await get(
       types: [ActorType.user, ActorType.contact],
       search: search,
+      inviteable: true,
     );
     candidates.removeWhere((a) => a.self);
 
@@ -284,6 +289,7 @@ class Actor extends ActorRow {
     int? limit,
     bool? archived = false,
     bool? self,
+    bool? inviteable,
   }) {
     final a = Store.get.actors;
     final query = Store.get.select(a).join([]);
@@ -320,6 +326,11 @@ class Actor extends ActorRow {
     // Filter by self flag
     if (self != null) {
       query.where(a.self.equals(self));
+    }
+
+    // Filter by inviteable (default: no filter; callers opt in by passing true)
+    if (inviteable != null) {
+      query.where(a.inviteable.equals(inviteable));
     }
 
     // Search by name or email (case-insensitive with LIKE)
