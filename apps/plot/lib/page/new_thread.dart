@@ -541,14 +541,12 @@ class NewThreadPageState extends State<NewThreadPage> {
     // Render from pinned lists so chips stay stable when toggled via tap.
     // _pinnedActors and _pinnedEmails are only updated by _refreshPinnedChips
     // (called after modal changes and initial load).
+    final displayedSelectedContacts = _pinnedActors
+        .where((a) => selectedIds.contains(a.id.toUuid()))
+        .length;
     final hasMore =
-        _pinnedActors.length + _pinnedEmails.length >= 3 ||
-        _recentContacts
-                .where((a) => !selectedIds.contains(a.id.toUuid()))
-                .length >
-            _pinnedActors
-                .where((a) => !selectedIds.contains(a.id.toUuid()))
-                .length;
+        selectedIds.length > displayedSelectedContacts ||
+        pendingEmails.length > _pinnedEmails.length;
 
     return Center(
       child: ConstrainedBox(
