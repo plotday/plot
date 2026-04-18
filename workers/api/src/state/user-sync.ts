@@ -45,9 +45,8 @@ export class UserSync extends DurableObject<Bindings> {
       flushAt: 1,
       flushInterval: 0,
     });
-    postHog.captureException(error, undefined, {
+    postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "UserSync",
-      user_id: this.userId,
       ...properties,
     });
     this.ctx.waitUntil(postHog.shutdown());

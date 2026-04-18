@@ -46,9 +46,8 @@ export class TrialReminder extends DurableObject<Bindings> {
       flushAt: 1,
       flushInterval: 0,
     });
-    postHog.captureException(error, undefined, {
+    postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "TrialReminder",
-      user_id: this.userId ?? undefined,
       ...properties,
     });
     this.ctx.waitUntil(postHog.shutdown());

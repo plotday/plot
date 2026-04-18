@@ -45,7 +45,7 @@ notificationSummary.post("/notification-summary", async (c) => {
     const summaries = await Promise.all(
       batches.map(async (batch) => {
         const body = aiAllowed.allowed
-          ? await generateSummary(c.env, batch.threads, user_name, batch.priority_title)
+          ? await generateSummary(c.env, batch.threads, user_name, batch.priority_title, c.var.user.id)
           : fallbackSummary(batch.threads);
         return {
           first_level_priority_id: batch.first_level_priority_id,
@@ -70,7 +70,8 @@ export async function generateSummary(
   env: Bindings,
   threads: z.infer<typeof ThreadSchema>[],
   userName?: string | null,
-  priorityTitle?: string | null
+  priorityTitle?: string | null,
+  userId?: string
 ): Promise<string> {
   const ai = env.AI;
   // For a single thread with a title, just use it directly
@@ -134,7 +135,7 @@ export async function generateSummary(
     const logger = createLogger();
     logger.error("Error generating notification summary", e as Error);
     const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-    postHog.captureException(e as Error, undefined, { context: "notification-summary:generateSummary" });
+    postHog.captureException(e as Error, userId, { context: "notification-summary:generateSummary" });
     await postHog.shutdown();
     return fallbackSummary(threads);
   }

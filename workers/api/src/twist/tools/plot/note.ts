@@ -580,7 +580,7 @@ export async function createNotes(
               note_id: noteId,
             });
             const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-            postHog.captureException(error as Error, undefined, { context: "detect-tasks:createNotes", note_id: noteId });
+            postHog.captureException(error as Error, ownerId, { context: "detect-tasks:createNotes", note_id: noteId });
             await postHog.shutdown();
           }
         }

@@ -446,7 +446,7 @@ async function applyUnreadStatus(
         error
       );
       const postHog = new PostHog(env.POSTHOG_API_KEY, { host: env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-      postHog.captureException(error as Error, undefined, { context: "note-analysis:applyUnreadStatus", user_id: member.userId, thread_id: threadId });
+      postHog.captureException(error as Error, member.userId, { context: "note-analysis:applyUnreadStatus", thread_id: threadId });
       await postHog.shutdown();
     }
   }
@@ -694,7 +694,7 @@ async function createTaskNotes(
         flushAt: 1,
         flushInterval: 0,
       });
-      postHog.captureException(error as Error, undefined, {
+      postHog.captureException(error as Error, userId, {
         context: "detect-tasks:createTaskNotes",
         note_id: context.noteId,
         actor_id: task.actorId,

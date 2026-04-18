@@ -176,7 +176,7 @@ notificationContent.get("/notification-content", async (c) => {
         const threadList = batch.threads.slice(0, 10);
 
         const body = aiAllowed.allowed
-          ? await generateSummary(c.env, threadList, c.var.user.name, batch.priorityTitle)
+          ? await generateSummary(c.env, threadList, c.var.user.name, batch.priorityTitle, c.var.user.id)
           : fallbackSummary(threadList);
 
         return {

@@ -45,9 +45,8 @@ export class EmailNotify extends DurableObject<Bindings> {
       flushAt: 1,
       flushInterval: 0,
     });
-    postHog.captureException(error, undefined, {
+    postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "EmailNotify",
-      user_id: this.userId ?? undefined,
       ...properties,
     });
     this.ctx.waitUntil(postHog.shutdown());
@@ -312,7 +311,8 @@ export class EmailNotify extends DurableObject<Bindings> {
               this.env,
               threadList,
               user.name,
-              group.title
+              group.title,
+              this.userId ?? undefined
             ).catch(() => fallbackSummary(threadList));
 
             const shortId = uuidToBase58(group.priorityId);

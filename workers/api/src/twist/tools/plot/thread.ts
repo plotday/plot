@@ -131,8 +131,8 @@ export async function createThread(
     if ("upsert" in prep) {
       // Use database function for source-based upsert
       // RPC returns full activity row directly
+      const userId = await plot.getUserId();
       try {
-        const userId = await plot.getUserId();
         dbResult = await rpcUser(plot.db, "upsert_thread", {
           user_id: userId,
           p_thread: prep.upsert as Json,
@@ -145,7 +145,7 @@ export async function createThread(
           defaults: JSON.stringify(prep.defaults),
         });
         const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-        postHog.captureException(error as Error, undefined, { context: "plot:upsertThread", twist_instance_id: plot.twistInstanceId });
+        postHog.captureException(error as Error, userId, { context: "plot:upsertThread", twist_instance_id: plot.twistInstanceId });
         await postHog.shutdown();
         throw error;
       }

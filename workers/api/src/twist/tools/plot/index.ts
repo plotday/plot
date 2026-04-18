@@ -575,7 +575,8 @@ export class Plot extends Tool implements IPlot {
             note_id: currentNote.id,
           });
           const postHog = new PostHog(this.env.POSTHOG_API_KEY, { host: this.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-          postHog.captureException(error as Error, undefined, { context: "plot:intentHandling", note_id: currentNote.id, twist_instance_id: this.twistInstanceId });
+          const intentUserId = await this.getUserId().catch(() => undefined);
+          postHog.captureException(error as Error, intentUserId, { context: "plot:intentHandling", note_id: currentNote.id, twist_instance_id: this.twistInstanceId });
           await postHog.shutdown();
           try {
             await threadOps.createNote(this, {

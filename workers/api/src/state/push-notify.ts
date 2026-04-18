@@ -41,9 +41,8 @@ export class PushNotify extends DurableObject<Bindings> {
       flushAt: 1,
       flushInterval: 0,
     });
-    postHog.captureException(error, undefined, {
+    postHog.captureException(error, this.userId ?? undefined, {
       durable_object: "PushNotify",
-      user_id: this.userId,
       ...properties,
     });
     this.ctx.waitUntil(postHog.shutdown());

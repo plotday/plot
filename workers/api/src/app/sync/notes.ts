@@ -451,9 +451,8 @@ export async function markThreadUnreadForOthers(
         flushAt: 1,
         flushInterval: 0,
       });
-      postHog.captureException(error as Error, undefined, {
+      postHog.captureException(error as Error, userId, {
         context: "markThreadUnreadForOthers",
-        user_id: userId,
         thread_id: threadId,
       });
       await postHog.shutdown();

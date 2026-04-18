@@ -459,7 +459,7 @@ export async function deployTwist({
         flushAt: 1,
         flushInterval: 0,
       });
-      postHog.captureException(upsertPublicError as Error, undefined, {
+      postHog.captureException(upsertPublicError as Error, userId ?? undefined, {
         context: "twist:auto-approve:public-upsert",
         twist_package_id: twistPackageId,
         environment,

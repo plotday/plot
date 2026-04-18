@@ -144,7 +144,7 @@ async function clearTwistingTag(
         priority_twist_id: priorityTwistId,
       }
     );
-    postHog.captureException(error as Error, undefined, {
+    postHog.captureException(error as Error, ownerId, {
       context: "twist:tag-cleanup",
       priority_twist_id: priorityTwistId,
       note_id: noteId,
@@ -297,7 +297,7 @@ async function processTwistBatch(
 
           postHog.captureException(
             new Error("Sync cascade depth limit reached"),
-            undefined,
+            ownerId,
             {
               sync_depth: syncDepth,
               twist_id: String(twistId),
@@ -329,7 +329,7 @@ async function processTwistBatch(
             thread_id: note.thread_id ?? undefined,
           }
         );
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: noteId,
@@ -376,7 +376,7 @@ async function processTwistBatch(
             thread_id: note.thread_id ?? undefined,
           }
         );
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: noteId,
@@ -406,7 +406,7 @@ async function processTwistBatch(
 
           postHog.captureException(
             new Error("Sync cascade depth limit reached"),
-            undefined,
+            ownerId,
             {
               sync_depth: syncDepth,
               twist_id: String(twistId),
@@ -464,7 +464,7 @@ async function processTwistBatch(
             priority_id: activity.priority_id ?? undefined,
           }
         );
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: activityId,
@@ -500,7 +500,7 @@ async function processTwistBatch(
         logger.error("Error processing channel link create", error as Error, {
           link_id: link.id,
         });
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           link_id: link.id,
@@ -535,7 +535,7 @@ async function processTwistBatch(
         logger.error("Error processing channel link update", error as Error, {
           link_id: link.id,
         });
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           link_id: link.id,
@@ -576,12 +576,6 @@ async function processTwistBatch(
         // Unread marking: try AI analysis first, fall back to default marking.
         // This ensures notifications are always delivered even if analysis fails.
         let analysisHandledUnread = false;
-        const owner = await db
-          .selectFrom("twist_instance")
-          .select("owner_id")
-          .where("id", "=", twistInstanceId)
-          .executeTakeFirst();
-        const ownerId = owner?.owner_id;
 
         // AI note analysis for source notes (best-effort)
         // Skip notes created by the twist itself, and historical imports (> 7 days old)
@@ -595,7 +589,6 @@ async function processTwistBatch(
           note.author_id &&
           note.author_id !== twistInstanceId &&
           isRecent &&
-          ownerId &&
           note.thread_id
         ) {
           try {
@@ -619,14 +612,14 @@ async function processTwistBatch(
             });
             postHog.captureException(
               analysisError instanceof Error ? analysisError : new Error(String(analysisError)),
-              undefined,
+              ownerId,
               { context: "note-analysis:channelNote", note_id: note.id, twist_instance_id: twistInstanceId }
             );
           }
         }
 
         // Fallback: mark unread with default urgency if analysis didn't handle it
-        if (!analysisHandledUnread && note.thread_id && ownerId) {
+        if (!analysisHandledUnread && note.thread_id) {
           try {
             await markThreadUnreadForOthers(env, db, note.thread_id, ownerId);
           } catch (error) {
@@ -634,7 +627,7 @@ async function processTwistBatch(
               note_id: note.id,
               thread_id: note.thread_id,
             });
-            postHog.captureException(error as Error, undefined, {
+            postHog.captureException(error as Error, ownerId, {
               context: "markThreadUnreadForOthers:channelNote",
               note_id: note.id,
               thread_id: note.thread_id,
@@ -644,7 +637,7 @@ async function processTwistBatch(
         }
 
         // Notify UserSync DOs so the push notification pipeline fires
-        if (note.thread_id && ownerId) {
+        if (note.thread_id) {
           try {
             const thread = await db
               .selectFrom("thread")
@@ -688,7 +681,7 @@ async function processTwistBatch(
         logger.error("Error processing channel note create", error as Error, {
           note_id: note.id,
         });
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           note_id: note.id,
@@ -711,7 +704,7 @@ async function processTwistBatch(
           thread_id: threadRead.thread_id,
           user_id: threadRead.user_id ?? undefined,
         });
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, threadRead.user_id ?? ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: threadRead.thread_id,
@@ -738,7 +731,7 @@ async function processTwistBatch(
           schedule_id: scheduleContact.schedule_id,
           contact_id: scheduleContact.contact_id ?? undefined,
         });
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           schedule_id: scheduleContact.schedule_id,
@@ -765,7 +758,7 @@ async function processTwistBatch(
           thread_id: threadSchedule.thread_id,
           user_id: threadSchedule.user_id ?? undefined,
         });
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, threadSchedule.user_id ?? ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           thread_id: threadSchedule.thread_id,
@@ -797,7 +790,7 @@ async function processTwistBatch(
             twist_instance_id: twistInstanceId,
           }
         );
-        postHog.captureException(error as Error, undefined, {
+        postHog.captureException(error as Error, ownerId, {
           twist_id: String(twistId),
           twist_instance_id: twistInstanceId,
           queue,
@@ -823,7 +816,7 @@ async function processTwistBatch(
       twist_instance_id: twistInstanceId,
       twist_id: String(twistId),
     });
-    postHog.captureException(error as Error, undefined, {
+    postHog.captureException(error as Error, ownerId, {
       twist_id: String(twistId),
       twist_instance_id: twistInstanceId,
       queue,
