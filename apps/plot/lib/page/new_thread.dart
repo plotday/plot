@@ -534,8 +534,7 @@ class NewThreadPageState extends State<NewThreadPage> {
           ListTile(body: PriorityLabel(priority: priority)),
       selectedValue: state.draft.priority,
       prompt: 'Select priority',
-      onAdd: (ctx) =>
-          createPriorityInline(ctx, parent: state.draft.priority),
+      onAdd: (ctx) => createPriorityInline(ctx, parent: state.draft.priority),
     );
     if (!result.present) return;
     final picked = result.value;
@@ -606,16 +605,8 @@ class NewThreadPageState extends State<NewThreadPage> {
         mainAxisSize: MainAxisSize.min,
         spacing: 4,
         children: [
-          FaIcon(
-            subType.icon,
-            size: context.theme.iconSizes.base,
-            color: context.theme.plotColors.veryMuted,
-          ),
-          Icon(
-            PlotIcon.verticalExpand,
-            size: context.theme.iconSizes.xs,
-            color: context.theme.plotColors.veryMuted,
-          ),
+          FaIcon(subType.icon, size: context.theme.iconSizes.base),
+          Icon(PlotIcon.verticalExpand, size: context.theme.iconSizes.xs),
         ],
       ),
     );
@@ -624,10 +615,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       tipBuilder: (context, controller) => _buildChipTooltip(
         context: context,
         label: subType.label,
-        shortcut: platformSingleActivator(
-          LogicalKeyboardKey.keyI,
-          shift: true,
-        ),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyI, shift: true),
       ),
       child: button,
     );
@@ -641,7 +629,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         _HoverBuilder(
           builder: (context, hovered) {
             final IconData icon;
-            final String label;
+            final String? label;
             final Color color;
             if (hasTitle) {
               icon = FontAwesomeIcons.pen;
@@ -652,10 +640,10 @@ class NewThreadPageState extends State<NewThreadPage> {
             } else if (hovered) {
               icon = FontAwesomeIcons.pen;
               label = 'Set title';
-              color = context.theme.plotColors.muted;
+              color = context.theme.colors.foreground;
             } else {
               icon = PlotIcon.sparkles;
-              label = 'Auto title';
+              label = null;
               color = context.theme.plotColors.veryMuted;
             }
             final button = FButton(
@@ -670,14 +658,19 @@ class NewThreadPageState extends State<NewThreadPage> {
                 mainAxisSize: MainAxisSize.min,
                 spacing: 6,
                 children: [
-                  FaIcon(icon, size: context.theme.iconSizes.base, color: color),
-                  Text(
-                    label,
-                    style: context.theme.typography.sm.copyWith(
-                      color: color,
-                      height: 1,
-                    ),
+                  FaIcon(
+                    icon,
+                    size: context.theme.iconSizes.base,
+                    color: color,
                   ),
+                  if (label != null)
+                    Text(
+                      label,
+                      style: context.theme.typography.sm.copyWith(
+                        color: color,
+                        height: 1,
+                      ),
+                    ),
                 ],
               ),
             );
@@ -726,8 +719,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     final bloc = context.read<PriorityBloc>();
     final result = await SelectModal.open<ThreadSubType>(
       context,
-      items: (_) async =>
-          [SelectGroup(title: null, items: ThreadSubType.values)],
+      items: (_) async => [
+        SelectGroup(title: null, items: ThreadSubType.values),
+      ],
       itemBuilder: (subType, _) => ListTile(
         icon: subType.icon,
         body: Text(subType.label),
@@ -1090,10 +1084,16 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
 
     final updatedThread = currentThread.copyWith(
-      contacts: contactsChanged ? Value(nextContacts.toList()) : const Value.absent(),
+      contacts: contactsChanged
+          ? Value(nextContacts.toList())
+          : const Value.absent(),
       // Preserve other thread-level changes (like title/preview) from NoteEditor
-      title: thread.title == currentThread.title ? const Value.absent() : Value(thread.title),
-      preview: thread.preview == currentThread.preview ? const Value.absent() : Value(thread.preview),
+      title: thread.title == currentThread.title
+          ? const Value.absent()
+          : Value(thread.title),
+      preview: thread.preview == currentThread.preview
+          ? const Value.absent()
+          : Value(thread.preview),
     );
 
     // Update the bloc and persist changes.
