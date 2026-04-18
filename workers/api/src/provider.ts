@@ -241,7 +241,10 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     parseTokenResponse: parseGoogleTokenResponse,
     additionalParams: {
       access_type: "offline",
-      prompt: "select_account consent",  // Google supports combined values
+      prompt: "select_account",
+      // Incremental authorization: token carries previously granted scopes,
+      // but the consent screen lists only newly requested ones.
+      include_granted_scopes: "true",
     },
   },
   microsoft: {
