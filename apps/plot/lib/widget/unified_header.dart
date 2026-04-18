@@ -173,6 +173,32 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           BackToPrioritiesTabCommand(),
           color: context.theme.colors.foreground,
         )
+      // Multi-panel right-only with a thread visible: back + open priorities
+      // + open threads. Back clears the thread but keeps the middle panel
+      // closed, so the user can return to the priority page without the
+      // thread shrinking.
+      else if (layoutState.multiPanel &&
+          !layoutState.leftPanelVisible &&
+          !layoutState.middlePanelVisible &&
+          hasActivity)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Button.icon(
+              CommandWrapper(
+                ToggleLeftSidebarCommand(isVisible: false),
+                icon: Value(PlotIcon.priorities),
+              ),
+            ),
+            Button.icon(ToggleMiddleSidebarCommand(isVisible: false)),
+            Button.icon(
+              CommandWrapper(
+                ChangeCurrentThread(null),
+                icon: Value(PlotIcon.back),
+              ),
+            ),
+          ],
+        )
       // 2-panel browsing (960–1309px): cycle
       else if (layoutState.isTwoPanel &&
           context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
