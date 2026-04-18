@@ -171,15 +171,22 @@ class Actor extends ActorRow {
 
   /// Returns non-self, non-archived user/contact actors ordered for thread
   /// sharing:
-  ///   1. MRU — actors who appear on the user's most-recent threads, ordered
-  ///      by the recency of their most-recent thread.
-  ///   2. Frequent — remaining actors on any of the user's threads, ordered
-  ///      by thread count (ties → alphabetical).
-  ///   3. Rest — all other matching actors, alphabetical.
+  ///   1. MRU — actors who appear on the most-recent threads in scope,
+  ///      ordered by the recency of their most-recent thread.
+  ///   2. Frequent — remaining actors on any in-scope thread, ordered by
+  ///      thread count (ties → alphabetical). When [priority] is provided
+  ///      and no actor has an MRU entry, this list carries the "most
+  ///      frequently shared in the priority" fallback.
+  ///   3. Rest — actors the user has no sharing history with in scope.
+  ///      When [priority] is provided, this falls back to the user's
+  ///      cross-priority MRU/frequent ordering before alphabetical.
   ///
-  /// The candidate pool honors [search] via the same LIKE filter as [get].
+  /// When [priority] is provided, thread scope is restricted to its subtree
+  /// (priority + descendants). The candidate pool honors [search] via the
+  /// same LIKE filter as [get].
   static Future<List<Actor>> getSortedForSharing({
     String? search,
+    Priority? priority,
     int mruSize = 5,
     int threadWindow = 200,
   }) async {
@@ -191,14 +198,92 @@ class Actor extends ActorRow {
     candidates.removeWhere((a) => a.self);
 
     final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
-    final threads = await Thread.get(
-      draft: false,
-      archived: false,
-      order: ThreadOrder.reverse,
+
+    final scoped = await _scanThreadsForSharing(
+      selfIds: selfIds,
+      priorityPath: priority?.path,
       limit: threadWindow,
     );
 
-    // Walk threads newest-first; first sighting of a contact is their MRU.
+    // Global scan is only needed as a tail fallback when a priority is
+    // provided: actors with no in-priority history fall back to their
+    // cross-priority MRU before the alphabetical tail.
+    final global = priority == null
+        ? scoped
+        : await _scanThreadsForSharing(
+            selfIds: selfIds,
+            priorityPath: null,
+            limit: threadWindow,
+          );
+
+    int byName(Actor a, Actor b) =>
+        a.nameOrEmail.toLowerCase().compareTo(b.nameOrEmail.toLowerCase());
+
+    final seen = <Actor>[];
+    final unseenInScope = <Actor>[];
+    for (final actor in candidates) {
+      if (scoped.firstSeenIndex.containsKey(actor.id.toUuid())) {
+        seen.add(actor);
+      } else {
+        unseenInScope.add(actor);
+      }
+    }
+
+    // MRU within scope: order by first-seen index (lower = more recent).
+    seen.sort((a, b) {
+      final ai = scoped.firstSeenIndex[a.id.toUuid()]!;
+      final bi = scoped.firstSeenIndex[b.id.toUuid()]!;
+      if (ai != bi) return ai.compareTo(bi);
+      return byName(a, b);
+    });
+
+    final mru = seen.take(mruSize).toList();
+    final frequent = seen.skip(mruSize).toList()
+      ..sort((a, b) {
+        final ca = scoped.counts[a.id.toUuid()] ?? 0;
+        final cb = scoped.counts[b.id.toUuid()] ?? 0;
+        if (ca != cb) return cb.compareTo(ca);
+        return byName(a, b);
+      });
+
+    // Tail: for actors with no in-scope history, prefer their cross-priority
+    // MRU/frequency before falling back to alphabetical. When no priority is
+    // provided, [global] === [scoped] so this collapses to alphabetical.
+    final tailSeen = <Actor>[];
+    final tailUnseen = <Actor>[];
+    for (final actor in unseenInScope) {
+      if (global.firstSeenIndex.containsKey(actor.id.toUuid())) {
+        tailSeen.add(actor);
+      } else {
+        tailUnseen.add(actor);
+      }
+    }
+    tailSeen.sort((a, b) {
+      final ai = global.firstSeenIndex[a.id.toUuid()]!;
+      final bi = global.firstSeenIndex[b.id.toUuid()]!;
+      if (ai != bi) return ai.compareTo(bi);
+      final ca = global.counts[a.id.toUuid()] ?? 0;
+      final cb = global.counts[b.id.toUuid()] ?? 0;
+      if (ca != cb) return cb.compareTo(ca);
+      return byName(a, b);
+    });
+    tailUnseen.sort(byName);
+
+    return [...mru, ...frequent, ...tailSeen, ...tailUnseen];
+  }
+
+  static Future<_ThreadScanResult> _scanThreadsForSharing({
+    required Set<Uuid> selfIds,
+    required Path? priorityPath,
+    required int limit,
+  }) async {
+    final threads = await Thread.get(
+      priorityPath: priorityPath,
+      draft: false,
+      archived: false,
+      order: ThreadOrder.reverse,
+      limit: limit,
+    );
     final firstSeenIndex = <Uuid, int>{};
     final counts = <Uuid, int>{};
     for (var i = 0; i < threads.length; i++) {
@@ -208,39 +293,7 @@ class Actor extends ActorRow {
         counts[contactId] = (counts[contactId] ?? 0) + 1;
       }
     }
-
-    int byName(Actor a, Actor b) =>
-        a.nameOrEmail.toLowerCase().compareTo(b.nameOrEmail.toLowerCase());
-
-    final seen = <Actor>[];
-    final unseen = <Actor>[];
-    for (final actor in candidates) {
-      if (firstSeenIndex.containsKey(actor.id.toUuid())) {
-        seen.add(actor);
-      } else {
-        unseen.add(actor);
-      }
-    }
-
-    // MRU: order seen actors by first-seen index (lower = more recent).
-    seen.sort((a, b) {
-      final ai = firstSeenIndex[a.id.toUuid()]!;
-      final bi = firstSeenIndex[b.id.toUuid()]!;
-      if (ai != bi) return ai.compareTo(bi);
-      return byName(a, b);
-    });
-
-    final mru = seen.take(mruSize).toList();
-    final frequent = seen.skip(mruSize).toList()
-      ..sort((a, b) {
-        final ca = counts[a.id.toUuid()] ?? 0;
-        final cb = counts[b.id.toUuid()] ?? 0;
-        if (ca != cb) return cb.compareTo(ca);
-        return byName(a, b);
-      });
-    unseen.sort(byName);
-
-    return [...mru, ...frequent, ...unseen];
+    return _ThreadScanResult(firstSeenIndex: firstSeenIndex, counts: counts);
   }
 
   /// Returns all actor IDs that belong to the current user.
@@ -398,6 +451,13 @@ class Actor extends ActorRow {
     }
     return email ?? 'Unknown';
   }
+}
+
+class _ThreadScanResult {
+  _ThreadScanResult({required this.firstSeenIndex, required this.counts});
+
+  final Map<Uuid, int> firstSeenIndex;
+  final Map<Uuid, int> counts;
 }
 
 /// Drift converter for ActorId

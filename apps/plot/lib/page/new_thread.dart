@@ -290,10 +290,14 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   /// Loads contacts for the "with" suggestion chips, sorted MRU → frequent →
-  /// rest by [Actor.getSortedForSharing].
+  /// rest by [Actor.getSortedForSharing]. Scoped to the draft's currently
+  /// selected priority so suggestions reflect who the user typically shares
+  /// with in that priority, falling back to cross-priority MRU for actors
+  /// with no history in this priority.
   Future<void> _loadRecentContacts() async {
     try {
-      final sorted = await Actor.getSortedForSharing();
+      final priority = context.read<PriorityBloc>().state.draft.priority;
+      final sorted = await Actor.getSortedForSharing(priority: priority);
       final recent = sorted.take(10).toList();
       if (mounted) {
         setState(() => _recentContacts = recent);
@@ -390,12 +394,24 @@ class NewThreadPageState extends State<NewThreadPage> {
   }
 
   Widget _buildAutoSparklesToggle(BuildContext context) {
-    final button = FButton.icon(
+    final fontSize = context.theme.typography.sm.fontSize;
+    final button = FButton(
       onPress: _switchToAuto,
       variant: FButtonVariant.ghost,
+      style: FButtonStyleDelta.delta(
+        contentStyle: FButtonContentStyleDelta.delta(
+          padding: EdgeInsetsGeometryDelta.value(
+            EdgeInsets.symmetric(
+              horizontal: 6,
+              vertical: isMobilePlatform() ? 10 : 6,
+            ),
+          ),
+        ),
+      ),
+      mainAxisSize: MainAxisSize.min,
       child: Icon(
         PlotIcon.sparkles,
-        size: context.theme.iconSizes.base,
+        size: fontSize,
         color: context.theme.plotColors.veryMuted,
       ),
     );
@@ -452,16 +468,21 @@ class NewThreadPageState extends State<NewThreadPage> {
       ),
     );
 
+    final labelStyle = context.theme.typography.sm.copyWith(height: 1);
     final Widget label = auto
         ? Row(
             mainAxisSize: MainAxisSize.min,
             spacing: 6,
             children: [
-              Icon(PlotIcon.sparkles, size: context.theme.iconSizes.base),
-              const Text('Auto'),
+              Icon(PlotIcon.sparkles, size: labelStyle.fontSize),
+              Text('Auto', style: labelStyle),
             ],
           )
-        : PriorityLabel(priority: state.draft.priority);
+        : PriorityLabel(
+            priority: state.draft.priority,
+            fontSize: labelStyle.fontSize,
+            height: 1,
+          );
 
     final button = FButton(
       onPress: () => _selectPriority(context, state),
@@ -533,6 +554,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (draft.priority.id != root.id) {
       await bloc.updateDraft(bloc.state.draft.copyWith(priority: root));
     }
+    if (mounted) _loadRecentContacts();
   }
 
   Future<void> _switchToPriority(Priority priority) async {
@@ -546,6 +568,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
     bloc.setNewThreadDefaultPriority(priority);
     await _loadTwistsForPriority(priority);
+    if (mounted) _loadRecentContacts();
   }
 
   /// Row showing the draft's thread type (with a chevron to change it) and

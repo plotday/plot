@@ -1970,7 +1970,10 @@ class _ThreadShareContactsGroup extends CommandGroup {
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final actors = await Actor.getSortedForSharing(search: search);
+    final actors = await Actor.getSortedForSharing(
+      search: search,
+      priority: thread.priority,
+    );
     final excluded = excludeActorIds.toSet();
     actors.removeWhere((a) => excluded.contains(a.id));
 
