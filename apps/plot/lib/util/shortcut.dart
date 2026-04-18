@@ -65,9 +65,16 @@ String _metaSymbol() {
 SingleActivator platformSingleActivator(
   LogicalKeyboardKey key, {
   bool shift = false,
+  bool alt = false,
 }) {
   final useMeta = _isMacOS();
-  return SingleActivator(key, meta: useMeta, control: !useMeta, shift: shift);
+  return SingleActivator(
+    key,
+    meta: useMeta,
+    control: !useMeta,
+    shift: shift,
+    alt: alt,
+  );
 }
 
 String _formatKey(LogicalKeyboardKey key) {

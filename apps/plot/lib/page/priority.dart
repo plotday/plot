@@ -460,22 +460,6 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                     return null;
                   },
                 ),
-                FocusAgendaIntent: CallbackAction<FocusAgendaIntent>(
-                  onInvoke: (_) {
-                    _focusListSource(context, ThreadListSource.agenda);
-                    return null;
-                  },
-                ),
-                FocusActivityListIntent:
-                    CallbackAction<FocusActivityListIntent>(
-                      onInvoke: (_) {
-                        _focusListSource(
-                          context,
-                          ThreadListSource.activityFeed,
-                        );
-                        return null;
-                      },
-                    ),
                 ToggleStartFinishCurrentThreadIntent:
                     CallbackAction<ToggleStartFinishCurrentThreadIntent>(
                       onInvoke: (_) {
@@ -500,18 +484,25 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
                         return null;
                       },
                     ),
-                ToggleTabIntent: CallbackAction<ToggleTabIntent>(
-                  onInvoke: (_) {
-                    final tabNotifier = PriorityTabProvider.maybeOf(context);
-                    if (tabNotifier != null) {
-                      final target = tabNotifier.value == PriorityTab.agenda
-                          ? ThreadListSource.activityFeed
-                          : ThreadListSource.agenda;
-                      _focusListSource(context, target);
-                    }
-                    return null;
-                  },
-                ),
+                FocusOrToggleAgendaActivityIntent:
+                    CallbackAction<FocusOrToggleAgendaActivityIntent>(
+                      onInvoke: (_) {
+                        final priorityBloc = context.read<PriorityBloc>();
+                        final currentSource =
+                            priorityBloc.resolveThreadListSource();
+                        final controller = _resolveController(context);
+                        if (controller?.focusedIndex == null) {
+                          _focusListSource(context, currentSource);
+                        } else {
+                          final target =
+                              currentSource == ThreadListSource.agenda
+                                  ? ThreadListSource.activityFeed
+                                  : ThreadListSource.agenda;
+                          _focusListSource(context, target);
+                        }
+                        return null;
+                      },
+                    ),
                 ScheduleCurrentThreadIntent:
                     CallbackAction<ScheduleCurrentThreadIntent>(
                       onInvoke: (_) {
@@ -525,10 +516,8 @@ class PriorityShortcutsProviderState extends State<_PriorityShortcutsProvider> {
               },
               child: Shortcuts(
                 shortcuts: <ShortcutActivator, Intent>{
-                  platformSingleActivator(LogicalKeyboardKey.keyT):
-                      const FocusAgendaIntent(),
-                  platformSingleActivator(LogicalKeyboardKey.keyT, shift: true):
-                      const ToggleTabIntent(),
+                  platformSingleActivator(LogicalKeyboardKey.keyA, shift: true):
+                      const FocusOrToggleAgendaActivityIntent(),
                   platformSingleActivator(LogicalKeyboardKey.slash):
                       const ToggleSearchIntent(),
                   platformSingleActivator(LogicalKeyboardKey.keyD):

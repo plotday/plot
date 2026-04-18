@@ -142,7 +142,7 @@ class NewThread extends Command {
         icon: PlotIcon.addNote,
         shortcut: platformSingleActivator(
           LogicalKeyboardKey.keyN,
-          shift: kIsWeb,
+          alt: kIsWeb,
         ),
       );
 
@@ -2200,14 +2200,6 @@ class ToggleSearchIntent extends Intent {
   const ToggleSearchIntent();
 }
 
-class FocusAgendaIntent extends Intent {
-  const FocusAgendaIntent();
-}
-
-class FocusActivityListIntent extends Intent {
-  const FocusActivityListIntent();
-}
-
 class ToggleStartFinishCurrentThreadIntent extends Intent {
   const ToggleStartFinishCurrentThreadIntent();
 }
@@ -2216,8 +2208,10 @@ class ArchiveCurrentThreadIntent extends Intent {
   const ArchiveCurrentThreadIntent();
 }
 
-class ToggleTabIntent extends Intent {
-  const ToggleTabIntent();
+/// Focuses the current list if nothing is focused; otherwise switches
+/// between the Agenda and Activity lists.
+class FocusOrToggleAgendaActivityIntent extends Intent {
+  const FocusOrToggleAgendaActivityIntent();
 }
 
 class ScheduleCurrentThreadIntent extends Intent {

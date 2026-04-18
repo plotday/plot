@@ -183,7 +183,7 @@ class ToggleSelfTask extends NoteCommand {
             ? EventAction.untagged
             : EventAction.tagged,
         icon: PlotIcon.selfTask,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyX, shift: true),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyT),
       );
 
   @override
@@ -411,7 +411,7 @@ class PickNoteAssignee extends ShowCommands {
         showFilter: true,
         eventObject: EventObject.note,
         eventAction: EventAction.updated,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyA, shift: true),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyT, shift: true),
       );
 
   final Note note;
@@ -821,7 +821,7 @@ class PickDraftNoteAssignee extends ShowCommands {
          eventObject: EventObject.note,
          eventAction: EventAction.updated,
          shortcut: platformSingleActivator(
-           LogicalKeyboardKey.keyA,
+           LogicalKeyboardKey.keyT,
            shift: true,
          ),
        );
