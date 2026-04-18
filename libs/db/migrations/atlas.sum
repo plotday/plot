@@ -1,4 +1,4 @@
-h1:NW31lYZVYoI68AZCP6LpCLz0eaztJwdIdnNX0nZK3XI=
+h1:beWZ8yWqYMgNKoGWx3jKNXk2gDhRKxoD3+NrqPF30Zo=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -284,3 +284,5 @@ h1:NW31lYZVYoI68AZCP6LpCLz0eaztJwdIdnNX0nZK3XI=
 20260418153225_document_priority_and_new_thread_shortcuts.sql h1:tM8PWKEefXxlN3GkLMxl6ZPf6ZL8FJqfN7xvYLWiwc4=
 20260418195128_add_email_frequency_setting.sql h1:+SdOlOqpItfNyhURp/h47yqoRacRMdftFFhR9FHl0NM=
 20260418195247_add_email_token_to_user_settings.sql h1:3nCDMJ1HRwURn+B2+GOERX6H0TfFSFWIt0aiPe+qYoM=
+20260418212406_drop_priority_access_from_thread_read_state.sql h1:k4FWlQQE5erWjeZwKPph5fESpEHMVgoIUdziYyq6iVM=
+20260418213918_allow_archived_priority_access.sql h1:yY/Gr7S1RfnsKy4HPvom7rvOHegNaX0pkmyF7dylUVE=

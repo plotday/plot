@@ -14,7 +14,6 @@ BEGIN
         FROM priority p
         WHERE p.id = assert_priority_access.priority_id
           AND p.user_id = assert_priority_access.user_id
-          AND p.archived_at IS NULL
     ) THEN
         RAISE EXCEPTION 'User does not have access to this priority';
     END IF;
@@ -570,7 +569,6 @@ BEGIN
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
-    PERFORM "user".assert_priority_access(upsert_thread_read.user_id, v_priority_id);
 
     INSERT INTO thread_read (user_id, thread_id, read_at, bumped_at)
         VALUES (upsert_thread_read.user_id, p_thread_id, COALESCE(p_read_at, now()), p_bumped_at)
@@ -606,7 +604,6 @@ BEGIN
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
-    PERFORM "user".assert_priority_access(delete_thread_read.user_id, v_priority_id);
 
     DELETE FROM thread_read
     WHERE
@@ -651,7 +648,6 @@ BEGIN
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
-    PERFORM "user".assert_priority_access(upsert_thread_unread.user_id, v_priority_id);
 
     INSERT INTO thread_unread (user_id, thread_id, urgency, importance, read_at, bumped_at)
         VALUES (upsert_thread_unread.user_id, p_thread_id, p_urgency, p_importance, p_read_at, p_bumped_at)
@@ -701,7 +697,6 @@ BEGIN
     IF v_priority_id IS NULL THEN
         RAISE EXCEPTION 'Thread not found';
     END IF;
-    PERFORM "user".assert_priority_access(clear_thread_unread.user_id, v_priority_id);
 
     -- Upsert to handle the race where the user reads a thread before analysis
     -- creates the thread_unread row. If no row exists, INSERT a preemptive read
