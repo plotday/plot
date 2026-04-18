@@ -61,7 +61,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1",
     "vitest": "^0.33.0",
-    "wrangler": "^4.82.2"
+    "wrangler": "^4.83.0"
   },
   "nx": {},
   "pnpm": {
