@@ -12,12 +12,14 @@ interface NotificationDigestProps {
     url: string;
   }>;
   appUrl: string;
+  unsubscribeUrl: string;
 }
 
 export default function NotificationDigest({
   recipientName,
   priorities,
   appUrl,
+  unsubscribeUrl,
 }: NotificationDigestProps) {
   return (
     <EmailLayout preview="New activity in Plot">
@@ -36,7 +38,10 @@ export default function NotificationDigest({
       ))}
       <EmailButton href={appUrl}>Open Plot</EmailButton>
       <Text style={hint}>
-        You're receiving this because you have unread notifications in Plot.
+        You're receiving this because you have unread notifications in Plot.{" "}
+        <Link href={unsubscribeUrl} style={unsubscribeLink}>
+          Unsubscribe or change email frequency
+        </Link>
       </Text>
     </EmailLayout>
   );
@@ -75,4 +80,9 @@ const hint = {
   fontSize: "14px",
   lineHeight: "20px",
   margin: "24px 0 0",
+};
+
+const unsubscribeLink = {
+  color: "#6b7280",
+  textDecoration: "underline",
 };

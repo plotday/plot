@@ -1,3 +1,4 @@
+- Notification emails now include an unsubscribe link — choose to get them at most once per day, once per week, or never, without needing to sign in
 - Priorities with nothing on the agenda now open straight to the activity feed — and opening a thread that isn't on the agenda also switches to the feed, so you always land on a list that has your thread in it
 - More keyboard shortcuts: Cmd+P switches priorities (Cmd+Option+P on web), and on the new thread page you can now change the priority with Cmd+Shift+P (Cmd+Option+Shift+P on web), edit the title with Cmd+Shift+H, and change the thread type with Cmd+Shift+I
 - Keyboard shortcut updates: Cmd+Shift+A focuses the current list and switches between agenda and activity on a second press, Cmd+T makes the focused note a task, Cmd+Shift+T assigns it, and new thread on web is now Cmd+Option+N (so browsers stop stealing Cmd+Shift+N)

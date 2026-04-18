@@ -199,6 +199,54 @@ export class EmailNotify extends DurableObject<Bindings> {
 
         const user = userResult.rows[0];
 
+        // Check user's email frequency preference and throttle accordingly.
+        // NULL = default (send whenever pending), 'daily' = at most every 24h,
+        // 'weekly' = at most every 7d, 'never' = skip entirely.
+        const prefResult = await sql<{
+          email_frequency: "daily" | "weekly" | "never" | null;
+        }>`
+          SELECT email_frequency FROM user_settings WHERE user_id = ${this.userId!}::uuid
+        `.execute(db);
+        const frequency = prefResult.rows[0]?.email_frequency ?? null;
+
+        if (frequency === "never") {
+          logger.info("Skipping email — user opted out", {
+            user_id: this.userId ?? undefined,
+          });
+          await this.clearPending();
+          return;
+        }
+
+        if (frequency === "daily" || frequency === "weekly") {
+          const lastSentAt =
+            (await this.ctx.storage.get<number>("lastEmailSentAt")) ?? 0;
+          const minIntervalMs =
+            frequency === "weekly"
+              ? 7 * 24 * 60 * 60 * 1000
+              : 24 * 60 * 60 * 1000;
+          const sinceLast = Date.now() - lastSentAt;
+          if (lastSentAt > 0 && sinceLast < minIntervalMs) {
+            logger.info("Skipping email — within throttle window", {
+              user_id: this.userId ?? undefined,
+              frequency,
+              since_last_ms: sinceLast,
+            });
+            await this.clearPending();
+            return;
+          }
+        }
+
+        // Ensure the user has an email_token used for unsubscribe links.
+        const tokenResult = await sql<{ email_token: string }>`
+          INSERT INTO user_settings (user_id, email_token)
+            VALUES (${this.userId!}::uuid, gen_random_uuid())
+          ON CONFLICT (user_id) DO UPDATE SET
+            email_token = COALESCE(user_settings.email_token, EXCLUDED.email_token),
+            updated_at = now()
+          RETURNING email_token::text AS email_token
+        `.execute(db);
+        const emailToken = tokenResult.rows[0]?.email_token;
+
         // Group threads by first-level priority
         type PriorityGroup = {
           priorityId: string;
@@ -279,6 +327,10 @@ export class EmailNotify extends DurableObject<Bindings> {
         // Generate subject line
         const subject = this.formatSubject(priorities.map((p) => p.title));
 
+        const unsubscribeUrl = emailToken
+          ? `${this.env.SITE_ROOT}/unsubscribe?t=${emailToken}`
+          : `${this.env.SITE_ROOT}/unsubscribe`;
+
         // Enqueue email
         await this.env.MAIL_QUEUE.send({
           to: [user.email],
@@ -288,6 +340,7 @@ export class EmailNotify extends DurableObject<Bindings> {
             recipientName: user.name,
             priorities,
             appUrl,
+            unsubscribeUrl,
           },
         });
 

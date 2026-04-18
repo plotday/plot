@@ -2428,18 +2428,28 @@ export type Database = {
       user_settings: {
         Row: {
           ai_enabled: boolean | null
+          email_frequency: Database["public"]["Enums"]["email_frequency"] | null
+          email_token: string | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
           updated_at: string
           user_id: string
         }
         Insert: {
           ai_enabled?: boolean | null
+          email_frequency?:
+            | Database["public"]["Enums"]["email_frequency"]
+            | null
+          email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
           updated_at?: string
           user_id: string
         }
         Update: {
           ai_enabled?: boolean | null
+          email_frequency?:
+            | Database["public"]["Enums"]["email_frequency"]
+            | null
+          email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
           updated_at?: string
           user_id?: string
@@ -3904,6 +3914,7 @@ export type Database = {
     }
     Enums: {
       ai_provider: "openai" | "anthropic" | "google" | "custom"
+      email_frequency: "daily" | "weekly" | "never"
       enter_behavior: "enter_newline" | "enter_submits"
       group_join_policy: "member" | "open" | "admin"
       group_type: "public" | "team" | "private" | "announce"
@@ -4975,6 +4986,7 @@ export const Constants = {
   public: {
     Enums: {
       ai_provider: ["openai", "anthropic", "google", "custom"],
+      email_frequency: ["daily", "weekly", "never"],
       enter_behavior: ["enter_newline", "enter_submits"],
       group_join_policy: ["member", "open", "admin"],
       group_type: ["public", "team", "private", "announce"],

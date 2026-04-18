@@ -25,6 +25,7 @@ export default [
     route("upgrade/*", "routes/upgrade.tsx"),
     route("team/:id", "routes/team.$id.tsx"),
     route("account/delete", "routes/account.delete.tsx"),
+    route("unsubscribe", "routes/unsubscribe.tsx"),
     route("twister/login", "routes/twister.login.tsx"),
   ]),
 ] satisfies RouteConfig;

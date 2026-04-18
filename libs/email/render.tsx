@@ -68,6 +68,7 @@ interface NotificationDigestProps {
     url: string;
   }>;
   appUrl: string;
+  unsubscribeUrl: string;
 }
 
 export const render = async <T extends EmailType>(

@@ -29,6 +29,7 @@ import notificationSummary from "./app/notification-summary";
 import testRoutes from "./app/test-routes";
 import summary from "./app/summary";
 import updates from "./app/updates";
+import unsubscribe from "./app/unsubscribe";
 import type { Bindings } from "./env";
 import { clientVersionMiddleware } from "./middleware/client-version";
 import { trackerIdentifyMiddleware } from "./middleware/posthog-identify";
@@ -226,6 +227,9 @@ app.get("/health", dbMiddleware, async (c) => {
   await c.var.db.selectFrom("priority").select("id").limit(1).execute();
   return c.text("ok");
 });
+
+// Public unsubscribe endpoint — token-authenticated, no session required
+app.route("/", unsubscribe);
 
 // Mount webhook route at top level
 app.route("/", webhook);
