@@ -2025,7 +2025,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 309;
+  int get schemaVersion => 310;
 
   @override
   MigrationStrategy get migration {
@@ -2853,6 +2853,11 @@ class Store extends _$Store {
       // Priority rules replaced by server-side user_moved flag on thread_priority.
       // Drop the ephemeral local table; routing is now learned from moves, not rules.
       await m.database.customStatement('DROP TABLE IF EXISTS priority_rules');
+    }
+    if (from < 310) {
+      // Sparse per-priority config (topic/group/view behaviours), populated
+      // by the server and read-only on the client.
+      await _safeAddColumn(m, priorities, priorities.config);
     }
   }
 

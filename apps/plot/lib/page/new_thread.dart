@@ -510,6 +510,33 @@ class NewThreadPageState extends State<NewThreadPage> {
   Widget _buildWithSelector(BuildContext context, PriorityState state) {
     final selectedIds = state.draft.contacts.toSet();
     final pendingEmails = state.draft.inviteEmails.toSet();
+    final lockedConfig = state.context.priorityConfig;
+    final lockedGroupId = lockedConfig.group;
+
+    // When a group is locked by priority config, hide the recent-contact
+    // suggestion chips and replace them with a single selected, non-toggleable
+    // group chip. The `+` button still opens the share picker.
+    if (lockedGroupId != null) {
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildLockedGroupChip(
+                context,
+                lockedGroupId,
+                label: lockedConfig.groupLabel,
+              ),
+              _buildAddContactChip(context, state, hasMore: false),
+            ],
+          ),
+        ),
+      );
+    }
 
     // Render from pinned lists so chips stay stable when toggled via tap.
     // _pinnedActors and _pinnedEmails are only updated by _refreshPinnedChips
@@ -553,6 +580,52 @@ class NewThreadPageState extends State<NewThreadPage> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Chip shown in place of the "with" suggestion chips when the draft's
+  /// priority pins an auto-attached group (via `priority.config.group`).
+  /// Renders as always-selected; tapping does nothing so the group cannot
+  /// be removed from the thread.
+  ///
+  /// Prefers the config-provided [label] so the chip shows a stable name
+  /// (e.g. "Plot Team") even when the resolved group's own name differs by
+  /// environment (e.g. "Plot Publisher" fallback in dev). Falls back to the
+  /// group's own name when no label is configured.
+  Widget _buildLockedGroupChip(
+    BuildContext context,
+    Uuid groupId, {
+    String? label,
+  }) {
+    const chipRadius = BorderRadius.all(Radius.circular(24));
+    final chipPadding = EdgeInsets.symmetric(
+      horizontal: 10,
+      vertical: isMobilePlatform() ? 10 : 5,
+    );
+
+    Widget buildChipWithText(String text) => FButton(
+      onPress: () {},
+      variant: FButtonVariant.primary,
+      style: FButtonStyleDelta.delta(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(borderRadius: chipRadius),
+          ),
+        ]),
+        contentStyle: FButtonContentStyleDelta.delta(
+          padding: EdgeInsetsGeometryDelta.value(chipPadding),
+        ),
+      ),
+      mainAxisSize: MainAxisSize.min,
+      child: Text(text),
+    );
+
+    if (label != null && label.isNotEmpty) return buildChipWithText(label);
+
+    return StreamBuilder<GroupRow?>(
+      stream: Group.watchOne(groupId),
+      builder: (context, snapshot) =>
+          buildChipWithText(snapshot.data?.name ?? ''),
     );
   }
 

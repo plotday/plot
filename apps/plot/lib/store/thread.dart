@@ -2090,6 +2090,13 @@ class Thread extends Equatable implements Comparable<Thread> {
          urgency: null,
          readAt: null,
          hasEmbedding: false,
+         // Seed topic + auto-attached group from the priority's config so
+         // any thread composed here inherits the routing key and the locked
+         // group chip before the user types.
+         topic: priority.priorityConfig.topic,
+         groups: priority.priorityConfig.group != null
+             ? [priority.priorityConfig.group!]
+             : null,
        ),
        _schedule = null,
        _userSchedule = null,

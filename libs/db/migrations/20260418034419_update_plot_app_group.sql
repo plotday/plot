@@ -1,14 +1,5 @@
--- Ensures a user has their own root priority. Idempotent — safe to call
--- multiple times. In the per-user model the root is just a priority
--- with nlevel(path) = 1 and user_id = the user, so we don't touch
--- priority_user at all.
-CREATE OR REPLACE FUNCTION public.activate_invited_user (
-    p_user_id uuid
-)
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "activate_invited_user" function
+CREATE OR REPLACE FUNCTION "public"."activate_invited_user" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     v_root_priority_id uuid;
     v_new_path ltree;
@@ -86,4 +77,31 @@ BEGIN
 
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
-$function$;
+$$;
+
+-- Backfill existing Using Plot priorities with the prod-preferred group
+-- resolution (full Plot team → Plot publisher admins fallback) and the
+-- "Plot Team" display label.
+UPDATE "public"."priority"
+SET config = jsonb_build_object(
+    'topic', 'feedback',
+    'group', COALESCE(
+        (
+            SELECT g.id::text FROM public."group" g
+            JOIN public.team t ON t.id = g.team_id
+            WHERE g.auto_maintained = TRUE
+              AND g.auto_team_admin_team_id IS NULL
+              AND t.name = 'Plot'
+            LIMIT 1
+        ),
+        (
+            SELECT g.id::text FROM public."group" g
+            WHERE g.auto_maintained = TRUE
+              AND g.auto_publisher_id = (SELECT id FROM public.publisher WHERE name = 'Plot' LIMIT 1)
+            LIMIT 1
+        )
+    ),
+    'groupLabel', 'Plot Team',
+    'view', 'activity'
+)
+WHERE key = '@plot.app';

@@ -21,7 +21,12 @@ CREATE TABLE "public"."priority" (
     "key" text,
     -- inherit_members is vestigial: with per-user priorities there are no
     "inherit_members" boolean NOT NULL DEFAULT TRUE,
-    "default_thread_icon" text
+    "default_thread_icon" text,
+    -- Sparse per-priority configuration. Not user-editable; set directly in
+    -- the DB. Recognized keys: topic (string, default thread.topic),
+    -- "group" (uuid, auto-attached to new threads), view ('activity' to
+    -- hide the agenda tab on the priority page).
+    "config" jsonb
 );
 
 -- Per-user owner lookups

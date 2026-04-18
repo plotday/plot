@@ -38,8 +38,16 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    INSERT INTO public.priority (created_by, user_id, title, path, color, key)
-    VALUES (p_user_id, p_user_id, 'Twist Development', v_root_path || generate_path(NULL), 3, '@plot.twist-dev')
+    INSERT INTO public.priority (created_by, user_id, title, path, color, key, config)
+    VALUES (
+        p_user_id,
+        p_user_id,
+        'Twist Development',
+        v_root_path || generate_path(NULL),
+        3,
+        '@plot.twist-dev',
+        jsonb_build_object('view', 'activity')
+    )
     RETURNING id INTO v_priority_id;
 
     RETURN v_priority_id;

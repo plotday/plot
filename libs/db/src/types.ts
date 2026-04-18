@@ -895,6 +895,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           color: number | null
+          config: Json | null
           created_at: string
           created_by: string
           default_thread_icon: string | null
@@ -911,6 +912,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           color?: number | null
+          config?: Json | null
           created_at?: string
           created_by: string
           default_thread_icon?: string | null
@@ -927,6 +929,7 @@ export type Database = {
         Update: {
           archived_at?: string | null
           color?: number | null
+          config?: Json | null
           created_at?: string
           created_by?: string
           default_thread_icon?: string | null
@@ -4217,6 +4220,7 @@ export type Database = {
           attention_window: Json | null
           attention_window_set: boolean | null
           color: number | null
+          config: Json | null
           created_at: string | null
           created_by: string | null
           global_path: unknown
@@ -4651,6 +4655,7 @@ export type Database = {
           attention_window: Json | null
           attention_window_set: boolean | null
           color: number | null
+          config: Json | null
           created_at: string | null
           created_by: string | null
           global_path: unknown

@@ -752,9 +752,10 @@ class _PriorityPageState extends State<PriorityPage> {
         } else {
           _currentTab = _tabNotifier!.value;
         }
-        // Force activity feed for viewer priorities
+        // Force activity feed for activity-only priorities (viewers and
+        // priorities configured with `config.view == 'activity'`).
         final priorityBloc = context.read<PriorityBloc>();
-        if (priorityBloc.state.context.isViewer &&
+        if (priorityBloc.state.context.isActivityOnly &&
             _currentTab == PriorityTab.agenda) {
           _currentTab = PriorityTab.activityFeed;
           // Defer notifier update — setting it synchronously during
@@ -795,7 +796,8 @@ class _PriorityPageState extends State<PriorityPage> {
         return BlocBuilder<LayoutBloc, LayoutState>(
           builder: (context, layoutState) {
             final isUpNext =
-                _currentTab == PriorityTab.agenda && !state.context.isViewer;
+                _currentTab == PriorityTab.agenda &&
+                !state.context.isActivityOnly;
             var items = isUpNext
                 ? state.agendaViewItems
                 : state.activityFeedItems;
@@ -1101,11 +1103,11 @@ class _PriorityPageState extends State<PriorityPage> {
         : allAgendaItems;
 
     final isNowTab =
-        _currentTab == PriorityTab.agenda && !state.context.isViewer;
+        _currentTab == PriorityTab.agenda && !state.context.isActivityOnly;
 
     return Column(
       children: [
-        if (!state.context.isViewer)
+        if (!state.context.isActivityOnly)
           BlocSelector<PrioritiesBloc, PrioritiesState, bool>(
             selector: (prioritiesState) {
               final p = prioritiesState.priorities.firstWhereOrNull(

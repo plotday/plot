@@ -36,6 +36,10 @@ class Priorities extends Table
       boolean().withDefault(const Constant(false))();
   BoolColumn get seeWithinUpdatesSet =>
       boolean().withDefault(const Constant(false))();
+
+  /// Sparse per-priority configuration. Not user-editable. Stored as a JSON
+  /// string. See `PriorityConfig` for recognized keys.
+  TextColumn get config => text().nullable()();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -83,6 +87,12 @@ class PrioritiesBase extends BaseTable {
       json['created_at'] as String,
     ).millisecondsSinceEpoch.toDouble();
     json.remove('inherit_members');
+    // config is a JSONB object on the server; Drift stores it as a JSON string.
+    if (json['config'] != null) {
+      json['config'] = json['config'] is String
+          ? json['config']
+          : jsonEncode(json['config']);
+    }
 
     return PriorityRow.fromJson(json);
   }
@@ -98,8 +108,58 @@ class PrioritiesBase extends BaseTable {
     json.remove('attention_window_set');
     json.remove('see_within_requests_set');
     json.remove('see_within_updates_set');
+    // config is read-only from the client's perspective.
+    json.remove('config');
     return json;
   }
+}
+
+/// Typed view onto the sparse [Priorities.config] JSON blob.
+class PriorityConfig {
+  const PriorityConfig({this.topic, this.group, this.groupLabel, this.view});
+
+  static const empty = PriorityConfig();
+
+  static PriorityConfig parse(String? raw) {
+    if (raw == null || raw.isEmpty) return empty;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return empty;
+      final map = decoded.cast<String, dynamic>();
+      final groupRaw = map['group'];
+      PriorityId? group;
+      if (groupRaw is String && groupRaw.isNotEmpty) {
+        try {
+          group = Uuid.fromString(groupRaw);
+        } catch (_) {}
+      }
+      return PriorityConfig(
+        topic: map['topic'] is String ? map['topic'] as String : null,
+        group: group,
+        groupLabel:
+            map['groupLabel'] is String ? map['groupLabel'] as String : null,
+        view: map['view'] is String ? map['view'] as String : null,
+      );
+    } catch (_) {
+      return empty;
+    }
+  }
+
+  /// Topic to stamp on new threads created in this priority.
+  final String? topic;
+
+  /// Group auto-attached to new threads created in this priority.
+  final PriorityId? group;
+
+  /// Display label for the locked group chip. Decoupled from the underlying
+  /// group's name so the UI stays stable even when the resolved group
+  /// differs by environment (e.g. full team vs. publisher admins fallback).
+  final String? groupLabel;
+
+  /// View override. 'activity' hides the agenda tab on the priority page.
+  final String? view;
+
+  bool get viewIsActivity => view == 'activity';
 }
 
 enum PriorityOrder { sorted, nested, recent }
@@ -853,6 +913,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          attentionWindowSet: row.attentionWindowSet,
          seeWithinRequestsSet: row.seeWithinRequestsSet,
          seeWithinUpdatesSet: row.seeWithinUpdatesSet,
+         config: row.config,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -961,6 +1022,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Returns true if this priority has a viewer role (read-only).
   bool get isViewer => role == 'viewer';
 
+  /// Whether the priority should only display its activity feed (no agenda
+  /// tab). True for viewer priorities, or when `config.view == 'activity'`.
+  bool get isActivityOnly => isViewer || priorityConfig.viewIsActivity;
+
   /// Whether this is a system priority that shouldn't be edited/archived by users.
   bool get isPlot =>
       key == '@plot.app' || key == '@plot.twist-dev' || key == '@plot';
@@ -982,6 +1047,10 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   /// Parsed see within updates time (inherited from this priority or ancestors).
   SeeWithinTime? get seeWithinUpdatesTime =>
       SeeWithinTime.fromJsonString(seeWithinUpdates);
+
+  /// Parsed sparse priority config (topic/group/view behaviours). Not
+  /// user-editable; populated from the server.
+  PriorityConfig get priorityConfig => PriorityConfig.parse(config);
 
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
@@ -1054,6 +1123,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? attentionWindowSet,
     bool? seeWithinRequestsSet,
     bool? seeWithinUpdatesSet,
+    Value<String?> config = const Value.absent(),
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1093,6 +1163,7 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         attentionWindowSet: attentionWindowSet,
         seeWithinRequestsSet: seeWithinRequestsSet,
         seeWithinUpdatesSet: seeWithinUpdatesSet,
+        config: config,
       ),
       parent: currentParent,
       children: children,

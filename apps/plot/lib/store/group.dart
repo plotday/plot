@@ -35,4 +35,20 @@ class Group {
     await Store.get.pull(table, GroupsBase(), initial: true);
     await Store.get.pull(table, GroupsBase());
   }
+
+  /// Fetch a group by id. Returns null if the user can't see the group.
+  static Future<GroupRow?> getOne(Uuid id) {
+    return (Store.get.select(table)
+          ..where((t) => t.id.equals(id.toBytes()))
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  /// Watch a group by id. Emits null until the group is synced.
+  static Stream<GroupRow?> watchOne(Uuid id) {
+    return (Store.get.select(table)
+          ..where((t) => t.id.equals(id.toBytes()))
+          ..limit(1))
+        .watchSingleOrNull();
+  }
 }

@@ -1,3 +1,4 @@
+- The Using Plot and Twist Development priorities now show only the activity feed — the agenda tab is hidden on these feedback-style priorities. Messages you start in Using Plot are also automatically tagged as feedback and shared with the Plot team.
 - You can now respond to calendar invites directly from the activity feed — Attend and Skip buttons appear on calendar event threads without needing to open them or switch to the agenda. For recurring events, the buttons act on the next upcoming occurrence (or the most recent past one if there's no upcoming).
 - Fixed archiving a thread with outstanding tasks not sticking — the thread would disappear and then reappear on the agenda after syncing
 - Fixed Skip/Attend on calendar events not syncing back to Google Calendar — declining or accepting an event in Plot now updates your RSVP on the actual calendar event
