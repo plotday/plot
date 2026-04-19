@@ -411,6 +411,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     List<Priority> priorities,
   ) async {
     if (priorities.isEmpty) return priorities;
+    // Sign-out can race with in-flight watch streams; skip enrichment rather
+    // than crash on Base.userId when _userId has been cleared.
+    if (!Base.signedIn) return priorities;
 
     // Get all priority IDs
     final priorityIds = priorities.map((p) => p.id).toList();
