@@ -1,4 +1,4 @@
-import { type Actor, type ActorId, type Link, type Note, type Thread } from "./plot";
+import { type Actor, type ActorId, type Link, type NewLinkWithNotes, type Note, type Thread } from "./plot";
 import type { ScheduleContactStatus } from "./schedule";
 import {
   type AuthProvider,
@@ -9,6 +9,34 @@ import {
   type SyncContext,
 } from "./tools/integrations";
 import { Twist } from "./twist";
+
+/**
+ * Fields captured in Plot when a user initiates creation of a new external
+ * item via a connector's `onCreateLink` hook.
+ *
+ * Thread-agnostic on purpose — connectors do not receive the Plot thread.
+ * The platform attaches the returned `NewLinkWithNotes` to the originating
+ * thread once `onCreateLink` resolves.
+ */
+export type CreateLinkDraft = {
+  /** The channel (account + resource) the new item belongs to. */
+  channelId: string;
+  /** Link type identifier, matches a `LinkTypeConfig.type`. */
+  type: string;
+  /** Status the user selected. Matches a `statuses[].status` for `type`. */
+  status: string;
+  /** Title of the originating Plot thread (post AI title generation). */
+  title: string;
+  /** Markdown content of the thread's first note, or null if none. */
+  noteContent: string | null;
+  /**
+   * Contacts attached to the originating Plot thread, excluding the
+   * creating user. Use these as recipients (email, chat DM members, etc.)
+   * when the external item is a message or invite. An empty list means
+   * the user did not add anyone to the thread.
+   */
+  contacts: Actor[];
+};
 
 /**
  * Base class for connectors — twists that sync data from external services.
@@ -210,6 +238,31 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onLinkUpdated(link: Link): Promise<void> {
     return Promise.resolve();
+  }
+
+  /**
+   * Called when a user creates a thread in Plot that should create a new
+   * item in this connector's external system.
+   *
+   * A connector opts in to Plot-initiated creation by declaring a status
+   * with `createDefault: true` on the relevant `LinkTypeConfig`. When a
+   * user picks "Create new <type>" from the Add link modal and the thread
+   * is synced, the runtime calls this method with the draft fields.
+   *
+   * Implementations should create the item in the external service and
+   * return a `NewLinkWithNotes` describing the created item. The platform
+   * attaches the returned link to the originating thread — do not call
+   * `integrations.saveLink` yourself.
+   *
+   * Returning `null` aborts creation silently (the thread is still saved
+   * without a link).
+   *
+   * @param draft - The fields captured in Plot for the new item.
+   * @returns The link to attach, or null to abort creation.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
+    return Promise.resolve(null);
   }
 
   /**

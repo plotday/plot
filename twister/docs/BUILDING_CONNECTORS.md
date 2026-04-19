@@ -15,6 +15,7 @@ Connectors connect Plot to external services like Google Calendar, Slack, Linear
 - [Data Sync](#data-sync)
 - [Batch Processing](#batch-processing)
 - [Complete Example](#complete-example)
+- [Creating Items from Plot (`onCreateLink`)](#creating-items-from-plot-oncreatelink)
 - [Best Practices](#best-practices)
 
 ---
@@ -403,6 +404,89 @@ export default class IssueConnector extends Connector<IssueConnector> {
 ```
 
 ---
+
+## Creating Items from Plot (`onCreateLink`)
+
+Some connectors let users start a new thread that creates a brand-new
+external item — a Linear issue, a Google Calendar event, a Slack DM. Opt
+in per link type:
+
+### 1. Mark the creation default
+
+Declare one `statuses[]` entry with `createDefault: true` on the
+`LinkTypeConfig` for that type. Either on the static `readonly linkTypes`
+on the class or on the dynamic per-channel linkTypes returned by
+`getChannels`:
+
+```typescript
+readonly linkTypes = [{
+  type: "issue",
+  label: "Issue",
+  statuses: [
+    { status: "backlog", label: "Backlog" },
+    { status: "unstarted", label: "To Do", todo: true, createDefault: true },
+    { status: "completed", label: "Done", tag: Tag.Done, done: true },
+  ],
+}];
+```
+
+A link type opts in to Plot-initiated creation by having at least one
+status with `createDefault: true`. The marker also tells the UI which
+status to pre-select in the picker.
+
+### 2. Implement `onCreateLink(draft)`
+
+```typescript
+async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
+  const client = await this.getClient(draft.channelId);
+  const payload = await client.createIssue({
+    teamId: draft.channelId,
+    title: draft.title,
+    description: draft.noteContent ?? undefined,
+    stateId: await this.resolveStateId(client, draft.channelId, draft.status),
+  });
+  const issue = await payload.issue;
+  if (!issue) return null;
+  return {
+    source: `linear:issue:${issue.id}`,
+    type: "issue",
+    title: issue.title,
+    status: draft.status,
+    created: issue.createdAt,
+    sourceUrl: issue.url ?? null,
+    meta: { linearId: issue.id, projectId: draft.channelId },
+  };
+}
+```
+
+### `CreateLinkDraft`
+
+| Field | Purpose |
+|-------|---------|
+| `channelId` | Target channel (Linear team, Google calendar, Slack workspace). |
+| `type` | Link type id matching a `LinkTypeConfig.type`. |
+| `status` | Status the user selected; matches `statuses[].status`. |
+| `title` | Thread title (post AI title generation). |
+| `noteContent` | Markdown of the thread's first note, or `null`. |
+| `contacts` | Thread's contacts, minus the creating user — use for email recipients, DM members, invitees. |
+
+### Platform guarantees
+
+- The returned link is attached to the originating Plot thread
+  automatically. **Don't call `integrations.saveLink()` yourself** — doing
+  so creates a duplicate thread.
+- The runtime fills `channelId` and `type` on the saved link from the
+  draft if you omit them, so status-label lookup and channel-scoped
+  rendering keep working.
+- Loop prevention is handled by the runtime: the link is written with
+  the twist as `updated_by`, so subsequent syncs of the same external id
+  won't retrigger `onLinkUpdated` for the initial state.
+
+### Return `null` to abort
+
+If creation shouldn't proceed (wrong link type, external API refused,
+user not authorized), return `null`. The Plot thread is still saved; no
+link is attached.
 
 ## Best Practices
 

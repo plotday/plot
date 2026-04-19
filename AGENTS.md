@@ -35,6 +35,7 @@ All types in `twister/src/` with full JSDoc:
 - **Tools Guide**: `twister/docs/TOOLS_GUIDE.md`
 - **Multi-User Auth**: `twister/docs/MULTI_USER_AUTH.md`
 - **Sync Strategies**: `twister/docs/SYNC_STRATEGIES.md`
+- **Plot-initiated item creation (`onCreateLink`)**: `twister/docs/BUILDING_CONNECTORS.md#creating-items-from-plot-oncreatelink`
 - **Working Connector Examples**: `connectors/linear/`, `connectors/google-calendar/`, `connectors/slack/`, `connectors/jira/`
 
 ## Changesets: Only for `twister/`
@@ -52,6 +53,7 @@ Only changes under `twister/` require a changeset. `@plotday/twister` is the onl
 5. **❌ Not handling initial vs incremental sync** — Propagate `initialSync` flag from entry point (`onChannelEnabled` → `true`, webhook → `false`) through all batch callbacks. Set `unread: false` and `archived: false` for initial, omit for incremental
 6. **❌ Missing localhost guard in webhooks** — Skip webhook registration when URL contains "localhost"
 7. **❌ Stripping HTML tags locally** — Pass raw HTML with `contentType: "html"` for server-side markdown conversion
+8. **❌ Implementing `onCreateLink` without declaring `createDefault`** — A link type opts in to Plot-initiated item creation by marking one status with `createDefault: true` on `LinkTypeConfig.statuses[]`. Without the marker the "Create new …" picker entry never appears, regardless of whether the method is defined
 
 ---
 

@@ -58,6 +58,13 @@ export type LinkTypeConfig = {
      * At most one status per type should set this.
      */
     todo?: boolean;
+    /**
+     * Default status applied when Plot asks the connector to create a new
+     * item of this type via `Connector.onCreateLink`. Declaring at least one
+     * status with `createDefault: true` is how a link type opts in to
+     * Plot-initiated creation. At most one status per type should set this.
+     */
+    createDefault?: boolean;
   }>;
   /** Whether this link type supports displaying and changing the assignee */
   supportsAssignee?: boolean;

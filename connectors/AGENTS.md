@@ -831,6 +831,63 @@ export class MyConnector extends Connector<MyConnector> {
 
 Without this, the connector cannot be @-mentioned at all. Connectors that don't process replies (e.g., read-only calendar sync) should NOT set this flag.
 
+### Creating New Items from Plot (`onCreateLink`)
+
+Plot users can start a new thread tied to a brand-new external item (e.g. create a Linear issue, a Google Calendar event, a Slack DM) via "Create new …" in the Add link modal. Connectors opt in per link type:
+
+1. **Mark a status as the creation default** on the `LinkTypeConfig` you expose for that type — either on the static `readonly linkTypes` on the class, or on the dynamic per-channel linkTypes returned by `getChannels`:
+
+   ```typescript
+   statuses: [
+     { status: "backlog", label: "Backlog" },
+     { status: "unstarted", label: "To Do", todo: true, createDefault: true },
+     { status: "completed", label: "Done", tag: Tag.Done, done: true },
+   ],
+   ```
+
+   A link type opts in to Plot-initiated creation by declaring at least one status with `createDefault: true`. The marked status is used as the default when the user selects "Create new X".
+
+2. **Implement `onCreateLink(draft)`** — called after the Plot thread is saved and titled. Create the external item and return a `NewLinkWithNotes` describing it. The platform attaches the link to the originating thread; do NOT call `integrations.saveLink()` yourself.
+
+   ```typescript
+   async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
+     if (draft.type !== "issue") return null;
+     const client = await this.getClient(draft.channelId);
+     const payload = await client.createIssue({
+       teamId: draft.channelId,
+       title: draft.title,
+       description: draft.noteContent ?? undefined,
+       stateId: await this.resolveStateId(client, draft.channelId, draft.status),
+     });
+     const issue = await payload.issue;
+     if (!issue) return null;
+     return {
+       source: `linear:issue:${issue.id}`,
+       type: "issue",
+       title: issue.title,
+       status: draft.status,
+       created: issue.createdAt,
+       sourceUrl: issue.url ?? null,
+       meta: { linearId: issue.id, projectId: draft.channelId },
+       // channelId/type default to draft.channelId/draft.type if you omit them.
+     };
+   }
+   ```
+
+**`CreateLinkDraft` shape** (see `twister/src/connector.ts`):
+- `channelId`, `type`, `status` — identify the target channel + link type + status.
+- `title` — Plot thread title (post AI title generation).
+- `noteContent` — markdown of the thread's first note, or `null`.
+- `contacts: Actor[]` — thread's contacts (excluding the creating user), for email recipients / DM members / invitees.
+
+**Platform defaults**: the runtime fills in `channelId` and `type` on the returned link from the draft if the connector omits them. Status label resolution depends on `channel_id`, so this default keeps the UI rendering correct even if you forget to echo them.
+
+**Do not**:
+- Call `integrations.saveLink()` — the platform wires the returned link to the user's thread.
+- Assume the draft's status matches an external state id verbatim. For dynamic-per-team statuses (Linear teams, Jira projects), the draft's status is whatever was shown in the picker — your connector is responsible for resolving categories like `"unstarted"` if your static `linkTypes` fallback was used.
+
+**Loop prevention**: the link your `onCreateLink` returns is written with `updated_by` set to the twist, so subsequent syncs of the same external id won't retrigger `onCreateLink` or `onLinkUpdated` for the initial state.
+
 ## Contacts Pattern
 
 Connectors that sync user data should create contacts for authors and assignees:
@@ -907,6 +964,7 @@ After creating a new connector, add it to `pnpm-workspace.yaml` if not already c
 - [ ] Handle `initialSync` flag in **every sync entry point**: `onChannelEnabled`/`startSync` set `true`, webhooks/incremental set `false`, and the flag is propagated through all batch callbacks to where activities are created. Set `unread: false` and `archived: false` for initial, omit both for incremental
 - [ ] Create contacts for authors/assignees with `NewContact`
 - [ ] Clean up all stored state and callbacks in `stopSync()` and `onChannelDisabled()`
+- [ ] **If the connector should let users create new items from Plot**: mark one status per opted-in `LinkTypeConfig` with `createDefault: true` and implement `onCreateLink(draft)`. Return a `NewLinkWithNotes` — never call `integrations.saveLink()` from `onCreateLink`
 - [ ] Add `package.json` with correct structure, `tsconfig.json`, and `src/index.ts` re-export
 - [ ] Verify the connector builds: `pnpm build`
 
@@ -929,6 +987,8 @@ After creating a new connector, add it to `pnpm-workspace.yaml` if not already c
 15. **❌ Using placeholder titles in comment/update webhooks** — `title` always overwrites on upsert. Always use the real entity title (fetch from API if not in the webhook payload). Never use IDs or keys as placeholder titles
 16. **❌ Not setting `created` on notes from external data** — Always pass the external system's timestamp (e.g., `internalDate` from Gmail, `created_at` from an API) as the note's `created` field. Omitting it defaults to sync time, making all notes appear to have been created "just now"
 17. **❌ Using `this.run()` in `onChannelEnabled` to start sync** — `onChannelEnabled` runs synchronously inside the API request handler. Using `this.run()` (which executes inline) blocks the HTTP response until the entire sync completes, causing client timeouts. Always use `this.runTask()` to queue the initial sync as a separate execution so `onChannelEnabled` returns quickly
+18. **❌ Calling `integrations.saveLink()` from `onCreateLink`** — The platform wires the returned link to the user's originating thread. Calling `saveLink` yourself creates a duplicate thread. Just return the `NewLinkWithNotes`
+19. **❌ Forgetting to mark a status with `createDefault: true`** — Without it, Plot has no idea the link type opts in to Plot-initiated creation, so the "Create new X" entry never appears in the Add link modal. Declaring the marker is what opts a link type in, not implementing `onCreateLink` alone
 
 ## Study These Examples
 

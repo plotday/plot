@@ -17,7 +17,7 @@ import {
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
-import { Connector } from "@plotday/twister/connector";
+import { Connector, type CreateLinkDraft } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
   AuthProvider,
@@ -78,7 +78,12 @@ export class Linear extends Connector<Linear> {
       logoMono: "https://api.iconify.design/simple-icons/linear.svg",
       statuses: [
         { status: "backlog", label: "Backlog" },
-        { status: "unstarted", label: "To Do", todo: true },
+        {
+          status: "unstarted",
+          label: "To Do",
+          todo: true,
+          createDefault: true,
+        },
         { status: "started", label: "In Progress" },
         { status: "completed", label: "Done", tag: Tag.Done, done: true },
         { status: "cancelled", label: "Cancelled", done: true },
@@ -155,7 +160,9 @@ export class Linear extends Connector<Linear> {
           .map((s) => ({
             status: s.id,
             label: s.name,
-            ...(s.type === "unstarted" ? { todo: true as const } : {}),
+            ...(s.type === "unstarted"
+              ? { todo: true as const, createDefault: true as const }
+              : {}),
             ...(s.type === "completed"
               ? { tag: Tag.Done, done: true as const }
               : {}),
@@ -582,6 +589,71 @@ export class Linear extends Connector<Linear> {
     };
 
     return newLink;
+  }
+
+  /**
+   * Create a new Linear issue from a Plot thread. The `draft.channelId` is
+   * the Linear team id; `draft.status` is either a state UUID (from dynamic
+   * per-team linkTypes) or a state type category (from static fallback).
+   */
+  async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type !== "issue") return null;
+
+    const client = await this.getClient(draft.channelId);
+
+    // Resolve the status to a Linear state ID. resolveStateId needs an
+    // issueId to fall back through, so for the "category" case (non-UUID
+    // statuses from the static linkTypes fallback) we look up the team's
+    // states directly.
+    let stateId: string | null = null;
+    if (draft.status.length > 20) {
+      stateId = draft.status;
+    } else {
+      const team = await client.team(draft.channelId);
+      if (team) {
+        const states = await team.states();
+        stateId = states.nodes.find((s) => s.type === draft.status)?.id ?? null;
+      }
+    }
+
+    const issuePayload = await client.createIssue({
+      teamId: draft.channelId,
+      title: draft.title,
+      ...(draft.noteContent ? { description: draft.noteContent } : {}),
+      ...(stateId ? { stateId } : {}),
+    });
+
+    const issue = await issuePayload.issue;
+    if (!issue) return null;
+
+    const creator = await issue.creator;
+    const authorContact = this.resolveAuthorContact(creator ?? null);
+
+    const threadActions: Action[] = [];
+    if (issue.url) {
+      threadActions.push({
+        type: ActionType.external,
+        title: "Open in Linear",
+        url: issue.url,
+      });
+    }
+
+    return {
+      source: `linear:issue:${issue.id}`,
+      type: "issue",
+      title: issue.title,
+      status: draft.status,
+      created: issue.createdAt,
+      author: authorContact,
+      meta: {
+        linearId: issue.id,
+        projectId: draft.channelId,
+      },
+      actions: threadActions.length > 0 ? threadActions : undefined,
+      sourceUrl: issue.url ?? null,
+    };
   }
 
   /**
