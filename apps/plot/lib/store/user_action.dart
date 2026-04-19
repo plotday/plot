@@ -1,6 +1,15 @@
 part of 'store.dart';
 
-enum UserActionType { external, auth, callback, conferencing, file, thread, plan }
+enum UserActionType {
+  external,
+  auth,
+  callback,
+  conferencing,
+  file,
+  thread,
+  plan,
+  createLink,
+}
 
 enum ConferencingProvider { googleMeet, zoom, microsoftTeams, webex, other }
 
@@ -30,6 +39,8 @@ abstract class UserAction extends Equatable {
         return ThreadUserAction.fromJson(json);
       case UserActionType.plan:
         return PlanUserAction.fromJson(json);
+      case UserActionType.createLink:
+        return CreateLinkUserAction.fromJson(json);
     }
   }
 
@@ -329,6 +340,133 @@ class PlanUserAction extends UserAction {
 
   @override
   List<Object?> get props => [type, title, operations, callback];
+}
+
+/// Action attached to a thread draft requesting that a connector create a new
+/// item (e.g., a Linear issue) in its external system when the thread is
+/// synced. Stripped from the note once the real link arrives via sync.
+class CreateLinkUserAction extends UserAction {
+  const CreateLinkUserAction({
+    required this.twistInstanceId,
+    required this.channelId,
+    required this.linkType,
+    required this.status,
+    required this.connectorName,
+    required this.linkTypeLabel,
+    required this.channelName,
+    this.accountName,
+    this.logo,
+    this.logoDark,
+  }) : super(type: UserActionType.createLink);
+
+  final String twistInstanceId;
+  final String channelId;
+  final String linkType;
+  final String status;
+  /// Connector brand name (e.g. "Linear"), stripped of any " (account)"
+  /// suffix carried on the twist instance name.
+  final String connectorName;
+  /// Human-readable link type label (e.g. "Issue"). Lowercased at render.
+  final String linkTypeLabel;
+  /// Channel title (e.g. the Linear team name "Plot", or "My Tasks" for
+  /// Google Tasks).
+  final String channelName;
+  /// The account portion parsed out of the twist instance name (e.g. "Kris
+  /// Braun" from "Linear (Kris Braun)"). Null when the twist has no account
+  /// suffix.
+  final String? accountName;
+  final String? logo;
+  final String? logoDark;
+
+  /// Display for both the picker row and the note-editor attachment row.
+  ///
+  /// "Create new {connector} {linkType}" — linkType lowercased so the
+  /// sentence reads naturally.
+  String get title =>
+      'Create new $connectorName ${linkTypeLabel.toLowerCase()}';
+
+  /// "{channel}" or "{channel} ({account})" when an account is known.
+  String get subtitle =>
+      accountName == null ? channelName : '$channelName ($accountName)';
+
+  /// Splits a twist-instance name like "Linear (Kris Braun)" into
+  /// `(connectorName: "Linear", accountName: "Kris Braun")`. Falls back to
+  /// `(connectorName: name, accountName: null)` for names without the
+  /// trailing parenthetical.
+  static ({String connectorName, String? accountName}) parseTwistName(
+    String name,
+  ) {
+    final match = RegExp(r'^(.*) \(([^()]+)\)\s*$').firstMatch(name);
+    if (match != null) {
+      return (
+        connectorName: match.group(1)!,
+        accountName: match.group(2)!,
+      );
+    }
+    return (connectorName: name, accountName: null);
+  }
+
+  CreateLinkUserAction copyWith({String? status}) {
+    return CreateLinkUserAction(
+      twistInstanceId: twistInstanceId,
+      channelId: channelId,
+      linkType: linkType,
+      status: status ?? this.status,
+      connectorName: connectorName,
+      linkTypeLabel: linkTypeLabel,
+      channelName: channelName,
+      accountName: accountName,
+      logo: logo,
+      logoDark: logoDark,
+    );
+  }
+
+  factory CreateLinkUserAction.fromJson(Map<String, dynamic> json) {
+    return CreateLinkUserAction(
+      twistInstanceId: json['twistInstanceId'] as String,
+      channelId: json['channelId'] as String,
+      linkType: json['linkType'] as String,
+      status: json['status'] as String,
+      connectorName: json['connectorName'] as String,
+      linkTypeLabel: json['linkTypeLabel'] as String,
+      channelName: json['channelName'] as String,
+      accountName: json['accountName'] as String?,
+      logo: json['logo'] as String?,
+      logoDark: json['logoDark'] as String?,
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name,
+      'twistInstanceId': twistInstanceId,
+      'channelId': channelId,
+      'linkType': linkType,
+      'status': status,
+      'connectorName': connectorName,
+      'linkTypeLabel': linkTypeLabel,
+      'channelName': channelName,
+      if (accountName != null) 'accountName': accountName,
+      if (logo != null) 'logo': logo,
+      if (logoDark != null) 'logoDark': logoDark,
+    };
+  }
+
+  @override
+  List<Object?> get props => [
+    type,
+    twistInstanceId,
+    channelId,
+    linkType,
+    status,
+    connectorName,
+    linkTypeLabel,
+    channelName,
+    accountName,
+    logo,
+    logoDark,
+  ];
 }
 
 class UserActionsConverter extends TypeConverter<List<UserAction>?, String?>

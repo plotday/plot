@@ -367,6 +367,54 @@ class PriorityBloc extends Cubit<PriorityState> {
     );
   }
 
+  /// Optimistically remove an archived thread from the agenda and the
+  /// activity feed. When the user is viewing the archive (showArchived),
+  /// the thread stays in the feed and is just updated in place via
+  /// [optimisticallyUpdateThread].
+  void optimisticallyArchiveThread(Thread archivedThread) {
+    final id = archivedThread.id;
+    _pendingRemovedIds.add(id);
+    _optimisticTimestamp = DateTime.now();
+    _stickyUnreadIds.remove(id);
+
+    final updatedAgenda = state.agendaItems
+        .where(
+          (item) => item.when(
+            header: (_) => true,
+            activity: (a) => a.thread.id != id,
+          ),
+        )
+        .toList();
+
+    final updatedFeed = state.showArchived
+        ? state.activityFeedItems.map((item) {
+            return item.when(
+              header: (_) => item,
+              activity: (a) => a.thread.id == id
+                  ? AgendaThreadItem(archivedThread)
+                  : item,
+            );
+          }).toList()
+        : state.activityFeedItems
+            .where(
+              (item) => item.when(
+                header: (_) => true,
+                activity: (a) => a.thread.id != id,
+              ),
+            )
+            .toList();
+
+    emit(
+      state.copyWith(
+        thread: state.thread?.id == id
+            ? Value(archivedThread)
+            : const Value.absent(),
+        agendaItems: updatedAgenda,
+        activityFeedItems: updatedFeed,
+      ),
+    );
+  }
+
   /// Optimistically remove associated copies of a thread from the agenda.
   /// Non-associated copies (user-scheduled) are preserved.
   void optimisticallyDisassociate(ThreadId id) {
@@ -1237,6 +1285,26 @@ class PriorityBloc extends Cubit<PriorityState> {
   }) async {
     // Convert the draft to a non-draft
     final savedThread = thread.copyWith(draft: false);
+
+    // If the draft note carries a CreateLinkUserAction, stash a pending
+    // create_link payload so ThreadsBase.toBase spreads it into the thread
+    // push body. The server dispatches to the connector's onCreateLink once
+    // the thread is titled and persisted.
+    final createAction = note?.actions
+        ?.whereType<CreateLinkUserAction>()
+        .firstOrNull;
+    if (createAction != null) {
+      ThreadsBase.pendingCreateLinks[savedThread.id.toString()] = {
+        'create_link': {
+          'twist_instance_id': createAction.twistInstanceId,
+          'channel_id': createAction.channelId,
+          'type': createAction.linkType,
+          'status': createAction.status,
+        },
+        if (note?.content != null) 'note_content': note!.content,
+      };
+    }
+
     await savedThread.save();
 
     // Convert draft note to published if provided

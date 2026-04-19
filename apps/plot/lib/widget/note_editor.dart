@@ -14,6 +14,10 @@ import 'package:plot/util/image_utils.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/state/theme.dart' show ThemeBloc;
+import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
+import 'package:plot/style/plot_colors.dart';
+import 'package:plot/style/plot_icon_sizes.dart';
 import 'logging.dart';
 
 class NoteEditor extends StatefulWidget {
@@ -597,10 +601,19 @@ class NoteEditorState extends State<NoteEditor> {
         .where(
           (a) =>
               a.type == UserActionType.file ||
-              a.type == UserActionType.external,
+              a.type == UserActionType.external ||
+              a.type == UserActionType.createLink,
         )
         .toList();
     if (attachments.isEmpty) return const SizedBox.shrink();
+
+    // Render create-link rows first so the "new link being created" is
+    // visually prominent.
+    attachments.sort((a, b) {
+      final aCreate = a is CreateLinkUserAction ? 0 : 1;
+      final bCreate = b is CreateLinkUserAction ? 0 : 1;
+      return aCreate.compareTo(bCreate);
+    });
 
     return Padding(
       padding: const EdgeInsets.only(left: 6, right: 6),
@@ -614,6 +627,8 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Widget _buildAttachmentRow(UserAction action) {
+    if (action is CreateLinkUserAction) return _buildCreateLinkRow(action);
+
     final Widget icon;
     final String label;
 
@@ -658,6 +673,158 @@ class NoteEditorState extends State<NoteEditor> {
         ],
       ),
     );
+  }
+
+  /// Row for a `CreateLinkUserAction`: connector logo, "Create new [Type]
+  /// (account)", trailing ghost-button status selector, then remove button.
+  Widget _buildCreateLinkRow(CreateLinkUserAction action) {
+    final isDark = context.read<ThemeBloc>().isDarkMode(context);
+    final logo = isDark ? (action.logoDark ?? action.logo) : action.logo;
+
+    // Resolve the link type config to source status options. Channel-level
+    // statuses take precedence for the picker, but the current status may be
+    // a twist-level default (e.g. a category like "unstarted" when the
+    // channel stores state UUIDs from a stale sync) so the label lookup
+    // consults both.
+    final twist = TwistInstance.fromCache(
+      TwistInstanceId.fromString(action.twistInstanceId),
+    );
+    final channel = Channel.findByChannel(
+      TwistInstanceId.fromString(action.twistInstanceId),
+      action.channelId,
+    );
+    final channelType = channel?.parsedLinkTypes
+        ?.where((c) => c.type == action.linkType)
+        .firstOrNull;
+    final twistType = twist?.parsedLinkTypes
+        ?.where((c) => c.type == action.linkType)
+        .firstOrNull;
+    final statuses = (channelType?.statuses?.isNotEmpty ?? false)
+        ? channelType!.statuses!
+        : (twistType?.statuses ?? const <LinkStatus>[]);
+    final currentStatusLabel = (channelType?.statuses ?? const <LinkStatus>[])
+            .where((s) => s.status == action.status)
+            .firstOrNull
+            ?.label ??
+        (twistType?.statuses ?? const <LinkStatus>[])
+            .where((s) => s.status == action.status)
+            .firstOrNull
+            ?.label ??
+        action.status;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: logo != null
+                ? LogoImage(
+                    url: logo,
+                    size: 16,
+                    fallback: Icon(
+                      PlotIcon.link,
+                      size: 12,
+                      color: context.colour.muted,
+                    ),
+                  )
+                : Icon(PlotIcon.link, size: 12, color: context.colour.muted),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: RichText(
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                style: context.theme.typography.xs.copyWith(
+                  color: context.colour.muted,
+                ),
+                children: [
+                  TextSpan(text: action.title),
+                  TextSpan(
+                    text: '  ${action.subtitle}',
+                    style: TextStyle(
+                      color: context.theme.plotColors.veryMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (statuses.isNotEmpty) ...[
+            FButton(
+              onPress: () => _pickCreateLinkStatus(action, statuses),
+              variant: FButtonVariant.ghost,
+              style: ghostSizedStyleDelta(
+                context,
+                textStyle: context.theme.typography.xs,
+              ),
+              mainAxisSize: MainAxisSize.min,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 4,
+                children: [
+                  Text(currentStatusLabel),
+                  Icon(
+                    PlotIcon.verticalExpand,
+                    size: context.theme.iconSizes.xs,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _removeAttachment(action),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Icon(
+                FontAwesomeIcons.xmark,
+                size: 12,
+                color: context.colour.muted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickCreateLinkStatus(
+    CreateLinkUserAction action,
+    List<LinkStatus> statuses,
+  ) async {
+    final result = await SelectModal.open<LinkStatus>(
+      context,
+      items: (_) async => [SelectGroup(title: null, items: statuses)],
+      itemBuilder: (s, _) => ListTile(
+        body: Text(s.label),
+        selected: s.status == action.status,
+      ),
+      selectedValue: statuses
+          .where((s) => s.status == action.status)
+          .firstOrNull,
+      prompt: 'Select status',
+    );
+    if (!result.present || !mounted) return;
+    final newStatus = result.value;
+    final updatedAction = action.copyWith(status: newStatus.status);
+    final currentActions = widget.draft.actions ?? const [];
+    final updatedActions = currentActions
+        .map((a) => identical(a, action) ? updatedAction : a)
+        .toList();
+    if (widget.isNewThreadMode) {
+      widget.onDraftChanged!(
+        widget.thread!,
+        note: widget.draft.copyWith(actions: updatedActions),
+      );
+    } else {
+      context
+          .read<ThreadBloc>()
+          .updateDraft(widget.draft.copyWith(actions: updatedActions));
+    }
   }
 
   void _removeAttachment(UserAction action) {

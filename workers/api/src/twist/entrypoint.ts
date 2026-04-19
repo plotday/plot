@@ -682,6 +682,16 @@ export default class extends WorkerEntrypoint {
     }
   }
 
+  // IMPORTANT: This method and callCallback both process dispatch results
+  // (the { sourceMethod, forwardTo, deferredNoteKeyUpdate, ... } shapes that
+  // a tool's dispatch() returns). They must stay in sync. When a built-in
+  // tool (e.g. Integrations) adds a NEW dispatch field — forwardTo variants,
+  // new deferred* hooks, etc. — you MUST mirror the handling into BOTH
+  // functions, or callbacks routed through one path silently no-op.
+  // Existing fields: sourceMethod, optionPath, args, forwardTo,
+  // deferredTagRemoval, deferredNoteKeyUpdate. Grep each to verify.
+  // (No backticks in this file — it is consumed as a template literal; see
+  // the escaped \` usages in console.debug below.)
   async dispatchToTool(twistInit, paths, optionPath, ...args) {
     console.debug(\`[TWIST_CONTEXT] twistInstanceId=\${twistInit.twistInstanceId}\`);
     let tools;
@@ -710,6 +720,17 @@ export default class extends WorkerEntrypoint {
               if (typeof method === 'function') {
                 try {
                   const cbResult = await method.call(twist, ...callbackInfo.args);
+
+                  // forwardTo: pass the twist method's result into a built-in tool
+                  // callback (e.g. onCreateLink → saveCreatedLink). Mirrors the
+                  // forwardTo handling in callCallback above.
+                  if (callbackInfo.forwardTo && typeof tool.callCallback === 'function') {
+                    await tool.callCallback(
+                      callbackInfo.forwardTo.functionName,
+                      ...callbackInfo.forwardTo.prependArgs,
+                      cbResult
+                    );
+                  }
 
                   // If onNoteCreated returned a note key, update the note's key for future upsert matching
                   if (callbackInfo.deferredNoteKeyUpdate && typeof cbResult === 'string') {

@@ -515,6 +515,138 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Attaches a connector-returned link to an existing user-created thread.
+   * Used by the `create_link` dispatch path: the user authored the thread in
+   * Plot, the connector's `onCreateLink` created the external item, and the
+   * runtime now links the two. Unlike `saveLink`, this never creates a new
+   * thread — the thread already exists.
+   *
+   * Called as a `forwardTo` target. The `defaultChannelId` and `defaultType`
+   * come from the originating `CreateLinkDraft` and are applied when the
+   * connector omitted them on its returned link — this keeps downstream
+   * rendering (status label lookup via channel-level `linkTypes`, etc.)
+   * working without requiring every connector to remember to echo these
+   * fields.
+   */
+  async saveCreatedLink(
+    threadId: Uuid,
+    defaultChannelId: string,
+    defaultType: string,
+    link: NewLinkWithNotes | null
+  ): Promise<void> {
+    if (!link) return;
+
+    // Apply runtime defaults so the connector's return value stays focused on
+    // external-system fields (external id, title, status, etc.).
+    if (link.channelId === undefined || link.channelId === null) {
+      (link as any).channelId = defaultChannelId;
+    }
+    if (link.type === undefined || link.type === null) {
+      (link as any).type = defaultType;
+    }
+
+    // Look up twist_id so the thread can carry the connector branding and
+    // participate in cross-user dedup if the same external item is seen
+    // again via sync.
+    const ptRow = await this.db
+      .selectFrom("twist_instance")
+      .select("twist_id")
+      .where("id", "=", this.twistInstanceId)
+      .executeTakeFirst();
+
+    const updatedBy = -1; // twist-originated write
+    const syncDepth = 1;
+
+    const source = (link as any).source as string | undefined;
+    const sourceCreatedAt = link.created instanceof Date
+      ? link.created.toISOString()
+      : (typeof link.created === "string" ? link.created : new Date().toISOString());
+
+    // Update the thread row with twist_id, icon, and (if the link has a
+    // source) a dedup key so future syncs upsert this thread instead of
+    // creating a duplicate. Preserve the user-set title.
+    if (ptRow) {
+      const threadUpdate: Record<string, unknown> = {
+        twist_id: ptRow.twist_id,
+        icon: link.type
+          ? `connector:${ptRow.twist_id}:${link.type}`
+          : `connector:${ptRow.twist_id}`,
+      };
+      if (source) threadUpdate.key = link.relatedSource ?? source;
+      await this.db
+        .updateTable("thread")
+        .set(threadUpdate as any)
+        .where("id", "=", threadId as string)
+        .execute();
+    }
+
+    const linkDefaults: Record<string, unknown> = {
+      thread_id: threadId as string,
+      created_by: this.twistInstanceId,
+      author_id: this.twistInstanceId,
+      updated_by: updatedBy,
+      sync_depth: syncDepth,
+      source_created_at: sourceCreatedAt,
+      title: link.title ?? null,
+      type: link.type ?? null,
+      status: link.status ?? null,
+      actions: (link.actions ?? null) as Json | null,
+      meta: (link.meta ?? null) as Json | null,
+      source_url: link.sourceUrl ?? null,
+      channel_id: link.channelId ?? null,
+    };
+
+    if (source) {
+      const linkUpsert: Record<string, unknown> = {
+        source,
+        thread_id: threadId as string,
+        updated_by: updatedBy,
+        sync_depth: syncDepth,
+      };
+      if (link.title !== undefined) linkUpsert.title = link.title;
+      if (link.type !== undefined) linkUpsert.type = link.type;
+      if (link.status !== undefined) linkUpsert.status = link.status;
+      if (link.meta !== undefined) linkUpsert.meta = link.meta as Json | null;
+      if (link.actions !== undefined) linkUpsert.actions = link.actions as Json | null;
+      if (link.sourceUrl !== undefined) linkUpsert.source_url = link.sourceUrl;
+      if (link.channelId !== undefined) linkUpsert.channel_id = link.channelId;
+      if (link.relatedSource !== undefined) linkUpsert.related_source = link.relatedSource;
+
+      const userId = await this.getPlot().getUserId();
+      await rpcUser(this.db, "upsert_link", {
+        user_id: userId,
+        p_link: linkUpsert as Json,
+        p_defaults: linkDefaults as Json,
+      });
+    } else {
+      await this.db
+        .insertInto("link")
+        // @ts-ignore - Type mismatch between builder and actual values
+        .values(linkDefaults)
+        .execute();
+    }
+
+    // Propagate status tags, create task schedule for assignee, and notify.
+    const plot = this.getPlot();
+    await this.propagateLinkStatusTags(plot, threadId);
+    await this.createTaskScheduleForLink(threadId);
+
+    // Notify sync DOs so the user sees the link appear.
+    try {
+      const tp = await this.db
+        .selectFrom("thread_priority")
+        .select("priority_id")
+        .where("thread_id", "=", threadId as string)
+        .executeTakeFirst();
+      if (tp?.priority_id) {
+        await plot.notifySyncDOs(new Set([tp.priority_id]));
+      }
+    } catch (error) {
+      console.error("[saveCreatedLink] notifySyncDOs failed:", error);
+    }
+  }
+
+  /**
    * Extracts the most relevant date from a link for sync history filtering.
    * Uses the first schedule's start time (for calendar events) or the
    * link's created date as fallback.
@@ -960,7 +1092,7 @@ export class Integrations extends Tool implements IAuth {
 
   async dispatch(
     dispatchItem: any
-  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; deferredTagRemoval?: { noteId: string; actorId: string }; deferredNoteKeyUpdate?: { noteId: string } }>> {
+  ): Promise<Array<{ optionPath?: string[]; sourceMethod?: string; args: any[]; forwardTo?: { functionName: string; prependArgs: any[] }; deferredTagRemoval?: { noteId: string; actorId: string }; deferredNoteKeyUpdate?: { noteId: string } }>> {
     // Handle note dispatch for connectors with handleReplies — when a user
     // replies to a thread the connector created, the connector is auto-mentioned
     // but there's no Plot tool to handle intent matching or tag removal.
@@ -1241,6 +1373,44 @@ export class Integrations extends Tool implements IAuth {
         sourceMethod: "onScheduleContactUpdated",
         args: [thread, item.schedule_id, item.contact_id, item.status ?? null, actor],
       }];
+    }
+
+    // Handle create_link dispatch — user authored a thread in Plot marked to
+    // create a new external item. Route to the connector's onCreateLink and
+    // forward the returned link to saveCreatedLink to attach it to the
+    // originating thread.
+    if (dispatchItem?.itemType === "create_link" && this.sourceProvider) {
+      const { threadId, draft } = dispatchItem as {
+        threadId: string;
+        draft: {
+          channelId: string;
+          type: string;
+          status: string;
+          title: string;
+          noteContent: string | null;
+          contacts: Array<{
+            id: string;
+            type: string;
+            email: string | null;
+            name: string | null;
+          }>;
+        };
+      };
+      if (!threadId || !draft) return [];
+      // Pass the draft's channelId and type through forwardTo so
+      // saveCreatedLink can default them on the returned link if the
+      // connector omitted them. That way connectors don't have to remember
+      // to echo channelId/type on every onCreateLink return — status label
+      // resolution and other channel-scoped rendering would silently fail
+      // otherwise.
+      return [{
+        sourceMethod: "onCreateLink",
+        args: [draft],
+        forwardTo: {
+          functionName: "saveCreatedLink",
+          prependArgs: [threadId, draft.channelId, draft.type],
+        },
+      } as any];
     }
 
     if (dispatchItem?.itemType !== "link" && dispatchItem?.itemType !== "channel_link") return [];

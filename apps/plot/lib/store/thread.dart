@@ -211,6 +211,15 @@ class ThreadsBase extends BaseTable {
   /// consumed and cleared during push.
   static final Set<String> autoFileIds = {};
 
+  /// Pending create-link payloads keyed by thread id. Populated when the user
+  /// picks "Create new X" in the Add link modal. On push, the payload is
+  /// spread into the thread row body so the server can dispatch to the
+  /// connector's onCreateLink after the thread is upserted and titled.
+  ///
+  /// Shape: `{ 'create_link': { twist_instance_id, channel_id, type, status },
+  ///          'note_content': String | null }`.
+  static final Map<String, Map<String, dynamic>> pendingCreateLinks = {};
+
   @override
   Map<String, String> buildParams({
     DateTime? updatedSince,
@@ -331,6 +340,15 @@ class ThreadsBase extends BaseTable {
     final id = json['id']?.toString();
     if (id != null && autoFileIds.remove(id)) {
       json['auto_file'] = true;
+    }
+
+    // Attach connector create-link payload if set. Consumed once so resending
+    // the thread (e.g. retry) does not re-trigger item creation.
+    if (id != null) {
+      final pending = pendingCreateLinks.remove(id);
+      if (pending != null) {
+        json.addAll(pending);
+      }
     }
 
     // Convert invite_emails from stored string to JSON array for the API,

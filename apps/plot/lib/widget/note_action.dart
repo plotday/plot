@@ -108,6 +108,9 @@ class NoteActionWidget extends StatelessWidget {
           plan: link as PlanUserAction,
           note: note,
         );
+      case UserActionType.createLink:
+        // Rendered inline by NoteEditor's attachment row; invisible elsewhere.
+        return const SizedBox.shrink();
     }
   }
 }

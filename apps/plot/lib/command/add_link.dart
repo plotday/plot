@@ -11,15 +11,15 @@ class AddLink extends Command {
     required this.onActionsChanged,
     this.onNavigateToThread,
   }) : super(
-          title: 'Add link',
-          eventObject: EventObject.note,
-          eventAction: EventAction.added,
-          icon: PlotIcon.link,
-          shortcut: platformSingleActivator(
-            LogicalKeyboardKey.keyL,
-            shift: true,
-          ),
-        );
+         title: 'Add link',
+         eventObject: EventObject.note,
+         eventAction: EventAction.added,
+         icon: PlotIcon.link,
+         shortcut: platformSingleActivator(
+           LogicalKeyboardKey.keyL,
+           shift: true,
+         ),
+       );
 
   final List<UserAction> currentActions;
   final void Function(List<UserAction> actions) onActionsChanged;
@@ -32,6 +32,15 @@ class AddLink extends Command {
 
     if (result.isThread) {
       onNavigateToThread?.call(result.existingThread!);
+      return const CommandDone();
+    }
+
+    if (result.isCreateAction) {
+      // Only one create-link action per thread; replace any existing one.
+      final filtered = currentActions
+          .where((a) => a is! CreateLinkUserAction)
+          .toList();
+      onActionsChanged([result.createAction!, ...filtered]);
       return const CommandDone();
     }
 

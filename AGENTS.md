@@ -532,3 +532,17 @@ When adding or updating connector logos in `apps/site/app/data/connections.ts`:
 - **Never ignore database errors** in the API. Use `safeQuery()` from `@plotday/db` which throws a `DbError` if the query fails. Never use fire-and-forget patterns like `await supabase.from(...).insert(...)` without checking the result.
 - **Report unexpected errors to PostHog error tracking.** Any catch block handling an unexpected error must call `captureException`. In the Flutter app, use `Tracker.captureException(error, stackTrace)`. In TypeScript workers, use `tracker.captureException(error)` (or `postHog.captureException(error, distinctId)` when no tracker is available). Do NOT report expected/handled errors like network timeouts, auth failures the user will see, or validation errors — only unexpected failures that indicate bugs or system issues.
 - **`withUserDb` already opens a transaction.** Its callback receives a `Kysely<DB>` handle that is the transaction — use it directly (e.g. `sql\`...\`.execute(trx)` or `rpc(trx, ...)`). Do NOT call `trx.transaction().execute(...)` inside the callback; Kysely rejects nested transactions with "calling the transaction method for a Transaction is not supported". For multi-step mutations, put all statements in one `withUserDb` block for atomicity.
+- **When adding a new dispatch shape on a built-in tool, update BOTH `callCallback` and `dispatchToTool` in `workers/api/src/twist/entrypoint.ts`.** A tool's `dispatch()` returns `{ sourceMethod, forwardTo, deferredTagRemoval, deferredNoteKeyUpdate, ... }` entries. `callCallback` and `dispatchToTool` each process those entries independently. Adding a field to one handler but not the other makes callbacks routed through the other path silently no-op (e.g. `forwardTo` was missing from `dispatchToTool`, so `onCreateLink` ran but `saveCreatedLink` never fired and the returned link was dropped). The top of `dispatchToTool` has the authoritative list of recognized fields — keep it current.
+- **`workers/api/src/twist/entrypoint.ts` is consumed as a template literal.** All backticks in that file must be written as `\`` (escaped). Raw backticks break the esbuild bundle with `Expected ";" but found ...` and the connector deploy fails.
+- **Never use `c.var.db` inside `c.executionCtx.waitUntil(...)`.** The request-scoped Kysely connection is destroyed once the handler returns, and any later query throws `driver has already been destroyed`. Open a fresh connection inside the background task and destroy it in `finally`:
+  ```ts
+  c.executionCtx.waitUntil((async () => {
+    const db = createDb(c.env);
+    try {
+      // ...use `db` here...
+    } finally {
+      await db.destroy();
+    }
+  })());
+  ```
+  Also snapshot any values you need from `c.var` / request body into locals before the `waitUntil` — the Hono `c` object itself is safe to reference by closure, but don't assume per-request resources on it outlive the response. See `workers/api/src/app/sync/links.ts` for the canonical pattern.

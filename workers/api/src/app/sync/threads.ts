@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { sql, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpc, rpcUser } from "../../rpc";
 import { checkAiLimit, recordAiUsage } from "../../utils/ai-limits";
@@ -12,6 +12,7 @@ import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { createLogger } from "@plotday/worker-util";
 import { sendInvitation } from "../invitation";
 import { notifySync } from "./notify";
+import { twistFactory } from "../../twist/factory";
 
 const threads = new Hono<{ Bindings: Bindings }>();
 
@@ -130,6 +131,20 @@ threads.get("/sync/threads", async (c) => {
 threads.post("/sync/threads", async (c) => {
   const body = await c.req.json();
 
+  // Capture create-link fields before they're stripped. `threadData` can be
+  // the same reference as `body` (when the client sends a flat body with no
+  // `thread` wrapper), so a later `delete threadData.create_link` would
+  // also clear `body.create_link` if we didn't snapshot here.
+  const createLinkSpec = body.create_link as
+    | {
+        twist_instance_id?: string;
+        channel_id?: string;
+        type?: string;
+        status?: string;
+      }
+    | undefined;
+  const noteContent = (body.note_content as string | null | undefined) ?? null;
+
   const threadData = body.thread || body;
 
   if (threadData.title && typeof threadData.title === "string") {
@@ -194,6 +209,10 @@ threads.post("/sync/threads", async (c) => {
   // by upsert_thread and the peer-promotion logic.
   delete threadData.twist_id;
   delete threadData.pending_contacts;
+  // create_link and note_content are client→server control fields for the
+  // connector-backed create-new-item flow; they are not thread columns.
+  delete threadData.create_link;
+  delete threadData.note_content;
 
   // Translate legacy `topics` field (apiVersion < 3) to `groups` so
   // upsert_thread sees the new shape. If both are present, `groups` wins.
@@ -306,6 +325,95 @@ threads.post("/sync/threads", async (c) => {
   }
 
   notifySync(c, threadData.priority_id);
+
+  // Dispatch to connector to create a new external item when the client
+  // requested it. Fire-and-forget via waitUntil so the thread response
+  // returns immediately — the link will appear via sync once the connector
+  // responds.
+  if (
+    createLinkSpec?.twist_instance_id &&
+    createLinkSpec.channel_id &&
+    createLinkSpec.type &&
+    createLinkSpec.status &&
+    result &&
+    threadData.draft !== true
+  ) {
+    // Snapshot thread fields needed inside waitUntil — `c.var.db` is torn
+    // down once the response returns, so we spin up a fresh connection.
+    const dispatchContactIds: string[] = Array.isArray(threadData.contacts)
+      ? (threadData.contacts as string[])
+      : [];
+    const dispatchTitle = threadData.title as string;
+    const dispatchThreadId = result.id;
+
+    c.executionCtx.waitUntil(
+      (async () => {
+        const db = createDb(c.env);
+        try {
+          // Resolve the thread's contacts into Actor rows for the connector,
+          // excluding every contact linked to the creating user so the author
+          // isn't passed as a recipient.
+          const contacts: Array<{ id: string; type: "contact" | "user"; email: string | null; name: string | null }> = [];
+          if (dispatchContactIds.length > 0) {
+            const rows = await db
+              .selectFrom("contact as c")
+              .leftJoin("user_contact as uc", (join) =>
+                join
+                  .onRef("uc.contact_id", "=", "c.id")
+                  .on("uc.user_id", "=", userId)
+                  .on("uc.linked", "=", true)
+                  .on("uc.archived_at", "is", null)
+              )
+              .select([
+                "c.id",
+                "c.email",
+                "c.name",
+                "uc.user_id as linked_user_id",
+              ])
+              .where("c.id", "in", dispatchContactIds)
+              .execute();
+            for (const row of rows) {
+              if (row.linked_user_id) continue;
+              contacts.push({
+                id: row.id,
+                type: "contact",
+                email: row.email ?? null,
+                name: row.name ?? null,
+              });
+            }
+          }
+
+          const draft = {
+            channelId: createLinkSpec.channel_id!,
+            type: createLinkSpec.type!,
+            status: createLinkSpec.status!,
+            title: dispatchTitle,
+            noteContent,
+            contacts,
+          };
+
+          const factory = twistFactory({
+            env: c.env,
+            ctx: c.executionCtx as any,
+            db,
+          });
+          const wrapper = await factory({
+            twistInstanceId: createLinkSpec.twist_instance_id!,
+          });
+          await wrapper.dispatch("Integrations", {
+            itemType: "create_link",
+            threadId: dispatchThreadId,
+            draft,
+          });
+        } catch (error) {
+          console.error("[sync/threads] create_link dispatch failed:", error);
+          c.var.tracker.captureException(error as Error);
+        } finally {
+          await db.destroy();
+        }
+      })()
+    );
+  }
 
   return c.json(result as any);
 });

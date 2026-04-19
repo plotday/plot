@@ -47,6 +47,11 @@ class LinkStatus {
   final int? tag;
   final bool done;
   final bool todo;
+  /// When true, this status is the default applied to items created via the
+  /// connector's `onCreateLink`. At most one status per link type should
+  /// set this. A link type opts in to Plot-initiated creation by declaring
+  /// at least one status with `createDefault: true`.
+  final bool createDefault;
 
   const LinkStatus({
     required this.status,
@@ -54,6 +59,7 @@ class LinkStatus {
     this.tag,
     this.done = false,
     this.todo = false,
+    this.createDefault = false,
   });
 
   factory LinkStatus.fromJson(Map<String, dynamic> json) {
@@ -63,6 +69,9 @@ class LinkStatus {
       tag: json['tag'] as int?,
       done: json['done'] as bool? ?? false,
       todo: json['todo'] as bool? ?? false,
+      createDefault: json['createDefault'] as bool? ??
+          json['create_default'] as bool? ??
+          false,
     );
   }
 }

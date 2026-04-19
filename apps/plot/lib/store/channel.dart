@@ -73,7 +73,10 @@ class Channel extends Equatable {
   }
 
   static Future<void> pull() async {
+    // Without the update pull, Store.pull(initial: true) short-circuits
+    // after the first run and new/updated channels never reach the client.
     await Store.get.pull(Store.get.channels, ChannelsBase(), initial: true);
+    await Store.get.pull(Store.get.channels, ChannelsBase());
     // Refresh cache after pull
     final rows = await Store.get.select(Store.get.channels).get();
     _cache.clear();
@@ -126,6 +129,18 @@ class Channel extends Equatable {
     final rows = await (Store.get.select(Store.get.channels)
           ..where((sc) => sc.twistInstanceId.equals(ptId.toBytes()))
           ..where((sc) => sc.enabled.equals(true)))
+        .get();
+    final channels = rows.map((row) => Channel(row)).toList();
+    populateCache(channels);
+    return channels;
+  }
+
+  /// Get every enabled channel across all connections for the current user.
+  /// Ordered by connection title then channel title for stable picker display.
+  static Future<List<Channel>> getAllEnabled() async {
+    final rows = await (Store.get.select(Store.get.channels)
+          ..where((sc) => sc.enabled.equals(true))
+          ..orderBy([(sc) => OrderingTerm.asc(sc.title)]))
         .get();
     final channels = rows.map((row) => Channel(row)).toList();
     populateCache(channels);
