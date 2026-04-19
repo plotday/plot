@@ -1,14 +1,5 @@
--- Ensures a user has their own root priority. Idempotent — safe to call
--- multiple times. In the per-user model the root is just a priority
--- with nlevel(path) = 1 and user_id = the user, so we don't touch
--- priority_user at all.
-CREATE OR REPLACE FUNCTION public.activate_invited_user (
-    p_user_id uuid
-)
-    RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $function$
+-- Modify "activate_invited_user" function
+CREATE OR REPLACE FUNCTION "public"."activate_invited_user" ("p_user_id" uuid) RETURNS jsonb LANGUAGE plpgsql SET "search_path" = public AS $$
 DECLARE
     c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001';
     c_twist_package_id   CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
@@ -191,4 +182,131 @@ We''d love to know what brought you to Plot and what you''re hoping to make prog
 
     RETURN jsonb_build_object('activated', TRUE, 'already_active', FALSE, 'root_priority_id', v_root_priority_id);
 END;
-$function$;
+$$;
+
+-- Data migration: rename the existing shared welcome onboarding thread so
+-- it no longer collides with the new per-user welcome's title. Scope by
+-- twist_id to target only the system-authored onboarding thread.
+UPDATE public.thread
+SET title = 'Everything in its place'
+WHERE key = 'welcome'
+  AND twist_id = (
+    SELECT id FROM public.twist
+    WHERE twist_package_id = '0199b6f4-ae64-7718-8a02-44716f30358f'::uuid
+      AND environment = 'public'
+    LIMIT 1
+  )
+  AND title <> 'Everything in its place';
+
+-- Data migration: backfill welcome-user thread for existing users who
+-- already have an @plot.app priority but no welcome-user thread filed
+-- into it. Mirrors the new seeding in activate_invited_user so a fresh
+-- environment and an existing one reach the same state.
+DO $$
+DECLARE
+    c_system_instance_id CONSTANT uuid := '0199b6f4-ae64-7718-0000-000000000001';
+    c_twist_package_id   CONSTANT uuid := '0199b6f4-ae64-7718-8a02-44716f30358f';
+    v_plot_team_group_id uuid;
+    v_plot_twist_id      bigint;
+    r                    RECORD;
+    v_user_contact_id    uuid;
+    v_welcome_thread_id  uuid;
+BEGIN
+    SELECT COALESCE(
+        (
+            SELECT g.id FROM public.group g
+            JOIN public.team t ON t.id = g.team_id
+            WHERE g.auto_maintained = TRUE
+              AND g.auto_team_admin_team_id IS NULL
+              AND t.name = 'Plot'
+            LIMIT 1
+        ),
+        (
+            SELECT g.id FROM public.group g
+            WHERE g.auto_maintained = TRUE
+              AND g.auto_publisher_id = (SELECT id FROM public.publisher WHERE name = 'Plot' LIMIT 1)
+            LIMIT 1
+        )
+    ) INTO v_plot_team_group_id;
+
+    IF v_plot_team_group_id IS NULL THEN
+        RETURN;
+    END IF;
+
+    SELECT id INTO v_plot_twist_id
+    FROM public.twist
+    WHERE twist_package_id = c_twist_package_id
+      AND environment = 'public'
+    LIMIT 1;
+
+    IF NOT EXISTS (SELECT 1 FROM public.twist_instance WHERE id = c_system_instance_id) THEN
+        RETURN;
+    END IF;
+
+    FOR r IN
+        SELECT p.id AS priority_id, p.user_id
+        FROM public.priority p
+        WHERE p.key = '@plot.app'
+          AND p.archived_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM public.thread t
+              JOIN public.thread_priority tp ON tp.thread_id = t.id
+              WHERE t.key = 'welcome-user'
+                AND tp.user_id = p.user_id
+                AND t.archived_at IS NULL
+          )
+    LOOP
+        SELECT contact_id INTO v_user_contact_id
+        FROM public.user_contact
+        WHERE user_id = r.user_id
+          AND "primary" = TRUE
+          AND linked = TRUE
+          AND archived_at IS NULL
+        LIMIT 1;
+
+        -- twist_id is intentionally NULL: welcome-user is a per-user thread
+        -- and must not participate in cross-user (twist_id, key) dedup. The
+        -- twist_instance_id in created_by is what makes this "twist-authored"
+        -- for peer-filing purposes; icon preserves the visual attribution.
+        INSERT INTO public.thread (created_by, icon, title, preview, key, topic, contacts, groups)
+        VALUES (
+            c_system_instance_id,
+            CASE WHEN v_plot_twist_id IS NOT NULL THEN 'twist:' || v_plot_twist_id::text END,
+            'Welcome to Plot!',
+            'We''re glad something brought you here.',
+            'welcome-user',
+            'priority:@plot.app:welcome-user',
+            CASE
+                WHEN v_user_contact_id IS NOT NULL THEN ARRAY[v_user_contact_id]
+                ELSE ARRAY[]::uuid[]
+            END,
+            ARRAY[v_plot_team_group_id]
+        )
+        RETURNING id INTO v_welcome_thread_id;
+
+        INSERT INTO public.thread_priority (thread_id, user_id, priority_id)
+        VALUES (v_welcome_thread_id, r.user_id, r.priority_id)
+        ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
+
+        INSERT INTO public.thread_unread (user_id, thread_id, urgency, importance)
+        VALUES (r.user_id, v_welcome_thread_id, 'inform-updates', 50)
+        ON CONFLICT (user_id, thread_id) DO NOTHING;
+
+        INSERT INTO public.schedule (thread_id, user_id, "order", reason, "on")
+        VALUES (v_welcome_thread_id, r.user_id, 50, 'add', daterange('1970-01-01', NULL))
+        ON CONFLICT (thread_id, user_id) WHERE user_id IS NOT NULL AND occurrence IS NULL DO NOTHING;
+
+        INSERT INTO public.note (author_id, created_by, thread_id, source_created_at, content)
+        VALUES (
+            c_system_instance_id,
+            c_system_instance_id,
+            v_welcome_thread_id,
+            now(),
+'We''re glad something brought you here. Maybe it''s a project you''re ready to move on, a team you want to work with more clearly, or a sense that more is possible when you direct your best energy into your most important work. We''ve seen too much initiative absorbed by the overhead of modern work — tools built to move us faster that often leave us so busy and scattered that real progress slows to a crawl.
+
+We''re building Plot for a different way of working, one where you choose your focus and have what you need to make progress. We believe human initiative, creativity, and wisdom are what drives meaningful work forward, and technology should create the space for them to thrive.
+
+We''d love to know what brought you to Plot and what you''re hoping to make progress on. Tell us what you''re trying to achieve, where you''re stuck, or what''s not quite working yet. We read every reply and shape Plot through what we''re learning together.'
+        );
+    END LOOP;
+END $$;
