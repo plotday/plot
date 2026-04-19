@@ -252,8 +252,9 @@ twist.post("/twist/generate", async (c) => {
 twist.get("/twist/:id", async (c) => {
   const twistPackageId = c.req.param("id");
   const userToken = c.var.userToken;
+  const publisherToken = c.var.publisherToken;
 
-  if (!userToken) {
+  if (!userToken && !publisherToken) {
     return new Response("Unauthorized", { status: 401 });
   }
 
