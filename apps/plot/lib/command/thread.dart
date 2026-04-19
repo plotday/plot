@@ -1912,13 +1912,17 @@ Future<Commands> _buildSharedCommands(
   }
 
   // Self should always appear in the shared list. If not already present
-  // (legacy threads, or thread authored before self was added), prepend.
+  // (legacy threads, or thread authored before self was added), prepend the
+  // user's primary contact actor — Actor.getCurrentUserActorIds() returns
+  // every linked contact in non-deterministic cache order, so picking
+  // .first there can surface a secondary email (e.g. work alias) instead
+  // of the primary one.
   final selfIndex = sharedActors.indexWhere((a) => a.self);
   if (selfIndex < 0) {
-    final selfIds = Actor.getCurrentUserActorIds();
-    if (selfIds.isNotEmpty) {
+    final primarySelfId = Base.actorIdOrNull;
+    if (primarySelfId != null) {
       try {
-        final selfActor = await Actor.getOne(selfIds.first);
+        final selfActor = await Actor.getOne(primarySelfId);
         sharedActors.insert(0, selfActor);
         seenActorIds.add(selfActor.id);
       } catch (_) {
