@@ -392,3 +392,65 @@ Target length: ~7 minutes. Record as a screencast with voiceover. The audience i
 | Privacy and Limited Use compliance | Outro |
 | Contacts improve UX across all connectors | Section 2 |
 | `drive` scope justified over `drive.file` | Section 4 narration |
+
+## Console Data Access Form Answers
+
+Ready-to-paste answers for the Google Cloud Console → Google Auth Platform → Data Access form. Each justification is under the 1000-character limit.
+
+> **Note:** `directory.readonly` appears in the console but isn't part of the scope inventory above. Either add it to the inventory or remove it from the console. The sensitive-scope justification below assumes it stays, justified by Workspace coworker name/avatar resolution.
+
+### Top sensitive-scopes block (chat readonly scopes, tasks, calendar.events, contacts, directory)
+
+**"How will the scopes be used?"**
+
+```
+Plot is a productivity app that unifies tasks, messages, and documents from Google services into a single prioritized workspace.
+
+- calendar.events: Display events inline with tasks/messages and write RSVPs (Accept/Decline) from Plot.
+- tasks: Sync Google Tasks alongside tasks from Linear, Jira, Asana; users complete and create tasks in Plot, writes sync back.
+- contacts.readonly + contacts.other.readonly: Match email addresses across synced services to real names/avatars, and power @-mention autocomplete.
+- directory.readonly: Resolve Workspace coworker names/avatars on Chat, email, and calendar participants that aren't in the user's personal Contacts.
+- chat.spaces.readonly: List the user's Chat spaces for the space-selection UI.
+- chat.memberships.readonly: Resolve member names/avatars on synced Chat threads.
+- chat.users.readstate: Bidirectionally sync read/unread state between Plot and Google Chat to avoid duplicate unread indicators.
+```
+
+### Drive scopes — `.../auth/drive`
+
+**"What features will you use?"** — Select features covering: syncing files and folders, accessing file metadata/content, and working with comments (read + create/reply).
+
+**"How will the scopes be used?"**
+
+```
+The Drive connector syncs documents from user-selected Drive folders into Plot, where they appear alongside related tasks, calendar events, and messages. We enumerate folder contents (including shared drives), watch for changes to keep Plot in sync, read file metadata and content to display document references, and read/create/reply to comments so users can participate in document discussions without leaving Plot.
+
+We evaluated narrower scopes and they are insufficient:
+- drive.file only grants access to files explicitly opened via Google's picker; it does not support folder enumeration or change watching, which are required for continuous sync of a user-selected folder.
+- drive.metadata.readonly has no file content and no comment write access, breaking bidirectional comment sync.
+
+The broad drive scope is the minimum that supports folder-based sync with bidirectional comment replies.
+```
+
+### Gmail scopes — `.../auth/gmail.modify`
+
+**"What features will you use?"** — Select: reading email, modifying labels / archiving, and sending email.
+
+**"How will the scopes be used?"**
+
+```
+The Gmail connector syncs email threads from user-selected labels into Plot, where they appear alongside related tasks, calendar events, and documents. Users choose which labels to sync — it's not all-or-nothing. Plot reads message content to display threads, writes label and archive changes back to Gmail when users organize threads in Plot, and sends replies so users can respond to threads without switching apps.
+
+We request gmail.modify rather than gmail.readonly + gmail.send because gmail.modify is the narrowest single scope that covers label modification (which neither of the others provides) and is already a superset of both; requesting all three would be redundant. gmail.modify does not grant permanent delete, which Plot does not need. We explicitly do not request mail.google.com/ or gmail.compose.
+```
+
+### Chat scopes — `.../auth/chat.messages`
+
+**"What features will you use?"** — Select: reading messages, sending/creating messages, updating messages, and managing reactions (full CRUD + reactions).
+
+**"How will the scopes be used?"**
+
+```
+The Chat connector syncs messages from user-selected Google Chat spaces into Plot, where they appear as conversation threads alongside related tasks, emails, and documents. Users can reply to Chat threads directly from Plot, and the reply is posted back to Google Chat as the user. Plot also supports editing and deleting messages the user authored, and adding/removing reactions, so the experience in Plot matches native Chat.
+
+We evaluated chat.messages.create and it is insufficient — it is write-only and does not allow reading existing messages, which breaks the core sync use case. chat.admin.* scopes are explicitly not requested; Plot operates per-user, not as a Workspace admin. The Chat connector is only available to Google Workspace users (a limitation of the Chat API with user auth), and is requested incrementally — only when the user enables the Chat connector.
+```
