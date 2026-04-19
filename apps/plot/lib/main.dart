@@ -10,6 +10,8 @@ import 'package:super_editor/super_editor.dart' show LogNames;
 import 'package:app_links/app_links.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:flutter/services.dart' show MethodChannel;
+
 import 'analytics/tracker.dart';
 import 'app.dart';
 import 'app_info.dart';
@@ -31,11 +33,44 @@ import 'command/share.dart';
 import 'page/invite.dart';
 import 'share_intent.dart';
 
+/// iOS-only: reads shared content written by the ShareExtension from the App
+/// Group UserDefaults. Workaround for share_handler_ios's case-sensitive
+/// scheme check — iOS lowercases URL schemes via Launch Services, so
+/// `hasPrefix("ShareMedia-...")` never matches the incoming `sharemedia-...`
+/// URL, and app_links intercepts the URL instead.
+const _iosShareChannel = MethodChannel('day.plot.app/share_ios');
+
+Future<String?> _readIosSharedContent(Uri uri) async {
+  final key = uri.queryParameters['key'] ?? 'ShareKey';
+  try {
+    return await _iosShareChannel.invokeMethod<String>(
+      'readSharedContent',
+      {'key': key},
+    );
+  } catch (e, t) {
+    // Catches both PlatformException and MissingPluginException
+    // (the latter fires if the native handler isn't registered yet).
+    log.warning('readSharedContent failed', e, t);
+    return null;
+  }
+}
+
+/// True if [uri] is a deep link from the iOS ShareExtension. iOS lowercases
+/// URL schemes, so we match case-insensitively.
+bool _isIosShareDeepLink(Uri uri) {
+  return uri.scheme.toLowerCase().startsWith('sharemedia-');
+}
+
 // Global instance lock for cleanup
 InstanceLock? _instanceLock;
 
 // Getter for instance lock (for cleanup in window.dart)
 InstanceLock? get instanceLock => _instanceLock;
+
+// Guard against re-registering Logger listeners on hot restart
+// (main() re-runs in the same isolate; static fields survive).
+bool _loggingInitialized = false;
+bool _posthogForwardingInitialized = false;
 
 // Global navigator key for deep link navigation
 // Note: This will be assigned from the router in RootProviderState.initState()
@@ -98,6 +133,31 @@ Future<void> run(List<String> args) async {
         (uri) async {
           log.info('Received deep link: $uri');
 
+          // iOS ShareExtension callback — route through the share pipeline
+          // instead of OpenPageLink (which expects a priority/thread URL).
+          if (!kIsWeb && Platform.isIOS && _isIosShareDeepLink(uri)) {
+            final content = await _readIosSharedContent(uri);
+            if (content != null && content.isNotEmpty) {
+              final shared = extractHttpUrl(content);
+              if (shared != null) {
+                log.info('iOS share deep link → extracted URL: $shared');
+                final context = navigatorKey?.currentContext;
+                if (context?.mounted == true) {
+                  context!.run(OpenSharedLink(shared));
+                } else {
+                  PendingShare.url = shared;
+                }
+              } else {
+                log.warning(
+                  'iOS share deep link: no HTTP URL in content="$content"',
+                );
+              }
+            } else {
+              log.warning('iOS share deep link: no content in App Group');
+            }
+            return;
+          }
+
           // Focus window first (desktop only)
           if (!kIsWeb && (Platform.isMacOS || Platform.isWindows)) {
             try {
@@ -126,6 +186,20 @@ Future<void> run(List<String> args) async {
       final initialUri = await appLinks.getInitialLink();
       if (initialUri != null) {
         log.info('App opened with deep link: $initialUri');
+        // iOS cold-start share: pull content from App Group and buffer so the
+        // router can replay it once ready.
+        if (!kIsWeb && Platform.isIOS && _isIosShareDeepLink(initialUri)) {
+          final content = await _readIosSharedContent(initialUri);
+          final shared = content != null ? extractHttpUrl(content) : null;
+          if (shared != null) {
+            log.info('iOS cold-start share deep link → URL: $shared');
+            PendingShare.url = shared;
+          } else {
+            log.warning(
+              'iOS cold-start share deep link: no URL (content="$content")',
+            );
+          }
+        }
         // Extract invite token so it survives until the router initializes
         final segments = initialUri.pathSegments;
         if (segments.length >= 2 && segments.first == 'invite') {
@@ -142,9 +216,16 @@ Future<void> run(List<String> args) async {
     initShareIntent(
       onShareReceived: (url) {
         final context = navigatorKey?.currentContext;
-        if (context?.mounted == true) {
+        final mounted = context?.mounted == true;
+        log.info(
+          'onShareReceived: navigatorKey=${navigatorKey != null}, '
+          'context=${context != null}, mounted=$mounted',
+        );
+        if (mounted) {
+          log.info('onShareReceived: dispatching OpenSharedLink immediately');
           context!.run(OpenSharedLink(url));
         } else {
+          log.info('onShareReceived: buffering via PendingShare.url');
           PendingShare.url = url;
         }
       },
@@ -168,30 +249,36 @@ Future<void> run(List<String> args) async {
     // INFO in all modes; use FINE temporarily when debugging specific issues
     Logger.root.level = Level.INFO;
 
-    Logger.root.onRecord.listen((record) {
-      if ([
-            LogNames.editor,
-            LogNames.infrastructure,
-            LogNames.textField,
-            'attributions',
-            'super_text',
-          ].any((prefix) => record.loggerName.startsWith(prefix)) &&
-          record.level < Level.WARNING) {
-        return;
-      }
-      // ignore: avoid_print
-      print(
-        '${record.level.name}: ${record.loggerName.isEmpty ? 'plot' : record.loggerName}: ${record.message}',
-      );
-      if (record.error != null) {
+    // Only register the listeners once per isolate. In debug mode, hot restart
+    // re-runs main() but keeps static state — without this guard the listener
+    // stack grows by one per restart, producing duplicate log output.
+    if (!_loggingInitialized) {
+      _loggingInitialized = true;
+      Logger.root.onRecord.listen((record) {
+        if ([
+              LogNames.editor,
+              LogNames.infrastructure,
+              LogNames.textField,
+              'attributions',
+              'super_text',
+            ].any((prefix) => record.loggerName.startsWith(prefix)) &&
+            record.level < Level.WARNING) {
+          return;
+        }
         // ignore: avoid_print
-        print(record.error);
-      }
-      if (record.stackTrace != null) {
-        // ignore: avoid_print
-        print(record.stackTrace);
-      }
-    });
+        print(
+          '${record.level.name}: ${record.loggerName.isEmpty ? 'plot' : record.loggerName}: ${record.message}',
+        );
+        if (record.error != null) {
+          // ignore: avoid_print
+          print(record.error);
+        }
+        if (record.stackTrace != null) {
+          // ignore: avoid_print
+          print(record.stackTrace);
+        }
+      });
+    }
 
     // Initialize Env first so Tracker can be set up early
     await Env.init();
@@ -199,8 +286,9 @@ Future<void> run(List<String> args) async {
     // Initialize Tracker immediately after Env so it's ready to capture startup errors
     await Tracker.init();
 
-    // Forward warning+ logs to PostHog in production
-    if (!kDebugMode) {
+    // Forward warning+ logs to PostHog in production (also guarded).
+    if (!kDebugMode && !_posthogForwardingInitialized) {
+      _posthogForwardingInitialized = true;
       Logger.root.onRecord.listen((record) {
         if (record.level < Level.WARNING) return;
         // Avoid infinite loop from Tracker's own logs

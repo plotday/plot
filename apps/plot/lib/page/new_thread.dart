@@ -140,6 +140,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     if (!_hasAppliedQueryParams) {
       _hasAppliedQueryParams = true;
       if (widget.sharedUrl != null) {
+        log.info(
+          'NewThreadPage: opened with sharedUrl=${widget.sharedUrl} — defaulting to link type',
+        );
         _selectedType = NewThreadType.link;
       } else {
         _selectedType = _loadDefaultType();
@@ -265,6 +268,28 @@ class NewThreadPageState extends State<NewThreadPage> {
       // Load twists for the selected priority if different from context
       if (queryPriority != null) {
         await _loadTwistsForPriority(queryPriority);
+      }
+    }
+
+    // Share intent: add the shared URL as a link action on the draft note.
+    if (widget.sharedUrl != null && mounted) {
+      final currentNote = bloc.state.draftNote;
+      final existingActions = currentNote.actions ?? const <UserAction>[];
+      final alreadyPresent = existingActions.any(
+        (a) => a is ExternalUserAction && a.url == widget.sharedUrl,
+      );
+      if (!alreadyPresent) {
+        log.info('[NewThreadPage] Adding shared URL as ExternalUserAction');
+        final updatedNote = currentNote.copyWith(
+          actions: [
+            ...existingActions,
+            ExternalUserAction(
+              title: widget.sharedUrl!,
+              url: widget.sharedUrl!,
+            ),
+          ],
+        );
+        await bloc.updateDraft(bloc.state.draft, note: updatedNote);
       }
     }
   }
@@ -1192,10 +1217,8 @@ class NewThreadPageState extends State<NewThreadPage> {
                       // Single panel mode: editor at bottom, edge-to-edge
                       if (!layoutState.multiPanel) {
                         return Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Spacer(),
-
                             if (!isViewerMode) ...[
                               Padding(
                                 padding: EdgeInsets.symmetric(
@@ -1214,27 +1237,29 @@ class NewThreadPageState extends State<NewThreadPage> {
                                 child: _buildAutoOrganizeLine(context, state),
                               ),
 
-                            NoteEditor(
-                              key: _threadEditorKey,
-                              draft: state.draftNote,
-                              thread: state.draft,
-                              twists: _draftTwists ?? state.twists,
-                              actors: state.actors,
-                              onDraftChanged: _handleDraftChanged,
-                              flushToBottom: true,
-                              showScheduleActions: false,
-                              hint: state.draft.priority.isPlotApp
-                                  ? 'Ask for help or share feedback'
-                                  : _editorHint,
-                              additionalMentions: _twistMentions,
-                              onSubmitted: _onChatSubmitted,
-                              assignNote: !isViewerMode,
-                              viewerMode: isViewerMode,
-                              selectedTwist: _selectedTwist,
-                              onTwistSelected: _selectTwist,
-                              onNavigateToThread: (thread) {
-                                context.run(ChangeCurrentThread(thread));
-                              },
+                            Flexible(
+                              child: NoteEditor(
+                                key: _threadEditorKey,
+                                draft: state.draftNote,
+                                thread: state.draft,
+                                twists: _draftTwists ?? state.twists,
+                                actors: state.actors,
+                                onDraftChanged: _handleDraftChanged,
+                                flushToBottom: true,
+                                showScheduleActions: false,
+                                hint: state.draft.priority.isPlotApp
+                                    ? 'Ask for help or share feedback'
+                                    : _editorHint,
+                                additionalMentions: _twistMentions,
+                                onSubmitted: _onChatSubmitted,
+                                assignNote: !isViewerMode,
+                                viewerMode: isViewerMode,
+                                selectedTwist: _selectedTwist,
+                                onTwistSelected: _selectTwist,
+                                onNavigateToThread: (thread) {
+                                  context.run(ChangeCurrentThread(thread));
+                                },
+                              ),
                             ),
                           ],
                         );

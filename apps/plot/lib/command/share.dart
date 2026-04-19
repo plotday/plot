@@ -20,22 +20,34 @@ class OpenSharedLink extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    log.info('OpenSharedLink.run: url=$url');
     try {
       final nowBloc = context.read<NowBloc>();
       final nowState = nowBloc.state;
       if (nowState is! NowLoaded) {
-        log.warning('Cannot open shared link: NowBloc not loaded');
+        log.warning(
+          'Cannot open shared link: NowBloc not loaded (state=${nowState.runtimeType})',
+        );
         return const CommandDone();
       }
 
       final priorityId = nowState.priority.id.toShortString();
+      log.info(
+        'OpenSharedLink: pushing PriorityRoute($priorityId) > NewThreadRoute(sharedUrl)',
+      );
 
-      return CommandRoute(
+      // Use push (not navigate/CommandRoute) because on cold start the
+      // router's own initial navigation is resolving to the same default
+      // PriorityRoute at the same moment — navigate() then merges/dedupes
+      // and drops our `children: [NewThreadRoute]`, leaving the default
+      // empty child (PriorityOnlyRoute) visible instead.
+      await context.router.root.push(
         PriorityRoute(
           priorityIdString: priorityId,
           children: [NewThreadRoute(sharedUrl: url)],
         ),
       );
+      return const CommandDone();
     } catch (e, t) {
       log.warning('Failed to open shared link: $url', e, t);
       return CommandMessage('Failed to open shared link', isError: true);
