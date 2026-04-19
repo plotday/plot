@@ -487,10 +487,14 @@ class ArchiveThread extends Command {
 
     if (isArchived) {
       // Un-archive: set archivedAt to null
-      await thread.copyWith(archivedAt: const Value(null)).save();
+      final unarchived = thread.copyWith(archivedAt: const Value(null));
+      priorityBloc?.optimisticallyUpdateThread(unarchived);
+      await unarchived.save();
     } else {
       // Archive: set archivedAt to current time
-      await thread.delete();
+      final archived = thread.copyWith(archivedAt: Value(DateTime.now()));
+      priorityBloc?.optimisticallyArchiveThread(archived);
+      await archived.save();
     }
     return navigationResult ?? const CommandDone();
   }
