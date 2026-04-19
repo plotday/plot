@@ -258,10 +258,26 @@ BEGIN
         FROM "group"
         WHERE auto_maintained = TRUE AND team_id IS NULL AND auto_publisher_id IS NULL;
 
+        -- Only evict the contact from Everyone when no other qualifying
+        -- self-link still claims it. Without this guard, deleting a
+        -- source='thread' user_contact cross-link (e.g. the
+        -- 20260418050000 / 20260418053000 cleanups) would cascade-remove
+        -- the contact's primary owner from Everyone even though their
+        -- source='self' link is still intact. This is an AFTER trigger,
+        -- so for UPDATE the row's new state is already visible to the
+        -- subquery — if NEW.linked=false (or primary=false, archived),
+        -- it's already excluded by the qualifying predicate.
         IF v_everyone_group_id IS NOT NULL THEN
             DELETE FROM group_member
             WHERE group_id = v_everyone_group_id
-              AND contact_id = COALESCE(OLD.contact_id, NEW.contact_id);
+              AND contact_id = COALESCE(OLD.contact_id, NEW.contact_id)
+              AND NOT EXISTS (
+                SELECT 1 FROM user_contact uc
+                WHERE uc.contact_id = COALESCE(OLD.contact_id, NEW.contact_id)
+                  AND uc.linked = TRUE
+                  AND uc."primary" = TRUE
+                  AND uc.archived_at IS NULL
+              );
         END IF;
     END IF;
 

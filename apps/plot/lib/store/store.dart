@@ -1153,8 +1153,17 @@ class Store extends _$Store {
           ),
         ),
       );
-    } else if (initial) {
-      // Set pulledAt and firstPulledAt for initial pull even if no rows (marks entity as initialized)
+    } else if (initial && baseTable.filterName == null) {
+      // Set pulledAt and firstPulledAt for initial pull even if no rows
+      // (marks entity as initialized). Only for global entities — scoped
+      // entities (notes:<threadId>, etc.) shouldn't be stamped on empty
+      // results because an empty response usually signals a transient
+      // visibility gap on the server (missing thread_priority, group
+      // membership) rather than a genuinely-empty scope. Stamping here
+      // would lock the client out of ever retrying: the next open sees
+      // syncState != null, short-circuits _ensureNotesLoadedForActivity,
+      // and the notes stay frozen. See the 2026-04-18 Everyone-eviction
+      // incident for the full failure mode.
       final nowMicros = DateTime.now().toUtc().microsecondsSinceEpoch;
       await into(syncStates).insert(
         SyncStatesCompanion.insert(
@@ -2025,7 +2034,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 311;
+  int get schemaVersion => 312;
 
   @override
   MigrationStrategy get migration {
@@ -2861,6 +2870,20 @@ class Store extends _$Store {
     }
     if (from < 311) {
       await _safeAddColumn(m, actors, actors.inviteable);
+    }
+    if (from < 312) {
+      // Clear per-thread notes/note_tags sync sentinels that were stamped
+      // by the 0-row initial pull shortcut in Store.pull() (see 2026-04-18
+      // Everyone-eviction incident). When a thread's user.note view was
+      // temporarily empty due to a server-side visibility gap, the stamp
+      // locked the client into "this thread is initialized" forever; the
+      // notes never re-pulled even after the server restored visibility.
+      // Clearing the rows lets _ensureNotesLoadedForActivity re-fire an
+      // initial pull on the next thread open, and the updated Store.pull
+      // logic no longer stamps filtered entities on empty responses.
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'notes:%' OR entity LIKE 'note_tags:%'",
+      );
     }
   }
 
