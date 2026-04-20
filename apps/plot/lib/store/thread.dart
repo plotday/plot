@@ -3007,6 +3007,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     Order? order,
     bool? draft,
     Value<List<Uuid>?> contacts = const Value.absent(),
+    Value<List<Uuid>?> groups = const Value.absent(),
     Value<List<String>?> inviteEmails = const Value.absent(),
     bool? unread,
     Value<String?> preview = const Value.absent(),
@@ -3052,6 +3053,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (priority != null ||
         draft != null ||
         contacts.present ||
+        groups.present ||
         inviteEmails.present ||
         unread != null ||
         preview.present ||
@@ -3067,6 +3069,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       activityRemoteDirty = priority != null ||
           draft != null ||
           contacts.present ||
+          groups.present ||
           inviteEmails.present ||
           preview.present ||
           icon.present ||
@@ -3076,6 +3079,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         priorityId: priority?.id,
         draft: draft,
         contacts: contacts,
+        groups: groups,
         inviteEmails: inviteEmails.present
             ? Value(inviteEmails.value != null && inviteEmails.value!.isNotEmpty
                 ? jsonEncode(inviteEmails.value)

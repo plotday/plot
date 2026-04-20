@@ -1877,6 +1877,7 @@ IconData _computeSharedIcon(Thread thread) {
 
 bool _hasOtherShared(Thread thread) {
   if (thread.inviteEmails.isNotEmpty) return true;
+  if (thread.groups.isNotEmpty) return true;
   if (thread.contacts.isEmpty) return false;
   final selfUuids = Actor.getCurrentUserActorIds()
       .map((a) => a.toUuid())
@@ -1889,15 +1890,29 @@ int _sharedCount(Thread thread) {
       .map((a) => a.toUuid())
       .toSet();
   final others = thread.contacts.where((id) => !selfUuids.contains(id)).length;
-  // The current user always counts as one, whether or not they appear in
-  // thread.contacts (legacy threads may not include self).
-  return 1 + others + thread.inviteEmails.length;
+  final groupsCount = thread.groups.length;
+  // When a group is on the thread, it implicitly represents the current user
+  // (either directly or because the user is a member). Don't also add the
+  // separate +1 for self in that case.
+  final selfCount = groupsCount > 0 ? 0 : 1;
+  return selfCount + others + groupsCount + thread.inviteEmails.length;
 }
 
 Future<Commands> _buildSharedCommands(
   Thread thread, {
   required Future<void> Function(Thread)? onUpdate,
 }) async {
+  final isDraft = onUpdate != null;
+
+  // Resolve groups filed on the thread. Groups are shown in the "Shared"
+  // list so the viewer can see (and remove) the team the thread is shared
+  // with.
+  final sharedGroups = <GroupRow>[];
+  for (final groupId in thread.groups) {
+    final group = await Group.getOne(groupId);
+    if (group != null) sharedGroups.add(group);
+  }
+
   // Resolve shared actors, deduping by actor id so a user with multiple
   // linked contacts doesn't appear twice.
   final sharedActors = <Actor>[];
@@ -1911,28 +1926,34 @@ Future<Commands> _buildSharedCommands(
     }
   }
 
-  // Self should always appear in the shared list. If not already present
-  // (legacy threads, or thread authored before self was added), prepend the
-  // user's primary contact actor — Actor.getCurrentUserActorIds() returns
-  // every linked contact in non-deterministic cache order, so picking
-  // .first there can surface a secondary email (e.g. work alias) instead
-  // of the primary one.
-  final selfIndex = sharedActors.indexWhere((a) => a.self);
-  if (selfIndex < 0) {
-    final primarySelfId = Base.actorIdOrNull;
-    if (primarySelfId != null) {
-      try {
-        final selfActor = await Actor.getOne(primarySelfId);
-        sharedActors.insert(0, selfActor);
-        seenActorIds.add(selfActor.id);
-      } catch (_) {
-        // No self actor available, skip
+  // Inject the current user into the shared list on draft threads (the
+  // NewThreadPage flow, where self gets saved into thread.contacts), or on
+  // existing threads that have no group filed — in which case self isn't
+  // implicitly represented.
+  //
+  // When a group is already on an existing thread, skip injection: the
+  // group stands in for its members (including the viewer). If the viewer
+  // later removes the group, ShareThreadGroup adds their contact back into
+  // thread.contacts so they retain access.
+  final shouldInjectSelf = isDraft || sharedGroups.isEmpty;
+  if (shouldInjectSelf) {
+    final selfIndex = sharedActors.indexWhere((a) => a.self);
+    if (selfIndex < 0) {
+      final primarySelfId = Base.actorIdOrNull;
+      if (primarySelfId != null) {
+        try {
+          final selfActor = await Actor.getOne(primarySelfId);
+          sharedActors.insert(0, selfActor);
+          seenActorIds.add(selfActor.id);
+        } catch (_) {
+          // No self actor available, skip
+        }
       }
+    } else if (selfIndex > 0) {
+      // Move self to the top so the current user is always listed first.
+      final self = sharedActors.removeAt(selfIndex);
+      sharedActors.insert(0, self);
     }
-  } else if (selfIndex > 0) {
-    // Move self to the top so the current user is always listed first.
-    final self = sharedActors.removeAt(selfIndex);
-    sharedActors.insert(0, self);
   }
 
   final sharedActorIds = sharedActors.map((a) => a.id).toList();
@@ -1944,14 +1965,21 @@ Future<Commands> _buildSharedCommands(
   Command toggleInvite(String email) =>
       InviteThreadEmail(thread, email, onUpdate: onUpdate);
 
+  Command toggleGroup(GroupRow group) => onUpdate != null
+      ? _ShareDraftThreadGroup(thread, group, onUpdate: onUpdate)
+      : ShareThreadGroup(thread, group);
+
   return Commands(
     prompt: 'Share with',
     emptyMessage: 'Enter an email address to invite someone',
     groups: [
-      if (sharedActors.isNotEmpty || thread.inviteEmails.isNotEmpty)
+      if (sharedActors.isNotEmpty ||
+          sharedGroups.isNotEmpty ||
+          thread.inviteEmails.isNotEmpty)
         StaticCommandGroup(
           title: 'Shared',
           commands: [
+            ...sharedGroups.map(toggleGroup),
             ...sharedActors.map(toggleActor),
             ...thread.inviteEmails.map(toggleInvite),
           ],
@@ -2135,6 +2163,87 @@ class _ShareDraftThreadActor extends Command {
       return const CommandRefresh();
     } catch (e, stackTrace) {
       log.severe('Error in _ShareDraftThreadActor: $e', e, stackTrace);
+      return CommandMessage('Failed to update sharing', isError: true);
+    }
+  }
+}
+
+/// If the current user is a member of [group], returns a new contacts list
+/// that includes the user's primary contact so they retain access when the
+/// group is removed from thread sharing. Returns null when no change is
+/// needed (user isn't a member, or their contact is already in the list).
+List<Uuid>? _contactsWithSelfIfGroupMember(Thread thread, GroupRow group) {
+  if (!group.isMember) return null;
+  final selfUuid = Base.actorIdOrNull?.toUuid();
+  if (selfUuid == null) return null;
+  if (thread.contacts.contains(selfUuid)) return null;
+  return [...thread.contacts, selfUuid];
+}
+
+class ShareThreadGroup extends Command {
+  ShareThreadGroup(this.thread, this.group)
+    : super(
+        title: group.name,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.users,
+        on: true,
+      );
+
+  final Thread thread;
+  final GroupRow group;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final newGroups = thread.groups.where((id) => id != group.id).toList();
+      final newContacts = _contactsWithSelfIfGroupMember(thread, group);
+      await thread
+          .copyWith(
+            groups: Value(newGroups.isEmpty ? null : newGroups),
+            contacts: newContacts != null
+                ? Value(newContacts)
+                : const Value.absent(),
+          )
+          .save();
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in ShareThreadGroup: $e', e, stackTrace);
+      return CommandMessage('Failed to update sharing', isError: true);
+    }
+  }
+}
+
+class _ShareDraftThreadGroup extends Command {
+  _ShareDraftThreadGroup(this.thread, this.group, {required this.onUpdate})
+    : super(
+        title: group.name,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.users,
+        on: true,
+      );
+
+  final Thread thread;
+  final GroupRow group;
+  final Future<void> Function(Thread) onUpdate;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      final newGroups = thread.groups.where((id) => id != group.id).toList();
+      final newContacts = _contactsWithSelfIfGroupMember(thread, group);
+      await onUpdate(
+        thread.copyWith(
+          groups: Value(newGroups.isEmpty ? null : newGroups),
+          contacts: newContacts != null
+              ? Value(newContacts)
+              : const Value.absent(),
+        ),
+      );
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in _ShareDraftThreadGroup: $e', e, stackTrace);
       return CommandMessage('Failed to update sharing', isError: true);
     }
   }
