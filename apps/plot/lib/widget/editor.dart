@@ -2174,7 +2174,9 @@ class ViewerState extends State<Viewer> {
           componentBuilders: <ComponentBuilder>[
             const BlockquoteComponentBuilder(),
             const PlotCodeBlockComponentBuilder(),
-            const MarkdownTableComponentBuilder(),
+            const MarkdownTableComponentBuilder(
+              fit: TableComponentFit.scroll,
+            ),
             const ParagraphComponentBuilder(),
             const ListItemComponentBuilder(),
             const ImageComponentBuilder(),

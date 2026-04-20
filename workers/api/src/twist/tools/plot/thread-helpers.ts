@@ -127,14 +127,94 @@ function stripHtmlToText(html: string): string {
 }
 
 /**
+ * Splits a pipe-delimited table row into trimmed cells.
+ * Escaped pipes (`\|`) are left intact.
+ */
+function parseTableCells(row: string): string[] {
+  const stripped = row.trim().replace(/^\||\|$/g, "");
+  // Split on unescaped pipes
+  const cells = stripped.split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, "|").trim());
+  return cells;
+}
+
+/** Is this line a Markdown table separator row (e.g. `| --- | :---: |`)? */
+function isSeparatorRow(line: string): boolean {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+/**
+ * Flattens a collected block of table lines into either a cleaned Markdown table
+ * (if it looks like real tabular data) or a sequence of paragraphs (if it looks
+ * like a layout table, which is almost always the case for email HTML).
+ */
+function emitTable(tableLines: string[], out: string[]): void {
+  // Parse rows, dropping separator rows and all-empty rows.
+  const rows: string[][] = [];
+  for (const tl of tableLines) {
+    if (isSeparatorRow(tl)) continue;
+    const cells = parseTableCells(tl);
+    if (cells.every((c) => !c)) continue;
+    rows.push(cells);
+  }
+
+  if (rows.length === 0) return;
+
+  const columnCount = Math.max(...rows.map((r) => r.length));
+
+  // Flatten if it looks like prose/layout rather than tabular data:
+  //   - Single-column tables are always layout artifacts.
+  //   - Any cell that contains a Markdown link, a list marker, or long text
+  //     is a strong signal that this is a layout table, not data.
+  const looksLikeProse =
+    columnCount <= 1 ||
+    rows.some((row) =>
+      row.some(
+        (cell) => cell.length > 30 || /\[[^\]]*\]\(/.test(cell) || /\n/.test(cell)
+      )
+    );
+
+  if (looksLikeProse) {
+    for (const row of rows) {
+      const text = row.filter((c) => c).join(" ").trim();
+      if (text) {
+        if (out.length > 0 && out[out.length - 1] !== "") out.push("");
+        out.push(text);
+      }
+    }
+    return;
+  }
+
+  // Real data table — emit cleaned form.
+  const header = rows[0];
+  const paddedHeader = [...header, ...Array(columnCount - header.length).fill("")];
+  out.push("| " + paddedHeader.join(" | ") + " |");
+  out.push("|" + " --- |".repeat(columnCount));
+  for (let r = 1; r < rows.length; r++) {
+    const padded = [...rows[r], ...Array(columnCount - rows[r].length).fill("")];
+    out.push("| " + padded.join(" | ") + " |");
+  }
+}
+
+/**
+ * Flattens an orphan pipe-delimited row (a `|...|` line that is not part of a
+ * valid Markdown table) to plain text. ai.toMarkdown sometimes emits these when
+ * a layout table gets split across a blank line.
+ */
+function flattenOrphanPipeRow(line: string): string {
+  const cells = parseTableCells(line).filter((c) => c);
+  return cells.join(" ");
+}
+
+/**
  * Cleans up Markdown produced by ai.toMarkdown() from HTML (especially email HTML).
- * Removes layout table artifacts, excessive horizontal rules, empty blockquotes,
- * and collapses excessive blank lines.
+ * Aggressively flattens layout tables to paragraphs, drops empty rows, collapses
+ * excessive horizontal rules / blank lines, and strips orphan pipe rows.
  */
 function cleanConvertedMarkdown(markdown: string): string {
   // ai.toMarkdown() sometimes joins paragraphs on one line with double spaces
   // instead of proper newlines. Convert inline double-space separators to paragraph breaks.
-  markdown = markdown.replace(/(\S)  +(?=\S)/g, "$1\n\n");
+  // Exclude pipes from both sides so we don't shred table rows like `|  | cell |`.
+  markdown = markdown.replace(/([^\s|])  +(?=[^\s|])/g, "$1\n\n");
 
   const lines = markdown.split("\n");
   const cleaned: string[] = [];
@@ -143,41 +223,34 @@ function cleanConvertedMarkdown(markdown: string): string {
   while (i < lines.length) {
     const line = lines[i].replace(/^\s+/, ""); // trim leading whitespace
 
-    // Detect Markdown tables: a sequence starting with a |...| header row
-    // followed by a |---|...| separator row
+    // Detect Markdown tables: header row followed by a separator row.
     if (
-      line.trimStart().startsWith("|") &&
+      line.startsWith("|") &&
       i + 1 < lines.length &&
-      /^\s*\|[\s:-]+\|/.test(lines[i + 1])
+      isSeparatorRow(lines[i + 1])
     ) {
-      // Collect all table lines
       const tableLines: string[] = [];
       while (i < lines.length && lines[i].trimStart().startsWith("|")) {
         tableLines.push(lines[i]);
         i++;
       }
+      emitTable(tableLines, cleaned);
+      continue;
+    }
 
-      // Count columns from the separator row (second line)
-      const separatorCells = tableLines[1]
-        .trim()
-        .replace(/^\||\|$/g, "")
-        .split("|").length;
-
-      if (separatorCells <= 1) {
-        // Single-column table = layout artifact. Extract cell text.
-        for (const tl of tableLines) {
-          // Skip separator rows
-          if (/^\s*\|[\s:-]+\|$/.test(tl)) continue;
-          const cellText = tl
-            .trim()
-            .replace(/^\||\|$/g, "")
-            .trim();
-          if (cellText) cleaned.push(cellText);
+    // Orphan pipe row: `|...|` line with no surrounding table structure.
+    // Flatten to plain text so users don't see literal pipes. Separate from
+    // adjacent content with a blank line so flattened rows become paragraphs
+    // rather than a single run-on paragraph.
+    if (line.startsWith("|") && line.replace(/\s/g, "").length > 1) {
+      const flat = flattenOrphanPipeRow(line);
+      if (flat) {
+        if (cleaned.length > 0 && cleaned[cleaned.length - 1] !== "") {
+          cleaned.push("");
         }
-      } else {
-        // Multi-column table — keep as-is (likely real data)
-        cleaned.push(...tableLines);
+        cleaned.push(flat);
       }
+      i++;
       continue;
     }
 
@@ -189,7 +262,6 @@ function cleanConvertedMarkdown(markdown: string): string {
 
     // Collapse consecutive horizontal rules to at most one
     if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
-      // Check if previous non-empty line was also a rule
       let prevNonEmpty: string | undefined;
       for (let j = cleaned.length - 1; j >= 0; j--) {
         if (cleaned[j].trim() !== "") {
@@ -210,11 +282,40 @@ function cleanConvertedMarkdown(markdown: string): string {
     i++;
   }
 
-  // Collapse consecutive blank lines to a single paragraph break
   let result = cleaned.join("\n");
   result = result.replace(/\n{3,}/g, "\n\n");
 
   return result.trim();
+}
+
+/**
+ * Pre-processes email HTML before ai.toMarkdown() runs. Unwraps layout tables
+ * (almost all email tables are layout, not data) so the AI converter produces
+ * clean paragraphs instead of Markdown tables riddled with pipes. Also drops
+ * <style>, <script>, and <head> blocks that carry no useful note content.
+ *
+ * Uses Cloudflare's built-in HTMLRewriter — no extra dependency.
+ */
+async function preprocessEmailHtml(html: string): Promise<string> {
+  const response = new Response(html, {
+    headers: { "Content-Type": "text/html" },
+  });
+  const remove = { element: (el: Element) => { el.remove(); } };
+  const unwrap = { element: (el: Element) => { el.removeAndKeepContent(); } };
+  const toDiv = { element: (el: Element) => { el.tagName = "div"; } };
+  const rewriter = new HTMLRewriter()
+    .on("style", remove)
+    .on("script", remove)
+    .on("head", remove)
+    .on("table", unwrap)
+    .on("tbody", unwrap)
+    .on("thead", unwrap)
+    .on("tfoot", unwrap)
+    .on("tr", toDiv)
+    .on("td", toDiv)
+    .on("th", toDiv);
+  const transformed = rewriter.transform(response);
+  return await transformed.text();
 }
 
 /**
@@ -237,11 +338,15 @@ export async function convertNoteToMarkdown(
 
   switch (type) {
     case "html": {
-      // Convert HTML to Markdown using Cloudflare Workers AI
+      // Convert HTML to Markdown using Cloudflare Workers AI.
+      // Pre-process to flatten layout tables (which are used for presentation
+      // in virtually all HTML email) so we get clean paragraphs instead of
+      // Markdown tables with spurious pipes and tiny-scaled cell content.
+      const preprocessed = await preprocessEmailHtml(note);
       try {
         const result = await ai.toMarkdown({
           name: "note.html",
-          blob: new Blob([note], { type: "text/html" }),
+          blob: new Blob([preprocessed], { type: "text/html" }),
         });
 
         // Check if conversion was successful
@@ -256,7 +361,7 @@ export async function convertNoteToMarkdown(
             "Failed to convert HTML to Markdown",
             new Error(String(result.error))
           );
-          return stripHtmlToText(note);
+          return stripHtmlToText(preprocessed);
         }
 
         // Fallback for unexpected format
