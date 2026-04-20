@@ -38,6 +38,27 @@ export type GitHubProviderData = {
 export type LinearProviderData = {
   email: string | null;
   userId: string;
+  organizationName: string | null;
+};
+
+export type AtlassianProviderData = {
+  cloudId: string | null;
+  siteName: string | null;
+};
+
+export type NotionProviderData = {
+  workspaceName: string | null;
+  workspaceId: string | null;
+};
+
+export type AsanaProviderData = {
+  email: string | null;
+  name: string | null;
+};
+
+export type TodoistProviderData = {
+  email: string | null;
+  fullName: string | null;
 };
 
 // Union of all provider-specific data types
@@ -46,7 +67,11 @@ export type ProviderData =
   | GoogleProviderData
   | MicrosoftProviderData
   | GitHubProviderData
-  | LinearProviderData;
+  | LinearProviderData
+  | AtlassianProviderData
+  | NotionProviderData
+  | AsanaProviderData
+  | TodoistProviderData;
 
 // Combined storage type
 export type StoredTokenData = BaseTokenData & {
@@ -154,8 +179,8 @@ const parseGitHubTokenResponse = async (
   return { email: user.email, userId: user.userId, login: user.login };
 };
 
-// Helper function to fetch viewer info from Linear API
-async function fetchLinearViewer(accessToken: string): Promise<{ userId: string; email: string | null } | null> {
+// Helper function to fetch viewer + organization info from Linear API
+async function fetchLinearViewer(accessToken: string): Promise<{ userId: string; email: string | null; organizationName: string | null } | null> {
   try {
     const response = await fetch("https://api.linear.app/graphql", {
       method: "POST",
@@ -163,7 +188,7 @@ async function fetchLinearViewer(accessToken: string): Promise<{ userId: string;
         Authorization: accessToken,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ query: "{ viewer { id email } }" }),
+      body: JSON.stringify({ query: "{ viewer { id email } organization { name } }" }),
     });
 
     if (!response.ok) {
@@ -171,20 +196,132 @@ async function fetchLinearViewer(accessToken: string): Promise<{ userId: string;
     }
 
     const data = (await response.json()) as {
-      data?: { viewer?: { id?: string; email?: string } };
+      data?: {
+        viewer?: { id?: string; email?: string };
+        organization?: { name?: string };
+      };
     };
     const viewer = data.data?.viewer;
     if (!viewer?.id) {
       return null;
     }
 
-    return { userId: viewer.id, email: viewer.email || null };
+    return {
+      userId: viewer.id,
+      email: viewer.email || null,
+      organizationName: data.data?.organization?.name || null,
+    };
   } catch (error) {
     const logger = createLogger({ component: "provider" });
     logger.error("Error fetching Linear viewer", error as Error);
     return null;
   }
 }
+
+// Fetch the first accessible Atlassian site (cloudId + name)
+async function fetchAtlassianSite(accessToken: string): Promise<{ cloudId: string; siteName: string | null } | null> {
+  try {
+    const response = await fetch("https://api.atlassian.com/oauth/token/accessible-resources", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) return null;
+    const sites = (await response.json()) as Array<{ id?: string; name?: string; url?: string }>;
+    const first = sites?.[0];
+    if (!first?.id) return null;
+    return { cloudId: first.id, siteName: first.name || first.url || null };
+  } catch (error) {
+    const logger = createLogger({ component: "provider" });
+    logger.error("Error fetching Atlassian accessible-resources", error as Error);
+    return null;
+  }
+}
+
+const parseAtlassianTokenResponse = async (
+  response: any
+): Promise<AtlassianProviderData | undefined> => {
+  if (!response.access_token) return undefined;
+  const site = await fetchAtlassianSite(response.access_token);
+  return {
+    cloudId: site?.cloudId ?? null,
+    siteName: site?.siteName ?? null,
+  };
+};
+
+const parseNotionTokenResponse = (
+  response: any
+): NotionProviderData | undefined => {
+  if (!response.access_token) return undefined;
+  return {
+    workspaceName: response.workspace_name || null,
+    workspaceId: response.workspace_id || null,
+  };
+};
+
+async function fetchAsanaUser(accessToken: string): Promise<{ email: string | null; name: string | null } | null> {
+  try {
+    const response = await fetch("https://app.asana.com/api/1.0/users/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { data?: { email?: string; name?: string } };
+    return {
+      email: data.data?.email || null,
+      name: data.data?.name || null,
+    };
+  } catch (error) {
+    const logger = createLogger({ component: "provider" });
+    logger.error("Error fetching Asana user", error as Error);
+    return null;
+  }
+}
+
+const parseAsanaTokenResponse = async (
+  response: any
+): Promise<AsanaProviderData | undefined> => {
+  if (!response.access_token) return undefined;
+  const user = await fetchAsanaUser(response.access_token);
+  return {
+    email: user?.email ?? null,
+    name: user?.name ?? null,
+  };
+};
+
+async function fetchTodoistUser(accessToken: string): Promise<{ email: string | null; fullName: string | null } | null> {
+  try {
+    const response = await fetch("https://api.todoist.com/sync/v9/sync", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: 'sync_token=*&resource_types=["user"]',
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { user?: { email?: string; full_name?: string } };
+    return {
+      email: data.user?.email || null,
+      fullName: data.user?.full_name || null,
+    };
+  } catch (error) {
+    const logger = createLogger({ component: "provider" });
+    logger.error("Error fetching Todoist user", error as Error);
+    return null;
+  }
+}
+
+const parseTodoistTokenResponse = async (
+  response: any
+): Promise<TodoistProviderData | undefined> => {
+  if (!response.access_token) return undefined;
+  const user = await fetchTodoistUser(response.access_token);
+  return {
+    email: user?.email ?? null,
+    fullName: user?.fullName ?? null,
+  };
+};
 
 const parseLinearTokenResponse = async (
   response: any
@@ -198,7 +335,11 @@ const parseLinearTokenResponse = async (
     return undefined;
   }
 
-  return { email: viewer.email, userId: viewer.userId };
+  return {
+    email: viewer.email,
+    userId: viewer.userId,
+    organizationName: viewer.organizationName,
+  };
 };
 
 type ProviderConfig = {
@@ -269,6 +410,8 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "Notion",
     authUrl: "https://api.notion.com/v1/oauth/authorize",
     tokenUrl: "https://api.notion.com/v1/oauth/token",
+    parseTokenResponse: parseNotionTokenResponse,
+    extractAccountLabel: (d) => (d as NotionProviderData).workspaceName || null,
   },
   slack: {
     name: "Slack",
@@ -321,13 +464,25 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     additionalParams: {
       audience: "api.atlassian.com",
     },
+    parseTokenResponse: parseAtlassianTokenResponse,
+    extractMetadata: (providerData: ProviderData): Record<string, string> | undefined => {
+      const a = providerData as AtlassianProviderData;
+      const metadata: Record<string, string> = {};
+      if (a.cloudId) metadata.cloud_id = a.cloudId;
+      if (a.siteName) metadata.site_name = a.siteName;
+      return Object.keys(metadata).length > 0 ? metadata : undefined;
+    },
+    extractAccountLabel: (d) => (d as AtlassianProviderData).siteName || null,
   },
   linear: {
     name: "Linear",
     authUrl: "https://linear.app/oauth/authorize",
     tokenUrl: "https://api.linear.app/oauth/token",
     parseTokenResponse: parseLinearTokenResponse,
-    extractAccountLabel: (d) => (d as LinearProviderData).email || null,
+    extractAccountLabel: (d) => {
+      const l = d as LinearProviderData;
+      return l.organizationName || l.email || null;
+    },
   },
   monday: {
     name: "Monday.com",
@@ -349,6 +504,11 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "Asana",
     authUrl: "https://app.asana.com/-/oauth_authorize",
     tokenUrl: "https://app.asana.com/-/oauth_token",
+    parseTokenResponse: parseAsanaTokenResponse,
+    extractAccountLabel: (d) => {
+      const a = d as AsanaProviderData;
+      return a.email || a.name || null;
+    },
   },
   hubspot: {
     name: "HubSpot",
@@ -359,5 +519,10 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "Todoist",
     authUrl: "https://todoist.com/oauth/authorize",
     tokenUrl: "https://todoist.com/oauth/access_token",
+    parseTokenResponse: parseTodoistTokenResponse,
+    extractAccountLabel: (d) => {
+      const t = d as TodoistProviderData;
+      return t.email || t.fullName || null;
+    },
   },
 };
