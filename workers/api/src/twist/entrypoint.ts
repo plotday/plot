@@ -143,6 +143,12 @@ class ToolShed {
     const toolPath = this.path.concat([id]);
     const tool = await this.builtInToolFactory(toolPath, id, options);
     this.rootToolShed.disposables.push(tool);
+    // Register so getByPath() can resolve scheduled-callback paths like ["Tasks"].
+    // Don't overwrite an explicit build() registration for the same id.
+    if (!this.built.has(id)) {
+      this.built.set(id, tool);
+      this.options.set(id, options);
+    }
     return tool;
   }
 
