@@ -84,6 +84,7 @@ class CommandModal {
         return ListTile(
           controller: controller,
           command: wrappedCommand,
+          longPressCommand: command.longPressCommand,
           showShortcut: true,
           onTap: isDisabled ? () {} : null,
           leadingBuilder: command.unread

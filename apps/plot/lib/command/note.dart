@@ -253,37 +253,198 @@ class ToggleNoteTag extends NoteCommand {
   }
 }
 
-class ToggleNotePrivate extends NoteCommand {
-  ToggleNotePrivate(super.note, {this.isViewer = false})
+/// Tap: sets accessContacts to [currentUser] (private to just me).
+/// Long-press (when the thread has other contacts): opens the privacy
+/// modal with the current user preselected.
+class MakeNotePrivate extends NoteCommand {
+  MakeNotePrivate(super.note, {required this.threadBloc})
     : super(
-        title: isViewer
-            ? (note.isPrivate ? 'Private' : 'Public')
-            : (note.isPrivate ? 'Make public' : 'Make private'),
+        title: 'Make private',
         eventObject: EventObject.note,
-        eventAction: note.isPrivate ? EventAction.untagged : EventAction.tagged,
+        eventAction: EventAction.tagged,
         icon: PlotIcon.private,
-        on: isViewer ? note.isPrivate : null,
       );
 
-  final bool isViewer;
+  final ThreadBloc threadBloc;
 
   @override
-  bool enabled(BuildContext context) => !isViewer;
+  Command? get longPressCommand => _threadHasOtherContacts(threadBloc)
+      ? ChangeNotePrivacy(note, threadBloc: threadBloc)
+      : null;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    if (isViewer) return const CommandDone();
     try {
-      final updatedNote = note.copyWith(
-        accessContacts: Value(note.isPrivate ? null : []),
+      final updated = note.copyWith(
+        accessContacts: Value([Base.actorId]),
       );
-      await updatedNote.save();
+      await updated.save();
       return const CommandDone();
     } catch (e, stackTrace) {
-      log.severe('Error in ToggleNotePrivate: $e', e, stackTrace);
-      return CommandMessage('Failed to toggle private', isError: true);
+      log.severe('Error in MakeNotePrivate: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to make private', isError: true);
     }
   }
+}
+
+/// Opens the privacy modal: select which thread contacts can see the note,
+/// or make it public again. The current user is always included.
+class ChangeNotePrivacy extends ShowCommands {
+  ChangeNotePrivacy(this.note, {required this.threadBloc})
+    : super(
+        title: note.isPrivate ? 'Change privacy' : 'Make private',
+        icon: PlotIcon.private,
+        commandsBuilder: (context) => _buildCommands(note, threadBloc),
+        showFilter: false,
+        eventObject: EventObject.note,
+        eventAction: EventAction.updated,
+      );
+
+  final Note note;
+  final ThreadBloc threadBloc;
+
+  static Future<Commands> _buildCommands(
+    Note note,
+    ThreadBloc threadBloc,
+  ) async {
+    final freshNote = await note.refresh();
+    final selfIds = Actor.getCurrentUserActorIds()
+        .map((a) => a.value)
+        .toSet();
+    final threadContacts = threadBloc.state.thread.contacts;
+
+    final actors = <Actor>[];
+    for (final contactId in threadContacts) {
+      try {
+        actors.add(await Actor.getOne(ActorId.fromUuid(contactId)));
+      } catch (_) {
+        // Skip contacts we can't resolve
+      }
+    }
+
+    final selfActors = actors.where((a) => selfIds.contains(a.id.value))
+        .toList();
+    final otherActors = actors.where((a) => !selfIds.contains(a.id.value))
+        .toList();
+
+    return Commands(
+      prompt: freshNote.isPrivate
+          ? 'Change who can see this note'
+          : 'Share privately with',
+      groups: [
+        if (freshNote.isPrivate)
+          StaticCommandGroup(commands: [MakeNotePublic(freshNote)]),
+        if (selfActors.isNotEmpty)
+          StaticCommandGroup(
+            title: 'You',
+            commands: selfActors
+                .map((a) => ToggleNotePrivacyContact(
+                      freshNote,
+                      a,
+                      isSelf: true,
+                    ))
+                .toList(),
+          ),
+        if (otherActors.isNotEmpty)
+          StaticCommandGroup(
+            title: 'Others in this thread',
+            commands: otherActors
+                .map((a) => ToggleNotePrivacyContact(
+                      freshNote,
+                      a,
+                      isSelf: false,
+                    ))
+                .toList(),
+          ),
+      ],
+    );
+  }
+}
+
+class MakeNotePublic extends NoteCommand {
+  MakeNotePublic(super.note)
+    : super(
+        title: 'Make public',
+        eventObject: EventObject.note,
+        eventAction: EventAction.untagged,
+        icon: FontAwesomeIcons.lockOpen,
+      );
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    try {
+      await note.copyWith(accessContacts: const Value(null)).save();
+      return const CommandDone();
+    } catch (e, stackTrace) {
+      log.severe('Error in MakeNotePublic: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to make public', isError: true);
+    }
+  }
+}
+
+class ToggleNotePrivacyContact extends NoteCommand {
+  ToggleNotePrivacyContact(
+    super.note,
+    this.actor, {
+    required this.isSelf,
+  }) : super(
+          title: actor.nameOrEmail,
+          eventObject: EventObject.note,
+          eventAction: _isInAccess(note, actor.id)
+              ? EventAction.untagged
+              : EventAction.tagged,
+          icon: (isSelf || _isInAccess(note, actor.id))
+              ? PlotIcon.shared
+              : PlotIcon.shareAdd,
+          on: isSelf || _isInAccess(note, actor.id),
+        );
+
+  final Actor actor;
+  final bool isSelf;
+
+  static bool _isInAccess(Note note, ActorId id) =>
+      note.accessContacts?.contains(id) == true;
+
+  @override
+  String? get subtitle => actor.name != null ? actor.email : null;
+
+  @override
+  bool enabled(BuildContext context) => !isSelf;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    if (isSelf) {
+      return const CommandMessage(
+        "You can't remove yourself from a private note",
+      );
+    }
+    try {
+      final current = note.accessContacts;
+      final List<ActorId> next;
+      if (current == null) {
+        // Note is currently public — toggling a contact makes it private
+        // including the current user.
+        next = [Base.actorId, actor.id];
+      } else if (current.contains(actor.id)) {
+        next = List.of(current)..remove(actor.id);
+      } else {
+        next = List.of(current)..add(actor.id);
+      }
+      await note.copyWith(accessContacts: Value(next)).save();
+      return const CommandRefresh();
+    } catch (e, stackTrace) {
+      log.severe('Error in ToggleNotePrivacyContact: $e', e, stackTrace);
+      Tracker.captureException(e, stackTrace);
+      return CommandMessage('Failed to update privacy', isError: true);
+    }
+  }
+}
+
+bool _threadHasOtherContacts(ThreadBloc bloc) {
+  final selfIds = Actor.getCurrentUserActorIds().map((a) => a.value).toSet();
+  return bloc.state.thread.contacts.any((c) => !selfIds.contains(c));
 }
 
 class EditNote extends NoteCommand {
@@ -698,11 +859,12 @@ List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
       SplitNoteToNewThread(note),
     if (note.content != null && note.content!.trim().isNotEmpty)
       CopyNoteContent(note),
-    if ((!note.isPrivate || note.authorId.isCurrentUser))
-      ToggleNotePrivate(
-        note,
-        isViewer: activityBloc?.state.thread.priority.isViewer ?? false,
-      ),
+    if (activityBloc != null && !note.isPrivate)
+      MakeNotePrivate(note, threadBloc: activityBloc),
+    if (activityBloc != null &&
+        note.isPrivate &&
+        note.authorId.isCurrentUser)
+      ChangeNotePrivacy(note, threadBloc: activityBloc),
     ];
 
 }

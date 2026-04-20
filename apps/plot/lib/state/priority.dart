@@ -17,6 +17,90 @@ import 'logging.dart';
 
 part 'priority_state.dart';
 
+/// Fields that can be watched on an optimistic thread override.
+/// An override "settles" (and is cleared) once the stream's copy of the
+/// thread matches the expected thread on every watched field.
+enum _OverrideField {
+  todo,
+  archived,
+  priorityId,
+  title,
+  unread,
+  at,
+  on,
+}
+
+/// A per-thread optimistic override applied to stream results until the
+/// stream confirms the expected state.
+///
+/// When [expected] is non-null, stream listeners replace the stream's copy
+/// of the thread with [expected] until every [watched] field on the stream
+/// copy matches. This keeps the optimistic state visible across the many
+/// intermediate emissions produced by multi-row saves (thread row, user
+/// schedule, tags, notes, links) without dropping unrelated updates.
+///
+/// When [expected] is null, the thread is filtered out of stream results
+/// (e.g. archived while not viewing archived, moved to a different
+/// priority) until the stream stops returning it.
+class _OptimisticOverride {
+  const _OptimisticOverride._(this.expected, this.watched);
+
+  factory _OptimisticOverride.expect({
+    required Thread expected,
+    Set<_OverrideField>? fields,
+  }) => _OptimisticOverride._(expected, fields ?? _defaultWatched);
+
+  factory _OptimisticOverride.absent() =>
+      const _OptimisticOverride._(null, <_OverrideField>{});
+
+  final Thread? expected;
+  final Set<_OverrideField> watched;
+
+  /// Default set used when the caller passes the whole updated thread
+  /// without specifying which fields it changed. Covers the visible-state
+  /// fields that optimistic commands actually flip; intentionally excludes
+  /// fields the server may rewrite (e.g. AI-generated title) to avoid
+  /// overrides that never settle.
+  static const _defaultWatched = <_OverrideField>{
+    _OverrideField.todo,
+    _OverrideField.archived,
+    _OverrideField.priorityId,
+    _OverrideField.unread,
+    _OverrideField.at,
+    _OverrideField.on,
+  };
+
+  /// True when [actual] (the stream's copy, or null if absent) matches
+  /// what this override expects. Settled overrides are safe to drop.
+  bool settled(Thread? actual) {
+    if (expected == null) return actual == null;
+    if (actual == null) return false;
+    for (final field in watched) {
+      if (!_matches(field, actual, expected!)) return false;
+    }
+    return true;
+  }
+
+  static bool _matches(_OverrideField field, Thread actual, Thread expected) {
+    switch (field) {
+      case _OverrideField.todo:
+        return actual.todo == expected.todo;
+      case _OverrideField.archived:
+        return (actual.archivedAt != null) == (expected.archivedAt != null);
+      case _OverrideField.priorityId:
+        return actual.priority.id == expected.priority.id;
+      case _OverrideField.title:
+        return actual.title == expected.title;
+      case _OverrideField.unread:
+        return actual.unread == expected.unread;
+      case _OverrideField.at:
+        return actual.at == expected.at;
+      case _OverrideField.on:
+        return actual.on == expected.on;
+    }
+  }
+}
+
 class PriorityBloc extends Cubit<PriorityState> {
   /// Tracks threads that should stay in the unread section while being viewed,
   /// along with their original sort values to prevent position jumps when
@@ -173,21 +257,76 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// can safely transition from optimistic reorderViewItems to _makeAgenda.
   (ThreadId, double)? _pendingReorderOrder;
 
-  /// Timestamp of last optimistic thread update. Used to suppress agenda
-  /// rebuilds briefly so the optimistic state isn't overwritten by stale
-  /// stream notifications (which may arrive with partial data, e.g. thread
-  /// saved but schedule not yet saved).
-  DateTime? _optimisticTimestamp;
+  /// Per-thread optimistic overrides applied to stream results until the
+  /// stream confirms the expected state. See [_OptimisticOverride]. Replaces
+  /// the earlier `_optimisticTimestamp` (time-based), `_pendingRemovedIds`,
+  /// and `_pendingOptimisticSchedule` mechanisms with one data-driven
+  /// suppression that operates per thread and per field.
+  final Map<ThreadId, _OptimisticOverride> _optimisticOverrides = {};
 
-  /// Data-driven suppression for optimistic schedule changes: keeps
-  /// suppressing stream rebuilds until the stream data confirms the
-  /// thread has the expected schedule.
-  (ThreadId, DateTimeRange?)? _pendingOptimisticSchedule;
+  /// Finds a thread from the current state so callers that only have an id
+  /// can build an expected-state override. Searches the activity feed first
+  /// (where todo changes originate for the bug this fixes) then the agenda.
+  Thread? _findThreadInState(ThreadId id) {
+    for (final item in state.activityFeedItems) {
+      final thread = item.when(
+        header: (_) => null,
+        activity: (a) => a.thread,
+      );
+      if (thread != null && thread.id == id) return thread;
+    }
+    for (final item in state.agendaItems) {
+      final thread = item.when(
+        header: (_) => null,
+        activity: (a) => a.thread,
+      );
+      if (thread != null && thread.id == id) return thread;
+    }
+    return null;
+  }
 
-  /// Data-driven suppression for optimistic removals: keeps suppressing
-  /// stream rebuilds until the stream data confirms the thread is gone,
-  /// preventing sync events from briefly restoring removed threads.
-  final Set<ThreadId> _pendingRemovedIds = {};
+  /// Apply pending optimistic overrides to a stream's thread list and clear
+  /// any overrides that have settled (the stream now matches the expected
+  /// state on every watched field). Returns a new list with:
+  ///   - expected-present overrides: the stream row replaced with
+  ///     `override.expected` so downstream list builders render the
+  ///     optimistic state (and if the stream hasn't caught up yet, the
+  ///     expected thread is appended so it still appears).
+  ///   - expected-absent overrides: the stream row filtered out.
+  List<Thread> _applyOptimisticOverrides(List<Thread> streamThreads) {
+    if (_optimisticOverrides.isEmpty) return streamThreads;
+
+    final byId = <ThreadId, Thread>{};
+    for (final t in streamThreads) {
+      byId[t.id] = t;
+    }
+
+    _optimisticOverrides.removeWhere((id, o) => o.settled(byId[id]));
+
+    if (_optimisticOverrides.isEmpty) return streamThreads;
+
+    final patched = <Thread>[];
+    for (final thread in streamThreads) {
+      final override = _optimisticOverrides[thread.id];
+      if (override == null) {
+        patched.add(thread);
+      } else if (override.expected == null) {
+        // Expected absent — drop from the list until the stream agrees.
+        continue;
+      } else {
+        patched.add(override.expected!);
+      }
+    }
+    // Append expected threads the stream hasn't caught up with yet so
+    // downstream list builders (e.g. _makeAgenda) still include them.
+    for (final entry in _optimisticOverrides.entries) {
+      final expected = entry.value.expected;
+      if (expected != null && !byId.containsKey(entry.key)) {
+        patched.add(expected);
+      }
+    }
+    return patched;
+  }
 
   /// Current thread associations, keyed by parent thread ID.
   /// Updated via a separate stream subscription.
@@ -321,8 +460,20 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// When [finishTodo] is true, remaining link schedule instances are also
   /// updated to todo=false so the leading icon reflects the finished state.
   void optimisticallyRemoveThread(ThreadId id, {bool finishTodo = false}) {
-    _pendingRemovedIds.add(id);
-    _optimisticTimestamp = DateTime.now();
+    // Record an override so stream emissions between the thread-row write
+    // and the user-schedule write (derived todo=true while the schedule
+    // isn't yet archived) don't flip the icon back on.
+    final existing = _findThreadInState(id);
+    if (existing != null) {
+      if (finishTodo) {
+        _optimisticOverrides[id] = _OptimisticOverride.expect(
+          expected: existing.copyWith(todo: false),
+          fields: const {_OverrideField.todo},
+        );
+      } else {
+        _optimisticOverrides[id] = _OptimisticOverride.absent();
+      }
+    }
     final updatedItems = state.agendaItems
         .where(
           (item) => item.when(
@@ -373,8 +524,14 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// [optimisticallyUpdateThread].
   void optimisticallyArchiveThread(Thread archivedThread) {
     final id = archivedThread.id;
-    _pendingRemovedIds.add(id);
-    _optimisticTimestamp = DateTime.now();
+    // When viewing the archive, expect the thread to remain with
+    // archivedAt set; otherwise expect it to disappear from the list.
+    _optimisticOverrides[id] = state.showArchived
+        ? _OptimisticOverride.expect(
+            expected: archivedThread,
+            fields: const {_OverrideField.archived},
+          )
+        : _OptimisticOverride.absent();
     _stickyUnreadIds.remove(id);
 
     final updatedAgenda = state.agendaItems
@@ -418,7 +575,10 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// Optimistically remove associated copies of a thread from the agenda.
   /// Non-associated copies (user-scheduled) are preserved.
   void optimisticallyDisassociate(ThreadId id) {
-    _optimisticTimestamp = DateTime.now();
+    // No thread-level override: disassociation updates the _associations map
+    // in place below, which _makeAgenda consults on every rebuild — so the
+    // associated copy naturally stops rendering without needing to suppress
+    // stream events.
 
     // Also update the associations map so _makeAgenda doesn't re-add them
     if (_associations != null) {
@@ -450,7 +610,13 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// The stream-based update will confirm the same state when it catches up.
   void optimisticallyUpdateThread(Thread updatedThread) {
     if (updatedThread.draft) return;
-    _optimisticTimestamp = DateTime.now();
+    // Record the expected post-update state. The default watched set covers
+    // the visible-state fields any save() could flip (todo, archived,
+    // priority, schedule, unread) while ignoring fields the server may
+    // rewrite on its own (e.g. AI-generated title).
+    _optimisticOverrides[updatedThread.id] = _OptimisticOverride.expect(
+      expected: updatedThread,
+    );
 
     // Keep sticky cache in sync so edits (rename, archive, etc.) aren't
     // reverted when the stream re-emits and the thread is outside the LIMIT.
@@ -511,8 +677,8 @@ class PriorityBloc extends Cubit<PriorityState> {
         final scheduleChanged = exactItem != null && oldAt != updatedThread.at;
 
         if (scheduleChanged && updatedThread.at != null) {
-          // Record expected schedule for data-driven suppression
-          _pendingOptimisticSchedule = (updatedThread.id, updatedThread.at);
+          // The override recorded above already captures the expected `at`,
+          // so stream emissions with the new schedule will settle it.
 
           // Remove only the specific item and its associated event header
           updatedAgendaItems = state.agendaItems.where((item) {
@@ -744,6 +910,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
     _activityFeedSubscription?.cancel();
     _tagsSubscription?.cancel();
+
+    // Drop optimistic overrides — they apply to the old priority's streams
+    // and won't naturally settle in the new one.
+    _optimisticOverrides.clear();
 
     // Load or create draft for new priority
     log.info(
@@ -1343,7 +1513,6 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     log.fine('Loading agenda for priority ${priorityToLoad.id}');
     _agendaSubscription?.cancel();
-    _pendingRemovedIds.clear();
 
     // Three streams are combined:
     // 1. Main agenda: threads in the current priority (filtered by path)
@@ -1489,49 +1658,13 @@ class PriorityBloc extends Cubit<PriorityState> {
               final (result, outsidePriorityIds) = combined;
               final (:threads, :rawRowCount) = result;
 
-              // After a reorder or optimistic update, suppress agenda rebuilds
-              // briefly so the optimistic state stays visible until all DB writes
-              // (thread, schedule, tags) are complete and the stream settles.
               final now = DateTime.now();
 
-              // Data-driven suppression for optimistic schedule changes: keep
-              // suppressing until stream data confirms the expected schedule.
-              final bool suppressOptimisticSchedule;
-              if (_pendingOptimisticSchedule != null) {
-                final (threadId, expectedAt) = _pendingOptimisticSchedule!;
-                final settled = threads.any(
-                  (t) => t.id == threadId && t.at == expectedAt,
-                );
-                suppressOptimisticSchedule = !settled;
-                if (settled) {
-                  _pendingOptimisticSchedule = null;
-                }
-              } else {
-                suppressOptimisticSchedule = false;
-              }
-
-              // Data-driven suppression for optimistic removals: keep suppressing
-              // until the stream confirms the removed thread is gone.
-              final bool suppressOptimisticRemoval;
-              if (_pendingRemovedIds.isNotEmpty) {
-                final stillPresent = threads.any(
-                  (t) => _pendingRemovedIds.contains(t.id),
-                );
-                suppressOptimisticRemoval = stillPresent;
-                if (!stillPresent) {
-                  _pendingRemovedIds.clear();
-                }
-              } else {
-                suppressOptimisticRemoval = false;
-              }
-
-              // Time-based suppression for other optimistic thread updates (non-reorder).
-              final suppressOptimistic =
-                  suppressOptimisticSchedule ||
-                  suppressOptimisticRemoval ||
-                  (_optimisticTimestamp != null &&
-                      now.difference(_optimisticTimestamp!) <
-                          const Duration(milliseconds: 500));
+              // Per-thread optimistic overrides replace the earlier
+              // time-based / pending-id suppressions: stream rows are patched
+              // (or filtered) until the expected state is reflected, then the
+              // override clears. Unrelated threads keep updating normally.
+              final patchedThreads = _applyOptimisticOverrides(threads);
 
               // Data-driven suppression for reorders: keep reorderViewItems until
               // the stream data includes the reordered thread at its expected order.
@@ -1540,7 +1673,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               final bool suppressReorder;
               if (_pendingReorderOrder != null) {
                 final (threadId, expectedOrder) = _pendingReorderOrder!;
-                final settled = threads.any(
+                final settled = patchedThreads.any(
                   (t) => t.id == threadId && t.order.value == expectedOrder,
                 );
                 suppressReorder = !settled;
@@ -1561,7 +1694,9 @@ class PriorityBloc extends Cubit<PriorityState> {
                 final assocExists =
                     children != null &&
                     children.any((a) => a.childThreadId == childId);
-                final stillTodo = threads.any((t) => t.id == childId && t.todo);
+                final stillTodo = patchedThreads.any(
+                  (t) => t.id == childId && t.todo,
+                );
                 final settled = assocExists && !stillTodo;
                 suppressAssociation = !settled;
                 if (settled) {
@@ -1616,14 +1751,13 @@ class PriorityBloc extends Cubit<PriorityState> {
                   suppressReorder ||
                   suppressAssociation ||
                   suppressDisassociation ||
-                  suppressReorderTime ||
-                  suppressOptimistic;
+                  suppressReorderTime;
 
               log.fine(
                 '[_loadAgenda] stream fired: suppress=$suppressRebuild '
                 '(reorder=$suppressReorder assoc=$suppressAssociation '
-                'disassoc=$suppressDisassociation time=$suppressReorderTime '
-                'optimistic=$suppressOptimistic) '
+                'disassoc=$suppressDisassociation time=$suppressReorderTime) '
+                'overrides=${_optimisticOverrides.length} '
                 'reorderAge=${_reorderTimestamp != null ? now.difference(_reorderTimestamp!).inMilliseconds : "null"}ms '
                 'hasReorderViewItems=${state.reorderViewItems != null} '
                 'pendingOrder=${_pendingReorderOrder?.$2}',
@@ -1632,7 +1766,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               final agendaItems = suppressRebuild
                   ? state.agendaItems
                   : PriorityState._makeAgenda(
-                      threads,
+                      patchedThreads,
                       context: priorityToLoad,
                       horizonDays: _agendaHorizonDays,
                       associationsByParentId: _associations,
@@ -1733,14 +1867,12 @@ class PriorityBloc extends Cubit<PriorityState> {
           final (:threads, :rawRowCount) = result;
           _activityFeedLastRawRowCount = rawRowCount;
 
-          // Suppress rebuilds briefly after optimistic updates so stale
-          // intermediate stream events (e.g. thread saved but schedule not yet)
-          // don't overwrite the optimistic state.
-          final suppressOptimistic =
-              _optimisticTimestamp != null &&
-              DateTime.now().difference(_optimisticTimestamp!) <
-                  const Duration(milliseconds: 500);
-          if (suppressOptimistic) return;
+          // Apply per-thread optimistic overrides so intermediate stream
+          // snapshots (e.g. thread row written but user schedule not yet —
+          // which derives todo=true even though the user just archived it)
+          // don't flip the list back to a stale state. Unrelated threads
+          // keep updating normally on every emission.
+          final patchedThreads = _applyOptimisticOverrides(threads);
 
           // doneEnd when sync is complete AND either:
           // - raw rows are below limit (no more data), OR
@@ -1749,11 +1881,11 @@ class PriorityBloc extends Cubit<PriorityState> {
               _activityFeedLimitIncreased &&
               _activityFeedSyncNoMore &&
               rawRowCount >= _activityFeedLimit &&
-              threads.length ==
+              patchedThreads.length ==
                   state.activityFeedItems
                       .whereType<AgendaThreadItem>()
                       .length &&
-              threads.length < _activityFeedLimit;
+              patchedThreads.length < _activityFeedLimit;
           final isSearching = state.search.isNotEmpty;
           final doneEnd =
               (rawRowCount < _activityFeedLimit &&
@@ -1763,8 +1895,8 @@ class PriorityBloc extends Cubit<PriorityState> {
           // Inject sticky threads that fell outside the SQL LIMIT
           // after being marked as read (unreadSort dropped 1→0,
           // pushing them past the LIMIT boundary).
-          final allThreads = List<Thread>.from(threads);
-          final threadIds = threads.map((t) => t.id).toSet();
+          final allThreads = List<Thread>.from(patchedThreads);
+          final threadIds = patchedThreads.map((t) => t.id).toSet();
           for (final entry in _stickyUnreadIds.entries.toList()) {
             if (threadIds.contains(entry.key)) {
               // Refresh cached thread with latest stream data
@@ -1772,7 +1904,7 @@ class PriorityBloc extends Cubit<PriorityState> {
                 urgencyRank: entry.value.urgencyRank,
                 importance: entry.value.importance,
                 activityAt: entry.value.activityAt,
-                thread: threads.firstWhere((t) => t.id == entry.key),
+                thread: patchedThreads.firstWhere((t) => t.id == entry.key),
               );
             } else {
               // Thread fell outside LIMIT because it was marked read

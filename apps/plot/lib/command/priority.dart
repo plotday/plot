@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
 
 import 'command.dart';
 import 'package:plot/util/shortcut.dart';
@@ -11,6 +12,7 @@ import 'package:plot/widget/color_dot.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/priorities.dart';
+import 'package:plot/state/thread.dart';
 import 'package:plot/state/now.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/util/theme_color.dart';
@@ -470,8 +472,12 @@ List<Command> priorityCommands(Priority priority) => [
   ...prioritySecondaryCommands(priority),
 ];
 
-List<Command> currentPriorityCommands(Priority priority) => [
+List<Command> currentPriorityCommands(
+  Priority priority, {
+  BuildContext? context,
+}) => [
   ...prioritySecondaryCommands(priority),
+  if (context != null) ToggleArchivedVisibility(context: context),
   NewThread(),
   OpenNextThread(),
   OpenPreviousThread(),
@@ -484,10 +490,13 @@ List<StaticCommandGroup> priorityCommandGroups(Priority priority) => [
   ),
 ];
 
-List<StaticCommandGroup> currentPriorityCommandGroups(Priority priority) => [
+List<StaticCommandGroup> currentPriorityCommandGroups(
+  Priority priority, {
+  BuildContext? context,
+}) => [
   StaticCommandGroup(
     title: 'Priority: ${priority.title}',
-    commands: currentPriorityCommands(priority),
+    commands: currentPriorityCommands(priority, context: context),
   ),
 ];
 
@@ -531,6 +540,61 @@ class ToggleShowArchived extends Command {
   }
 }
 
+/// Toggle archived visibility across the current priority's threads and
+/// notes (and, via the priorities-list watcher, archived priorities too).
+/// Backed by `Tag.archived` on `PriorityBloc.filter` so it matches what the
+/// old search-filter toggle did.
+class ToggleArchivedVisibility extends Command {
+  ToggleArchivedVisibility._({required this.showingArchived})
+    : super(
+        title: showingArchived ? 'Hide archived' : 'Show archived',
+        subtitle: showingArchived
+            ? 'Hide archived threads, notes and priorities'
+            : 'Show archived threads, notes and priorities',
+        eventObject: EventObject.archived,
+        eventAction: EventAction.viewed,
+        icon: PlotIcon.archived,
+      );
+
+  factory ToggleArchivedVisibility({required BuildContext context}) {
+    final showing = context
+        .read<PriorityBloc>()
+        .state
+        .filter
+        .contains(Tag.archived);
+    return ToggleArchivedVisibility._(showingArchived: showing);
+  }
+
+  final bool showingArchived;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final priorityBloc = context.read<PriorityBloc>();
+    final currentFilters = List<Tag>.from(priorityBloc.state.filter);
+    if (currentFilters.contains(Tag.archived)) {
+      currentFilters.remove(Tag.archived);
+    } else {
+      currentFilters.add(Tag.archived);
+    }
+    priorityBloc.updateFilter(currentFilters);
+
+    try {
+      final threadBloc = context.read<ThreadBloc>();
+      final threadFilters = List<Tag>.from(threadBloc.state.filter);
+      if (threadFilters.contains(Tag.archived)) {
+        threadFilters.remove(Tag.archived);
+      } else {
+        threadFilters.add(Tag.archived);
+      }
+      threadBloc.updateFilter(threadFilters);
+    } on ProviderNotFoundException {
+      // No thread open — nothing to toggle.
+    }
+
+    return const CommandDone();
+  }
+}
+
 /// Toggle showing all priorities (active + archived) vs active only
 class ToggleArchivedPrioritiesFilter extends Command {
   ToggleArchivedPrioritiesFilter({required this.showAllPriorities})
@@ -544,7 +608,6 @@ class ToggleArchivedPrioritiesFilter extends Command {
         eventObject: EventObject.filter,
         eventAction: EventAction.filtered,
         icon: PlotIcon.archived,
-        on: showAllPriorities, // Highlighted when showing all
       );
 
   final bool showAllPriorities;

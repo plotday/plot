@@ -264,12 +264,10 @@ class PickFilterCommand extends ShowCommands {
            final commands = filterCommandsBuilder(context);
            final iconFilters =
                commands.whereType<ToggleIconFilter>().toList();
-           final tagFilters =
-               commands.whereType<ToggleActivityFilter>().toList();
-           final stateFilters = tagFilters
-               .where((c) => c.tag == Tag.archived)
-               .toList();
-           final otherTagFilters = tagFilters
+           // Exclude Tag.archived — archived visibility is toggled from the
+           // header menu, not the search filter modal.
+           final tagFilters = commands
+               .whereType<ToggleActivityFilter>()
                .where((c) => c.tag != Tag.archived)
                .toList();
 
@@ -280,15 +278,10 @@ class PickFilterCommand extends ShowCommands {
                    title: 'Thread type',
                    commands: iconFilters.map(_AccentWhenOn.new).toList(),
                  ),
-               if (otherTagFilters.isNotEmpty)
+               if (tagFilters.isNotEmpty)
                  StaticCommandGroup(
                    title: 'Tags',
-                   commands: otherTagFilters.map(_AccentWhenOn.new).toList(),
-                 ),
-               if (stateFilters.isNotEmpty)
-                 StaticCommandGroup(
-                   title: 'State',
-                   commands: stateFilters.map(_AccentWhenOn.new).toList(),
+                   commands: tagFilters.map(_AccentWhenOn.new).toList(),
                  ),
              ],
            );

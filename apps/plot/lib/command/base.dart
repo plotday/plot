@@ -106,6 +106,9 @@ abstract class Command {
   /// Returns true by default (command is enabled).
   bool enabled(BuildContext context) => true;
 
+  /// Optional alternate command invoked on long-press. Null = no long-press action.
+  Command? get longPressCommand => null;
+
   Future<CommandReturn> run(BuildContext context);
 
   /// Override to provide a custom icon widget (e.g., Avatar) instead of IconData.
@@ -151,6 +154,9 @@ class CommandWrapper extends Command {
 
   @override
   bool enabled(BuildContext context) => command.enabled(context);
+
+  @override
+  Command? get longPressCommand => command.longPressCommand;
 
   @override
   Future<CommandReturn> run(BuildContext context) {

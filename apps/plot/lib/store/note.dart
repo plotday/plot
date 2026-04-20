@@ -939,9 +939,12 @@ class Note extends Equatable implements Comparable<Note> {
   /// Sets or unsets a tag for a specific actor.
   /// Returns a new Note instance with the updated tag - caller must call save().
   Note setTag(Tag tag, ActorId actorId, [bool value = true]) {
-    // Handle compute tags that map to direct fields
+    // Handle compute tags that map to direct fields.
+    // Private notes must include the toggling user in accessContacts — an
+    // empty array hides the note from everyone unless created_by matches
+    // the viewer's user_id (not true for twist-created notes like emails).
     if (tag == Tag.private) {
-      return copyWith(accessContacts: Value(value ? [] : null));
+      return copyWith(accessContacts: Value(value ? [actorId] : null));
     }
 
     // Count tags can only be set for the current user

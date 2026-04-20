@@ -11,13 +11,13 @@ import 'package:plot/command/command.dart';
 import 'package:plot/page/priority.dart'
     show ActivityPanelControllerProvider, PriorityShortcutsProviderState;
 import 'package:plot/state/layout.dart';
+import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/theme.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/thread_header_notifier.dart';
 import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/priority_selector.dart';
@@ -51,8 +51,15 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     super.didChangeDependencies();
     _panelController = ActivityPanelControllerProvider.maybeOf(context);
     _panelController?.registerSearchToggle(_toggleSearch);
-    context.read<PriorityBloc>().headerNotifier =
-        ThreadHeaderNotifierProvider.read(context);
+    // No PriorityBloc when the header is used on the Priorities tab
+    // (single-panel root view). That path renders the no-priority header
+    // and has nothing to wire up here.
+    try {
+      context.read<PriorityBloc>().headerNotifier =
+          ThreadHeaderNotifierProvider.read(context);
+    } on ProviderNotFoundException {
+      // Intentionally no-op.
+    }
   }
 
   void _onSearchChanged() {
@@ -126,6 +133,14 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
+        // On the Priorities tab in single-panel mode there is no
+        // PriorityBloc in scope. Render a minimal header with just
+        // window-control padding and the menu.
+        try {
+          context.read<PriorityBloc>();
+        } on ProviderNotFoundException {
+          return _buildNoPriorityHeader(context, layoutState);
+        }
         return BlocBuilder<PriorityBloc, PriorityState>(
           builder: (context, state) {
             // of() registers an InheritedNotifier dependency, so this
@@ -283,9 +298,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (layoutState.multiPanel && !state.context.isTwistDev)
         Button.icon(NewThread()),
 
-      // Menu button (desktop only — mobile uses title tap target)
-      if (layoutState.multiPanel)
-        Button.icon(_buildMenuCommand(state, layoutState, notifier)),
+      Button.icon(_buildMenuCommand(state, layoutState, notifier)),
 
       // Windows window control padding
       if (resolvedToolbarPadding.right != 0)
@@ -363,34 +376,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
           spacing: 8,
           children: [
             Flexible(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => context.run(
-                  _buildMenuCommand(state, layoutState, notifier),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  spacing: 4,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        thread.displayTitle,
-                        overflow: TextOverflow.ellipsis,
-                        textHeightBehavior: const TextHeightBehavior(),
-                        style: context.theme.typography.sm.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: context.theme.colors.foreground,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      PlotIcon.menu,
-                      size: context.theme.iconSizes.xs,
-                      color: context.theme.colors.foreground.withValues(
-                        alpha: 0.7,
-                      ),
-                    ),
-                  ],
+              child: Text(
+                thread.displayTitle,
+                overflow: TextOverflow.ellipsis,
+                textHeightBehavior: const TextHeightBehavior(),
+                style: context.theme.typography.sm.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: context.theme.colors.foreground,
                 ),
               ),
             ),
@@ -400,34 +392,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       );
     }
 
-    // Single panel: tap priority to open menu
+    // Single panel: show the priority label.
     if (!layoutState.multiPanel) {
       return Expanded(
         child: Row(
           spacing: 8,
           children: [
-            Flexible(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => context.run(
-                  _buildMenuCommand(state, layoutState, notifier),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  spacing: 4,
-                  children: [
-                    Flexible(child: PriorityLabel(priority: state.context)),
-                    Icon(
-                      PlotIcon.menu,
-                      size: context.theme.iconSizes.xs,
-                      color: context.theme.colors.foreground.withValues(
-                        alpha: 0.7,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            Flexible(child: PriorityLabel(priority: state.context)),
             search,
           ],
         ),
@@ -603,6 +574,82 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
         .toList();
   }
 
+  Widget _buildNoPriorityHeader(
+    BuildContext context,
+    LayoutState layoutState,
+  ) {
+    final resolvedToolbarPadding = Window.toolbarPadding.resolve(
+      TextDirection.ltr,
+    );
+
+    final titleChildren = <Widget>[
+      if (resolvedToolbarPadding.left != 0)
+        SizedBox(width: resolvedToolbarPadding.left),
+      const Expanded(child: SizedBox.shrink()),
+    ];
+
+    final suffixes = <Widget>[
+      Button.icon(_buildNoPriorityMenuCommand()),
+      if (resolvedToolbarPadding.right != 0)
+        SizedBox(width: resolvedToolbarPadding.right),
+      const SizedBox.shrink(),
+    ];
+
+    Widget header = FTheme(
+      data: darkenTheme(context, context.theme, context.colour, steps: 2),
+      child: Builder(
+        builder: (context) => ClipRect(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.theme.colors.background,
+              border: Border(
+                bottom: BorderSide(
+                  color: context.theme.colors.border,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: FHeader(
+              style: FHeaderStyleDelta.delta(
+                padding: EdgeInsetsGeometryDelta.add(EdgeInsets.zero),
+              ),
+              title: Row(spacing: 8, children: titleChildren),
+              suffixes: suffixes,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (Platform.instance.isWindows) {
+      header = DragToMoveArea(child: header);
+    }
+    return header;
+  }
+
+  Command _buildNoPriorityMenuCommand() {
+    return ShowCommands(
+      title: 'Menu',
+      icon: PlotIcon.menu,
+      commandsBuilder: (context) async {
+        final showAll = context
+            .read<LocalPreferencesBloc>()
+            .state
+            .showAllPriorities;
+        return Commands(
+          groups: [
+            StaticCommandGroup(
+              title: 'View',
+              commands: [
+                ToggleArchivedPrioritiesFilter(showAllPriorities: showAll),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Command _buildMenuCommand(
     PriorityState state,
     LayoutState layoutState,
@@ -613,16 +660,17 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       icon: PlotIcon.menu,
       commandsBuilder: (context) async {
         final thread = state.thread;
+        // Build priority groups before any await so BuildContext is not
+        // carried across an async gap.
+        final priorityGroups = currentPriorityCommandGroups(
+          state.thread?.priority ?? state.context,
+          context: context,
+        );
         final threadGroups = thread != null
             ? await threadCommandGroups(thread)
             : <StaticCommandGroup>[];
         return Commands(
-          groups: [
-            ...threadGroups,
-            ...currentPriorityCommandGroups(
-              state.thread?.priority ?? state.context,
-            ),
-          ],
+          groups: [...threadGroups, ...priorityGroups],
         );
       },
     );

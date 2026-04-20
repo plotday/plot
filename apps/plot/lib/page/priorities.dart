@@ -15,6 +15,7 @@ import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/unified_header.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
 
@@ -64,7 +65,11 @@ class PrioritiesPage extends StatelessWidget {
           });
         }
 
+        // In single-panel mode the Priorities tab stands alone, so it renders
+        // its own UnifiedHeader (multi-panel mode hoists UnifiedHeader to the
+        // priority page above the layout).
         return Scaffold(
+          header: context.isMultiPanel ? null : const UnifiedHeader(),
           childPad: false,
           scrollable: false,
           body: BlocBuilder<LayoutBloc, LayoutState>(
@@ -82,10 +87,6 @@ class PrioritiesPage extends StatelessWidget {
                       }
                       return Column(
                         children: [
-                          if (!layoutState.multiPanel)
-                            SizedBox(
-                              height: MediaQuery.of(context).padding.top,
-                            ),
                           Expanded(
                             child: PrioritiesList(
                               root: root,
@@ -167,3 +168,4 @@ class PrioritiesPage extends StatelessWidget {
     );
   }
 }
+
