@@ -414,29 +414,37 @@ Before committing or declaring any code change complete, run `/finalize` to exec
 
 **CRITICAL: Any query on `thread_unread` or `thread` that determines what a user can see or what triggers notifications MUST enforce thread visibility filters.**
 
-The `user.thread` view is the canonical reference for visibility logic. In the per-user priority model visibility is driven by `thread_priority` (who filed the thread where) and `thread.contacts` (who is allowed to see it).
+The `user.thread` view is the canonical reference for visibility logic. In the per-user priority model visibility is driven by `thread_priority` (who filed the thread where) plus membership in `thread.contacts` OR `thread.groups`.
 
 ```sql
 -- Required visibility filters when joining thread_unread with thread:
 JOIN public.thread_priority tp ON tp.thread_id = t.id
 LEFT JOIN public.thread_unread tu
     ON tu.user_id = tp.user_id AND tu.thread_id = t.id
-WHERE t.archived_at IS NULL                            -- exclude archived threads
-  AND (t.draft = false OR t.created_by = tp.user_id)   -- only own drafts
-  AND t.contacts && "user".user_contact_ids(tp.user_id) -- contacts intersect user's linked contacts
+WHERE t.archived_at IS NULL                             -- exclude archived threads
+  AND (t.draft = false OR t.created_by = tp.user_id)    -- only own drafts
+  AND (                                                 -- access via contacts OR groups
+    t.contacts && "user".user_contact_ids(tp.user_id)
+    OR t.groups && "user".user_group_ids(tp.user_id)
+  )
 ```
 
+- Always use the contacts-OR-groups pair. A contacts-only filter silently drops threads the user can see only through group membership (e.g. team-wide feedback threads), which suppresses unread indicators and push/email notifications.
 - `thread_priority` is populated automatically by the
-  `populate_thread_priority_for_author` and `file_thread_priority_peers`
-  triggers, so raw inserts and RPC-driven upserts both get correct
-  filings. Callers do not need to write `thread_priority` directly.
+  `populate_thread_priority_for_author`, `file_thread_priority_peers`,
+  and `file_thread_priority_for_group_members` triggers, so raw inserts
+  and RPC-driven upserts both get correct filings. Callers do not need
+  to write `thread_priority` directly.
 - `thread.contacts` must include every linked contact the thread is
-  authored by or shared with. `user.user_contact_ids(user_id)` returns
-  every contact linked to the user, not only the primary.
+  authored by or shared with. `thread.groups` lists every group the
+  thread was sent to.
+- `user.user_contact_ids(user_id)` returns every contact linked to the
+  user (not only the primary). `user.user_group_ids(user_id)` returns
+  every group the user belongs to via any of those contacts.
 - `thread.access` and `thread.access_contacts` are vestigial — kept in
   the schema for Flutter backwards compatibility but **no longer
   consulted** by visibility logic. New code should read `thread.contacts`
-  (and the user's linked contacts) only.
+  and `thread.groups` only.
 
 ### When these filters are required
 

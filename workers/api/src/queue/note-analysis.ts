@@ -1,4 +1,4 @@
-import { type Kysely } from "kysely";
+import { type Kysely, sql } from "kysely";
 import { PostHog } from "posthog-node";
 
 import type { DB } from "../db";
@@ -96,7 +96,7 @@ async function gatherContext(
       .executeTakeFirst(),
     db
       .selectFrom("thread")
-      .select(["title", "contacts"])
+      .select(["title", "contacts", "groups"])
       .where("id", "=", threadId)
       .executeTakeFirst(),
   ]);
@@ -114,21 +114,32 @@ async function gatherContext(
         .select(["l.title", "l.status", "l.type", "c.name as assignee_name"])
         .where("l.thread_id", "=", threadId)
         .execute(),
-      // Thread members: all users linked to the thread's contacts,
-      // resolved to their primary contact record.
+      // Thread members: every user who can see this thread — linked to any
+      // thread contact, OR a member of any thread group (via their linked
+      // contacts). Resolved to each user's primary contact record.
       (async () => {
-        if (!thread.contacts || thread.contacts.length === 0) return [];
+        const contacts = (thread.contacts ?? []) as string[];
+        const groups = (thread.groups ?? []) as string[];
+        if (contacts.length === 0 && groups.length === 0) return [];
 
-        // Find all users linked to these contacts
-        const users = await db
-          .selectFrom("user_contact")
-          .select("user_id")
-          .where("contact_id", "in", thread.contacts as string[])
-          .where("linked", "=", true)
-          .where("archived_at", "is", null)
-          .execute();
+        const userRows = await sql<{ user_id: string }>`
+          SELECT DISTINCT uc.user_id
+          FROM user_contact uc
+          WHERE uc.linked = TRUE
+            AND uc.archived_at IS NULL
+            AND (
+              ${contacts.length > 0 ? sql`uc.contact_id = ANY(${contacts}::uuid[])` : sql`FALSE`}
+              OR EXISTS (
+                SELECT 1 FROM group_member gm
+                WHERE gm.contact_id = uc.contact_id
+                  AND ${groups.length > 0 ? sql`gm.group_id = ANY(${groups}::uuid[])` : sql`FALSE`}
+              )
+            )
+        `.execute(db);
 
-        const userIds = [...new Set(users.map((u) => u.user_id))];
+        const userIds: string[] = [
+          ...new Set(userRows.rows.map((r) => r.user_id)),
+        ];
         if (userIds.length === 0) return [];
 
         return db

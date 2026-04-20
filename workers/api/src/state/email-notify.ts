@@ -156,7 +156,10 @@ export class EmailNotify extends DurableObject<Bindings> {
             AND tu.urgency != 'passive'
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
-            AND t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
+            AND (
+              t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
+              OR t.groups && "user".user_group_ids(${this.userId!}::uuid)
+            )
           ORDER BY tu.updated_at DESC
         `.execute(db);
 

@@ -44,7 +44,10 @@ notificationContent.get("/notification-content", async (c) => {
         AND tu.urgency != 'passive'
         AND t.archived_at IS NULL
         AND (t.draft = false OR t.created_by = ${userId}::uuid)
-        AND t.contacts && "user".user_contact_ids(${userId}::uuid)
+        AND (
+          t.contacts && "user".user_contact_ids(${userId}::uuid)
+          OR t.groups && "user".user_group_ids(${userId}::uuid)
+        )
       ORDER BY CASE tu.urgency
         WHEN 'interrupt' THEN 0
         WHEN 'inform-requests' THEN 1

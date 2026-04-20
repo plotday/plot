@@ -108,7 +108,10 @@ export class PushNotify extends DurableObject<Bindings> {
             AND tu.urgency != 'passive'
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${userId}::uuid)
-            AND t.contacts && "user".user_contact_ids(${userId}::uuid)
+            AND (
+              t.contacts && "user".user_contact_ids(${userId}::uuid)
+              OR t.groups && "user".user_group_ids(${userId}::uuid)
+            )
           GROUP BY tu.urgency, psi.see_within_requests, psi.see_within_updates
           ORDER BY CASE tu.urgency
             WHEN 'interrupt' THEN 0
@@ -272,7 +275,10 @@ export class PushNotify extends DurableObject<Bindings> {
             AND tu.urgency != 'passive'
             AND t.archived_at IS NULL
             AND (t.draft = false OR t.created_by = ${this.userId!}::uuid)
-            AND t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
+            AND (
+              t.contacts && "user".user_contact_ids(${this.userId!}::uuid)
+              OR t.groups && "user".user_group_ids(${this.userId!}::uuid)
+            )
         `.execute(db);
         latestUnreadAt = result.rows[0]?.latest ?? null;
 

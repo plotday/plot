@@ -1,3 +1,4 @@
+- Fixed missing notifications and unread indicators for threads shared to a team — feedback and other team-wide threads now correctly trigger push and email notifications, and show the unread dot on the priority they land in
 - Archiving a thread from the activity feed now feels instant — the thread disappears immediately instead of after a noticeable delay
 - Notification emails now include an unsubscribe link — choose to get them at most once per day, once per week, or never, without needing to sign in
 - Priorities with nothing on the agenda now open straight to the activity feed — and opening a thread that isn't on the agenda also switches to the feed, so you always land on a list that has your thread in it

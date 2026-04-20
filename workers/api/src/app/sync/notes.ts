@@ -406,25 +406,36 @@ export async function markThreadUnreadForOthers(
   excludeUserId: string,
   noteCreatedAt?: string
 ): Promise<string[]> {
-  // Get all thread contacts
+  // Get all thread contacts and groups
   const thread = await db
     .selectFrom("thread")
-    .select("contacts")
+    .select(["contacts", "groups"])
     .where("id", "=", threadId)
     .executeTakeFirst();
 
-  if (!thread?.contacts || thread.contacts.length === 0) return [];
+  if (!thread) return [];
+  const contacts = (thread.contacts ?? []) as string[];
+  const groups = (thread.groups ?? []) as string[];
+  if (contacts.length === 0 && groups.length === 0) return [];
 
-  // Find all users linked to these contacts
-  const users = await db
-    .selectFrom("user_contact")
-    .select("user_id")
-    .where("contact_id", "in", thread.contacts as string[])
-    .where("linked", "=", true)
-    .where("archived_at", "is", null)
-    .execute();
+  // Resolve every user with visibility: linked to any thread contact,
+  // OR a member of any thread group (via their linked contacts).
+  const userRows = await sql<{ user_id: string }>`
+    SELECT DISTINCT uc.user_id
+    FROM user_contact uc
+    WHERE uc.linked = TRUE
+      AND uc.archived_at IS NULL
+      AND (
+        ${contacts.length > 0 ? sql`uc.contact_id = ANY(${contacts}::uuid[])` : sql`FALSE`}
+        OR EXISTS (
+          SELECT 1 FROM group_member gm
+          WHERE gm.contact_id = uc.contact_id
+            AND ${groups.length > 0 ? sql`gm.group_id = ANY(${groups}::uuid[])` : sql`FALSE`}
+        )
+      )
+  `.execute(db);
 
-  const userIds = [...new Set(users.map((u) => u.user_id))];
+  const userIds = [...new Set(userRows.rows.map((r) => r.user_id))];
 
   const markedUserIds: string[] = [];
   for (const userId of userIds) {
