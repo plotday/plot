@@ -1661,6 +1661,27 @@ export class Integrations extends Tool implements IAuth {
       }
     }
 
+    // Populate twist_instance.account_label from per-provider metadata so the
+    // Connections UI and composed actor display name (notes/mentions) get a
+    // disambiguating label without a client-side round-trip. Only write when
+    // currently null so a user-set label is never overwritten.
+    const accountLabel = providerData
+      ? (config?.extractAccountLabel?.(providerData) ?? null)
+      : null;
+    if (accountLabel) {
+      try {
+        await this.db
+          .updateTable("twist_instance")
+          .set({ account_label: accountLabel })
+          .where("id", "=", this.twistInstanceId)
+          .where("account_label", "is", null)
+          .execute();
+      } catch (error) {
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+        logger.error("Failed to set account_label", error as Error);
+      }
+    }
+
     // Create Authorization object
     const authorization: Authorization = {
       provider: tokenInfo.provider,

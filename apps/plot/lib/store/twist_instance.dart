@@ -14,6 +14,7 @@ class TwistInstances extends Table
   BoolColumn get shared => boolean().withDefault(const Constant(false))();
   TextColumn get keyOption => text().nullable()();
   TextColumn get name => text()();
+  TextColumn get accountLabel => text().nullable()();
   TextColumn get config => text().map(const JsonConverter())();
   TextColumn get linkTypes => text().nullable()();
   TextColumn get logoUrl => text().nullable()();
@@ -204,6 +205,7 @@ class TwistInstance extends TwistInstanceRow {
         shared: row.shared,
         keyOption: row.keyOption,
         name: row.name,
+        accountLabel: row.accountLabel,
         config: row.config,
         linkTypes: row.linkTypes,
         logoUrl: row.logoUrl,
@@ -235,6 +237,10 @@ class TwistInstance extends TwistInstanceRow {
 
   /// Returns the display name for this twist instance.
   ///
+  /// For sources (connections), the per-connection [accountLabel] is appended
+  /// so notes/mentions show e.g. `Gmail (kris@plot.day)` — the same format the
+  /// server-side `actor` view produces.
+  ///
   /// For single-instance twists, if the user has the same twist (same [twistId])
   /// installed in multiple scopes (e.g. Personal + a team), appends a scope
   /// suffix so the user can distinguish them:
@@ -248,6 +254,14 @@ class TwistInstance extends TwistInstanceRow {
     required List<TwistInstance> allInstances,
     String? teamName,
   }) {
+    // Sources: compose with account_label for note-author / mention display.
+    if (isSource) {
+      if (accountLabel != null && accountLabel!.isNotEmpty) {
+        return '$name ($accountLabel)';
+      }
+      return name;
+    }
+
     // Multi-instance twists always use their configured name as-is
     if (multipleInstances) return name;
 

@@ -16,6 +16,8 @@ export type ArrayTypeImpl<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S[], I[], U[]>
   : T[];
 
+export type EmailFrequency = "daily" | "never" | "weekly";
+
 export type EnterBehavior = "enter_newline" | "enter_submits";
 
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
@@ -797,6 +799,7 @@ export interface Twist {
 }
 
 export interface TwistInstance {
+  account_label: string | null;
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   draft: Generated<boolean>;
@@ -919,6 +922,7 @@ export interface TwistInstanceConnection {
 }
 
 export interface TwistInstanceDetails {
+  account_label: string | null;
   archived_at: Timestamp | null;
   author_email: string | null;
   author_name: string | null;
@@ -1317,6 +1321,8 @@ export interface UserSchedule {
 
 export interface UserSettings {
   ai_enabled: boolean | null;
+  email_frequency: EmailFrequency | null;
+  email_token: string | null;
   enter_behavior: EnterBehavior | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
@@ -1393,6 +1399,7 @@ export interface UserThreadTags {
 }
 
 export interface UserTwist {
+  account_label: string | null;
   archived_at: Timestamp | null;
   created_at: Timestamp | null;
   default_mention_created: boolean | null;
@@ -1409,6 +1416,7 @@ export interface UserTwist {
   options: Json | null;
   owner_id: string | null;
   shared: boolean | null;
+  team_id: Int8 | null;
   twist_environment: TwistEnvironment | null;
   twist_id: Int8 | null;
   updated_at: Timestamp | null;

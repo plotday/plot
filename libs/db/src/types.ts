@@ -2054,6 +2054,7 @@ export type Database = {
       }
       twist_instance: {
         Row: {
+          account_label: string | null
           archived_at: string | null
           created_at: string
           draft: boolean
@@ -2067,6 +2068,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          account_label?: string | null
           archived_at?: string | null
           created_at?: string
           draft?: boolean
@@ -2080,6 +2082,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          account_label?: string | null
           archived_at?: string | null
           created_at?: string
           draft?: boolean
@@ -3107,6 +3110,7 @@ export type Database = {
       }
       twist_instance_details: {
         Row: {
+          account_label: string | null
           archived_at: string | null
           author_email: string | null
           author_name: string | null
@@ -4519,6 +4523,7 @@ export type Database = {
       }
       twist: {
         Row: {
+          account_label: string | null
           archived_at: string | null
           created_at: string | null
           default_mention_created: boolean | null
@@ -4535,6 +4540,7 @@ export type Database = {
           options: Json | null
           owner_id: string | null
           shared: boolean | null
+          team_id: number | null
           twist_environment:
             | Database["public"]["Enums"]["twist_environment"]
             | null
@@ -4546,13 +4552,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -4821,6 +4827,7 @@ export type Database = {
       }
       upsert_twist_instance: {
         Args: {
+          p_account_label: string
           p_archived_at: string
           p_config: Json
           p_id: string

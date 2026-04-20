@@ -32,7 +32,7 @@ class Twist {
   final String environment;
   final bool isSource;
   final TwistPermissions? permissions;
-  final Map<String, dynamic>? options;
+  final Map<String, dynamic>? optionsSchema;
   final String? version;
   final String? logoUrl;
   final String? logoUrlDark;
@@ -53,7 +53,7 @@ class Twist {
     required this.environment,
     this.isSource = false,
     this.permissions,
-    this.options,
+    this.optionsSchema,
     this.version,
     this.logoUrl,
     this.logoUrlDark,
@@ -126,7 +126,7 @@ class Twist {
               json['permissions'] as Map<String, dynamic>,
             )
           : null,
-      options: json['options'] as Map<String, dynamic>?,
+      optionsSchema: json['options_schema'] as Map<String, dynamic>?,
       version: json['version'] as String?,
       logoUrl: json['logo_url'] as String?,
       logoUrlDark: json['logo_url_dark'] as String?,
@@ -171,6 +171,7 @@ class TwistApi {
     String? name,
     Map<String, dynamic>? config,
     String? teamId,
+    String? accountLabel,
   }) async {
     await api.patch<Map<String, dynamic>>(
       '/twist/$twistInstanceId',
@@ -178,6 +179,7 @@ class TwistApi {
         if (name != null) 'name': name,
         if (config != null) 'config': config,
         if (teamId != null) 'teamId': teamId,
+        if (accountLabel != null) 'accountLabel': accountLabel,
       },
     );
   }
@@ -429,22 +431,26 @@ class TwistApi {
 class SourceSummary {
   final String id; // twist_instance_id
   final String name;
+  final String? twistName;
   final String? logoUrl;
   final String? logoUrlDark;
-  final String? accountName;
-  final String? accountEmail;
+  final String? accountLabel;
   final AuthProvider? provider;
   final int enabledCount;
+  final String? teamId;
+  final String? teamName;
 
   const SourceSummary({
     required this.id,
     required this.name,
+    this.twistName,
     this.logoUrl,
     this.logoUrlDark,
-    this.accountName,
-    this.accountEmail,
+    this.accountLabel,
     this.provider,
     required this.enabledCount,
+    this.teamId,
+    this.teamName,
   });
 
   factory SourceSummary.fromJson(Map<String, dynamic> json) {
@@ -452,10 +458,10 @@ class SourceSummary {
     return SourceSummary(
       id: json['id'] as String,
       name: json['name'] as String,
+      twistName: json['twist_name'] as String?,
       logoUrl: json['logo_url'] as String?,
       logoUrlDark: json['logo_url_dark'] as String?,
-      accountName: json['account_name'] as String?,
-      accountEmail: json['account_email'] as String?,
+      accountLabel: json['account_label'] as String?,
       provider: providerStr != null
           ? AuthProvider.values.firstWhere(
               (v) => v.name == providerStr,
@@ -463,11 +469,10 @@ class SourceSummary {
             )
           : null,
       enabledCount: json['enabled_count'] as int? ?? 0,
+      teamId: json['team_id'] as String?,
+      teamName: json['team_name'] as String?,
     );
   }
-
-  /// Display name matching the existing TwistAccount.displayName pattern.
-  String? get displayName => accountName ?? accountEmail;
 }
 
 /// An upcoming connection not yet available as a source

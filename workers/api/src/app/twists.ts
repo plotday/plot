@@ -42,6 +42,7 @@ const TwistUpdateRequestSchema = z.object({
   name: z.string().optional(),
   config: z.record(z.string(), z.any()).optional(),
   teamId: z.string().nullable().optional(),
+  accountLabel: z.string().nullable().optional(),
 });
 
 const DraftRequestSchema = z.object({
@@ -126,12 +127,16 @@ twists.get("/sources/summary", async (c) => {
     const sources = await c.var.db
       .selectFrom("twist_instance")
       .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+      .leftJoin("team", "team.id", "twist_instance.team_id")
       .select([
         "twist_instance.id",
         "twist_instance.name",
-        "twist_instance.options",
+        "twist_instance.account_label",
+        "twist_instance.team_id",
+        "twist.name as twist_name",
         "twist.logo_url",
         "twist.logo_url_dark",
+        "team.name as team_name",
       ])
       .where("twist.is_source", "=", true)
       .where("twist_instance.owner_id", "=", userId)
@@ -159,53 +164,35 @@ twists.get("/sources/summary", async (c) => {
       countMap.set(row.twist_instance_id, Number(row.enabled_count));
     }
 
-    // Batch query: first connected account per source (via twist_instance_connection + contact)
-    const accounts = await c.var.db
+    // Batch query: the provider for each source (first connected actor). Only
+    // the provider itself is needed — the per-account disambiguator lives on
+    // twist_instance.account_label now.
+    const providers = await c.var.db
       .selectFrom("twist_instance_connection as ptc")
-      .innerJoin("contact as c", "c.id", "ptc.actor_id")
-      .select([
-        "ptc.twist_instance_id",
-        "ptc.provider",
-        "c.name as account_name",
-        "c.email as account_email",
-      ])
+      .select(["ptc.twist_instance_id", "ptc.provider"])
       .where("ptc.twist_instance_id", "in", sourceIds)
       .where("ptc.user_id", "=", userId)
       .execute();
 
-    // Use the first account per source
-    const accountMap = new Map<string, { provider: string; name: string | null; email: string | null }>();
-    for (const row of accounts) {
-      if (!accountMap.has(row.twist_instance_id)) {
-        accountMap.set(row.twist_instance_id, {
-          provider: row.provider,
-          name: row.account_name,
-          email: row.account_email,
-        });
+    const providerMap = new Map<string, string>();
+    for (const row of providers) {
+      if (!providerMap.has(row.twist_instance_id)) {
+        providerMap.set(row.twist_instance_id, row.provider);
       }
     }
 
     const result = sources.map((source) => {
-      const account = accountMap.get(source.id);
-      // For no-provider connectors, fall back to _accountName stored in options
-      let accountName = account?.name ?? null;
-      if (!accountName && source.options) {
-        try {
-          const cfg = typeof source.options === "string"
-            ? JSON.parse(source.options)
-            : source.options;
-          if (cfg?._accountName) accountName = cfg._accountName;
-        } catch { /* ignore parse errors */ }
-      }
       return {
         id: source.id,
         name: source.name,
+        twist_name: source.twist_name,
         logo_url: source.logo_url,
         logo_url_dark: source.logo_url_dark,
-        account_name: accountName,
-        account_email: account?.email ?? null,
-        provider: account?.provider ?? null,
+        account_label: source.account_label,
+        provider: providerMap.get(source.id) ?? null,
         enabled_count: countMap.get(source.id) ?? 0,
+        team_id: source.team_id ? String(source.team_id) : null,
+        team_name: source.team_name ?? null,
       };
     });
 

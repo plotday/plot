@@ -32,6 +32,7 @@ export type MicrosoftProviderData = {
 export type GitHubProviderData = {
   email: string | null;
   userId: string;
+  login: string;
 };
 
 export type LinearProviderData = {
@@ -78,7 +79,7 @@ function parseJwtEmail(idToken: string): string | null {
 }
 
 // Helper function to fetch user info from GitHub API
-async function fetchGitHubUser(accessToken: string): Promise<{ userId: string; email: string | null } | null> {
+async function fetchGitHubUser(accessToken: string): Promise<{ userId: string; email: string | null; login: string } | null> {
   try {
     const response = await fetch("https://api.github.com/user", {
       headers: {
@@ -91,12 +92,12 @@ async function fetchGitHubUser(accessToken: string): Promise<{ userId: string; e
       return null;
     }
 
-    const data = await response.json() as { id?: number; email?: string };
-    if (!data.id) {
+    const data = await response.json() as { id?: number; email?: string; login?: string };
+    if (!data.id || !data.login) {
       return null;
     }
 
-    return { userId: String(data.id), email: data.email || null };
+    return { userId: String(data.id), email: data.email || null, login: data.login };
   } catch (error) {
     const logger = createLogger({ component: "provider" });
     logger.error("Error fetching GitHub user", error as Error);
@@ -150,7 +151,7 @@ const parseGitHubTokenResponse = async (
     return undefined;
   }
 
-  return { email: user.email, userId: user.userId };
+  return { email: user.email, userId: user.userId, login: user.login };
 };
 
 // Helper function to fetch viewer info from Linear API
@@ -213,6 +214,11 @@ type ProviderConfig = {
   ) => ProviderData | undefined | Promise<ProviderData | undefined>;
   // Extract metadata for AuthToken.provider field
   extractMetadata?: (providerData: ProviderData) => Record<string, string> | undefined;
+  // Extract the per-connection account label shown as disambiguator in the
+  // Connections UI and composed into the actor display name for notes/mentions.
+  // Return null when the provider exposes no natural label — the client will
+  // then require the user to enter one.
+  extractAccountLabel?: (providerData: ProviderData) => string | null;
 };
 
 /**
@@ -239,6 +245,7 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     tokenUrl: "https://oauth2.googleapis.com/token",
     emailScopes: ["openid", "email"],
     parseTokenResponse: parseGoogleTokenResponse,
+    extractAccountLabel: (d) => (d as GoogleProviderData).email || null,
     additionalParams: {
       access_type: "offline",
       prompt: "select_account",
@@ -253,6 +260,7 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     emailScopes: ["openid", "email"],
     parseTokenResponse: parseMicrosoftTokenResponse,
+    extractAccountLabel: (d) => (d as MicrosoftProviderData).email || null,
     additionalParams: {
       prompt: "consent",  // Microsoft only supports single values; consent ensures permission screen shows
     },
@@ -301,6 +309,10 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
 
       return Object.keys(metadata).length > 0 ? metadata : undefined;
     },
+    extractAccountLabel: (d) => {
+      const s = d as SlackProviderData;
+      return s.team?.name ?? s.enterprise?.name ?? null;
+    },
   },
   atlassian: {
     name: "Atlassian",
@@ -315,6 +327,7 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     authUrl: "https://linear.app/oauth/authorize",
     tokenUrl: "https://api.linear.app/oauth/token",
     parseTokenResponse: parseLinearTokenResponse,
+    extractAccountLabel: (d) => (d as LinearProviderData).email || null,
   },
   monday: {
     name: "Monday.com",
@@ -327,6 +340,10 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     tokenUrl: "https://github.com/login/oauth/access_token",
     emailScopes: ["user:email"],
     parseTokenResponse: parseGitHubTokenResponse,
+    extractAccountLabel: (d) => {
+      const g = d as GitHubProviderData;
+      return g.login || g.email || null;
+    },
   },
   asana: {
     name: "Asana",

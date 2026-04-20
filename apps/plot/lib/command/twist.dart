@@ -69,26 +69,28 @@ sealed class _ConnectionItem {
 class _ActiveSource extends _ConnectionItem {
   final String id; // twist_instance_id
   final String name;
-  final String? accountName;
-  final String? accountEmail;
+  final String? twistName;
+  final String? accountLabel;
   final String? logoUrl;
   final String? logoUrlDark;
   final AuthProvider? provider;
   final int enabledCount;
+  final String? teamName;
 
   _ActiveSource({
     required this.id,
     required this.name,
-    this.accountName,
-    this.accountEmail,
+    this.twistName,
+    this.accountLabel,
     this.logoUrl,
     this.logoUrlDark,
     this.provider,
     required this.enabledCount,
+    this.teamName,
   });
 
   @override
-  String get filterText => '${accountName ?? ''} $name'.trim();
+  String get filterText => '${accountLabel ?? ''} ${twistName ?? name}'.trim();
 }
 
 class _AvailableSource extends _ConnectionItem {
@@ -159,7 +161,8 @@ class ManageConnections extends Command {
           if (item is _ActiveSource) {
             await EditSource(
               twistInstanceId: item.id,
-              name: item.name,
+              name: item.twistName ?? item.name,
+              accountLabel: item.accountLabel,
               logoUrl: item.logoUrl,
               logoUrlDark: item.logoUrlDark,
             ).run(ctx);
@@ -296,12 +299,13 @@ class ManageConnections extends Command {
         _ActiveSource(
           id: summary.id,
           name: summary.name,
-          accountName: summary.displayName,
-          accountEmail: summary.accountEmail,
+          twistName: summary.twistName,
+          accountLabel: summary.accountLabel,
           logoUrl: summary.logoUrl,
           logoUrlDark: summary.logoUrlDark,
           provider: summary.provider,
           enabledCount: summary.enabledCount,
+          teamName: summary.teamName,
         ),
       );
     }
@@ -377,14 +381,9 @@ class _ActiveSourceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.theme;
 
-    // Build subtitle: account name with email if different
-    String? subtitle;
-    if (item.accountName != null) {
-      subtitle = item.accountName!;
-      if (item.accountEmail != null && item.accountEmail != item.accountName) {
-        subtitle = '$subtitle · ${item.accountEmail}';
-      }
-    }
+    final hasLabel =
+        item.accountLabel != null && item.accountLabel!.isNotEmpty;
+    final subtitle = hasLabel ? item.accountLabel! : 'Set label';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -407,44 +406,42 @@ class _ActiveSourceRow extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  item.name,
+                  item.twistName ?? item.name,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: theme.typography.md.fontSize,
                     color: theme.colors.foreground,
                   ),
                 ),
-                if (subtitle != null) ...[
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      subtitle,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: theme.typography.md.fontSize,
-                        color: theme.colors.mutedForeground,
-                      ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    subtitle,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: theme.typography.md.fontSize,
+                      color: theme.colors.mutedForeground,
+                      fontStyle: hasLabel ? FontStyle.normal : FontStyle.italic,
                     ),
                   ),
-                ],
+                ),
               ],
             ),
           ),
-          if (item.enabledCount > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: theme.colors.secondary,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${item.enabledCount}',
-                style: TextStyle(
-                  fontSize: theme.typography.xs.fontSize,
-                  color: theme.colors.mutedForeground,
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colors.secondary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              item.teamName ?? 'Personal',
+              style: TextStyle(
+                fontSize: theme.typography.xs.fontSize,
+                color: theme.colors.mutedForeground,
               ),
             ),
+          ),
         ],
       ),
     );
@@ -814,6 +811,7 @@ class EditSource extends ShowForm {
     this.isNewlyActivated = false,
     this.logoUrl,
     this.logoUrlDark,
+    this.accountLabel,
     super.subtitle,
   }) : super(
          title: isNewlyActivated ? 'Set up $name' : name,
@@ -825,6 +823,7 @@ class EditSource extends ShowForm {
            isNewlyActivated,
            logoUrl: logoUrl,
            logoUrlDark: logoUrlDark,
+           initialAccountLabel: accountLabel,
          ),
        );
 
@@ -833,6 +832,7 @@ class EditSource extends ShowForm {
   final bool isAccountBased;
   final String? logoUrl;
   final String? logoUrlDark;
+  final String? accountLabel;
 
   /// When true, hides the Archive button (source was just set up).
   final bool isNewlyActivated;
@@ -844,6 +844,7 @@ class EditSource extends ShowForm {
     bool isNewlyActivated, {
     String? logoUrl,
     String? logoUrlDark,
+    String? initialAccountLabel,
   }) async {
     final results = await Future.wait([
       TwistApi.getIntegrations(twistInstanceId),
@@ -872,7 +873,8 @@ class EditSource extends ShowForm {
       selectedChannels: Set.of(initialEnabled),
     );
 
-    // Look up the current twist instance to get its current team_id
+    // Look up the current twist instance to get its current team_id and
+    // account_label (fallback when not passed in explicitly).
     final currentTwistId = Uuid.fromString(twistInstanceId);
     TwistInstanceRow? twistInstance = TwistInstance.fromCache(currentTwistId);
     twistInstance ??= await (Store.get.select(
@@ -881,6 +883,9 @@ class EditSource extends ShowForm {
     final initialTeamId = twistInstance?.teamId != null
         ? twistInstance!.teamId.toString()
         : 'personal';
+    final existingLabel = initialAccountLabel ?? twistInstance?.accountLabel;
+    final needsLabelPrompt =
+        existingLabel == null || existingLabel.isEmpty;
 
     // Build option form items for no-provider connectors
     final hasOptions =
@@ -898,6 +903,15 @@ class EditSource extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
+            FormTextInput(
+              key: 'account_label',
+              label: 'Label',
+              initialValue: existingLabel ?? '',
+              required: needsLabelPrompt,
+              placeholder: needsLabelPrompt
+                  ? 'e.g. work@example.com'
+                  : null,
+            ),
             if (teams.isNotEmpty)
               FormSelect<String>(
                 key: 'team_id',
@@ -959,6 +973,8 @@ class EditSource extends ShowForm {
                   }
                 }
 
+                final label =
+                    (values['account_label'] as String?)?.trim() ?? '';
                 return SaveSource(
                   twistInstanceId: twistInstanceId,
                   name: name,
@@ -967,6 +983,7 @@ class EditSource extends ShowForm {
                   optionItems: optionItems,
                   isNewlyActivated: isNewlyActivated,
                   teamId: owner == 'personal' ? null : owner,
+                  accountLabel: label.isEmpty ? null : label,
                 );
               },
             ),
@@ -1237,9 +1254,10 @@ class AddSourceDetail extends ShowForm {
     }
 
     // Build option form items (for connectors using API key auth)
-    final hasOptions = twist.options != null && twist.options!.isNotEmpty;
+    final hasOptions =
+        twist.optionsSchema != null && twist.optionsSchema!.isNotEmpty;
     final optionItems = hasOptions
-        ? TwistOptionItems(options: twist.options!)
+        ? TwistOptionItems(options: twist.optionsSchema!)
         : null;
 
     // State for no-provider connector channel selection (captured by closures)
@@ -1247,12 +1265,37 @@ class AddSourceDetail extends ShowForm {
     var noProviderChanges = const IntegrationChanges();
     final noProviderChannelController = FormChannelListController();
 
-    FormItem? buildTeamSelect() {
+    // For OAuth connectors, suppress the Personal/team selector until the user
+    // has authenticated an account; we can then default to the matching team.
+    bool isOAuthPreAuth(TwistIntegrations current) =>
+        current.providers.isNotEmpty && current.accounts.isEmpty;
+
+    String defaultTeamFor(TwistIntegrations current) {
+      final domains = current.teamDomains;
+      if (domains == null) return 'personal';
+      for (final account in current.accounts) {
+        final email = account.email;
+        if (email == null) continue;
+        final atIdx = email.lastIndexOf('@');
+        if (atIdx < 0) continue;
+        final domain = email.substring(atIdx + 1).toLowerCase();
+        for (final entry in domains.entries) {
+          if (entry.value.any((d) => d.toLowerCase() == domain)) {
+            final teamId = entry.key.toString();
+            if (teams.any((t) => t.id == teamId)) return teamId;
+          }
+        }
+      }
+      return 'personal';
+    }
+
+    FormItem? buildTeamSelect(TwistIntegrations current) {
       if (teams.isEmpty) return null;
+      if (isOAuthPreAuth(current)) return null;
       return FormSelect<String>(
         key: 'team_id',
         label: 'Team',
-        initialValue: teams.first.id,
+        initialValue: defaultTeamFor(current),
         items: (search) async => ['personal', ...teams.map((t) => t.id)],
         titleBuilder: (id) => id == 'personal'
             ? 'Personal'
@@ -1285,16 +1328,15 @@ class AddSourceDetail extends ShowForm {
       // ignore: prefer_final_locals
       var refreshChanges = const IntegrationChanges();
 
+      final refreshedDefault = defaultTeamFor(refreshed);
       return [
         StaticFormGroup(
           items: [
-            if (buildTeamSelect() != null) buildTeamSelect()!,
+            if (buildTeamSelect(refreshed) != null) buildTeamSelect(refreshed)!,
             if (twist.description != null)
               FormInfo(key: 'description', text: twist.description!),
             ...refreshed.providers.map((provider) {
-              final initialOwner = teams.isNotEmpty
-                  ? teams.first.id
-                  : 'personal';
+              final initialOwner = refreshedDefault;
               final initialTeam = teams.firstWhereOrNull(
                 (t) => t.id == initialOwner,
               );
@@ -1314,8 +1356,6 @@ class AddSourceDetail extends ShowForm {
                 key: 'auth_${provider.provider.name}',
                 divider: false,
                 builder: (formContext) {
-                  final values = FormScope.of(formContext)?.values ?? {};
-                  final owner = values['team_id'] as String? ?? initialOwner;
                   return Padding(
                     padding: formContext.theme.spacing.padding.copyWith(top: 0),
                     child: _AuthWithScopeToggles(
@@ -1327,11 +1367,12 @@ class AddSourceDetail extends ShowForm {
                         scopeGroupSelections[provider.provider.name] = groups;
                       },
                       onSuccess: () {
-                        _activateSource(
+                        _activateAfterOAuth(
                           formContext,
                           draftId,
                           twist.name,
-                          teamId: owner == 'personal' ? null : owner,
+                          teams,
+                          fallbackOwner: initialOwner,
                         );
                       },
                     ),
@@ -1408,13 +1449,12 @@ class AddSourceDetail extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            if (buildTeamSelect() != null) buildTeamSelect()!,
+            if (buildTeamSelect(integrations) != null)
+              buildTeamSelect(integrations)!,
             if (twist.description != null)
               FormInfo(key: 'description', text: twist.description!),
             ...integrations.providers.map((provider) {
-              final initialOwner = teams.isNotEmpty
-                  ? teams.first.id
-                  : 'personal';
+              final initialOwner = defaultTeamFor(integrations);
               final initialTeam = teams.firstWhereOrNull(
                 (t) => t.id == initialOwner,
               );
@@ -1434,8 +1474,6 @@ class AddSourceDetail extends ShowForm {
                 key: 'auth_${provider.provider.name}',
                 divider: false,
                 builder: (formContext) {
-                  final values = FormScope.of(formContext)?.values ?? {};
-                  final owner = values['team_id'] as String? ?? initialOwner;
                   return Padding(
                     padding: formContext.theme.spacing.padding.copyWith(top: 0),
                     child: _AuthWithScopeToggles(
@@ -1447,11 +1485,12 @@ class AddSourceDetail extends ShowForm {
                         scopeGroupSelections[provider.provider.name] = groups;
                       },
                       onSuccess: () {
-                        _activateSource(
+                        _activateAfterOAuth(
                           formContext,
                           draftId,
                           twist.name,
-                          teamId: owner == 'personal' ? null : owner,
+                          teams,
+                          fallbackOwner: initialOwner,
                         );
                       },
                     ),
@@ -1522,6 +1561,63 @@ class AddSourceDetail extends ShowForm {
           ],
         ),
       ],
+    );
+  }
+
+  /// After a successful OAuth, re-fetch integrations so we can default the
+  /// connection's team based on the authenticated account's email domain.
+  /// If the form has a visible team selector (post-auth state from a previous
+  /// flow), its value wins over the computed default.
+  static Future<void> _activateAfterOAuth(
+    BuildContext context,
+    String draftId,
+    String name,
+    List<TeamUsage> teams, {
+    required String fallbackOwner,
+  }) async {
+    String owner = fallbackOwner;
+    try {
+      final refreshed = await TwistApi.getIntegrations(draftId);
+      final domains = refreshed.teamDomains;
+      if (domains != null) {
+        for (final account in refreshed.accounts) {
+          final email = account.email;
+          if (email == null) continue;
+          final atIdx = email.lastIndexOf('@');
+          if (atIdx < 0) continue;
+          final domain = email.substring(atIdx + 1).toLowerCase();
+          String? matched;
+          for (final entry in domains.entries) {
+            if (entry.value.any((d) => d.toLowerCase() == domain)) {
+              final teamId = entry.key.toString();
+              if (teams.any((t) => t.id == teamId)) {
+                matched = teamId;
+                break;
+              }
+            }
+          }
+          if (matched != null) {
+            owner = matched;
+            break;
+          }
+        }
+      }
+    } catch (e, t) {
+      log.warning('Failed to refresh integrations after OAuth', e, t);
+    }
+
+    if (context.mounted) {
+      final values = FormScope.of(context)?.values ?? {};
+      final selected = values['team_id'] as String?;
+      if (selected != null) owner = selected;
+    }
+
+    if (!context.mounted) return;
+    await _activateSource(
+      context,
+      draftId,
+      name,
+      teamId: owner == 'personal' ? null : owner,
     );
   }
 
@@ -1806,10 +1902,11 @@ class EditTwist extends ShowForm {
 
       // Build option form items
       final hasOptions =
-          matchingTwist.options != null && matchingTwist.options!.isNotEmpty;
+          matchingTwist.optionsSchema != null &&
+          matchingTwist.optionsSchema!.isNotEmpty;
       final optionItems = hasOptions
           ? TwistOptionItems(
-              options: matchingTwist.options!,
+              options: matchingTwist.optionsSchema!,
               initialConfig: twistInstance.config,
             )
           : null;
@@ -2213,9 +2310,10 @@ class SetupTwist extends ShowForm {
     var integrationChanges = const IntegrationChanges();
 
     // Build option form items
-    final hasOptions = twist.options != null && twist.options!.isNotEmpty;
+    final hasOptions =
+        twist.optionsSchema != null && twist.optionsSchema!.isNotEmpty;
     final optionItems = hasOptions
-        ? TwistOptionItems(options: twist.options!)
+        ? TwistOptionItems(options: twist.optionsSchema!)
         : null;
 
     // Check if twist has link permission (and is not a source)
@@ -3114,6 +3212,7 @@ class SaveSource extends Command {
     this.optionItems,
     this.isNewlyActivated = false,
     this.teamId,
+    this.accountLabel,
   }) : super(
          title: isNewlyActivated ? 'Add connection' : 'Save',
          icon: FontAwesomeIcons.check,
@@ -3134,16 +3233,21 @@ class SaveSource extends Command {
 
   final String? teamId;
 
+  /// Per-connection disambiguator. Written to twist_instance.account_label
+  /// and composed into the actor display name (notes/mentions).
+  final String? accountLabel;
+
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // 0. Save updated metadata (teamId only — source names are server-computed)
+      // 0. Save updated metadata (teamId and account_label).
       await TwistApi.updateTwist(
         twistInstanceId: twistInstanceId,
         teamId: teamId,
+        accountLabel: accountLabel,
       );
 
-      // Update local database to immediately reflect team change.
+      // Update local database to immediately reflect team/label change.
       final id = Uuid.fromString(twistInstanceId);
       TwistInstanceRow? twist = TwistInstance.fromCache(id);
       twist ??= await (Store.get.select(
@@ -3155,6 +3259,7 @@ class SaveSource extends Command {
             .replace(
               twist.copyWith(
                 teamId: Value(teamId != null ? BigInt.parse(teamId!) : null),
+                accountLabel: Value(accountLabel),
               ),
             );
       }

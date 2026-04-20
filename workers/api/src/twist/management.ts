@@ -528,7 +528,12 @@ export async function getByFilter(
 export async function update(
   db: Kysely<DB>,
   twist_instance_id: string,
-  twist: { name?: string; config?: any; teamId?: string | null }
+  twist: {
+    name?: string;
+    config?: any;
+    teamId?: string | null;
+    accountLabel?: string | null;
+  }
 ) {
   try {
     if (!twist_instance_id || typeof twist_instance_id !== "string") {
@@ -601,8 +606,8 @@ export async function update(
     }
 
     if (twist.name !== undefined) {
-      // Source (connection) names are server-computed as "ConnectorName (account)".
-      // Ignore client-supplied name updates for sources.
+      // Source (connection) names are the connector's own name and not
+      // user-editable. Use account_label to distinguish accounts instead.
       if (twistDef?.is_source === true) {
         twist = { ...twist, name: undefined };
       } else if (twist.name !== currentTwist.name) {
@@ -633,12 +638,18 @@ export async function update(
     }
 
     // Map config → options for the updateTable call.
-    const dbUpdate: { name?: string; options?: any; team_id?: bigint | null } =
-      {};
+    const dbUpdate: {
+      name?: string;
+      options?: any;
+      team_id?: bigint | null;
+      account_label?: string | null;
+    } = {};
     if (twist.name !== undefined) dbUpdate.name = twist.name;
     if (twist.config !== undefined) dbUpdate.options = twist.config;
     if (twist.teamId !== undefined)
       dbUpdate.team_id = twist.teamId ? BigInt(twist.teamId) : null;
+    if (twist.accountLabel !== undefined)
+      dbUpdate.account_label = twist.accountLabel;
 
     if (Object.keys(dbUpdate).length === 0) {
       return await db
@@ -909,36 +920,25 @@ export async function activateDraft(
     }
   }
 
-  // Source (connection) name override: "ConnectorName (account)"
+  // Source (connection) name: always the connector's own name. Per-connection
+  // disambiguation happens via twist_instance.account_label (written by
+  // Integrations.storeAuthorization for OAuth; set via form for non-OAuth).
   if (twistRecord?.is_source === true) {
-    let accountName: string | null = null;
+    name = twistRecord.name;
+  }
 
-    // OAuth connectors: derive from twist_instance_connection → contact
-    const connectionContact = await db
-      .selectFrom("twist_instance_connection as tic")
-      .innerJoin("contact as c", "c.id", "tic.actor_id")
-      .select(["c.name", "c.email"])
-      .where("tic.twist_instance_id", "=", draftId)
-      .executeTakeFirst();
-    if (connectionContact) {
-      accountName = connectionContact.name ?? connectionContact.email ?? null;
+  // Non-OAuth connectors: seed account_label from _accountName in options if
+  // present, so the same field isn't stored twice.
+  let accountLabelFromOptions: string | null = null;
+  if (twistRecord?.is_source === true) {
+    const opts = config
+      ?? (typeof draft.options === "string"
+        ? JSON.parse(draft.options)
+        : (draft.options as Record<string, any> | null));
+    const fromOptions = opts?._accountName;
+    if (typeof fromOptions === "string" && fromOptions) {
+      accountLabelFromOptions = fromOptions;
     }
-
-    // No-provider connectors: fall back to _accountName stored in options
-    if (!accountName) {
-      const opts = config
-        ?? (typeof draft.options === "string"
-          ? JSON.parse(draft.options)
-          : (draft.options as Record<string, any> | null));
-      const fromOptions = opts?._accountName;
-      if (typeof fromOptions === "string" && fromOptions) {
-        accountName = fromOptions;
-      }
-    }
-
-    name = accountName
-      ? `${twistRecord.name} (${accountName})`
-      : twistRecord.name;
   }
 
   // Name uniqueness — only for multi-instance twists (single-instance always uses package name)
@@ -957,7 +957,10 @@ export async function activateDraft(
     }
   }
 
-  // Flip draft → false, set name/options/team_id
+  // Flip draft → false, set name/options/team_id. For non-OAuth source
+  // connectors, seed account_label from options._accountName when no OAuth
+  // flow populated it already (Integrations.storeAuthorization only writes
+  // when account_label is null).
   await db
     .updateTable("twist_instance")
     .set({
@@ -965,6 +968,9 @@ export async function activateDraft(
       name,
       team_id: teamId as any,
       ...(config ? { options: config } : {}),
+      ...(accountLabelFromOptions
+        ? { account_label: accountLabelFromOptions }
+        : {}),
     })
     .where("id", "=", draftId)
     .execute();

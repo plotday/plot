@@ -25,7 +25,11 @@ SELECT
     pt.created_at,
     pt.updated_at,
     'twist_instance'::text AS type,
-    pt.name,
+    CASE
+        WHEN pt.account_label IS NOT NULL AND pt.account_label <> ''
+            THEN pt.name || ' (' || pt.account_label || ')'
+        ELSE pt.name
+    END AS name,
     NULL::text AS email,
     NULL::text AS avatar_url,
     pt.archived_at,

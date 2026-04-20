@@ -2034,7 +2034,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 312;
+  int get schemaVersion => 313;
 
   @override
   MigrationStrategy get migration {
@@ -2884,6 +2884,13 @@ class Store extends _$Store {
       await m.database.customStatement(
         "DELETE FROM sync_states WHERE entity LIKE 'notes:%' OR entity LIKE 'note_tags:%'",
       );
+    }
+    if (from < 313) {
+      // Per-connection account disambiguator used as Connections subtitle and
+      // composed into the actor display name (notes/mentions). Server populates
+      // it from provider metadata (e.g. Google email, Slack workspace name);
+      // user-editable in EditSource.
+      await _safeAddColumn(m, twistInstances, twistInstances.accountLabel);
     }
   }
 

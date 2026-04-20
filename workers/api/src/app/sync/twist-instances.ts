@@ -155,6 +155,7 @@ twistInstances.post("/sync/twist-instances", async (c) => {
       p_owner_id: body.owner_id,
       p_team_id: body.team_id ?? null,
       p_name: body.name || null,
+      p_account_label: body.account_label ?? null,
       p_config: body.config || null,
       p_archived_at: body.archived_at || null,
     });

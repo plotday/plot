@@ -258,6 +258,7 @@ CREATE OR REPLACE FUNCTION "user".upsert_twist_instance (
     p_owner_id uuid,
     p_team_id bigint,
     p_name text,
+    p_account_label text,
     p_config jsonb,
     p_archived_at timestamptz
 )
@@ -284,11 +285,12 @@ BEGIN
         END IF;
     END IF;
 
-    INSERT INTO twist_instance (id, twist_id, owner_id, team_id, name, options, archived_at)
-        VALUES (COALESCE(p_id, uuidv7()), p_twist_id, p_owner_id, p_team_id, p_name, COALESCE(p_config, '{}'::jsonb), p_archived_at)
+    INSERT INTO twist_instance (id, twist_id, owner_id, team_id, name, account_label, options, archived_at)
+        VALUES (COALESCE(p_id, uuidv7()), p_twist_id, p_owner_id, p_team_id, p_name, p_account_label, COALESCE(p_config, '{}'::jsonb), p_archived_at)
     ON CONFLICT (id)
         DO UPDATE SET
             name = EXCLUDED.name,
+            account_label = EXCLUDED.account_label,
             team_id = EXCLUDED.team_id,
             options = EXCLUDED.options,
             archived_at = EXCLUDED.archived_at,

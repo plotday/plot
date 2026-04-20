@@ -7,6 +7,11 @@ CREATE TABLE "public"."twist_instance" (
     -- NULL = personal (counts against the owner user's plan).
     "team_id" bigint REFERENCES public.team (id) ON DELETE SET NULL,
     "name" text NOT NULL,
+    -- For source (connection) instances, a per-connection disambiguator shown as
+    -- the subtitle in the Connections list and composed into the actor display
+    -- name (`ConnectorName (account_label)`). Populated per-provider at auth
+    -- time; user-editable in EditSource. NULL for non-source twists.
+    "account_label" text,
     "options" jsonb NOT NULL DEFAULT '{}' ::jsonb,
     -- true while the user is configuring the twist (pre-activation). Drafts
     -- are excluded from most views and are hard-deleted if abandoned.
