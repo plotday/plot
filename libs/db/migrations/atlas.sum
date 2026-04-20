@@ -1,4 +1,4 @@
-h1:IxTSM2nOpkCX/lW/9SzfApGiSLLMa3MTH+5q4Yy45AY=
+h1:hQEdfCmGfjaQoHTewqIttKjLxr7EvJy5s/bMVFNlSdY=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -295,3 +295,4 @@ h1:IxTSM2nOpkCX/lW/9SzfApGiSLLMa3MTH+5q4Yy45AY=
 20260420145019_add_account_label_to_twist_instance.sql h1:aFJPjtivlOLHAyads3kP0WWK45CxavVTllwHNU2H+aU=
 20260420145501_reclassify_non_inviteable_contacts.sql h1:ZWCHa+UtjY4UwXXdLyFgWlfcum38Rwb2o2GZm4rWpdg=
 20260420151333_validate_email_in_upsert_contacts.sql h1:fHv32sYcRz+jIO7MZTj4m2f3RhrYUs1F8defNGz0OQM=
+20260420162004_dedupe_thread_contacts_per_user.sql h1:JBG5rk0VzU46UpYJaUql6oS/ZyBz1sQkbuwE/6my+cI=
