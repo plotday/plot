@@ -228,7 +228,7 @@ class _ModalProviderState extends State<ModalProvider> {
     _activeProviders.add(this);
   }
 
-  Future<Value<T>> push<T>(BuildContext context, Widget modal) async {
+  Future<Value<T>> push<T>(BuildContext context, Widget modal) {
     final stackItem = _ModalStackItem<T>(modal);
 
     _modalStack.add(stackItem);
@@ -290,76 +290,80 @@ class _ModalProviderState extends State<ModalProvider> {
         );
       }
 
-      final Value<T> result;
+      // Results flow through stackItem.completer. showFDialog/showFSheet are
+      // fire-and-forget: we can't pass a typed result through navigator.pop
+      // because nested modals may have a different T than the first modal.
+      final Future<dynamic> dialogFuture;
       if (multiPanel) {
         // Desktop/tablet: Use FDialog with custom styling
-        result =
-            await showFDialog<Value<T>>(
-              context: modalContext,
-              builder: (dialogContext, _, _) => FToaster(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    // Position at 15% from top with max height of 80%
-                    final screenHeight = constraints.maxHeight;
-                    final maxDialogHeight = screenHeight * 0.8;
-                    return FDialog.raw(
-                      // ignore: unused_result
-                      style: dialogContext.theme.dialogStyle.copyWith(
-                        decoration: DecorationDelta.value(BoxDecoration(
-                          color: dialogContext.theme.colors.background,
-                          border: Border.all(
-                            color: dialogContext.theme.colors.border,
-                          ),
-                          borderRadius: BorderRadius.circular(borderRadiusMd),
-                        )),
-                      ),
-                      constraints: BoxConstraints(
-                        maxHeight: min(maxDialogHeight, modalMaxHeight),
-                        maxWidth: modalMaxWidth,
-                      ),
-                      builder: (context, style) => Padding(
-                        padding: EdgeInsets.all(1),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(borderRadiusMd),
-                          child: buildModalContent(dialogContext),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ) ??
-            Value.absent();
-      } else {
-        // Mobile: Use FSheet
-        result =
-            await showFSheet<Value<T>>(
-              context: modalContext,
-              side: FLayout.btt,
-              useRootNavigator: true,
-              barrierDismissible: true,
-              draggable: true,
-              useSafeArea: true,
-              mainAxisMaxRatio: 1,
-              builder: (dialogContext) {
-                return FToaster(
-                  child: material.Material(
-                    child: Container(
+        dialogFuture = showFDialog<dynamic>(
+          context: modalContext,
+          builder: (dialogContext, _, _) => FToaster(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Position at 15% from top with max height of 80%
+                final screenHeight = constraints.maxHeight;
+                final maxDialogHeight = screenHeight * 0.8;
+                return FDialog.raw(
+                  // ignore: unused_result
+                  style: dialogContext.theme.dialogStyle.copyWith(
+                    decoration: DecorationDelta.value(BoxDecoration(
                       color: dialogContext.theme.colors.background,
+                      border: Border.all(
+                        color: dialogContext.theme.colors.border,
+                      ),
+                      borderRadius: BorderRadius.circular(borderRadiusMd),
+                    )),
+                  ),
+                  constraints: BoxConstraints(
+                    maxHeight: min(maxDialogHeight, modalMaxHeight),
+                    maxWidth: modalMaxWidth,
+                  ),
+                  builder: (context, style) => Padding(
+                    padding: EdgeInsets.all(1),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(borderRadiusMd),
                       child: buildModalContent(dialogContext),
                     ),
                   ),
                 );
               },
-            ) ??
-            Value.absent();
+            ),
+          ),
+        );
+      } else {
+        // Mobile: Use FSheet
+        dialogFuture = showFSheet<dynamic>(
+          context: modalContext,
+          side: FLayout.btt,
+          useRootNavigator: true,
+          barrierDismissible: true,
+          draggable: true,
+          useSafeArea: true,
+          mainAxisMaxRatio: 1,
+          builder: (dialogContext) {
+            return FToaster(
+              child: material.Material(
+                child: Container(
+                  color: dialogContext.theme.colors.background,
+                  child: buildModalContent(dialogContext),
+                ),
+              ),
+            );
+          },
+        );
       }
 
-      _modalStack.clear();
-      return result;
-    } else {
-      return stackItem.completer.future;
+      // When the dialog closes for any reason (including barrier dismiss),
+      // drain the stack so any unresolved completers complete with absent.
+      unawaited(dialogFuture.whenComplete(() {
+        while (_modalStack.isNotEmpty) {
+          _modalStack.removeLast().completeAbsent();
+        }
+        _notifyStackChanged();
+      }));
     }
+    return stackItem.completer.future;
   }
 
   void pop<T>(BuildContext context, Value<T> result) {
@@ -392,7 +396,10 @@ class _ModalProviderState extends State<ModalProvider> {
         rootNavigator: _usedRootNavigator,
       );
       if (navigator.canPop()) {
-        navigator.pop(result);
+        // Pop without a typed result — the modal's return value flows
+        // through stackItem.completer. Passing result directly can throw
+        // when nested modals have a different T than the route's T.
+        navigator.pop();
       } else {
         log.warning('Cannot pop - navigator says canPop is false');
       }
@@ -421,7 +428,7 @@ class _ModalProviderState extends State<ModalProvider> {
         rootNavigator: _usedRootNavigator,
       );
       if (navigator.canPop()) {
-        navigator.pop(value);
+        navigator.pop();
       } else {
         log.warning('Cannot pop - navigator says canPop is false');
       }
