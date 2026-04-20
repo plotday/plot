@@ -166,7 +166,6 @@ jobs:
           # iOS App Store provisioning profile (day.plot.app)
           echo "$IOS_MOBILEPROVISION_BASE64" | base64 --decode > "$RUNNER_TEMP/ios.mobileprovision"
           chmod 0600 "$RUNNER_TEMP/ios.mobileprovision"
-          echo "ios.mobileprovision: secret_len=${#IOS_MOBILEPROVISION_BASE64} decoded=$(wc -c <"$RUNNER_TEMP/ios.mobileprovision") head=$(head -c 8 "$RUNNER_TEMP/ios.mobileprovision" | xxd -p)"
 
           APP_PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
           APP_PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/ios.mobileprovision")")
@@ -267,7 +266,9 @@ jobs:
       - name: Write .env file
         env:
           FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
-        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
+        run: |
+          printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env.production
+          cp apps/plot/.env.production apps/plot/.env
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
@@ -606,14 +607,12 @@ jobs:
           # Import Apple Distribution certificate
           DIST_CERT_PATH="$RUNNER_TEMP/dist_cert.p12"
           echo "$APPLE_DIST_CERT_BASE64" | base64 --decode > "$DIST_CERT_PATH"
-          echo "dist: secret_len=${#APPLE_DIST_CERT_BASE64} decoded=$(wc -c <"$DIST_CERT_PATH") head=$(head -c 8 "$DIST_CERT_PATH" | xxd -p)"
           security import "$DIST_CERT_PATH" -P "$APPLE_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           rm "$DIST_CERT_PATH"
 
           # Import Mac Installer Distribution certificate
           INSTALLER_CERT_PATH="$RUNNER_TEMP/installer_cert.p12"
           echo "$APPLE_INSTALLER_CERT_BASE64" | base64 --decode > "$INSTALLER_CERT_PATH"
-          echo "installer: secret_len=${#APPLE_INSTALLER_CERT_BASE64} decoded=$(wc -c <"$INSTALLER_CERT_PATH") head=$(head -c 8 "$INSTALLER_CERT_PATH" | xxd -p)"
           security import "$INSTALLER_CERT_PATH" -P "$APPLE_INSTALLER_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           rm "$INSTALLER_CERT_PATH"
 
@@ -636,7 +635,9 @@ jobs:
       - name: Write .env file
         env:
           FLUTTER_ENV_PROD: ${{ secrets.FLUTTER_ENV_PROD }}
-        run: printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env
+        run: |
+          printf '%s' "$FLUTTER_ENV_PROD" > apps/plot/.env.production
+          cp apps/plot/.env.production apps/plot/.env
 
       - name: Cache Flutter dependencies
         uses: actions/cache@v4
