@@ -92,6 +92,15 @@ const TwistDeploymentSchema = z
 twist.get("/twist/publishers", async (c) => {
   const userToken = c.var.userToken;
   const user = c.var.user;
+  const publisherToken = c.var.publisherToken;
+  const publisher = c.var.publisher;
+
+  // Publisher tokens are scoped to a single publisher — return just that one
+  // so the CLI's deploy flow can resolve the target publisher without needing
+  // the user-level access that lists all accessible publishers.
+  if (publisherToken && publisher) {
+    return c.json([publisher]);
+  }
 
   if (!userToken || !user) {
     return new Response("Unauthorized", { status: 401 });
