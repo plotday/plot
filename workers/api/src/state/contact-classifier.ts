@@ -4,7 +4,13 @@
  * (e.g. `no-reply@github.com`, `mailer-daemon@example.com`).
  *
  * Null / empty input returns true — we can't classify it, and a picker
- * showing a contact with no email is better than silently hiding it.
+ * showing a contact with no email (e.g. a synced external actor with only
+ * an external id) is better than silently hiding it.
+ *
+ * Non-empty strings that don't look like a valid `local@domain` address
+ * return false — they're garbage from malformed header parsing
+ * (`undisclosed-recipients:;`, `"bayne` from a bad comma split), and
+ * surfacing them as inviteable people is strictly worse than hiding them.
  *
  * This is the going-forward source of truth for the `contact.inviteable`
  * column. The SQL backfill in 20260418050001_add_contact_inviteable.sql
@@ -20,10 +26,17 @@ export function classifyInviteable(
 
   const lower = email.toLowerCase();
   const atIndex = lower.lastIndexOf("@");
-  if (atIndex <= 0 || atIndex === lower.length - 1) return true;
+  // Malformed: non-empty string without a proper `local@domain` shape
+  // (e.g. `undisclosed-recipients:;`, `"bayne`, a bare domain). These are
+  // always garbage — never surface them as inviteable people.
+  if (atIndex <= 0 || atIndex === lower.length - 1) return false;
 
-  const local = lower.slice(0, atIndex);
+  const rawLocal = lower.slice(0, atIndex);
   const domain = lower.slice(atIndex + 1);
+
+  // Normalize `_` and `.` to `-` so variants like `no_reply`, `no-reply.ontario`,
+  // and `testflight_no_reply` collapse to the same shape we already recognize.
+  const local = rawLocal.replace(/[_.]/g, "-");
 
   if (EXACT_LOCAL.has(local)) return false;
   if (LOCAL_PREFIXES.some((p) => local.startsWith(p))) return false;
@@ -50,6 +63,9 @@ const EXACT_LOCAL = new Set([
   "alert",
   "auto-confirm",
   "automated",
+  "newsletter",
+  "newsletters",
+  "unsubscribe",
 ]);
 
 const LOCAL_PREFIXES = [
@@ -59,12 +75,30 @@ const LOCAL_PREFIXES = [
   "notification-",
   "notifications-",
   "reply+",
+  "reply-",
+  "noreply+",
+  "no-reply+",
+  "newsletter-",
+  "newsletters-",
+  "unsubscribe-",
+  "unsubscribe+",
 ];
 
 // Word-bounded matches inside the local part. `-` is treated as a word
 // boundary so `team-noreply` matches but `nonoreplyable` does not.
+// The trailing `\+` also catches `foo-reply+token@` style Google OAuth
+// verification addresses.
 const LOCAL_WORD_CONTAINS = [
   /(^|-)(noreply|no-reply|donotreply)(-|$)/,
+  /(^|-)reply(-|\+|$)/,
+  /(^|-)(newsletter|newsletters|unsubscribe)(-|$)/,
 ];
 
-const DOMAIN_LABELS = new Set(["bounces", "bounce", "mailer"]);
+const DOMAIN_LABELS = new Set([
+  "bounces",
+  "bounce",
+  "mailer",
+  "reply",
+  "noreply",
+  "no-reply",
+]);

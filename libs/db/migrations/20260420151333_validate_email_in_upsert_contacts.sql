@@ -1,16 +1,5 @@
--- Upsert contacts from the Plot tool
--- Uses COALESCE to preserve existing name/avatar when new value is null.
--- Rejects malformed email values (missing @, stray punctuation like
--- `undisclosed-recipients:;`, fragments from a broken quoted-name split
--- like `"bayne`) so garbage from upstream parsers never becomes a contact.
-CREATE OR REPLACE FUNCTION public.upsert_contacts (contacts jsonb)
-    RETURNS TABLE (
-        id uuid,
-        email text,
-        name text,
-        user_id uuid)
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "upsert_contacts" function
+CREATE OR REPLACE FUNCTION "public"."upsert_contacts" ("contacts" jsonb) RETURNS TABLE ("id" uuid, "email" text, "name" text, "user_id" uuid) LANGUAGE plpgsql AS $$
 BEGIN
     RETURN QUERY INSERT INTO contact (email, name, avatar_url)
     SELECT
@@ -34,4 +23,13 @@ ON CONFLICT ON CONSTRAINT contact_email_unique
         contact.name,
         contact.user_id;
 END;
-$function$;
+$$;
+-- Clean up existing garbage contacts whose email is not a valid address
+-- (e.g. `undisclosed-recipients:;`, `"bayne` from a broken quoted-name split).
+-- Keep the rows so any FK references remain valid, but hide them from all
+-- contact pickers and @-mentions by flipping inviteable=false.
+UPDATE "public"."contact"
+SET "inviteable" = false
+WHERE "inviteable" = true
+  AND "email" IS NOT NULL
+  AND "email" !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$';
