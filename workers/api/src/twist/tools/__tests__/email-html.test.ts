@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { preprocessEmailHtml } from "../plot/thread-helpers";
+import { cleanConvertedMarkdown, preprocessEmailHtml } from "../plot/thread-helpers";
 
 // Fragment of an Iterable/Mailchimp-style email (Anthropic rate-limit update,
 // Mon, 28 Jul 2025). This exact email rendered as a single run-on block of
@@ -83,5 +83,64 @@ describe("preprocessEmailHtml", () => {
     expect(out).toContain("<div>Header</div>");
     expect(out).toContain("<div>Cell A</div>");
     expect(out).toContain("<div>Cell B</div>");
+  });
+});
+
+describe("cleanConvertedMarkdown — empty lines and paragraphs", () => {
+  it("drops empty headings from <h4></h4>-style placeholders", () => {
+    const input = [
+      "####",
+      "",
+      "Claude",
+      "",
+      "Search and update CRM records.",
+      "",
+      "####",
+      "",
+      "ChatGPT",
+    ].join("\n");
+    const out = cleanConvertedMarkdown(input);
+    expect(out).not.toMatch(/^#+\s*$/m);
+    expect(out).toContain("Claude");
+    expect(out).toContain("ChatGPT");
+  });
+
+  it("strips invisible spacer characters (soft hyphen, CGJ, zero-width)", () => {
+    // Mailchimp/customer.io-style preheader padding.
+    const padding = "\u034F \u034F \u034F \u00AD \u00AD \u200B \u200B";
+    const input = `Preview text.${padding}\n\nReal body content.`;
+    const out = cleanConvertedMarkdown(input);
+    expect(out).not.toMatch(/[\u034F\u00AD\u200B\uFEFF]/);
+    expect(out).toBe("Preview text.\n\nReal body content.");
+  });
+
+  it("never emits consecutive blank lines", () => {
+    const input = "Line A\n\n\n\n\nLine B\n\n\n\nLine C";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("Line A\n\nLine B\n\nLine C");
+  });
+
+  it("drops lines of only invisible/whitespace characters", () => {
+    const input = "First.\n\n   \u034F \u00AD \u200B   \n\nSecond.";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("First.\n\nSecond.");
+  });
+
+  it("drops empty list items and empty blockquotes", () => {
+    const input = ["- item one", "-", "- item two", ">", "> real quote"].join(
+      "\n"
+    );
+    const out = cleanConvertedMarkdown(input);
+    expect(out).not.toMatch(/^-\s*$/m);
+    expect(out).not.toMatch(/^>\s*$/m);
+    expect(out).toContain("- item one");
+    expect(out).toContain("- item two");
+    expect(out).toContain("> real quote");
+  });
+
+  it("trims leading and trailing blank separators", () => {
+    const input = "\n\n\u034F\n\nHello\n\n\u00AD\n\n";
+    const out = cleanConvertedMarkdown(input);
+    expect(out).toBe("Hello");
   });
 });

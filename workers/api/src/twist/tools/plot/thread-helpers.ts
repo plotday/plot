@@ -206,11 +206,44 @@ function flattenOrphanPipeRow(line: string): string {
 }
 
 /**
+ * Characters that are visually invisible or zero-width. Email HTML often uses
+ * runs of these (especially soft hyphens and combining grapheme joiners) as
+ * preheader padding; left in place they render as large blocks of whitespace.
+ */
+const INVISIBLE_CHARS_RE =
+  /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFEFF]/g;
+
+/** Line contains no visible content (whitespace, invisibles, or empty). */
+function isVisuallyEmpty(line: string): boolean {
+  return line.replace(INVISIBLE_CHARS_RE, "").trim() === "";
+}
+
+/**
+ * A Markdown block whose only textual content would render as empty — e.g.
+ * `####` (empty heading), `-` / `*` (empty list item), `>` (empty blockquote),
+ * `**` (empty emphasis). These survive from empty tags like `<h4></h4>` in
+ * email HTML and produce vertical whitespace with no content.
+ */
+function isEmptyMarkdownBlock(line: string): boolean {
+  const stripped = line.replace(INVISIBLE_CHARS_RE, "").trim();
+  if (stripped === "") return false; // pure whitespace handled separately
+  return /^(?:#{1,6}|[-*+]|\d+\.|>|\*+|_+|~+)\s*$/.test(stripped);
+}
+
+/**
  * Cleans up Markdown produced by ai.toMarkdown() from HTML (especially email HTML).
  * Aggressively flattens layout tables to paragraphs, drops empty rows, collapses
  * excessive horizontal rules / blank lines, and strips orphan pipe rows.
+ *
+ * Empty lines and empty Markdown blocks (empty headings, list items, emphasis,
+ * blockquotes) are dropped so they never produce vertical whitespace in the
+ * rendered output.
  */
-function cleanConvertedMarkdown(markdown: string): string {
+export function cleanConvertedMarkdown(markdown: string): string {
+  // Strip invisible/zero-width characters used as email preheader padding.
+  // Leave regular whitespace alone so real paragraph spacing survives.
+  markdown = markdown.replace(INVISIBLE_CHARS_RE, "");
+
   // ai.toMarkdown() sometimes joins paragraphs on one line with double spaces
   // instead of proper newlines. Convert inline double-space separators to paragraph breaks.
   // Exclude pipes from both sides so we don't shred table rows like `|  | cell |`.
@@ -218,6 +251,13 @@ function cleanConvertedMarkdown(markdown: string): string {
 
   const lines = markdown.split("\n");
   const cleaned: string[] = [];
+
+  /** Append a blank separator unless we're at the start or already blank. */
+  const pushBlankLine = () => {
+    if (cleaned.length > 0 && cleaned[cleaned.length - 1] !== "") {
+      cleaned.push("");
+    }
+  };
 
   let i = 0;
   while (i < lines.length) {
@@ -245,22 +285,27 @@ function cleanConvertedMarkdown(markdown: string): string {
     if (line.startsWith("|") && line.replace(/\s/g, "").length > 1) {
       const flat = flattenOrphanPipeRow(line);
       if (flat) {
-        if (cleaned.length > 0 && cleaned[cleaned.length - 1] !== "") {
-          cleaned.push("");
-        }
+        pushBlankLine();
         cleaned.push(flat);
       }
       i++;
       continue;
     }
 
-    // Remove empty blockquote lines (just ">" with optional whitespace)
-    if (/^\s*>\s*$/.test(line)) {
+    // Drop empty Markdown blocks (empty heading/list/quote/emphasis).
+    if (isEmptyMarkdownBlock(line)) {
       i++;
       continue;
     }
 
-    // Collapse consecutive horizontal rules to at most one
+    // Visually-empty line → a single blank separator, never consecutive.
+    if (isVisuallyEmpty(line)) {
+      pushBlankLine();
+      i++;
+      continue;
+    }
+
+    // Collapse consecutive horizontal rules to at most one.
     if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
       let prevNonEmpty: string | undefined;
       for (let j = cleaned.length - 1; j >= 0; j--) {
@@ -278,14 +323,17 @@ function cleanConvertedMarkdown(markdown: string): string {
       }
     }
 
-    cleaned.push(line);
+    // Trim trailing whitespace — `"foo   "` would otherwise create a
+    // Markdown hard break via the "two trailing spaces" rule.
+    cleaned.push(line.replace(/\s+$/, ""));
     i++;
   }
 
-  let result = cleaned.join("\n");
-  result = result.replace(/\n{3,}/g, "\n\n");
+  // Drop leading/trailing blank separators.
+  while (cleaned.length > 0 && cleaned[0] === "") cleaned.shift();
+  while (cleaned.length > 0 && cleaned[cleaned.length - 1] === "") cleaned.pop();
 
-  return result.trim();
+  return cleaned.join("\n");
 }
 
 /**
