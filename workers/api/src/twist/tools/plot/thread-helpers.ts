@@ -296,7 +296,7 @@ function cleanConvertedMarkdown(markdown: string): string {
  *
  * Uses Cloudflare's built-in HTMLRewriter — no extra dependency.
  */
-async function preprocessEmailHtml(html: string): Promise<string> {
+export async function preprocessEmailHtml(html: string): Promise<string> {
   const response = new Response(html, {
     headers: { "Content-Type": "text/html" },
   });
