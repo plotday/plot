@@ -284,13 +284,44 @@ export function parseEmailAddress(headerValue: string): EmailAddress | null {
 
 
 /**
+ * Splits a comma-separated email header into individual addresses, respecting
+ * RFC 5322 quoted display names. `"Bayne, John" <john@x>, jane@y` must split
+ * into two entries, not four — naive `split(",")` produces `"Bayne` as its own
+ * chunk, which can leak into downstream contact storage as a garbage email.
+ */
+export function splitEmailList(headerValue: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  let escaped = false;
+  for (const ch of headerValue) {
+    if (escaped) {
+      current += ch;
+      escaped = false;
+    } else if (ch === "\\") {
+      current += ch;
+      escaped = true;
+    } else if (ch === '"') {
+      inQuotes = !inQuotes;
+      current += ch;
+    } else if (ch === "," && !inQuotes) {
+      if (current.trim()) parts.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current);
+  return parts;
+}
+
+/**
  * Parses a comma-separated email header value into an array of email address strings.
  * Skips entries that are not valid email addresses (e.g. "undisclosed-recipients:;").
  */
 export function parseEmailAddresses(headerValue: string | null): string[] {
   if (!headerValue) return [];
-  return headerValue
-    .split(",")
+  return splitEmailList(headerValue)
     .map((addr) => parseEmailAddress(addr.trim())?.email)
     .filter((email): email is string => !!email);
 }
@@ -303,8 +334,7 @@ export function parseEmailAddresses(headerValue: string | null): string[] {
 function parseEmailAddressesToContacts(headerValue: string | null): NewContact[] {
   if (!headerValue) return [];
 
-  return headerValue
-    .split(",")
+  return splitEmailList(headerValue)
     .map((addr) => parseEmailAddress(addr.trim()))
     .filter((parsed): parsed is EmailAddress => parsed !== null)
     .map((parsed) => ({
