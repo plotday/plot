@@ -975,6 +975,35 @@ export async function activateDraft(
     .where("id", "=", draftId)
     .execute();
 
+  // Fallback: every source connection should have a disambiguating label even
+  // when the provider exposes no natural one (e.g. providers without
+  // extractAccountLabel, or when the OAuth metadata lookup fails). Use the
+  // team name when scoped to a team, otherwise 'Personal'.
+  if (twistRecord?.is_source === true) {
+    const current = await db
+      .selectFrom("twist_instance")
+      .select("account_label")
+      .where("id", "=", draftId)
+      .executeTakeFirst();
+    if (!current?.account_label) {
+      let fallbackLabel = "Personal";
+      if (teamId) {
+        const team = await db
+          .selectFrom("team")
+          .select("name")
+          .where("id", "=", teamId)
+          .executeTakeFirst();
+        if (team?.name) fallbackLabel = team.name;
+      }
+      await db
+        .updateTable("twist_instance")
+        .set({ account_label: fallbackLabel })
+        .where("id", "=", draftId)
+        .where("account_label", "is", null)
+        .execute();
+    }
+  }
+
   // Call activate lifecycle
   try {
     const twistWrapper = await activate.twistFactory({

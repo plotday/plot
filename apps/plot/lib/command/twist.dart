@@ -903,9 +903,25 @@ class EditSource extends ShowForm {
     final initialTeamId = twistInstance?.teamId != null
         ? twistInstance!.teamId.toString()
         : 'personal';
-    final existingLabel = initialAccountLabel ?? twistInstance?.accountLabel;
-    final needsLabelPrompt =
-        existingLabel == null || existingLabel.isEmpty;
+    // Prefer the server-fresh account_label from the integrations response
+    // (which reflects the activateDraft fallback) over the potentially stale
+    // local-store value. Then fall back to the team name or 'Personal' so the
+    // Label field is never blank by default.
+    final storedLabel = initialAccountLabel ??
+        integrations.accountLabel ??
+        twistInstance?.accountLabel;
+    String fallbackLabel() {
+      final teamName = integrations.teamName;
+      if (teamName != null && teamName.isNotEmpty) return teamName;
+      if (initialTeamId != 'personal') {
+        final team = teams.firstWhereOrNull((t) => t.id == initialTeamId);
+        if (team != null) return team.name;
+      }
+      return 'Personal';
+    }
+    final existingLabel = (storedLabel != null && storedLabel.isNotEmpty)
+        ? storedLabel
+        : fallbackLabel();
 
     // Build option form items for no-provider connectors
     final hasOptions =
@@ -926,11 +942,8 @@ class EditSource extends ShowForm {
             FormTextInput(
               key: 'account_label',
               label: 'Label',
-              initialValue: existingLabel ?? '',
-              required: needsLabelPrompt,
-              placeholder: needsLabelPrompt
-                  ? 'e.g. work@example.com'
-                  : null,
+              initialValue: existingLabel,
+              required: false,
             ),
             if (teams.isNotEmpty)
               FormSelect<String>(
@@ -1357,12 +1370,11 @@ class AddSourceDetail extends ShowForm {
               FormInfo(key: 'description', text: twist.description!),
             ...refreshed.providers.map((provider) {
               final initialOwner = refreshedDefault;
-              final initialTeam = teams.firstWhereOrNull(
-                (t) => t.id == initialOwner,
-              );
-              final initialAtLimit = initialTeam != null
-                  ? initialTeam.connections.isAtLimit
-                  : usage.personal.connections.isAtLimit;
+              // Gate preemptively only when the user has no team to fall
+              // back to. When teams exist, let them authenticate — the
+              // save/connect path checks the selected team's limit.
+              final initialAtLimit =
+                  teams.isEmpty && usage.personal.connections.isAtLimit;
 
               if (initialAtLimit) {
                 return FormButton(
@@ -1475,12 +1487,11 @@ class AddSourceDetail extends ShowForm {
               FormInfo(key: 'description', text: twist.description!),
             ...integrations.providers.map((provider) {
               final initialOwner = defaultTeamFor(integrations);
-              final initialTeam = teams.firstWhereOrNull(
-                (t) => t.id == initialOwner,
-              );
-              final initialAtLimit = initialTeam != null
-                  ? initialTeam.connections.isAtLimit
-                  : usage.personal.connections.isAtLimit;
+              // Gate preemptively only when the user has no team to fall
+              // back to. When teams exist, let them authenticate — the
+              // save/connect path checks the selected team's limit.
+              final initialAtLimit =
+                  teams.isEmpty && usage.personal.connections.isAtLimit;
 
               if (initialAtLimit) {
                 return FormButton(
@@ -2203,8 +2214,13 @@ class ShowTwistInfo extends ShowForm {
     // Block AI-required twists for free users without keys
     final blocked = twist.aiRequired && subscription.isFree && !hasAiKeys;
 
-    // Check if personal twist limit is reached
-    final atTwistLimit = usage != null && usage.personal.twists.isAtLimit;
+    // Only gate entry when the user has no team to fall back to. If they
+    // have teams, let them reach the setup form and pick a scope — the
+    // save-time check in SetupTwist will gate against the chosen owner.
+    final atTwistLimit =
+        usage != null &&
+        usage.teams.isEmpty &&
+        usage.personal.twists.isAtLimit;
 
     return FormData(
       title: twist.name,

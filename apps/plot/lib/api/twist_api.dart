@@ -665,6 +665,14 @@ class TwistIntegrations {
   /// Used for smart channel default suggestions.
   final Map<int, List<String>>? teamDomains;
 
+  /// Per-connection disambiguator from twist_instance.account_label. Fetched
+  /// fresh from the server so clients don't depend on local-sync timing when
+  /// populating the Label field for a newly activated connection.
+  final String? accountLabel;
+
+  /// Name of the team owning this instance (null for personal).
+  final String? teamName;
+
   const TwistIntegrations({
     required this.providers,
     required this.accounts,
@@ -675,6 +683,8 @@ class TwistIntegrations {
     this.shared = false,
     this.keyOption,
     this.teamDomains,
+    this.accountLabel,
+    this.teamName,
   });
 
   factory TwistIntegrations.fromJson(Map<String, dynamic> json) {
@@ -696,6 +706,8 @@ class TwistIntegrations {
       teamDomains: _parseTeamDomains(
         json['teamDomains'],
       ),
+      accountLabel: json['accountLabel'] as String?,
+      teamName: json['teamName'] as String?,
     );
   }
 

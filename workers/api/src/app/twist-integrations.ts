@@ -47,8 +47,12 @@ async function resolveTwistInfo(db: Kysely<DB>, twistInstanceId: string) {
   const row = await db
     .selectFrom("twist_instance")
     .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+    .leftJoin("team", "team.id", "twist_instance.team_id")
     .select([
       "twist_instance.twist_id as twistId",
+      "twist_instance.account_label as accountLabel",
+      "twist_instance.team_id as teamId",
+      "team.name as teamName",
       "twist.version",
       "twist.environment",
       "twist.options_schema as twistOptions",
@@ -198,6 +202,8 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       return c.json({
         providers: [], accounts: [], syncables: [], optionsSchema,
         shared: twistInfo.shared, keyOption: twistInfo.keyOption,
+        accountLabel: twistInfo.accountLabel ?? null,
+        teamName: twistInfo.teamName ?? null,
       });
     }
 
@@ -302,6 +308,8 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
       shared: twistInfo.shared,
       keyOption: twistInfo.keyOption,
       teamDomains,
+      accountLabel: twistInfo.accountLabel ?? null,
+      teamName: twistInfo.teamName ?? null,
     });
   }
 
@@ -356,6 +364,8 @@ twistIntegrations.get("/twist/:id/integrations", async (c) => {
     shared: twistInfo.shared,
     keyOption: twistInfo.keyOption,
     teamDomains,
+    accountLabel: twistInfo.accountLabel ?? null,
+    teamName: twistInfo.teamName ?? null,
   });
 });
 
