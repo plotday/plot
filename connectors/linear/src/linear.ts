@@ -403,7 +403,7 @@ export class Linear extends Connector<Linear> {
     // Build filter
     const filter: any = {};
     if (options?.timeMin) {
-      filter.created = { gte: options.timeMin };
+      filter.createdAt = { gte: options.timeMin };
     }
 
     // Fetch batch of issues (50 at a time)
