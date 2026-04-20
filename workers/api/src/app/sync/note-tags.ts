@@ -62,17 +62,13 @@ noteTags.get("/sync/note-tags", async (c) => {
       query = query.where(updatedSinceCursor(updatedSince, cursorId));
     }
 
-    // Calendar range filter
-    if (rangeStart || rangeEnd) {
-      const start = rangeStart || "";
-      const end = rangeEnd || "";
-      const tstzRange = `[${start},${end})`;
-      const dateStart = rangeStart ? rangeStart.split("T")[0] : "";
-      const dateEnd = rangeEnd ? rangeEnd.split("T")[0] : "";
-      const dateRange = `[${dateStart},${dateEnd})`;
-      query = query.where(
-        sql<boolean>`(range_at && ${tstzRange}::tstzrange OR range_on && ${dateRange}::daterange)`
-      );
+    // Pagination range filter on the sort column (note_tags has no
+    // schedule range columns, so filter rows by sortBy timestamp).
+    if (rangeStart) {
+      query = query.where(sql<boolean>`${sql.ref(sortBy)} > ${rangeStart}::timestamptz`);
+    }
+    if (rangeEnd) {
+      query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
     }
 
     return query.execute();
