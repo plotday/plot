@@ -158,6 +158,7 @@ class ManageConnections extends Command {
         itemBuilder: (item, isLoading) => _buildItem(item, isLoading),
         onRefreshNeeded: (refresh) => refreshFn = refresh,
         onSelect: (ctx, item, _) async {
+          String? archivedActiveId;
           if (item is _ActiveSource) {
             await EditSource(
               twistInstanceId: item.id,
@@ -166,6 +167,12 @@ class ManageConnections extends Command {
               logoUrl: item.logoUrl,
               logoUrlDark: item.logoUrlDark,
             ).run(ctx);
+            // The archive command sets archivedAt on the local TwistInstance,
+            // so we can detect the archive flow without plumbing a return value.
+            final ti = TwistInstance.fromCache(Uuid.fromString(item.id));
+            if (ti?.archivedAt != null) {
+              archivedActiveId = item.id;
+            }
           } else if (item is _AvailableSource) {
             await AddSourceDetail(item.twist).run(ctx);
             final activatedId = AddSourceDetail.lastActivatedSourceId;
@@ -182,8 +189,21 @@ class ManageConnections extends Command {
           } else if (item is _UpcomingConnection) {
             await _NotifyUpcomingConnection(item).run(ctx);
           }
-          // Refresh items after returning from child command
-          _dataCache = null;
+          // Optimistically drop an archived source from the cache so the list
+          // reflects the change immediately; otherwise invalidate so we refetch.
+          final cache = _dataCache;
+          if (archivedActiveId != null && cache != null) {
+            _dataCache = (
+              active: cache.active
+                  .where((s) => s.id != archivedActiveId)
+                  .toList(),
+              available: cache.available,
+              upcoming: cache.upcoming,
+              usage: cache.usage,
+            );
+          } else {
+            _dataCache = null;
+          }
           await refreshFn?.call();
           return false; // Keep SelectModal open
         },
