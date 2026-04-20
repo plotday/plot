@@ -29,6 +29,19 @@ export class PostHogAPI {
     return response.json() as Promise<T>;
   }
 
+  async getProject(): Promise<{ name: string; id: number } | null> {
+    try {
+      const url = new URL(`/api/projects/${this.projectId}/`, this.host);
+      const response = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+      });
+      if (!response.ok) return null;
+      return (await response.json()) as { name: string; id: number };
+    } catch {
+      return null;
+    }
+  }
+
   async getEventDefinitions(): Promise<
     Array<{ name: string; volume_30_day: number | null }>
   > {

@@ -124,6 +124,14 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     return calendarHome;
   }
 
+  override async getAccountName(
+    _auth: Authorization | null,
+    _token: AuthToken | null
+  ): Promise<string | null> {
+    const appleId = this.tools.options.appleId as string | undefined;
+    return appleId && appleId.length > 0 ? appleId : null;
+  }
+
   // ---- Channel Lifecycle ----
 
   /**

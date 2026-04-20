@@ -71,6 +71,19 @@ export class PostHog extends Connector<PostHog> {
     );
   }
 
+  override async getAccountName(
+    _auth: Authorization | null,
+    _token: AuthToken | null
+  ): Promise<string | null> {
+    try {
+      const api = this.getAPI();
+      const project = await api.getProject();
+      return project?.name ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Returns available event definitions as channels.
    * Auth params are null since this connector uses API key options, not OAuth.

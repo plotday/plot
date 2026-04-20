@@ -67,6 +67,14 @@ export class Fellow extends Connector<Fellow> {
     return new FellowAPI(opts.apiKey as string, opts.subdomain as string);
   }
 
+  override async getAccountName(
+    _auth: Authorization | null,
+    _token: AuthToken | null
+  ): Promise<string | null> {
+    const subdomain = this.tools.options.subdomain as string | undefined;
+    return subdomain && subdomain.length > 0 ? subdomain : null;
+  }
+
   /**
    * Returns a single channel for the Fellow workspace.
    */

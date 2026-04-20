@@ -143,6 +143,23 @@ export class Linear extends Connector<Linear> {
   }
 
   /**
+   * Returns the Linear workspace (organization) name for the connected account.
+   */
+  override async getAccountName(
+    _auth: Authorization | null,
+    token: AuthToken | null
+  ): Promise<string | null> {
+    if (!token) return null;
+    try {
+      const client = new LinearClient({ accessToken: token.token });
+      const org = await client.organization;
+      return org?.name ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Returns available Linear teams as channel resources,
    * with per-team workflow states as dynamic linkTypes.
    */
