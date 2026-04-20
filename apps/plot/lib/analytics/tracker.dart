@@ -20,6 +20,7 @@ import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
+import '../api/api_exception.dart';
 import '../api/network_exception.dart';
 import '../env.dart';
 import 'conventions.dart';
@@ -279,6 +280,12 @@ class Tracker {
       // These are expected during offline periods and are already handled
       // by the sync orchestrator.
       if (error is NetworkException) {
+        return true;
+      }
+
+      // Ignore auth failures — the user will be signed out via
+      // _checkAuthError, so these are expected not bugs.
+      if (error is ApiException && error.statusCode == 401) {
         return true;
       }
 
