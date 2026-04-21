@@ -3973,20 +3973,7 @@ export type Database = {
           updated_at: string | null
           user_id: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "channel_twist_instance_id_fkey"
-            columns: ["twist_instance_id"]
-            referencedRelation: "twist"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
-            referencedRelation: "group"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       group: {
         Row: {

@@ -458,7 +458,9 @@ export class Integrations extends Tool implements IAuth {
 
   /**
    * Declare what channels an actor has access to.
-   * Also updates link_types on any already-enabled channels.
+   * Refreshes title and link_types on any existing channel rows for this
+   * twist_instance. Only touches rows that already exist — enable/disable
+   * state is owned by enableSync/disableSync.
    */
   async setChannels(
     provider: AuthProvider,
@@ -467,23 +469,23 @@ export class Integrations extends Tool implements IAuth {
   ): Promise<void> {
     await this.store.set(`channel_access:${provider}:${actorId}`, channels);
 
-    // Update link_types on existing channels (regardless of enabled state).
     // Offset updated_at by 1ms to ensure the change is picked up by the
     // next sync pull (the cursor uses millisecond-truncated timestamps).
     const flat = this.flattenChannels(channels);
     const futureDate = new Date(Date.now() + 1);
     for (const channel of flat) {
+      const update: Record<string, unknown> = { updated_at: futureDate };
+      if (channel.title) update.title = channel.title;
       if (channel.linkTypes) {
-        await this.db
-          .updateTable("channel")
-          .set({
-            link_types: JSON.stringify(channel.linkTypes) as any,
-            updated_at: futureDate,
-          })
-          .where("twist_instance_id", "=", this.twistInstanceId)
-          .where("channel_id", "=", channel.id)
-          .execute();
+        update.link_types = JSON.stringify(channel.linkTypes) as any;
       }
+      if (Object.keys(update).length === 1) continue; // only updated_at — nothing to refresh
+      await this.db
+        .updateTable("channel")
+        .set(update as any)
+        .where("twist_instance_id", "=", this.twistInstanceId)
+        .where("channel_id", "=", channel.id)
+        .execute();
     }
   }
 
@@ -2046,22 +2048,33 @@ export class Integrations extends Tool implements IAuth {
     const channelArg = { id: channelId, title: title ?? channelId };
     const syncContext = await this.buildSyncContext();
 
+    // Self-heal: if we couldn't find linkTypes (or title) from channel_access KV
+    // or an existing row, prepend a getChannels → setChannels dispatch. This
+    // runs before onChannelEnabled on the same request, so setChannels updates
+    // title + link_types on the row we just inserted. Required to make
+    // archive+re-add work for users whose channel_access KV was never populated.
+    const refreshDispatch = (!linkTypes || !channelObj?.title)
+      ? await this.buildRefreshDispatch(provider, actorId)
+      : null;
+
     // Source pattern: dispatch directly to source method
     if (this.sourceProvider) {
-      return {
-        __dispatch: [{ sourceMethod: "onChannelEnabled", args: [channelArg, syncContext] }],
-      } as any;
+      const dispatches: any[] = [];
+      if (refreshDispatch) dispatches.push(refreshDispatch);
+      dispatches.push({ sourceMethod: "onChannelEnabled", args: [channelArg, syncContext] });
+      return { __dispatch: dispatches } as any;
     }
 
     // Legacy pattern: dispatch via option path
     const providerIndex = this.providerConfigs.findIndex(p => p.provider === provider);
     if (providerIndex >= 0) {
-      return {
-        __dispatch: [{
-          optionPath: ["providers", providerIndex, "onChannelEnabled"],
-          args: [channelArg, syncContext],
-        }],
-      } as any;
+      const dispatches: any[] = [];
+      if (refreshDispatch) dispatches.push(refreshDispatch);
+      dispatches.push({
+        optionPath: ["providers", providerIndex, "onChannelEnabled"],
+        args: [channelArg, syncContext],
+      });
+      return { __dispatch: dispatches } as any;
     }
   }
 
@@ -2344,12 +2357,16 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Re-calls getChannels for a provider+actor using stored token,
-   * updating channel_access with the latest list.
+   * Builds the getChannels → setChannels dispatch entry for a provider+actor
+   * using the stored token. Returns null if no token or no matching provider.
+   * Shared between refreshChannels (user-triggered) and enableSync (self-heal).
    */
-  async refreshChannels(provider: AuthProvider, actorId: ActorId): Promise<any> {
+  private async buildRefreshDispatch(
+    provider: AuthProvider,
+    actorId: ActorId
+  ): Promise<any | null> {
     const token = await this.getActorToken(provider, actorId);
-    if (!token) return;
+    if (!token) return null;
 
     const tokenKey = `auth_token:${provider}:${actorId}`;
     const tokenData = await this.store.get<StoredTokenData>(tokenKey);
@@ -2370,28 +2387,28 @@ export class Integrations extends Tool implements IAuth {
       prependArgs: [provider, actorId],
     };
 
-    // Source pattern: dispatch directly to source method
     if (this.sourceProvider) {
-      return {
-        __dispatch: [{
-          sourceMethod: "getChannels",
-          args: [auth, token],
-          forwardTo,
-        }],
-      } as any;
+      return { sourceMethod: "getChannels", args: [auth, token], forwardTo };
     }
 
-    // Legacy pattern: dispatch via option path
     const providerIndex = this.providerConfigs.findIndex(p => p.provider === provider);
-    if (providerIndex < 0) return;
+    if (providerIndex < 0) return null;
 
     return {
-      __dispatch: [{
-        optionPath: ["providers", providerIndex, "getChannels"],
-        args: [auth, token],
-        forwardTo,
-      }],
-    } as any;
+      optionPath: ["providers", providerIndex, "getChannels"],
+      args: [auth, token],
+      forwardTo,
+    };
+  }
+
+  /**
+   * Re-calls getChannels for a provider+actor using stored token,
+   * updating channel_access with the latest list.
+   */
+  async refreshChannels(provider: AuthProvider, actorId: ActorId): Promise<any> {
+    const dispatch = await this.buildRefreshDispatch(provider, actorId);
+    if (!dispatch) return;
+    return { __dispatch: [dispatch] } as any;
   }
 
   /**
@@ -2500,22 +2517,13 @@ export class Integrations extends Tool implements IAuth {
       };
     }
 
-    // Dual-read fallback: check KV
+    // Dual-read fallback: check KV. Do NOT opportunistically create a channel
+    // row here — we'd have to stamp `title = channel_id` and `link_types = NULL`
+    // as sentinels, and nothing in this path arranges for them to be corrected.
+    // The authoritative row is written by enableSync (which also dispatches a
+    // setChannels refresh when data is incomplete).
     const config = await this.store.get<ChannelConfig>(`channel_config:${provider}:${channelId}`);
-    if (config) {
-      // Migrate KV data to DB lazily
-      await this.db
-        .insertInto("channel")
-        .values({
-          twist_instance_id: this.twistInstanceId,
-          channel_id: channelId,
-          title: config.title ?? channelId,
-          enabled: config.enabled,
-        })
-        .onConflict((oc) => oc.columns(["twist_instance_id", "channel_id"]).doNothing())
-        .execute();
-      return config;
-    }
+    if (config) return config;
 
     // Backward compat: read from old storage key prefix
     return await this.store.get<ChannelConfig>(`syncable_config:${provider}:${channelId}`);
@@ -2753,19 +2761,25 @@ export class Integrations extends Tool implements IAuth {
       provider,
       clientId
     );
+    const useBasicAuth = !!config.useBasicAuth && !!clientSecret;
 
     const params = new URLSearchParams({
-      client_id: clientId,
-      ...(clientSecret ? { client_secret: clientSecret } : null),
+      ...(useBasicAuth ? {} : { client_id: clientId }),
+      ...(!useBasicAuth && clientSecret ? { client_secret: clientSecret } : null),
       refresh_token: refreshToken,
       grant_type: "refresh_token",
     });
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    if (useBasicAuth) {
+      headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
+    }
+
     const response = await fetch(config.tokenUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
+      headers,
       body: params.toString(),
     });
 
@@ -3029,21 +3043,27 @@ export class Integrations extends Tool implements IAuth {
     }
 
     const clientSecret = Integrations.SecretFromId(env, provider, clientId);
+    const useBasicAuth = !!config.useBasicAuth && !!clientSecret;
 
     const params = new URLSearchParams({
-      client_id: clientId,
-      ...(clientSecret ? { client_secret: clientSecret } : null),
+      ...(useBasicAuth ? {} : { client_id: clientId }),
+      ...(!useBasicAuth && clientSecret ? { client_secret: clientSecret } : null),
       code,
       grant_type: "authorization_code",
       redirect_uri: redirectUri,
       ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
     });
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    if (useBasicAuth) {
+      headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
+    }
+
     const response = await fetch(config.tokenUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
+      headers,
       body: params.toString(),
     });
 
