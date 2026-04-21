@@ -1,3 +1,4 @@
+- Slack: save a message for Later and it becomes a to-do in Plot. Toggle the to-do in Plot and the message saves/unsaves in Slack. You'll need to reconnect Slack once to grant the new permission.
 - Fixed missing notifications and unread indicators for threads shared to a team — feedback and other team-wide threads now correctly trigger push and email notifications, and show the unread dot on the priority they land in
 - Archiving a thread from the activity feed now feels instant — the thread disappears immediately instead of after a noticeable delay
 - Notification emails now include an unsubscribe link — choose to get them at most once per day, once per week, or never, without needing to sign in
