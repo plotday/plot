@@ -2,7 +2,8 @@ import {
   Connector,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { Note, Thread } from "@plotday/twister/plot";
+import { Tag } from "@plotday/twister/tag";
+import type { Actor, ActorId, Link, Note, Thread } from "@plotday/twister/plot";
 import {
   AuthProvider,
   type AuthToken,
@@ -74,17 +75,34 @@ export class Slack extends Connector<Slack> {
     "chat:write",
     "im:history",
     "mpim:history",
+    "stars:read",
+    "stars:write",
   ];
 
   readonly provider = AuthProvider.Slack;
   readonly scopes = Slack.SCOPES;
-  readonly linkTypes = [{ type: "message", label: "Message", logo: "https://api.iconify.design/logos/slack-icon.svg", logoMono: "https://api.iconify.design/simple-icons/slack.svg" }];
+  readonly linkTypes = [
+    {
+      type: "message",
+      label: "Message",
+      logo: "https://api.iconify.design/logos/slack-icon.svg",
+      logoMono: "https://api.iconify.design/simple-icons/slack.svg",
+      statuses: [
+        { status: "inbox", label: "Inbox" },
+        { status: "later", label: "Later", tag: Tag.Star, todo: true },
+      ],
+    },
+  ];
 
   build(build: ToolBuilder) {
     return {
       integrations: build(Integrations),
       network: build(Network, { urls: ["https://slack.com/api/*"] }),
     };
+  }
+
+  override async activate(context: { auth: Authorization; actor: Actor }): Promise<void> {
+    await this.set("auth_actor_id", context.actor.id);
   }
 
   async getChannels(
