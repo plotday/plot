@@ -65,6 +65,15 @@ export type SyncState = {
   latest?: string;
 };
 
+export type StarsListItem = {
+  type: string;
+  channel?: string;
+  message?: {
+    ts: string;
+    thread_ts?: string;
+  };
+};
+
 export class SlackApi {
   constructor(public accessToken: string) {}
 
@@ -188,6 +197,34 @@ export class SlackApi {
     }
     const data = await this.call("chat.postMessage", params);
     return data.message;
+  }
+
+  public async addStar(channelId: string, timestamp: string): Promise<void> {
+    await this.call("stars.add", { channel: channelId, timestamp });
+  }
+
+  public async removeStar(channelId: string, timestamp: string): Promise<void> {
+    try {
+      await this.call("stars.remove", { channel: channelId, timestamp });
+    } catch (error) {
+      // stars.remove returns `not_starred` when the item isn't saved;
+      // treat as idempotent success.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("not_starred")) throw error;
+    }
+  }
+
+  public async listStars(cursor?: string): Promise<{
+    items: StarsListItem[];
+    nextCursor?: string;
+  }> {
+    const params: Record<string, string | number> = { limit: 100 };
+    if (cursor) params.cursor = cursor;
+    const data = await this.call("stars.list", params);
+    return {
+      items: (data.items ?? []) as StarsListItem[],
+      nextCursor: data.response_metadata?.next_cursor,
+    };
   }
 }
 
