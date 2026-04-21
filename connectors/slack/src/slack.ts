@@ -155,6 +155,9 @@ export class Slack extends Connector<Slack> {
       channel.id
     );
     await this.runTask(webhookCallback);
+
+    const backfillCallback = await this.callback(this.backfillStars, channel.id);
+    await this.runTask(backfillCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
@@ -404,6 +407,54 @@ export class Slack extends Connector<Slack> {
 
     // Record the new state so subsequent duplicate events short-circuit.
     await this.set(this.starredKey(channelId, parentTs), isStarred);
+  }
+
+  async backfillStars(channelId: string): Promise<void> {
+    const actorId = await this.get<ActorId>("auth_actor_id");
+    if (!actorId) return;
+
+    let api: SlackApi;
+    try {
+      api = await this.getUserApi(channelId);
+    } catch (error) {
+      console.warn("backfillStars: user token unavailable", error);
+      return;
+    }
+
+    let cursor: string | undefined = undefined;
+    do {
+      const { items, nextCursor } = await api.listStars(cursor);
+
+      for (const item of items) {
+        if (item.type !== "message") continue;
+        if (item.channel !== channelId) continue;
+
+        const messageTs = item.message?.ts;
+        const parentTs = item.message?.thread_ts ?? messageTs;
+        if (!parentTs) continue;
+
+        const alreadyStarred = await this.get<boolean>(
+          this.starredKey(channelId, parentTs)
+        );
+        if (alreadyStarred) continue;
+
+        const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${parentTs}`;
+
+        try {
+          await this.tools.integrations.setThreadToDo(canonicalUrl, actorId, true);
+        } catch (error) {
+          console.warn("backfillStars: setThreadToDo failed", parentTs, error);
+          // Continue with other items.
+        }
+
+        // Block the onThreadToDo callback that Plot will queue, since the
+        // item is already saved-for-later in Slack — no need to write again.
+        await this.set(this.skipKey(channelId, parentTs), true);
+        await this.set(this.starredKey(channelId, parentTs), true);
+      }
+
+      cursor = nextCursor;
+    } while (cursor);
   }
 
   private async startIncrementalSync(channelId: string): Promise<void> {
