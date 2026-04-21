@@ -145,7 +145,12 @@ export async function createThread(
           defaults: JSON.stringify(prep.defaults),
         });
         const postHog = new PostHog(plot.env.POSTHOG_API_KEY, { host: plot.env.POSTHOG_HOST, flushAt: 1, flushInterval: 0 });
-        postHog.captureException(error as Error, userId, { context: "plot:upsertThread", twist_instance_id: plot.twistInstanceId });
+        postHog.captureException(error as Error, userId, {
+          context: "plot:upsertThread",
+          twist_instance_id: plot.twistInstanceId,
+          upsert: JSON.stringify(prep.upsert),
+          defaults: JSON.stringify({ ...prep.defaults, priority_id: priorityId }),
+        });
         await postHog.shutdown();
         throw error;
       }

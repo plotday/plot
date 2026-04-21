@@ -131,12 +131,23 @@ export class UserSync extends DurableObject<Bindings> {
 
     const timingEnabled = this.env.SYNC_TIMING_ENABLED === "true";
 
+    // Per-step timings. Attached to outer error/warn logs so that when a DO
+    // storage timeout aborts the alarm, we can see which await was in flight.
+    const timings: Record<string, number> = {};
+    const alarmStart = Date.now();
+    let currentStep: string = "init";
+    const markStep = (name: string, since: number) => {
+      timings[name] = Date.now() - since;
+      currentStep = name;
+    };
+
     try {
       const now = Date.now();
       if (now - this.state.lastNotifyTime < MIN_WAIT_MS) {
         // More notifications came in recently, reschedule
         const delayMs = MIN_WAIT_MS - (now - this.state.lastNotifyTime);
         this.state.pendingAlarm = true;
+        currentStep = "setAlarmReschedule";
         await this.ctx.storage.setAlarm(now + delayMs);
         return;
       }
@@ -152,11 +163,14 @@ export class UserSync extends DurableObject<Bindings> {
       // Check if there are connected clients
       const broadcastId = this.env.BROADCAST.idFromName(this.userId);
       const broadcast = this.env.BROADCAST.get(broadcastId);
+      const tHasClients = Date.now();
+      currentStep = "hasConnectedClients";
       const broadcastResponse = await broadcast.fetch(
         new Request("http://do/hasConnectedClients")
       );
       const broadcastData: any = await broadcastResponse.json();
       const hasClients = broadcastData.hasConnectedClients;
+      markStep("hasConnectedClientsMs", tHasClients);
 
       if (!hasClients) {
         // No connected clients — trigger push notification in background.
@@ -173,6 +187,17 @@ export class UserSync extends DurableObject<Bindings> {
               })
             )
             .catch((error) => {
+              // Storage timeouts in PushNotify are transient platform noise;
+              // don't capture, but keep a warn-level breadcrumb.
+              if (
+                error instanceof Error &&
+                error.message.includes("storage operation exceeded timeout")
+              ) {
+                logger.warn("PushNotify DO interrupted by DO storage timeout", {
+                  user_id: this.userId ?? undefined,
+                });
+                return;
+              }
               logger.error("Error triggering PushNotify DO", error as Error, {
                 user_id: this.userId ?? undefined,
               });
@@ -184,28 +209,24 @@ export class UserSync extends DurableObject<Bindings> {
       }
 
       const userId = this.userId;
+      currentStep = "withDb";
       await withDb(this.env, async (db) => {
         // rpc() unwraps single-row TABLE results into a bare object, so a
         // single pending entity (the common case) would slip past an
         // Array.isArray check. Normalize to an array.
-        let pendingUpdatesRaw: Awaited<ReturnType<typeof rpc<"get_pending_user_sync">>>;
-        try {
-          pendingUpdatesRaw = await rpc(db, "get_pending_user_sync", {
-            p_user_id: userId,
-          });
-        } catch (error) {
-          logger.error("Error querying user_sync", error as Error, {
-            user_id: userId,
-          });
-          this.captureException(error as Error);
-          return;
-        }
+        const tRpc = Date.now();
+        currentStep = "getPendingUserSync";
+        const pendingUpdatesRaw = await rpc(db, "get_pending_user_sync", {
+          p_user_id: userId,
+        });
+        markStep("getPendingUserSyncMs", tRpc);
 
         const pendingUpdates = Array.isArray(pendingUpdatesRaw)
           ? pendingUpdatesRaw
           : pendingUpdatesRaw
             ? [pendingUpdatesRaw]
             : [];
+        timings.pendingEntityCount = pendingUpdates.length;
 
         if (pendingUpdates.length === 0) {
           this.state.lastSyncTime = now;
@@ -213,12 +234,15 @@ export class UserSync extends DurableObject<Bindings> {
         }
 
         // Send sync messages for each entity
+        const tSend = Date.now();
+        currentStep = "broadcastSend";
         for (const update of pendingUpdates) {
           await broadcast.send({
             type: "sync",
             table: update.entity,
           });
         }
+        markStep("broadcastSendMs", tSend);
 
         // Advance last_sync_at = last_update_at directly in SQL to preserve
         // full μs precision. Doing this via JS Date loses microseconds, causing
@@ -229,9 +253,11 @@ export class UserSync extends DurableObject<Bindings> {
         let retryCount = 0;
         const maxRetries = 3;
         let updateError: any = null;
+        const tUpdate = Date.now();
 
         while (retryCount <= maxRetries) {
           try {
+            currentStep = retryCount === 0 ? "updateUserSync" : `updateUserSyncRetry${retryCount}`;
             await db
               .updateTable("user_sync")
               .set({ last_sync_at: sql`last_update_at` })
@@ -264,6 +290,8 @@ export class UserSync extends DurableObject<Bindings> {
             break;
           }
         }
+        markStep("updateUserSyncMs", tUpdate);
+        timings.updateRetryCount = retryCount;
 
         if (updateError) {
           logger.error("Error updating user_sync last_sync_at", updateError, {
@@ -274,12 +302,10 @@ export class UserSync extends DurableObject<Bindings> {
 
         this.state.lastSyncTime = now;
 
-        const syncDispatchMs = Date.now() - now;
-
         if (timingEnabled) {
           logger.info("User sync dispatch timing", {
             user_id: userId,
-            sync_dispatch_ms: syncDispatchMs,
+            sync_dispatch_ms: Date.now() - now,
             pending_entity_count: pendingUpdates.length,
             entities: pendingUpdates.map((u) => u.entity),
           });
@@ -292,22 +318,31 @@ export class UserSync extends DurableObject<Bindings> {
         });
       });
     } catch (error) {
+      timings.totalMs = Date.now() - alarmStart;
       // "storage operation exceeded timeout" is a transient Cloudflare platform
       // error when the storage backend is slow. The DO resets and will retry on
-      // the next notification — not actionable, so log as warning only.
+      // the next notification — not actionable, so log as warning only. Timings
+      // show which step was in flight when the reset hit.
       if (
         error instanceof Error &&
         error.message.includes("storage operation exceeded timeout")
       ) {
         logger.warn("UserSync alarm interrupted by DO storage timeout", {
           user_id: this.userId,
+          in_flight_step: currentStep,
+          ...timings,
         });
         return;
       }
       logger.error("Error in UserSync alarm", error as Error, {
         user_id: this.userId,
+        in_flight_step: currentStep,
+        ...timings,
       });
-      this.captureException(error as Error);
+      this.captureException(error as Error, {
+        in_flight_step: currentStep,
+        ...timings,
+      });
     }
   }
 

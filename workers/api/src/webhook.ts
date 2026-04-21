@@ -388,7 +388,7 @@ webhook.post("/hook/slack", webhookRateLimiter, async (c) => {
 });
 
 // Gmail webhook endpoint - handles Google Pub/Sub push notifications
-webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
+webhook.post("/hook/gmail/:topicId", webhookAsyncRateLimiter, async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
@@ -463,8 +463,17 @@ webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
       params[key] = value;
     });
 
-    // Construct callback request with decoded data
-    const webhookRequest = {
+    // Enqueue to WEBHOOK_QUEUE for bounded-concurrency async processing.
+    // Dispatching synchronously to the per-twist_instance CallbacksState DO
+    // held the DO's input gate through the full callback path (DB queries →
+    // factory → twist RPC → twist's own RPCs back to this worker). Pub/Sub
+    // bursts piled webhooks onto the same DO until its storage watchdog
+    // tripped with "Durable Object storage operation exceeded timeout".
+    // The queue consumer in queue/webhook.ts dispatches with max_concurrency
+    // 5 and retries transient failures via Cloudflare Queues.
+    await c.env.WEBHOOK_QUEUE.send({
+      type: "webhook",
+      token: callbackToken,
       method: "POST",
       headers,
       params,
@@ -472,28 +481,11 @@ webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
         ...body, // Include original Pub/Sub message
         decodedData, // Add decoded message data for convenience
       },
-    };
+    });
 
-    // Call the callback using the decoded token
-    // The callback token encodes the DO shard and callback info
-    const _gmailResult = await Network.HandleGmailWebhook(
-      c.env.CALLBACKS,
-      callbackToken,
-      webhookRequest
-    );
-
-    // Always return 200 OK to acknowledge message
+    // Always return 200 OK to acknowledge the message to Pub/Sub.
     return c.json({ ok: true });
   } catch (error) {
-    // Permanent callback failures — return 200 to stop Pub/Sub retries
-    if (isCallbackError(error)) {
-      const errorType = getCallbackErrorType(error as Error);
-      if (errorType === "NOT_FOUND" || errorType === "EXPIRED") {
-        logger.warn("Callback permanently unavailable", { errorType });
-        return c.json({ ok: false, error: errorType });
-      }
-    }
-    // Transient failures — return 500 so Pub/Sub retries
     return captureServerError(c, error, "Error processing Gmail webhook");
   }
 });
@@ -501,7 +493,7 @@ webhook.post("/hook/gmail/:topicId", webhookRateLimiter, async (c) => {
 // Generic Pub/Sub webhook endpoint - handles push notifications from any Google service
 // (Google Chat via Workspace Events, and future services). Gmail keeps its own route
 // for backward compatibility with existing Pub/Sub subscriptions.
-webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
+webhook.post("/hook/pubsub/:topicId", webhookAsyncRateLimiter, async (c) => {
   const context = extractRequestContext(c);
   const logger = createLogger(context);
 
@@ -583,12 +575,15 @@ webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
       params[key] = value;
     });
 
-    // Construct callback request with decoded data.
-    // Workspace Events delivers the CloudEvent type via Pub/Sub message
-    // attributes (e.g. "ce-type": "google.workspace.chat.message.v1.created"),
-    // so merge attributes into decodedData for the connector to access.
+    // Enqueue to WEBHOOK_QUEUE for bounded-concurrency async processing (see
+    // Gmail webhook above for rationale). Workspace Events delivers the
+    // CloudEvent type via Pub/Sub message attributes (e.g. "ce-type":
+    // "google.workspace.chat.message.v1.created"), so merge attributes into
+    // decodedData for the connector to access.
     const attributes = message.attributes as Record<string, string> | undefined;
-    const webhookRequest = {
+    await c.env.WEBHOOK_QUEUE.send({
+      type: "webhook",
+      token: callbackToken,
       method: "POST",
       headers,
       params,
@@ -600,27 +595,11 @@ webhook.post("/hook/pubsub/:topicId", webhookRateLimiter, async (c) => {
           ...(attributes ? { attributes } : {}),
         },
       },
-    };
+    });
 
-    // Call the callback using the decoded token
-    const _result = await Network.HandleGmailWebhook(
-      c.env.CALLBACKS,
-      callbackToken,
-      webhookRequest
-    );
-
-    // Always return 200 OK to acknowledge message
+    // Always return 200 OK to acknowledge the message to Pub/Sub.
     return c.json({ ok: true });
   } catch (error) {
-    // Permanent callback failures — return 200 to stop Pub/Sub retries
-    if (isCallbackError(error)) {
-      const errorType = getCallbackErrorType(error as Error);
-      if (errorType === "NOT_FOUND" || errorType === "EXPIRED") {
-        logger.warn("Callback permanently unavailable", { errorType });
-        return c.json({ ok: false, error: errorType });
-      }
-    }
-    // Transient failures — return 500 so Pub/Sub retries
     return captureServerError(c, error, "Error processing Pub/Sub webhook");
   }
 });
