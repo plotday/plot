@@ -170,6 +170,16 @@ export class Slack extends Connector<Slack> {
     return new SlackApi(token.token);
   }
 
+  private async getUserApi(channelId: string): Promise<SlackApi> {
+    const token = await this.tools.integrations.getUserToken(channelId);
+    if (!token) {
+      throw new Error(
+        "No Slack user token available (missing stars:read/stars:write scopes?)"
+      );
+    }
+    return new SlackApi(token);
+  }
+
   async listWorkspaceChannels(channelId: string): Promise<MessageChannel[]> {
     const api = await this.getApi(channelId);
     const channels = await api.getChannels();
@@ -390,6 +400,63 @@ export class Slack extends Connector<Slack> {
       false
     );
     await this.runTask(syncCallback);
+  }
+
+  private starredKey(channelId: string, threadTs: string): string {
+    return `starred:${channelId}:${threadTs}`;
+  }
+
+  private skipKey(channelId: string, threadTs: string): string {
+    return `skip_todo_writeback:${channelId}:${threadTs}`;
+  }
+
+  async onThreadToDo(
+    thread: Thread,
+    _actor: Actor,
+    todo: boolean,
+    _options: { date?: Date }
+  ): Promise<void> {
+    const meta = thread.meta ?? {};
+    const channelId = meta.channelId as string | undefined;
+    const threadTs = meta.threadTs as string | undefined;
+    if (!channelId || !threadTs) return;
+
+    if (await this.get(this.skipKey(channelId, threadTs))) {
+      await this.clear(this.skipKey(channelId, threadTs));
+      return;
+    }
+
+    // Update local state BEFORE calling Slack so the webhook fired by our
+    // own write sees isStarred === wasStarred and doesn't re-propagate.
+    await this.set(this.starredKey(channelId, threadTs), todo);
+
+    const api = await this.getUserApi(channelId);
+    if (todo) {
+      await api.addStar(channelId, threadTs);
+    } else {
+      await api.removeStar(channelId, threadTs);
+    }
+  }
+
+  async onLinkUpdated(link: Link): Promise<void> {
+    const channelId = link.meta?.channelId as string | undefined;
+    const threadTs = link.meta?.threadTs as string | undefined;
+    if (!channelId || !threadTs) return;
+
+    if (await this.get(this.skipKey(channelId, threadTs))) {
+      await this.clear(this.skipKey(channelId, threadTs));
+      return;
+    }
+
+    const isLater = link.status === "later";
+    await this.set(this.starredKey(channelId, threadTs), isLater);
+
+    const api = await this.getUserApi(channelId);
+    if (isLater) {
+      await api.addStar(channelId, threadTs);
+    } else {
+      await api.removeStar(channelId, threadTs);
+    }
   }
 
   // ---- Write-back: reply from Plot ----
