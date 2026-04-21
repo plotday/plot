@@ -1,3 +1,5 @@
+import { type EmailType } from "@plotday/email";
+
 import { type TwistBuilder } from "../";
 import { type RunMessage } from "./twist/tools/tasks";
 import { type Broadcast } from "./state/broadcast";
@@ -126,6 +128,13 @@ export type QueueMessage =
   | LogMessage
   | WebhookMessage;
 
+export type MailRequest = {
+  to: string[];
+  subject: string;
+  email: EmailType;
+  props?: Record<string, unknown>;
+};
+
 export type Bindings = {
   readonly HYPERDRIVE?: Hyperdrive;
   readonly DATABASE_URL?: string;
@@ -207,12 +216,7 @@ export type Bindings = {
   readonly UPDATES_QUEUE: Queue<TwistBatchMessage>;
   readonly TWIST_LOGS_QUEUE: Queue<LogMessage>;
   readonly WEBHOOK_QUEUE: Queue<WebhookMessage>;
-  readonly MAIL_QUEUE: Queue<{
-    to: string[];
-    subject: string;
-    email: string;
-    props?: Record<string, unknown>;
-  }>;
+  readonly MAIL_QUEUE: Queue<MailRequest>;
   readonly AI: Ai;
   readonly STORAGE: DurableObjectNamespace<Storage>;
   readonly CALLBACKS: DurableObjectNamespace<CallbacksState>;

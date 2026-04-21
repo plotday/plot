@@ -3,10 +3,11 @@ import { type Kysely, sql } from "kysely";
 import { Hono } from "hono";
 
 import { render } from "@plotday/email";
+import type { EmailType } from "@plotday/email";
 import { createLogger } from "@plotday/worker-util";
 
 import type { DB } from "../db-types";
-import type { Bindings } from "../env";
+import type { Bindings, MailRequest } from "../env";
 import { rpc } from "../rpc";
 import {
   createFreeSubscription,
@@ -27,12 +28,7 @@ interface SendInvitationParams {
   priorityId?: string;
   threadId?: string;
   inviterUserId: string;
-  mailQueue: Queue<{
-    to: string[];
-    subject: string;
-    email: string;
-    props?: Record<string, unknown>;
-  }>;
+  mailQueue: Queue<MailRequest>;
   appRoot: string;
 }
 
@@ -131,7 +127,7 @@ export async function sendInvitation(
   const inviteUrl = `${appRoot}/invite/${token}`;
   const isThreadInvitation = !!threadId;
 
-  let emailTemplate: string;
+  let emailTemplate: EmailType;
   let emailSubject: string;
   let emailProps: Record<string, unknown>;
 

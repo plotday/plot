@@ -114,8 +114,10 @@ export const render = async <T extends EmailType>(
     case "notification-digest":
       Component = NotificationDigest;
       break;
-    default:
-      throw new Error(`Unknown email type: ${type}`);
+    default: {
+      const _exhaustive: never = type;
+      throw new Error(`Unknown email type: ${_exhaustive}`);
+    }
   }
   return {
     html: await reactEmailRender(<Component {...(props as any)} />, {

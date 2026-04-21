@@ -168,6 +168,13 @@ export default {
             attempt: message.attempts,
           });
 
+          // Always surface the exception to PostHog so persistent send failures
+          // show up in error tracking, not just when the message finally expires.
+          posthog.captureException(error as Error, undefined, {
+            template,
+            attempt: message.attempts,
+          });
+
           if (message.attempts < MAX_ATTEMPTS) {
             const delaySeconds = calculateBackoffDelay(message.attempts);
 
@@ -193,7 +200,6 @@ export default {
                 error: errorMessage,
               },
             });
-            posthog.captureException(error as Error);
 
             message.ack(); // give up
           }
