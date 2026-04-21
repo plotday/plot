@@ -238,11 +238,15 @@ export class Slack extends Connector<Slack> {
   }
 
   async stopSync(channelId: string): Promise<void> {
-    // Clear webhook
     await this.clear(`channel_webhook_${channelId}`);
-
-    // Clear sync state
     await this.clear(`sync_state_${channelId}`);
+
+    // Sweep per-thread state for this channel so a re-enable starts clean.
+    const starredKeys = await this.tools.store.list(`starred:${channelId}:`);
+    for (const key of starredKeys) await this.clear(key);
+
+    const skipKeys = await this.tools.store.list(`skip_todo_writeback:${channelId}:`);
+    for (const key of skipKeys) await this.clear(key);
   }
 
   async setupChannelWebhook(channelId: string): Promise<void> {
