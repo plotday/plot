@@ -1792,16 +1792,43 @@ class SetThreadSubType extends Command {
 // Thread sharing commands
 
 class PickThreadShared extends ShowCommands {
-  PickThreadShared(this.thread)
-    : super(
-        title: _computeSharedTitle(thread),
-        icon: _computeSharedIcon(thread),
-        commandsBuilder: (context) => _getSharedCommands(thread),
-        showFilter: true,
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        shortcut: platformSingleActivator(LogicalKeyboardKey.keyS, shift: true),
-      );
+  factory PickThreadShared(Thread thread) {
+    // Mutable reference so commandsBuilder (and each toggle command) always
+    // sees the latest in-memory thread without re-reading from drift.
+    final threadRef = [thread];
+    final candidatesCache = _ShareCandidatesCache();
+
+    Future<void> onUpdate(Thread updated) async {
+      threadRef[0] = updated;
+      // Persist in the background — drift is local-first and the UI should
+      // reflect the new sharing state immediately. Errors are captured so
+      // we still learn about drift failures.
+      unawaited(_persistSharedChange(updated));
+    }
+
+    return PickThreadShared._(
+      thread: thread,
+      commandsBuilder: (context) => _buildSharedCommands(
+        threadRef[0],
+        onUpdate: onUpdate,
+        isDraft: false,
+        candidates: candidatesCache,
+      ),
+    );
+  }
+
+  PickThreadShared._({
+    required this.thread,
+    required Future<Commands> Function(BuildContext) commandsBuilder,
+  }) : super(
+         title: _computeSharedTitle(thread),
+         icon: _computeSharedIcon(thread),
+         commandsBuilder: commandsBuilder,
+         showFilter: true,
+         eventObject: EventObject.activity,
+         eventAction: EventAction.updated,
+         shortcut: platformSingleActivator(LogicalKeyboardKey.keyS, shift: true),
+       );
 
   final Thread thread;
 
@@ -1816,10 +1843,14 @@ class PickThreadShared extends ShowCommands {
       child: FaIcon(iconData, size: context.theme.iconSizes.base),
     );
   }
+}
 
-  static Future<Commands> _getSharedCommands(Thread thread) async {
-    final fresh = await Thread.getOne(thread.id);
-    return _buildSharedCommands(fresh, onUpdate: null);
+Future<void> _persistSharedChange(Thread thread) async {
+  try {
+    await thread.save();
+  } catch (e, stackTrace) {
+    log.severe('Error persisting shared change: $e', e, stackTrace);
+    Tracker.captureException(e, stackTrace);
   }
 }
 
@@ -1832,6 +1863,7 @@ class PickDraftThreadShared extends ShowCommands {
   }) {
     // Mutable reference so commandsBuilder always sees the latest thread
     final threadRef = [thread];
+    final candidatesCache = _ShareCandidatesCache();
 
     Future<void> wrappedOnUpdate(Thread updated) async {
       threadRef[0] = updated;
@@ -1841,8 +1873,12 @@ class PickDraftThreadShared extends ShowCommands {
     return PickDraftThreadShared._(
       thread: thread,
       onUpdate: onUpdate,
-      commandsBuilder: (context) =>
-          _buildSharedCommands(threadRef[0], onUpdate: wrappedOnUpdate),
+      commandsBuilder: (context) => _buildSharedCommands(
+        threadRef[0],
+        onUpdate: wrappedOnUpdate,
+        isDraft: true,
+        candidates: candidatesCache,
+      ),
     );
   }
 
@@ -1865,6 +1901,30 @@ class PickDraftThreadShared extends ShowCommands {
 
   final Thread thread;
   final Future<void> Function(Thread thread) onUpdate;
+}
+
+/// Caches sorted sharing candidates by search string for the lifetime of a
+/// single share-picker modal. Toggling a contact doesn't change the candidate
+/// pool (only which side of the "Shared" / "Contacts" partition each actor is
+/// on), so we avoid re-running the thread scan in [Actor.getSortedForSharing]
+/// on every toggle.
+class _ShareCandidatesCache {
+  final Map<String, List<Actor>> _byQuery = {};
+
+  Future<List<Actor>> get({
+    required String? search,
+    required Priority? priority,
+  }) async {
+    final key = (search ?? '').toLowerCase();
+    final cached = _byQuery[key];
+    if (cached != null) return cached;
+    final fresh = await Actor.getSortedForSharing(
+      search: search,
+      priority: priority,
+    );
+    _byQuery[key] = fresh;
+    return fresh;
+  }
 }
 
 String _computeSharedTitle(Thread thread) {
@@ -1900,10 +1960,10 @@ int _sharedCount(Thread thread) {
 
 Future<Commands> _buildSharedCommands(
   Thread thread, {
-  required Future<void> Function(Thread)? onUpdate,
+  required Future<void> Function(Thread) onUpdate,
+  required bool isDraft,
+  required _ShareCandidatesCache candidates,
 }) async {
-  final isDraft = onUpdate != null;
-
   // Resolve groups filed on the thread. Groups are shown in the "Shared"
   // list so the viewer can see (and remove) the team the thread is shared
   // with.
@@ -1958,16 +2018,14 @@ Future<Commands> _buildSharedCommands(
 
   final sharedActorIds = sharedActors.map((a) => a.id).toList();
 
-  Command toggleActor(Actor actor) => onUpdate != null
-      ? _ShareDraftThreadActor(thread, actor, onUpdate: onUpdate)
-      : ShareThreadActor(thread, actor);
+  Command toggleActor(Actor actor) =>
+      ShareThreadActor(thread, actor, onUpdate: onUpdate);
 
   Command toggleInvite(String email) =>
       InviteThreadEmail(thread, email, onUpdate: onUpdate);
 
-  Command toggleGroup(GroupRow group) => onUpdate != null
-      ? _ShareDraftThreadGroup(thread, group, onUpdate: onUpdate)
-      : ShareThreadGroup(thread, group);
+  Command toggleGroup(GroupRow group) =>
+      ShareThreadGroup(thread, group, onUpdate: onUpdate);
 
   return Commands(
     prompt: 'Share with',
@@ -1988,6 +2046,7 @@ Future<Commands> _buildSharedCommands(
         thread: thread,
         excludeActorIds: sharedActorIds,
         onUpdate: onUpdate,
+        candidates: candidates,
       ),
     ],
   );
@@ -1998,27 +2057,27 @@ class _ThreadShareContactsGroup extends CommandGroup {
     required this.thread,
     required this.excludeActorIds,
     required this.onUpdate,
+    required this.candidates,
   }) : super(title: 'Contacts');
 
   final Thread thread;
   final List<ActorId> excludeActorIds;
-  final Future<void> Function(Thread)? onUpdate;
+  final Future<void> Function(Thread) onUpdate;
+  final _ShareCandidatesCache candidates;
 
   @override
   Future<List<Command>> list({String? search}) async {
-    final actors = await Actor.getSortedForSharing(
+    final sorted = await candidates.get(
       search: search,
       priority: thread.priority,
     );
     final excluded = excludeActorIds.toSet();
-    actors.removeWhere((a) => excluded.contains(a.id));
+    final actors = sorted
+        .where((a) => !excluded.contains(a.id))
+        .toList(growable: false);
 
     final commands = <Command>[
-      for (final actor in actors)
-        if (onUpdate != null)
-          _ShareDraftThreadActor(thread, actor, onUpdate: onUpdate!)
-        else
-          ShareThreadActor(thread, actor),
+      for (final actor in actors) ShareThreadActor(thread, actor, onUpdate: onUpdate),
     ];
 
     if (search != null && _isValidShareEmail(search)) {
@@ -2080,51 +2139,7 @@ bool _actorShared(Thread thread, Actor actor) =>
     actor.self || thread.contacts.contains(actor.id.toUuid());
 
 class ShareThreadActor extends Command {
-  ShareThreadActor(this.thread, this.actor)
-    : _isShared = _actorShared(thread, actor),
-      super(
-        title: actor.nameOrEmail,
-        eventObject: EventObject.activity,
-        eventAction: _actorShared(thread, actor)
-            ? EventAction.updated
-            : EventAction.shared,
-        icon: _actorShared(thread, actor) ? PlotIcon.user : PlotIcon.shareAdd,
-        on: _actorShared(thread, actor),
-      );
-
-  final Thread thread;
-  final Actor actor;
-  final bool _isShared;
-
-  @override
-  String? get subtitle => actor.name != null ? actor.email : null;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      if (actor.self) {
-        final blocker = await _checkSelfRemoval(context, thread);
-        if (blocker != null) return blocker;
-        await thread
-            .copyWith(contacts: Value(_contactsWithoutSelf(thread)))
-            .save();
-        return const CommandRefresh();
-      }
-      final contactUuid = actor.id.toUuid();
-      final newContacts = _isShared
-          ? thread.contacts.where((id) => id != contactUuid).toList()
-          : [...thread.contacts, contactUuid];
-      await thread.copyWith(contacts: Value(newContacts)).save();
-      return const CommandRefresh();
-    } catch (e, stackTrace) {
-      log.severe('Error in ShareThreadActor: $e', e, stackTrace);
-      return CommandMessage('Failed to update sharing', isError: true);
-    }
-  }
-}
-
-class _ShareDraftThreadActor extends Command {
-  _ShareDraftThreadActor(this.thread, this.actor, {required this.onUpdate})
+  ShareThreadActor(this.thread, this.actor, {required this.onUpdate})
     : _isShared = _actorShared(thread, actor),
       super(
         title: actor.nameOrEmail,
@@ -2162,7 +2177,7 @@ class _ShareDraftThreadActor extends Command {
       await onUpdate(thread.copyWith(contacts: Value(newContacts)));
       return const CommandRefresh();
     } catch (e, stackTrace) {
-      log.severe('Error in _ShareDraftThreadActor: $e', e, stackTrace);
+      log.severe('Error in ShareThreadActor: $e', e, stackTrace);
       return CommandMessage('Failed to update sharing', isError: true);
     }
   }
@@ -2181,41 +2196,7 @@ List<Uuid>? _contactsWithSelfIfGroupMember(Thread thread, GroupRow group) {
 }
 
 class ShareThreadGroup extends Command {
-  ShareThreadGroup(this.thread, this.group)
-    : super(
-        title: group.name,
-        eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
-        icon: PlotIcon.users,
-        on: true,
-      );
-
-  final Thread thread;
-  final GroupRow group;
-
-  @override
-  Future<CommandReturn> run(BuildContext context) async {
-    try {
-      final newGroups = thread.groups.where((id) => id != group.id).toList();
-      final newContacts = _contactsWithSelfIfGroupMember(thread, group);
-      await thread
-          .copyWith(
-            groups: Value(newGroups.isEmpty ? null : newGroups),
-            contacts: newContacts != null
-                ? Value(newContacts)
-                : const Value.absent(),
-          )
-          .save();
-      return const CommandRefresh();
-    } catch (e, stackTrace) {
-      log.severe('Error in ShareThreadGroup: $e', e, stackTrace);
-      return CommandMessage('Failed to update sharing', isError: true);
-    }
-  }
-}
-
-class _ShareDraftThreadGroup extends Command {
-  _ShareDraftThreadGroup(this.thread, this.group, {required this.onUpdate})
+  ShareThreadGroup(this.thread, this.group, {required this.onUpdate})
     : super(
         title: group.name,
         eventObject: EventObject.activity,
@@ -2243,14 +2224,14 @@ class _ShareDraftThreadGroup extends Command {
       );
       return const CommandRefresh();
     } catch (e, stackTrace) {
-      log.severe('Error in _ShareDraftThreadGroup: $e', e, stackTrace);
+      log.severe('Error in ShareThreadGroup: $e', e, stackTrace);
       return CommandMessage('Failed to update sharing', isError: true);
     }
   }
 }
 
 class InviteThreadEmail extends Command {
-  InviteThreadEmail(this.thread, this.email, {this.onUpdate})
+  InviteThreadEmail(this.thread, this.email, {required this.onUpdate})
     : _isInvited = thread.inviteEmails.contains(email.toLowerCase()),
       super(
         title: thread.inviteEmails.contains(email.toLowerCase())
@@ -2271,7 +2252,7 @@ class InviteThreadEmail extends Command {
 
   final Thread thread;
   final String email;
-  final Future<void> Function(Thread)? onUpdate;
+  final Future<void> Function(Thread) onUpdate;
   final bool _isInvited;
 
   @override
@@ -2281,12 +2262,7 @@ class InviteThreadEmail extends Command {
       final newEmails = _isInvited
           ? thread.inviteEmails.where((e) => e != normalized).toList()
           : [...thread.inviteEmails, normalized];
-      final updated = thread.copyWith(inviteEmails: Value(newEmails));
-      if (onUpdate != null) {
-        await onUpdate!(updated);
-      } else {
-        await updated.save();
-      }
+      await onUpdate(thread.copyWith(inviteEmails: Value(newEmails)));
       return const CommandRefresh();
     } catch (e, stackTrace) {
       log.severe('Error in InviteThreadEmail: $e', e, stackTrace);
