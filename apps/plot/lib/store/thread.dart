@@ -4291,6 +4291,120 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
     return '$result)';
   }
+
+  /// Query the server for threads matching [query] and hydrate them into the
+  /// local store so they render in search results and are openable offline.
+  /// Returns the hydrated threads.
+  static Future<List<Thread>> searchRemote(
+    String query, {
+    required bool archived,
+    PriorityId? priorityId,
+    int limit = 50,
+  }) async {
+    if (query.trim().isEmpty) return [];
+
+    final params = <String, String>{
+      'q': query,
+      'archived': archived.toString(),
+      'limit': limit.toString(),
+      if (priorityId != null) 'priority_id': priorityId.toString(),
+    };
+    final queryString = params.entries
+        .map(
+          (e) =>
+              '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}',
+        )
+        .join('&');
+
+    final raw = await api.get<List<dynamic>>(
+      '/sync/threads/search?$queryString',
+    );
+    final rows = raw.cast<Map<String, dynamic>>();
+    if (rows.isEmpty) return [];
+
+    // Hydrate into the local threads table using the same pipeline as
+    // /sync/threads pulls.
+    final base = ThreadsBase();
+    final storeRows = <Insertable<ThreadRow>>[];
+    for (final row in rows) {
+      try {
+        storeRows.add(base.fromBase(row));
+      } catch (e, st) {
+        log.warning('Error parsing remote search row', e, st);
+      }
+    }
+    final processed = await base.processPulledRows(Store.get, storeRows);
+    await Store.get.batch((batch) {
+      batch.insertAll(
+        Store.get.threads,
+        processed,
+        mode: InsertMode.insertOrReplace,
+      );
+    });
+
+    // Load the hydrated threads back out so callers get fully-joined Thread
+    // objects (schedules, links, priority, etc).
+    final ids = <ThreadId>[];
+    for (final r in rows) {
+      final raw = r['id'];
+      if (raw is String) {
+        try {
+          ids.add(Uuid.fromString(raw));
+        } catch (_) {
+          // Skip malformed ids.
+        }
+      }
+    }
+    if (ids.isEmpty) return [];
+
+    final threads = <Thread>[];
+    for (final id in ids) {
+      try {
+        final list = await _get(
+          id: id,
+          archived: null,
+          draft: null,
+          order: ThreadOrder.sorted,
+        );
+        if (list.isNotEmpty) threads.add(list.first);
+      } catch (e) {
+        // Skip threads that fail to load locally.
+      }
+    }
+    return threads;
+  }
+
+  /// Ask the server how many threads match [query] under the given
+  /// [archived] scope. Used to decide whether to surface a
+  /// "view archived matches" affordance.
+  static Future<int> searchRemoteCount(
+    String query, {
+    required bool archived,
+    PriorityId? priorityId,
+  }) async {
+    if (query.trim().isEmpty) return 0;
+
+    final params = <String, String>{
+      'q': query,
+      'archived': archived.toString(),
+      'count_only': 'true',
+      if (priorityId != null) 'priority_id': priorityId.toString(),
+    };
+    final queryString = params.entries
+        .map(
+          (e) =>
+              '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}',
+        )
+        .join('&');
+
+    final result = await api.get<Map<String, dynamic>>(
+      '/sync/threads/search?$queryString',
+    );
+    final count = result['count'];
+    if (count is int) return count;
+    if (count is num) return count.toInt();
+    return 0;
+  }
 }
 
 /// Pending sync flags for different entity types.

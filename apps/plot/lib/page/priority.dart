@@ -1258,7 +1258,9 @@ class _PriorityPageState extends State<PriorityPage> {
   ) {
     final borderColor = context.theme.colors.border;
     final bg = context.colour.background;
-    final AgendaItem? prev = index > 0 ? listItems[index - 1] : null;
+    final AgendaItem? prev = index > 0 && index - 1 < listItems.length
+        ? listItems[index - 1]
+        : null;
     final AgendaItem? next = index < listItems.length ? listItems[index] : null;
 
     final selectedId = state.thread?.id;
@@ -1838,7 +1840,27 @@ class _PriorityPageState extends State<PriorityPage> {
     ScrollController? scrollController, {
     PageStorageKey<String>? scrollStorageKey,
   }) {
-    if (items.isEmpty &&
+    // Append remote search extras (threads surfaced by the server that
+    // aren't visible locally) with a section header. Only when searching.
+    final isSearching = state.search.isNotEmpty;
+    final displayItems = <AgendaItem>[...items];
+    if (isSearching && state.remoteSearchExtras.isNotEmpty) {
+      displayItems.add(const AgendaHeaderItem(text: 'From the server'));
+      for (final t in state.remoteSearchExtras) {
+        displayItems.add(AgendaThreadItem(t));
+      }
+    }
+
+    // A trailing synthetic row is appended when a search footer (spinner,
+    // archived hint, or offline note) should be shown.
+    final showFooter =
+        isSearching &&
+        (state.remoteSearchInProgress ||
+            state.remoteSearchOffline ||
+            (state.hasArchivedMatches && !state.showArchived));
+
+    if (displayItems.isEmpty &&
+        !showFooter &&
         state.activityFeedDoneEnd &&
         state.activityFeedLoaded) {
       return Padding(
@@ -1858,22 +1880,27 @@ class _PriorityPageState extends State<PriorityPage> {
     }
 
     final bloc = context.read<PriorityBloc>();
+    final footerIndex = showFooter ? displayItems.length : -1;
+    final totalCount = displayItems.length + (showFooter ? 1 : 0);
     return InfiniteList(
       controller: controller,
       scrollController: scrollController,
       scrollStorageKey: scrollStorageKey,
       initialScrollOffset: bloc.activityFeedScrollOffset,
       onScrollOffsetChanged: (offset) => bloc.activityFeedScrollOffset = offset,
-      count: items.length,
+      count: totalCount,
       doneEnd: state.activityFeedDoneEnd,
       fetcher: (first, count) => bloc.fetchMoreActivityFeedItems(first, count),
       separatorBuilder: (context, index) =>
-          _buildSeparator(context, items, index, state, controller),
+          _buildSeparator(context, displayItems, index, state, controller),
       builder: (context, index, focusNode, {reorderableIndex}) {
-        if (index < 0 || index >= items.length) {
+        if (index < 0 || index >= totalCount) {
           return null;
         }
-        final current = items[index];
+        if (index == footerIndex) {
+          return _SearchFooter(state: state);
+        }
+        final current = displayItems[index];
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -1921,6 +1948,61 @@ class _PriorityPageState extends State<PriorityPage> {
         );
       },
     );
+  }
+}
+
+class _SearchFooter extends StatelessWidget {
+  const _SearchFooter({required this.state});
+
+  final PriorityState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.plotColors;
+    final padding = EdgeInsets.symmetric(
+      horizontal: context.contentPaddingH,
+      vertical: context.theme.spacing.md,
+    );
+
+    if (state.remoteSearchInProgress) {
+      return Padding(
+        padding: padding,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [const Spinner()],
+        ),
+      );
+    }
+
+    if (state.hasArchivedMatches && !state.showArchived) {
+      return Padding(
+        padding: padding,
+        child: Align(
+          alignment: Alignment.center,
+          child: FButton(
+            variant: FButtonVariant.ghost,
+            onPress: () => context.read<PriorityBloc>().toggleShowArchived(),
+            child: const Text('View archived items matching this search'),
+          ),
+        ),
+      );
+    }
+
+    if (state.remoteSearchOffline) {
+      return Padding(
+        padding: padding,
+        child: Text(
+          'Offline — showing local matches only',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: colors.veryMuted,
+            fontSize: context.theme.typography.sm.fontSize,
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
 

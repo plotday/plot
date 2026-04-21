@@ -127,6 +127,102 @@ threads.get("/sync/threads", async (c) => {
   return c.json(rows as any);
 });
 
+// GET /sync/threads/search - Full-text style search across threads, notes, and links.
+// Returns rows from user.thread (same shape as GET /sync/threads) so the client
+// can hydrate into the local store and render results. When count_only=true,
+// returns { count } instead of rows — used by the client to decide whether to
+// surface a "view archived matches" hint without fetching the rows themselves.
+threads.get("/sync/threads/search", async (c) => {
+  const userId = c.var.user.id;
+  const q = (c.req.query("q") ?? "").trim();
+  const archivedRaw = c.req.query("archived");
+  const archived =
+    archivedRaw === "true" ? true : archivedRaw === "false" ? false : undefined;
+  const countOnly = c.req.query("count_only") === "true";
+  const priorityId = c.req.query("priority_id") || null;
+  const limitRaw = c.req.query("limit");
+  const limit = limitRaw
+    ? Math.min(Math.max(1, parseInt(limitRaw, 10) || 50), 200)
+    : 50;
+
+  if (!q) {
+    return countOnly ? c.json({ count: 0 }) : c.json([]);
+  }
+
+  // Escape ILIKE wildcards and build a contains-pattern.
+  const escaped = q.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+  const pattern = `%${escaped}%`;
+
+  const archivedExpr =
+    archived === true
+      ? sql<boolean>`ut.archived_at IS NOT NULL`
+      : archived === false
+        ? sql<boolean>`ut.archived_at IS NULL`
+        : sql<boolean>`true`;
+
+  const priorityExpr = priorityId
+    ? sql<boolean>`ut.priority_id IN (SELECT child_id FROM public.priority_child WHERE priority_id = ${priorityId}::uuid)`
+    : sql<boolean>`true`;
+
+  const matchExpr = sql<boolean>`(
+    ut.title ILIKE ${pattern}
+    OR EXISTS (
+      SELECT 1 FROM public.note n
+      WHERE n.thread_id = ut.id
+        AND n.archived_at IS NULL
+        AND n.draft = false
+        AND n.content ILIKE ${pattern}
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.link l
+      WHERE l.thread_id = ut.id
+        AND (l.title ILIKE ${pattern} OR l.source_url ILIKE ${pattern} OR l.preview ILIKE ${pattern})
+    )
+  )`;
+
+  if (countOnly) {
+    const count = await withUserDb(c.var.db, userId, async (trx) => {
+      const result = await sql<{ count: string }>`
+        SELECT count(*)::text AS count
+        FROM "user".thread ut
+        WHERE ut.user_id = ${userId}::uuid
+          AND ${archivedExpr}
+          AND ${priorityExpr}
+          AND ${matchExpr}
+      `.execute(trx);
+      return parseInt(result.rows[0]?.count ?? "0", 10) || 0;
+    });
+    return c.json({ count });
+  }
+
+  const resultRows = await withUserDb(c.var.db, userId, async (trx) => {
+    const result = await sql<any>`
+      SELECT ut.*
+      FROM "user".thread ut
+      WHERE ut.user_id = ${userId}::uuid
+        AND ${archivedExpr}
+        AND ${priorityExpr}
+        AND ${matchExpr}
+      ORDER BY ut.activity_at DESC
+      LIMIT ${limit}
+    `.execute(trx);
+    return result.rows;
+  });
+
+  // Version-gated serialization: apiVersion < 3 clients expect `topics` instead
+  // of `groups` (same shim as GET /sync/threads above).
+  const apiVersion = c.var.apiVersion ?? 0;
+  if (apiVersion < 3) {
+    const legacyRows = resultRows.map((row: any) => {
+      const { groups, topic: _topic, ...rest } = row;
+      return { ...rest, topics: groups ?? [] };
+    });
+    return c.json(legacyRows as any);
+  }
+
+  return c.json(resultRows as any);
+});
+
 // POST /sync/threads - Upsert via upsert_thread() RPC
 threads.post("/sync/threads", async (c) => {
   const body = await c.req.json();

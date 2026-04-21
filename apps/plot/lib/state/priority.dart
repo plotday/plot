@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:drift/drift.dart' hide Column;
 
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/async.dart';
 import 'package:plot/util/list.dart';
@@ -151,6 +152,12 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     // Reload agenda items with new archived filter
     _loadPriority();
+
+    // If a search is active, rerun the remote search so its archived
+    // scope matches and the archived-match hint is re-evaluated.
+    if (state.search.isNotEmpty) {
+      _runRemoteSearch(state.search);
+    }
   }
 
   void updateFilter(List<Tag> filter) {
@@ -186,7 +193,17 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// and cancel stale subscriptions so old results stop flowing.
   void prepareSearch(String search) {
     if (state.search == search) return;
-    emit(state.copyWith(search: search));
+    // Invalidate any in-flight remote search so its response is discarded.
+    _searchGeneration++;
+    emit(
+      state.copyWith(
+        search: search,
+        remoteSearchExtras: const [],
+        remoteSearchInProgress: false,
+        remoteSearchOffline: false,
+        hasArchivedMatches: false,
+      ),
+    );
 
     // When searching, force navigation to use activityFeed (matches UI)
     if (search.isNotEmpty) {
@@ -216,7 +233,104 @@ class PriorityBloc extends Cubit<PriorityState> {
     _activityFeedLastRawRowCount = 0;
     _activityFeedLimitIncreased = false;
     _loadActivityFeed(triggerSync: false);
+
+    _runRemoteSearch(search);
   }
+
+  /// Remote search augmentation: fire a parallel API query to surface
+  /// threads/notes not yet synced locally, and (when not already showing
+  /// archived) a count-only query to decide whether to offer the
+  /// "view archived matches" affordance.
+  void _runRemoteSearch(String search) {
+    _searchGeneration++;
+    final gen = _searchGeneration;
+
+    if (search.trim().isEmpty) {
+      emit(
+        state.copyWith(
+          remoteSearchExtras: const [],
+          remoteSearchInProgress: false,
+          remoteSearchOffline: false,
+          hasArchivedMatches: false,
+        ),
+      );
+      return;
+    }
+
+    emit(
+      state.copyWith(
+        remoteSearchExtras: const [],
+        remoteSearchInProgress: true,
+        remoteSearchOffline: false,
+        hasArchivedMatches: false,
+      ),
+    );
+
+    final showArchived = state.showArchived;
+
+    final scopePriorityId = state.context.id;
+
+    // 1) Main search: hydrate matching threads into the local store and stash
+    //    the ones that weren't already visible as "extras".
+    unawaited(() async {
+      try {
+        final threads = await Thread.searchRemote(
+          search,
+          archived: showArchived,
+          priorityId: scopePriorityId,
+        );
+        if (gen != _searchGeneration || isClosed) return;
+
+        final visibleIds = <String>{
+          for (final item in state.activityFeedItems)
+            if (item is AgendaThreadItem) item.thread.id.toString(),
+        };
+        final extras = threads
+            .where((t) => !visibleIds.contains(t.id.toString()))
+            .toList();
+
+        if (gen != _searchGeneration || isClosed) return;
+        emit(state.copyWith(remoteSearchExtras: extras));
+      } on NetworkException {
+        if (gen != _searchGeneration || isClosed) return;
+        emit(
+          state.copyWith(
+            remoteSearchOffline: true,
+            remoteSearchExtras: const [],
+          ),
+        );
+      } catch (e, st) {
+        log.warning('Remote search failed', e, st);
+      } finally {
+        if (gen == _searchGeneration && !isClosed) {
+          emit(state.copyWith(remoteSearchInProgress: false));
+        }
+      }
+    }());
+
+    // 2) Archived-hint: only relevant when we are NOT currently showing
+    //    archived items. The answer flips the ghost button on/off.
+    if (!showArchived) {
+      unawaited(() async {
+        try {
+          final count = await Thread.searchRemoteCount(
+            search,
+            archived: true,
+            priorityId: scopePriorityId,
+          );
+          if (gen != _searchGeneration || isClosed) return;
+          emit(state.copyWith(hasArchivedMatches: count > 0));
+        } on NetworkException {
+          // Offline — no archived hint to show.
+        } catch (e, st) {
+          log.warning('Remote archived count failed', e, st);
+        }
+      }());
+    }
+  }
+
+  /// Monotonic counter used to discard stale remote search responses.
+  int _searchGeneration = 0;
 
   /// Combined prepare + execute for callers that don't need debouncing.
   void updateSearch(String search) {

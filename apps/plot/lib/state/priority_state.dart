@@ -27,6 +27,10 @@ class PriorityState extends Equatable {
     List<AgendaItem>? reorderViewItems,
     List<String> iconFilter = const [],
     List<(ThreadSubType, int)> iconCounts = const [],
+    List<Thread> remoteSearchExtras = const [],
+    bool remoteSearchInProgress = false,
+    bool remoteSearchOffline = false,
+    bool hasArchivedMatches = false,
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -63,6 +67,12 @@ class PriorityState extends Equatable {
       iconCounts: iconCounts.isNotEmpty
           ? List.unmodifiable(iconCounts)
           : iconCounts,
+      remoteSearchExtras: remoteSearchExtras.isNotEmpty
+          ? List.unmodifiable(remoteSearchExtras)
+          : remoteSearchExtras,
+      remoteSearchInProgress: remoteSearchInProgress,
+      remoteSearchOffline: remoteSearchOffline,
+      hasArchivedMatches: hasArchivedMatches,
     );
   }
 
@@ -87,6 +97,10 @@ class PriorityState extends Equatable {
     this.reorderViewItems,
     this.iconFilter = const [],
     this.iconCounts = const [],
+    this.remoteSearchExtras = const [],
+    this.remoteSearchInProgress = false,
+    this.remoteSearchOffline = false,
+    this.hasArchivedMatches = false,
   });
 
   final Priority context;
@@ -114,6 +128,22 @@ class PriorityState extends Equatable {
 
   final List<String> iconFilter;
   final List<(ThreadSubType, int)> iconCounts;
+
+  /// Threads returned by the remote search endpoint that are not already
+  /// visible in [activityFeedItems]. Empty when search is empty or offline.
+  final List<Thread> remoteSearchExtras;
+
+  /// True while the remote search request is in flight.
+  final bool remoteSearchInProgress;
+
+  /// True if the most recent remote search attempt failed because the
+  /// device is offline (or the request otherwise threw a network error).
+  final bool remoteSearchOffline;
+
+  /// True if the server reports that toggling [showArchived] would surface
+  /// additional matches. Drives the "View archived items matching this
+  /// search" ghost button. Only meaningful when [showArchived] is false.
+  final bool hasArchivedMatches;
 
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
@@ -1070,6 +1100,10 @@ class PriorityState extends Equatable {
     Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
     List<String>? iconFilter,
     List<(ThreadSubType, int)>? iconCounts,
+    List<Thread>? remoteSearchExtras,
+    bool? remoteSearchInProgress,
+    bool? remoteSearchOffline,
+    bool? hasArchivedMatches,
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -1112,6 +1146,11 @@ class PriorityState extends Equatable {
       iconCounts: iconCounts != null
           ? (iconCounts.isNotEmpty ? List.unmodifiable(iconCounts) : iconCounts)
           : this.iconCounts,
+      remoteSearchExtras: remoteSearchExtras ?? this.remoteSearchExtras,
+      remoteSearchInProgress:
+          remoteSearchInProgress ?? this.remoteSearchInProgress,
+      remoteSearchOffline: remoteSearchOffline ?? this.remoteSearchOffline,
+      hasArchivedMatches: hasArchivedMatches ?? this.hasArchivedMatches,
     );
   }
 
@@ -1137,6 +1176,10 @@ class PriorityState extends Equatable {
     reorderViewItems,
     iconFilter,
     iconCounts,
+    remoteSearchExtras,
+    remoteSearchInProgress,
+    remoteSearchOffline,
+    hasArchivedMatches,
   ];
 
   @override
