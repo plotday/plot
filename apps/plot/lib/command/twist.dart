@@ -900,9 +900,15 @@ class EditSource extends ShowForm {
     twistInstance ??= await (Store.get.select(
       TwistInstance.table,
     )..where((t) => t.id.equals(currentTwistId.toBytes()))).getSingleOrNull();
+    // For newly-activated sources whose draft was filed under personal because
+    // the OAuth domain didn't match a team, prefer a team default so the
+    // connection counts against team quota. Existing sources keep their
+    // current scope.
     final initialTeamId = twistInstance?.teamId != null
         ? twistInstance!.teamId.toString()
-        : 'personal';
+        : (isNewlyActivated && teams.isNotEmpty
+            ? teams.first.id
+            : 'personal');
     // Prefer the server-fresh account_label from the integrations response
     // (which reflects the activateDraft fallback) over the potentially stale
     // local-store value. Then fall back to the team name or 'Personal' so the
@@ -994,16 +1000,14 @@ class EditSource extends ShowForm {
               buildCommand: (values) {
                 final owner = values['team_id'] as String? ?? initialTeamId;
 
-                // Check connection limit if owner changes
-                if (owner != initialTeamId) {
-                  final team = teams.firstWhereOrNull((t) => t.id == owner);
-                  final atLimit = team != null
-                      ? team.connections.isAtLimit
-                      : usage.personal.connections.isAtLimit;
-
-                  if (atLimit) {
-                    return _UpgradeCommand('Upgrade to add more connections');
-                  }
+                // Always check the selected scope's limit. The button label
+                // updates reactively when the user picks a different scope.
+                final team = teams.firstWhereOrNull((t) => t.id == owner);
+                final atLimit = team != null
+                    ? team.connections.isAtLimit
+                    : usage.personal.connections.isAtLimit;
+                if (atLimit) {
+                  return _UpgradeCommand('Upgrade to add more connections');
                 }
 
                 final label =
@@ -1305,20 +1309,24 @@ class AddSourceDetail extends ShowForm {
 
     String defaultTeamFor(TwistIntegrations current) {
       final domains = current.teamDomains;
-      if (domains == null) return 'personal';
-      for (final account in current.accounts) {
-        final email = account.email;
-        if (email == null) continue;
-        final atIdx = email.lastIndexOf('@');
-        if (atIdx < 0) continue;
-        final domain = email.substring(atIdx + 1).toLowerCase();
-        for (final entry in domains.entries) {
-          if (entry.value.any((d) => d.toLowerCase() == domain)) {
-            final teamId = entry.key.toString();
-            if (teams.any((t) => t.id == teamId)) return teamId;
+      if (domains != null) {
+        for (final account in current.accounts) {
+          final email = account.email;
+          if (email == null) continue;
+          final atIdx = email.lastIndexOf('@');
+          if (atIdx < 0) continue;
+          final domain = email.substring(atIdx + 1).toLowerCase();
+          for (final entry in domains.entries) {
+            if (entry.value.any((d) => d.toLowerCase() == domain)) {
+              final teamId = entry.key.toString();
+              if (teams.any((t) => t.id == teamId)) return teamId;
+            }
           }
         }
       }
+      // No domain match: prefer a team over personal so connections count
+      // against team quota by default. User can switch in the selector.
+      if (teams.isNotEmpty) return teams.first.id;
       return 'personal';
     }
 
@@ -2392,9 +2400,13 @@ class SetupTwist extends ShowForm {
               FormSelect<String>(
                 key: 'team_id',
                 label: 'Scope',
-                initialValue: availableScopes.isNotEmpty
-                    ? availableScopes.first
-                    : 'personal',
+                // Prefer a team over personal so the twist counts against
+                // team quota by default. User can switch in the selector.
+                initialValue: availableScopes
+                        .firstWhereOrNull((s) => s != 'personal') ??
+                    (availableScopes.isNotEmpty
+                        ? availableScopes.first
+                        : 'personal'),
                 items: (search) async => availableScopes,
                 titleBuilder: (id) => id == 'personal'
                     ? 'Personal'
