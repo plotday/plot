@@ -334,7 +334,14 @@ export class EmailNotify extends DurableObject<Bindings> {
           ? `${this.env.SITE_ROOT}/unsubscribe?t=${emailToken}`
           : `${this.env.SITE_ROOT}/unsubscribe`;
 
-        // Enqueue email
+        // Persist dedup state BEFORE enqueuing. Cloudflare's output gate flushes
+        // pending storage writes before releasing any network egress, so if this
+        // alarm is evicted between the queue send and a later storage write the
+        // retried alarm will still see `lastEmailedUnreadAt` and skip — avoiding
+        // duplicate digest emails to the same inbox.
+        await this.ctx.storage.put("lastEmailSentAt", Date.now());
+        await this.ctx.storage.put("lastEmailedUnreadAt", latestUpdatedAt);
+
         await this.env.MAIL_QUEUE.send({
           to: [user.email],
           subject,
@@ -346,10 +353,6 @@ export class EmailNotify extends DurableObject<Bindings> {
             unsubscribeUrl,
           },
         });
-
-        // Update state
-        await this.ctx.storage.put("lastEmailSentAt", Date.now());
-        await this.ctx.storage.put("lastEmailedUnreadAt", latestUpdatedAt);
 
         logger.info("Email notification sent", {
           user_id: this.userId ?? undefined,
