@@ -349,32 +349,61 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
-    // Slack sends a challenge parameter for URL verification
     const bodyObj = body as { challenge?: string; event?: any };
     if (bodyObj.challenge) {
-      // Note: The webhook infrastructure should handle responding with the challenge
-      return;
+      return; // URL verification challenge handled by infra
     }
-
-    // Validate webhook authenticity
-    // In production, you should verify the request signature
-    // using the signing secret from your Slack app
 
     const event = bodyObj.event;
-    if (!event) {
-      console.warn("No event in webhook body");
+    if (!event) return;
+
+    if (event.type === "star_added" || event.type === "star_removed") {
+      await this.handleStarEvent(event, event.type === "star_added");
       return;
     }
 
-    // Only process message events for the specific channel
     if (
       event.type === "message" &&
       event.channel === channelId &&
-      !event.subtype // Ignore bot messages and special subtypes
+      !event.subtype
     ) {
-      // Trigger incremental sync
       await this.startIncrementalSync(channelId);
     }
+  }
+
+  private async handleStarEvent(event: any, isStarred: boolean): Promise<void> {
+    const item = event.item;
+    if (!item || item.type !== "message") return;
+
+    const channelId = item.channel as string | undefined;
+    const messageTs = item.message?.ts as string | undefined;
+    const parentTs = (item.message?.thread_ts as string | undefined) ?? messageTs;
+    if (!channelId || !parentTs) return;
+
+    // Gate on enabled channels: ignore stars in channels the user hasn't
+    // opted into for Plot sync (v1 scope).
+    if (!(await this.get<boolean>(`sync_enabled_${channelId}`))) return;
+
+    const wasStarred = !!(await this.get<boolean>(
+      this.starredKey(channelId, parentTs)
+    ));
+    if (wasStarred === isStarred) return; // our own echo
+
+    const actorId = await this.get<ActorId>("auth_actor_id");
+    if (!actorId) {
+      console.error("No auth_actor_id; cannot apply star event");
+      return;
+    }
+
+    const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${parentTs}`;
+
+    await this.tools.integrations.setThreadToDo(canonicalUrl, actorId, isStarred);
+
+    // Block the onThreadToDo callback that Plot will queue in response.
+    await this.set(this.skipKey(channelId, parentTs), true);
+
+    // Record the new state so subsequent duplicate events short-circuit.
+    await this.set(this.starredKey(channelId, parentTs), isStarred);
   }
 
   private async startIncrementalSync(channelId: string): Promise<void> {
