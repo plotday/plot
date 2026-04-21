@@ -35,6 +35,7 @@ import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/main.dart' show navigatorKey;
+import 'package:plot/router.dart';
 import 'package:plot/widget/otp_input.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
@@ -67,10 +68,13 @@ List<StaticCommandGroup> settingsCommandsFromState(
       prioritiesState.priorities.any((p) => p.teamId != null);
 
   final rootPriority = prioritiesState?.root;
+  final plotAppPriority = prioritiesState?.priorities
+      .firstWhereOrNull((p) => p.isPlotApp && p.archivedAt == null);
 
   return settingsCommands(
     hasTeams: hasTeams,
     rootPriority: rootPriority,
+    plotAppPriority: plotAppPriority,
     email: email,
     adminOrgs: adminOrgs,
     subscription: subscription,
@@ -80,6 +84,7 @@ List<StaticCommandGroup> settingsCommandsFromState(
 List<StaticCommandGroup> settingsCommands({
   bool hasTeams = false,
   Priority? rootPriority,
+  Priority? plotAppPriority,
   String? email,
   List<Map<String, dynamic>> adminOrgs = const [],
   SubscriptionInfo? subscription,
@@ -114,6 +119,7 @@ List<StaticCommandGroup> settingsCommands({
     title: 'App',
     commands: [
       if (subscription != null && !subscription.canBuildTwists) UpgradePlan(),
+      if (plotAppPriority != null) HelpAndFeedback(plotAppPriority),
       CopyPageLink(),
       OpenCopiedPageLink(),
       FullResync(),
@@ -1234,6 +1240,29 @@ class _SaveAiPreference extends Command {
     }
 
     return archived;
+  }
+}
+
+class HelpAndFeedback extends Command {
+  HelpAndFeedback(this.plotAppPriority)
+    : super(
+        title: 'Help and feedback',
+        subtitle: 'Ask for help or share feedback in Using Plot',
+        icon: PlotIcon.help,
+        eventObject: EventObject.commandBar,
+        eventAction: EventAction.opened,
+      );
+
+  final Priority plotAppPriority;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    return CommandRoute(
+      PriorityRoute(
+        priorityIdString: plotAppPriority.id.toShortString(),
+        children: [NewThreadRoute()],
+      ),
+    );
   }
 }
 
