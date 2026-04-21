@@ -1373,9 +1373,9 @@ class AddSourceDetail extends ShowForm {
       return [
         StaticFormGroup(
           items: [
-            if (buildTeamSelect(refreshed) != null) buildTeamSelect(refreshed)!,
             if (twist.description != null)
               FormInfo(key: 'description', text: twist.description!),
+            if (buildTeamSelect(refreshed) != null) buildTeamSelect(refreshed)!,
             ...refreshed.providers.map((provider) {
               final initialOwner = refreshedDefault;
               // Gate preemptively only when the user has no team to fall
@@ -1489,10 +1489,10 @@ class AddSourceDetail extends ShowForm {
       groups: [
         StaticFormGroup(
           items: [
-            if (buildTeamSelect(integrations) != null)
-              buildTeamSelect(integrations)!,
             if (twist.description != null)
               FormInfo(key: 'description', text: twist.description!),
+            if (buildTeamSelect(integrations) != null)
+              buildTeamSelect(integrations)!,
             ...integrations.providers.map((provider) {
               final initialOwner = defaultTeamFor(integrations);
               // Gate preemptively only when the user has no team to fall
