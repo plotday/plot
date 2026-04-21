@@ -17,7 +17,7 @@ import { type Callback } from "@plotday/twister/tools/callbacks";
 import { Tag } from "@plotday/twister/tag";
 import {
   type ArchiveLinkFilter,
-  type AuthProvider,
+  AuthProvider,
   type AuthToken,
   type Authorization,
   type Channel,
@@ -34,6 +34,7 @@ import {
   extractUserId,
   PROVIDER_CONFIGS,
   type ProviderData,
+  type SlackProviderData,
   type StoredTokenData,
 } from "../../provider";
 import { CallbacksState } from "../../state/callbacks";
@@ -289,6 +290,33 @@ export class Integrations extends Tool implements IAuth {
         return token;
       }
     }
+    return null;
+  }
+
+  /**
+   * Retrieves a provider-specific secondary user token for a channel.
+   * Currently implemented for Slack, where OAuth v2 returns a separate
+   * `authed_user.access_token` alongside the bot token. Returns null for
+   * providers that don't distinguish bot vs. user tokens.
+   */
+  async getUserToken(channelId: string): Promise<string | null> {
+    const provider = this.providerConfigs[0]?.provider;
+    if (!provider) return null;
+
+    const config = await this.getChannelConfig(provider, channelId);
+    const actorId = config?.enabled ? config.enabledBy : null;
+    if (!actorId) return null;
+
+    const tokenKey = `auth_token:${provider}:${actorId}`;
+    const tokenData = await this.store.get<StoredTokenData>(tokenKey);
+    const providerData = tokenData?.providerData;
+    if (!providerData) return null;
+
+    if (provider === AuthProvider.Slack) {
+      const slackData = providerData as SlackProviderData;
+      return slackData.authed_user?.access_token ?? null;
+    }
+
     return null;
   }
 
