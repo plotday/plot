@@ -6,6 +6,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/spacing.dart';
+import 'package:plot/widget/selectable_text.dart';
 import 'package:re_highlight/languages/bash.dart';
 import 'package:re_highlight/languages/c.dart';
 import 'package:re_highlight/languages/cpp.dart';
@@ -148,6 +149,8 @@ class PlotCodeBlockComponent extends StatefulWidget {
 class _PlotCodeBlockComponentState extends State<PlotCodeBlockComponent>
     with ProxyDocumentComponent<PlotCodeBlockComponent> {
   final _boxKey = GlobalKey();
+  final _focusNode = FocusNode(debugLabel: 'PlotCodeBlockComponent');
+  TextSelection _selection = const TextSelection.collapsed(offset: -1);
   bool _copied = false;
   Timer? _copiedTimer;
 
@@ -157,7 +160,32 @@ class _PlotCodeBlockComponentState extends State<PlotCodeBlockComponent>
   @override
   void dispose() {
     _copiedTimer?.cancel();
+    _focusNode.dispose();
     super.dispose();
+  }
+
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey != LogicalKeyboardKey.keyC) {
+      return KeyEventResult.ignored;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    if (!(keyboard.isMetaPressed || keyboard.isControlPressed)) {
+      return KeyEventResult.ignored;
+    }
+    if (keyboard.isShiftPressed || keyboard.isAltPressed) {
+      return KeyEventResult.ignored;
+    }
+    if (!_selection.isValid || _selection.isCollapsed) {
+      return KeyEventResult.ignored;
+    }
+    final selectedText =
+        _selection.textInside(widget.viewModel.text.toPlainText());
+    if (selectedText.isEmpty) return KeyEventResult.ignored;
+    Clipboard.setData(ClipboardData(text: selectedText));
+    return KeyEventResult.handled;
   }
 
   void _copyToClipboard() {
@@ -233,7 +261,19 @@ class _PlotCodeBlockComponentState extends State<PlotCodeBlockComponent>
                 horizontal: spacing.lg,
                 vertical: spacing.md,
               ),
-              child: RichText(text: highlightedSpan),
+              child: Focus(
+                focusNode: _focusNode,
+                onKeyEvent: _onKeyEvent,
+                child: SelectableText.rich(
+                  highlightedSpan,
+                  onSelectionChanged: (selection, _) {
+                    _selection = selection;
+                    if (selection.isValid && !selection.isCollapsed) {
+                      _focusNode.requestFocus();
+                    }
+                  },
+                ),
+              ),
             ),
             Positioned(
               top: spacing.xs,
