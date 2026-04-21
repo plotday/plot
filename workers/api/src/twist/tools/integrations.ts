@@ -117,6 +117,14 @@ export class Integrations extends Tool implements IAuth {
   /** Cached sync history min date (undefined = not computed yet, null = no limit). */
   private _syncHistoryMin: Date | null | undefined = undefined;
   /**
+   * Cached account contact for this twist instance's owner.
+   * undefined = not computed yet, null = no connection registered.
+   */
+  private _accountContact:
+    | { id: ActorId; email: string; name: string | null }
+    | null
+    | undefined = undefined;
+  /**
    * Extract provider metadata from integration options during deployment.
    * Returns provider/scopes pairs without lifecycle callbacks.
    */
@@ -480,6 +488,82 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Resolves the account-owner contact for this connector instance. The actor
+   * is recorded in `twist_instance_connection` when the user completes OAuth
+   * (see {@link handleAuthCallback}). Returns `null` when no connection has
+   * been registered yet, or the contact row has been deleted.
+   *
+   * Cached per-instance; callers hitting `saveLink` in tight loops get one
+   * round-trip per process rather than per thread.
+   */
+  async getAccountContact(): Promise<
+    { id: ActorId; email: string; name: string | null } | null
+  > {
+    if (this._accountContact !== undefined) return this._accountContact;
+
+    const row = await this.db
+      .selectFrom("twist_instance_connection as tic")
+      .innerJoin("contact as c", "c.id", "tic.actor_id")
+      .select(["c.id", "c.email", "c.name"])
+      .where("tic.twist_instance_id", "=", this.twistInstanceId)
+      .where("c.email", "is not", null)
+      .limit(1)
+      .executeTakeFirst();
+
+    this._accountContact = row?.email
+      ? { id: row.id as ActorId, email: row.email, name: row.name ?? null }
+      : null;
+    return this._accountContact;
+  }
+
+  /**
+   * Ensures the connector's account-owner contact is present on the thread's
+   * accessContacts and on every note whose accessContacts is non-null. The
+   * owner is implicitly a participant in everything we sync from their own
+   * account, but connectors typically only see them when they appear in the
+   * external item's recipients — mailing lists, aliases, and forwarded mail
+   * don't surface the owner's address, and the resulting note would be
+   * redacted by `user.note`'s access_contacts filter.
+   *
+   * Leaves `note.accessContacts === undefined` (unset) and
+   * `note.accessContacts === null` untouched so connectors can still opt into
+   * "inherit thread visibility" on a per-note basis.
+   */
+  private async injectAccountContact(link: NewLinkWithNotes): Promise<void> {
+    const account = await this.getAccountContact();
+    if (!account) return;
+
+    const ownerContact: NewContact = {
+      email: account.email,
+      ...(account.name ? { name: account.name } : {}),
+    };
+
+    const emailLower = account.email.toLowerCase();
+    const threadContacts = link.accessContacts ?? [];
+    const alreadyOnThread = threadContacts.some(
+      (c) => !!c.email && c.email.toLowerCase() === emailLower
+    );
+    if (!alreadyOnThread) {
+      link.accessContacts = [...threadContacts, ownerContact];
+    }
+
+    if (!link.notes) return;
+    for (const note of link.notes) {
+      // `undefined` and `null` both mean "inherit thread visibility" — leave alone.
+      if (note.accessContacts == null) continue;
+      const alreadyOnNote = note.accessContacts.some((c) => {
+        // ActorId is a branded string; NewContact is an object with email/name.
+        if (typeof c === "string") return c === (account.id as string);
+        const email = (c as NewContact).email;
+        return !!email && email.toLowerCase() === emailLower;
+      });
+      if (!alreadyOnNote) {
+        note.accessContacts = [...note.accessContacts, ownerContact];
+      }
+    }
+  }
+
+  /**
    * Saves a link with notes. Creates both a thread (container) and a link
    * (external entity). Priority resolution is delegated to
    * `prepareThreadForDb`, which routes via `match_priority_for_user` for the
@@ -501,6 +585,8 @@ export class Integrations extends Tool implements IAuth {
         }
       }
     }
+
+    await this.injectAccountContact(link);
 
     const plot = this.getPlot();
     const threadId = await plot.createLink(link);
