@@ -367,6 +367,82 @@ export async function preprocessEmailHtml(html: string): Promise<string> {
 }
 
 /**
+ * Shorten a long URL label to `host.com/...`. The underlying href is kept
+ * intact; only what the reader sees is trimmed.
+ */
+function shortenUrlLabel(raw: string, url: string): string {
+  if (raw.length <= 60) return raw;
+  try {
+    return `${new URL(url).host}/...`;
+  } catch {
+    return `${raw.slice(0, 57)}...`;
+  }
+}
+
+/**
+ * Convert a plaintext note to Markdown.
+ *
+ * Handles:
+ * - HTML entity decoding (&amp;, &lt;, etc.)
+ * - Outlook-style "Label<https://url>" links → [Label](url)
+ * - Long autolinked URLs displayed as `host.com/...`
+ * - Horizontal-rule lines (10+ underscores/dashes/equals) normalized to `---`,
+ *   with consecutive HRs collapsed
+ * - Single newlines doubled so line breaks survive Markdown rendering
+ */
+export function plainTextToMarkdown(note: string): string {
+  let converted = note
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+
+  // Outlook/Teams plaintext link format: "Manage Booking<https://...>"
+  converted = converted.replace(
+    /([^<\n]*?\S)[ \t]*<(https?:\/\/[^>\s]+)>/g,
+    (_, label: string, url: string) => `[${label}](${url})`
+  );
+
+  // Normalize decorative bars (e.g. "________________________________") to ---
+  converted = converted.replace(/^[ \t]*[_\-=]{10,}[ \t]*$/gm, "---");
+  // Collapse runs of consecutive HRs (separated only by blank lines) into one
+  converted = converted.replace(/(?:^---[ \t]*\n\s*)+(?=^---[ \t]*$)/gm, "");
+
+  // Mask existing markdown links so linkify doesn't re-process their hrefs
+  const masked: string[] = [];
+  converted = converted.replace(/\[[^\]]*\]\([^)]+\)/g, (m) => {
+    const idx = masked.push(m) - 1;
+    return `LINK${idx}`;
+  });
+
+  const linkify = new LinkifyIt();
+  const matches = linkify.match(converted);
+  if (matches) {
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      const label = shortenUrlLabel(match.raw, match.url);
+      converted =
+        converted.substring(0, match.index) +
+        `[${label}](${match.url})` +
+        converted.substring(match.lastIndex);
+    }
+  }
+
+  converted = converted.replace(
+    // eslint-disable-next-line no-control-regex
+    /LINK(\d+)/g,
+    (_, idx: string) => masked[Number(idx)]
+  );
+
+  // Preserve line breaks: every single newline becomes a paragraph break
+  converted = converted.replace(/\n/g, "\n\n");
+
+  return converted;
+}
+
+/**
  * Converts note content to Markdown based on the specified contentType.
  *
  * @param ai - The Cloudflare Workers AI binding
@@ -425,36 +501,7 @@ export async function convertNoteToMarkdown(
     }
 
     case "text": {
-      // Decode HTML entities
-      let converted = note
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&nbsp;/g, " ");
-
-      // Auto-link URLs using linkify-it for robust URL detection
-      const linkify = new LinkifyIt();
-      const matches = linkify.match(converted);
-
-      if (matches) {
-        // Process matches in reverse order to preserve string positions
-        for (let i = matches.length - 1; i >= 0; i--) {
-          const match = matches[i];
-          const markdownLink = `[${match.raw}](${match.url})`;
-          converted =
-            converted.substring(0, match.index) +
-            markdownLink +
-            converted.substring(match.lastIndex);
-        }
-      }
-
-      // Preserve line breaks by converting single newlines to double newlines
-      // This ensures text line breaks are preserved in Markdown rendering
-      converted = converted.replace(/\n/g, "\n\n");
-
-      return converted;
+      return plainTextToMarkdown(note);
     }
 
     case "markdown":
