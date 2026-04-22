@@ -8,6 +8,8 @@ import { isCallbackError } from "../../errors";
 import { type CallbacksState } from "../../state/callbacks";
 import { extractRunQueueContext } from "../../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
+import { invokeWebhookCallback } from "../invoke-webhook";
+import { disposeRpc } from "../../utils/rpc";
 import { Tool } from "./tool";
 
 /**
@@ -114,10 +116,16 @@ export class Tasks extends Tool implements IRun {
 
   static async processQueue(
     env: Bindings,
+    ctx: { exports: ExecutionContext["exports"] },
     batch: MessageBatch<RunMessage>,
     postHog: PostHog
   ) {
-    for (const message of batch.messages) {
+    // Dispatch each message independently: one slow task should not hold
+    // up its batch-mates, and invokeWebhookCallback keeps the twist RPC
+    // out of the CallbacksState DO so the DO's output gate stays free.
+    const handleMessage = async (
+      message: Message<RunMessage>
+    ): Promise<void> => {
       try {
         if (env.SYNC_TIMING_ENABLED === "true" && message.body.queuedAt) {
           const queueWaitMs = Date.now() - message.body.queuedAt;
@@ -126,34 +134,31 @@ export class Tasks extends Tool implements IRun {
           logger.info("Queue wait time", { queue_wait_ms: queueWaitMs });
         }
 
-        const callbacks = Tasks.GetStub(
-          env.CALLBACKS,
-          message.body.twistInstanceId
+        const result = await invokeWebhookCallback(
+          env,
+          ctx,
+          message.body.token
         );
-        using _result = await callbacks.callCallback(message.body.token);
+        disposeRpc(result);
         message.ack();
       } catch (error) {
         const context = extractRunQueueContext(message.body, batch.queue);
         const logger = createLogger(context);
 
-        // Transient infrastructure errors (DO communication, Hyperdrive) —
-        // retry silently without PostHog noise
         if (isTransientError(error)) {
           logger.warn("Transient error executing callback, retrying", {
             error: String(error),
           });
           message.retry();
-          continue;
+          return;
         }
 
-        // CallbackErrors crossing DO boundary (NOT_FOUND, EXPIRED, etc.) —
-        // permanent failures, ack to prevent infinite retries
         if (isCallbackError(error)) {
           logger.warn("Callback error, acking message", {
             error: String(error),
           });
           message.ack();
-          continue;
+          return;
         }
 
         logger.error("Failed to execute callback", error as Error);
@@ -164,6 +169,8 @@ export class Tasks extends Tool implements IRun {
         });
         message.retry();
       }
-    }
+    };
+
+    await Promise.allSettled(batch.messages.map(handleMessage));
   }
 }

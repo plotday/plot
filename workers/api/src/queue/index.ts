@@ -45,6 +45,7 @@ export async function queue(
       case "run-production":
         await Tasks.processQueue(
           env,
+          ctx,
           batch as MessageBatch<RunMessage>,
           postHog
         );
@@ -78,6 +79,7 @@ export async function queue(
         await processWebhooks(
           batch as MessageBatch<WebhookMessage>,
           env,
+          ctx,
           postHog
         );
         break;

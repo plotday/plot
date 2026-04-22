@@ -4,25 +4,53 @@ import { createLogger } from "@plotday/worker-util";
 
 import { type Bindings, type WebhookMessage } from "../env";
 import { isCallbackError, getCallbackErrorType } from "../errors";
-import { Network } from "../twist/tools/network";
+import { invokeWebhookCallback } from "../twist/invoke-webhook";
+import { disposeRpc } from "../utils/rpc";
+
+// Cloudflare resets a Durable Object when an in-flight call holds its
+// storage gate past the platform's watchdog. The new helper runs the
+// twist RPC outside the CallbacksState DO, but we keep this detection in
+// place for any remaining DO hop (validateAndLoad, delete) and for the
+// back-compat CallCallback path reachable from other routes.
+function isDurableObjectResetError(error: unknown): boolean {
+  const msg = (error as Error)?.message ?? "";
+  return msg.includes("Durable Object storage operation exceeded timeout");
+}
+
+// Mirrors workers/api/src/twist/tools/tasks.ts:isTransientError. Both the
+// Tasks queue and the webhook queue talk to the same set of DOs +
+// Hyperdrive, so they classify transient errors the same way.
+function isTransientError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message;
+  return (
+    msg.includes("Network connection lost") ||
+    msg.includes("error code: 1019") ||
+    msg.includes("The Durable Object") ||
+    msg.includes("internal error")
+  );
+}
 
 /**
  * Process async webhook deliveries from WEBHOOK_QUEUE.
  *
- * The /hook/:token ingress enqueues payloads and returns 200 immediately so
- * senders (Attio, etc.) never block on the DB. This consumer drains the
- * queue with bounded concurrency (configured in wrangler.jsonc), so the
- * number of in-flight callbacks — and therefore the number of open pg
- * connections through the CallbacksState DO path — stays capped regardless
- * of how bursty the ingress is.
+ * Each message runs through `invokeWebhookCallback` independently — no
+ * shared state, no shared retry fate. The consumer dispatches the whole
+ * batch in parallel via `Promise.allSettled` so one slow callback cannot
+ * block the other nine in the same batch. Cloudflare Queues redelivers
+ * on retry(), so a transient failure in one callback never affects its
+ * neighbours.
  *
- * Failure handling: Cloudflare Queues retries messages that throw. Permanent
- * failures (expired/deleted callbacks) are acked so they don't retry. Other
- * errors retry up to the queue's DLQ policy.
+ * Error taxonomy:
+ * - `CallbackError` NOT_FOUND / EXPIRED / INVALID_TOKEN*: permanent. Ack.
+ * - `CallbackError` SUSPENDED: retriable once the twist resumes.
+ * - Durable Object reset / transient infra errors: retry, warn only.
+ * - Anything else: retry + capture to PostHog.
  */
 export async function processWebhooks(
   batch: MessageBatch<WebhookMessage>,
   env: Bindings,
+  ctx: { exports: ExecutionContext["exports"] },
   postHog: PostHog
 ): Promise<void> {
   const logger = createLogger({
@@ -30,19 +58,24 @@ export async function processWebhooks(
     batch_size: batch.messages.length,
   });
 
-  for (const message of batch.messages) {
+  const handleMessage = async (
+    message: Message<WebhookMessage>
+  ): Promise<void> => {
     const { token, method, headers, params, body, rawBody } = message.body;
     try {
-      using _result = await Network.HandleWebhook(env.CALLBACKS, token, {
+      const result = await invokeWebhookCallback(env, ctx, token, {
         method,
         headers,
         params,
         body,
         rawBody,
       });
+      // The twist worker may return an RPC stub (e.g. wrapped tool
+      // response). Dispose to avoid "RPC stub was not disposed properly"
+      // warnings in the runtime.
+      disposeRpc(result);
       message.ack();
     } catch (error) {
-      // Permanent failures — ack so the queue doesn't retry forever.
       if (isCallbackError(error)) {
         const errorType = getCallbackErrorType(error as Error);
         if (
@@ -51,16 +84,42 @@ export async function processWebhooks(
           errorType === "INVALID_TOKEN" ||
           errorType === "INVALID_TOKEN_FORMAT"
         ) {
-          logger.warn("Dropping webhook for permanently unavailable callback", {
-            errorType,
-            token: token.substring(0, 8) + "...",
-          });
+          logger.warn(
+            "Dropping webhook for permanently unavailable callback",
+            {
+              errorType,
+              token: token.substring(0, 8) + "...",
+            }
+          );
           message.ack();
-          continue;
+          return;
         }
+        // SUSPENDED or anything else CallbackError-shaped: retry.
+        logger.warn("Callback unavailable, retrying", {
+          errorType,
+          token: token.substring(0, 8) + "...",
+        });
+        message.retry();
+        return;
       }
 
-      // Transient failures — let the queue retry.
+      if (isDurableObjectResetError(error)) {
+        logger.warn("Durable Object reset during webhook callback, retrying", {
+          token: token.substring(0, 8) + "...",
+        });
+        message.retry();
+        return;
+      }
+
+      if (isTransientError(error)) {
+        logger.warn("Transient error processing webhook, retrying", {
+          token: token.substring(0, 8) + "...",
+          error: String(error),
+        });
+        message.retry();
+        return;
+      }
+
       logger.error("Error processing queued webhook", error as Error, {
         token: token.substring(0, 8) + "...",
       });
@@ -70,5 +129,7 @@ export async function processWebhooks(
       });
       message.retry();
     }
-  }
+  };
+
+  await Promise.allSettled(batch.messages.map(handleMessage));
 }

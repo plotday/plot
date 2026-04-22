@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { render } from "@plotday/email";
 
 import { Network } from "./twist/tools/network";
+import { invokeWebhookCallback } from "./twist/invoke-webhook";
 import { sendEmail } from "./email/send";
 import type { Bindings } from "./env";
 import { verifyPubSubToken } from "./utils/pubsub";
@@ -370,15 +371,48 @@ webhook.post("/hook/slack", webhookRateLimiter, async (c) => {
       params[key] = value;
     });
 
-    // Route to callbacks
-    const _slackResult = await Network.HandleSlackWebhook(c.env.CALLBACKS, {
-      method: "POST",
-      headers,
-      params,
-      body,
-    });
+    // Fan out to the webhook queue: one WebhookMessage per matching
+    // callback. Previously this awaited every callback in-request via
+    // Promise.allSettled, so one slow handler would stall Slack's HTTP
+    // window and its failure would contaminate the others. Each message
+    // now retries independently through Cloudflare Queues.
+    const teamId = body.team_id;
+    const eventType = body.event?.type;
+    if (!teamId || !eventType) {
+      logger.warn("Slack webhook missing team_id or event type", {
+        has_team_id: Boolean(teamId),
+        has_event_type: Boolean(eventType),
+      });
+      return c.json({ ok: true });
+    }
 
-    // Always return 200 OK to Slack (as per plan)
+    const matchingTokens = await Network.GetSlackCallbacks(
+      c.env.CALLBACKS,
+      teamId,
+      eventType
+    );
+
+    if (matchingTokens.length === 0) {
+      logger.info("No Slack callbacks match event", {
+        team_id: teamId,
+        event_type: eventType,
+      });
+      return c.json({ ok: true });
+    }
+
+    await Promise.all(
+      matchingTokens.map((token) =>
+        c.env.WEBHOOK_QUEUE.send({
+          type: "webhook",
+          token,
+          method: "POST",
+          headers,
+          params,
+          body,
+        })
+      )
+    );
+
     return c.json({ ok: true });
   } catch (error) {
     logger.error("Error processing Slack webhook", error as Error);
@@ -781,13 +815,12 @@ webhook.all("/hook-sync/:token", webhookRateLimiter, async (c) => {
     const { method, headers, params, body, rawBody } =
       await parseWebhookRequest(c, logger);
 
-    using result = await Network.HandleWebhook(c.env.CALLBACKS, token, {
-      method,
-      headers,
-      params,
-      body,
-      rawBody,
-    });
+    using result = await invokeWebhookCallback(
+      c.env,
+      c.executionCtx as unknown as { exports: ExecutionContext["exports"] },
+      token,
+      { method, headers, params, body, rawBody }
+    );
 
     return respondWithCallbackResult(c, result);
   } catch (error) {

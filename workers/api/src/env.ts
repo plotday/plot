@@ -103,8 +103,11 @@ export type TwistBatchMessage = {
 /**
  * Webhook callback message queued for async processing.
  *
- * Ingested by the default /hook/:token route and consumed by the webhook
- * queue consumer, which calls Network.HandleWebhook with the payload.
+ * Ingested by /hook/:token, /hook/gmail/:topicId, /hook/pubsub/:topicId,
+ * and /hook/slack (one message per matching team callback). Consumed by
+ * the webhook queue consumer, which dispatches through
+ * `invokeWebhookCallback` so each message executes independently — no
+ * shared blast radius, no shared retry fate.
  *
  * The consumer never inspects the callback's return value — callbacks that
  * need a synchronous response (e.g. Microsoft Graph validation echoes) must
@@ -169,6 +172,8 @@ export type Bindings = {
   readonly AUTH_ASANA_SECRET: string;
   readonly AUTH_HUBSPOT_ID: string;
   readonly AUTH_HUBSPOT_SECRET: string;
+  readonly AUTH_AIRTABLE_ID: string;
+  readonly AUTH_AIRTABLE_SECRET: string;
 
   readonly GCP_PROJECT_ID: string;
   readonly GCP_PROJECT_NUMBER: string;

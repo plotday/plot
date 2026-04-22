@@ -137,89 +137,42 @@ export class Network extends Tool implements INetwork {
   }
 
   /**
-   * Handles Slack webhook routing to multiple callbacks based on team_id.
-   * Filters callbacks by event type and granted scopes.
+   * Enumerate Slack callback tokens matching a team + event type.
+   *
+   * Slack webhooks are routed by team_id (not twist_instance) because the
+   * team is the only identifier in the signed payload. The same team can
+   * have many callbacks registered across multiple twist instances, and
+   * each callback declares which OAuth scopes it needs. This returns the
+   * subset of team callbacks whose declared scopes satisfy `eventType`.
+   *
+   * The `/hook/slack` ingress calls this and then enqueues one
+   * `WebhookMessage` per token so each callback retries independently and
+   * a slow callback cannot stall Slack's HTTP 200 window or delay the
+   * other callbacks for the same event. Previously callbacks were fanned
+   * out via `Promise.allSettled` inside the request, which amplified
+   * tail-latency outages.
    */
-  static async HandleSlackWebhook(
+  static async GetSlackCallbacks(
     callbacks: DurableObjectNamespace<CallbacksState>,
-    request: WebhookRequest
-  ): Promise<any> {
-    // Extract team_id from Slack webhook payload
-    const teamId = request.body?.team_id;
-    if (!teamId) {
-      const logger = createLogger();
-      logger.warn("Slack webhook missing team_id");
-      return { ok: false, error: "Missing team_id" };
-    }
-
-    // Extract event type
-    const eventType = request.body?.event?.type;
-    if (!eventType) {
-      const logger = createLogger();
-      logger.warn("Slack webhook missing event type");
-      return { ok: false, error: "Missing event type" };
-    }
-
-    // Get callbacks for this team
+    teamId: string,
+    eventType: string
+  ): Promise<string[]> {
     const callbacksStub = Network.GetCallbacksStub(callbacks, teamId);
-    const teamCallbacksResult = await callbacksStub.get(teamId);
+    // @ts-ignore TS2589: DO stub response type inference is excessively deep
+    const rawResult: any = await callbacksStub.get(teamId);
     disposeRpc(callbacksStub);
-    const teamCallbacks = teamCallbacksResult
-      ? [...teamCallbacksResult]
-      : teamCallbacksResult;
+    const teamCallbacks: Array<{
+      callback: string;
+      meta?: Record<string, any>;
+    }> = rawResult ? Array.from(rawResult) : [];
 
-    if (!teamCallbacks || teamCallbacks.length === 0) {
-      const logger = createLogger();
-      logger.warn("No callbacks registered for Slack team", { team_id: teamId });
-      return { ok: true, message: "No callbacks registered" };
+    if (teamCallbacks.length === 0) {
+      return [];
     }
 
-    // Filter callbacks by event scopes
-    const matchingCallbacks = teamCallbacks.filter(
-      (cb: { callback: string; meta?: Record<string, any> }) => {
-        const scopes = cb.meta?.scopes || [];
-        return checkSlackEventScopes(eventType, scopes);
-      }
-    );
-
-    if (matchingCallbacks.length === 0) {
-      const logger = createLogger();
-      logger.warn("No callbacks with required scopes for event", {
-        event_type: eventType,
-        team_id: teamId,
-      });
-      return { ok: true, message: "No matching callbacks" };
-    }
-
-    // Call all matching callbacks in parallel
-    const results = await Promise.allSettled(
-      matchingCallbacks.map(
-        async (cb: { callback: string; meta?: Record<string, any> }) => {
-          const result = await CallbacksState.CallCallback(
-            callbacks,
-            cb.callback,
-            request
-          );
-          disposeRpc(result);
-          return true;
-        }
-      )
-    );
-
-    // Log any failures
-    const failures = results.filter(
-      (r: PromiseSettledResult<any>) => r.status === "rejected"
-    );
-    if (failures.length > 0) {
-      const logger = createLogger();
-      logger.error("Slack webhook callbacks failed", {
-        failed_count: failures.length,
-        total_count: results.length,
-        failures,
-      });
-    }
-
-    return { ok: true, processed: results.length };
+    return teamCallbacks
+      .filter((cb) => checkSlackEventScopes(eventType, cb.meta?.scopes || []))
+      .map((cb) => cb.callback);
   }
 
   /**

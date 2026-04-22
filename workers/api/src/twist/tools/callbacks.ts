@@ -4,10 +4,11 @@ import type {
   Callbacks as ICallbackTool,
 } from "@plotday/twister/tools/callbacks";
 
-import { type TwistEnvironment } from "../../env";
+import { type Bindings, type TwistEnvironment } from "../../env";
 import { CallbacksState, type ResolvedCallback } from "../../state/callbacks";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
+import { invokeWebhookCallback } from "../invoke-webhook";
 import { Tool } from "./tool";
 
 export * from "@plotday/twister/tools/callbacks";
@@ -146,16 +147,24 @@ export class Callbacks extends Tool implements ICallbackTool {
   }
 
   /**
-   * Static method to handle activity link callbacks from API endpoints
+   * Static method to handle activity link callbacks from API endpoints.
+   *
+   * Executes the callback via `invokeWebhookCallback` so the twist worker
+   * RPC runs in the calling worker's context, not inside the
+   * CallbacksState DO. This keeps the DO's output gate free during long
+   * callbacks and matches how the webhook queue consumer dispatches.
    */
   static async HandleActionCallback(
-    callbacks: DurableObjectNamespace<CallbacksState>,
+    env: Bindings,
+    ctx: { exports: ExecutionContext["exports"] },
     token: string,
     action: Action
   ): Promise<any> {
     try {
-      // Extract callback token from the action
-      if (action.type !== ActionType.callback && action.type !== ActionType.plan) {
+      if (
+        action.type !== ActionType.callback &&
+        action.type !== ActionType.plan
+      ) {
         throw new Error("Action is not a callback or plan type");
       }
 
@@ -168,17 +177,12 @@ export class Callbacks extends Tool implements ICallbackTool {
         throw new Error("Callback token mismatch");
       }
 
-      // Execute the callback with the full thread action as argument
-      const result = await CallbacksState.CallCallback(
-        callbacks,
-        callbackToken,
-        action
-      );
-
-      return result;
+      return await invokeWebhookCallback(env, ctx, callbackToken, action);
     } catch (error) {
       const logger = createLogger();
-      logger.error("Error handling action callback", error as Error, { callback_token: token });
+      logger.error("Error handling action callback", error as Error, {
+        callback_token: token,
+      });
       throw error;
     }
   }

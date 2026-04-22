@@ -20,7 +20,8 @@ callbacks.post("/callback/:token", async (c) => {
     }
 
     using result = await Callbacks.HandleLinkCallback(
-      c.env.CALLBACKS,
+      c.env,
+      c.executionCtx as unknown as { exports: ExecutionContext["exports"] },
       token,
       link
     );

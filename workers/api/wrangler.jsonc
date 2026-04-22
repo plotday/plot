@@ -211,7 +211,8 @@
             "queue": "webhook-development",
             "max_batch_size": 10,
             "max_batch_timeout": 1,
-            "max_concurrency": 5
+            "max_concurrency": 25,
+            "retry_delay": 10
           }
         ]
       },
@@ -437,7 +438,8 @@
             "queue": "webhook-production",
             "max_batch_size": 10,
             "max_batch_timeout": 1,
-            "max_concurrency": 5
+            "max_concurrency": 25,
+            "retry_delay": 10
           }
         ]
       },

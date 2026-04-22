@@ -4,8 +4,8 @@ import superjson from "superjson";
 import { createLogger } from "@plotday/worker-util";
 
 import { createDb, sql, type DB, type Kysely } from "../db";
-import { type Bindings } from "../env";
-import { CallbackError } from "../errors";
+import { type Bindings, type TwistEnvironment } from "../env";
+import { CallbackError, type CallbackErrorContext } from "../errors";
 import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { handleTwistOperation } from "../twist/error-handling";
@@ -38,6 +38,29 @@ export type ResolvedCallback = {
   extraArgs?: any[];
   callOnce: boolean;
 };
+
+/**
+ * Result of validateAndLoad(): everything a worker-side caller needs to
+ * construct the twist and invoke the callback outside of this DO. Keeping
+ * twistFactory + twistWrapper.callCallback out of the DO prevents long
+ * twist executions from blocking the DO's output gate (Cloudflare resets
+ * the DO when that gate is held past the storage watchdog).
+ */
+export type LoadedCallback = {
+  ok: true;
+  callback: CallbackData;
+  twistId: string;
+  twistPackageId: string;
+  environment: TwistEnvironment;
+};
+
+export type LoadError = {
+  __error: true;
+  type: "NOT_FOUND" | "EXPIRED" | "SUSPENDED" | "INVALID_TOKEN";
+  context?: CallbackErrorContext;
+};
+
+export type LoadResult = LoadedCallback | LoadError;
 
 /**
  * Validates if a string is a valid Durable Object ID (64 hex characters)
@@ -270,6 +293,176 @@ export class CallbacksState extends DurableObject<Bindings> {
     }
 
     return `${doId}:${token}`;
+  }
+
+  /**
+   * Validate a callback token and load everything the caller needs to
+   * invoke it, without constructing the twist or calling into the twist
+   * worker. The caller (typically `invokeWebhookCallback`) runs the twist
+   * RPC outside this DO so the output gate is only held for the cheap
+   * SQLite + DB lookups here.
+   *
+   * Returns either the loaded metadata (`ok: true`) or a `__error` object.
+   * Errors are returned rather than thrown so the DO runtime does not log
+   * expected outcomes (expired / uninstalled twists) as uncaught.
+   *
+   * Side effects: deletes the callback row for `NOT_FOUND` / `EXPIRED`
+   * cases and when the twist was deleted or archived. Does NOT delete on
+   * `SUSPENDED` — the callback will be eligible again once the twist
+   * resumes.
+   *
+   * Takes the full `doId:token` format (the same thing `callCallback`
+   * accepts).
+   */
+  async validateAndLoad(fullToken: string): Promise<LoadResult> {
+    if (!fullToken) {
+      return {
+        __error: true,
+        type: "INVALID_TOKEN",
+        context: { operation: "validateAndLoad" },
+      };
+    }
+    const [, token] = fullToken.split(":");
+    if (!token) {
+      return {
+        __error: true,
+        type: "INVALID_TOKEN",
+        context: {
+          operation: "validateAndLoad",
+          reason: "Missing colon separator",
+        },
+      };
+    }
+
+    const result = this.sql
+      .exec(
+        `
+          SELECT token, twist_instance_id, path, version, function_name, extra_args, call_at, call_once, expires, key, meta
+          FROM callbacks
+          WHERE token = ?
+          `,
+        [token]
+      )
+      .next();
+    if (result.done) {
+      return {
+        __error: true,
+        type: "NOT_FOUND",
+        context: {
+          operation: "validateAndLoad",
+          token: token.substring(0, 8) + "...",
+        },
+      };
+    }
+    const rawCallback = result.value as any;
+    const callback: CallbackData = {
+      token: rawCallback.token,
+      twistInstanceId: rawCallback.twist_instance_id,
+      path: this.parseWithFallback(rawCallback.path),
+      version: rawCallback.version,
+      functionName: rawCallback.function_name,
+      extraArgs: rawCallback.extra_args
+        ? this.parseWithFallback(rawCallback.extra_args)
+        : undefined,
+      callAt: rawCallback.call_at ? new Date(rawCallback.call_at) : undefined,
+      callOnce: Boolean(rawCallback.call_once),
+      expires: rawCallback.expires ? new Date(rawCallback.expires) : undefined,
+      key: rawCallback.key ?? undefined,
+      meta: rawCallback.meta
+        ? this.parseWithFallback(rawCallback.meta)
+        : undefined,
+    };
+
+    if (callback.expires && callback.expires < new Date()) {
+      this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
+      return {
+        __error: true,
+        type: "EXPIRED",
+        context: {
+          operation: "validateAndLoad",
+          token: token.substring(0, 8) + "...",
+        },
+      };
+    }
+
+    return await this.withDb(async (db) => {
+      const twistInstance = await db
+        .selectFrom("twist_instance")
+        .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+        .select([
+          "twist_instance.twist_id",
+          "twist_instance.archived_at",
+          "twist_instance.suspended_at",
+          "twist.execution_limit",
+          "twist.environment",
+          "twist.twist_package_id",
+        ])
+        .where("twist_instance.id", "=", callback.twistInstanceId)
+        .executeTakeFirst();
+
+      if (!twistInstance) {
+        this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
+        return {
+          __error: true,
+          type: "NOT_FOUND",
+          context: {
+            operation: "validateAndLoad",
+            twistInstanceId: callback.twistInstanceId,
+            reason: "Priority twist deleted",
+          },
+        };
+      }
+
+      if (twistInstance.archived_at) {
+        this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
+        return {
+          __error: true,
+          type: "NOT_FOUND",
+          context: {
+            operation: "validateAndLoad",
+            twistInstanceId: callback.twistInstanceId,
+            reason: "Priority twist archived",
+          },
+        };
+      }
+
+      if (twistInstance.suspended_at) {
+        return {
+          __error: true,
+          type: "SUSPENDED",
+          context: {
+            operation: "validateAndLoad",
+            twistInstanceId: callback.twistInstanceId,
+            reason: "Twist processing suspended due to high usage",
+          },
+        };
+      }
+
+      const usage = Usage.Get(this.env, callback.twistInstanceId);
+      const withinQuota = await usage.checkExecutionQuota(
+        twistInstance.execution_limit
+      );
+      if (!withinQuota) {
+        return {
+          __error: true,
+          type: "SUSPENDED",
+          context: {
+            operation: "validateAndLoad",
+            twistInstanceId: callback.twistInstanceId,
+            reason:
+              "Twist processing suspended due to execution quota exceeded",
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        callback,
+        twistId: twistInstance.twist_id,
+        twistPackageId: twistInstance.twist_package_id,
+        environment: twistInstance.environment as TwistEnvironment,
+      };
+    });
   }
 
   async callCallback(
