@@ -108,6 +108,10 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// Pinned email invites shown in the chip row. Same stability rule.
   List<String> _pinnedEmails = const [];
 
+  /// Pinned groups shown in the chip row (from per-priority defaults, or
+  /// added via the share picker). Users can toggle them off on the draft.
+  List<GroupRow> _pinnedGroups = const [];
+
   // Selected twist for chat mode
   TwistInstance? _selectedTwist;
 
@@ -339,11 +343,12 @@ class NewThreadPageState extends State<NewThreadPage> {
 
   /// Rebuilds the pinned chip list from current draft state + recent contacts.
   /// Call after modal changes or initial load — NOT after chip taps.
-  void _refreshPinnedChips() {
+  Future<void> _refreshPinnedChips() async {
     final bloc = context.read<PriorityBloc>();
     final draft = bloc.state.draft;
     final selectedIds = draft.contacts.toSet();
     final pendingEmails = draft.inviteEmails;
+    final groupIds = draft.groups;
 
     // Resolve selected contacts to actors.
     // Note: If an actor isn't in cache, it's skipped here. _handleDraftChanged
@@ -354,19 +359,31 @@ class NewThreadPageState extends State<NewThreadPage> {
         .cast<Actor>()
         .toList();
 
-    // Budget: 3 total chips
-    final selectedChipCount = selected.length.clamp(0, 3);
-    final emailSlots = (3 - selectedChipCount).clamp(0, 3);
+    // Resolve attached groups. Keep order from the draft so chips stay stable
+    // as toggles change which ones are selected.
+    final groups = <GroupRow>[];
+    for (final id in groupIds) {
+      final g = await Group.getOne(id);
+      if (g != null) groups.add(g);
+    }
+
+    // Budget: 3 total chips across groups + contacts + emails.
+    final groupChipCount = groups.length.clamp(0, 3);
+    final selectedChipCount = selected.length.clamp(0, 3 - groupChipCount);
+    final emailSlots = (3 - groupChipCount - selectedChipCount).clamp(0, 3);
     final emailChipCount = pendingEmails.length.clamp(0, emailSlots);
-    final suggestionSlots = 3 - selectedChipCount - emailChipCount;
+    final suggestionSlots =
+        (3 - groupChipCount - selectedChipCount - emailChipCount).clamp(0, 3);
 
     final suggestions = _recentContacts
         .where((a) => !selectedIds.contains(a.id.toUuid()))
         .take(suggestionSlots)
         .toList();
 
+    if (!mounted) return;
     setState(() {
-      _pinnedActors = [...selected.take(3), ...suggestions];
+      _pinnedGroups = groups.take(3).toList();
+      _pinnedActors = [...selected.take(3 - groupChipCount), ...suggestions];
       _pinnedEmails = pendingEmails.take(emailSlots).toList();
     });
   }
@@ -806,43 +823,20 @@ class NewThreadPageState extends State<NewThreadPage> {
   Widget _buildWithSelector(BuildContext context, PriorityState state) {
     final selectedIds = state.draft.contacts.toSet();
     final pendingEmails = state.draft.inviteEmails.toSet();
-    final lockedConfig = state.context.priorityConfig;
-    final lockedGroupId = lockedConfig.group;
-
-    // When a group is locked by priority config, hide the recent-contact
-    // suggestion chips and replace them with a single selected, non-toggleable
-    // group chip. The `+` button still opens the share picker.
-    if (lockedGroupId != null) {
-      return Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildLockedGroupChip(
-                context,
-                lockedGroupId,
-                label: lockedConfig.groupLabel,
-              ),
-              _buildAddContactChip(context, state, hasMore: false),
-            ],
-          ),
-        ),
-      );
-    }
 
     // Render from pinned lists so chips stay stable when toggled via tap.
-    // _pinnedActors and _pinnedEmails are only updated by _refreshPinnedChips
-    // (called after modal changes and initial load).
+    // _pinnedGroups, _pinnedActors, and _pinnedEmails are only updated by
+    // _refreshPinnedChips (called after modal changes and initial load).
+    final groupIds = state.draft.groups.toSet();
     final displayedSelectedContacts = _pinnedActors
         .where((a) => selectedIds.contains(a.id.toUuid()))
         .length;
+    final displayedGroups =
+        _pinnedGroups.where((g) => groupIds.contains(g.id)).length;
     final hasMore =
         selectedIds.length > displayedSelectedContacts ||
-        pendingEmails.length > _pinnedEmails.length;
+        pendingEmails.length > _pinnedEmails.length ||
+        groupIds.length > displayedGroups;
 
     return Center(
       child: ConstrainedBox(
@@ -856,6 +850,12 @@ class NewThreadPageState extends State<NewThreadPage> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                for (final group in _pinnedGroups)
+                  _buildGroupChip(
+                    context,
+                    group,
+                    selected: groupIds.contains(group.id),
+                  ),
                 for (final actor in _pinnedActors)
                   _buildContactChip(
                     context,
@@ -877,50 +877,58 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
-  /// Chip shown in place of the "with" suggestion chips when the draft's
-  /// priority pins an auto-attached group (via `priority.config.group`).
-  /// Renders as always-selected; tapping does nothing so the group cannot
-  /// be removed from the thread.
-  ///
-  /// Prefers the config-provided [label] so the chip shows a stable name
-  /// (e.g. "Plot Team") even when the resolved group's own name differs by
-  /// environment (e.g. "Plot Publisher" fallback in dev). Falls back to the
-  /// group's own name when no label is configured.
-  Widget _buildLockedGroupChip(
+  Widget _buildGroupChip(
     BuildContext context,
-    Uuid groupId, {
-    String? label,
+    GroupRow group, {
+    required bool selected,
   }) {
     const chipRadius = BorderRadius.all(Radius.circular(24));
     final chipPadding = EdgeInsets.symmetric(
       horizontal: 10,
       vertical: isMobilePlatform() ? 10 : 5,
     );
-
-    Widget buildChipWithText(String text) => FButton(
-      onPress: () {},
-      variant: FButtonVariant.primary,
-      style: FButtonStyleDelta.delta(
-        decoration: FVariantsDelta.delta([
-          FVariantOperation.all(
-            DecorationDelta.boxDelta(borderRadius: chipRadius),
+    Widget buildChip(bool hovered) {
+      return FButton(
+        onPress: () => _toggleWithGroup(group),
+        variant: selected ? FButtonVariant.primary : FButtonVariant.secondary,
+        style: FButtonStyleDelta.delta(
+          decoration: FVariantsDelta.delta([
+            FVariantOperation.all(
+              DecorationDelta.boxDelta(borderRadius: chipRadius),
+            ),
+          ]),
+          contentStyle: FButtonContentStyleDelta.delta(
+            padding: EdgeInsetsGeometryDelta.value(chipPadding),
           ),
-        ]),
-        contentStyle: FButtonContentStyleDelta.delta(
-          padding: EdgeInsetsGeometryDelta.value(chipPadding),
         ),
-      ),
-      mainAxisSize: MainAxisSize.min,
-      child: Text(text),
-    );
+        mainAxisSize: MainAxisSize.min,
+        prefix: FaIcon(
+          FontAwesomeIcons.userGroup,
+          size: context.theme.iconSizes.sm,
+        ),
+        child: Text(
+          group.name,
+          style: (!selected && !hovered)
+              ? TextStyle(color: context.theme.plotColors.veryMuted)
+              : null,
+        ),
+      );
+    }
 
-    if (label != null && label.isNotEmpty) return buildChipWithText(label);
+    if (selected) return buildChip(false);
+    return _HoverBuilder(builder: (context, hovered) => buildChip(hovered));
+  }
 
-    return StreamBuilder<GroupRow?>(
-      stream: Group.watchOne(groupId),
-      builder: (context, snapshot) =>
-          buildChipWithText(snapshot.data?.name ?? ''),
-    );
+  Future<void> _toggleWithGroup(GroupRow group) async {
+    final bloc = context.read<PriorityBloc>();
+    final current = bloc.state.draft.groups.toList();
+    if (current.contains(group.id)) {
+      current.remove(group.id);
+    } else {
+      current.add(group.id);
+    }
+    await bloc.updateDraft(bloc.state.draft
+        .copyWith(groups: Value(current.isEmpty ? null : current)));
   }
 
   Widget _buildContactChip(

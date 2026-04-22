@@ -24,9 +24,15 @@ CREATE TABLE "public"."priority" (
     "default_thread_icon" text,
     -- Sparse per-priority configuration. Not user-editable; set directly in
     -- the DB. Recognized keys: topic (string, default thread.topic),
-    -- "group" (uuid, auto-attached to new threads), view ('activity' to
-    -- hide the agenda tab on the priority page).
-    "config" jsonb
+    -- view ('activity' to hide the agenda tab on the priority page).
+    -- NOTE: the historical 'group' key has been migrated to default_groups.
+    "config" jsonb,
+    -- User-editable defaults applied to every new thread filed under this
+    -- priority. Seeded onto the draft thread in the client; the user can
+    -- still remove entries before sending.
+    "default_contacts" uuid[] NOT NULL DEFAULT '{}',
+    "default_groups" uuid[] NOT NULL DEFAULT '{}',
+    "default_invite_emails" text[] NOT NULL DEFAULT '{}'
 );
 
 -- Per-user owner lookups

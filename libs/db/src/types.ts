@@ -901,6 +901,9 @@ export type Database = {
           config: Json | null
           created_at: string
           created_by: string
+          default_contacts: string[]
+          default_groups: string[]
+          default_invite_emails: string[]
           default_thread_icon: string | null
           id: string
           inherit_members: boolean
@@ -918,6 +921,9 @@ export type Database = {
           config?: Json | null
           created_at?: string
           created_by: string
+          default_contacts?: string[]
+          default_groups?: string[]
+          default_invite_emails?: string[]
           default_thread_icon?: string | null
           id?: string
           inherit_members?: boolean
@@ -935,6 +941,9 @@ export type Database = {
           config?: Json | null
           created_at?: string
           created_by?: string
+          default_contacts?: string[]
+          default_groups?: string[]
+          default_invite_emails?: string[]
           default_thread_icon?: string | null
           id?: string
           inherit_members?: boolean
@@ -4230,6 +4239,9 @@ export type Database = {
           config: Json | null
           created_at: string | null
           created_by: string | null
+          default_contacts: string[] | null
+          default_groups: string[] | null
+          default_invite_emails: string[] | null
           global_path: unknown
           id: string | null
           inherit_members: boolean | null
@@ -4667,6 +4679,9 @@ export type Database = {
           config: Json | null
           created_at: string | null
           created_by: string | null
+          default_contacts: string[] | null
+          default_groups: string[] | null
+          default_invite_emails: string[] | null
           global_path: unknown
           id: string | null
           inherit_members: boolean | null

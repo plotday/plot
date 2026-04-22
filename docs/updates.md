@@ -1,4 +1,7 @@
-- Slack: save a message for Later and it becomes a to-do in Plot. Toggle the to-do in Plot and the message saves/unsaves in Slack. You'll need to reconnect Slack once to grant the new permission.
+- Calendar event notes synced from Outlook and Teams look cleaner — "Manage Booking" and "Join" style links now appear as real clickable links instead of raw URLs, and long meeting URLs are shown as the site name instead of filling the screen
+- Set who to share new threads with by default, per priority — add contacts, teams, and email invites in the priority settings and every new thread filed there is pre-shared with them (still removable before sending)
+- Slack now connects as you — no workspace bot to install or invite into channels. Replies you send from Plot post as you, and Plot only sees channels you're already a member of. You'll need to reconnect Slack once.
+- Slack: save a message for Later and it becomes a to-do in Plot. Toggle the to-do in Plot and the message saves/unsaves in Slack.
 - Fixed missing notifications and unread indicators for threads shared to a team — feedback and other team-wide threads now correctly trigger push and email notifications, and show the unread dot on the priority they land in
 - Archiving a thread from the activity feed now feels instant — the thread disappears immediately instead of after a noticeable delay
 - Notification emails now include an unsubscribe link — choose to get them at most once per day, once per week, or never, without needing to sign in

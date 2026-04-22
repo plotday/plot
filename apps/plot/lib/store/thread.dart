@@ -2108,17 +2108,23 @@ class Thread extends Equatable implements Comparable<Thread> {
          urgency: null,
          readAt: null,
          hasEmbedding: false,
-         // Seed topic + auto-attached group from the priority's config so
-         // any thread composed here inherits the routing key and the locked
-         // group chip before the user types. When no explicit
+         // Seed topic + per-priority sharing defaults onto the draft thread so
+         // it inherits the routing key, any auto-attached contacts/groups, and
+         // pending email invites before the user types. When no explicit
          // config.topic is set, fall back to the priority id itself for
          // non-root priorities, so sibling threads filed in the same
          // sub-priority share a topic filter for classify_thread_for_user.
          topic: priority.priorityConfig.topic ??
              (priority.path.isRoot ? null : priority.id.toString()),
-         groups: priority.priorityConfig.group != null
-             ? [priority.priorityConfig.group!]
-             : null,
+         contacts: priority.defaultSharedContacts.isEmpty
+             ? null
+             : List<Uuid>.from(priority.defaultSharedContacts),
+         groups: priority.defaultSharedGroups.isEmpty
+             ? null
+             : List<Uuid>.from(priority.defaultSharedGroups),
+         inviteEmails: priority.defaultSharedInviteEmails.isEmpty
+             ? null
+             : jsonEncode(priority.defaultSharedInviteEmails),
        ),
        _schedule = null,
        _userSchedule = null,

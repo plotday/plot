@@ -392,12 +392,16 @@ BEGIN
         id = _input.id;
     -- Update priority table
     IF NOT _is_move THEN
-        INSERT INTO priority (id, user_id, archived_at, title, color, path, created_by, updated_by)
+        INSERT INTO priority (id, user_id, archived_at, title, color, path, created_by, updated_by,
+            default_contacts, default_groups, default_invite_emails)
             VALUES (_input.id, upsert_priority.user_id, _input.archived_at, _input.title, CASE WHEN _is_creator THEN
                     _input.color
                 ELSE
                     NULL
-                END, _input.path, _input.created_by, _input.updated_by)
+                END, _input.path, _input.created_by, _input.updated_by,
+                COALESCE(_input.default_contacts, '{}'::uuid[]),
+                COALESCE(_input.default_groups, '{}'::uuid[]),
+                COALESCE(_input.default_invite_emails, '{}'::text[]))
         ON CONFLICT (id)
             DO UPDATE SET
                 archived_at = _input.archived_at,
@@ -407,7 +411,10 @@ BEGIN
                 ELSE
                     priority.color
                 END,
-                updated_by = _input.updated_by
+                updated_by = _input.updated_by,
+                default_contacts = COALESCE(_input.default_contacts, priority.default_contacts),
+                default_groups = COALESCE(_input.default_groups, priority.default_groups),
+                default_invite_emails = COALESCE(_input.default_invite_emails, priority.default_invite_emails)
             RETURNING
                 id INTO _priority_id;
     ELSE
@@ -422,7 +429,10 @@ BEGIN
             ELSE
                 priority.color
             END,
-            updated_by = _input.updated_by
+            updated_by = _input.updated_by,
+            default_contacts = COALESCE(_input.default_contacts, priority.default_contacts),
+            default_groups = COALESCE(_input.default_groups, priority.default_groups),
+            default_invite_emails = COALESCE(_input.default_invite_emails, priority.default_invite_emails)
         WHERE
             id = _input.id
         RETURNING

@@ -40,6 +40,20 @@ class Priorities extends Table
   /// Sparse per-priority configuration. Not user-editable. Stored as a JSON
   /// string. See `PriorityConfig` for recognized keys.
   TextColumn get config => text().nullable()();
+
+  /// Contacts auto-added to any new thread filed under this priority. Stored
+  /// as a JSON-encoded list of contact UUIDs. Empty list means no defaults.
+  TextColumn get defaultContacts =>
+      text().nullable().map(const UuidListConverter())();
+
+  /// Groups auto-added to any new thread filed under this priority. Stored
+  /// as a JSON-encoded list of group UUIDs. Empty list means no defaults.
+  TextColumn get defaultGroups =>
+      text().nullable().map(const UuidListConverter())();
+
+  /// Invite emails auto-added to any new thread filed under this priority.
+  /// Stored as a JSON-encoded list of email strings.
+  TextColumn get defaultInviteEmails => text().nullable()();
 }
 
 class PrioritiesBase extends BaseTable {
@@ -93,6 +107,18 @@ class PrioritiesBase extends BaseTable {
           ? json['config']
           : jsonEncode(json['config']);
     }
+    // default_contacts/default_groups/default_invite_emails arrive from the
+    // API as either native JSON arrays or, when the pg driver on the worker
+    // falls back to text for array types, as strings (`"[]"`, `"{}"`, or
+    // `"{uuid1,uuid2}"`). Normalize to a List<dynamic> for the uuid-backed
+    // columns (UuidListConverter expects List<dynamic> at the JSON boundary)
+    // and to a JSON string for default_invite_emails (plain TextColumn).
+    json['default_contacts'] = _normalizeArrayField(json['default_contacts']);
+    json['default_groups'] = _normalizeArrayField(json['default_groups']);
+    final normalizedEmails = _normalizeArrayField(json['default_invite_emails']);
+    json['default_invite_emails'] = normalizedEmails.isEmpty
+        ? null
+        : jsonEncode(normalizedEmails);
 
     return PriorityRow.fromJson(json);
   }
@@ -110,13 +136,78 @@ class PrioritiesBase extends BaseTable {
     json.remove('see_within_updates_set');
     // config is read-only from the client's perspective.
     json.remove('config');
+    // default_contacts / default_groups / default_invite_emails are stored
+    // locally as JSON strings; the server expects native Postgres arrays.
+    final defaultContacts = json['default_contacts'];
+    if (defaultContacts is String) {
+      json['default_contacts'] = defaultContacts.isEmpty
+          ? <String>[]
+          : jsonDecode(defaultContacts) as List<dynamic>;
+    } else {
+      json['default_contacts'] ??= <String>[];
+    }
+    final defaultGroups = json['default_groups'];
+    if (defaultGroups is String) {
+      json['default_groups'] = defaultGroups.isEmpty
+          ? <String>[]
+          : jsonDecode(defaultGroups) as List<dynamic>;
+    } else {
+      json['default_groups'] ??= <String>[];
+    }
+    final defaultInviteEmails = json['default_invite_emails'];
+    if (defaultInviteEmails is String) {
+      json['default_invite_emails'] = defaultInviteEmails.isEmpty
+          ? <String>[]
+          : jsonDecode(defaultInviteEmails) as List<dynamic>;
+    } else {
+      json['default_invite_emails'] ??= <String>[];
+    }
     return json;
   }
 }
 
+/// Normalize an array-typed field coming from the API to a `List<dynamic>`.
+/// Handles native JSON arrays, JSON array strings (`"[]"`, `"[\"uuid\"]"`),
+/// and PostgreSQL text array literals (`"{}"`, `"{uuid1,uuid2}"`). Returns
+/// an empty list for null or unparseable input.
+List<dynamic> _normalizeArrayField(dynamic raw) {
+  if (raw == null) return const [];
+  if (raw is List) return raw;
+  if (raw is String) {
+    if (raw.isEmpty || raw == '{}' || raw == '[]') return const [];
+    if (raw.startsWith('[')) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) return decoded;
+      } catch (_) {}
+    }
+    if (raw.startsWith('{') && raw.endsWith('}')) {
+      final inner = raw.substring(1, raw.length - 1);
+      if (inner.isEmpty) return const [];
+      return inner
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .map<dynamic>((s) {
+            // PG text arrays wrap quoted strings (e.g. {"a,b","c"}). Strip
+            // surrounding double quotes and unescape basic sequences.
+            if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+              return s
+                  .substring(1, s.length - 1)
+                  .replaceAll(r'\"', '"')
+                  .replaceAll(r'\\', r'\');
+            }
+            return s;
+          })
+          .toList();
+    }
+  }
+  return const [];
+}
+
 /// Typed view onto the sparse [Priorities.config] JSON blob.
 class PriorityConfig {
-  const PriorityConfig({this.topic, this.group, this.groupLabel, this.view});
+  const PriorityConfig({this.topic, this.view});
 
   static const empty = PriorityConfig();
 
@@ -126,18 +217,8 @@ class PriorityConfig {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return empty;
       final map = decoded.cast<String, dynamic>();
-      final groupRaw = map['group'];
-      PriorityId? group;
-      if (groupRaw is String && groupRaw.isNotEmpty) {
-        try {
-          group = Uuid.fromString(groupRaw);
-        } catch (_) {}
-      }
       return PriorityConfig(
         topic: map['topic'] is String ? map['topic'] as String : null,
-        group: group,
-        groupLabel:
-            map['groupLabel'] is String ? map['groupLabel'] as String : null,
         view: map['view'] is String ? map['view'] as String : null,
       );
     } catch (_) {
@@ -147,14 +228,6 @@ class PriorityConfig {
 
   /// Topic to stamp on new threads created in this priority.
   final String? topic;
-
-  /// Group auto-attached to new threads created in this priority.
-  final PriorityId? group;
-
-  /// Display label for the locked group chip. Decoupled from the underlying
-  /// group's name so the UI stays stable even when the resolved group
-  /// differs by environment (e.g. full team vs. publisher admins fallback).
-  final String? groupLabel;
 
   /// View override. 'activity' hides the agenda tab on the priority page.
   final String? view;
@@ -819,6 +892,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     super.pomodoro = const Duration(minutes: 25),
     super.color,
     this.draft = false,
+    List<Uuid>? defaultContacts,
+    List<Uuid>? defaultGroups,
+    List<String>? defaultInviteEmails,
   }) : children = [],
        _ancestors =
            parent!._ancestors +
@@ -847,6 +923,18 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          attentionWindowSet: false,
          seeWithinRequestsSet: false,
          seeWithinUpdatesSet: false,
+         defaultContacts:
+             defaultContacts == null || defaultContacts.isEmpty
+                 ? null
+                 : defaultContacts,
+         defaultGroups:
+             defaultGroups == null || defaultGroups.isEmpty
+                 ? null
+                 : defaultGroups,
+         defaultInviteEmails:
+             defaultInviteEmails == null || defaultInviteEmails.isEmpty
+                 ? null
+                 : jsonEncode(defaultInviteEmails),
        ) {
     if (!draft) {
       parent!._addChild(this);
@@ -917,6 +1005,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
          seeWithinRequestsSet: row.seeWithinRequestsSet,
          seeWithinUpdatesSet: row.seeWithinUpdatesSet,
          config: row.config,
+         defaultContacts: row.defaultContacts,
+         defaultGroups: row.defaultGroups,
+         defaultInviteEmails: row.defaultInviteEmails,
        ) {
     if (!draft) {
       parent?._addChild(this);
@@ -1051,9 +1142,29 @@ class Priority extends PriorityRow implements Comparable<Priority> {
   SeeWithinTime? get seeWithinUpdatesTime =>
       SeeWithinTime.fromJsonString(seeWithinUpdates);
 
-  /// Parsed sparse priority config (topic/group/view behaviours). Not
+  /// Parsed sparse priority config (topic/view behaviours). Not
   /// user-editable; populated from the server.
   PriorityConfig get priorityConfig => PriorityConfig.parse(config);
+
+  /// Contacts to seed onto any new thread filed under this priority.
+  /// Empty when no defaults are configured.
+  List<Uuid> get defaultSharedContacts => defaultContacts ?? const [];
+
+  /// Groups to seed onto any new thread filed under this priority.
+  /// Empty when no defaults are configured.
+  List<Uuid> get defaultSharedGroups => defaultGroups ?? const [];
+
+  /// Invite emails to seed onto any new thread filed under this priority.
+  /// Empty when no defaults are configured.
+  List<String> get defaultSharedInviteEmails {
+    final raw = defaultInviteEmails;
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      return (jsonDecode(raw) as List<dynamic>).cast<String>();
+    } catch (_) {
+      return const [];
+    }
+  }
 
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
@@ -1127,6 +1238,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     bool? seeWithinRequestsSet,
     bool? seeWithinUpdatesSet,
     Value<String?> config = const Value.absent(),
+    Value<List<Uuid>?> defaultContacts = const Value.absent(),
+    Value<List<Uuid>?> defaultGroups = const Value.absent(),
+    Value<String?> defaultInviteEmails = const Value.absent(),
     bool? draft,
   }) {
     final newDraft = draft ?? this.draft;
@@ -1167,6 +1281,9 @@ class Priority extends PriorityRow implements Comparable<Priority> {
         seeWithinRequestsSet: seeWithinRequestsSet,
         seeWithinUpdatesSet: seeWithinUpdatesSet,
         config: config,
+        defaultContacts: defaultContacts,
+        defaultGroups: defaultGroups,
+        defaultInviteEmails: defaultInviteEmails,
       ),
       parent: currentParent,
       children: children,

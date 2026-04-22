@@ -2034,7 +2034,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 313;
+  int get schemaVersion => 314;
 
   @override
   MigrationStrategy get migration {
@@ -2891,6 +2891,21 @@ class Store extends _$Store {
       // it from provider metadata (e.g. Google email, Slack workspace name);
       // user-editable in EditSource.
       await _safeAddColumn(m, twistInstances, twistInstances.accountLabel);
+    }
+    if (from < 314) {
+      // Priority-level defaults that seed every new thread filed under the
+      // priority with contacts/groups/invite emails. Nullable so a fresh sync
+      // repopulates from the server.
+      await _safeAddColumn(m, priorities, priorities.defaultContacts);
+      await _safeAddColumn(m, priorities, priorities.defaultGroups);
+      await _safeAddColumn(m, priorities, priorities.defaultInviteEmails);
+      // Earlier builds of this change shipped a fromBase that couldn't parse
+      // pg text-array strings and dropped default_groups on the floor. Clear
+      // the priorities sync cursor so the next sync re-pulls every priority
+      // with the fixed parser and the server-populated defaults land locally.
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'priorit%'",
+      );
     }
   }
 

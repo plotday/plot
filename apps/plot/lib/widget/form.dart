@@ -3,7 +3,10 @@ import 'package:plot/widget/widget.dart';
 import 'package:plot/widget/select_tile.dart';
 import 'package:plot/command/base.dart';
 import 'package:plot/command/logging.dart';
+import 'package:plot/command/share.dart';
 import 'package:plot/analytics/tracker.dart';
+import 'package:plot/store/store.dart'
+    show Actor, ActorId, Group, Priority, Uuid;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/store/attention.dart';
@@ -1329,5 +1332,192 @@ class FormData {
       }
     }
     return staticGroups;
+  }
+}
+
+/// Multi-select form item backed by [SharedSelection] (contacts + groups +
+/// invite emails). Looks and behaves like a [SelectTile]; tapping opens the
+/// shared picker and the user can toggle multiple entries in one pass.
+class FormShareSelect extends FormItem {
+  FormShareSelect({
+    required super.key,
+    super.label,
+    this.placeholder,
+    this.priority,
+    SharedSelection? initialValue,
+  }) : _value = initialValue ?? const SharedSelection();
+
+  /// Placeholder when nothing is selected.
+  final String? placeholder;
+
+  /// Optional priority for scoping contact suggestions (ranks people the
+  /// user typically shares with in this priority first).
+  final Priority? priority;
+
+  SharedSelection _value;
+  bool userModified = false;
+  final List<VoidCallback> _listeners = [];
+
+  /// Cache of (contact id → display name) and (group id → display name) so
+  /// the tile summary can render even before the selection is resolved
+  /// through DB lookups.
+  final Map<Uuid, String> _contactNames = {};
+  final Map<Uuid, String> _groupNames = {};
+  bool _namesLoaded = false;
+
+  @override
+  SharedSelection getValue() => _value;
+
+  @override
+  void setValue(dynamic value) {
+    if (value is SharedSelection) {
+      _value = value;
+      userModified = true;
+      for (final listener in _listeners) {
+        listener();
+      }
+    }
+  }
+
+  @override
+  bool isValid() => true;
+
+  @override
+  bool get canActivate => true;
+
+  @override
+  void addChangeListener(VoidCallback listener) => _listeners.add(listener);
+
+  @override
+  void removeChangeListener(VoidCallback listener) =>
+      _listeners.remove(listener);
+
+  Future<void> _ensureNamesLoaded() async {
+    if (_namesLoaded) return;
+    for (final id in _value.contacts) {
+      if (_contactNames.containsKey(id)) continue;
+      try {
+        final actor = await Actor.getOne(ActorId.fromUuid(id));
+        _contactNames[id] = actor.nameOrEmail;
+      } catch (_) {}
+    }
+    for (final id in _value.groups) {
+      if (_groupNames.containsKey(id)) continue;
+      final group = await Group.getOne(id);
+      if (group != null) _groupNames[id] = group.name;
+    }
+    _namesLoaded = true;
+  }
+
+  @override
+  Future<void> activate(BuildContext context, {int subIndex = 0}) async {
+    await _ensureNamesLoaded();
+    if (!context.mounted) return;
+    await PickShared(
+      selection: _value,
+      priority: priority,
+      title: label ?? key,
+      onUpdate: (next) async {
+        _value = next;
+        userModified = true;
+        // Refresh name cache for any newly-added ids.
+        for (final id in next.contacts) {
+          if (_contactNames.containsKey(id)) continue;
+          try {
+            final actor = await Actor.getOne(ActorId.fromUuid(id));
+            _contactNames[id] = actor.nameOrEmail;
+          } catch (_) {}
+        }
+        for (final id in next.groups) {
+          if (_groupNames.containsKey(id)) continue;
+          final group = await Group.getOne(id);
+          if (group != null) _groupNames[id] = group.name;
+        }
+        for (final listener in _listeners) {
+          listener();
+        }
+      },
+    ).run(context);
+  }
+
+  String get _summary => sharedSelectionSummary(
+        _value,
+        groupNames: _groupNames,
+        contactNames: _contactNames,
+      );
+
+  @override
+  Widget build(
+    BuildContext context,
+    int highlightedSubIndex, {
+    bool enabled = true,
+    List<FocusNode> focusNodes = const [],
+    FormButtonController? controller,
+  }) {
+    return _FormShareSelectTile(
+      formItem: this,
+      highlighted: highlightedSubIndex >= 0,
+      focusNode: focusNodes.firstOrNull,
+      enabled: enabled,
+    );
+  }
+}
+
+class _FormShareSelectTile extends StatefulWidget {
+  const _FormShareSelectTile({
+    required this.formItem,
+    required this.highlighted,
+    required this.focusNode,
+    required this.enabled,
+  });
+
+  final FormShareSelect formItem;
+  final bool highlighted;
+  final FocusNode? focusNode;
+  final bool enabled;
+
+  @override
+  State<_FormShareSelectTile> createState() => _FormShareSelectTileState();
+}
+
+class _FormShareSelectTileState extends State<_FormShareSelectTile> {
+  bool _namesLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.formItem.addChangeListener(_onChanged);
+    _loadNames();
+  }
+
+  @override
+  void dispose() {
+    widget.formItem.removeChangeListener(_onChanged);
+    super.dispose();
+  }
+
+  Future<void> _loadNames() async {
+    await widget.formItem._ensureNamesLoaded();
+    if (!mounted) return;
+    setState(() => _namesLoaded = true);
+  }
+
+  void _onChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = _namesLoaded ? widget.formItem._summary : '';
+    return SelectTile(
+      label: widget.formItem.label ?? widget.formItem.key,
+      value: summary.isEmpty ? null : summary,
+      placeholder: widget.formItem.placeholder ?? 'No one',
+      highlighted: widget.highlighted,
+      enabled: widget.enabled,
+      onSelect: () => widget.formItem.activate(context),
+      focusNode: widget.focusNode,
+    );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:convert' show jsonEncode;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -258,12 +260,20 @@ Future<FormData> _buildNewPriorityForm(
             leadingBuilder: (c) =>
                 ColorDot(color: c ?? defaultParent.displayColor),
           ),
+          FormShareSelect(
+            key: 'shared',
+            label: 'Share new threads',
+            placeholder: 'No one',
+            priority: defaultParent,
+          ),
           FormButton(
             key: 'create',
             buildCommand: (values) {
               final title = values['title'] as String;
               final selectedParent = values['parent'] as Priority;
               final color = values['color'] as ThemeColor?;
+              final shared =
+                  (values['shared'] as SharedSelection?) ?? const SharedSelection();
               return submitBuilder(
                 Future.value(
                   Priority(
@@ -271,6 +281,9 @@ Future<FormData> _buildNewPriorityForm(
                     parent: selectedParent,
                     color: color,
                     draft: true,
+                    defaultContacts: shared.contacts,
+                    defaultGroups: shared.groups,
+                    defaultInviteEmails: shared.inviteEmails,
                   ),
                 ),
               );
@@ -419,18 +432,39 @@ class EditPriorityCommand extends ShowForm {
                           const ThemeColor.defaultColor(),
                     ),
                   ),
+                  FormShareSelect(
+                    key: 'shared',
+                    label: 'Share new threads',
+                    placeholder: 'No one',
+                    priority: p,
+                    initialValue: SharedSelection(
+                      contacts: List<Uuid>.from(p.defaultSharedContacts),
+                      groups: List<Uuid>.from(p.defaultSharedGroups),
+                      inviteEmails:
+                          List<String>.from(p.defaultSharedInviteEmails),
+                    ),
+                  ),
                   FormButton(
                     key: 'save',
                     buildCommand: (values) {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;
                       final color = values['color'] as ThemeColor?;
+                      final shared = (values['shared'] as SharedSelection?) ??
+                          const SharedSelection();
                       return EditPriority(
                         Future.value(
                           p.copyWith(
                             title: title,
                             parent: newParent,
                             color: Value(color),
+                            defaultContacts: Value(shared.contacts),
+                            defaultGroups: Value(shared.groups),
+                            defaultInviteEmails: Value(
+                              shared.inviteEmails.isEmpty
+                                  ? null
+                                  : jsonEncode(shared.inviteEmails),
+                            ),
                           ),
                         ),
                       );

@@ -75,7 +75,10 @@ SELECT
     COALESCE(direct.see_within_requests_set, FALSE) AS see_within_requests_set,
     COALESCE(direct.see_within_updates_set, FALSE) AS see_within_updates_set,
     p.inherit_members,
-    p.config
+    p.config,
+    p.default_contacts,
+    p.default_groups,
+    p.default_invite_emails
 FROM priority p
     LEFT JOIN user_root ur ON ur.user_id = p.user_id
     LEFT JOIN direct_settings direct ON direct.user_id = p.user_id AND direct.priority_id = p.id
