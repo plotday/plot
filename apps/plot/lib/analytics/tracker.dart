@@ -12,7 +12,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show HttpException, Platform, SocketException;
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
@@ -248,11 +248,13 @@ class Tracker {
   void _setupErrorTracking() {
     // Catch uncaught Flutter errors
     FlutterError.onError = (FlutterErrorDetails details) async {
-      _log.severe('Uncaught Flutter error', details.exception, details.stack);
-      await _backend.captureException(
-        error: details.exception,
-        stackTrace: details.stack,
-      );
+      if (!_shouldIgnore(details.exception, details.stack)) {
+        _log.severe('Uncaught Flutter error', details.exception, details.stack);
+        await _backend.captureException(
+          error: details.exception,
+          stackTrace: details.stack,
+        );
+      }
       FlutterError.presentError(details);
     };
 
@@ -260,39 +262,51 @@ class Tracker {
     PlatformDispatcher
         .instance
         .onError = (Object error, StackTrace stackTrace) {
-      // Ignore harmless forui FTappable error: findRenderObject() called on a
-      // defunct element when a button is removed while the pointer is still
-      // down (e.g. tapping a button that closes a modal).
-      if (error is FlutterError &&
-          error.message.contains('renderObject of inactive element') &&
-          stackTrace.toString().contains('tappable.dart')) {
-        return true;
+      if (!_shouldIgnore(error, stackTrace)) {
+        _log.severe('Uncaught async error', error, stackTrace);
+        _backend.captureException(error: error, stackTrace: stackTrace);
       }
-
-      // Ignore DNS lookup failures when polling for Clerk session tokens.
-      // These occur when the device is offline and are already caught and
-      // handled internally by the clerk_auth library.
-      if (error.toString().contains("Failed host lookup: 'clerk.plot.day'")) {
-        return true;
-      }
-
-      // Ignore network errors (timeouts, connection failures, socket errors).
-      // These are expected during offline periods and are already handled
-      // by the sync orchestrator.
-      if (error is NetworkException) {
-        return true;
-      }
-
-      // Ignore auth failures — the user will be signed out via
-      // _checkAuthError, so these are expected not bugs.
-      if (error is ApiException && error.statusCode == 401) {
-        return true;
-      }
-
-      _log.severe('Uncaught async error', error, stackTrace);
-      _backend.captureException(error: error, stackTrace: stackTrace);
       return true; // Marks the error as handled
     };
+  }
+
+  /// Filter out expected/handled errors that shouldn't be reported to PostHog.
+  bool _shouldIgnore(Object error, StackTrace? stackTrace) {
+    // Ignore harmless forui FTappable error: findRenderObject() called on a
+    // defunct element when a button is removed while the pointer is still
+    // down (e.g. tapping a button that closes a modal).
+    if (error is FlutterError &&
+        error.message.contains('renderObject of inactive element') &&
+        stackTrace != null &&
+        stackTrace.toString().contains('tappable.dart')) {
+      return true;
+    }
+
+    // Ignore DNS lookup failures when polling for Clerk session tokens.
+    // These occur when the device is offline and are already caught and
+    // handled internally by the clerk_auth library.
+    if (error.toString().contains("Failed host lookup: 'clerk.plot.day'")) {
+      return true;
+    }
+
+    // Ignore network errors (timeouts, connection failures, socket errors).
+    // These are expected during offline periods and are already handled
+    // by the sync orchestrator. HttpException and SocketException also
+    // surface from NetworkImage loads when a remote host drops the
+    // connection mid-request — not a bug.
+    if (error is NetworkException ||
+        error is HttpException ||
+        error is SocketException) {
+      return true;
+    }
+
+    // Ignore auth failures — the user will be signed out via
+    // _checkAuthError, so these are expected not bugs.
+    if (error is ApiException && error.statusCode == 401) {
+      return true;
+    }
+
+    return false;
   }
 
   /// Track an event with PostHog
