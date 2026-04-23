@@ -62,6 +62,14 @@ export async function bundleTwist(
     minify,
     logLevel: "silent",
     conditions: ["@plotday/connector"],
+    // Provide a working `require` for CJS deps that call `require("<node-builtin>")`
+    // (e.g. asana SDK does `require("querystring")`). Cloudflare Workers with
+    // nodejs_compat supports `createRequire` from `node:module`. Without this,
+    // esbuild's `__require` helper throws 'Dynamic require of "x" is not supported'
+    // at runtime even though the built-in is marked external.
+    banner: {
+      js: `import { createRequire as __plotCreateRequire } from "node:module"; var require = __plotCreateRequire(import.meta.url);`,
+    },
     // Mark Node.js built-ins as external - they'll be provided by Cloudflare Workers' nodejs_compat
     external: [
       "node:*",
