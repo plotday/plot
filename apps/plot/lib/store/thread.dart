@@ -2116,15 +2116,15 @@ class Thread extends Equatable implements Comparable<Thread> {
          // sub-priority share a topic filter for classify_thread_for_user.
          topic: priority.priorityConfig.topic ??
              (priority.path.isRoot ? null : priority.id.toString()),
-         contacts: priority.defaultSharedContacts.isEmpty
+         contacts: priority.inheritedDefaultSharedContacts.isEmpty
              ? null
-             : List<Uuid>.from(priority.defaultSharedContacts),
-         groups: priority.defaultSharedGroups.isEmpty
+             : List<Uuid>.from(priority.inheritedDefaultSharedContacts),
+         groups: priority.inheritedDefaultSharedGroups.isEmpty
              ? null
-             : List<Uuid>.from(priority.defaultSharedGroups),
-         inviteEmails: priority.defaultSharedInviteEmails.isEmpty
+             : List<Uuid>.from(priority.inheritedDefaultSharedGroups),
+         inviteEmails: priority.inheritedDefaultSharedInviteEmails.isEmpty
              ? null
-             : jsonEncode(priority.defaultSharedInviteEmails),
+             : jsonEncode(priority.inheritedDefaultSharedInviteEmails),
        ),
        _schedule = null,
        _userSchedule = null,

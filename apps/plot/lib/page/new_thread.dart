@@ -597,9 +597,13 @@ class NewThreadPageState extends State<NewThreadPage> {
     final root = await Priority.getDefault();
     if (!mounted) return;
     if (draft.priority.id != root.id) {
-      await bloc.updateDraft(bloc.state.draft.copyWith(priority: root));
+      final updated = _applyChainDefaults(draft, root);
+      await bloc.updateDraft(updated);
     }
-    if (mounted) _loadRecentContacts();
+    if (mounted) {
+      _loadRecentContacts();
+      _refreshPinnedChips();
+    }
   }
 
   Future<void> _switchToPriority(Priority priority) async {
@@ -609,11 +613,61 @@ class NewThreadPageState extends State<NewThreadPage> {
       ThreadsBase.autoFileIds.remove(draft.id.toString());
     });
     if (priority.id != draft.priority.id) {
-      await bloc.updateDraft(draft.copyWith(priority: priority));
+      final updated = _applyChainDefaults(draft, priority);
+      await bloc.updateDraft(updated);
     }
     bloc.setNewThreadDefaultPriority(priority);
     await _loadTwistsForPriority(priority);
-    if (mounted) _loadRecentContacts();
+    if (mounted) {
+      _loadRecentContacts();
+      _refreshPinnedChips();
+    }
+  }
+
+  /// Swap the draft's priority and merge in the new chain's default
+  /// contacts/groups/invite-emails. Treats members of the OLD priority
+  /// chain's defaults that are still on the draft as seeded (drops them),
+  /// keeps everything else as user-added, then unions in the NEW chain's
+  /// defaults. See C2 merge semantics in the design.
+  Thread _applyChainDefaults(Thread draft, Priority newPriority) {
+    final oldPriority = draft.priority;
+    final oldContactDefaults = oldPriority.inheritedDefaultSharedContacts.toSet();
+    final oldGroupDefaults = oldPriority.inheritedDefaultSharedGroups.toSet();
+    final oldEmailDefaults =
+        oldPriority.inheritedDefaultSharedInviteEmails.toSet();
+
+    final newContactDefaults = newPriority.inheritedDefaultSharedContacts;
+    final newGroupDefaults = newPriority.inheritedDefaultSharedGroups;
+    final newEmailDefaults = newPriority.inheritedDefaultSharedInviteEmails;
+
+    List<T> merge<T>(
+      List<T> current,
+      Set<T> oldDefaults,
+      List<T> newDefaults,
+    ) {
+      final userAdded =
+          current.where((e) => !oldDefaults.contains(e)).toList();
+      final seen = <T>{...userAdded};
+      final result = [...userAdded];
+      for (final e in newDefaults) {
+        if (seen.add(e)) result.add(e);
+      }
+      return result;
+    }
+
+    final mergedContacts =
+        merge(draft.contacts, oldContactDefaults, newContactDefaults);
+    final mergedGroups =
+        merge(draft.groups, oldGroupDefaults, newGroupDefaults);
+    final mergedEmails =
+        merge(draft.inviteEmails, oldEmailDefaults, newEmailDefaults);
+
+    return draft.copyWith(
+      priority: newPriority,
+      contacts: Value(mergedContacts.isEmpty ? null : mergedContacts),
+      groups: Value(mergedGroups.isEmpty ? null : mergedGroups),
+      inviteEmails: Value(mergedEmails.isEmpty ? null : mergedEmails),
+    );
   }
 
   /// Row showing the draft's thread type (with a chevron to change it) and

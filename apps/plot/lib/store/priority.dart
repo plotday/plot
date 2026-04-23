@@ -1166,6 +1166,44 @@ class Priority extends PriorityRow implements Comparable<Priority> {
     }
   }
 
+  /// Union of `defaultSharedContacts` from this priority and every ancestor
+  /// reachable via the `.parent` chain. Preserves insertion order starting
+  /// from the current priority, then walking up toward the root.
+  List<Uuid> get inheritedDefaultSharedContacts {
+    final seen = <Uuid>{};
+    final ordered = <Uuid>[];
+    for (Priority? p = this; p != null; p = p.parent) {
+      for (final id in p.defaultSharedContacts) {
+        if (seen.add(id)) ordered.add(id);
+      }
+    }
+    return ordered;
+  }
+
+  /// Union of `defaultSharedGroups` from this priority and every ancestor.
+  List<Uuid> get inheritedDefaultSharedGroups {
+    final seen = <Uuid>{};
+    final ordered = <Uuid>[];
+    for (Priority? p = this; p != null; p = p.parent) {
+      for (final id in p.defaultSharedGroups) {
+        if (seen.add(id)) ordered.add(id);
+      }
+    }
+    return ordered;
+  }
+
+  /// Union of `defaultSharedInviteEmails` from this priority and every ancestor.
+  List<String> get inheritedDefaultSharedInviteEmails {
+    final seen = <String>{};
+    final ordered = <String>[];
+    for (Priority? p = this; p != null; p = p.parent) {
+      for (final email in p.defaultSharedInviteEmails) {
+        if (seen.add(email)) ordered.add(email);
+      }
+    }
+    return ordered;
+  }
+
   /// Returns true if this priority has active threads.
   bool get active => _activeComputed ?? false;
 
