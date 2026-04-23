@@ -6,7 +6,7 @@ export default function Terms() {
       <Title order={1} mb="lg">
         Privacy Policy
       </Title>
-      <p><em>Last updated: March 8, 2026</em></p>
+      <p><em>Last updated: April 23, 2026</em></p>
       <TypographyStylesProvider p={0}>
         <p>
           Our mission is to serve people and teams doing great things.
@@ -236,8 +236,8 @@ export default function Terms() {
           advertisements. We will not sell your information to a third party.
         </p>
         <p>
-          Use and transfer to any other app of information received from Google
-          APIs adheres to the{" "}
+          Plot's use and transfer to any other app of information received
+          from Google APIs adheres to the{" "}
           <a href="https://developers.google.com/terms/api-services-user-data-policy#additional_requirements_for_specific_api_scopes">
             Google API Services User Data Policy
           </a>
@@ -245,24 +245,41 @@ export default function Terms() {
         </p>
         <ul>
           <li>
-            Plot's use of Google data is limited to providing and improving
-            the Service's functionality for you.
+            Plot's use of information received from Google APIs is limited to
+            providing or improving user-facing features of the Service that
+            are prominent in the Service's user interface.
           </li>
           <li>
-            Plot does not use Google data for serving advertisements or for
-            any advertising-related purpose.
+            Plot does not transfer information received from Google APIs to
+            others except as necessary to provide or improve those user-facing
+            features, to comply with applicable law, or as part of a merger,
+            acquisition, or sale of assets with notice to users.
           </li>
           <li>
-            Plot does not allow humans to read your Google data except (a)
-            with your explicit consent, (b) as necessary for security
-            purposes (e.g., investigating abuse), or (c) to comply with
-            applicable law.
+            Plot does not use information received from Google APIs for
+            serving advertisements, including retargeted, personalized, or
+            interest-based advertising.
           </li>
           <li>
-            Plot does not transfer Google data to third parties except as
-            necessary to provide or improve the Service, to comply with
-            applicable law, or as part of a merger, acquisition, or asset
-            sale with appropriate data protection obligations.
+            <strong>
+              Plot does not use information received from Google APIs, or data
+              derived from it, to develop, improve, or train generalized or
+              non-personalized artificial intelligence or machine learning
+              models.
+            </strong>{" "}
+            Where Plot uses AI to provide user-facing features on your Google
+            data (such as summarizing a message or extracting tasks from an
+            email), that processing is performed on your behalf by third-party
+            AI providers who are contractually prohibited from retaining your
+            data beyond what is necessary to return a response, and from using
+            it to train their models.
+          </li>
+          <li>
+            Plot does not allow humans to read your Google user data except
+            (a) with your explicit consent for specific data, (b) as necessary
+            for security purposes (such as investigating abuse), (c) to
+            comply with applicable law, or (d) for internal operations where
+            the data has been aggregated and anonymized.
           </li>
         </ul>
         <h2 id="3-protecting-your-information">
@@ -446,7 +463,7 @@ export default function Terms() {
           <br />
           privacy@plot.day
         </p>
-        <p>This policy is effective as of March 8, 2026.</p>
+        <p>This policy is effective as of April 23, 2026.</p>
       </TypographyStylesProvider>
     </Container>
   );
