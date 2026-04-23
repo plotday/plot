@@ -10,6 +10,7 @@ import twists from "./app/twists";
 import twistIntegrations from "./app/twist-integrations";
 // Import app routes and middleware
 import { authMiddleware as appAuthMiddleware } from "./app/auth";
+import authBridgeRoutes from "./app/authBridge";
 import authRoutes from "./app/authRoutes";
 import callbacks from "./app/callbacks";
 import connections from "./app/connections";
@@ -233,6 +234,10 @@ app.route("/", unsubscribe);
 
 // Mount webhook route at top level
 app.route("/", webhook);
+
+// OAuth bridge — public endpoint hit by the provider's browser redirect
+// (no user-auth context), so it must live outside the /app section.
+app.route("/", authBridgeRoutes);
 
 // Scheduled handler for cron triggers
 async function scheduled(

@@ -568,8 +568,8 @@ export const CONNECTIONS: Connection[] = [
     name: "Airtable",
     ...si("airtable", "18BFFF", "18BFFF"),
     category: "Productivity",
-    entities: ["Records", "Tables"],
-    available: false,
+    entities: ["Tasks", "Comments"],
+    available: true,
   },
   {
     name: "Google Sheets",

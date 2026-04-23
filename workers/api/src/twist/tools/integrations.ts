@@ -15,15 +15,15 @@ import {
 } from "@plotday/twister/plot";
 import { type Callback } from "@plotday/twister/tools/callbacks";
 import { Tag } from "@plotday/twister/tag";
-import {
-  type ArchiveLinkFilter,
+import type {
+  ArchiveLinkFilter,
   AuthProvider,
-  type AuthToken,
-  type Authorization,
-  type Channel,
-  type LinkTypeConfig,
-  type SyncContext,
-  type Integrations as IAuth,
+  AuthToken,
+  Authorization,
+  Channel,
+  LinkTypeConfig,
+  SyncContext,
+  Integrations as IAuth,
 } from "@plotday/twister/tools/integrations";
 import type { Uuid } from "@plotday/twister/utils/uuid";
 
@@ -34,7 +34,6 @@ import {
   extractUserId,
   PROVIDER_CONFIGS,
   type ProviderData,
-  type SlackProviderData,
   type StoredTokenData,
 } from "../../provider";
 import { CallbacksState } from "../../state/callbacks";
@@ -87,6 +86,14 @@ type AuthState = {
   timestamp?: number; // Optional for Google Sign-In flows
   callback?: Callback;
   enabledScopeGroups?: string[];
+  // Populated when requiresHttpsRedirect substitutes the client's redirect URI:
+  // clientId and redirectUri are the values actually used in the OAuth flow
+  // (needed by the server-rendered GET /auth/bridge handler to finish the
+  // token exchange), and bridgeUri is the original custom-scheme URI the
+  // client expects to resume on.
+  clientId?: string;
+  redirectUri?: string;
+  bridgeUri?: string;
 };
 
 type ChannelConfig = {
@@ -290,33 +297,6 @@ export class Integrations extends Tool implements IAuth {
         return token;
       }
     }
-    return null;
-  }
-
-  /**
-   * Retrieves a provider-specific secondary user token for a channel.
-   * Currently implemented for Slack, where OAuth v2 returns a separate
-   * `authed_user.access_token` alongside the bot token. Returns null for
-   * providers that don't distinguish bot vs. user tokens.
-   */
-  async getUserToken(channelId: string): Promise<string | null> {
-    const provider = this.providerConfigs[0]?.provider;
-    if (!provider) return null;
-
-    const config = await this.getChannelConfig(provider, channelId);
-    const actorId = config?.enabled ? config.enabledBy : null;
-    if (!actorId) return null;
-
-    const tokenKey = `auth_token:${provider}:${actorId}`;
-    const tokenData = await this.store.get<StoredTokenData>(tokenKey);
-    const providerData = tokenData?.providerData;
-    if (!providerData) return null;
-
-    if (provider === AuthProvider.Slack) {
-      const slackData = providerData as SlackProviderData;
-      return slackData.authed_user?.access_token ?? null;
-    }
-
     return null;
   }
 
@@ -1687,18 +1667,30 @@ export class Integrations extends Tool implements IAuth {
     const providerData =
       (await config?.parseTokenResponse?.(tokenInfo)) ?? null;
 
-    // Extract email from providerData and link to contact, building actor
+    // Extract email from providerData and link to contact, building actor.
+    // For providers that don't surface an email (e.g. Slack user-token-only
+    // OAuth), fall back to the provider's user id so buildActor can dedupe
+    // the auth to a single contact linked to the twist_instance owner.
     const email = this.extractEmail(providerData);
+    const providerUserId = extractUserId(tokenInfo.provider, providerData);
     let actor: Actor;
     try {
-      actor = await this.buildActor(email);
+      actor = await this.buildActor(email, tokenInfo.provider, providerUserId);
     } catch (error) {
       throw error;
     }
 
+    // buildActor may return a synthetic UUID when it can't resolve to a real
+    // contact row (no email, missing owner, error path). Look up the contact
+    // once so we only attempt FK-bound writes when actor.id is a real row.
+    const contact = await this.db
+      .selectFrom("contact")
+      .select("user_id")
+      .where("id", "=", actor.id)
+      .executeTakeFirst();
+
     // Store provider ID mapping for source-based contact lookup
-    const providerUserId = extractUserId(tokenInfo.provider, providerData);
-    if (providerUserId && actor.id) {
+    if (providerUserId && contact) {
       try {
         await this.db
           .insertInto("contact_external_account")
@@ -1721,11 +1713,15 @@ export class Integrations extends Tool implements IAuth {
       }
     }
 
-    // Store token keyed by provider + actor ID
+    // Store token keyed by provider + actor ID. Providers like Slack that
+    // return the effective access token under a nested field (e.g.
+    // authed_user.access_token for user-scoped apps) remap it here.
+    const effectiveAccessToken =
+      config?.extractAccessToken?.(tokenInfo) ?? tokenInfo.access_token;
     const tokenKey = `auth_token:${tokenInfo.provider}:${actor.id}`;
     const token: StoredTokenData = {
       client_id: tokenInfo.client_id,
-      access_token: tokenInfo.access_token,
+      access_token: effectiveAccessToken,
       refresh_token: tokenInfo.refresh_token ?? null,
       scopes: tokenInfo.scopes,
       expires_at: tokenInfo.expires_in
@@ -1746,11 +1742,6 @@ export class Integrations extends Tool implements IAuth {
     }
 
     // Record user connection for per-user connection tracking
-    const contact = await this.db
-      .selectFrom("contact")
-      .select("user_id")
-      .where("id", "=", actor.id)
-      .executeTakeFirst();
     if (contact?.user_id) {
       try {
         await this.db
@@ -2243,6 +2234,17 @@ export class Integrations extends Tool implements IAuth {
           contactUserId = contact?.user_id ?? null;
         }
 
+        // Prefer the provider-level account label (Slack workspace, Notion
+        // workspace, Atlassian site, …) over the email — it's the more useful
+        // disambiguator, and for providers like Slack's user-scoped OAuth
+        // there's no email available at all.
+        if (!name && tokenData?.providerData) {
+          name =
+            PROVIDER_CONFIGS[provider]?.extractAccountLabel?.(
+              tokenData.providerData
+            ) ?? null;
+        }
+
         // Look up stored scope group selections
         const enabledScopeGroups = await this.store.get<string[]>(
           `enabled_scope_groups:${provider}:${actorId}`
@@ -2583,10 +2585,78 @@ export class Integrations extends Tool implements IAuth {
   /**
    * Build an Actor for the authorized account. Links the email to a contact
    * and determines whether the actor is the owner (User) or a Contact.
+   *
+   * When `email` is null (e.g. Slack user-token-only OAuth) but a
+   * `providerUserId` is available, dedupe on `contact_external_account`
+   * and fall back to creating a contact linked to the twist_instance
+   * owner. Without this, `getIntegrationData` would produce a synthetic
+   * actor id not linked to any user, causing `currentUserHasAccess` to
+   * be false for every channel in the edit modal.
    */
-  private async buildActor(email: string | null): Promise<Actor> {
+  private async buildActor(
+    email: string | null,
+    provider?: AuthProvider,
+    providerUserId?: string | null
+  ): Promise<Actor> {
     if (!email) {
-      // No email available - create a minimal actor
+      if (provider && providerUserId) {
+        try {
+          const existing = await this.db
+            .selectFrom("contact_external_account")
+            .innerJoin(
+              "contact",
+              "contact.id",
+              "contact_external_account.contact_id"
+            )
+            .select(["contact.id", "contact.name"])
+            .where("contact_external_account.provider", "=", provider)
+            .where("contact_external_account.account_id", "=", providerUserId)
+            .executeTakeFirst();
+          if (existing?.id) {
+            return {
+              id: existing.id as ActorId,
+              type: ActorType.Contact,
+              name: existing.name ?? null,
+            };
+          }
+
+          const twistInstance = await this.db
+            .selectFrom("twist_instance")
+            .select("owner_id")
+            .where("id", "=", this.twistInstanceId)
+            .executeTakeFirst();
+          if (twistInstance?.owner_id) {
+            const newContact = await this.db
+              .insertInto("contact")
+              .values({
+                email: null,
+                user_id: twistInstance.owner_id,
+                name: null,
+                avatar_url: null,
+                inviteable: false,
+              })
+              .returning(["id"])
+              .executeTakeFirst();
+            if (newContact?.id) {
+              return {
+                id: newContact.id as ActorId,
+                type: ActorType.Contact,
+              };
+            }
+          }
+        } catch (error) {
+          const logger = createLogger({
+            twist_instance_id: this.twistInstanceId,
+          });
+          logger.error(
+            "Failed to link no-email OAuth contact to owner",
+            error as Error,
+            { provider }
+          );
+        }
+      }
+
+      // Fallback: synthetic actor (caller will skip FK-bound writes).
       return {
         id: crypto.randomUUID() as ActorId,
         type: ActorType.Contact,
@@ -2898,7 +2968,12 @@ export class Integrations extends Tool implements IAuth {
         );
       }
 
-      const { code, clientId, redirectUri } = params;
+      const { code } = params;
+      // When the client POSTs to /auth they supply clientId + redirectUri; the
+      // browser-rendered bridge flow (/auth/bridge) doesn't have those, so we
+      // fall back to the values captured in authState at GenerateAuthUrl time.
+      const clientId = params.clientId ?? authState.clientId;
+      const redirectUri = params.redirectUri ?? authState.redirectUri;
       if (!code) throw new Error("Missing code parameter");
       if (!clientId) throw new Error("Missing clientId parameter");
       if (!redirectUri) throw new Error("Missing redirectUri parameter");
@@ -3118,20 +3193,8 @@ export class Integrations extends Tool implements IAuth {
     const storageStub = storage.idFromName("auth");
     const storageObj = storage.get(storageStub);
 
-    // Generate unique state and store globally
+    // Generate unique state (stored after we know the effective redirectUri)
     const state = crypto.randomUUID();
-    const authState: AuthState = {
-      provider,
-      scopes: allScopes,
-      codeVerifier,
-      timestamp: Date.now(),
-      callback,
-      enabledScopeGroups,
-    };
-    await storageObj.set(
-      state,
-      superjson.stringify(authState)
-    );
 
     const platformEnvKey = `${Integrations.EnvPrefix(
       provider,
@@ -3157,6 +3220,33 @@ export class Integrations extends Tool implements IAuth {
       return null;
     }
 
+    // For providers that reject custom URI schemes, always route the OAuth
+    // redirect through the server-rendered bridge endpoint regardless of
+    // platform. This means only `${API_ROOT}/auth/bridge` needs to be
+    // registered with the provider; the bridge page then deep-links back to
+    // whatever URI the client originally supplied (plotday://, https://app…,
+    // or http://localhost:<port> loopback).
+    let effectiveRedirectUri = redirectUri;
+    let bridgeUri: string | undefined;
+    const bridgeEndpoint = `${env.API_ROOT}/auth/bridge`;
+    if (config.requiresHttpsRedirect && redirectUri !== bridgeEndpoint) {
+      bridgeUri = redirectUri;
+      effectiveRedirectUri = bridgeEndpoint;
+    }
+
+    const authState: AuthState = {
+      provider,
+      scopes: allScopes,
+      codeVerifier,
+      timestamp: Date.now(),
+      callback,
+      enabledScopeGroups,
+      clientId,
+      redirectUri: effectiveRedirectUri,
+      bridgeUri,
+    };
+    await storageObj.set(state, superjson.stringify(authState));
+
     // For sign-in flows (no callback), use simplified Google OAuth params
     // For authorization flows (has callback), use full params from config
     const isSignInFlow = !callback && provider === "google";
@@ -3164,11 +3254,12 @@ export class Integrations extends Tool implements IAuth {
       ? { prompt: "select_account" }
       : config.additionalParams;
 
+    const scopeParam = config.scopeParam ?? "scope";
     const params = new URLSearchParams({
       response_type: "code",
       client_id: clientId,
-      redirect_uri: redirectUri,
-      scope: allScopes.join(" "),
+      redirect_uri: effectiveRedirectUri,
+      [scopeParam]: allScopes.join(" "),
       state,
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
