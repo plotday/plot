@@ -329,17 +329,21 @@ jobs:
 
       - name: Locate twist directory
         id: locate
+        env:
+          TWIST: ${{ matrix.twist }}
         run: |
-          if [ -d "twists/${{ matrix.twist }}" ]; then
-            echo "dir=twists/${{ matrix.twist }}" >> $GITHUB_OUTPUT
-            echo "Found twist in private repo: twists/${{ matrix.twist }}"
-          elif [ -d "public/twists/${{ matrix.twist }}" ]; then
-            echo "dir=public/twists/${{ matrix.twist }}" >> $GITHUB_OUTPUT
-            echo "Found twist in public repo: public/twists/${{ matrix.twist }}"
+          if [ -d "twists/$TWIST" ]; then
+            DIR="twists/$TWIST"
+          elif [ -d "public/twists/$TWIST" ]; then
+            DIR="public/twists/$TWIST"
           else
-            echo "ERROR: Twist ${{ matrix.twist }} not found in twists/ or public/twists/"
+            echo "ERROR: Twist $TWIST not found in twists/ or public/twists/"
             exit 1
           fi
+          NAME=$(jq -r '.name' "$DIR/package.json")
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Found twist $NAME at $DIR"
 
       # Install from the root workspace so a stale public/pnpm-lock.yaml in
       # any other connector/twist can't block this deploy. Twister must be
@@ -355,9 +359,13 @@ jobs:
       # Use the `...` filter suffix so pnpm also installs deps of workspace
       # packages the twist depends on (e.g. one connector importing another).
       # Name-based filter (not path-based) — pnpm only honors `...` on name
-      # filters.
+      # filters. Use the actual package name from package.json since the
+      # directory name doesn't always match (e.g. twists/twist-creator →
+      # @plotday/twist-creator, not @plotday/twist-twist-creator).
       - name: Install twist dependencies
-        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="@plotday/twist-${{ matrix.twist }}..."
+        env:
+          PKG: ${{ steps.locate.outputs.name }}
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="${PKG}..."
 
       - name: Deploy ${{ matrix.twist }} twist
         run: |
@@ -392,6 +400,14 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
+      - name: Read connector package name
+        id: locate
+        env:
+          CONNECTOR: ${{ matrix.connector }}
+        run: |
+          NAME=$(jq -r '.name' "public/connectors/$CONNECTOR/package.json")
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
       # Install from the root workspace so a stale public/pnpm-lock.yaml in
       # any other connector/twist can't block this deploy. Twister must be
       # installed and built before the connector is installed, so its
@@ -408,7 +424,9 @@ jobs:
       # google-contacts). Name-based filter (not path-based) — pnpm only
       # honors `...` on name filters.
       - name: Install connector dependencies
-        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="@plotday/connector-${{ matrix.connector }}..."
+        env:
+          PKG: ${{ steps.locate.outputs.name }}
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="${PKG}..."
 
       - name: Deploy ${{ matrix.connector }} connector
         run: |
