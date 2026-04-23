@@ -10,6 +10,7 @@ import { notifyUserSyncByEnv } from "../app/sync/notify";
 import { type TwistPermissions, storeTwistModule } from "./index";
 import type { TwistSource } from "./types";
 import { getPersonalPlan } from "../utils/limits";
+import { emitCustomDeploymentEvent } from "../utils/twist-events";
 
 export type DeploymentInput =
   | { module: string; sourcemap?: string; source?: never }
@@ -32,6 +33,10 @@ export interface DeployTwistOptions {
   userEmail?: string;
   dryRun?: boolean;
   onProgress?: (message: string) => void;
+  // How the user authored the twist source. "spec" means it was produced by
+  // `/twist/generate` (AI-driven spec→code); "code" means hand-written or
+  // CLI-bundled. Used only for PostHog analytics.
+  source?: "code" | "spec";
 }
 
 export interface DeployTwistResult {
@@ -66,6 +71,7 @@ export async function deployTwist({
   logoUrlDark,
   dryRun = false,
   onProgress,
+  source: deployedFrom = "code",
 }: DeployTwistOptions): Promise<DeployTwistResult> {
   const logger = createLogger({
     twist_package_id: twistPackageId,
@@ -289,6 +295,27 @@ export async function deployTwist({
       .executeTakeFirstOrThrow();
 
     logger.info("Created new twist", { twist_id: String(twist.id) });
+  }
+
+  // Emit a PostHog event for each successful deploy. Uses a dedicated PostHog
+  // client (see emitCustomDeploymentEvent) so it flushes even from the SSE
+  // path where the request-scoped tracker may have shut down already.
+  try {
+    await emitCustomDeploymentEvent({
+      env,
+      userId,
+      publisherId,
+      twistPackageId,
+      name,
+      version,
+      environment,
+      isFirstDeploy: !existingTwist,
+      isSource: providers.length > 0 || isNoProviderConnector,
+      deploymentType: input.source !== undefined ? "source" : "module",
+      source: deployedFrom,
+    });
+  } catch (eventError) {
+    logger.error("Failed to emit deployment event (continuing)", eventError as Error);
   }
 
   // Call upgrade callback for all active twistInstances (if any exist)

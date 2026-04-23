@@ -28,7 +28,7 @@
     "@ai-sdk/google": "^2.0.23",
     "@ai-sdk/openai": "^2.0.52",
     "@clerk/backend": "^2.31.0",
-    "@cloudflare/containers": "^0.0.28",
+    "@cloudflare/containers": "^0.3.3",
     "@hono-rate-limiter/cloudflare": "^0.2.2",
     "@jridgewell/trace-mapping": "^0.3.31",
     "@plotday/db": "workspace:^",

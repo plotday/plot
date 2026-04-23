@@ -605,8 +605,8 @@ importers:
         specifier: ^2.31.0
         version: 2.31.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@cloudflare/containers':
-        specifier: ^0.0.28
-        version: 0.0.28
+        specifier: ^0.3.3
+        version: 0.3.3
       '@hono-rate-limiter/cloudflare':
         specifier: ^0.2.2
         version: 0.2.2(@cloudflare/workers-types@4.20250415.0)(hono@4.6.15)
@@ -1707,8 +1707,8 @@ packages:
     engines: {node: '>=18.17.0'}
     deprecated: 'This package is no longer supported. Please import types from @clerk/shared/types instead. See the upgrade guide for more info: https://clerk.com/docs/guides/development/upgrading/upgrade-guides/core-3'
 
-  '@cloudflare/containers@0.0.28':
-    resolution: {integrity: sha512-wzR9UWcGvZ9znd4elkXklilPcHX6srncsjSkx696SZRZyTygNbWsLlHegvc1C+e9gn28HRZU3dLiAzXiC9IY1w==}
+  '@cloudflare/containers@0.3.3':
+    resolution: {integrity: sha512-ZSXmArCoo5bVTp8pGAJdl5WKmwtZDcffJqr4JcZEbSmMIFjU+AlBqgysuxXMgu03Rp239cOdqerbjK7H0K2krQ==}
 
   '@cloudflare/kv-asset-handler@0.3.4':
     resolution: {integrity: sha512-YLPHc8yASwjNkmcDMQMY35yiWjoKAKnhUbPRszBRS0YgH+IXtsMp61j+yTcnCE3oO2DgP0U3iejLC8FTtKDC8Q==}
@@ -10013,7 +10013,7 @@ snapshots:
       - react
       - react-dom
 
-  '@cloudflare/containers@0.0.28': {}
+  '@cloudflare/containers@0.3.3': {}
 
   '@cloudflare/kv-asset-handler@0.3.4':
     dependencies:

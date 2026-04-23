@@ -25,17 +25,23 @@ export class Tracker {
     });
   }
 
-  // Update person properties in PostHog. Uses the `$set` pattern attached to
-  // a `$set` event so we can update properties without emitting an
-  // `$identify` (the Flutter app owns identify).
+  // Update person properties in PostHog via a `$set` event. Uses `$set`/
+  // `$set_once` so we can populate person profiles without emitting an
+  // `$identify` — avoids PostHog's anonymous→identified merge semantics,
+  // which don't apply when the server already knows the canonical user_id.
   setPersonProperties(
     distinctId: string,
     properties: Record<string, any>,
+    setOnce?: Record<string, any>,
   ) {
+    const eventProperties: Record<string, any> = { $set: properties };
+    if (setOnce && Object.keys(setOnce).length > 0) {
+      eventProperties.$set_once = setOnce;
+    }
     this._postHog.capture({
       distinctId,
       event: "$set",
-      properties: { $set: properties },
+      properties: eventProperties,
     });
   }
 

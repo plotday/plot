@@ -125,7 +125,11 @@ export class Twists extends Tool implements ITwists {
         throw new Error("Twist builder requires a Pro or Team plan");
       }
     }
-    return await generateTwist({ spec, env: this.env });
+    return await generateTwist({
+      spec,
+      env: this.env,
+      userId: twistInstance.owner_id ?? null,
+    });
   }
 
   async deploy(
@@ -211,7 +215,11 @@ export class Twists extends Tool implements ITwists {
       throw new Error("name is required for first deployment");
     }
 
-    // Use common deployment implementation
+    // Use common deployment implementation. When the Twists tool is dispatching
+    // a deploy, the source came from `this.generate()` (spec→files) whenever
+    // the caller used the `source` path, so attribute it to "spec". A raw
+    // pre-bundled module from a tool is vanishingly rare and attributed to
+    // "code" for lack of better signal.
     const result = await deployTwist({
       env: this.env,
       ctx: this.ctx,
@@ -224,6 +232,7 @@ export class Twists extends Tool implements ITwists {
       name: name || existingTwist?.name || "",
       description,
       dryRun,
+      source: _source !== undefined ? "spec" : "code",
     });
 
     return {

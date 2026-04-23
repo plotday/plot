@@ -1,5 +1,5 @@
-# Use Node.js 20 Alpine as base image
-FROM node:20-alpine
+# Use Node.js 22 Alpine as base image (current LTS)
+FROM node:22-alpine
 
 # Install system dependencies
 RUN apk add --no-cache git

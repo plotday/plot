@@ -9,6 +9,7 @@ import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { buildTwist } from "./builder";
 import type { TwistSource } from "./types";
+import { captureGenerationFailure } from "../utils/twist-events";
 
 /**
  * Zod schema for validating TwistSource structure
@@ -23,6 +24,8 @@ export interface GenerateTwistOptions {
   spec: string;
   env: Bindings;
   onProgress?: (message: string) => void;
+  // Optional user for PostHog attribution of generation failures.
+  userId?: string | null;
 }
 
 /**
@@ -51,7 +54,41 @@ export async function generateTwist({
   spec,
   env,
   onProgress,
+  userId,
 }: GenerateTwistOptions): Promise<TwistSource> {
+  let currentAttempt = 0;
+  try {
+    return await generateTwistInner({
+      spec,
+      env,
+      onProgress,
+      onAttempt: (n) => {
+        currentAttempt = n;
+      },
+    });
+  } catch (error) {
+    await captureGenerationFailure({
+      env,
+      userId,
+      error,
+      specLength: spec.length,
+      attempt: currentAttempt || undefined,
+    });
+    throw error;
+  }
+}
+
+async function generateTwistInner({
+  spec,
+  env,
+  onProgress,
+  onAttempt,
+}: {
+  spec: string;
+  env: Bindings;
+  onProgress?: (message: string) => void;
+  onAttempt: (n: number) => void;
+}): Promise<TwistSource> {
   if (
     !env.AI_GATEWAY_ACCOUNT_ID ||
     !env.AI_GATEWAY_ID ||
@@ -77,6 +114,7 @@ export async function generateTwist({
 
   while (attempt < MAX_ATTEMPTS) {
     attempt++;
+    onAttempt(attempt);
 
     // Report progress
     onProgress?.(
@@ -127,17 +165,34 @@ ${sdkDocs}
 
 ${TWIST_GUIDE}`;
 
-    // Call Claude API via Vercel AI SDK and Cloudflare AI Gateway
-    const model: any = anthropicProvider("claude-sonnet-4-5");
+    // Call Claude API via Vercel AI SDK and Cloudflare AI Gateway.
+    // Output limit: non-streaming generateObject keeps responses under SDK HTTP
+    // timeouts with max ~16K tokens. Sonnet 4.6 supports up to 64K output, but
+    // we don't stream here and a non-trivial twist typically fits well under 16K.
+    //
+    // Prompt caching: the system prompt is large (~tens of thousands of tokens of
+    // SDK docs + TWIST_GUIDE) and identical across retries and across callers.
+    // Marking it with cache_control ephemeral lets the Anthropic provider cache
+    // it for ~5 minutes; retries within a single generation call (and back-to-
+    // back generations) read it at ~10% cost.
+    const model: any = anthropicProvider("claude-sonnet-4-6");
     const result = await generateObject({
       model,
       schema: twistSourceSchema,
       schemaName: "TwistSource",
       schemaDescription:
         "Twist source code structure containing source files and npm dependencies",
-      maxOutputTokens: 4095,
-      system: systemPrompt,
-      prompt: userPrompt,
+      maxOutputTokens: 16_000,
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt,
+          providerOptions: {
+            anthropic: { cacheControl: { type: "ephemeral" } },
+          },
+        },
+        { role: "user", content: userPrompt },
+      ],
     });
 
     // Get the validated object from the result

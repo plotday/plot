@@ -3,20 +3,14 @@
  *
  * Sets the authenticated user's distinctId on the request-scoped tracker
  * so that all PostHog events and exceptions captured during the request
- * are attributed to the correct user.
+ * are attributed to the correct user, and pushes person properties so
+ * users who never open the Flutter app (e.g. web-only signups) still get
+ * a populated profile in PostHog.
  */
 
 import type { MiddlewareHandler } from "hono";
 import type { Bindings } from "../env";
 
-/**
- * Tracker identification middleware.
- *
- * - Sets the authenticated user's ID as the tracker's distinctId
- * - No $identify events are sent — the Flutter app handles person profiles
- *
- * Should be applied after auth middleware in the middleware chain.
- */
 export const trackerIdentifyMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   c,
   next
@@ -25,6 +19,10 @@ export const trackerIdentifyMiddleware: MiddlewareHandler<{ Bindings: Bindings }
 
   if (user) {
     c.var.tracker.setDistinctId(user.id);
+    c.var.tracker.setPersonProperties(user.id, {
+      email: user.email,
+      name: user.name,
+    });
   }
 
   await next();

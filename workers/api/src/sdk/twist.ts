@@ -80,6 +80,10 @@ const TwistDeploymentSchema = z
       .enum(["personal", "private", "review"])
       .optional()
       .default("personal"),
+    // Set by clients (e.g. the Twist Builder UI) when the twist source was
+    // produced by `/twist/generate` rather than hand-written. Used only for
+    // PostHog analytics.
+    generatedFromSpec: z.boolean().optional().default(false),
   })
   .refine(
     (data) => (data.module !== undefined) !== (data.source !== undefined),
@@ -224,6 +228,7 @@ twist.post("/twist/generate", async (c) => {
             spec,
             env: c.env,
             onProgress: (message) => stream.sendProgress(message),
+            userId: c.var.user?.id ?? null,
           });
           stream.sendResult(source);
         } catch (error) {
@@ -240,7 +245,11 @@ twist.post("/twist/generate", async (c) => {
       return stream.toResponse();
     } else {
       // Return JSON response (no progress updates)
-      const source = await generateTwist({ spec, env: c.env });
+      const source = await generateTwist({
+        spec,
+        env: c.env,
+        userId: c.var.user?.id ?? null,
+      });
       return c.json(source);
     }
   } catch (error) {
@@ -338,6 +347,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
     logoUrlDark,
     publisherId,
     environment,
+    generatedFromSpec,
   } = parseResult.data;
 
   const db = c.var.db;
@@ -474,6 +484,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
           userEmail: user?.email,
           dryRun,
           onProgress: (message) => stream.sendProgress(message),
+          source: generatedFromSpec ? "spec" : "code",
         });
 
         // If dryRun, return validation result with permissions
@@ -579,6 +590,7 @@ twist.post("/twist/:id", deploymentRateLimiter, async (c) => {
         userName: user?.name || user?.email?.split("@")[0],
         userEmail: user?.email,
         dryRun,
+        source: generatedFromSpec ? "spec" : "code",
       });
     } catch (error) {
       const translated = translateCheckViolation(error);

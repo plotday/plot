@@ -73,23 +73,10 @@ app.post("/build", async (req, res) => {
     // Create the build directory
     await mkdir(buildDir, { recursive: true });
 
-    // Create twist structure using plot CLI
-    console.log(`[${twistName}] Creating twist structure...`);
-    try {
-      await execAsync(
-        `cd /tmp && plot create --name ${twistName} --display-name "${twistName}"`,
-        { timeout: 30000 }
-      );
-    } catch (error: any) {
-      return res.json({
-        success: false,
-        errors: [
-          `Failed to create twist structure:\n${
-            error.stderr || error.stdout || error.message
-          }`,
-        ],
-      });
-    }
+    // We write the package.json, src/, and tsconfig below — no `plot create`
+    // scaffolding needed. (A previous version shelled out to `plot create` in
+    // /tmp, but with a different directory name than buildDir, so everything it
+    // wrote was abandoned — just ~5s of wasted work per build.)
 
     // Create package.json with dependencies
     const packageJson = {

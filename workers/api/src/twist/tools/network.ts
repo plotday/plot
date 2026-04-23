@@ -242,15 +242,21 @@ export class Network extends Tool implements INetwork {
       throw new Error("Store not initialized for provider-specific webhooks");
     }
 
-    // Retrieve integration data from store
+    // Retrieve integration data from store. `providerData.team.id` is the
+    // shape populated by the Slack entry in PROVIDER_CONFIGS.parseTokenResponse
+    // (see workers/api/src/provider.ts). Slack's OAuth v2 response puts team
+    // info under `team`, and `onAuth` persists the whole parsed response as
+    // `StoredTokenData.providerData` — there is no top-level `team` field.
     const tokenKey = `auth_token:${authorization.provider}:${authorization.actor.id}`;
     const tokenData = await this.store.get<{
       access_token: string;
       refresh_token?: string;
       scopes: string[];
-      team?: {
-        id: string;
-        name: string;
+      providerData?: {
+        team?: {
+          id: string;
+          name: string;
+        };
       };
     }>(tokenKey);
 
@@ -260,11 +266,11 @@ export class Network extends Tool implements INetwork {
       );
     }
 
-    if (!tokenData.team?.id) {
+    const teamId = tokenData.providerData?.team?.id;
+    if (!teamId) {
       throw new Error("Slack integration missing team_id");
     }
 
-    const teamId = tokenData.team.id;
     const scopes = tokenData.scopes || [];
 
     // For Slack webhooks, we use team_id for DO sharding to enable

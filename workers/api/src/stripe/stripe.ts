@@ -148,17 +148,30 @@ stripe.post("/webhook", async (c) => {
 });
 
 /**
- * Look up user ID from Stripe customer ID and set as tracker distinctId.
+ * Look up user ID from Stripe customer ID, set as tracker distinctId, and
+ * push person properties so users who onboarded via Stripe Checkout (without
+ * opening the Flutter app) still get a populated PostHog profile.
  */
 async function identifyStripeUser(c: any, stripeCustomerId: string) {
-  const userSub = await c.var.db
+  const row = await c.var.db
     .selectFrom("user_subscription")
-    .select("user_id")
-    .where("stripe_customer_id", "=", stripeCustomerId)
+    .innerJoin("user", "user.id", "user_subscription.user_id")
+    .select([
+      "user_subscription.user_id",
+      "user.email",
+      "user.name",
+      "user.created_at",
+    ])
+    .where("user_subscription.stripe_customer_id", "=", stripeCustomerId)
     .executeTakeFirst();
 
-  if (userSub) {
-    c.var.tracker.setDistinctId(userSub.user_id);
+  if (row) {
+    c.var.tracker.setDistinctId(row.user_id);
+    c.var.tracker.setPersonProperties(
+      row.user_id,
+      { email: row.email, name: row.name },
+      { signup_date: new Date(row.created_at).toISOString() },
+    );
   }
 }
 
