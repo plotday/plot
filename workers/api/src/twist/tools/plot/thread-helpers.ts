@@ -388,7 +388,8 @@ function shortenUrlLabel(raw: string, url: string): string {
  * - Long autolinked URLs displayed as `host.com/...`
  * - Horizontal-rule lines (10+ underscores/dashes/equals) normalized to `---`,
  *   with consecutive HRs collapsed
- * - Single newlines doubled so line breaks survive Markdown rendering
+ * - Single newlines doubled so line breaks survive Markdown rendering;
+ *   longer runs of newlines are collapsed to a single paragraph break
  */
 export function plainTextToMarkdown(note: string): string {
   let converted = note
@@ -436,8 +437,10 @@ export function plainTextToMarkdown(note: string): string {
     (_, idx: string) => masked[Number(idx)]
   );
 
-  // Preserve line breaks: every single newline becomes a paragraph break
-  converted = converted.replace(/\n/g, "\n\n");
+  // Preserve line breaks: every run of newlines becomes one paragraph break.
+  // Collapsing runs (rather than doubling every `\n`) prevents paragraphs that
+  // already have a blank line between them from ballooning into 3+ blank lines.
+  converted = converted.replace(/\n+/g, "\n\n");
 
   return converted;
 }

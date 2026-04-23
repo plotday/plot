@@ -57,6 +57,11 @@ describe("plainTextToMarkdown", () => {
     expect(plainTextToMarkdown(input)).toBe("line 1\n\nline 2");
   });
 
+  it("collapses runs of blank lines between paragraphs to one paragraph break", () => {
+    const input = "para 1\n\n\n\npara 2\n\npara 3";
+    expect(plainTextToMarkdown(input)).toBe("para 1\n\npara 2\n\npara 3");
+  });
+
   it("decodes common HTML entities", () => {
     expect(plainTextToMarkdown("a &amp; b")).toBe("a & b");
     expect(plainTextToMarkdown("&lt;tag&gt;")).toBe("<tag>");
