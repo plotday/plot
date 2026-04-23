@@ -1,16 +1,42 @@
--- Upsert schedule with access control
--- Validates user has access to the thread's priority
--- Per-user schedules (user_id set) can only be created/modified by the owning user
--- Supports both thread_id and link_id (exactly one must be set per CHECK constraint)
-CREATE OR REPLACE FUNCTION "user".upsert_schedule (
-    user_id uuid,
-    p_schedule jsonb,
-    p_defaults jsonb DEFAULT '{}' ::jsonb
-)
-    RETURNS schedule
-    LANGUAGE plpgsql
-    SET search_path TO 'public', 'user'
-    AS $function$
+-- Modify "upsert_contacts" function
+CREATE OR REPLACE FUNCTION "public"."upsert_contacts" ("contacts" jsonb) RETURNS TABLE ("id" uuid, "email" text, "name" text, "user_id" uuid) LANGUAGE plpgsql AS $$
+BEGIN
+    -- Deduplicate by email and sort so concurrent callers acquire row
+    -- locks in the same order. Without this, two sessions each upserting
+    -- overlapping email sets in different orders can deadlock on the
+    -- ON CONFLICT DO UPDATE row locks.
+    RETURN QUERY INSERT INTO contact (email, name, avatar_url)
+    SELECT DISTINCT ON (email_lower)
+        email_lower,
+        name_val,
+        avatar_val
+    FROM (
+        SELECT
+            lower((c ->> 'email')::text) AS email_lower,
+            (c ->> 'name')::text AS name_val,
+            (c ->> 'avatar_url')::text AS avatar_val
+        FROM
+            jsonb_array_elements(contacts) AS c
+        WHERE
+            -- Minimum valid email shape: non-empty local, one @, non-empty
+            -- domain with at least one dot. This is not full RFC 5322 — just
+            -- enough to filter out obviously broken header fragments.
+            (c ->> 'email') ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+    ) deduped
+    ORDER BY email_lower
+ON CONFLICT ON CONSTRAINT contact_email_unique
+    DO UPDATE SET
+        name = COALESCE(EXCLUDED.name, contact.name),
+        avatar_url = COALESCE(EXCLUDED.avatar_url, contact.avatar_url)
+    RETURNING
+        contact.id,
+        contact.email,
+        contact.name,
+        contact.user_id;
+END;
+$$;
+-- Modify "upsert_schedule" function
+CREATE OR REPLACE FUNCTION "user"."upsert_schedule" ("user_id" uuid, "p_schedule" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."schedule" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
 DECLARE
     v_id uuid;
     v_thread_id uuid;
@@ -280,4 +306,4 @@ BEGIN
             * INTO v_result;
     RETURN v_result;
 END;
-$function$;
+$$;
