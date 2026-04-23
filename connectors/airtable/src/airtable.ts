@@ -201,7 +201,7 @@ export class Airtable extends Connector<Airtable> {
     if (webhookId) {
       try {
         const api = await this.getAPI(baseId);
-        await api.deleteWebhook(baseId, webhookId);
+        if (api) await api.deleteWebhook(baseId, webhookId);
       } catch (error) {
         console.warn("Failed to delete Airtable webhook:", error);
       }
@@ -219,7 +219,9 @@ export class Airtable extends Connector<Airtable> {
   // ---- Detection + Backfill ----
 
   async detectAndSync(baseId: string, initialSync: boolean): Promise<void> {
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
     const api = await this.getAPI(baseId);
+    if (!api) return;
     const me = await api.whoami();
     await this.set<ViewerInfo>(`viewer_${baseId}`, {
       id: me.id,
@@ -328,6 +330,8 @@ export class Airtable extends Connector<Airtable> {
   }
 
   async syncBatch(baseId: string): Promise<void> {
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+
     const state = await this.get<SyncState>(`sync_state_${baseId}`);
     if (!state) return;
 
@@ -345,6 +349,7 @@ export class Airtable extends Connector<Airtable> {
 
     const table = detected[state.tableIndex];
     const api = await this.getAPI(baseId);
+    if (!api) return;
     const page = await api.listRecords(baseId, table.tableId, {
       offset: state.offset,
       pageSize: 50,
@@ -567,6 +572,7 @@ export class Airtable extends Connector<Airtable> {
   // ---- Webhooks ----
 
   async setupWebhook(baseId: string): Promise<void> {
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
     try {
       const webhookUrl = await this.tools.network.createWebhook(
         {},
@@ -586,6 +592,7 @@ export class Airtable extends Connector<Airtable> {
       const tableIds = detected.map((d) => d.tableId);
 
       const api = await this.getAPI(baseId);
+      if (!api) return;
       // Airtable allows one notification scope per webhook; register one
       // webhook per base covering all detected tables. The
       // recordChangeScope filter only accepts a single table, so when we
@@ -665,6 +672,7 @@ export class Airtable extends Connector<Airtable> {
     if (!viewer || detected.length === 0) return;
 
     const api = await this.getAPI(baseId);
+    if (!api) return;
     let cursor = (await this.get<number>(`webhook_cursor_${baseId}`)) ?? 1;
     const tableMap = new Map(detected.map((d) => [d.tableId, d] as const));
 
@@ -734,14 +742,16 @@ export class Airtable extends Connector<Airtable> {
   // ---- Reconciliation (catches comment edits/deletes webhooks miss) ----
 
   async reconcileComments(baseId: string): Promise<void> {
-    const enabled = await this.get<boolean>(`sync_enabled_${baseId}`);
-    if (!enabled) return;
+    // Stop the self-scheduling loop once the channel is disabled.
+    // Returning without rescheduling lets the recurring task die out,
+    // rather than spamming retries after teardown.
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
 
-    try {
+    const api = await this.getAPI(baseId);
+    if (api) {
       const tracked = (await this.get<TrackedRecord[]>(`tracked_records_${baseId}`)) ?? [];
       const detected = (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
       const tableMap = new Map(detected.map((d) => [d.tableId, d] as const));
-      const api = await this.getAPI(baseId);
 
       for (const rec of tracked) {
         const table = tableMap.get(rec.tableId);
@@ -755,12 +765,15 @@ export class Airtable extends Connector<Airtable> {
           console.warn("Reconcile failed for record", rec.recordId, error);
         }
       }
-    } finally {
-      const cb = await this.callback(this.reconcileComments, baseId);
-      await this.runTask(cb, {
-        runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
-      });
     }
+
+    // Reschedule only while the channel is still enabled. Re-check after
+    // the reconcile pass in case onChannelDisabled fired during the run.
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+    const cb = await this.callback(this.reconcileComments, baseId);
+    await this.runTask(cb, {
+      runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
+    });
   }
 
   // ---- Write-backs ----
@@ -792,6 +805,7 @@ export class Airtable extends Connector<Airtable> {
     }
 
     const api = await this.getAPI(baseId);
+    if (!api) return;
     try {
       await api.patchRecord(baseId, tableId, recordId, update);
     } catch (error) {
@@ -810,6 +824,7 @@ export class Airtable extends Connector<Airtable> {
     if (text.length === 0) return;
 
     const api = await this.getAPI(baseId);
+    if (!api) return;
     try {
       const comment = await api.createComment(baseId, tableId, recordId, {
         text: this.translateMentionsOutbound(text),
@@ -834,9 +849,15 @@ export class Airtable extends Connector<Airtable> {
 
   // ---- Helpers ----
 
-  private async getAPI(baseId: string): Promise<AirtableAPI> {
+  /**
+   * Returns an authenticated Airtable API client, or null when the channel
+   * has no usable token (disconnected, revoked, or not yet refreshed).
+   * Callers must bail silently on null rather than throwing, so scheduled
+   * tasks don't retry-spam after the user disables the channel.
+   */
+  private async getAPI(baseId: string): Promise<AirtableAPI | null> {
     const token = await this.tools.integrations.get(baseId);
-    if (!token) throw new Error("No Airtable authentication token available");
+    if (!token) return null;
     return new AirtableAPI(token.token);
   }
 }
