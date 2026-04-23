@@ -21,6 +21,7 @@ import 'package:plot/widget/toast.dart';
 import 'package:plot/store/store.dart' show AuthUserAction;
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/twist_api.dart' show TwistApi, TwistAuthUrl;
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/style/layout.dart';
 import 'logging.dart';
@@ -91,7 +92,10 @@ class AuthButton extends StatefulWidget {
   }) : _link = null,
        _onOIDCAuth = onAuth,
        _onLinkAuth = null,
-       _onRedirectAuth = onRedirectAuth;
+       _onRedirectAuth = onRedirectAuth,
+       _twistInstanceId = null,
+       _enabledScopeGroups = null,
+       _onSuccess = null;
 
   // Run an OAuth authorization flow for the given link
   AuthButton.authorize({
@@ -105,7 +109,31 @@ class AuthButton extends StatefulWidget {
        _onOIDCAuth = null,
        _onLinkAuth = onAuth,
        _onRedirectAuth = null,
+       _twistInstanceId = null,
+       _enabledScopeGroups = null,
+       _onSuccess = null,
        scopes = link.scopes;
+
+  // Run an OAuth connect flow for a twist integration. Unlike authorize(),
+  // which consumes a pre-issued AuthUserAction, this path requests the auth
+  // URL from the twist endpoint so it can pass `enabledScopeGroups` and tie
+  // the callback to a specific twist instance.
+  const AuthButton.connect({
+    required this.provider,
+    required this.scopes,
+    required String twistInstanceId,
+    required VoidCallback onSuccess,
+    List<String>? enabledScopeGroups,
+    this.onError,
+    super.key,
+  }) : _link = null,
+       autoSignIn = false,
+       _onOIDCAuth = null,
+       _onLinkAuth = null,
+       _onRedirectAuth = null,
+       _twistInstanceId = twistInstanceId,
+       _enabledScopeGroups = enabledScopeGroups,
+       _onSuccess = onSuccess;
 
   Future<void> onComplete({
     required String clientId,
@@ -147,6 +175,9 @@ class AuthButton extends StatefulWidget {
   final Future<void> Function()? _onRedirectAuth;
   final List<String> scopes;
   final AuthUserAction? _link;
+  final String? _twistInstanceId;
+  final List<String>? _enabledScopeGroups;
+  final VoidCallback? _onSuccess;
   final void Function(String error)? onError;
 
   @override
@@ -626,6 +657,10 @@ class _AuthButtonState extends State<AuthButton>
 
   void _onPress() {
     if (_isLoading) return;
+    if (widget._twistInstanceId != null) {
+      _startTwistAuth();
+      return;
+    }
     if (widget.provider == AuthProvider.google) {
       if (kIsWeb) {
         // On web, Clerk JS handles all Google auth. Use backend OAuth for
@@ -653,6 +688,148 @@ class _AuthButtonState extends State<AuthButton>
       _startAppleAuth();
     } else {
       _startOAuth();
+    }
+  }
+
+  /// Connect a twist integration. Asks the twist endpoint for an auth URL
+  /// (which applies per-integration scope groups), runs the platform-
+  /// appropriate OAuth flow, posts the code back to /auth, and then calls
+  /// [AuthButton._onSuccess].
+  bool get _useNativeGoogleSignInForTwist =>
+      !kIsWeb &&
+      widget.provider == AuthProvider.google &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.android);
+
+  Future<void> _startTwistAuth() async {
+    setState(() => _isLoading = true);
+
+    final redirectUri = kIsWeb
+        ? Env.webAuthCallbackUrl
+        : _appCallbackUrl;
+
+    String? platform;
+    if (!kIsWeb) {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        platform = 'android';
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        platform = 'ios';
+      } else {
+        platform = 'desktop';
+      }
+    }
+
+    try {
+      final authUrl = await TwistApi.getAuthUrl(
+        twistInstanceId: widget._twistInstanceId!,
+        provider: widget.provider.name,
+        redirectUri: redirectUri,
+        platform: platform,
+        enabledScopeGroups: widget._enabledScopeGroups,
+      );
+
+      if (_useNativeGoogleSignInForTwist) {
+        await _startTwistNativeGoogle(authUrl);
+      } else {
+        await _startTwistBrowser(authUrl, redirectUri);
+      }
+
+      widget._onSuccess?.call();
+    } on GoogleSignInException catch (e, t) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        log.info('Google sign-in cancelled');
+        return;
+      }
+      log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
+      Tracker.captureException(e, t);
+      if (mounted) _showTwistAuthError();
+    } catch (e, t) {
+      log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
+      Tracker.captureException(e, t);
+      if (mounted) _showTwistAuthError();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _startTwistNativeGoogle(TwistAuthUrl authUrl) async {
+    // Merge openid and email scopes so the server auth code includes an
+    // id_token with email claim. Android GIS only grants explicitly requested
+    // scopes; without these the token exchange returns no id_token and the
+    // account shows a UUID instead of the user's email.
+    final scopes = {...widget.scopes, 'openid', 'email'}.toList();
+
+    await GoogleSignIn.instance.signOut();
+
+    final GoogleSignInServerAuthorization? serverAuth;
+    if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      // On Apple platforms, authorizeServer on the instance-level client
+      // (null userId) triggers combined sign-in + authorization: one prompt
+      // with account picker + consent + server auth code.
+      serverAuth = await GoogleSignIn.instance.authorizationClient
+          .authorizeServer(scopes);
+    } else {
+      // On Android, GIS separates authentication from authorization.
+      final account = await GoogleSignIn.instance.authenticate(
+        scopeHint: scopes,
+      );
+      serverAuth = await account.authorizationClient.authorizeServer(scopes);
+    }
+    final code = serverAuth?.serverAuthCode;
+    if (code == null) {
+      throw Exception('No server auth code received from Google');
+    }
+
+    final callbackUri = Uri(
+      path: '/auth',
+      queryParameters: {
+        'code': code,
+        'clientId': Env.googleClientId,
+        'redirectUri': Env.authServerCallbackUrl,
+        'provider': 'google',
+        'scopes': scopes.join(','),
+        'callback': authUrl.callback,
+      },
+    );
+    await api.post<Map<String, dynamic>>(callbackUri.toString());
+  }
+
+  Future<void> _startTwistBrowser(
+    TwistAuthUrl authUrl,
+    String redirectUri,
+  ) async {
+    final result = await FlutterWebAuth2.authenticate(
+      url: authUrl.url,
+      callbackUrlScheme: redirectUri.split(':').first,
+    );
+
+    final responseUri = Uri.parse(result);
+    final code = responseUri.queryParameters['code'];
+    if (code == null) return;
+
+    final callbackUri = Uri(
+      path: '/auth',
+      queryParameters: {
+        'code': code,
+        'clientId': authUrl.clientId,
+        'redirectUri': redirectUri,
+        'state': authUrl.state,
+      },
+    );
+    await api.post<Map<String, dynamic>>(callbackUri.toString());
+  }
+
+  void _showTwistAuthError() {
+    final providerName =
+        widget.provider.name[0].toUpperCase() +
+        widget.provider.name.substring(1);
+    final message = 'Unable to connect with $providerName. Please try again.';
+    if (widget.onError != null) {
+      widget.onError!(message);
+    } else {
+      context.showToast(message: message, isError: true);
     }
   }
 
@@ -954,6 +1131,24 @@ AuthProviderConfig getAuthProviderConfig(AuthProvider provider) {
         buttonText: 'Continue with HubSpot',
       );
 
+    case AuthProvider.airtable:
+      return AuthProviderConfig(
+        backgroundColor: Colors.white,
+        textColor: const Color(0xFF1D1F25),
+        borderColor: const Color(0xFFE2E5EA),
+        horizontalPadding: horizontalPadding,
+        hoverColor: const Color(0xFFF5F8FB),
+        focusColor: const Color(0xFF18BFFF),
+        loadingColor: const Color(0xFF18BFFF),
+        disabledTextColor: const Color(0xFF9AA4B2),
+        iconSize: iconSize,
+        spacing: spacing,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        fontFamily: 'system-ui',
+        buttonText: 'Continue with Airtable',
+      );
+
     default:
       return AuthProviderConfig(
         backgroundColor: Colors.white,
@@ -1009,6 +1204,53 @@ class AuthProviderConfig {
   });
 }
 
+String? authProviderIconAsset(AuthProvider provider) {
+  switch (provider) {
+    case AuthProvider.google:
+      return "assets/google.svg";
+    case AuthProvider.microsoft:
+      return "assets/microsoft.svg";
+    case AuthProvider.slack:
+      return "assets/slack.svg";
+    case AuthProvider.apple:
+      return "assets/apple.svg";
+    case AuthProvider.github:
+      return "assets/github_dark.svg";
+    case AuthProvider.discord:
+      return "assets/discord.svg";
+    case AuthProvider.notion:
+      return "assets/notion.svg";
+    case AuthProvider.atlassian:
+      return "assets/atlassian.svg";
+    case AuthProvider.linear:
+      return "assets/linear.svg";
+    case AuthProvider.monday:
+      return "assets/monday.svg";
+    case AuthProvider.asana:
+      return "assets/asana.svg";
+    case AuthProvider.hubspot:
+      return "assets/hubspot.svg";
+    case AuthProvider.airtable:
+      return "assets/airtable.svg";
+    default:
+      return null;
+  }
+}
+
+Widget buildAuthProviderIcon(AuthProvider provider, double size) {
+  final icon = authProviderIconAsset(provider);
+  if (icon == null) {
+    return SizedBox(width: size, height: size);
+  }
+  return SizedBox(
+    width: size,
+    height: size,
+    child: Center(
+      child: SvgPicture.asset(icon, width: size, height: size),
+    ),
+  );
+}
+
 class _ProviderIcon extends StatelessWidget {
   final AuthProvider provider;
   final double size;
@@ -1017,50 +1259,9 @@ class _ProviderIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = _getIcon();
-
-    // Return empty widget if no icon is available
-    if (icon == null) {
+    if (authProviderIconAsset(provider) == null) {
       return const SizedBox.shrink();
     }
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Center(
-        child: SvgPicture.asset(icon, width: size, height: size),
-      ),
-    );
-  }
-
-  String? _getIcon() {
-    switch (provider) {
-      case AuthProvider.google:
-        return "assets/google.svg";
-      case AuthProvider.microsoft:
-        return "assets/microsoft.svg";
-      case AuthProvider.slack:
-        return "assets/slack.svg";
-      case AuthProvider.apple:
-        return "assets/apple.svg";
-      case AuthProvider.github:
-        return "assets/github_dark.svg";
-      case AuthProvider.discord:
-        return "assets/discord.svg";
-      case AuthProvider.notion:
-        return "assets/notion.svg";
-      case AuthProvider.atlassian:
-        return "assets/atlassian.svg";
-      case AuthProvider.linear:
-        return "assets/linear.svg";
-      case AuthProvider.monday:
-        return "assets/monday.svg";
-      case AuthProvider.asana:
-        return "assets/asana.svg";
-      case AuthProvider.hubspot:
-        return "assets/hubspot.svg";
-      default:
-        return null; // No icon for unknown/other providers
-    }
+    return buildAuthProviderIcon(provider, size);
   }
 }

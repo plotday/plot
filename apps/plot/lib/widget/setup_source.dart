@@ -862,6 +862,8 @@ class ProviderIcon extends StatelessWidget {
         return 'assets/asana.svg';
       case AuthProvider.hubspot:
         return 'assets/hubspot.svg';
+      case AuthProvider.airtable:
+        return 'assets/airtable.svg';
       case AuthProvider.monday:
         return 'assets/monday.svg';
       case AuthProvider.notion:

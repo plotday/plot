@@ -1,11 +1,6 @@
 import 'package:collection/collection.dart';
-import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 
@@ -14,10 +9,8 @@ import 'command.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
-import 'package:plot/widget/auth_button.dart'
-    show getAuthProviderConfig, buildAuthButtonStyle;
+import 'package:plot/widget/auth_button.dart' show AuthButton;
 import 'package:plot/store/store.dart';
-import 'package:plot/api/api.dart' as api;
 import 'package:plot/api/api_exception.dart';
 import 'package:plot/api/network_exception.dart';
 import 'package:plot/api/upgrade_api.dart';
@@ -2668,11 +2661,9 @@ class ConnectConnectorAccount extends ShowForm {
                   divider: false,
                   builder: (formContext) => Padding(
                     padding: formContext.theme.spacing.padding.copyWith(top: 0),
-                    child: _IntegrationAuthButton(
-                      provider: provider,
-                      hasExistingAccount: integrations.accounts.any(
-                        (a) => a.provider == provider.provider,
-                      ),
+                    child: AuthButton.connect(
+                      provider: provider.provider,
+                      scopes: provider.scopes,
                       twistInstanceId: twist.id.toString(),
                       onSuccess: () {
                         TwistInstance.pullUpdates();
@@ -2910,11 +2901,9 @@ class ShowAddIntegrationAccount extends ShowForm {
                   divider: false,
                   builder: (formContext) => Padding(
                     padding: formContext.theme.spacing.padding.copyWith(top: 0),
-                    child: _IntegrationAuthButton(
-                      provider: provider,
-                      hasExistingAccount: integrations.accounts.any(
-                        (a) => a.provider == provider.provider,
-                      ),
+                    child: AuthButton.connect(
+                      provider: provider.provider,
+                      scopes: provider.scopes,
                       twistInstanceId: twistInstanceId,
                       onSuccess: () {
                         onAccountAdded();
@@ -3016,9 +3005,9 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
         ],
         Padding(
           padding: EdgeInsets.only(top: context.theme.spacing.md),
-          child: _IntegrationAuthButton(
-            provider: widget.provider,
-            hasExistingAccount: false,
+          child: AuthButton.connect(
+            provider: widget.provider.provider,
+            scopes: widget.provider.scopes,
             twistInstanceId: widget.twistInstanceId,
             enabledScopeGroups: _enabledGroups.isNotEmpty
                 ? _enabledGroups.toList()
@@ -3027,221 +3016,6 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _IntegrationAuthButton extends StatefulWidget {
-  const _IntegrationAuthButton({
-    required this.provider,
-    required this.hasExistingAccount,
-    required this.twistInstanceId,
-    required this.onSuccess,
-    this.enabledScopeGroups,
-  });
-
-  final TwistProvider provider;
-  final bool hasExistingAccount;
-  final String twistInstanceId;
-  final VoidCallback onSuccess;
-  final List<String>? enabledScopeGroups;
-
-  @override
-  State<_IntegrationAuthButton> createState() => _IntegrationAuthButtonState();
-}
-
-class _IntegrationAuthButtonState extends State<_IntegrationAuthButton> {
-  bool _isLoading = false;
-
-  /// Whether native Google Sign-In is supported on this platform.
-  bool get _useNativeGoogleSignIn =>
-      !kIsWeb &&
-      widget.provider.provider == AuthProvider.google &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS ||
-          defaultTargetPlatform == TargetPlatform.android);
-
-  Future<void> _startAuth() async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-
-    final redirectUri = kIsWeb
-        ? Env.webAuthCallbackUrl
-        : 'plotday://auth/callback';
-
-    String? platform;
-    if (!kIsWeb) {
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        platform = 'android';
-      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-        platform = 'ios';
-      } else {
-        platform = 'desktop';
-      }
-    }
-
-    try {
-      // Create the server-side callback for this auth flow
-      final authUrl = await TwistApi.getAuthUrl(
-        twistInstanceId: widget.twistInstanceId,
-        provider: widget.provider.provider.name,
-        redirectUri: redirectUri,
-        platform: platform,
-        enabledScopeGroups: widget.enabledScopeGroups,
-      );
-
-      if (_useNativeGoogleSignIn) {
-        await _startNativeGoogleAuth(authUrl);
-      } else {
-        await _startBrowserAuth(authUrl, redirectUri);
-      }
-
-      widget.onSuccess();
-    } on GoogleSignInException catch (e) {
-      if (e.code == GoogleSignInExceptionCode.canceled) {
-        log.info('Google sign-in cancelled');
-        return;
-      }
-      log.warning('OAuth flow failed', e);
-      if (mounted) _showAuthError();
-    } catch (e, t) {
-      log.warning('OAuth flow failed', e, t);
-      if (mounted) _showAuthError();
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  /// Use native Google Sign-In SDK on macOS/iOS/Android.
-  Future<void> _startNativeGoogleAuth(TwistAuthUrl authUrl) async {
-    final providerScopes = widget.provider.scopes;
-    // Merge openid and email scopes so the server auth code includes an
-    // id_token with email claim. Android GIS only grants explicitly requested
-    // scopes; without these the token exchange returns no id_token and the
-    // account shows a UUID instead of the user's email.
-    final scopes = {...providerScopes, 'openid', 'email'}.toList();
-
-    // Clear any cached sign-in so the account picker is always shown.
-    await GoogleSignIn.instance.signOut();
-
-    final GoogleSignInServerAuthorization? serverAuth;
-    if (defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS) {
-      // On Apple platforms, calling authorizeServer on the instance-level
-      // client (null userId) triggers the combined sign-in + authorization
-      // flow: one prompt with account picker + consent + server auth code.
-      serverAuth = await GoogleSignIn.instance.authorizationClient
-          .authorizeServer(scopes);
-    } else {
-      // On Android, GIS separates authentication from authorization.
-      // authenticate() shows the Credential Manager account picker,
-      // then authorizeServer() shows consent for the selected account.
-      final account = await GoogleSignIn.instance.authenticate(
-        scopeHint: scopes,
-      );
-      serverAuth = await account.authorizationClient.authorizeServer(scopes);
-    }
-    final code = serverAuth?.serverAuthCode;
-    if (code == null) {
-      throw Exception('No server auth code received from Google');
-    }
-
-    final callbackUri = Uri(
-      path: '/auth',
-      queryParameters: {
-        'code': code,
-        'clientId': Env.googleClientId,
-        'redirectUri': Env.authServerCallbackUrl,
-        'provider': 'google',
-        'scopes': scopes.join(','),
-        'callback': authUrl.callback,
-      },
-    );
-    await api.post<Map<String, dynamic>>(callbackUri.toString());
-  }
-
-  /// Use FlutterWebAuth2 browser-based OAuth flow.
-  Future<void> _startBrowserAuth(
-    TwistAuthUrl authUrl,
-    String redirectUri,
-  ) async {
-    final result = await FlutterWebAuth2.authenticate(
-      url: authUrl.url,
-      callbackUrlScheme: redirectUri.split(':').first,
-    );
-
-    final responseUri = Uri.parse(result);
-    final params = responseUri.queryParameters;
-    final code = params['code'];
-
-    if (code != null) {
-      final callbackUri = Uri(
-        path: '/auth',
-        queryParameters: {
-          'code': code,
-          'clientId': authUrl.clientId,
-          'redirectUri': redirectUri,
-          'state': authUrl.state,
-        },
-      );
-      await api.post<Map<String, dynamic>>(callbackUri.toString());
-    }
-  }
-
-  void _showAuthError() {
-    final providerName =
-        widget.provider.provider.name[0].toUpperCase() +
-        widget.provider.provider.name.substring(1);
-    context.showToast(
-      message: 'Unable to connect with $providerName. Please try again.',
-      isError: true,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final config = getAuthProviderConfig(widget.provider.provider);
-    final label = config.buttonText;
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 300),
-      child: FButton(
-        mainAxisSize: .max,
-        style: buildAuthButtonStyle(context, config),
-        onPress: _isLoading ? null : _startAuth,
-        prefix: _isLoading
-            ? Spinner(color: config.loadingColor, size: config.iconSize)
-            : _buildProviderIcon(widget.provider.provider, config.iconSize),
-        child: Text(
-          label,
-          style: context.theme.typography.md.copyWith(
-            fontWeight: config.fontWeight,
-            fontFamily: config.fontFamily,
-            color: _isLoading ? config.disabledTextColor : config.textColor,
-            height: 1,
-          ),
-        ),
-      ),
-    );
-  }
-
-  static Widget _buildProviderIcon(AuthProvider provider, double size) {
-    final icon = switch (provider) {
-      AuthProvider.google => 'assets/google.svg',
-      AuthProvider.microsoft => 'assets/microsoft.svg',
-      AuthProvider.slack => 'assets/slack.svg',
-      AuthProvider.atlassian => 'assets/atlassian.svg',
-      AuthProvider.linear => 'assets/linear.svg',
-      AuthProvider.asana => 'assets/asana.svg',
-      _ => null,
-    };
-    if (icon == null) return SizedBox(width: size, height: size);
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Center(
-        child: SvgPicture.asset(icon, width: size, height: size),
-      ),
     );
   }
 }
