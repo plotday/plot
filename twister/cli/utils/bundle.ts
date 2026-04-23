@@ -67,8 +67,14 @@ export async function bundleTwist(
     // nodejs_compat supports `createRequire` from `node:module`. Without this,
     // esbuild's `__require` helper throws 'Dynamic require of "x" is not supported'
     // at runtime even though the built-in is marked external.
+    //
+    // Pass a literal `file:` URL (not `import.meta.url`) because the twist
+    // runtime loads bundled modules via Cloudflare's Worker Loader, which does
+    // not populate `import.meta.url` — `createRequire(undefined)` throws at
+    // module-eval time. We only use `require` for Node built-ins, which
+    // resolve globally regardless of the base path.
     banner: {
-      js: `import { createRequire as __plotCreateRequire } from "node:module"; var require = __plotCreateRequire(import.meta.url);`,
+      js: `import { createRequire as __plotCreateRequire } from "node:module"; var require = __plotCreateRequire("file:///twist.js");`,
     },
     // Mark Node.js built-ins as external - they'll be provided by Cloudflare Workers' nodejs_compat
     external: [
