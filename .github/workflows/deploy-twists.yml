@@ -342,12 +342,18 @@ jobs:
           fi
 
       # Install from the root workspace so a stale public/pnpm-lock.yaml in
-      # any other connector/twist can't block this deploy.
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="./${{ steps.locate.outputs.dir }}"
+      # any other connector/twist can't block this deploy. Twister must be
+      # installed and built before the twist is installed, so its generated
+      # bin/plot.cjs exists when pnpm links `.bin/plot` in the twist's
+      # node_modules.
+      - name: Install Twister dependencies
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister
 
       - name: Build Twister
         run: pnpm --filter=@plotday/twister build
+
+      - name: Install twist dependencies
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="./${{ steps.locate.outputs.dir }}"
 
       - name: Deploy ${{ matrix.twist }} twist
         run: |
@@ -383,12 +389,18 @@ jobs:
           cache: "pnpm"
 
       # Install from the root workspace so a stale public/pnpm-lock.yaml in
-      # any other connector/twist can't block this deploy.
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="./public/connectors/${{ matrix.connector }}"
+      # any other connector/twist can't block this deploy. Twister must be
+      # installed and built before the connector is installed, so its
+      # generated bin/plot.cjs exists when pnpm links `.bin/plot` in the
+      # connector's node_modules.
+      - name: Install Twister dependencies
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister
 
       - name: Build Twister
         run: pnpm --filter=@plotday/twister build
+
+      - name: Install connector dependencies
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="./public/connectors/${{ matrix.connector }}"
 
       - name: Deploy ${{ matrix.connector }} connector
         run: |
