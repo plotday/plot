@@ -332,7 +332,7 @@ class InfiniteList extends StatefulWidget {
     this.scrollController,
     this.scrollStorageKey,
     this.estimatedItemExtent = 75,
-    this.overflow = 2,
+    this.overflow = 3,
     this.reverse = false,
     this.onReorder,
     this.nonReorderablePrefixCount = 0,
