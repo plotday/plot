@@ -354,8 +354,10 @@ jobs:
 
       # Use the `...` filter suffix so pnpm also installs deps of workspace
       # packages the twist depends on (e.g. one connector importing another).
+      # Name-based filter (not path-based) — pnpm only honors `...` on name
+      # filters.
       - name: Install twist dependencies
-        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="./${{ steps.locate.outputs.dir }}..."
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="@plotday/twist-${{ matrix.twist }}..."
 
       - name: Deploy ${{ matrix.twist }} twist
         run: |
@@ -403,9 +405,10 @@ jobs:
 
       # Use the `...` filter suffix so pnpm also installs deps of workspace
       # packages the connector depends on (e.g. google-calendar imports
-      # google-contacts).
+      # google-contacts). Name-based filter (not path-based) — pnpm only
+      # honors `...` on name filters.
       - name: Install connector dependencies
-        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="./public/connectors/${{ matrix.connector }}..."
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="@plotday/connector-${{ matrix.connector }}..."
 
       - name: Deploy ${{ matrix.connector }} connector
         run: |
