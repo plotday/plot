@@ -3,10 +3,33 @@
  *
  * Covers the endpoints the connector needs: whoami, base/table metadata,
  * record list/patch, record comments CRUD, and webhook registration.
- * Handles 429 rate limiting with one retry after the service-specified delay.
+ *
+ * Throttling: Airtable allows 5 req/sec per base. Each AirtableAPI instance
+ * paces its own requests to stay just under that ceiling. 429s still get
+ * retried with exponential backoff as a safety net.
+ *
+ * 401 responses are surfaced as AirtableAuthError so callers can stop
+ * processing instead of spamming every record with the same revoked token.
  */
 
 const API = "https://api.airtable.com";
+const MIN_REQUEST_INTERVAL_MS = 220; // ~4.5 req/sec, under the 5 req/sec cap.
+const MAX_429_RETRIES = 4;
+
+export class AirtableAuthError extends Error {
+  constructor(
+    public readonly method: string,
+    public readonly path: string,
+    public readonly body: string
+  ) {
+    super(`Airtable ${method} ${path} failed: 401 ${body}`);
+    this.name = "AirtableAuthError";
+  }
+}
+
+export function isAirtableAuthError(error: unknown): error is AirtableAuthError {
+  return error instanceof AirtableAuthError;
+}
 
 // ---- Response shapes ----
 
@@ -169,7 +192,18 @@ export type AirtableWebhookPayloadsResponse = {
 // ---- Client ----
 
 export class AirtableAPI {
+  private lastRequestAt = 0;
+
   constructor(private readonly token: string) {}
+
+  private async throttle(): Promise<void> {
+    const now = Date.now();
+    const wait = this.lastRequestAt + MIN_REQUEST_INTERVAL_MS - now;
+    if (wait > 0) {
+      await new Promise((r) => setTimeout(r, wait));
+    }
+    this.lastRequestAt = Date.now();
+  }
 
   async whoami(): Promise<AirtableUserInfo> {
     return this.req<AirtableUserInfo>("GET", "/v0/meta/whoami");
@@ -330,8 +364,9 @@ export class AirtableAPI {
     path: string,
     body?: unknown
   ): Promise<T> {
-    const run = async (): Promise<Response> =>
-      fetch(`${API}${path}`, {
+    const run = async (): Promise<Response> => {
+      await this.throttle();
+      return fetch(`${API}${path}`, {
         method,
         headers: {
           Authorization: `Bearer ${this.token}`,
@@ -339,12 +374,23 @@ export class AirtableAPI {
         },
         body: body ? JSON.stringify(body) : undefined,
       });
+    };
 
     let res = await run();
-    if (res.status === 429) {
-      const retryAfter = Number(res.headers.get("Retry-After") ?? "1");
-      await new Promise((r) => setTimeout(r, Math.max(1, retryAfter) * 1000));
+    for (let attempt = 0; attempt < MAX_429_RETRIES && res.status === 429; attempt++) {
+      // Honor Retry-After when the server gives it; otherwise exponential
+      // backoff starting at 1s and capped at 30s. Airtable sometimes returns
+      // fractional seconds in Retry-After, so parse as float.
+      const retryAfter = Number(res.headers.get("Retry-After"));
+      const base = Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : Math.min(1000 * 2 ** attempt, 30_000);
+      await new Promise((r) => setTimeout(r, base));
       res = await run();
+    }
+    if (res.status === 401) {
+      const text = await res.text().catch(() => "");
+      throw new AirtableAuthError(method, path, text);
     }
     if (!res.ok) {
       const text = await res.text().catch(() => "");

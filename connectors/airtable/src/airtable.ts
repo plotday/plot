@@ -25,6 +25,7 @@ import { Tasks } from "@plotday/twister/tools/tasks";
 
 import {
   AirtableAPI,
+  isAirtableAuthError,
   type AirtableBase,
   type AirtableComment,
   type AirtableRecord,
@@ -402,10 +403,22 @@ export class Airtable extends Connector<Airtable> {
     const api = await this.getAPI(baseId);
     if (!api) return;
 
-    const page = await api.listRecords(baseId, table.tableId, {
-      offset: state.offset,
-      pageSize: 50,
-    });
+    let page;
+    try {
+      page = await api.listRecords(baseId, table.tableId, {
+        offset: state.offset,
+        pageSize: 50,
+      });
+    } catch (error) {
+      if (isAirtableAuthError(error)) {
+        // Token is revoked/expired — stop the batch so we don't keep hammering
+        // the API. The next reconcile will retry once the user reconnects.
+        console.warn("Airtable syncBatch: auth failed, stopping", baseId, error);
+        await this.clear(`sync_state_${baseId}`);
+        return;
+      }
+      throw error;
+    }
 
     // Per-record try/catch so one bad record doesn't abort the whole batch —
     // a malformed field or a transient saveLink failure is recoverable on
@@ -416,6 +429,11 @@ export class Airtable extends Connector<Airtable> {
         const link = this.recordToLink(record, table, baseId, comments, state.initialSync);
         await this.tools.integrations.saveLink(link);
       } catch (error) {
+        if (isAirtableAuthError(error)) {
+          console.warn("Airtable syncBatch: auth failed, stopping", baseId, error);
+          await this.clear(`sync_state_${baseId}`);
+          return;
+        }
         console.warn("Airtable syncBatch: saveLink failed", record.id, error);
       }
     }
@@ -879,12 +897,26 @@ export class Airtable extends Connector<Airtable> {
   async reconcileComments(baseId: string): Promise<void> {
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
 
+    // Don't reconcile while initial sync is still running — the two loops
+    // racing on the same records caused duplicate-key errors in saveLink
+    // (thread_twist_key_unique). Defer; we'll wake up again on schedule.
+    const inProgress = await this.get<SyncState>(`sync_state_${baseId}`);
+    if (inProgress) {
+      const cb = await this.callback(this.reconcileComments, baseId);
+      await this.runTask(cb, {
+        runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
+      });
+      return;
+    }
+
     const api = await this.getAPI(baseId);
+    let authFailed = false;
     if (api) {
       const detected =
         (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
-      for (const table of detected) {
+      outer: for (const table of detected) {
         let offset: string | null = null;
+        let failureStreak = 0;
         do {
           try {
             const page = await api.listRecords(baseId, table.tableId, {
@@ -906,12 +938,43 @@ export class Airtable extends Connector<Airtable> {
                   false
                 );
                 await this.tools.integrations.saveLink(link);
+                failureStreak = 0;
               } catch (error) {
-                console.warn("Reconcile failed for record", record.id, error);
+                if (isAirtableAuthError(error)) {
+                  authFailed = true;
+                  console.warn(
+                    "Reconcile: auth failed, stopping",
+                    baseId,
+                    error
+                  );
+                  break outer;
+                }
+                failureStreak++;
+                // Log only the first couple of failures per table. The
+                // previous version produced dozens of near-identical warnings
+                // per reconcile which drowned out useful signal.
+                if (failureStreak <= 2) {
+                  console.warn(
+                    "Reconcile failed for record",
+                    record.id,
+                    error
+                  );
+                } else if (failureStreak === 3) {
+                  console.warn(
+                    "Reconcile failing repeatedly, suppressing further per-record logs",
+                    baseId,
+                    table.tableId
+                  );
+                }
               }
             }
             offset = page.offset ?? null;
           } catch (error) {
+            if (isAirtableAuthError(error)) {
+              authFailed = true;
+              console.warn("Reconcile listRecords: auth failed, stopping", baseId, error);
+              break outer;
+            }
             console.warn(
               "Reconcile listRecords failed",
               baseId,
@@ -925,6 +988,10 @@ export class Airtable extends Connector<Airtable> {
     }
 
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+    // Back off reconcile when the token is bad so we don't keep whacking the
+    // API. A connected user re-enabling the channel will restart sync via
+    // onChannelEnabled, which also reschedules reconcile.
+    if (authFailed) return;
     const cb = await this.callback(this.reconcileComments, baseId);
     await this.runTask(cb, {
       runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
