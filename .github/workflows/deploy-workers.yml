@@ -6,6 +6,7 @@ on:
     paths:
       - "workers/**"
       - "libs/**"
+      - "public"
       - "public/twister/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/deploy-workers.yml"
@@ -62,14 +63,14 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Build SDK
-        run: |
-          cd public/twister
-          pnpm install --frozen-lockfile
-          pnpm build
+      # Install from the root workspace (not public/) so we don't depend on
+      # public/pnpm-lock.yaml being in sync with every connector's
+      # package.json. A broken public lockfile should not block workers.
+      - name: Install dependencies for Twister + root
+        run: pnpm install --ignore-scripts --frozen-lockfile --filter=@plotday/twister --filter=.
 
-      - name: Install root dependencies only
-        run: pnpm install --ignore-scripts --frozen-lockfile --filter="."
+      - name: Build Twister
+        run: pnpm --filter=@plotday/twister build
 
       - name: Check for changes
         id: filter
@@ -192,14 +193,11 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Build Twister
-        run: |
-          cd public/twister
-          pnpm install --frozen-lockfile
-          pnpm build
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build Twister
+        run: pnpm --filter=@plotday/twister build
 
       - name: Deploy secrets and variables for ${{ matrix.worker }}
         working-directory: workers/${{ matrix.worker }}

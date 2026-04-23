@@ -327,12 +327,6 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Build Twister
-        run: |
-          cd public/twister
-          pnpm install --frozen-lockfile
-          pnpm build
-
       - name: Locate twist directory
         id: locate
         run: |
@@ -347,10 +341,13 @@ jobs:
             exit 1
           fi
 
-      - name: Install dependencies for ${{ matrix.twist }}
-        run: |
-          cd ${{ steps.locate.outputs.dir }}
-          pnpm install --frozen-lockfile --filter="."
+      # Install from the root workspace so a stale public/pnpm-lock.yaml in
+      # any other connector/twist can't block this deploy.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="./${{ steps.locate.outputs.dir }}"
+
+      - name: Build Twister
+        run: pnpm --filter=@plotday/twister build
 
       - name: Deploy ${{ matrix.twist }} twist
         run: |
@@ -385,16 +382,13 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Build Twister
-        run: |
-          cd public/twister
-          pnpm install --frozen-lockfile
-          pnpm build
+      # Install from the root workspace so a stale public/pnpm-lock.yaml in
+      # any other connector/twist can't block this deploy.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter=@plotday/twister --filter="./public/connectors/${{ matrix.connector }}"
 
-      - name: Install dependencies for ${{ matrix.connector }}
-        run: |
-          cd public/connectors/${{ matrix.connector }}
-          pnpm install --frozen-lockfile --filter="."
+      - name: Build Twister
+        run: pnpm --filter=@plotday/twister build
 
       - name: Deploy ${{ matrix.connector }} connector
         run: |
