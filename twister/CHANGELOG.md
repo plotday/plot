@@ -1,5 +1,18 @@
 # @plotday/twister
 
+## 0.48.0
+
+### Added
+
+- `AuthProvider.Airtable` for Airtable OAuth integrations. ([`900b697`](https://github.com/plotday/plot/commit/900b6976fb197f45dd59fa772c6edee813ea4fd6))
+
+### Fixed
+
+- `plot deploy` now bundles CJS dependencies that call `require("<node-builtin>")` (e.g. the asana SDK's `require("querystring")`). Previously the esbuild-generated `__require` stub would throw "Dynamic require of X is not supported" at runtime. The bundler now injects a module-level `require` built from `createRequire(import.meta.url)`, which Cloudflare Workers resolves via nodejs_compat. ([`b7d31d3`](https://github.com/plotday/plot/commit/b7d31d3f6f8b663c6c0e820aac66c65a5e2bd7a4))
+- twist bundle banner now passes a literal `file:` URL to `createRequire` instead of `import.meta.url`. Cloudflare's Worker Loader leaves `import.meta.url` undefined, which caused every bundled twist/connector to throw `TypeError: path must be a file URL object...` at module-eval time and fail to deploy. ([`1a1c5cc`](https://github.com/plotday/plot/commit/1a1c5ccf63dc54978090021bcc27cb929e8db43d))
+- `plot generate` was trying to install `@plotday/twist` (wrong package name) instead of `@plotday/twister`, causing post-generation dependency install to fail. Also updated `docs/CLI_REFERENCE.md` so the documented flags match the actual CLI (`--dir` / `--spec`, not `--input` / `--output`). ([`b57bb31`](https://github.com/plotday/plot/commit/b57bb3192170223eaa8d537b2f9d55532ba5a347))
+- `plot build` (and therefore `plot deploy` / spec-driven twist generation) failed with "Could not resolve @plotday/twister" when run against the published package. The CLI bundler passes `conditions: ["@plotday/connector"]` to esbuild, and the package `exports` field points that condition at `./src/*.ts` — but the published tarball shipped only `dist/`, so every subpath import failed to resolve. Added `src` to the `files` field so the source files that the `@plotday/connector` condition references actually exist in the installed package. ([`b57bb31`](https://github.com/plotday/plot/commit/b57bb3192170223eaa8d537b2f9d55532ba5a347))
+
 ## 0.47.0
 
 ### Added
