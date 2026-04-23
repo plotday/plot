@@ -530,7 +530,7 @@ const UPCOMING_CONNECTIONS: UpcomingConnection[] = [
     ...si("airtable", "18BFFF", "18BFFF"),
     category: "Productivity",
     entities: ["Tasks", "Comments"],
-    description: "Sync your assigned Airtable tasks with two-way comments",
+    description: "Sync your Airtable tasks with two-way comments",
   },
   {
     name: "Google Sheets",
