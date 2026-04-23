@@ -468,6 +468,9 @@ export interface Priority {
   config: Json | null;
   created_at: Generated<Timestamp>;
   created_by: string;
+  default_contacts: Generated<string[]>;
+  default_groups: Generated<string[]>;
+  default_invite_emails: Generated<string[]>;
   default_thread_icon: string | null;
   id: Generated<string>;
   inherit_members: Generated<boolean>;
@@ -1056,6 +1059,7 @@ export interface TwistInstanceThreadRead {
 }
 
 export interface TwistInstanceThreadSchedule {
+  archived_at: Timestamp | null;
   at: string | null;
   on: string | null;
   priority_id: string | null;
@@ -1258,6 +1262,9 @@ export interface UserPriority {
   config: Json | null;
   created_at: Timestamp | null;
   created_by: string | null;
+  default_contacts: string[] | null;
+  default_groups: string[] | null;
+  default_invite_emails: string[] | null;
   global_path: string | null;
   id: string | null;
   inherit_members: boolean | null;

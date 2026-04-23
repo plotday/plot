@@ -3571,6 +3571,7 @@ export type Database = {
       }
       twist_instance_thread_schedule: {
         Row: {
+          archived_at: string | null
           at: unknown
           on: unknown
           priority_id: string | null
@@ -4551,13 +4552,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

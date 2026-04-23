@@ -743,19 +743,26 @@ export class Plot extends Tool implements IPlot {
               linkSource: link?.source ?? null,
             };
 
-            // todo=true if schedule is active (on/at set); false otherwise
-            const todo = item.on != null || item.at != null;
+            // todo=true if schedule is active (on/at set) and not archived.
+            // Archived schedules are emitted by the view so sources learn when
+            // a thread leaves the agenda.
+            const todo =
+              item.archived_at == null &&
+              (item.on != null || item.at != null);
 
-            // Extract date from schedule's on (daterange) or at (tstzrange)
+            // Extract date from schedule's on (daterange) or at (tstzrange).
+            // Only meaningful when todo=true; omit otherwise.
             let date: Date | undefined;
-            if (item.on != null) {
-              // daterange format: [start,end) — extract start date
-              const match = String(item.on).match(/[[(](\d{4}-\d{2}-\d{2})/);
-              if (match) date = new Date(match[1]);
-            } else if (item.at != null) {
-              // tstzrange format: ["start","end") — extract start timestamp
-              const match = String(item.at).match(/[[("]([\d\-T:.+Z]+)/);
-              if (match) date = new Date(match[1]);
+            if (todo) {
+              if (item.on != null) {
+                // daterange format: [start,end) — extract start date
+                const match = String(item.on).match(/[[(](\d{4}-\d{2}-\d{2})/);
+                if (match) date = new Date(match[1]);
+              } else if (item.at != null) {
+                // tstzrange format: ["start","end") — extract start timestamp
+                const match = String(item.at).match(/[[("]([\d\-T:.+Z]+)/);
+                if (match) date = new Date(match[1]);
+              }
             }
 
             callbacks.push({

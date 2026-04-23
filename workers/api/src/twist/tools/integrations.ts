@@ -1367,19 +1367,25 @@ export class Integrations extends Tool implements IAuth {
         }
       }
 
-      // todo=true if schedule is active (on/at set); false if cleared
-      const todo = item.on != null || item.at != null;
+      // todo=true if schedule is active (on/at set) and not archived; false
+      // if cleared. Archived schedules are emitted by the view so connectors
+      // learn when a thread leaves the agenda (e.g. to remove the Slack star).
+      const todo =
+        item.archived_at == null && (item.on != null || item.at != null);
 
-      // Extract date from schedule's on (daterange) or at (tstzrange)
+      // Extract date from schedule's on (daterange) or at (tstzrange).
+      // Only meaningful when todo=true; omit otherwise.
       let date: Date | undefined;
-      if (item.on != null) {
-        // daterange format: [start,end) — extract start date
-        const match = String(item.on).match(/[[(](\d{4}-\d{2}-\d{2})/);
-        if (match) date = new Date(match[1]);
-      } else if (item.at != null) {
-        // tstzrange format: ["start","end") — extract start timestamp
-        const match = String(item.at).match(/[[("]([\d\-T:.+Z]+)/);
-        if (match) date = new Date(match[1]);
+      if (todo) {
+        if (item.on != null) {
+          // daterange format: [start,end) — extract start date
+          const match = String(item.on).match(/[[(](\d{4}-\d{2}-\d{2})/);
+          if (match) date = new Date(match[1]);
+        } else if (item.at != null) {
+          // tstzrange format: ["start","end") — extract start timestamp
+          const match = String(item.at).match(/[[("]([\d\-T:.+Z]+)/);
+          if (match) date = new Date(match[1]);
+        }
       }
 
       const thread: Partial<Thread> = {
@@ -2221,29 +2227,31 @@ export class Integrations extends Tool implements IAuth {
         const tokenData = await this.store.get<StoredTokenData>(tokenKey);
         const email = tokenData ? this.extractEmail(tokenData.providerData) : null;
 
-        // Look up contact name and user_id
-        let name: string | null = null;
+        // Look up contact user_id for self-healing below; contact.name is
+        // intentionally NOT used as the account label — it's the connected
+        // person's display name, not the workspace/account disambiguator the
+        // modal is trying to show.
         let contactUserId: string | null = null;
         if (actorId) {
           const contact = await this.db
             .selectFrom("contact")
-            .select(["name", "user_id"])
+            .select("user_id")
             .where("id", "=", actorId)
             .executeTakeFirst();
-          name = contact?.name ?? null;
           contactUserId = contact?.user_id ?? null;
         }
 
         // Prefer the provider-level account label (Slack workspace, Notion
-        // workspace, Atlassian site, …) over the email — it's the more useful
-        // disambiguator, and for providers like Slack's user-scoped OAuth
-        // there's no email available at all.
-        if (!name && tokenData?.providerData) {
-          name =
-            PROVIDER_CONFIGS[provider]?.extractAccountLabel?.(
+        // workspace, Atlassian site, …) — it's the useful disambiguator for
+        // "which connection is this?". For providers that only expose an
+        // email (Google, Microsoft) the email is surfaced separately below.
+        // For providers whose `extractAccountLabel` returns the email we also
+        // reuse it as the label so the UI shows something.
+        const name: string | null = tokenData?.providerData
+          ? (PROVIDER_CONFIGS[provider]?.extractAccountLabel?.(
               tokenData.providerData
-            ) ?? null;
-        }
+            ) ?? null)
+          : null;
 
         // Look up stored scope group selections
         const enabledScopeGroups = await this.store.get<string[]>(
