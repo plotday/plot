@@ -1,3 +1,5 @@
+- Filter the search bar by thread type — pick any type represented in the current priority, including connector link types like Linear issues or Attio deals, each with its own logo
+- Airtable now syncs every task-like record from your bases, not only records assigned to you — records with an assignee still come in pre-assigned
 - Calendar event notes synced from Outlook and Teams look cleaner — "Manage Booking" and "Join" style links now appear as real clickable links instead of raw URLs, and long meeting URLs are shown as the site name instead of filling the screen
 - Set who to share new threads with by default, per priority — add contacts, teams, and email invites in the priority settings and every new thread filed there is pre-shared with them (still removable before sending)
 - Slack now connects as you — no workspace bot to install or invite into channels. Replies you send from Plot post as you, and Plot only sees channels you're already a member of. You'll need to reconnect Slack once.

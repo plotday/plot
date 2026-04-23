@@ -26,7 +26,7 @@ class PriorityState extends Equatable {
     bool activityFeedLoaded = false,
     List<AgendaItem>? reorderViewItems,
     List<String> iconFilter = const [],
-    List<(ThreadSubType, int)> iconCounts = const [],
+    List<(String, int)> iconCounts = const [],
     List<Thread> remoteSearchExtras = const [],
     bool remoteSearchInProgress = false,
     bool remoteSearchOffline = false,
@@ -127,7 +127,7 @@ class PriorityState extends Equatable {
   final List<AgendaItem>? reorderViewItems;
 
   final List<String> iconFilter;
-  final List<(ThreadSubType, int)> iconCounts;
+  final List<(String, int)> iconCounts;
 
   /// Threads returned by the remote search endpoint that are not already
   /// visible in [activityFeedItems]. Empty when search is empty or offline.
@@ -1099,7 +1099,7 @@ class PriorityState extends Equatable {
     bool? activityFeedLoaded,
     Value<List<AgendaItem>?> reorderViewItems = const Value.absent(),
     List<String>? iconFilter,
-    List<(ThreadSubType, int)>? iconCounts,
+    List<(String, int)>? iconCounts,
     List<Thread>? remoteSearchExtras,
     bool? remoteSearchInProgress,
     bool? remoteSearchOffline,

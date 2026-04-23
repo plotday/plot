@@ -8,9 +8,11 @@ import 'package:plot/analytics/tracker.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/state/priority.dart';
 import 'package:plot/state/thread.dart';
+import 'package:plot/style/colors.dart';
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/logo_image.dart';
 import 'logging.dart';
 
 class SetActivityFilters extends Command {
@@ -192,38 +194,153 @@ class ToggleNoteFilter extends Command {
 }
 
 class ToggleIconFilter extends Command {
-  ToggleIconFilter._({required this.subType, super.on})
-    : super(
-        title: subType.label,
-        eventObject: EventObject.filter,
-        eventAction: EventAction.filtered,
-        icon: subType.icon,
-      );
+  ToggleIconFilter._({
+    required this.iconValue,
+    required super.title,
+    required super.icon,
+    this.logoUrl,
+    this.logoDarkUrl,
+    super.on,
+  }) : super(
+         eventObject: EventObject.filter,
+         eventAction: EventAction.filtered,
+       );
 
-  factory ToggleIconFilter(
-    ThreadSubType subType, {
-    required BuildContext context,
-  }) {
-    final isActive = _isActive(context, subType);
-    return ToggleIconFilter._(subType: subType, on: isActive);
+  factory ToggleIconFilter(String iconValue, {required BuildContext context}) {
+    final info = _describe(iconValue);
+    final isActive = _isActive(context, iconValue);
+    return ToggleIconFilter._(
+      iconValue: iconValue,
+      title: info.title,
+      icon: info.icon,
+      logoUrl: info.logoUrl,
+      logoDarkUrl: info.logoDarkUrl,
+      on: isActive,
+    );
   }
 
-  final ThreadSubType subType;
+  final String iconValue;
+  final String? logoUrl;
+  final String? logoDarkUrl;
 
-  static bool? _isActive(BuildContext context, ThreadSubType subType) {
+  /// True when this filter represents a logo-bearing entry (connector link
+  /// type or twist) rather than a built-in icon. Used by filter wrappers to
+  /// decide whether to render [buildIcon] instead of tinting an [IconData].
+  bool get hasLogo => logoUrl != null;
+
+  static ({
+    String title,
+    IconData? icon,
+    String? logoUrl,
+    String? logoDarkUrl,
+  })
+  _describe(String iconValue) {
+    // Built-in subtype (action, notes, idea, …)
+    final subType = ThreadSubType.fromIcon(iconValue);
+    if (subType != null) {
+      return (
+        title: subType.label,
+        icon: subType.icon,
+        logoUrl: null,
+        logoDarkUrl: null,
+      );
+    }
+
+    // Connector link type: "connector:<twistId>:<type>"
+    if (iconValue.startsWith('connector:')) {
+      final parts = iconValue.substring(10).split(':');
+      final twistId = BigInt.tryParse(parts[0]);
+      final type = parts.length > 1 ? parts[1] : null;
+      final pt = twistId != null
+          ? TwistInstance.findByTwistId(twistId)
+          : null;
+      final resolved = Thread.resolveIcon(iconValue);
+      String title;
+      if (pt != null && type != null) {
+        final config =
+            pt.parsedLinkTypes?.where((c) => c.type == type).firstOrNull ??
+            Channel.findBySource(
+              pt.id,
+            )?.parsedLinkTypes?.where((c) => c.type == type).firstOrNull;
+        final typeLabel = config?.label ?? type;
+        title = '${pt.name} $typeLabel';
+      } else if (pt != null) {
+        title = pt.name;
+      } else {
+        title = 'Link';
+      }
+      return (
+        title: title,
+        icon: resolved.fallbackIcon,
+        logoUrl: resolved.logoUrl,
+        logoDarkUrl: resolved.logoDarkUrl,
+      );
+    }
+
+    // Twist-authored thread: "twist:<id>"
+    if (iconValue.startsWith('twist:')) {
+      final twistId = BigInt.tryParse(iconValue.substring(6));
+      final pt = twistId != null
+          ? TwistInstance.findByTwistId(twistId)
+          : null;
+      final resolved = Thread.resolveIcon(iconValue);
+      return (
+        title: pt?.name ?? 'Twist',
+        icon: resolved.fallbackIcon,
+        logoUrl: resolved.logoUrl,
+        logoDarkUrl: resolved.logoDarkUrl,
+      );
+    }
+
+    // Direct URL logo
+    if (iconValue.startsWith('http')) {
+      return (
+        title: 'Link',
+        icon: PlotIcon.link,
+        logoUrl: iconValue,
+        logoDarkUrl: null,
+      );
+    }
+
+    if (iconValue == 'link') {
+      return (
+        title: 'Link',
+        icon: PlotIcon.link,
+        logoUrl: null,
+        logoDarkUrl: null,
+      );
+    }
+
+    return (
+      title: iconValue,
+      icon: PlotIcon.notes,
+      logoUrl: null,
+      logoDarkUrl: null,
+    );
+  }
+
+  static bool? _isActive(BuildContext context, String iconValue) {
     try {
       final priorityBloc = context.read<PriorityBloc>();
-      return priorityBloc.state.iconFilter.contains(subType.value);
+      return priorityBloc.state.iconFilter.contains(iconValue);
     } on ProviderNotFoundException {
       return null;
     }
   }
 
   @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    if (logoUrl == null) return null;
+    final isDark = context.colour.brightness == Brightness.dark;
+    final url = isDark ? (logoDarkUrl ?? logoUrl!) : logoUrl!;
+    return LogoImage(url: url, size: context.theme.iconSizes.base);
+  }
+
+  @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final priorityBloc = context.read<PriorityBloc>();
-      priorityBloc.updateIconFilter(subType.value);
+      priorityBloc.updateIconFilter(iconValue);
     } on ProviderNotFoundException {
       // PriorityBloc not in scope
     }
@@ -242,6 +359,16 @@ class _AccentWhenOn extends CommandWrapper {
 
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    // Logo-bearing filters (connector link types, twists) render their own
+    // icon via the wrapped command's buildIcon. Tinting isn't possible for
+    // multicolor logos, so convey on/off state via opacity instead.
+    final custom = command.buildIcon(context, hoverIcon: hoverIcon);
+    if (custom != null) {
+      return Opacity(
+        opacity: command.on == true ? 1.0 : 0.55,
+        child: custom,
+      );
+    }
     final iconData = command.icon;
     if (iconData == null) return null;
     return Icon(

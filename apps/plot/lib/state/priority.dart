@@ -1479,13 +1479,8 @@ class PriorityBloc extends Cubit<PriorityState> {
     _iconCountsSubscription?.cancel();
     _iconCountsSubscription =
         Thread.watchIconCountsForPriority(priorityToLoad.path).listen((counts) {
-          final iconCounts = counts
-              .map((c) {
-                final subType = ThreadSubType.fromIcon(c.$1);
-                return subType != null ? (subType, c.$2) : null;
-              })
-              .whereType<(ThreadSubType, int)>()
-              .toList();
+          final iconCounts = [...counts]
+            ..sort((a, b) => b.$2.compareTo(a.$2));
           emit(state.copyWith(iconCounts: iconCounts));
         });
 

@@ -1154,7 +1154,10 @@ class _PriorityPageState extends State<PriorityPage> {
     PriorityState state,
     InfiniteListController activityController,
   ) {
-    final isSearching = state.search.isNotEmpty || state.filter.isNotEmpty;
+    final isSearching =
+        state.search.isNotEmpty ||
+        state.filter.isNotEmpty ||
+        state.iconFilter.isNotEmpty;
 
     // When searching, show only the activity feed at full height
     if (isSearching) {
