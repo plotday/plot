@@ -240,23 +240,6 @@ export abstract class Integrations extends ITool {
     options?: { date?: Date | string }
   ): Promise<void>;
 
-  /**
-   * Retrieves a provider-specific secondary user token for a channel.
-   *
-   * Some providers (notably Slack via OAuth v2) issue both a bot-level
-   * access token and a per-user access token in the same OAuth response.
-   * `get(channelId)` returns the bot token; this method returns the
-   * user token (`authed_user.access_token` for Slack) when one exists.
-   *
-   * Returns null for providers that don't have a separate user token,
-   * or when the channel is not enabled.
-   *
-   * @param channelId - The channel resource ID
-   * @returns Promise resolving to the user access token string or null
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract getUserToken(channelId: string): Promise<string | null>;
-
 }
 
 /**
@@ -303,6 +286,8 @@ export enum AuthProvider {
   HubSpot = "hubspot",
   /** Todoist OAuth provider for Todoist task management */
   Todoist = "todoist",
+  /** Airtable OAuth provider for Airtable bases */
+  Airtable = "airtable",
 }
 
 /**

@@ -109,22 +109,16 @@ export class SlackApi {
   }
 
   public async getChannels(): Promise<SlackChannel[]> {
-    const publicChannels = await this.call("conversations.list", {
-      types: "public_channel",
+    // Single call with both channel types — Slack dedupes across types and
+    // a user token sees both public channels and the private channels the
+    // user is a member of. Two separate calls returned the same public
+    // channels twice for some workspaces.
+    const response = await this.call("conversations.list", {
+      types: "public_channel,private_channel",
       exclude_archived: true,
       limit: 200,
     });
-
-    const privateChannels = await this.call("conversations.list", {
-      types: "private_channel",
-      exclude_archived: true,
-      limit: 200,
-    });
-
-    return [
-      ...(publicChannels.channels || []),
-      ...(privateChannels.channels || []),
-    ];
+    return response.channels || [];
   }
 
   public async getUser(userId: string): Promise<SlackUser | null> {

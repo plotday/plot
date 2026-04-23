@@ -38,29 +38,31 @@ import {
 /**
  * Slack integration source.
  *
- * Provides seamless integration with Slack, supporting message
- * synchronization, real-time updates via webhooks, and thread handling.
- * Designed for multitenant "Add to Slack" installations.
+ * Each Plot user authorizes their own Slack account via OAuth v2 with
+ * **user-token scopes only** — no bot user is installed in the workspace.
+ * Slack delivers events based on what the authorizing user can see, and
+ * all Plot-initiated actions (reading history, posting replies, starring
+ * messages) are attributed to that user.
  *
  * **Features:**
- * - OAuth 2.0 authentication with Slack (bot token)
- * - Workspace-level installations with bot scopes
- * - Real-time message synchronization
- * - Webhook-based change notifications via Slack Events API
- * - Support for threaded messages
- * - User mentions and reactions
+ * - OAuth 2.0 authentication with Slack (user token)
+ * - Per-user authorization; no workspace bot required
+ * - Real-time message synchronization via Slack Events API (user events)
+ * - Support for threaded messages, mentions, and reactions
  * - Batch processing for large channels
+ * - Star-based to-do sync against the user's saved items
  *
- * **Required OAuth Bot Scopes:**
+ * **Required OAuth User Scopes:**
  * - `channels:history` - Read public channel messages
  * - `channels:read` - View basic channel info
  * - `groups:history` - Read private channel messages
  * - `groups:read` - View basic private channel info
  * - `users:read` - View users in workspace
  * - `users:read.email` - View user email addresses
- * - `chat:write` - Send messages as the bot
- * - `im:history` - Read direct messages with the bot
+ * - `chat:write` - Post messages as the user (for Plot → Slack replies)
+ * - `im:history` - Read direct messages
  * - `mpim:history` - Read group direct messages
+ * - `stars:read` / `stars:write` - Read and manage the user's saved items
  */
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
@@ -103,6 +105,7 @@ export class Slack extends Connector<Slack> {
 
   override async activate(context: { auth: Authorization; actor: Actor }): Promise<void> {
     await this.set("auth_actor_id", context.actor.id);
+    await this.set("auth", context.auth);
   }
 
   async getChannels(
@@ -173,16 +176,6 @@ export class Slack extends Connector<Slack> {
     return new SlackApi(token.token);
   }
 
-  private async getUserApi(channelId: string): Promise<SlackApi> {
-    const token = await this.tools.integrations.getUserToken(channelId);
-    if (!token) {
-      throw new Error(
-        "No Slack user token available (missing stars:read/stars:write scopes?)"
-      );
-    }
-    return new SlackApi(token);
-  }
-
   async listWorkspaceChannels(channelId: string): Promise<MessageChannel[]> {
     const api = await this.getApi(channelId);
     const channels = await api.getChannels();
@@ -238,6 +231,14 @@ export class Slack extends Connector<Slack> {
   }
 
   async stopSync(channelId: string): Promise<void> {
+    const webhook = await this.get<{ url: string }>(`channel_webhook_${channelId}`);
+    if (webhook?.url) {
+      try {
+        await this.tools.network.deleteWebhook(webhook.url);
+      } catch (error) {
+        console.warn("Failed to delete Slack webhook:", error);
+      }
+    }
     await this.clear(`channel_webhook_${channelId}`);
     await this.clear(`sync_state_${channelId}`);
 
@@ -250,20 +251,25 @@ export class Slack extends Connector<Slack> {
   }
 
   async setupChannelWebhook(channelId: string): Promise<void> {
+    // Slack events arrive at a single app-wide URL (/hook/slack) and are
+    // routed to a callback by team_id. Passing { provider, authorization }
+    // makes createWebhook register this callback under the team's
+    // CallbacksState DO; with empty options the callback would be keyed by
+    // twist_instance_id and /hook/slack would never find it.
+    const authorization = await this.get<Authorization>("auth");
+    if (!authorization) {
+      console.error(
+        "Slack connector missing stored Authorization; cannot register webhook. Reconnect the account."
+      );
+      return;
+    }
+
     const webhookUrl = await this.tools.network.createWebhook(
-      {},
+      { provider: AuthProvider.Slack, authorization },
       this.onSlackWebhook,
       channelId
     );
 
-    // Check if webhook URL is localhost
-    if (URL.parse(webhookUrl)?.hostname === "localhost") {
-      return;
-    }
-
-    // Store webhook URL for this channel
-    // Note: Slack Events API setup typically requires manual configuration
-    // in the Slack app settings to point to this webhook URL
     await this.set(`channel_webhook_${channelId}`, {
       url: webhookUrl,
       channelId,
@@ -419,9 +425,9 @@ export class Slack extends Connector<Slack> {
 
     let api: SlackApi;
     try {
-      api = await this.getUserApi(channelId);
+      api = await this.getApi(channelId);
     } catch (error) {
-      console.warn("backfillStars: user token unavailable", error);
+      console.warn("backfillStars: Slack token unavailable", error);
       return;
     }
 
@@ -514,7 +520,7 @@ export class Slack extends Connector<Slack> {
     // own write sees isStarred === wasStarred and doesn't re-propagate.
     await this.set(this.starredKey(channelId, threadTs), todo);
 
-    const api = await this.getUserApi(channelId);
+    const api = await this.getApi(channelId);
     if (todo) {
       await api.addStar(channelId, threadTs);
     } else {
@@ -535,7 +541,7 @@ export class Slack extends Connector<Slack> {
     const isLater = link.status === "later";
     await this.set(this.starredKey(channelId, threadTs), isLater);
 
-    const api = await this.getUserApi(channelId);
+    const api = await this.getApi(channelId);
     if (isLater) {
       await api.addStar(channelId, threadTs);
     } else {
