@@ -131,6 +131,13 @@ export type AirtableWebhook = {
   expirationTime?: string;
 };
 
+export type AirtableWebhookListItem = {
+  id: string;
+  notificationUrl?: string;
+  expirationTime?: string;
+  isHookEnabled?: boolean;
+};
+
 export type AirtableWebhookChangedRecord = {
   current?: { cellValuesByFieldId?: Record<string, unknown> };
   previous?: { cellValuesByFieldId?: Record<string, unknown> };
@@ -289,6 +296,14 @@ export class AirtableAPI {
       notificationUrl,
       specification: spec,
     });
+  }
+
+  async listWebhooks(baseId: string): Promise<AirtableWebhookListItem[]> {
+    const res = await this.req<{ webhooks?: AirtableWebhookListItem[] }>(
+      "GET",
+      `/v0/bases/${baseId}/webhooks`
+    );
+    return res.webhooks ?? [];
   }
 
   async deleteWebhook(baseId: string, webhookId: string): Promise<void> {
