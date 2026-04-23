@@ -214,6 +214,26 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
             ),
           ],
         )
+      // 2-panel left+right with activity: the priority page (threads list)
+      // is hidden, so add a back button alongside the cycle button to let
+      // the user return to it.
+      else if (layoutState.isTwoPanel &&
+          layoutState.leftPanelVisible &&
+          !layoutState.middlePanelVisible &&
+          hasActivity &&
+          context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Button.icon(CyclePanelsCommand(layoutState: layoutState)),
+            Button.icon(
+              CommandWrapper(
+                ChangeCurrentThread(null),
+                icon: Value(PlotIcon.back),
+              ),
+            ),
+          ],
+        )
       // 2-panel browsing (960–1309px): cycle
       else if (layoutState.isTwoPanel &&
           context.read<LayoutBloc>().width < LayoutState.threePanelMinWidth)
