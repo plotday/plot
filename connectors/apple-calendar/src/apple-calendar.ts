@@ -45,11 +45,6 @@ type SyncState = {
   pendingHrefs?: string[];
 };
 
-type PendingOccurrence = {
-  occurrence: NewScheduleOccurrence;
-  cancelled: boolean;
-};
-
 /**
  * Apple Calendar connector — syncs events from iCloud via CalDAV.
  *
@@ -689,15 +684,22 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       ...(initialSync ? { archived: false } : {}),
     };
 
-    // Merge buffered occurrences from initial sync
-    const pendingKey = `pending_occ:${source}`;
-    const pendingOccurrences = await this.get<PendingOccurrence[]>(pendingKey);
-    if (pendingOccurrences) {
-      link.scheduleOccurrences = [
+    // Merge buffered occurrences from initial sync. Each pending occurrence
+    // is stored under its own key (pending_occ:<master>:<occurrenceIso>) so
+    // instance buffering is O(1) per instance instead of rewriting a growing
+    // list — see processEventInstance.
+    const pendingPrefix = `pending_occ:${source}:`;
+    const pendingKeys = await this.tools.store.list(pendingPrefix);
+    if (pendingKeys.length > 0) {
+      const merged: NewScheduleOccurrence[] = [
         ...(link.scheduleOccurrences || []),
-        ...pendingOccurrences.map((p) => p.occurrence),
       ];
-      await this.clear(pendingKey);
+      for (const key of pendingKeys) {
+        const pending = await this.get<NewScheduleOccurrence>(key);
+        if (pending) merged.push(pending);
+        await this.clear(key);
+      }
+      link.scheduleOccurrences = merged;
     }
 
     await this.tools.integrations.saveLink(link);
@@ -732,12 +734,18 @@ export class AppleCalendar extends Connector<AppleCalendar> {
         archived: true,
       };
 
+      // During initial sync, buffer the occurrence under a unique key for
+      // later merging with its master. Per-occurrence keys keep each write
+      // O(1); appending to a single shared list was O(N²) across batches
+      // and blew the CF worker CPU limit on calendars with many recurring
+      // exceptions.
       if (initialSync) {
-        const pendingKey = `pending_occ:${masterSource}`;
-        const existing =
-          (await this.get<PendingOccurrence[]>(pendingKey)) || [];
-        existing.push({ occurrence: cancelledOccurrence, cancelled: true });
-        await this.set(pendingKey, existing);
+        const occurrenceTs =
+          originalStart instanceof Date
+            ? originalStart.toISOString()
+            : new Date(originalStart).toISOString();
+        const pendingKey = `pending_occ:${masterSource}:${occurrenceTs}`;
+        await this.set(pendingKey, cancelledOccurrence);
         return;
       }
 
@@ -793,12 +801,16 @@ export class AppleCalendar extends Connector<AppleCalendar> {
       occurrence.end = instanceEnd;
     }
 
-    // During initial sync, buffer for merging with master
+    // During initial sync, buffer under a unique key for merging with
+    // master. See the cancelled branch above for why per-occurrence keys
+    // replaced the single-list-append pattern.
     if (initialSync) {
-      const pendingKey = `pending_occ:${masterSource}`;
-      const existing = (await this.get<PendingOccurrence[]>(pendingKey)) || [];
-      existing.push({ occurrence, cancelled: false });
-      await this.set(pendingKey, existing);
+      const occurrenceTs =
+        originalStart instanceof Date
+          ? originalStart.toISOString()
+          : new Date(originalStart).toISOString();
+      const pendingKey = `pending_occ:${masterSource}:${occurrenceTs}`;
+      await this.set(pendingKey, occurrence);
       return;
     }
 

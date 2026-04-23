@@ -48,11 +48,6 @@ type SyncOptions = {
   timeMax?: Date | null;
 };
 
-type PendingOccurrence = {
-  occurrence: NewScheduleOccurrence;
-  cancelled: boolean;
-};
-
 /**
  * Google Calendar integration tool.
  *
@@ -217,14 +212,17 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     await this.setupCalendarWatch(resolvedCalendarId);
 
     // Default sync range: 2 years back
-    const now = new Date();
-    const min = new Date(now.getFullYear() - 2, 0, 1);
-
+    // Quick pass: sync only upcoming events (timeMin = now). Front-loads
+    // non-recurring upcoming meetings and future exception instances, which
+    // are what users most want to see after connecting. The full pass that
+    // follows picks up long-running recurring masters (whose first instance
+    // is in the past and is therefore excluded by timeMin = now).
     const initialState: SyncState = {
       calendarId: resolvedCalendarId,
-      min,
+      min: new Date(),
       max: null,
       sequence: 1,
+      phase: "quick",
     };
 
     await this.set(`sync_state_${resolvedCalendarId}`, initialState);
@@ -645,8 +643,38 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         await this.runTask(syncCallback);
       } else {
         // Persist sync token for future incremental syncs
-        if (result.state.state && !result.state.more) {
+        if (result.state.state) {
           await this.set(`last_sync_token_${calendarId}`, result.state.state);
+        }
+
+        // Quick pass done: transition to full pass without releasing the
+        // lock. The full pass walks the historical range (timeMin = 2y ago)
+        // and picks up long-running recurring masters that timeMin = now
+        // excluded. Any exception instances the quick pass buffered into
+        // pending_occ: are carried across; they're only cleared when the
+        // full pass completes below.
+        if (state.phase === "quick") {
+          const historyMin = new Date();
+          historyMin.setFullYear(historyMin.getFullYear() - 2);
+          historyMin.setMonth(0, 1);
+          historyMin.setHours(0, 0, 0, 0);
+          const fullState: SyncState = {
+            calendarId,
+            min: historyMin,
+            max: null,
+            sequence: 1,
+            phase: "full",
+          };
+          await this.set(`sync_state_${calendarId}`, fullState);
+          const fullCallback = await this.callback(
+            this.syncBatch,
+            1,
+            mode,
+            calendarId,
+            initialSync
+          );
+          await this.runTask(fullCallback);
+          return;
         }
 
         if (mode === "full") {
@@ -913,19 +941,23 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             syncableId: calendarId,
           };
 
-          // Merge any buffered occurrences that arrived before this master event.
-          // Key matches the form used when instances buffer themselves (see
-          // processEventInstance → `pending_occ:${masterCanonicalUrl}`).
-          const pendingKey = `pending_occ:${canonicalUrl}`;
-          const pendingOccurrences = await this.get<PendingOccurrence[]>(
-            pendingKey
-          );
-          if (pendingOccurrences) {
-            link.scheduleOccurrences = [
+          // Merge any buffered occurrences that arrived before this master
+          // event. Each pending occurrence is stored under its own key
+          // (pending_occ:<master>:<occurrenceIso>) so instance buffering is
+          // O(1) per instance instead of rewriting a growing list — see
+          // processEventInstance.
+          const pendingPrefix = `pending_occ:${canonicalUrl}:`;
+          const pendingKeys = await this.tools.store.list(pendingPrefix);
+          if (pendingKeys.length > 0) {
+            const merged: NewScheduleOccurrence[] = [
               ...(link.scheduleOccurrences || []),
-              ...pendingOccurrences.map((p) => p.occurrence),
             ];
-            await this.clear(pendingKey);
+            for (const key of pendingKeys) {
+              const pending = await this.get<NewScheduleOccurrence>(key);
+              if (pending) merged.push(pending);
+              await this.clear(key);
+            }
+            link.scheduleOccurrences = merged;
           }
 
           // Send link - database handles upsert automatically
@@ -990,13 +1022,16 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         archived: true,
       };
 
-      // During initial sync, buffer the occurrence for later merging with its master
+      // During initial sync, buffer the occurrence under a unique key for
+      // later merging with its master. Per-occurrence keys keep each write
+      // O(1); appending to a single shared list was O(N²) across batches
+      // (re-serializing a growing array every instance) and blew the CF
+      // worker CPU limit on calendars with many recurring exceptions.
       if (initialSync) {
-        const pendingKey = `pending_occ:${masterCanonicalUrl}`;
-        const existing =
-          (await this.get<PendingOccurrence[]>(pendingKey)) || [];
-        existing.push({ occurrence: cancelledOccurrence, cancelled: true });
-        await this.set(pendingKey, existing);
+        const pendingKey = `pending_occ:${masterCanonicalUrl}:${new Date(
+          originalStartTime
+        ).toISOString()}`;
+        await this.set(pendingKey, cancelledOccurrence);
         return;
       }
 
@@ -1070,12 +1105,14 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       occurrence.end = instanceSchedule.end;
     }
 
-    // During initial sync, buffer the occurrence for later merging with its master
+    // During initial sync, buffer the occurrence under a unique key for
+    // later merging with its master. See the cancelled branch above for why
+    // per-occurrence keys replaced the single-list-append pattern.
     if (initialSync) {
-      const pendingKey = `pending_occ:${masterCanonicalUrl}`;
-      const existing = (await this.get<PendingOccurrence[]>(pendingKey)) || [];
-      existing.push({ occurrence, cancelled: false });
-      await this.set(pendingKey, existing);
+      const pendingKey = `pending_occ:${masterCanonicalUrl}:${new Date(
+        originalStartTime
+      ).toISOString()}`;
+      await this.set(pendingKey, occurrence);
       return;
     }
 
