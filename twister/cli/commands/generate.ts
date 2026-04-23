@@ -307,16 +307,16 @@ export async function generateCommand(options: GenerateOptions) {
     // Detect package manager and install dependencies
     const packageManager = detectPackageManager();
 
-    // Update @plotday/twist to latest and install packages
+    // Update @plotday/twister to latest and install packages
     try {
       out.progress("Updating Twist Creator to latest version...");
 
       const updateCommand =
         packageManager === "npm"
-          ? "npm install @plotday/twist@latest"
+          ? "npm install @plotday/twister@latest"
           : packageManager === "pnpm"
-          ? "pnpm add @plotday/twist@latest"
-          : "yarn add @plotday/twist@latest";
+          ? "pnpm add @plotday/twister@latest"
+          : "yarn add @plotday/twister@latest";
 
       execSync(updateCommand, { cwd: twistPath, stdio: "ignore" });
 
@@ -330,7 +330,7 @@ export async function generateCommand(options: GenerateOptions) {
       out.success("Dependencies installed.");
     } catch (error) {
       out.warning("Couldn't install dependencies", [
-        `Run '${packageManager} install @plotday/twist@latest' in ${options.dir}`,
+        `Run '${packageManager} install @plotday/twister@latest' in ${options.dir}`,
         `Then run '${
           packageManager === "yarn" ? "yarn" : `${packageManager} install`
         }'`,

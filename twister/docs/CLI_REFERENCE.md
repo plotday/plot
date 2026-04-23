@@ -97,14 +97,21 @@ plot generate [options]
 
 **Options:**
 
-- `--input <path>` - Path to plot-twist.md (default: `./plot-twist.md`)
-- `--output <directory>` - Output directory (default: `./src`)
-- `--overwrite` - Overwrite existing files
+- `-d, --dir <directory>` - Twist directory to generate in (default: current directory)
+- `--spec <file>` - Spec file to generate from (default: `plot-twist.md` inside the twist directory)
+- `--id <twistId>` - Twist ID (reads `plotTwistId` from `package.json` if present, otherwise generates a new UUID)
+- `--deploy-token <token>` - Authentication token (falls back to `PLOT_DEPLOY_TOKEN` env var or `DEPLOY_TOKEN` in `.env`)
+
+If existing files would be overwritten, the command prompts before proceeding. On success it writes `package.json`, `tsconfig.json`, `README.md`, `AGENTS.md`, `CLAUDE.md`, and the generated source files into `src/`, then runs `pnpm install` (or the detected package manager).
 
 **Example:**
 
 ```bash
-plot generate --input ./my-spec.md --output ./src
+# Generate from ./my-twist/plot-twist.md into ./my-twist
+plot generate --dir ./my-twist
+
+# Or point at a spec file elsewhere
+plot generate --dir ./my-twist --spec ./specs/my-twist.md
 ```
 
 ---

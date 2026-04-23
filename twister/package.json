@@ -204,6 +204,7 @@
   },
   "files": [
     "dist",
+    "src",
     "bin",
     "cli/templates",
     "tsconfig.base.json",
