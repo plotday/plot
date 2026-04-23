@@ -17,6 +17,7 @@ import {
   type Authorization,
   Integrations,
   type Channel,
+  type LinkTypeConfig,
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
@@ -50,7 +51,6 @@ const STATUS_DONE = "done";
 const DONE_OPTION_MATCHERS = /^(done|complete|completed|resolved|closed|shipped)$/i;
 const TODO_OPTION_MATCHERS =
   /^(todo|to.?do|not.?started|open|new|backlog|in.?progress|doing|started|blocked)$/i;
-const TASK_NAME_HINTS = /task|to.?do|issue|action|follow.?up|ticket/i;
 const NOTES_FIELD_MATCHERS = /notes?|description|details?|summary/i;
 
 // Upserting keeps the original thread title, so we want the richest name we can get.
@@ -61,9 +61,9 @@ type DetectedTable = {
   tableName: string;
   primaryFieldId: string;
   primaryFieldName: string;
-  assigneeFieldId: string;
-  assigneeFieldName: string;
-  assigneeFieldType: "singleCollaborator" | "multipleCollaborators";
+  assigneeFieldId: string | null;
+  assigneeFieldName: string | null;
+  assigneeFieldType: "singleCollaborator" | "multipleCollaborators" | null;
   dueDateFieldId: string | null;
   dueDateFieldName: string | null;
   /** Either a singleSelect status field or a checkbox field. */
@@ -79,21 +79,13 @@ type DetectedTable = {
   notesFieldName: string | null;
 };
 
-type ViewerInfo = {
-  id: string;
-  email: string | null;
-};
-
 type SyncState = {
   tableIndex: number;
   offset: string | null;
   initialSync: boolean;
 };
 
-type TrackedRecord = {
-  tableId: string;
-  recordId: string;
-};
+type LinkStatus = NonNullable<LinkTypeConfig["statuses"]>[number];
 
 const RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -169,7 +161,88 @@ export class Airtable extends Connector<Airtable> {
     if (!token) return [];
     const api = new AirtableAPI(token.token);
     const bases = await api.listBases();
-    return bases.map((b: AirtableBase) => ({ id: b.id, title: b.name }));
+    return Promise.all(
+      bases.map(async (b: AirtableBase): Promise<Channel> => {
+        const statuses = await this.baseStatuses(api, b.id);
+        return {
+          id: b.id,
+          title: b.name,
+          ...(statuses.length > 0
+            ? {
+                linkTypes: [
+                  {
+                    type: "task",
+                    label: "Task",
+                    logo: LOGO,
+                    logoDark: LOGO,
+                    logoMono: LOGO_MONO,
+                    statuses,
+                    supportsAssignee: true,
+                  },
+                ],
+              }
+            : {}),
+        };
+      })
+    );
+  }
+
+  /**
+   * Build a per-channel status list by inspecting detected task tables in the
+   * base. Each Airtable singleSelect option becomes its own Plot status so
+   * two-way status sync preserves workflow-specific labels ("In Progress",
+   * "Fixed", etc.) instead of collapsing everything to To Do / Done.
+   * Checkboxes contribute the fallback STATUS_TODO / STATUS_DONE pair.
+   */
+  private async baseStatuses(
+    api: AirtableAPI,
+    baseId: string
+  ): Promise<LinkStatus[]> {
+    let tables: AirtableTable[];
+    try {
+      tables = await api.listTables(baseId);
+    } catch {
+      return [];
+    }
+    const detected = tables
+      .map((t) => this.scoreTable(t))
+      .filter((d): d is DetectedTable => d !== null);
+    if (detected.length === 0) return [];
+
+    const optionNames = new Set<string>();
+    let hasCheckbox = false;
+    for (const table of detected) {
+      if (table.statusFieldType === "checkbox") hasCheckbox = true;
+      if (table.statusFieldType === "singleSelect" && table.statusFieldId) {
+        const raw = tables.find((x) => x.id === table.tableId);
+        const field = raw?.fields.find((x) => x.id === table.statusFieldId);
+        for (const choice of field?.options?.choices ?? []) {
+          optionNames.add(choice.name);
+        }
+      }
+    }
+
+    const statuses: LinkStatus[] = [];
+    let createDefaultAssigned = false;
+    const pushStatus = (status: string, label: string) => {
+      const isDone = DONE_OPTION_MATCHERS.test(status);
+      if (isDone) {
+        statuses.push({ status, label, done: true, tag: Tag.Done });
+      } else if (!createDefaultAssigned) {
+        statuses.push({ status, label, todo: true, createDefault: true });
+        createDefaultAssigned = true;
+      } else {
+        statuses.push({ status, label, todo: true });
+      }
+    };
+
+    if (hasCheckbox) {
+      pushStatus(STATUS_TODO, "To Do");
+      pushStatus(STATUS_DONE, "Done");
+    }
+    for (const name of optionNames) pushStatus(name, name);
+
+    return statuses;
   }
 
   async onChannelEnabled(
@@ -212,8 +285,9 @@ export class Airtable extends Connector<Airtable> {
     await this.clear(`webhook_url_${baseId}`);
     await this.clear(`sync_state_${baseId}`);
     await this.clear(`task_tables_${baseId}`);
-    await this.clear(`viewer_${baseId}`);
     await this.clear(`tracked_records_${baseId}`);
+    // Legacy key from pre-"sync all records" versions; clear for cleanup.
+    await this.clear(`viewer_${baseId}`);
   }
 
   // ---- Detection + Backfill ----
@@ -222,11 +296,6 @@ export class Airtable extends Connector<Airtable> {
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
     const api = await this.getAPI(baseId);
     if (!api) return;
-    const me = await api.whoami();
-    await this.set<ViewerInfo>(`viewer_${baseId}`, {
-      id: me.id,
-      email: me.email ?? null,
-    });
 
     const tables = await api.listTables(baseId);
     const detected = tables
@@ -248,14 +317,10 @@ export class Airtable extends Connector<Airtable> {
   }
 
   /**
-   * Score a table by task-like field presence. Returns a DetectedTable when
-   * the score meets the threshold, or null otherwise.
-   *
-   * - Assignee (collaborator field): +3
-   * - Due date (date/dateTime field): +2
-   * - Status (singleSelect with task-like options, or checkbox): +2
-   * - Name hint (table/primary field name mentions task/todo/issue/etc): +1
-   * Threshold: >= 5, AND an assignee field is required (otherwise no filter).
+   * Decide whether a table looks like task tracking. Qualifies when either
+   * a collaborator assignee or a status field (checkbox, or singleSelect
+   * with a done-matching option) is present — both are strong signals of
+   * task workflow.
    */
   private scoreTable(table: AirtableTable): DetectedTable | null {
     const primary = table.fields.find((f) => f.id === table.primaryFieldId);
@@ -264,14 +329,6 @@ export class Airtable extends Connector<Airtable> {
     const assignee =
       table.fields.find((f) => f.type === "multipleCollaborators") ??
       table.fields.find((f) => f.type === "singleCollaborator");
-    if (!assignee) return null;
-
-    let score = 3;
-
-    const dueDate = table.fields.find(
-      (f) => f.type === "date" || f.type === "dateTime"
-    );
-    if (dueDate) score += 2;
 
     const statusSelect = table.fields.find((f) => {
       if (f.type !== "singleSelect") return false;
@@ -280,13 +337,12 @@ export class Airtable extends Connector<Airtable> {
     });
     const checkbox = table.fields.find((f) => f.type === "checkbox");
     const statusField = statusSelect ?? checkbox ?? null;
-    if (statusField) score += 2;
 
-    const hinted =
-      TASK_NAME_HINTS.test(table.name) || TASK_NAME_HINTS.test(primary.name);
-    if (hinted) score += 1;
+    if (!assignee && !statusField) return null;
 
-    if (score < 5) return null;
+    const dueDate = table.fields.find(
+      (f) => f.type === "date" || f.type === "dateTime"
+    );
 
     let doneOption: string | null = null;
     let todoOption: string | null = null;
@@ -307,10 +363,11 @@ export class Airtable extends Connector<Airtable> {
       tableName: table.name,
       primaryFieldId: primary.id,
       primaryFieldName: primary.name,
-      assigneeFieldId: assignee.id,
-      assigneeFieldName: assignee.name,
-      assigneeFieldType:
-        assignee.type === "multipleCollaborators"
+      assigneeFieldId: assignee?.id ?? null,
+      assigneeFieldName: assignee?.name ?? null,
+      assigneeFieldType: !assignee
+        ? null
+        : assignee.type === "multipleCollaborators"
           ? "multipleCollaborators"
           : "singleCollaborator",
       dueDateFieldId: dueDate?.id ?? null,
@@ -341,33 +398,27 @@ export class Airtable extends Connector<Airtable> {
       return;
     }
 
-    const viewer = await this.get<ViewerInfo>(`viewer_${baseId}`);
-    if (!viewer) {
-      console.warn("Airtable viewer info missing for base", baseId);
-      return;
-    }
-
     const table = detected[state.tableIndex];
     const api = await this.getAPI(baseId);
     if (!api) return;
+
     const page = await api.listRecords(baseId, table.tableId, {
       offset: state.offset,
       pageSize: 50,
     });
 
-    const tracked = (await this.get<TrackedRecord[]>(`tracked_records_${baseId}`)) ?? [];
+    // Per-record try/catch so one bad record doesn't abort the whole batch —
+    // a malformed field or a transient saveLink failure is recoverable on
+    // the next reconcile pass.
     for (const record of page.records) {
-      if (!this.recordAssignedTo(record, table, viewer)) continue;
-
-      const comments = await api.listComments(baseId, table.tableId, record.id);
-      const link = this.recordToLink(record, table, baseId, comments, state.initialSync);
-      await this.tools.integrations.saveLink(link);
-
-      if (!tracked.some((t) => t.tableId === table.tableId && t.recordId === record.id)) {
-        tracked.push({ tableId: table.tableId, recordId: record.id });
+      try {
+        const comments = await api.listComments(baseId, table.tableId, record.id);
+        const link = this.recordToLink(record, table, baseId, comments, state.initialSync);
+        await this.tools.integrations.saveLink(link);
+      } catch (error) {
+        console.warn("Airtable syncBatch: saveLink failed", record.id, error);
       }
     }
-    await this.set(`tracked_records_${baseId}`, tracked);
 
     if (page.offset) {
       await this.set<SyncState>(`sync_state_${baseId}`, {
@@ -391,25 +442,6 @@ export class Airtable extends Connector<Airtable> {
 
   // ---- Record → Link ----
 
-  private recordAssignedTo(
-    record: AirtableRecord,
-    table: DetectedTable,
-    viewer: ViewerInfo
-  ): boolean {
-    const raw = record.fields[table.assigneeFieldName];
-    if (!raw) return false;
-    const collaborators = Array.isArray(raw) ? raw : [raw];
-    return collaborators.some((c: unknown) => {
-      if (!c || typeof c !== "object") return false;
-      const obj = c as { id?: string; email?: string };
-      if (obj.id && obj.id === viewer.id) return true;
-      if (viewer.email && obj.email && obj.email.toLowerCase() === viewer.email.toLowerCase()) {
-        return true;
-      }
-      return false;
-    });
-  }
-
   private recordToLink(
     record: AirtableRecord,
     table: DetectedTable,
@@ -417,7 +449,9 @@ export class Airtable extends Connector<Airtable> {
     comments: AirtableComment[],
     initialSync: boolean
   ): NewLinkWithNotes {
-    const title = this.stringValue(record.fields[table.primaryFieldName]) ?? "(untitled)";
+    const title = this.deriveTitle(record, table);
+    const description = this.buildDescription(record, table);
+    const preview = this.buildPreview(record, table);
     const status = this.deriveStatus(record, table);
     const assignee = this.deriveAssignee(record, table);
     const url = `https://airtable.com/${baseId}/${table.tableId}/${record.id}`;
@@ -432,12 +466,9 @@ export class Airtable extends Connector<Airtable> {
       author?: NewContact;
     }> = [];
 
-    const description = table.notesFieldName
-      ? this.stringValue(record.fields[table.notesFieldName])
-      : null;
     notes.push({
       key: DEFAULT_DESCRIPTION_KEY,
-      content: description && description.trim().length > 0 ? description : null,
+      content: description,
       created: new Date(record.createdTime),
     });
 
@@ -473,13 +504,91 @@ export class Airtable extends Connector<Airtable> {
       actions,
       sourceUrl: url,
       notes,
-      preview:
-        description && description.trim().length > 0 ? description : null,
+      preview,
       ...(initialSync ? { unread: false } : {}),
       ...(initialSync ? { archived: false } : {}),
     };
   }
 
+  /**
+   * Record's primary field if set; otherwise the first non-empty non-system
+   * scalar field under 200 chars. Avoids the ugly "(untitled)" fallback
+   * whenever a record has ANY usable text.
+   */
+  private deriveTitle(record: AirtableRecord, table: DetectedTable): string {
+    const primary = this.stringValue(record.fields[table.primaryFieldName]);
+    if (primary && primary.trim()) return primary.trim();
+    for (const [name, value] of Object.entries(record.fields)) {
+      if (this.isSystemField(name, table)) continue;
+      const str = this.stringValue(value);
+      if (str && str.trim() && str.trim().length < 200) return str.trim();
+    }
+    return "Untitled";
+  }
+
+  /**
+   * Build a markdown description combining the notes field (if any) with a
+   * details list of every other non-empty, non-system field. Gives the user
+   * a real-looking note on every synced record, even ones without a
+   * designated long-text field (the common case for Bug Tracker-style bases).
+   */
+  private buildDescription(
+    record: AirtableRecord,
+    table: DetectedTable
+  ): string | null {
+    const sections: string[] = [];
+
+    const notes = table.notesFieldName
+      ? this.stringValue(record.fields[table.notesFieldName])
+      : null;
+    if (notes && notes.trim()) sections.push(notes.trim());
+
+    const details: string[] = [];
+    for (const [name, value] of Object.entries(record.fields)) {
+      if (this.isSystemField(name, table)) continue;
+      if (name === table.notesFieldName) continue;
+      const str = this.stringValue(value);
+      if (!str || !str.trim()) continue;
+      details.push(`- **${name}**: ${str.trim()}`);
+    }
+    if (details.length > 0) sections.push(details.join("\n"));
+
+    return sections.length > 0 ? sections.join("\n\n") : null;
+  }
+
+  /** Short plain-text preview for list views — prefer the notes field. */
+  private buildPreview(
+    record: AirtableRecord,
+    table: DetectedTable
+  ): string | null {
+    const notes = table.notesFieldName
+      ? this.stringValue(record.fields[table.notesFieldName])
+      : null;
+    if (notes && notes.trim()) return notes.trim();
+    for (const [name, value] of Object.entries(record.fields)) {
+      if (this.isSystemField(name, table)) continue;
+      if (name === table.primaryFieldName) continue;
+      const str = this.stringValue(value);
+      if (str && str.trim()) return str.trim();
+    }
+    return null;
+  }
+
+  private isSystemField(name: string, table: DetectedTable): boolean {
+    return (
+      name === table.assigneeFieldName ||
+      name === table.statusFieldName ||
+      name === table.dueDateFieldName
+    );
+  }
+
+  /**
+   * For singleSelect status fields, returns the raw option name so it matches
+   * one of the dynamic statuses declared by getChannels. Falls back to the
+   * detected todo option when the field is empty so empty-status records
+   * still render with a valid status. Checkboxes collapse to STATUS_TODO /
+   * STATUS_DONE.
+   */
   private deriveStatus(record: AirtableRecord, table: DetectedTable): string {
     if (!table.statusFieldName || !table.statusFieldType) return STATUS_TODO;
     const raw = record.fields[table.statusFieldName];
@@ -487,16 +596,17 @@ export class Airtable extends Connector<Airtable> {
       return raw === true ? STATUS_DONE : STATUS_TODO;
     }
     const value = this.stringValue(raw);
-    if (!value) return STATUS_TODO;
-    if (DONE_OPTION_MATCHERS.test(value)) return STATUS_DONE;
-    return STATUS_TODO;
+    if (value) return value;
+    return table.todoOptionName ?? STATUS_TODO;
   }
 
   private deriveAssignee(
     record: AirtableRecord,
     table: DetectedTable
   ): NewContact | null {
-    const raw = record.fields[table.assigneeFieldName];
+    const fieldName = table.assigneeFieldName;
+    if (!fieldName) return null;
+    const raw = record.fields[fieldName];
     if (!raw) return null;
     const collaborators = Array.isArray(raw) ? raw : [raw];
     const first = collaborators[0] as
@@ -593,6 +703,35 @@ export class Airtable extends Connector<Airtable> {
 
       const api = await this.getAPI(baseId);
       if (!api) return;
+
+      // Airtable limits each OAuth integration to 2 webhooks per base.
+      // listWebhooks only returns webhooks our integration created, so any
+      // entries here are either the one we're about to replace or orphans
+      // from prior setup attempts that never got cleaned up. Delete them
+      // all before creating a fresh webhook (we can't reuse an existing
+      // one because macSecretBase64 is only returned on create).
+      const existingId = await this.get<string>(`webhook_id_${baseId}`);
+      try {
+        const existing = await api.listWebhooks(baseId);
+        for (const hook of existing) {
+          try {
+            await api.deleteWebhook(baseId, hook.id);
+          } catch (error) {
+            console.warn(
+              `Failed to delete stale Airtable webhook ${hook.id}:`,
+              error
+            );
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to list Airtable webhooks for cleanup:", error);
+      }
+      if (existingId) {
+        await this.clear(`webhook_id_${baseId}`);
+        await this.clear(`webhook_secret_${baseId}`);
+        await this.clear(`webhook_cursor_${baseId}`);
+      }
+
       // Airtable allows one notification scope per webhook; register one
       // webhook per base covering all detected tables. The
       // recordChangeScope filter only accepts a single table, so when we
@@ -668,8 +807,7 @@ export class Airtable extends Connector<Airtable> {
     const webhookId = await this.get<string>(`webhook_id_${baseId}`);
     if (!webhookId) return;
     const detected = (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
-    const viewer = await this.get<ViewerInfo>(`viewer_${baseId}`);
-    if (!viewer || detected.length === 0) return;
+    if (detected.length === 0) return;
 
     const api = await this.getAPI(baseId);
     if (!api) return;
@@ -680,7 +818,7 @@ export class Airtable extends Connector<Airtable> {
       const payloads = await api.listWebhookPayloads(baseId, webhookId, cursor);
 
       for (const payload of payloads.payloads) {
-        await this.applyPayload(payload, baseId, tableMap, viewer, api);
+        await this.applyPayload(payload, baseId, tableMap, api);
       }
 
       cursor = payloads.cursor;
@@ -694,14 +832,13 @@ export class Airtable extends Connector<Airtable> {
     payload: AirtableWebhookPayload,
     baseId: string,
     tableMap: Map<string, DetectedTable>,
-    viewer: ViewerInfo,
     api: AirtableAPI
   ): Promise<void> {
     const changedTables = payload.changedTablesById ?? {};
     for (const [tableId, change] of Object.entries(changedTables)) {
       const table = tableMap.get(tableId);
       if (!table) continue;
-      await this.applyTableChange(change, table, baseId, viewer, api);
+      await this.applyTableChange(change, table, baseId, api);
     }
   }
 
@@ -709,7 +846,6 @@ export class Airtable extends Connector<Airtable> {
     change: AirtableWebhookTableChange,
     table: DetectedTable,
     baseId: string,
-    viewer: ViewerInfo,
     api: AirtableAPI
   ): Promise<void> {
     const recordIds = new Set<string>();
@@ -719,56 +855,75 @@ export class Airtable extends Connector<Airtable> {
     for (const recordId of recordIds) {
       try {
         const record = await api.getRecord(baseId, table.tableId, recordId);
-        if (!this.recordAssignedTo(record, table, viewer)) continue;
         const comments = await api.listComments(baseId, table.tableId, recordId);
         const link = this.recordToLink(record, table, baseId, comments, false);
         await this.tools.integrations.saveLink(link);
-        await this.trackRecord(baseId, { tableId: table.tableId, recordId });
       } catch (error) {
         console.warn("Failed to sync Airtable record from webhook:", error);
       }
     }
   }
 
-  private async trackRecord(baseId: string, rec: TrackedRecord): Promise<void> {
-    const tracked = (await this.get<TrackedRecord[]>(`tracked_records_${baseId}`)) ?? [];
-    if (tracked.some((t) => t.tableId === rec.tableId && t.recordId === rec.recordId)) {
-      return;
-    }
-    tracked.push(rec);
-    await this.set(`tracked_records_${baseId}`, tracked);
-  }
+  // ---- Reconciliation (catches webhook-missed edits AND backfills) ----
 
-  // ---- Reconciliation (catches comment edits/deletes webhooks miss) ----
-
+  /**
+   * Walks every record in every detected task table and re-saves it. This
+   * also serves as the initial backfill when a channel is enabled — the
+   * dedicated syncBatch path still handles the first pass, but a reconcile
+   * tick guarantees eventual consistency even if the batch loop dropped a
+   * record or the webhook missed an update.
+   *
+   * Kept under the historical `reconcileComments` name so previously
+   * scheduled self-rescheduling tasks continue to dispatch after upgrade.
+   */
   async reconcileComments(baseId: string): Promise<void> {
-    // Stop the self-scheduling loop once the channel is disabled.
-    // Returning without rescheduling lets the recurring task die out,
-    // rather than spamming retries after teardown.
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
 
     const api = await this.getAPI(baseId);
     if (api) {
-      const tracked = (await this.get<TrackedRecord[]>(`tracked_records_${baseId}`)) ?? [];
-      const detected = (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
-      const tableMap = new Map(detected.map((d) => [d.tableId, d] as const));
-
-      for (const rec of tracked) {
-        const table = tableMap.get(rec.tableId);
-        if (!table) continue;
-        try {
-          const record = await api.getRecord(baseId, rec.tableId, rec.recordId);
-          const comments = await api.listComments(baseId, rec.tableId, rec.recordId);
-          const link = this.recordToLink(record, table, baseId, comments, false);
-          await this.tools.integrations.saveLink(link);
-        } catch (error) {
-          console.warn("Reconcile failed for record", rec.recordId, error);
-        }
+      const detected =
+        (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
+      for (const table of detected) {
+        let offset: string | null = null;
+        do {
+          try {
+            const page = await api.listRecords(baseId, table.tableId, {
+              offset,
+              pageSize: 100,
+            });
+            for (const record of page.records) {
+              try {
+                const comments = await api.listComments(
+                  baseId,
+                  table.tableId,
+                  record.id
+                );
+                const link = this.recordToLink(
+                  record,
+                  table,
+                  baseId,
+                  comments,
+                  false
+                );
+                await this.tools.integrations.saveLink(link);
+              } catch (error) {
+                console.warn("Reconcile failed for record", record.id, error);
+              }
+            }
+            offset = page.offset ?? null;
+          } catch (error) {
+            console.warn(
+              "Reconcile listRecords failed",
+              baseId,
+              table.tableId,
+              error
+            );
+            break;
+          }
+        } while (offset);
       }
     }
 
-    // Reschedule only while the channel is still enabled. Re-check after
-    // the reconcile pass in case onChannelDisabled fired during the run.
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
     const cb = await this.callback(this.reconcileComments, baseId);
     await this.runTask(cb, {
@@ -792,14 +947,20 @@ export class Airtable extends Connector<Airtable> {
     if (!baseId || !tableId || !recordId || !link.status) return;
     if (!statusFieldName || !statusFieldType) return;
 
-    const done = link.status === STATUS_DONE;
     const update: Record<string, unknown> = {};
     if (statusFieldType === "checkbox") {
-      update[statusFieldName] = done;
+      update[statusFieldName] = link.status === STATUS_DONE;
     } else {
-      const doneName = (meta.airtableDoneOptionName as string | null) ?? null;
-      const todoName = (meta.airtableTodoOptionName as string | null) ?? null;
-      const next = done ? doneName : todoName;
+      // link.status is the Airtable option name directly (from dynamic
+      // per-channel statuses). Translate the legacy STATUS_TODO/STATUS_DONE
+      // sentinels back through the stored option names for links created
+      // before the dynamic-statuses change.
+      let next: string | null = link.status;
+      if (link.status === STATUS_TODO) {
+        next = (meta.airtableTodoOptionName as string | null) ?? null;
+      } else if (link.status === STATUS_DONE) {
+        next = (meta.airtableDoneOptionName as string | null) ?? null;
+      }
       if (!next) return;
       update[statusFieldName] = next;
     }
