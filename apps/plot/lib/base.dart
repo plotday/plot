@@ -109,10 +109,26 @@ class Base {
     if (base._reAuthSignaled) return;
     base._reAuthSignaled = true;
     log.warning('Session invalid — forcing sign-out');
+    // Persist so the sign-in screen can show a "session expired" banner even
+    // if sign-out fires during cold start, before any UI listener is attached.
+    ProfilePreferences.instance.setBool(_forceSignedOutKey, true);
     base._needsReAuthController.add(null);
     // Sign out asynchronously — the UI listener will show a toast first.
     Future.microtask(() => signOut());
   }
+
+  static const _forceSignedOutKey = 'session_force_signed_out';
+
+  /// Whether the last sign-out was triggered by [_forceSignOut] (i.e. Clerk
+  /// reported the session invalid). Cleared on the next successful sign-in
+  /// or explicit sign-out. Used by the sign-in page to show a banner.
+  static bool get wasForceSignedOut =>
+      ProfilePreferences.instance.getBool(_forceSignedOutKey) ?? false;
+
+  /// Clear the force-signed-out flag. Called after the sign-in page has
+  /// acknowledged the banner (e.g. when the user taps "Dismiss").
+  static Future<void> clearForceSignedOut() =>
+      ProfilePreferences.instance.remove(_forceSignedOutKey);
 
   static Future<void> init() async {
     log.info("Initializing Clerk auth");
@@ -298,6 +314,9 @@ class Base {
 
     // Clear stored identity
     await base._clearStoredIdentity();
+    // Only _forceSignOut sets this; clear on explicit sign-out too so we
+    // don't show a stale "session expired" banner after a manual sign-out.
+    await ProfilePreferences.instance.remove(_forceSignedOutKey);
 
     // Emit null to trigger UI sign-out flow
     base._currentUserController.add(null);
@@ -379,6 +398,8 @@ class Base {
     if (contactId != null) {
       await prefs.setString('clerk_user_contact_id', contactId);
     }
+    // Successful re-auth clears the "session expired" banner.
+    await prefs.remove(_forceSignedOutKey);
 
     final user = User(
       id: userId,

@@ -13,6 +13,11 @@ import 'package:plot/notifications/notification_quiet_hours.dart';
 import 'package:plot/notifications/notification_service.dart';
 
 const _threadIdsPrefsKey = 'notification_thread_ids';
+// Must stay in sync with the copies in notification_service.dart — the main
+// app cancels this notification and clears this pref key when it signs in.
+const _lastSignedOutNotifyKey = 'last_signed_out_notify_ms';
+const _signedOutNotificationId = 999900;
+const _signedOutNotifyCooldown = Duration(hours: 24);
 
 /// Top-level background message handler registered with Firebase Messaging.
 ///
@@ -45,7 +50,13 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
   final token = await _getSessionToken(publishableKey);
   // ignore: avoid_print
   print('[BG_HANDLER] token=${token != null ? 'ok' : 'null'}');
-  if (token == null) return;
+  if (token == null) {
+    // Session is dead — user would otherwise silently miss every push until
+    // they happen to reopen the app. Surface a throttled local notification
+    // so they know they need to sign in again.
+    await _maybeShowSignedOutNotification(prefs);
+    return;
+  }
 
   // Fetch up-to-date notification summaries from the API
   // ignore: avoid_print
@@ -75,6 +86,35 @@ Future<void> handleBackgroundMessage(RemoteMessage message) async {
     );
     // Persist updated thread IDs
     await _persistThreadIds(prefs, shown);
+  }
+}
+
+/// Show a "Plot signed out — tap to sign in" notification, throttled to at
+/// most once per [_signedOutNotifyCooldown] so a burst of pushes doesn't spam
+/// the user. Empty payload so tapping opens the app without trying to
+/// navigate to a (now-inaccessible) priority.
+Future<void> _maybeShowSignedOutNotification(SharedPreferences prefs) async {
+  final lastMs = prefs.getInt(_lastSignedOutNotifyKey);
+  final now = DateTime.now().millisecondsSinceEpoch;
+  if (lastMs != null &&
+      now - lastMs < _signedOutNotifyCooldown.inMilliseconds) {
+    // ignore: avoid_print
+    print('[BG_HANDLER] skipping signed-out notification (cooldown)');
+    return;
+  }
+  try {
+    await NotificationDisplay.instance.initialize();
+    await NotificationDisplay.instance.showBatchNotification(
+      id: _signedOutNotificationId,
+      title: 'Plot signed out',
+      body: 'Tap to sign in again and resume notifications.',
+      targetPriorityId: '',
+      urgency: 'inform-requests',
+    );
+    await prefs.setInt(_lastSignedOutNotifyKey, now);
+  } catch (e) {
+    // ignore: avoid_print
+    print('[BG_HANDLER] failed to show signed-out notification: $e');
   }
 }
 

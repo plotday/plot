@@ -233,6 +233,14 @@ class _SignInPageState extends State<SignInPage> {
                               height: 120,
                             ),
                           ),
+                          if (Base.wasForceSignedOut)
+                            FAlert(
+                              variant: FAlertVariant.destructive,
+                              title: const Text('Your session expired'),
+                              subtitle: const Text(
+                                'Sign in again to resume syncing and receive notifications.',
+                              ),
+                            ),
                           if (PendingInvite.token != null) ...[
                             Text(
                               "You've been invited to Plot",

@@ -19,6 +19,13 @@ import 'package:plot/notifications/notification_quiet_hours.dart';
 import 'package:plot/store/attention.dart';
 import 'package:plot/store/store.dart';
 
+/// Notification ID and SharedPreferences key for the "Plot signed out" push
+/// that the background FCM handler displays when Clerk reports the session
+/// invalid. Kept at file scope so both the main app and the background
+/// isolate (in `background_handler.dart`) reference the same values.
+const int _signedOutNotificationId = 999900;
+const String _lastSignedOutNotifyKey = 'last_signed_out_notify_ms';
+
 /// Manages push notification token registration and message handling.
 ///
 /// On mobile (iOS/Android), uses FCM for push delivery.
@@ -150,6 +157,11 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('notification_user_id', userId);
       await syncAttentionWindowsToPrefs(prefs);
+      // Clear any stale "Plot signed out" notification the background handler
+      // may have shown while the session was dead, and reset the cooldown so
+      // the next real expiry can notify again.
+      await NotificationDisplay.instance.cancel(_signedOutNotificationId);
+      await prefs.remove(_lastSignedOutNotifyKey);
     } catch (e) {
       log.warning('Failed to persist notification prefs', e);
     }
