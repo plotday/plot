@@ -84,25 +84,41 @@ export class SlackApi {
     const url = `https://slack.com/api/${method}`;
     const headers = {
       Authorization: `Bearer ${this.accessToken}`,
-      "Content-Type": "application/json; charset=utf-8",
+      "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
     };
+
+    // Slack Web API's canonical body format is form-urlencoded. JSON bodies
+    // are accepted for some methods but not all (e.g. conversations.replies
+    // rejected JSON with invalid_arguments under user tokens), so always
+    // encode params as a form body.
+    const body = new URLSearchParams();
+    for (const [key, value] of Object.entries(params ?? {})) {
+      if (value === undefined || value === null) continue;
+      body.append(
+        key,
+        typeof value === "string" ? value : JSON.stringify(value)
+      );
+    }
 
     const response = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify(params || {}),
+      body: body.toString(),
     });
 
     if (!response.ok) {
       throw new Error(
-        `Slack API error: ${response.status} ${response.statusText}`
+        `Slack API error (${method}): ${response.status} ${response.statusText}`
       );
     }
 
     const data = await response.json();
 
     if (!data.ok) {
-      throw new Error(`Slack API error: ${data.error}`);
+      const details = data.response_metadata?.messages?.length
+        ? ` (${data.response_metadata.messages.join("; ")})`
+        : "";
+      throw new Error(`Slack API error (${method}): ${data.error}${details}`);
     }
 
     return data;
@@ -223,13 +239,56 @@ export class SlackApi {
 }
 
 /**
- * Converts a Slack user ID to a NewActor.
+ * Info resolved from Slack's `users.info` that we copy onto actors so Plot
+ * contacts carry a real name/email instead of the opaque `U…` user id.
  */
-function slackUserToNewActor(userId: string): NewActor {
-  return {
-    name: userId,
-    source: { provider: AuthProvider.Slack, accountId: userId },
-  };
+export type SlackUserInfo = {
+  name: string | null;
+  email: string | null;
+};
+
+export type SlackUserInfoMap = Map<string, SlackUserInfo>;
+
+/**
+ * Extract the best display name + email from a users.info response.
+ * Prefers the human-readable `real_name`, falls back to `display_name`,
+ * then the login `name`.
+ */
+export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
+  const name =
+    user.profile?.real_name ||
+    user.real_name ||
+    user.profile?.display_name ||
+    user.name ||
+    null;
+  const email = user.profile?.email || null;
+  return { name, email };
+}
+
+/**
+ * Converts a Slack user ID to a NewActor.
+ *
+ * When `info` is provided (resolved via users.info), the actor carries the
+ * user's real name and email so the Plot contact row gets meaningful
+ * identity info. Without it we fall back to the Slack user id as the name,
+ * which keeps the actor upsertable by `source` but displays poorly — callers
+ * should prefetch user info whenever possible.
+ */
+function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
+  const source = { provider: AuthProvider.Slack, accountId: userId };
+  if (info?.email && info.name) {
+    return { name: info.name, email: info.email, source };
+  }
+  if (info?.email) {
+    return { email: info.email, source };
+  }
+  if (info?.name) {
+    return { name: info.name, source };
+  }
+  // Fallback: no info available. `NewContact` requires at least one of
+  // `email` or `name`, so use the user id as the name — same as the
+  // pre-resolver behavior.
+  return { name: userId, source };
 }
 
 /**
@@ -287,7 +346,10 @@ const SLACK_REACTION_TO_TAG: Record<string, Tag> = {
 /**
  * Extracts reaction tags from all messages in a thread.
  */
-function extractSlackReactionTags(messages: SlackMessage[]): NewTags | undefined {
+function extractSlackReactionTags(
+  messages: SlackMessage[],
+  userInfos?: SlackUserInfoMap
+): NewTags | undefined {
   const tagActors = new Map<Tag, NewActor[]>();
 
   for (const msg of messages) {
@@ -296,7 +358,9 @@ function extractSlackReactionTags(messages: SlackMessage[]): NewTags | undefined
       const tag = SLACK_REACTION_TO_TAG[reaction.name];
       if (!tag) continue;
 
-      const actors = reaction.users.map((userId) => slackUserToNewActor(userId));
+      const actors = reaction.users.map((userId) =>
+        slackUserToNewActor(userId, userInfos?.get(userId))
+      );
       const existing = tagActors.get(tag) ?? [];
       tagActors.set(tag, [...existing, ...actors]);
     }
@@ -325,6 +389,7 @@ function extractSlackReactionTags(messages: SlackMessage[]): NewTags | undefined
 export function transformSlackThread(
   messages: SlackMessage[],
   channelId: string,
+  userInfos?: SlackUserInfoMap,
   initialSync?: boolean
 ): NewLinkWithNotes {
   const parentMessage = messages[0];
@@ -346,7 +411,7 @@ export function transformSlackThread(
   const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${threadTs}`;
 
   // Extract reaction tags from all messages
-  const reactionTags = extractSlackReactionTags(messages);
+  const reactionTags = extractSlackReactionTags(messages, userInfos);
 
   // Create link
   const thread: NewLinkWithNotes = {
@@ -375,7 +440,7 @@ export function transformSlackThread(
     // Create NewNote with idempotent key
     const note = {
       key: message.ts,
-      author: slackUserToNewActor(userId),
+      author: slackUserToNewActor(userId, userInfos?.get(userId)),
       content: text,
       created: new Date(parseFloat(message.ts) * 1000),
       checkForTasks: true,

@@ -30,6 +30,9 @@ import {
   SlackApi,
   type SlackChannel,
   type SlackMessage,
+  type SlackUserInfo,
+  type SlackUserInfoMap,
+  slackUserInfoFromUser,
   type SyncState,
   syncSlackChannel,
   transformSlackThread,
@@ -114,9 +117,18 @@ export class Slack extends Connector<Slack> {
   ): Promise<Channel[]> {
     const api = new SlackApi(token.token);
     const channels = await api.getChannels();
-    return channels
-      .filter((c: SlackChannel) => c.is_member && !c.is_archived)
-      .map((c: SlackChannel) => ({ id: c.id, title: c.name }));
+    const filtered = channels.filter(
+      (c: SlackChannel) => c.is_member && !c.is_archived
+    );
+    // Surface "general" first so the channel-default scorer (which gives a +1
+    // index-0 bonus) auto-enables it on install rather than picking whichever
+    // channel Slack happens to list first (commonly "random").
+    filtered.sort((a: SlackChannel, b: SlackChannel) => {
+      if (a.name === "general") return -1;
+      if (b.name === "general") return 1;
+      return 0;
+    });
+    return filtered.map((c: SlackChannel) => ({ id: c.id, title: c.name }));
   }
 
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
@@ -328,10 +340,44 @@ export class Slack extends Connector<Slack> {
     channelId: string,
     initialSync: boolean
   ): Promise<void> {
+    // Collect every unique Slack user id referenced by these threads
+    // (message authors + reaction users) and resolve them up front via
+    // `users.info` with a persistent cache. Without this, actors are
+    // built with `name: userId`, which poisons the Plot contact row
+    // (and the connector's own account label) with an opaque `U…` id.
+    const userIds = new Set<string>();
+    for (const thread of threads) {
+      for (const message of thread) {
+        const author = message.user;
+        if (author) userIds.add(author);
+        if (message.reactions) {
+          for (const reaction of message.reactions) {
+            for (const userId of reaction.users) userIds.add(userId);
+          }
+        }
+      }
+    }
+
+    let userInfos: SlackUserInfoMap | undefined;
+    try {
+      const api = await this.getApi(channelId);
+      userInfos = await this.resolveUserInfos(api, [...userIds]);
+    } catch (error) {
+      console.warn(
+        "Failed to resolve Slack user info; proceeding without real names",
+        error
+      );
+    }
+
     for (const thread of threads) {
       try {
         // Transform Slack thread to NewLinkWithNotes
-        const activityThread = transformSlackThread(thread, channelId, initialSync);
+        const activityThread = transformSlackThread(
+          thread,
+          channelId,
+          userInfos,
+          initialSync
+        );
 
         if (!activityThread.notes || activityThread.notes.length === 0) continue;
 
@@ -350,6 +396,41 @@ export class Slack extends Connector<Slack> {
         // Continue processing other threads
       }
     }
+  }
+
+  /**
+   * Resolve Slack user ids to `{ name, email }` using a persistent per-user
+   * cache. A single id is stored under `user_info:<userId>` so repeat syncs
+   * and webhook-driven incremental syncs don't re-hit `users.info`.
+   *
+   * Bot ids (`B…`) are not served by `users.info`; we skip them and let
+   * callers fall back to the id as the actor name. Failures on individual
+   * ids are non-fatal — missing entries are simply omitted from the map.
+   */
+  private async resolveUserInfos(
+    api: SlackApi,
+    userIds: string[]
+  ): Promise<SlackUserInfoMap> {
+    const result: SlackUserInfoMap = new Map();
+    for (const userId of userIds) {
+      if (!userId.startsWith("U") && !userId.startsWith("W")) continue;
+      const cached = await this.get<SlackUserInfo>(`user_info:${userId}`);
+      if (cached) {
+        result.set(userId, cached);
+        continue;
+      }
+      try {
+        const user = await api.getUser(userId);
+        if (!user) continue;
+        const info = slackUserInfoFromUser(user);
+        if (!info.name && !info.email) continue;
+        await this.set(`user_info:${userId}`, info);
+        result.set(userId, info);
+      } catch (error) {
+        console.warn(`users.info failed for ${userId}`, error);
+      }
+    }
+    return result;
   }
 
   async onSlackWebhook(
