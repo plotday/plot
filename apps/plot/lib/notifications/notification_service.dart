@@ -318,10 +318,10 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
 
     _permissionDenied = false;
 
-    // Get current token and register
-    await _getTokenAndRegister();
-
-    // Listen for token refresh
+    // Subscribe to token refresh BEFORE the initial getToken() attempt. On
+    // iOS the first FCM token is delivered via this stream once APNS is
+    // ready, so subscribing first avoids missing it if APNS arrives between
+    // our wait loop and the listener being set up.
     _tokenRefreshSubscription ??=
         messaging.onTokenRefresh.listen((token) async {
       _currentToken = token;
@@ -334,10 +334,24 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
         _scheduleRetry();
       }
     });
+
+    await _getTokenAndRegister();
   }
 
   /// Get the FCM token and register it with the API, with retry on failure.
   Future<void> _getTokenAndRegister() async {
+    // On iOS, getToken() throws `[firebase_messaging/apns-token-not-set]` if
+    // called before APNS has delivered the device token. Poll getAPNSToken()
+    // first so we don't burn retries on a transient startup race that every
+    // retry will hit identically.
+    if (Platform.isIOS && !await _waitForApnsToken()) {
+      // APNS hasn't arrived yet. Don't treat this as an error or schedule
+      // our own retry — onTokenRefresh will fire when APNS eventually lands,
+      // and app resume re-enters this method.
+      log.info('APNS token not yet available — deferring FCM registration');
+      return;
+    }
+
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
@@ -394,6 +408,29 @@ class NotificationService with WidgetsBindingObserver, WindowListener {
       if (!_started) return;
       await _getTokenAndRegister();
     });
+  }
+
+  /// iOS only: poll `getAPNSToken()` until it returns non-null or we time
+  /// out. Firebase's `getToken()` throws `apns-token-not-set` if called
+  /// before iOS has handed us the APNS device token — typically a few
+  /// seconds after permission is granted, but can be longer on cold start
+  /// or poor networks.
+  Future<bool> _waitForApnsToken() async {
+    const interval = Duration(milliseconds: 500);
+    const maxAttempts = 20; // 10s total
+    final messaging = FirebaseMessaging.instance;
+    for (int i = 0; i < maxAttempts; i++) {
+      try {
+        if (await messaging.getAPNSToken() != null) return true;
+      } catch (e) {
+        log.warning('getAPNSToken() failed', e);
+        return false;
+      }
+      if (i < maxAttempts - 1) {
+        await Future<void>.delayed(interval);
+      }
+    }
+    return false;
   }
 
   /// Re-register on app resume (mobile only). Handles cases where:
