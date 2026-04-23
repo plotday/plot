@@ -48,6 +48,7 @@ import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext, extractErrorContext, mergeContext } from "./utils/log-context";
 import { dbMiddleware } from "./middleware/db";
 import { withDb } from "./db";
+import { syncUserTwistStats } from "./utils/twist-stats";
 import { expireTrial } from "./utils/trial";
 // Import webhook routes
 import webhook from "./webhook";
@@ -241,7 +242,7 @@ app.route("/", authBridgeRoutes);
 
 // Scheduled handler for cron triggers
 async function scheduled(
-  _event: ScheduledEvent,
+  event: ScheduledEvent,
   env: Bindings,
   _ctx: ExecutionContext
 ): Promise<void> {
@@ -334,6 +335,47 @@ async function scheduled(
       "Error in stuck Twisting tag cleanup",
       error as Error
     );
+  }
+
+  // Daily sweep: refresh PostHog person properties with each user's active
+  // connector and twist counts. Cron fires every 5 minutes, so we gate to a
+  // single window (07:00-07:04 UTC) to run once per day.
+  const scheduledTime = new Date(event.scheduledTime);
+  if (scheduledTime.getUTCHours() === 7 && scheduledTime.getUTCMinutes() < 5) {
+    const postHog = new PostHog(env.POSTHOG_API_KEY, {
+      host: env.POSTHOG_HOST,
+      flushAt: 20,
+      flushInterval: 1000,
+    });
+    const tracker = new Tracker(postHog);
+    try {
+      await withDb(env, async (db) => {
+        const owners = await db
+          .selectFrom("twist_instance")
+          .select("owner_id")
+          .where("archived_at", "is", null)
+          .where("suspended_at", "is", null)
+          .where("draft", "=", false)
+          .distinct()
+          .execute();
+
+        for (const { owner_id } of owners) {
+          try {
+            await syncUserTwistStats(db, tracker, owner_id);
+          } catch (error) {
+            logger.error("Failed to sync twist stats for user", error as Error, {
+              user_id: owner_id,
+            });
+          }
+        }
+
+        logger.info("Daily twist stats sweep complete", { count: owners.length });
+      });
+    } catch (error) {
+      logger.error("Error in daily twist stats sweep", error as Error);
+    } finally {
+      await postHog.shutdown();
+    }
   }
 }
 

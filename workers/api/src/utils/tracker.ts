@@ -25,6 +25,20 @@ export class Tracker {
     });
   }
 
+  // Update person properties in PostHog. Uses the `$set` pattern attached to
+  // a `$set` event so we can update properties without emitting an
+  // `$identify` (the Flutter app owns identify).
+  setPersonProperties(
+    distinctId: string,
+    properties: Record<string, any>,
+  ) {
+    this._postHog.capture({
+      distinctId,
+      event: "$set",
+      properties: { $set: properties },
+    });
+  }
+
   shutdown(timeoutMs?: number) {
     return this._postHog.shutdown(timeoutMs);
   }

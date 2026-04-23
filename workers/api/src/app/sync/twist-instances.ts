@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { createDb, sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { twistFactory } from "../../twist";
 import { resolveOptions } from "../../twist/tools/factory";
@@ -8,6 +8,7 @@ import type { OptionsSchema } from "@plotday/twister/options";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { rpcUser } from "../../rpc";
 import { notifyUserSync } from "./notify";
+import { syncUserTwistStats } from "../../utils/twist-stats";
 import { createLogger } from "@plotday/worker-util";
 
 const twistInstances = new Hono<{ Bindings: Bindings }>();
@@ -197,6 +198,21 @@ twistInstances.post("/sync/twist-instances", async (c) => {
   }
 
   notifyUserSync(c, c.var.user.id);
+
+  const userId = c.var.user.id;
+  const tracker = c.var.tracker;
+  c.executionCtx.waitUntil(
+    (async () => {
+      const db = createDb(c.env);
+      try {
+        await syncUserTwistStats(db, tracker, userId);
+      } catch (error) {
+        tracker.captureException(error);
+      } finally {
+        await db.destroy();
+      }
+    })()
+  );
 
   return c.json(result as any);
 });
