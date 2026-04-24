@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { plainTextToMarkdown } from "./thread-helpers";
+import { markdownToPlainText, plainTextToMarkdown } from "./thread-helpers";
 
 describe("plainTextToMarkdown", () => {
   it("auto-links bare URLs", () => {
@@ -67,6 +67,30 @@ describe("plainTextToMarkdown", () => {
     expect(plainTextToMarkdown("&lt;tag&gt;")).toBe("<tag>");
   });
 
+  it("keeps list items tight instead of separating them with paragraph breaks", () => {
+    const input = "Intro:\n1. first\n2. second\n3. third";
+    expect(plainTextToMarkdown(input)).toBe(
+      "Intro:\n\n1. first\n2. second\n3. third"
+    );
+  });
+
+  it("keeps bulleted lists tight", () => {
+    const input = "- apples\n- oranges\n- pears";
+    expect(plainTextToMarkdown(input)).toBe("- apples\n- oranges\n- pears");
+  });
+
+  it("unescapes markdown that upstream services escaped in plain text", () => {
+    const input = "\\[Beth Round\\] said: 1\\. first 2\\. second";
+    expect(plainTextToMarkdown(input)).toBe(
+      "[Beth Round] said: 1. first 2. second"
+    );
+  });
+
+  it("unescapes over-escaped list markers on their own line", () => {
+    const input = "Summary:\n1\\. alpha\n2\\. beta";
+    expect(plainTextToMarkdown(input)).toBe("Summary:\n\n1. alpha\n2. beta");
+  });
+
   it("handles the full Teams/Outlook calendar description realistically", () => {
     const input = [
       "Microsoft ISV Success",
@@ -101,5 +125,52 @@ describe("plainTextToMarkdown", () => {
     // Only one HR rendered despite two in the input
     const hrCount = (result.match(/^---$/gm) ?? []).length;
     expect(hrCount).toBe(1);
+  });
+});
+
+describe("markdownToPlainText", () => {
+  it("renumbers numbered lists that use `1.` on every line", () => {
+    const input = "Test a markdown note:\n\n1. It works\n1. Will it work?";
+    expect(markdownToPlainText(input)).toBe(
+      "Test a markdown note:\n\n1. It works\n2. Will it work?"
+    );
+  });
+
+  it("preserves bullet markers and line breaks", () => {
+    const input = "Groceries:\n\n- apples\n- oranges\n- pears";
+    expect(markdownToPlainText(input)).toBe(
+      "Groceries:\n\n- apples\n- oranges\n- pears"
+    );
+  });
+
+  it("keeps link labels and drops markdown syntax around them", () => {
+    const input = "See [the docs](https://example.com/docs) for details.";
+    expect(markdownToPlainText(input)).toBe(
+      "See the docs for details."
+    );
+  });
+
+  it("renders mentions as @-prefixed names", () => {
+    const input = "Hey [Beth Round](#@11111111-1111-1111-1111-111111111111) 👋";
+    expect(markdownToPlainText(input)).toBe("Hey @Beth Round 👋");
+  });
+
+  it("strips emphasis markers but keeps their content", () => {
+    const input = "**bold** and *italic* and ~~strike~~";
+    expect(markdownToPlainText(input)).toBe("bold and italic and strike");
+  });
+
+  it("renumbers independently across separate list blocks", () => {
+    const input = "1. one\n1. two\n\nbetween\n\n1. alpha\n1. beta";
+    expect(markdownToPlainText(input)).toBe(
+      "1. one\n2. two\n\nbetween\n\n1. alpha\n2. beta"
+    );
+  });
+
+  it("leaves code block content untouched after removing fences", () => {
+    const input = "Before\n\n```js\nconst x = 1;\n```\n\nAfter";
+    expect(markdownToPlainText(input)).toBe(
+      "Before\n\nconst x = 1;\n\nAfter"
+    );
   });
 });

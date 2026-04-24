@@ -10,11 +10,13 @@ import type {
   NewActor,
   NewContact,
 } from "@plotday/twister/plot";
-
+import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { createLogger } from "@plotday/worker-util";
 import { rpc } from "../../../rpc";
 import { addContacts } from "./contacts";
 import type { Plot } from "./index";
+
+export { markdownToPlainText };
 
 /** Type alias for thread insert operations (DB table is now "thread") */
 type ActivityInsert = Database["public"]["Tables"]["thread"]["Insert"];
@@ -379,17 +381,62 @@ function shortenUrlLabel(raw: string, url: string): string {
   }
 }
 
+/** A line that looks like a Markdown list item (bulleted or numbered). */
+function isListLine(line: string): boolean {
+  return /^\s*(?:[-*+]|\d+\.)\s/.test(line);
+}
+
+/**
+ * Insert paragraph breaks between adjacent non-blank lines that aren't part
+ * of the same tight list block, and collapse runs of blank lines to one.
+ *
+ * Preserves list structure — consecutive `- `/`* `/`1. ` lines stay
+ * separated by a single newline so Markdown renders them as a tight list —
+ * while giving plain-text prose the double-newline separator it needs for
+ * Markdown paragraph rendering.
+ */
+function normalizeMarkdownParagraphs(text: string): string {
+  const lines = text.split("\n");
+  const expanded: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    expanded.push(lines[i]);
+    if (i === lines.length - 1) break;
+    const cur = lines[i];
+    const next = lines[i + 1];
+    if (cur.trim() === "" || next.trim() === "") continue;
+    if (isListLine(cur) && isListLine(next)) continue;
+    expanded.push("");
+  }
+
+  const out: string[] = [];
+  let prevBlank = false;
+  for (const line of expanded) {
+    if (line === "") {
+      if (!prevBlank) out.push("");
+      prevBlank = true;
+    } else {
+      out.push(line);
+      prevBlank = false;
+    }
+  }
+  return out.join("\n");
+}
+
 /**
  * Convert a plaintext note to Markdown.
  *
  * Handles:
  * - HTML entity decoding (&amp;, &lt;, etc.)
+ * - Unescaping common over-escaped Markdown punctuation (`\[`, `\]`, `1\.`)
+ *   that external services apply when round-tripping markdown through a
+ *   plain-text comment store (Google Drive, etc.)
  * - Outlook-style "Label<https://url>" links → [Label](url)
  * - Long autolinked URLs displayed as `host.com/...`
  * - Horizontal-rule lines (10+ underscores/dashes/equals) normalized to `---`,
  *   with consecutive HRs collapsed
- * - Single newlines doubled so line breaks survive Markdown rendering;
- *   longer runs of newlines are collapsed to a single paragraph break
+ * - Paragraph breaks via a blank line between adjacent non-list lines;
+ *   consecutive list-item lines stay tight so lists render as one block
  */
 export function plainTextToMarkdown(note: string): string {
   let converted = note
@@ -399,6 +446,13 @@ export function plainTextToMarkdown(note: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ");
+
+  // Drop over-escaping that external services apply when round-tripping
+  // markdown through a plain-text comment store. `\[Name\]` / `1\.` in
+  // plain prose is noise; legitimate plain text never writes these.
+  converted = converted
+    .replace(/\\([[\]()*_~`>#+=!-])/g, "$1")
+    .replace(/(^|\s)(\d+)\\\./gm, "$1$2.");
 
   // Outlook/Teams plaintext link format: "Manage Booking<https://...>"
   converted = converted.replace(
@@ -437,13 +491,12 @@ export function plainTextToMarkdown(note: string): string {
     (_, idx: string) => masked[Number(idx)]
   );
 
-  // Preserve line breaks: every run of newlines becomes one paragraph break.
-  // Collapsing runs (rather than doubling every `\n`) prevents paragraphs that
-  // already have a blank line between them from ballooning into 3+ blank lines.
-  converted = converted.replace(/\n+/g, "\n\n");
-
-  return converted;
+  return normalizeMarkdownParagraphs(converted);
 }
+
+// `markdownToPlainText` lives in @plotday/twister/utils/markdown so
+// connectors can call it in-process without crossing the RPC boundary.
+// It is re-exported from this file for convenience of existing callers.
 
 /**
  * Converts note content to Markdown based on the specified contentType.
