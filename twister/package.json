@@ -110,6 +110,11 @@
       "types": "./dist/utils/hash.d.ts",
       "default": "./dist/utils/hash.js"
     },
+    "./utils/markdown": {
+      "@plotday/connector": "./src/utils/markdown.ts",
+      "types": "./dist/utils/markdown.d.ts",
+      "default": "./dist/utils/markdown.js"
+    },
     "./utils/uuid": {
       "@plotday/connector": "./src/utils/uuid.ts",
       "types": "./dist/utils/uuid.d.ts",

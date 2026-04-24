@@ -22,6 +22,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 
 import {
   listProjects,
@@ -531,13 +532,17 @@ export class Todoist extends Connector<Todoist> {
     const projectId = thread.meta?.projectId as string | undefined;
     if (!taskId || !projectId || !note.content) return;
 
+    // Todoist stores comments as plain text, so render Plot markdown to
+    // readable plain text (renumbered lists, mentions as @Name, etc.).
+    // Baseline round-trips through Todoist's echoed `content`.
+    const body = markdownToPlainText(note.content);
     const token = await this.getToken(projectId);
-    const comment = await createComment(token, taskId, note.content);
+    const comment = await createComment(token, taskId, body);
     if (!comment?.id) return;
 
     return {
       key: `comment-${comment.id}`,
-      externalContent: comment.content ?? note.content,
+      externalContent: comment.content ?? body,
     };
   }
 
@@ -554,7 +559,7 @@ export class Todoist extends Connector<Todoist> {
     if (!match) return;
     const commentId = match[1];
 
-    const body = note.content ?? "";
+    const body = markdownToPlainText(note.content ?? "");
     const token = await this.getToken(projectId);
     const comment = await updateComment(token, commentId, body);
 

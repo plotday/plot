@@ -19,6 +19,7 @@ import {
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 import { Options } from "@plotday/twister/options";
+import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 
 import {
   AttioAPI,
@@ -674,7 +675,9 @@ export class Attio extends Connector<Attio> {
     const objectSlug = thread.meta?.attioObjectSlug as string | undefined;
     if (!recordId || !objectSlug) return;
 
-    const content = note.content ?? "";
+    // Attio posts notes with `format: "plaintext"` (attio-api.ts), so
+    // render Plot markdown to readable plain text first.
+    const content = markdownToPlainText(note.content ?? "");
     const api = this.getAPI();
     const result = await api.createNote(objectSlug, recordId, "", content);
     const noteId = result?.data?.id?.note_id;

@@ -23,6 +23,7 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
+import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 
 import {
   AirtableAPI,
@@ -1052,7 +1053,9 @@ export class Airtable extends Connector<Airtable> {
     const recordId = meta.airtableRecordId as string | undefined;
     if (!baseId || !tableId || !recordId) return;
 
-    const text = (note.content ?? "").trim();
+    // Airtable stores comments as plain text, so render Plot markdown to
+    // readable plain text before translating mentions.
+    const text = markdownToPlainText(note.content ?? "").trim();
     if (text.length === 0) return;
 
     const api = await this.getAPI(baseId);
@@ -1098,7 +1101,9 @@ export class Airtable extends Connector<Airtable> {
     const recordId = meta.airtableRecordId as string | undefined;
     if (!baseId || !tableId || !recordId) return;
 
-    const text = (note.content ?? "").trim();
+    // Airtable stores comments as plain text, so render Plot markdown to
+    // readable plain text before translating mentions.
+    const text = markdownToPlainText(note.content ?? "").trim();
     if (text.length === 0) return;
 
     const api = await this.getAPI(baseId);

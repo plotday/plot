@@ -21,6 +21,7 @@ import {
   type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
+import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 
 type DocumentFolder = {
   id: string;
@@ -500,7 +501,11 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       return;
     }
     const api = await this.getApi(ctx.folderId, ctx.authChannelId);
-    const body = note.content ?? "";
+    // Drive comments store content verbatim as plain text, so render Plot
+    // markdown to a readable plain-text form (renumbered lists, mentions
+    // as @Name, etc.) before sending. The baseline round-trips through
+    // whatever Drive echoes back on the response.
+    const body = markdownToPlainText(note.content ?? "");
     const reNoteKey = thread.meta?.reNoteKey as string | undefined;
 
     if (!reNoteKey) {
@@ -533,7 +538,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     if (!ctx) return;
     if (!note.key) return;
 
-    const body = note.content ?? "";
+    const body = markdownToPlainText(note.content ?? "");
     const api = await this.getApi(ctx.folderId, ctx.authChannelId);
 
     const replyMatch = note.key.match(/^reply-([^-]+)-(.+)$/);
