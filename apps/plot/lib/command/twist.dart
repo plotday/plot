@@ -69,6 +69,7 @@ class _ActiveSource extends _ConnectionItem {
   final AuthProvider? provider;
   final int enabledCount;
   final String? teamName;
+  final bool showScopeBadge;
 
   _ActiveSource({
     required this.id,
@@ -80,6 +81,7 @@ class _ActiveSource extends _ConnectionItem {
     this.provider,
     required this.enabledCount,
     this.teamName,
+    this.showScopeBadge = false,
   });
 
   @override
@@ -291,7 +293,11 @@ class ManageConnections extends Command {
     }
     final upcomingResult = _upcomingCache;
 
-    // Build active connections from summaries
+    // Build active connections from summaries. Only show the scope badge
+    // (team name / "Personal") when the user actually belongs to a team —
+    // otherwise the "Personal" badge confused users into thinking it meant
+    // the connection was assigned to their Personal priority.
+    final showScopeBadge = usage != null && usage.teams.isNotEmpty;
     final activeItems = <_ActiveSource>[];
     for (final summary in summaries) {
       activeItems.add(
@@ -305,6 +311,7 @@ class ManageConnections extends Command {
           provider: summary.provider,
           enabledCount: summary.enabledCount,
           teamName: summary.teamName,
+          showScopeBadge: showScopeBadge,
         ),
       );
     }
@@ -426,20 +433,21 @@ class _ActiveSourceRow extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: theme.colors.secondary,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              item.teamName ?? 'Personal',
-              style: TextStyle(
-                fontSize: theme.typography.xs.fontSize,
-                color: theme.colors.mutedForeground,
+          if (item.showScopeBadge)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colors.secondary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                item.teamName ?? 'Personal',
+                style: TextStyle(
+                  fontSize: theme.typography.xs.fontSize,
+                  color: theme.colors.mutedForeground,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
