@@ -3964,6 +3964,7 @@ export type Database = {
           id: string | null
           inviteable: boolean | null
           name: string | null
+          primary: boolean | null
           self: boolean | null
           type: string | null
           updated_at: string | null
@@ -4552,13 +4553,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

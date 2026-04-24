@@ -2,6 +2,11 @@
 -- Shows all actors accessible to each user: contacts via user_contact,
 -- non-primary contacts via their primary contact's visibility, and
 -- twist instances owned by the user.
+--
+-- The "primary" column marks the canonical actor to surface in user-facing
+-- pickers (one per person). Non-primary linked contacts are still returned
+-- so historical content authored by alternate contact IDs resolves to a
+-- name, but they MUST be filtered out of mention/share/assign pickers.
 CREATE OR REPLACE VIEW "user"."actor" --
 AS
 -- Contacts visible via user_contact (primary or external contacts)
@@ -21,7 +26,8 @@ SELECT
         WHERE c.id = a.id
             AND c.user_id = uc.user_id
     ) AS self,
-    a.inviteable
+    a.inviteable,
+    true AS "primary"
 FROM
     user_contact uc
     JOIN contact c ON c.id = uc.contact_id
@@ -43,7 +49,8 @@ SELECT
     a.email,
     a.avatar_url,
     (c.user_id = uc_primary.user_id) AS self,
-    a.inviteable
+    a.inviteable,
+    false AS "primary"
 FROM
     contact c
     JOIN actor a ON a.id = c.id
@@ -64,7 +71,8 @@ SELECT
     a.email,
     a.avatar_url,
     false AS self,
-    a.inviteable
+    a.inviteable,
+    true AS "primary"
 FROM
     "public"."user" u
     JOIN twist_instance pt ON pt.owner_id = u.id

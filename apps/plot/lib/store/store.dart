@@ -2051,7 +2051,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 314;
+  int get schemaVersion => 315;
 
   @override
   MigrationStrategy get migration {
@@ -2922,6 +2922,18 @@ class Store extends _$Store {
       // with the fixed parser and the server-populated defaults land locally.
       await m.database.customStatement(
         "DELETE FROM sync_states WHERE entity LIKE 'priorit%'",
+      );
+    }
+    if (from < 315) {
+      // Distinguishes canonical actors (primary linked contacts, external
+      // contacts, twist instances) from non-primary linked-contact aliases
+      // that are kept only for historical author resolution. Pickers filter
+      // on primary=true so each person appears once.
+      await _safeAddColumn(m, actors, actors.primary);
+      // Clear the actors sync cursor so the next sync re-pulls every row
+      // and stamps the correct primary flag (existing rows default to true).
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'actors%'",
       );
     }
   }

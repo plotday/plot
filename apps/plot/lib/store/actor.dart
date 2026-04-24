@@ -9,6 +9,11 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   TextColumn get avatarUrl => text().nullable()();
   BoolColumn get self => boolean()();
   BoolColumn get inviteable => boolean().withDefault(const Constant(true))();
+  /// The canonical actor for its underlying person/twist. Non-primary linked
+  /// contacts (secondary email aliases) are returned so historical content
+  /// authored by those IDs still resolves to a name, but they MUST be excluded
+  /// from user-facing pickers (mentions, share, assignee).
+  BoolColumn get primary => boolean().withDefault(const Constant(true))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -83,6 +88,7 @@ class Actor extends ActorRow {
     bool? archived = false,
     bool? self,
     bool? inviteable,
+    bool? primary,
   }) async {
     // Trigger archived sync if needed
     if (archived == true) {
@@ -100,6 +106,7 @@ class Actor extends ActorRow {
       archived: archived,
       self: self,
       inviteable: inviteable,
+      primary: primary,
     ).get();
 
     // Cache all fetched actors for synchronous lookups
@@ -118,6 +125,7 @@ class Actor extends ActorRow {
     bool? archived = false,
     bool? self,
     bool? inviteable,
+    bool? primary,
   }) {
     // Trigger archived sync if needed
     if (archived == true) {
@@ -135,6 +143,7 @@ class Actor extends ActorRow {
       archived: archived,
       self: self,
       inviteable: inviteable,
+      primary: primary,
     ).watch();
   }
 
@@ -194,6 +203,7 @@ class Actor extends ActorRow {
       types: [ActorType.user, ActorType.contact],
       search: search,
       inviteable: true,
+      primary: true,
     );
     candidates.removeWhere((a) => a.self);
 
@@ -343,6 +353,7 @@ class Actor extends ActorRow {
     bool? archived = false,
     bool? self,
     bool? inviteable,
+    bool? primary,
   }) {
     final a = Store.get.actors;
     final query = Store.get.select(a).join([]);
@@ -386,6 +397,13 @@ class Actor extends ActorRow {
       query.where(a.inviteable.equals(inviteable));
     }
 
+    // Filter by primary (default: no filter; pickers opt in by passing true
+    // to hide non-primary linked contacts — the alternate-email aliases kept
+    // for historical author resolution).
+    if (primary != null) {
+      query.where(a.primary.equals(primary));
+    }
+
     // Search by name or email (case-insensitive with LIKE)
     if (search != null && search.isNotEmpty) {
       final searchPattern = '%${search.toLowerCase()}%';
@@ -413,6 +431,7 @@ class Actor extends ActorRow {
         avatarUrl: row.avatarUrl,
         self: row.self,
         inviteable: row.inviteable,
+        primary: row.primary,
       );
 
   @override
@@ -427,6 +446,7 @@ class Actor extends ActorRow {
     Value<String?> avatarUrl = const Value.absent(),
     bool? self,
     bool? inviteable,
+    bool? primary,
     Value<int?> pending = const Value.absent(),
   }) => Actor.fromStore(
     super.copyWith(
@@ -440,6 +460,7 @@ class Actor extends ActorRow {
       avatarUrl: avatarUrl,
       self: self,
       inviteable: inviteable,
+      primary: primary,
       pending: pending,
     ),
   );

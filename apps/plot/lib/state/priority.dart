@@ -1497,6 +1497,7 @@ class PriorityBloc extends Cubit<PriorityState> {
       Actor.watch(
         types: [ActorType.user, ActorType.contact],
         inviteable: true,
+        primary: true,
       ).listen((actors) {
         log.fine('Priority actors updated: ${actors.length} actors');
         emit(state.copyWith(actors: actors));
