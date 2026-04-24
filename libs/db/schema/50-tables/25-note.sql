@@ -12,6 +12,7 @@ CREATE TABLE "public"."note" (
     "draft" boolean NOT NULL DEFAULT FALSE,
     "access_contacts" uuid[],
     "content" text, -- markdown
+    "external_content_hash" text, -- SHA-256 of (contentType + "\n" + content) as last seen by the connector; baseline for sync-in preservation
     "actions" jsonb,
     "key" text,
     "mentions" uuid[],
@@ -35,6 +36,8 @@ WHERE
     access_contacts IS NOT NULL;
 
 COMMENT ON COLUMN "public"."note"."key" IS 'External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).';
+
+COMMENT ON COLUMN "public"."note"."external_content_hash" IS 'SHA-256 hash of the content the connector last saw in the external system, computed over (contentType + "\n" + content). Used by connector sync-in to distinguish "external unchanged" (preserve Plot''s content, which may be formatted markdown) from "external edited" (overwrite with incoming). NULL means no baseline yet. Only set by the twist runtime — clients must not write to this column.';
 
 -- Ensure one note per key per thread
 -- No WHERE clause needed: NULL != NULL allows multiple notes when key is null

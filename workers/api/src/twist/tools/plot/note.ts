@@ -1,4 +1,5 @@
 import type { Database } from "@plotday/db";
+import { sql } from "kysely";
 import {
   type Action,
   type ActorId,
@@ -17,6 +18,7 @@ import { PostHog } from "posthog-node";
 import { detectTasks } from "../../../queue/note-analysis";
 import { rpc } from "../../../rpc";
 import { checkAiLimit, recordAiUsage } from "../../../utils/ai-limits";
+import { hashExternalContent } from "../hash-external-content";
 import type { Plot } from "./index";
 import {
   convertNoteToMarkdown,
@@ -168,6 +170,19 @@ export async function createNote(
       );
     }
 
+    // For keyed (connector-synced) notes with content, compute the external
+    // sync baseline. The hash covers the content as the connector provided
+    // it — pre-markdown conversion — so a connector's subsequent sync of
+    // unchanged external content produces the same hash and the upsert
+    // preserves Plot's (possibly richer) content. When the external side
+    // is actually edited, the hash diverges and we fall through to the
+    // overwrite path. See preservation logic on the ON CONFLICT below.
+    let externalContentHash: string | null = null;
+    const noteKey = "key" in note && typeof note.key === "string" ? note.key : null;
+    if (noteKey && note.content) {
+      externalContentHash = await hashExternalContent(note.content);
+    }
+
     // Process author - use provided author or default to twist
     const authorId = note.author
       ? await processNewActor(plot, note.author, priorityId)
@@ -227,6 +242,7 @@ export async function createNote(
       draft: false,
       access_contacts: resolvedAccessContacts,
       content: contentToStore,
+      external_content_hash: externalContentHash,
       actions: note.actions ? JSON.stringify(note.actions) : null,
       mentions: mentionIds,
       updated_by: plot.getUpdatedBy(),
@@ -246,11 +262,22 @@ export async function createNote(
       dbNote.key = note.key;
     }
 
-    // Insert or upsert note based on whether key is provided
+    // Insert or upsert note based on whether key is provided.
     // When key is provided, use upsert to handle duplicate keys within same activity.
-    // The WHERE clause ensures the UPDATE only fires when content actually changed,
-    // preventing unnecessary DB triggers (updated_at, sync_twist_for_note) that would
-    // wake TwistSync and cause feedback loops when connectors re-sync their own writes.
+    //
+    // Sync-baseline preservation: `note.external_content_hash` records the
+    // hash of the last external-provided content the runtime saw for this
+    // note. On re-upsert with the same hash, the external side is unchanged,
+    // so we preserve the existing `content` (which may be a richer Plot-side
+    // version — e.g. Plot-authored markdown round-tripping through a plain-
+    // text-only comments API, or a user-edited note whose new content Plot
+    // has but the connector hasn't pushed yet). When the hash differs, the
+    // external side was edited and we overwrite. When either hash is NULL,
+    // we fall back to the prior "overwrite always" behavior.
+    //
+    // The WHERE clause also gates on hash equality so a "same content"
+    // re-sync doesn't fire UPDATE and wake the sync_twist_for_note trigger
+    // (which would create a feedback loop).
     let dbResult = dbNote.key
       ? await plot.db
           .insertInto("note")
@@ -264,7 +291,14 @@ export async function createNote(
                 source_created_at: eb.ref("excluded.source_created_at"),
                 draft: eb.ref("excluded.draft"),
                 access_contacts: eb.ref("excluded.access_contacts"),
-                content: eb.ref("excluded.content"),
+                content: sql<string | null>`CASE
+                  WHEN excluded.external_content_hash IS NOT NULL
+                    AND note.external_content_hash IS NOT NULL
+                    AND excluded.external_content_hash = note.external_content_hash
+                  THEN note.content
+                  ELSE excluded.content
+                END` as any,
+                external_content_hash: sql<string | null>`COALESCE(excluded.external_content_hash, note.external_content_hash)` as any,
                 actions: eb.ref("excluded.actions"),
                 mentions: eb.ref("excluded.mentions"),
                 updated_by: eb.ref("excluded.updated_by"),
@@ -274,7 +308,17 @@ export async function createNote(
               }))
               .where((eb) =>
                 eb.or([
-                  eb("note.content", "is distinct from", eb.ref("excluded.content")),
+                  // Content-distinct check only matters when we lack a
+                  // baseline on either side; otherwise the hash comparison
+                  // is the authoritative "did external change" signal.
+                  eb.and([
+                    eb.or([
+                      eb("excluded.external_content_hash", "is", null),
+                      eb("note.external_content_hash", "is", null),
+                    ]),
+                    eb("note.content", "is distinct from", eb.ref("excluded.content")),
+                  ]),
+                  eb("note.external_content_hash", "is distinct from", eb.ref("excluded.external_content_hash")),
                   eb("note.author_id", "is distinct from", eb.ref("excluded.author_id")),
                   eb("note.source_created_at", "is distinct from", eb.ref("excluded.source_created_at")),
                   eb("note.archived_at", "is distinct from", eb.ref("excluded.archived_at")),

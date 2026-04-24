@@ -1,5 +1,6 @@
 import { sql, type Kysely } from "kysely";
 
+import type { NoteWriteBackResult } from "@plotday/twister";
 import {
   type Actor,
   type ActorId,
@@ -36,6 +37,7 @@ import {
   type ProviderData,
   type StoredTokenData,
 } from "../../provider";
+import { hashExternalContent } from "./hash-external-content";
 import { CallbacksState } from "../../state/callbacks";
 import { classifyInviteable } from "../../state/contact-classifier";
 import superjson from "superjson";
@@ -1258,7 +1260,14 @@ export class Integrations extends Tool implements IAuth {
         if (typeof item.updated_by === "number" && item.updated_by <= 0) return [];
 
         const { note, thread } = await this.buildNoteAndThread(item);
-        return [{ sourceMethod: "onNoteUpdated", args: [note, thread] }];
+        return [{
+          sourceMethod: "onNoteUpdated",
+          args: [note, thread],
+          // The hook may return a NoteWriteBackResult whose externalContent
+          // refreshes the sync baseline (so the next sync-in recognizes the
+          // post-write external state and preserves Plot's updated content).
+          deferredNoteKeyUpdate: { noteId: item.id as string },
+        }];
       }
 
       // Skip notes created by this twist (prevent loops for new notes only)
@@ -3383,11 +3392,43 @@ export class Integrations extends Tool implements IAuth {
     }
   }
 
-  /** Update a note's key for external dedup. Called by entrypoint when onNoteCreated returns a key. */
+  /** Update a note's key for external dedup. Called by entrypoint when onNoteCreated returns a plain-string key. */
   async updateNoteKey(noteId: string, key: string): Promise<void> {
     await this.db
       .updateTable("note")
       .set({ key })
+      .where("id", "=", noteId)
+      .execute();
+  }
+
+  /**
+   * Apply a {@link NoteWriteBackResult} after a connector's
+   * `onNoteCreated`/`onNoteUpdated` returned one. Sets the note's `key`
+   * (when the connector just established it) and stores the sync baseline
+   * hash of `externalContent` so the next sync-in can recognize the
+   * round-tripped content and preserve Plot's stored version.
+   *
+   * Uses a bypass-only UPDATE (doesn't touch other columns) so it won't
+   * wake the `sync_twist_for_note` trigger unless the hash or key actually
+   * changes. We intentionally skip the `updated_at`/`updated_by` refresh.
+   */
+  async updateNoteBaseline(
+    noteId: string,
+    result: NoteWriteBackResult
+  ): Promise<void> {
+    const patch: { key?: string; external_content_hash?: string } = {};
+    if (typeof result.key === "string" && result.key.length > 0) {
+      patch.key = result.key;
+    }
+    if (typeof result.externalContent === "string") {
+      patch.external_content_hash = await hashExternalContent(
+        result.externalContent
+      );
+    }
+    if (Object.keys(patch).length === 0) return;
+    await this.db
+      .updateTable("note")
+      .set(patch)
       .where("id", "=", noteId)
       .execute();
   }

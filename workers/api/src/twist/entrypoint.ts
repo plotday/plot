@@ -738,14 +738,26 @@ export default class extends WorkerEntrypoint {
                     );
                   }
 
-                  // If onNoteCreated returned a note key, update the note's key for future upsert matching
-                  if (callbackInfo.deferredNoteKeyUpdate && typeof cbResult === 'string') {
+                  // Dispatch origin: onNoteCreated / onNoteUpdated.
+                  //   - Plain string return  -> set note.key only (legacy).
+                  //   - NoteWriteBackResult  -> set key + refresh sync baseline
+                  //     (external_content_hash) from externalContent. Lets the
+                  //     next sync-in recognize the round-tripped external state
+                  //     and preserve Plot's (possibly richer) content.
+                  if (callbackInfo.deferredNoteKeyUpdate) {
+                    const noteId = callbackInfo.deferredNoteKeyUpdate.noteId;
                     try {
-                      if (typeof tool.updateNoteKey === 'function') {
-                        await tool.updateNoteKey(callbackInfo.deferredNoteKeyUpdate.noteId, cbResult);
+                      if (typeof cbResult === 'string') {
+                        if (typeof tool.updateNoteKey === 'function') {
+                          await tool.updateNoteKey(noteId, cbResult);
+                        }
+                      } else if (cbResult && typeof cbResult === 'object') {
+                        if (typeof tool.updateNoteBaseline === 'function') {
+                          await tool.updateNoteBaseline(noteId, cbResult);
+                        }
                       }
                     } catch (keyError) {
-                      console.warn('Failed to update note key:', keyError);
+                      console.warn('Failed to update note baseline:', keyError);
                     }
                   }
                 } catch (error) {
