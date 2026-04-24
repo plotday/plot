@@ -1010,6 +1010,10 @@ class NewThreadPageState extends State<NewThreadPage> {
           ),
         ),
         mainAxisSize: MainAxisSize.min,
+        prefix: FaIcon(
+          selected ? FontAwesomeIcons.user : FontAwesomeIcons.plus,
+          size: context.theme.iconSizes.sm,
+        ),
         child: Text(
           actor.name ?? actor.email ?? 'Unknown',
           style: (!selected && !hovered)
@@ -1019,8 +1023,18 @@ class NewThreadPageState extends State<NewThreadPage> {
       );
     }
 
-    if (selected) return buildChip(false);
-    return _HoverBuilder(builder: (context, hovered) => buildChip(hovered));
+    final email = actor.email;
+    final showEmailTooltip = email != null && actor.name != null;
+    Widget chip = selected
+        ? buildChip(false)
+        : _HoverBuilder(builder: (context, hovered) => buildChip(hovered));
+    if (showEmailTooltip) {
+      chip = FTooltip(
+        tipBuilder: (context, controller) => Text(email),
+        child: chip,
+      );
+    }
+    return chip;
   }
 
   Widget _buildEmailChip(
