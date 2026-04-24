@@ -10,6 +10,7 @@ export default [
     index("routes/home.tsx"),
     route("twists", "routes/twists.tsx"),
     route("connections", "routes/connections.tsx"),
+    route("slack", "routes/slack.tsx"),
     route("pricing", "routes/pricing.tsx"),
     route("start", "routes/start.tsx"),
     route("start-done", "routes/start-done.tsx"),

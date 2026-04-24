@@ -94,6 +94,11 @@ type AuthState = {
   clientId?: string;
   redirectUri?: string;
   bridgeUri?: string;
+  // Set by the plot.day/slack admin-install flow: complete the OAuth exchange
+  // purely to register the app with the workspace (unlocking the install gate
+  // for member connects), then discard/revoke the admin's token — no callback,
+  // no account linkage, no deep-link back to the app.
+  installOnly?: boolean;
 };
 
 type ChannelConfig = {
@@ -2086,12 +2091,20 @@ export class Integrations extends Tool implements IAuth {
     const channelArg = { id: channelId, title: title ?? channelId };
     const syncContext = await this.buildSyncContext();
 
-    // Self-heal: if we couldn't find linkTypes (or title) from channel_access KV
-    // or an existing row, prepend a getChannels → setChannels dispatch. This
-    // runs before onChannelEnabled on the same request, so setChannels updates
-    // title + link_types on the row we just inserted. Required to make
-    // archive+re-add work for users whose channel_access KV was never populated.
-    const refreshDispatch = (!linkTypes || !channelObj?.title)
+    // Self-heal: if the channel isn't in channel_access KV at all, prepend a
+    // getChannels → setChannels dispatch to populate it. This runs before
+    // onChannelEnabled on the same request, so setChannels updates title +
+    // link_types on the row we just inserted.
+    //
+    // We only refresh when the channel is genuinely missing (no title from
+    // KV and no caller-supplied title). Per-channel linkTypes being null is
+    // not a trigger — most connectors expose linkTypes at the provider level
+    // only, so a refresh would not populate them anyway. Previously we
+    // refreshed on missing linkTypes too, which re-invoked getChannels on
+    // every enable for nearly every connector — for Google Drive that
+    // paginates every folder across every drive inline and blocks the HTTP
+    // response for many seconds. See commit adding this note.
+    const refreshDispatch = !channelObj?.title
       ? await this.buildRefreshDispatch(provider, actorId)
       : null;
 

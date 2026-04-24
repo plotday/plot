@@ -749,7 +749,11 @@ class _AuthButtonState extends State<AuthButton>
       if (_useNativeGoogleSignInForTwist) {
         await _startTwistNativeGoogle(authUrl);
       } else {
-        await _startTwistBrowser(authUrl, redirectUri);
+        final completed = await _startTwistBrowser(authUrl, redirectUri);
+        // User cancelled or the provider returned an error. The bridge page
+        // they returned from already surfaced the message, so don't pop a
+        // second toast or advance the caller's setup flow.
+        if (!completed) return;
       }
 
       // Keep the button's spinner on through the activation step the caller
@@ -830,7 +834,18 @@ class _AuthButtonState extends State<AuthButton>
     await api.post<Map<String, dynamic>>(callbackUri.toString());
   }
 
-  Future<void> _startTwistBrowser(
+  /// Returns true when the OAuth flow completed successfully. Returns false
+  /// when the user cancelled or the provider redirected back with an error
+  /// (e.g. Slack's workspace install gate) — in that case the error was
+  /// already surfaced on the bridge page the user returned from, so the
+  /// caller must skip its post-success work.
+  ///
+  /// Two success shapes are possible: bridge flows (requiresHttpsRedirect
+  /// providers like Slack) return `?state=…&success=1` because the API
+  /// already completed the token exchange server-side before rendering the
+  /// bridge page, so there's no `code` for us to POST. Non-bridge flows
+  /// return `?code=…&state=…` and we POST the code here.
+  Future<bool> _startTwistBrowser(
     TwistAuthUrl authUrl,
     String redirectUri,
   ) async {
@@ -840,19 +855,23 @@ class _AuthButtonState extends State<AuthButton>
     );
 
     final responseUri = Uri.parse(result);
-    final code = responseUri.queryParameters['code'];
-    if (code == null) return;
+    final params = responseUri.queryParameters;
+    if (params['error'] != null) return false;
 
-    final callbackUri = Uri(
-      path: '/auth',
-      queryParameters: {
-        'code': code,
-        'clientId': authUrl.clientId,
-        'redirectUri': redirectUri,
-        'state': authUrl.state,
-      },
-    );
-    await api.post<Map<String, dynamic>>(callbackUri.toString());
+    final code = params['code'];
+    if (code != null) {
+      final callbackUri = Uri(
+        path: '/auth',
+        queryParameters: {
+          'code': code,
+          'clientId': authUrl.clientId,
+          'redirectUri': redirectUri,
+          'state': authUrl.state,
+        },
+      );
+      await api.post<Map<String, dynamic>>(callbackUri.toString());
+    }
+    return true;
   }
 
   void _showTwistAuthError({String? message}) {
