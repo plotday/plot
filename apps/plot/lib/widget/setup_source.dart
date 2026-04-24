@@ -107,6 +107,11 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
   /// Providers currently being refreshed — keeps existing data visible.
   final Set<AuthProvider> _refreshingProviders = {};
 
+  /// Local state for the per-account "sync new channels" toggle. Keyed by
+  /// "providerKey:actorId" — same shape as channel keys above. Seeded from
+  /// the server `accounts[].autoEnableNewChannels` field.
+  final Map<String, bool> _autoEnableLocalState = {};
+
   @override
   void initState() {
     super.initState();
@@ -140,6 +145,14 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
 
   /// Seed local selected channels from server enabled state or smart defaults.
   void _seedLocalState(TwistIntegrations data) {
+    for (final account in data.accounts) {
+      final key = '${account.provider.name}:${account.actorId}';
+      _autoEnableLocalState.putIfAbsent(
+        key,
+        () => account.autoEnableNewChannels,
+      );
+    }
+
     if (_initializedFromServer) return;
 
     if (!widget.setupMode) {
@@ -150,6 +163,31 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       // Setup mode: compute smart defaults
       _initializedFromServer = true;
       _applySuggestedDefaults(data);
+    }
+  }
+
+  Future<void> _toggleAutoEnable(TwistAccount account) async {
+    final key = '${account.provider.name}:${account.actorId}';
+    final current = _autoEnableLocalState[key] ?? false;
+    final next = !current;
+
+    setState(() => _autoEnableLocalState[key] = next);
+
+    try {
+      await TwistApi.setAutoEnableNewChannels(
+        twistInstanceId: widget.twistInstanceId,
+        provider: account.provider.name,
+        actorId: account.actorId,
+        enabled: next,
+      );
+    } catch (e, t) {
+      log.warning('Failed to update sync new channels', e, t);
+      if (!mounted) return;
+      setState(() => _autoEnableLocalState[key] = current);
+      context.showToast(
+        message: 'Failed to update sync setting. Please try again.',
+        isError: true,
+      );
     }
   }
 
@@ -530,13 +568,33 @@ class _SetupSourceWidgetState extends State<SetupSourceWidget> {
       }
     }
 
+    // Per-account "sync new channels" toggles, rendered at the end of the
+    // channel list. Skipped for accounts whose provider is fully soft-removed.
+    final autoEnableRows = <Widget>[];
+    for (final account in data.accounts) {
+      if (fullyRemovedProviders.contains(account.provider)) continue;
+      final accountKey = '${account.provider.name}:${account.actorId}';
+      if (_removedAccounts.contains(accountKey)) continue;
+      autoEnableRows.add(
+        _AutoEnableNewChannelsRow(
+          showAccountLabel: data.accounts.length > 1,
+          accountLabel: account.displayName,
+          isOn: _autoEnableLocalState[accountKey] ?? false,
+          onToggle: () => _toggleAutoEnable(account),
+        ),
+      );
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ...accountRows,
         ...channelRows,
-        if (channelRows.isNotEmpty || accountRows.isNotEmpty)
+        ...autoEnableRows,
+        if (channelRows.isNotEmpty ||
+            accountRows.isNotEmpty ||
+            autoEnableRows.isNotEmpty)
           SizedBox(height: context.theme.spacing.md),
       ],
     );
@@ -873,5 +931,111 @@ class ProviderIcon extends StatelessWidget {
       default:
         return null;
     }
+  }
+}
+
+class _AutoEnableNewChannelsRow extends StatefulWidget {
+  const _AutoEnableNewChannelsRow({
+    required this.isOn,
+    required this.onToggle,
+    required this.showAccountLabel,
+    required this.accountLabel,
+  });
+
+  final bool isOn;
+  final VoidCallback onToggle;
+
+  /// When the modal shows multiple accounts of the same connector, append the
+  /// account label to the title so the user can tell the toggles apart.
+  final bool showAccountLabel;
+  final String accountLabel;
+
+  @override
+  State<_AutoEnableNewChannelsRow> createState() =>
+      _AutoEnableNewChannelsRowState();
+}
+
+class _AutoEnableNewChannelsRowState extends State<_AutoEnableNewChannelsRow> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final title = widget.showAccountLabel
+        ? 'Sync new channels · ${widget.accountLabel}'
+        : 'Sync new channels';
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onToggle,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: _isHovered
+                ? theme.colors.foreground.withValues(alpha: 0.05)
+                : null,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 12.0 + theme.iconSizes.base + 12.0,
+              right: theme.spacing.sm,
+              top: theme.spacing.sm,
+              bottom: theme.spacing.sm,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(right: theme.spacing.sm),
+                  child: const SizedBox(width: 10),
+                ),
+                IgnorePointer(
+                  child: SizedBox(
+                    width: 32,
+                    height: 20,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: FSwitch(
+                        value: widget.isOn,
+                        onChange: (_) {},
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: theme.spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: theme.typography.sm.fontSize,
+                          color: theme.colors.foreground,
+                        ),
+                      ),
+                      SizedBox(height: theme.spacing.xs),
+                      Text(
+                        'When a new channel is added, enable it automatically.',
+                        style: TextStyle(
+                          fontSize: theme.typography.xs.fontSize,
+                          color: theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

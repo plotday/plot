@@ -330,6 +330,21 @@ class TwistApi {
     );
   }
 
+  /// Set the per-connection "sync new channels" flag.
+  /// When true, channels discovered for the first time during a periodic
+  /// refresh are enabled automatically.
+  static Future<void> setAutoEnableNewChannels({
+    required String twistInstanceId,
+    required String provider,
+    required String actorId,
+    required bool enabled,
+  }) async {
+    await api.post<Map<String, dynamic>>(
+      '/twist/$twistInstanceId/syncables/$provider/auto-enable',
+      body: {'actorId': actorId, 'enabled': enabled},
+    );
+  }
+
   /// Get available source channels for link observation
   static Future<List<LinkChannel>> getAvailableLinkChannels(
     String twistInstanceId,
@@ -781,12 +796,14 @@ class TwistAccount extends Equatable {
   final String actorId;
   final String? email;
   final String? name;
+  final bool autoEnableNewChannels;
 
   const TwistAccount({
     required this.provider,
     required this.actorId,
     this.email,
     this.name,
+    this.autoEnableNewChannels = false,
   });
 
   factory TwistAccount.fromJson(Map<String, dynamic> json) {
@@ -798,13 +815,15 @@ class TwistAccount extends Equatable {
       actorId: json['actorId'] as String,
       email: json['email'] as String?,
       name: json['name'] as String?,
+      autoEnableNewChannels: json['autoEnableNewChannels'] as bool? ?? false,
     );
   }
 
   String get displayName => name ?? email ?? actorId;
 
   @override
-  List<Object?> get props => [provider, actorId, email, name];
+  List<Object?> get props =>
+      [provider, actorId, email, name, autoEnableNewChannels];
 }
 
 /// A channel resource for a twist integration

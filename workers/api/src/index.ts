@@ -50,6 +50,7 @@ import { extractRequestContext, extractErrorContext, mergeContext } from "./util
 import { dbMiddleware } from "./middleware/db";
 import { withDb } from "./db";
 import { syncUserTwistStats } from "./utils/twist-stats";
+import { refreshAllChannels } from "./scheduled/refresh-channels";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
@@ -311,10 +312,22 @@ async function scheduled(
     );
   }
 
+  // Daily sweep: re-discover external channels for every active connection so
+  // newly-created Slack channels / Airtable bases / Linear projects show up
+  // automatically. When the per-connection auto-enable flag is on, new
+  // channels are also enabled in the same call.
+  const scheduledTime = new Date(event.scheduledTime);
+  if (scheduledTime.getUTCHours() === 5 && scheduledTime.getUTCMinutes() < 5) {
+    try {
+      await refreshAllChannels(env, _ctx);
+    } catch (error) {
+      logger.error("Error in periodic channel refresh", error as Error);
+    }
+  }
+
   // Daily sweep: refresh PostHog person properties with each user's active
   // connector and twist counts. Cron fires every 5 minutes, so we gate to a
   // single window (07:00-07:04 UTC) to run once per day.
-  const scheduledTime = new Date(event.scheduledTime);
   if (scheduledTime.getUTCHours() === 7 && scheduledTime.getUTCMinutes() < 5) {
     const postHog = new PostHog(env.POSTHOG_API_KEY, {
       host: env.POSTHOG_HOST,

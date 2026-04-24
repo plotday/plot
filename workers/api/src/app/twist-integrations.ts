@@ -1129,6 +1129,90 @@ twistIntegrations.post(
   }
 );
 
+// POST /twist/:id/syncables/:provider/auto-enable
+// Set the per-connection "auto-enable newly discovered channels" flag.
+twistIntegrations.post(
+  "/twist/:id/syncables/:provider/auto-enable",
+  async (c) => {
+    const twistInstanceId = c.req.param("id");
+    const provider = c.req.param("provider");
+    const body = await c.req.json<{ actorId?: string; enabled?: boolean }>();
+    const actorId = body.actorId;
+    const enabled = body.enabled === true;
+
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
+
+    if (!actorId) {
+      return c.json({ message: "actorId is required" }, 400);
+    }
+
+    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
+    if (!twistInfo) {
+      return c.json({ message: "Twist not found" }, 404);
+    }
+
+    const config = await loadTwistConfig(
+      c.env,
+      twistInfo.twistPackageId,
+      twistInfo.version
+    );
+    if (!config) {
+      return c.json({ message: "Twist config not found" }, 404);
+    }
+
+    const integrationsPathStr = config.integrationsMap[provider];
+    if (!integrationsPathStr) {
+      return c.json(
+        { message: `Provider ${provider} not configured` },
+        400
+      );
+    }
+
+    try {
+      const factory = twistFactory({
+        env: c.env,
+        ctx: c.executionCtx as ExecutionContext,
+        db: c.var.db,
+      });
+
+      const twistWrapper = await factory({
+        twistInstanceId,
+      });
+
+      const result = await twistWrapper.callCallback(
+        integrationsPathStr.split(":"),
+        "setAutoEnableNewChannels",
+        provider,
+        actorId,
+        enabled
+      );
+      disposeRpc(result);
+
+      logger.info("Auto-enable new channels updated", {
+        provider,
+        actor_id: actorId,
+        enabled,
+      });
+
+      return c.json({ success: true });
+    } catch (error) {
+      logger.error(
+        "Error setting auto-enable new channels",
+        error as Error,
+        { provider, actor_id: actorId }
+      );
+      return c.json(
+        {
+          message: `Failed to update setting: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+        },
+        500
+      );
+    }
+  }
+);
+
 // DELETE /twist/:id/integrations/:provider/:actorId
 // Remove an account (auth token) for a provider.
 twistIntegrations.delete(

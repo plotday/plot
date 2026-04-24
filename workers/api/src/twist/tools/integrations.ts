@@ -449,14 +449,134 @@ export class Integrations extends Tool implements IAuth {
    * support can see the full available list (DO state is not reachable from
    * psql). New rows are inserted with enabled=false; enable/disable state is
    * owned by enableSync/disableSync and never overwritten here.
+   *
+   * If `auto_enable_new_channels:${provider}:${actorId}` is set, any channel
+   * that's appearing for the first time (no existing public.channel row) is
+   * enabled in the same call and an `onChannelEnabled` dispatch entry is
+   * returned, so periodic refreshes pick up new sources/calendars/projects
+   * without user action.
    */
   async setChannels(
     provider: AuthProvider,
     actorId: ActorId,
     channels: Channel[]
-  ): Promise<void> {
+  ): Promise<any> {
+    // Snapshot the set of channels we already know about before mirroring so
+    // we can identify newly-discovered ones for auto-enable.
+    const flat = this.flattenChannels(channels);
+    const knownIds = new Set<string>();
+    if (flat.length > 0) {
+      const existingRows = await this.db
+        .selectFrom("channel")
+        .select("channel_id")
+        .where("twist_instance_id", "=", this.twistInstanceId)
+        .where(
+          "channel_id",
+          "in",
+          flat.map((c) => c.id)
+        )
+        .execute();
+      for (const row of existingRows) knownIds.add(row.channel_id);
+    }
+
     await this.store.set(`channel_access:${provider}:${actorId}`, channels);
     await this.mirrorChannelsToDb(channels);
+
+    // Auto-enable newly-discovered channels when the per-connection flag is on.
+    const autoEnable = await this.store.get<boolean>(
+      `auto_enable_new_channels:${provider}:${actorId}`
+    );
+    if (!autoEnable) return;
+
+    const newChannels = flat.filter((c) => !knownIds.has(c.id));
+    if (newChannels.length === 0) return;
+
+    const syncContext = await this.buildSyncContext();
+    const dispatches: any[] = [];
+    for (const channel of newChannels) {
+      const entry = await this.applyChannelEnabled(
+        provider,
+        actorId,
+        channel,
+        syncContext
+      );
+      if (entry) dispatches.push(entry);
+    }
+    if (dispatches.length > 0) return { __dispatch: dispatches } as any;
+  }
+
+  /**
+   * Per-connection preference: when true, channels discovered for the first
+   * time via `setChannels` are auto-enabled. Default is false.
+   */
+  async getAutoEnableNewChannels(
+    provider: AuthProvider,
+    actorId: ActorId
+  ): Promise<boolean> {
+    return (
+      (await this.store.get<boolean>(
+        `auto_enable_new_channels:${provider}:${actorId}`
+      )) ?? false
+    );
+  }
+
+  async setAutoEnableNewChannels(
+    provider: AuthProvider,
+    actorId: ActorId,
+    enabled: boolean
+  ): Promise<void> {
+    await this.store.set(
+      `auto_enable_new_channels:${provider}:${actorId}`,
+      enabled
+    );
+  }
+
+  /**
+   * Persist enable for a channel and build the onChannelEnabled dispatch entry.
+   * Shared between enableSync (user-triggered) and setChannels (auto-enable on
+   * newly-discovered channels). Caller is responsible for assembling the
+   * resulting `{ __dispatch }` envelope.
+   */
+  private async applyChannelEnabled(
+    provider: AuthProvider,
+    actorId: ActorId,
+    channel: Channel,
+    syncContext: SyncContext
+  ): Promise<any | null> {
+    const title = channel.title ?? channel.id;
+    const linkTypes = channel.linkTypes ?? null;
+
+    await this.store.set(`channel_config:${provider}:${channel.id}`, {
+      enabled: true,
+      enabledBy: actorId,
+      title,
+    } satisfies ChannelConfig);
+
+    await this.db
+      .updateTable("channel")
+      .set({
+        enabled: true,
+        title,
+        ...(linkTypes ? { link_types: JSON.stringify(linkTypes) as any } : {}),
+        updated_at: new Date(),
+      })
+      .where("twist_instance_id", "=", this.twistInstanceId)
+      .where("channel_id", "=", channel.id)
+      .execute();
+
+    const channelArg = { id: channel.id, title };
+
+    if (this.sourceProvider) {
+      return { sourceMethod: "onChannelEnabled", args: [channelArg, syncContext] };
+    }
+    const providerIndex = this.providerConfigs.findIndex(
+      (p) => p.provider === provider
+    );
+    if (providerIndex < 0) return null;
+    return {
+      optionPath: ["providers", providerIndex, "onChannelEnabled"],
+      args: [channelArg, syncContext],
+    };
   }
 
   /**
@@ -2213,6 +2333,7 @@ export class Integrations extends Tool implements IAuth {
       actorId: ActorId;
       email: string | null;
       name: string | null;
+      autoEnableNewChannels: boolean;
       enabledScopeGroups?: string[];
     }>;
     syncables: Array<{
@@ -2267,6 +2388,7 @@ export class Integrations extends Tool implements IAuth {
       actorId: ActorId;
       email: string | null;
       name: string | null;
+      autoEnableNewChannels: boolean;
       enabledScopeGroups?: string[];
     }> = [];
 
@@ -2339,11 +2461,17 @@ export class Integrations extends Tool implements IAuth {
           `enabled_scope_groups:${provider}:${actorId}`
         );
 
+        const autoEnableNewChannels =
+          (await this.store.get<boolean>(
+            `auto_enable_new_channels:${provider}:${actorId}`
+          )) ?? false;
+
         accounts.push({
           provider,
           actorId: actorId as ActorId,
           email,
           name,
+          autoEnableNewChannels,
           ...(enabledScopeGroups ? { enabledScopeGroups } : {}),
         });
 
