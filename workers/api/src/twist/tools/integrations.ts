@@ -611,6 +611,47 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
+   * Batch version of {@link saveLink}. Runs the saves concurrently inside the
+   * worker (in bounded chunks) so the caller pays one cross-runtime round-trip
+   * for N links instead of N. Order of the returned array matches the input.
+   *
+   * Failures on individual links DO NOT abort the batch: each failure is
+   * logged and returned as `null` in its slot. Callers that need to know
+   * how many succeeded can count non-null entries. This keeps one malformed
+   * item from losing an entire page of synced data, which is the realistic
+   * failure mode on large initial syncs from external providers.
+   */
+  async saveLinks(links: NewLinkWithNotes[]): Promise<(Uuid | null)[]> {
+    if (links.length === 0) return [];
+    // Bound concurrency so a 2,500-link page doesn't fan out to 2,500
+    // simultaneous DB transactions. Kysely serializes on a single connection
+    // anyway, but chunking provides isolation and back-pressure.
+    const CHUNK = 10;
+    const results: (Uuid | null)[] = new Array(links.length);
+    for (let i = 0; i < links.length; i += CHUNK) {
+      const chunk = links.slice(i, i + CHUNK);
+      const settled = await Promise.allSettled(
+        chunk.map((link) => this.saveLink(link))
+      );
+      for (let j = 0; j < settled.length; j++) {
+        const r = settled[j];
+        if (r.status === "fulfilled") {
+          results[i + j] = r.value;
+        } else {
+          const source =
+            (chunk[j] as { source?: string }).source ?? "(no source)";
+          console.error(
+            `saveLinks: link ${i + j} failed (source=${source}):`,
+            r.reason
+          );
+          results[i + j] = null;
+        }
+      }
+    }
+    return results;
+  }
+
+  /**
    * Attaches a connector-returned link to an existing user-created thread.
    * Used by the `create_link` dispatch path: the user authored the thread in
    * Plot, the connector's `onCreateLink` created the external item, and the
