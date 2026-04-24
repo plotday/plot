@@ -312,8 +312,14 @@ class PriorityState extends Equatable {
     required Priority context,
     required int horizonDays,
     Map<Uuid, List<ThreadAssociationRow>>? associationsByParentId,
-    Set<Uuid>? outsidePriorityIds,
   }) {
+    // A thread is "outside" the current view when its priority is neither
+    // the current context nor a descendant of it. Link-scheduled events
+    // from outside priorities are shown dimmed; associations and other
+    // groupings treat them as external.
+    bool isOutside(Thread t) =>
+        t.priority.path != context.path &&
+        !context.path.isParent(t.priority.path);
     log.fine('[_makeAgenda] rebuilding agenda (${threads.length} threads)');
     final items = <AgendaItem>[];
     final addedAssociations = <String>{};
@@ -438,7 +444,7 @@ class PriorityState extends Equatable {
       bool current = false,
       DateTime? scheduleAt,
     }) {
-      final isOutside = outsidePriorityIds?.contains(event.id) == true;
+      final eventIsOutside = isOutside(event);
 
       final startOfDay =
           event.draft && event.at?.start == event.at?.start?.startOfDay;
@@ -448,7 +454,7 @@ class PriorityState extends Equatable {
           AgendaHeaderItem(
             date: event.at?.start?.toDate(),
             now: current,
-            isOutsidePriority: isOutside,
+            isOutsidePriority: eventIsOutside,
           ),
         );
       } else {
@@ -458,12 +464,12 @@ class PriorityState extends Equatable {
             dateTimeRange: event.at,
             now: current,
             thread: event,
-            isOutsidePriority: isOutside,
+            isOutsidePriority: eventIsOutside,
           ),
         );
         // Add the event as a thread widget below the header
         items.add(
-          AgendaThreadItem(event, now: current, isOutsidePriority: isOutside),
+          AgendaThreadItem(event, now: current, isOutsidePriority: eventIsOutside),
         );
       }
 
@@ -474,7 +480,7 @@ class PriorityState extends Equatable {
       // Track which (child, parentKey) pairs have been added to avoid
       // duplicates when the same event appears multiple times (e.g.
       // multiple link schedule instances for the same recurring event).
-      if (!isOutside && associationsByParentId != null) {
+      if (!eventIsOutside && associationsByParentId != null) {
         final associations = associationsByParentId[event.id];
         if (associations != null) {
           final parentKey =
@@ -499,7 +505,7 @@ class PriorityState extends Equatable {
 
       // Outside-priority events only show the event itself — no todos or
       // notes are grouped under them.
-      if (isOutside) return threads;
+      if (eventIsOutside) return threads;
 
       // Pinned-to-event-start todos are handled by the time-match
       // condition in the priority filter below, so they sort by order

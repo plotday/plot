@@ -1666,7 +1666,7 @@ class PriorityBloc extends Cubit<PriorityState> {
               ThreadWatchResult,
               List<Thread>,
               List<Thread>,
-              (ThreadWatchResult, Set<Uuid>)
+              ThreadWatchResult
             >(agendaStream, associatedStream, crossPriorityStream, (
               agendaResult,
               associatedThreads,
@@ -1698,18 +1698,16 @@ class PriorityBloc extends Cubit<PriorityState> {
               }).toList();
 
               // Merge cross-priority link events not already in agenda.
-              // Track which thread IDs are outside the current priority.
               // Only include actual link schedule instances from the
               // cross-priority stream — base threads (e.g. todos that
-              // happen to have a link) should not leak through.
-              final outsidePriorityIds = <Uuid>{};
-              final crossExtra = <Thread>[];
-              for (final t in crossPriorityThreads) {
-                if (!agendaIds.contains(t.id) && t.isLinkScheduleInstance) {
-                  crossExtra.add(t);
-                  outsidePriorityIds.add(t.id);
-                }
-              }
+              // happen to have a link) should not leak through. Whether
+              // each thread is dimmed is decided at render time in
+              // [_makeAgenda] via a direct path check on the thread's
+              // priority, so this step does not need to track them.
+              final crossExtra = <Thread>[
+                for (final t in crossPriorityThreads)
+                  if (!agendaIds.contains(t.id) && t.isLinkScheduleInstance) t,
+              ];
 
               final allThreads = [
                 ...agendaResult.threads,
@@ -1718,34 +1716,30 @@ class PriorityBloc extends Cubit<PriorityState> {
               ];
 
               return (
-                (threads: allThreads, rawRowCount: agendaResult.rawRowCount),
-                outsidePriorityIds,
+                threads: allThreads,
+                rawRowCount: agendaResult.rawRowCount,
               );
             })
-            .map((combined) {
+            .map((result) {
               // Compute a cheap signature so identical re-emissions can be
               // dropped before we pay the _makeAgenda cost. Drift streams
               // re-fire on every table change, so repeated syncs of unrelated
               // tables produce many identical emissions.
-              final (result, outsidePriorityIds) = combined;
               final threadSig =
                   (result.threads
                           .map(
                             (t) =>
                                 '${t.id}:${t.updatedAt.microsecondsSinceEpoch}'
                                 ':${t.occurrence ?? ''}'
-                                ':${t.isLinkScheduleInstance ? 1 : 0}',
+                                ':${t.isLinkScheduleInstance ? 1 : 0}'
+                                ':${t.priority.path.value}',
                           )
                           .toList()
                         ..sort())
                       .join(',');
-              final outsideSig =
-                  (outsidePriorityIds.map((u) => u.toString()).toList()..sort())
-                      .join(',');
               final sig =
-                  '${result.rawRowCount}|${result.threads.length}|'
-                  '$threadSig|$outsideSig';
-              return (sig, combined);
+                  '${result.rawRowCount}|${result.threads.length}|$threadSig';
+              return (sig, result);
             })
             .distinct((a, b) => a.$1 == b.$1)
             .map((tagged) => tagged.$2)
@@ -1763,9 +1757,8 @@ class PriorityBloc extends Cubit<PriorityState> {
               }),
             )
             .debounceTime(const Duration(milliseconds: 100))
-            .listen((combined) {
-              final (result, outsidePriorityIds) = combined;
-              final (:threads, :rawRowCount) = result;
+            .listen((result) {
+              final threads = result.threads;
 
               final now = DateTime.now();
 
@@ -1879,7 +1872,6 @@ class PriorityBloc extends Cubit<PriorityState> {
                       context: priorityToLoad,
                       horizonDays: _agendaHorizonDays,
                       associationsByParentId: _associations,
-                      outsidePriorityIds: outsidePriorityIds,
                     );
 
               emit(
