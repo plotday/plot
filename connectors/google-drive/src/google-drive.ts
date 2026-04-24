@@ -269,7 +269,6 @@ export class GoogleDrive extends Connector<GoogleDrive> {
    * Runs as a task to avoid blocking the HTTP response from onChannelEnabled.
    */
   async initChannel(channelId: string, timeMinISO?: string | null): Promise<void> {
-    console.log(`[google-drive] initChannel started for ${channelId}`);
     const api = await this.getApi(channelId);
     const changesToken = await getChangesStartToken(api);
     const timeMin = timeMinISO ? new Date(timeMinISO) : undefined;
@@ -299,14 +298,11 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       await this.set(`sync_state_${channelId}`, initialState);
     }
 
-    console.log(`[google-drive] Setting up drive watch for ${channelId}`);
     await this.setupDriveWatch(channelId);
 
     // Run first batch inline (we're already in a task context) to avoid an
     // extra queue cycle delay. Subsequent batches are queued as tasks.
-    console.log(`[google-drive] Starting initial sync for ${channelId}`);
     await this.syncBatch(1, channelId, true);
-    console.log(`[google-drive] initChannel completed for ${channelId}`);
   }
 
   /**

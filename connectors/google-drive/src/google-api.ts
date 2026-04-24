@@ -240,6 +240,7 @@ export async function listComments(
           "nextPageToken,comments(id,content,htmlContent,author,assigneeEmailAddress,createdTime,modifiedTime,resolved,replies(id,content,htmlContent,author,createdTime,modifiedTime))",
         pageSize: 100,
         includeDeleted: false,
+        supportsAllDrives: true,
         pageToken,
       }
     )) as { comments: GoogleDriveComment[]; nextPageToken?: string } | null;
@@ -263,7 +264,10 @@ export async function createComment(
   return (await api.call(
     "POST",
     `${DRIVE_API}/files/${fileId}/comments`,
-    { fields: "id,content,author,createdTime,modifiedTime,resolved" },
+    {
+      fields: "id,content,author,createdTime,modifiedTime,resolved",
+      supportsAllDrives: true,
+    },
     { content, anchor: "" }
   )) as GoogleDriveComment;
 }
