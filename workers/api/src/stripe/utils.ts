@@ -123,8 +123,8 @@ export function isCustomerDeletedError(error: unknown): boolean {
 }
 
 /**
- * Create a free tier subscription in Stripe using price lookup key
- * Uses "free_monthly" lookup key which must be configured in Stripe
+ * Create a free tier subscription in Stripe. Used to reinstate billing
+ * tracking after a paid sub is cancelled (or a trial ends without payment).
  */
 export async function createFreeSubscription(
   stripe: Stripe,
@@ -136,7 +136,6 @@ export async function createFreeSubscription(
     userId: string;
   }
 ): Promise<Stripe.Subscription> {
-  // Get the price using lookup key
   const prices = await stripe.prices.list({
     lookup_keys: ["free_monthly"],
     limit: 1,
@@ -150,23 +149,58 @@ export async function createFreeSubscription(
 
   return await stripe.subscriptions.create({
     customer: customerId,
-    items: [
-      {
-        price: prices.data[0].id,
-      },
-    ],
+    items: [{ price: prices.data[0].id }],
     metadata: {
       user_id: userId,
-      // Stripe-side this is the $0 free_monthly price, but Plot grants Core
-      // access for the 30-day reverse trial. The webhook reads metadata.plan
-      // to populate user_subscription.plan, so 'core' here is what makes the
-      // trial actually take effect for limits/features.
+      plan: "free",
+    },
+  });
+}
+
+/**
+ * Create the initial subscription for a brand-new user: a 30-day Stripe-native
+ * trial of the Core plan with no card collected up front. If the user adds a
+ * payment method during the trial, Stripe converts to active billing
+ * automatically. If they don't, Stripe cancels the sub at trial end and
+ * customer.subscription.deleted fires so we can downgrade to free.
+ *
+ * Stripe drives all the timing (trial_will_end fires 3 days before, deleted
+ * fires at expiry) — no Durable Object scheduling needed on our side.
+ */
+export async function createInitialTrialSubscription(
+  stripe: Stripe,
+  {
+    customerId,
+    userId,
+  }: {
+    customerId: string;
+    userId: string;
+  }
+): Promise<Stripe.Subscription> {
+  const prices = await stripe.prices.list({
+    lookup_keys: ["core_monthly"],
+    limit: 1,
+  });
+
+  if (!prices.data.length) {
+    throw new Error(
+      'Price with lookup key "core_monthly" not found in Stripe. Please create it first.'
+    );
+  }
+
+  return await stripe.subscriptions.create({
+    customer: customerId,
+    items: [{ price: prices.data[0].id }],
+    trial_period_days: 30,
+    payment_settings: {
+      save_default_payment_method: "on_subscription",
+    },
+    trial_settings: {
+      end_behavior: { missing_payment_method: "cancel" },
+    },
+    metadata: {
+      user_id: userId,
       plan: "core",
-      // Marker the webhook checks to avoid two anti-features kicking in for
-      // the initial trial sub: clearing trial_ends_at, and treating it as a
-      // mid-trial upgrade (which would post a celebration note and cancel
-      // the reminder DO).
-      is_trial: "true",
     },
   });
 }

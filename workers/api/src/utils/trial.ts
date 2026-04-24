@@ -3,7 +3,6 @@ import { sql } from "kysely";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
-import { createStripeClient } from "../stripe/utils";
 import { BUILTIN_TWIST_PACKAGE_ID, PLAN_LIMITS } from "./limits";
 import { createLogger } from "@plotday/worker-util";
 
@@ -253,19 +252,6 @@ export async function handleTrialUpgrade(
   // Complete outstanding todo tags
   await completeTrialTodos(db, trial.threadId);
 
-  // Cancel TrialReminder DO
-  try {
-    const trialReminderId = env.TRIAL_REMINDER.idFromName(userId);
-    const trialReminderDO = env.TRIAL_REMINDER.get(trialReminderId);
-    await trialReminderDO.fetch(
-      new Request("http://do/cancel", { method: "POST" })
-    );
-  } catch (error) {
-    logger.error("Failed to cancel trial reminder DO", error as Error, {
-      user_id: userId,
-    });
-  }
-
   // Notify sync for the @plot.app priority
   try {
     const syncNotifyId = env.SYNC_NOTIFY.idFromName(trial.priorityId);
@@ -284,14 +270,63 @@ export async function handleTrialUpgrade(
 }
 
 /**
+ * Post the 3-day-left reminder. Called from the customer.subscription.trial_will_end
+ * webhook (Stripe fires this 3 days before trial_end automatically). Lists
+ * what the user will lose if they don't add payment, then links to upgrade.
+ */
+export async function handleTrialWillEnd(
+  db: Kysely<DB>,
+  env: Bindings,
+  userId: string
+): Promise<void> {
+  const logger = createLogger({ operation: "handleTrialWillEnd", user_id: userId });
+
+  const trial = await findTrialThread(db, userId);
+  if (!trial) {
+    logger.warn("Trial thread not found for trial_will_end reminder", { user_id: userId });
+    return;
+  }
+
+  const siteRoot = env.SITE_ROOT || "https://plot.day";
+  const excessConnections = await getExcessConnectionNames(db, userId);
+  const excessTwists = await getExcessTwistNames(db, userId);
+  const content = buildReminderContent(3, excessConnections, excessTwists, siteRoot);
+
+  await addTrialNote(
+    db,
+    trial.threadId,
+    userId,
+    content,
+    "reminder-3day",
+    true,
+    trial.plotTwistInstanceId
+  );
+
+  // Notify sync so the new note appears live
+  try {
+    const syncNotifyId = env.SYNC_NOTIFY.idFromName(trial.priorityId);
+    const syncNotifyDO = env.SYNC_NOTIFY.get(syncNotifyId);
+    await syncNotifyDO.fetch(
+      new Request("http://do/notify", {
+        method: "POST",
+        body: JSON.stringify({ id: trial.priorityId }),
+      })
+    );
+  } catch (error) {
+    logger.error("Failed to notify sync after trial reminder", error as Error);
+  }
+}
+
+/**
  * Expire a user's reverse trial — downgrade to free and archive excess.
- * Called by the TrialReminder DO alarm and by the cron fallback sweep.
+ * Called from the customer.subscription.deleted webhook when Stripe cancels
+ * a trial sub at end-of-trial without a payment method.
  */
 export async function expireTrial(
   db: Kysely<DB>,
   env: Bindings,
   userId: string,
-  stripeCustomerId: string | null
+  _stripeCustomerId: string | null
 ): Promise<void> {
   const logger = createLogger({ operation: "expireTrial", user_id: userId });
 
@@ -307,50 +342,21 @@ export async function expireTrial(
     return;
   }
 
-  if (new Date(sub.trial_ends_at) > new Date()) {
-    logger.info("Trial not yet expired, skipping", { user_id: userId });
-    return;
-  }
-
   // Get names of what they'll lose before downgrading
   const excessConnections = await getExcessConnectionNames(db, userId);
   const excessTwists = await getExcessTwistNames(db, userId);
 
-  // Downgrade to free
+  // Downgrade to free. trial_ends_at is left as-is (still useful for "trial
+  // expired on date X" UI); handleSubscriptionDeleted clears stripe_subscription_id
+  // and creates a fresh free_monthly Stripe sub for tracking.
   await db
     .updateTable("user_subscription")
     .set({ plan: "free" })
     .where("user_id", "=", userId)
     .execute();
 
-  // Update the trial sub's Stripe metadata so future webhook firings
-  // (monthly billing-cycle renewals on the $0 free_monthly price) don't
-  // resurrect plan='core' from the now-stale metadata. Best effort.
-  if (stripeCustomerId) {
-    try {
-      const stripeClient = createStripeClient(env.STRIPE_SECRET_KEY);
-      const subs = await stripeClient.subscriptions.list({
-        customer: stripeCustomerId,
-        status: "active",
-        limit: 10,
-      });
-      for (const s of subs.data) {
-        if (s.metadata.is_trial === "true") {
-          await stripeClient.subscriptions.update(s.id, {
-            metadata: { ...s.metadata, plan: "free", is_trial: "false" },
-          });
-        }
-      }
-    } catch (error) {
-      logger.error("Failed to clear trial metadata on Stripe sub", error as Error, {
-        user_id: userId,
-        stripe_customer_id: stripeCustomerId,
-      });
-    }
-  }
-
   // Enforce limits (archive excess twists, delete excess connections)
-  if (stripeCustomerId) {
+  if (_stripeCustomerId) {
     // Reuse the existing enforceDowngradeLimits logic inline since it's in stripe.ts
     // and requires a logger. We replicate the essential parts here.
     const limits = PLAN_LIMITS.free;

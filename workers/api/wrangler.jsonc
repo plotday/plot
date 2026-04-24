@@ -82,6 +82,10 @@
     {
       "tag": "v19",
       "new_sqlite_classes": ["TrialReminder"]
+    },
+    {
+      "tag": "v20",
+      "deleted_classes": ["TrialReminder"]
     }
   ],
   "env": {
@@ -285,10 +289,6 @@
           {
             "name": "EMAIL_NOTIFY",
             "class_name": "EmailNotify"
-          },
-          {
-            "name": "TRIAL_REMINDER",
-            "class_name": "TrialReminder"
           }
         ]
       },
@@ -511,10 +511,6 @@
           {
             "name": "EMAIL_NOTIFY",
             "class_name": "EmailNotify"
-          },
-          {
-            "name": "TRIAL_REMINDER",
-            "class_name": "TrialReminder"
           }
         ]
       },

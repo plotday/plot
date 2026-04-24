@@ -18,7 +18,7 @@ import { backfillEmbeddings } from "../queue/backfill-embeddings";
 import { twistFactory } from "../twist/factory";
 import { disposeRpc } from "../utils/rpc";
 import { notifyUserSync } from "../app/sync/notify";
-import { handleTrialUpgrade } from "../utils/trial";
+import { expireTrial, handleTrialUpgrade, handleTrialWillEnd } from "../utils/trial";
 
 const stripe = new Hono<{ Bindings: Bindings }>();
 
@@ -125,11 +125,19 @@ stripe.post("/webhook", async (c) => {
 
       case "customer.subscription.trial_will_end": {
         const subscription = event.data.object as Stripe.Subscription;
-        logger.info("Trial ending soon", {
-          subscription_id: subscription.id,
-          customer_id: subscription.customer as string,
+        const customerId = subscription.customer as string;
+        const trialUser = await c.var.db
+          .selectFrom("user_subscription")
+          .select("user_id")
+          .where("stripe_customer_id", "=", customerId)
+          .executeTakeFirst();
+        if (trialUser) {
+          await handleTrialWillEnd(c.var.db, c.env, trialUser.user_id);
+        }
+        await identifyStripeUser(c, customerId);
+        c.var.tracker.capture("[User] Trial Will End", {
+          stripe_customer_id: customerId,
         });
-        // Opportunity to send notification to user
         break;
       }
 
@@ -194,18 +202,25 @@ async function handleSubscriptionUpdate(
   const plan = validPlans.includes(subscription.metadata.plan)
     ? (subscription.metadata.plan as PlanKey)
     : ("free" as PlanKey);
-  // Reverse-trial subs are tagged is_trial='true' by createFreeSubscription.
-  // They get plan='core' for access while keeping trial_ends_at and the
-  // TrialReminder DO running.
-  const isTrial = subscription.metadata.is_trial === "true";
+  // Stripe-native trial: trial_end is set while the sub is in `trialing`
+  // status, then cleared automatically when the trial converts to active.
+  // We mirror it into trial_ends_at so the rest of the app can read trial
+  // state from the DB.
+  const trialEndsAt = subscription.trial_end
+    ? new Date(subscription.trial_end * 1000)
+    : null;
 
   // Read the old plan before updating (for sync history expansion detection)
   const oldUserSub = await c.var.db
     .selectFrom("user_subscription")
-    .select(["plan", "user_id"])
+    .select(["plan", "user_id", "trial_ends_at"])
     .where("stripe_customer_id", "=", customerId)
     .executeTakeFirst();
   const oldPlan = (oldUserSub?.plan as PlanKey) ?? "free";
+  // Detect trial → active conversion: was trialing in DB, now Stripe says
+  // trial is over. Used to gate the upgrade celebration.
+  const justEndedTrial =
+    !!oldUserSub?.trial_ends_at && trialEndsAt === null;
 
   // Try user_subscription first, then team_subscription
   let isUserSubscription = false;
@@ -218,11 +233,7 @@ async function handleSubscriptionUpdate(
         status,
         billing_cycle_start: start.toISOString(),
         billing_cycle_end: end.toISOString(),
-        // Clear any lingering reverse-trial state once the user is on a paid plan.
-        // Skip when this webhook is the initial trial sub itself — clearing
-        // trial_ends_at here would silently end the reverse trial seconds
-        // after signup.
-        ...(plan !== "free" && !isTrial ? { trial_ends_at: null } : {}),
+        trial_ends_at: trialEndsAt ? trialEndsAt.toISOString() : null,
       })
       .where("stripe_customer_id", "=", customerId)
       .executeTakeFirst();
@@ -330,22 +341,12 @@ async function handleSubscriptionUpdate(
     );
   }
 
-  // Detect mid-trial upgrade: if user was on a reverse trial and just upgraded.
-  // Skip when this is the initial trial sub itself — otherwise we'd post the
-  // "you upgraded!" celebration note seconds after signup and cancel the
-  // reminder DO before any reminders ever fire.
-  if (plan !== "free" && !isTrial) {
+  // Detect trial → paid conversion: Stripe just cleared subscription.trial_end
+  // (or the user upgraded to a higher plan during the trial). Either way,
+  // post the celebration note and complete outstanding trial todos.
+  if (plan !== "free" && oldUserSub?.user_id && justEndedTrial) {
     try {
-      const trialUser = await c.var.db
-        .selectFrom("user_subscription")
-        .select(["user_id", "trial_ends_at"])
-        .where("stripe_customer_id", "=", customerId)
-        .where("trial_ends_at", "is not", null)
-        .executeTakeFirst();
-
-      if (trialUser && new Date(trialUser.trial_ends_at!).getTime() > Date.now()) {
-        await handleTrialUpgrade(c.var.db, c.env, trialUser.user_id);
-      }
+      await handleTrialUpgrade(c.var.db, c.env, oldUserSub.user_id);
     } catch (error) {
       logger.error("Failed to handle trial upgrade", error as Error, {
         customer_id: customerId,
@@ -419,6 +420,28 @@ async function handleSubscriptionDeleted(
       }
     );
     return;
+  }
+
+  // Trial cancellation path: Stripe is firing this because the trial ended
+  // without a payment method (trial_settings.end_behavior='cancel'). Run
+  // expireTrial first to post the expiry note, complete trial todos, and
+  // archive excess connections/twists. Safe no-op if the user wasn't on a
+  // trial — expireTrial guards on plan='core' && trial_ends_at.
+  if (subscription.metadata.plan === "core" || subscription.trial_end) {
+    const trialUser = await c.var.db
+      .selectFrom("user_subscription")
+      .select(["user_id"])
+      .where("stripe_customer_id", "=", customerId)
+      .executeTakeFirst();
+    if (trialUser) {
+      try {
+        await expireTrial(c.var.db, c.env, trialUser.user_id, customerId);
+      } catch (error) {
+        logger.error("Failed to expire trial on subscription delete", error as Error, {
+          customer_id: customerId,
+        });
+      }
+    }
   }
 
   const { start, end } = createFreeTierBillingCycle();

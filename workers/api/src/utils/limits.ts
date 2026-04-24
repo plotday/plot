@@ -272,7 +272,7 @@ export async function getPersonalPlan(
     .where("user_id", "=", userId)
     .executeTakeFirst();
 
-  return sub && sub.status === "active"
+  return sub && (sub.status === "active" || sub.status === "trialing")
     ? (sub.plan as "free" | "core" | "pro" | "team")
     : "free";
 }

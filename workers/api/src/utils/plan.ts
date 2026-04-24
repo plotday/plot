@@ -33,8 +33,11 @@ export async function getEffectivePlan(
     .where("user_id", "=", userId)
     .executeTakeFirst();
 
+  // 'trialing' is the Stripe status for the 30-day Core trial; treat it
+  // exactly like 'active' so trial users get full Core access.
   const personalPlan =
-    personalSub && personalSub.status === "active"
+    personalSub &&
+    (personalSub.status === "active" || personalSub.status === "trialing")
       ? (personalSub.plan as "free" | "core" | "pro" | "team")
       : "free";
 

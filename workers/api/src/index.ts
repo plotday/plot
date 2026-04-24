@@ -49,7 +49,6 @@ import { extractRequestContext, extractErrorContext, mergeContext } from "./util
 import { dbMiddleware } from "./middleware/db";
 import { withDb } from "./db";
 import { syncUserTwistStats } from "./utils/twist-stats";
-import { expireTrial } from "./utils/trial";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
@@ -77,7 +76,6 @@ export { SyncRecovery } from "./state/sync-recovery";
 export { PrivacyReporting } from "./state/privacy-reporting";
 export { PushNotify } from "./state/push-notify";
 export { EmailNotify } from "./state/email-notify";
-export { TrialReminder } from "./state/trial-reminder";
 
 export class TwistBuilder extends Container {
   defaultPort = 3000;
@@ -272,37 +270,8 @@ async function scheduled(
     logger.error("Error in privacy reporting handler", error as Error);
   }
 
-  // Expire overdue reverse trials (fallback for DO alarm failures)
-  try {
-    await withDb(env, async (db) => {
-      const overdue = await db
-        .selectFrom("user_subscription")
-        .select(["user_id", "stripe_customer_id"])
-        .where("plan", "=", "core")
-        .where("trial_ends_at", "is not", null)
-        .where("trial_ends_at", "<=", new Date() as any)
-        .limit(10)
-        .execute();
-
-      for (const user of overdue) {
-        try {
-          await expireTrial(db, env, user.user_id, user.stripe_customer_id);
-        } catch (error) {
-          logger.error("Failed to expire trial for user", error as Error, {
-            user_id: user.user_id,
-          });
-        }
-      }
-
-      if (overdue.length > 0) {
-        logger.info("Expired overdue trials via cron fallback", {
-          count: overdue.length,
-        });
-      }
-    });
-  } catch (error) {
-    logger.error("Error in trial expiry sweep", error as Error);
-  }
+  // Trial expiry is now driven by Stripe's customer.subscription.deleted
+  // webhook (trial_settings.end_behavior='cancel'). No fallback sweep needed.
 
   // Fail-closed belt-and-suspenders: archive any stuck Twisting tag (tag_id
   // 109) whose row hasn't been touched in over an hour. The queue handler's
