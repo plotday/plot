@@ -21,6 +21,20 @@ function normalizeName(name: string | undefined | null): string | undefined {
   // Handles: "Kris Braun <kris@example.com>" or "Kris Braun kris@example.com"
   name = name.replace(/\s*<?[^ ]+@[^ ]+>?\s*$/, "").trim();
 
+  // Strip Google Groups / mailing-list " via <group>" suffix.
+  // "Jane Doe via Plot Support" → "Jane Doe", "'Google Developers' via Plot" → "'Google Developers'"
+  name = name.replace(/\s+via\s+.+$/i, "").trim();
+
+  // Strip wrapping single or double quotes left over from RFC 5322 quoted names.
+  // e.g. "'Google Developers'" → "Google Developers"
+  if (name.length >= 2) {
+    const first = name[0];
+    const last = name[name.length - 1];
+    if ((first === "'" || first === '"') && first === last) {
+      name = name.slice(1, -1).trim();
+    }
+  }
+
   // Convert "Last, First" to "First Last"
   name = name.replace(/^([^, ]+),\s*(.+)/, "$2 $1");
 
