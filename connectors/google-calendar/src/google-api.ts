@@ -91,6 +91,11 @@ export type SyncState = {
   min?: Date | null;
   max?: Date | null;
   sequence?: number;
+  // Initial sync runs two passes: "quick" (timeMin=now, front-loads upcoming
+  // non-recurring events and future exceptions) then "full" (timeMin=history
+  // limit, picks up long-running recurring masters excluded by the quick
+  // pass's timeMin). Undefined on incremental webhook-triggered syncs.
+  phase?: "quick" | "full";
 };
 
 export class GoogleApi {
@@ -457,6 +462,7 @@ export async function syncGoogleCalendar(
 }> {
   const params: any = {
     showDeleted: true,
+    maxResults: 2500,
   };
 
   if (state.state && state.more) {

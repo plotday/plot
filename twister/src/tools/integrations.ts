@@ -203,6 +203,30 @@ export abstract class Integrations extends ITool {
   abstract saveLink(link: NewLinkWithNotes): Promise<Uuid | null>;
 
   /**
+   * Batch version of {@link saveLink} — saves many links in one call.
+   *
+   * Connectors syncing many items per page (e.g. calendar events, issues,
+   * messages) should prefer this over looping `saveLink`. Each `saveLink`
+   * crosses the runtime boundary and counts against the per-execution
+   * request budget; `saveLinks` collapses N saves into a single crossing.
+   *
+   * Failures on individual links DO NOT abort the batch. A bad item lands
+   * as `null` in its slot and the rest still save. This prevents one
+   * malformed record from losing an entire page of sync progress.
+   *
+   * This method is available only to Connectors (not regular Twists).
+   *
+   * @param links - Array of links with notes to save
+   * @returns Array of the same length and order as `links`. Each entry is
+   *   the saved thread's UUID, or `null` if the link was filtered out
+   *   (e.g. older than the plan's sync history limit) OR failed to save.
+   *   The two null causes are not distinguished; the save failure is
+   *   logged server-side.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract saveLinks(links: NewLinkWithNotes[]): Promise<(Uuid | null)[]>;
+
+  /**
    * Saves contacts to the connector's priority.
    *
    * @param contacts - Array of contacts to save

@@ -709,6 +709,48 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     calendarId: string,
     initialSync: boolean
   ): Promise<void> {
+    // Coalesce everything keyed by canonical URL so a master + any number of
+    // its exception instances (and multiple exceptions of the same series
+    // landing in the same page) collapse into a single NewLinkWithNotes. The
+    // final saveLinks call makes one RPC for the entire page.
+    const linksBySource = new Map<string, NewLinkWithNotes>();
+    type LinkWithSource = NewLinkWithNotes & { source: string };
+    const addLink = (link: LinkWithSource) => {
+      const existing = linksBySource.get(link.source) as
+        | LinkWithSource
+        | undefined;
+      if (!existing) {
+        linksBySource.set(link.source, link);
+        return;
+      }
+      // Merge occurrences and notes. Prefer the fuller entry (master) when
+      // only one side carries the series-level fields (schedules, title...).
+      existing.scheduleOccurrences = [
+        ...(existing.scheduleOccurrences || []),
+        ...(link.scheduleOccurrences || []),
+      ];
+      if (link.notes?.length) {
+        existing.notes = [...(existing.notes || []), ...link.notes];
+      }
+      if (link.schedules && !existing.schedules) {
+        existing.schedules = link.schedules;
+        existing.title = link.title ?? existing.title;
+        existing.type = link.type ?? existing.type;
+        existing.status = link.status ?? existing.status;
+        existing.actions = link.actions ?? existing.actions;
+        existing.sourceUrl = link.sourceUrl ?? existing.sourceUrl;
+        existing.preview = link.preview ?? existing.preview;
+        existing.access = link.access ?? existing.access;
+        existing.accessContacts =
+          link.accessContacts ?? existing.accessContacts;
+        existing.author = link.author ?? existing.author;
+        existing.created = link.created ?? existing.created;
+        existing.meta = { ...(existing.meta || {}), ...(link.meta || {}) };
+        if (link.unread !== undefined) existing.unread = link.unread;
+        if (link.archived !== undefined) existing.archived = link.archived;
+      }
+    };
+
     for (const event of events) {
       try {
         // Extract contacts from organizer and attendees
@@ -733,7 +775,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
         // Check if this is a recurring event instance (exception)
         if (event.recurringEventId && event.originalStartTime) {
-          await this.processEventInstance(event, calendarId, initialSync);
+          const instanceLink = await this.prepareEventInstance(
+            event,
+            calendarId,
+            initialSync
+          );
+          if (instanceLink) addLink(instanceLink as LinkWithSource);
         } else {
           // Regular or master recurring event
           const activityData = transformGoogleEvent(event, calendarId);
@@ -793,8 +840,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               syncableId: calendarId,
             };
 
-            // Send link - database handles upsert automatically
-            await this.tools.integrations.saveLink(link);
+            addLink(link as LinkWithSource);
             continue;
           }
 
@@ -945,7 +991,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           // event. Each pending occurrence is stored under its own key
           // (pending_occ:<master>:<occurrenceIso>) so instance buffering is
           // O(1) per instance instead of rewriting a growing list — see
-          // processEventInstance.
+          // prepareEventInstance.
           const pendingPrefix = `pending_occ:${canonicalUrl}:`;
           const pendingKeys = await this.tools.store.list(pendingPrefix);
           if (pendingKeys.length > 0) {
@@ -960,36 +1006,45 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             link.scheduleOccurrences = merged;
           }
 
-          // Send link - database handles upsert automatically
-          await this.tools.integrations.saveLink(link);
+          addLink(link as LinkWithSource);
         }
       } catch (error) {
         console.error(`Failed to process event ${event.id}:`, error);
         // Continue processing other events
       }
     }
+
+    // Single batched save for the whole page. Collapses what used to be
+    // one saveLink RPC per event (and one per exception instance on heavy
+    // recurring meetings) into a single cross-runtime call.
+    const batch = Array.from(linksBySource.values());
+    if (batch.length > 0) {
+      await this.tools.integrations.saveLinks(batch);
+    }
   }
 
   /**
-   * Process a recurring event instance (occurrence) from Google Calendar.
-   * This updates the master recurring thread with occurrence-specific data.
+   * Transform a recurring event instance (occurrence) into either an
+   * occurrence-only {@link NewLinkWithNotes} (for the caller's batched
+   * saveLinks), or `null` when the occurrence is instead buffered to
+   * `pending_occ:` storage for cross-batch merging. Never saves directly.
    */
-  private async processEventInstance(
+  private async prepareEventInstance(
     event: GoogleEvent,
     calendarId: string,
     initialSync: boolean
-  ): Promise<void> {
+  ): Promise<NewLinkWithNotes | null> {
     const originalStartTime =
       event.originalStartTime?.dateTime || event.originalStartTime?.date;
     if (!originalStartTime) {
       console.warn(`No original start time for instance: ${event.id}`);
-      return;
+      return null;
     }
 
     // The recurring event ID points to the master thread
     if (!event.recurringEventId) {
       console.warn(`No recurring event ID for instance: ${event.id}`);
-      return;
+      return null;
     }
 
     // Canonical URL for the master recurring event. All occurrences share
@@ -1032,7 +1087,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           originalStartTime
         ).toISOString()}`;
         await this.set(pendingKey, cancelledOccurrence);
-        return;
+        return null;
       }
 
       const cancelledBy =
@@ -1046,7 +1101,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         created: event.updated ? new Date(event.updated) : new Date(),
       };
 
-      const occurrenceUpdate: NewLinkWithNotes = {
+      return {
         type: "event",
         title: undefined,
         source: masterCanonicalUrl,
@@ -1055,9 +1110,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         scheduleOccurrences: [cancelledOccurrence],
         notes: [cancelNote],
       };
-
-      await this.tools.integrations.saveLink(occurrenceUpdate);
-      return;
     }
 
     // Build contacts from attendees for this occurrence
@@ -1113,11 +1165,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         originalStartTime
       ).toISOString()}`;
       await this.set(pendingKey, occurrence);
-      return;
+      return null;
     }
 
-    // For incremental sync, save immediately (master should exist)
-    const occurrenceUpdate: NewLinkWithNotes = {
+    // Incremental sync: return an occurrence-only link. The caller merges
+    // it with the master (if the master is in the same batch) or saves it
+    // standalone (master already exists in the DB from a prior sync).
+    return {
       type: "event",
       title: undefined,
       source: masterCanonicalUrl,
@@ -1126,8 +1180,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       scheduleOccurrences: [occurrence],
       notes: [],
     };
-
-    await this.tools.integrations.saveLink(occurrenceUpdate);
   }
 
   async onCalendarWebhook(
