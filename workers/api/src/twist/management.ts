@@ -7,6 +7,7 @@ import { rpc } from "../rpc";
 import { createLogger } from "@plotday/worker-util";
 import { BUILTIN_TWIST_PACKAGE_ID, checkTwistLimit, SingleInstanceError } from "../utils/limits";
 import { getEffectivePlan } from "../utils/plan";
+import { disposeRpc } from "../utils/rpc";
 
 /**
  * Cleans up a failed twist installation by:
@@ -1199,6 +1200,82 @@ export async function deleteDraft(
   logger.info("Draft twist deleted", { draft_id: draftId });
 }
 
+/**
+ * Remove an account (auth) from a connector the same way the app's
+ * `DELETE /twist/:id/integrations/:provider/:actorId` endpoint does it.
+ *
+ * This goes through the connector's `removeAuth` callback, which:
+ *   - disables (or reassigns) any channels this actor enabled, firing
+ *     `onChannelDisabled` (most connectors archive the channel's links
+ *     and therefore its threads from inside that callback)
+ *   - clears the stored auth token and channel access entries
+ *   - deletes the `twist_instance_connection` row
+ *
+ * Use this (rather than a raw delete) whenever we need to match the
+ * in-app disconnect behaviour — e.g. trimming excess connections on
+ * trial expiry or plan downgrade.
+ */
+export async function removeIntegrationAccount({
+  db,
+  env,
+  twistFactory: factory,
+  twistInstanceId,
+  provider,
+  actorId,
+}: {
+  db: Kysely<DB>;
+  env: Bindings;
+  twistFactory: ReturnType<typeof twistFactory>;
+  twistInstanceId: string;
+  provider: string;
+  actorId: string;
+}): Promise<void> {
+  const logger = createLogger({
+    twist_instance_id: twistInstanceId,
+    provider,
+    actor_id: actorId,
+  });
+
+  const twistInfo = await db
+    .selectFrom("twist_instance")
+    .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+    .select(["twist.twist_package_id as twistPackageId", "twist.version"])
+    .where("twist_instance.id", "=", twistInstanceId)
+    .where("twist_instance.archived_at", "is", null)
+    .executeTakeFirst();
+
+  if (!twistInfo) {
+    logger.warn("Twist instance not found or already archived, skipping removeAuth");
+    return;
+  }
+
+  const configRaw = await env.TWIST_CONFIG.get(
+    `${twistInfo.twistPackageId}:${twistInfo.version}`
+  );
+  if (!configRaw) {
+    logger.warn("Twist config not found, skipping removeAuth");
+    return;
+  }
+
+  const config = JSON.parse(configRaw);
+  const integrationsPathStr: string | undefined =
+    config?.integrationsMap?.[provider];
+  if (!integrationsPathStr) {
+    logger.warn(`Provider ${provider} not configured on twist, skipping removeAuth`);
+    return;
+  }
+
+  const twistWrapper = await factory({ twistInstanceId });
+
+  const result = await twistWrapper.callCallback(
+    integrationsPathStr.split(":"),
+    "removeAuth",
+    provider,
+    actorId
+  );
+  disposeRpc(result);
+}
+
 export async function archiveAndDeleteTwist(
   db: Kysely<DB>,
   twist_instance_id: string,
@@ -1258,4 +1335,127 @@ export async function archiveAndDeleteTwist(
     logger.error("Error archiving and deleting twist", error as Error);
     throw error;
   }
+}
+
+/**
+ * Trim a user's personal connections and non-source twists to fit a plan's
+ * limits, using the same archival flow the app invokes when a user removes
+ * a connection or twist:
+ *
+ *   - Excess connections go through the connector's `removeAuth` callback
+ *     (via `removeIntegrationAccount`), which disables/reassigns channels
+ *     and lets each connector archive its own links/threads via
+ *     `onChannelDisabled`.
+ *   - Excess non-built-in twists go through `archiveAndDeleteTwist`, which
+ *     archives links/threads created by the twist and runs the twist's
+ *     `deactivate` callback.
+ *
+ * Called from both trial expiry (`expireTrial`) and the Stripe downgrade
+ * webhook (`enforceDowngradeLimits`).
+ */
+export async function enforcePersonalPlanLimits({
+  db,
+  env,
+  twistFactory: factory,
+  userId,
+  limits,
+}: {
+  db: Kysely<DB>;
+  env: Bindings;
+  twistFactory: ReturnType<typeof twistFactory>;
+  userId: string;
+  limits: { connections: number; twists: number };
+}): Promise<{ removedConnections: number; archivedTwists: number }> {
+  const logger = createLogger({
+    operation: "enforcePersonalPlanLimits",
+    user_id: userId,
+  });
+
+  let removedConnections = 0;
+  let archivedTwists = 0;
+
+  // Trim excess connections via each connector's removeAuth callback.
+  if (limits.connections !== Infinity) {
+    const excess = await db
+      .selectFrom("twist_instance_connection as ptc")
+      .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
+      .select([
+        "ptc.twist_instance_id",
+        "ptc.provider",
+        "ptc.actor_id",
+      ])
+      .where("ptc.user_id", "=", userId)
+      .where("pt.archived_at", "is", null)
+      .orderBy("ptc.connected_at", "desc")
+      .offset(limits.connections)
+      .execute();
+
+    for (const row of excess) {
+      try {
+        await removeIntegrationAccount({
+          db,
+          env,
+          twistFactory: factory,
+          twistInstanceId: row.twist_instance_id,
+          provider: row.provider,
+          actorId: row.actor_id,
+        });
+        removedConnections++;
+      } catch (error) {
+        logger.error(
+          "Failed to remove excess connection during plan downgrade",
+          error as Error,
+          {
+            twist_instance_id: row.twist_instance_id,
+            provider: row.provider,
+            actor_id: row.actor_id,
+          }
+        );
+      }
+    }
+
+    if (removedConnections > 0) {
+      logger.info("Removed excess connections on plan downgrade", {
+        user_id: userId,
+        removed: removedConnections,
+      });
+    }
+  }
+
+  // Archive excess non-source twists (preserving the built-in Plot twist).
+  if (limits.twists !== Infinity) {
+    const excessTwists = await db
+      .selectFrom("twist_instance as pt")
+      .innerJoin("twist as t", "t.id", "pt.twist_id")
+      .select("pt.id")
+      .where("pt.owner_id", "=", userId)
+      .where("pt.archived_at", "is", null)
+      .where("t.is_source", "=", false)
+      .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
+      .orderBy("pt.created_at", "desc")
+      .offset(limits.twists)
+      .execute();
+
+    for (const row of excessTwists) {
+      try {
+        await archiveAndDeleteTwist(db, row.id, { twistFactory: factory });
+        archivedTwists++;
+      } catch (error) {
+        logger.error(
+          "Failed to archive excess twist during plan downgrade",
+          error as Error,
+          { twist_instance_id: row.id }
+        );
+      }
+    }
+
+    if (archivedTwists > 0) {
+      logger.info("Archived excess twists on plan downgrade", {
+        user_id: userId,
+        archived: archivedTwists,
+      });
+    }
+  }
+
+  return { removedConnections, archivedTwists };
 }

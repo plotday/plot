@@ -5,6 +5,8 @@ import type { DB } from "../db-types";
 import type { Bindings } from "../env";
 import { BUILTIN_TWIST_PACKAGE_ID, PLAN_LIMITS } from "./limits";
 import { createLogger } from "@plotday/worker-util";
+import { twistFactory } from "../twist";
+import { enforcePersonalPlanLimits } from "../twist/management";
 
 /**
  * Find the Plot twist's twist_instance ID for the user who owns a given
@@ -325,6 +327,7 @@ export async function handleTrialWillEnd(
 export async function expireTrial(
   db: Kysely<DB>,
   env: Bindings,
+  ctx: ExecutionContext,
   userId: string,
   _stripeCustomerId: string | null
 ): Promise<void> {
@@ -355,71 +358,18 @@ export async function expireTrial(
     .where("user_id", "=", userId)
     .execute();
 
-  // Enforce limits (archive excess twists, delete excess connections)
-  if (_stripeCustomerId) {
-    // Reuse the existing enforceDowngradeLimits logic inline since it's in stripe.ts
-    // and requires a logger. We replicate the essential parts here.
-    const limits = PLAN_LIMITS.free;
-
-    // Trim excess connections
-    if (limits.connections !== Infinity) {
-      const excess = await db
-        .selectFrom("twist_instance_connection as ptc")
-        .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
-        .select(["ptc.twist_instance_id", "ptc.user_id", "ptc.provider"])
-        .where("ptc.user_id", "=", userId)
-        .where("pt.archived_at", "is", null)
-        .orderBy("ptc.connected_at", "desc")
-        .offset(limits.connections)
-        .execute();
-
-      for (const row of excess) {
-        await db
-          .deleteFrom("twist_instance_connection")
-          .where("twist_instance_id", "=", row.twist_instance_id)
-          .where("user_id", "=", row.user_id)
-          .where("provider", "=", row.provider)
-          .execute();
-      }
-
-      if (excess.length > 0) {
-        logger.info("Trimmed excess connections on trial expiry", {
-          user_id: userId,
-          removed: excess.length,
-        });
-      }
-    }
-
-    // Archive excess twists (excluding built-in Plot twist)
-    if (limits.twists !== Infinity) {
-      const excessPts = await db
-        .selectFrom("twist_instance as pt")
-        .innerJoin("twist as t", "t.id", "pt.twist_id")
-        .select("pt.id")
-        .where("pt.owner_id", "=", userId)
-        .where("pt.archived_at", "is", null)
-        .where("t.is_source", "=", false)
-        .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
-        .orderBy("pt.created_at", "desc")
-        .offset(limits.twists)
-        .execute();
-
-      for (const row of excessPts) {
-        await db
-          .updateTable("twist_instance")
-          .set({ archived_at: new Date().toISOString() })
-          .where("id", "=", row.id)
-          .execute();
-      }
-
-      if (excessPts.length > 0) {
-        logger.info("Archived excess twists on trial expiry", {
-          user_id: userId,
-          archived: excessPts.length,
-        });
-      }
-    }
-  }
+  // Enforce the new plan limits using the same archival flow the app uses
+  // when a user removes a connection or twist themselves. This ensures the
+  // connector's onChannelDisabled callbacks run, so per-connector thread
+  // archival (via archiveLinks) happens consistently.
+  const factory = twistFactory({ env, ctx, db });
+  await enforcePersonalPlanLimits({
+    db,
+    env,
+    twistFactory: factory,
+    userId,
+    limits: PLAN_LIMITS.free,
+  });
 
   // Add final note to trial thread
   const trial = await findTrialThread(db, userId);

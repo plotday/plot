@@ -13,9 +13,10 @@ import {
 import { createLogger } from "@plotday/worker-util";
 import { extractRequestContext } from "../utils/log-context";
 import { sql } from "kysely";
-import { BUILTIN_TWIST_PACKAGE_ID, PLAN_LIMITS, type PlanKey } from "../utils/limits";
+import { PLAN_LIMITS, type PlanKey } from "../utils/limits";
 import { backfillEmbeddings } from "../queue/backfill-embeddings";
 import { twistFactory } from "../twist/factory";
+import { enforcePersonalPlanLimits } from "../twist/management";
 import { disposeRpc } from "../utils/rpc";
 import { notifyUserSync } from "../app/sync/notify";
 import { expireTrial, handleTrialUpgrade, handleTrialWillEnd } from "../utils/trial";
@@ -263,7 +264,14 @@ async function handleSubscriptionUpdate(
   }
 
   // Enforce limits on downgrade
-  await enforceDowngradeLimits(c.var.db, customerId, plan, logger);
+  await enforceDowngradeLimits(
+    c.var.db,
+    c.env,
+    c.executionCtx as ExecutionContext,
+    customerId,
+    plan,
+    logger
+  );
 
   // Cancel any stale personal Stripe subscriptions when a new paid sub lands.
   // Scoped to personal subs: user clicks upgrade again → new Pro sub arrives →
@@ -435,7 +443,13 @@ async function handleSubscriptionDeleted(
       .executeTakeFirst();
     if (trialUser) {
       try {
-        await expireTrial(c.var.db, c.env, trialUser.user_id, customerId);
+        await expireTrial(
+          c.var.db,
+          c.env,
+          c.executionCtx as ExecutionContext,
+          trialUser.user_id,
+          customerId
+        );
       } catch (error) {
         logger.error("Failed to expire trial on subscription delete", error as Error, {
           customer_id: customerId,
@@ -481,7 +495,14 @@ async function handleSubscriptionDeleted(
   }
 
   // Enforce limits after reverting to free tier
-  await enforceDowngradeLimits(c.var.db, customerId, "free", logger);
+  await enforceDowngradeLimits(
+    c.var.db,
+    c.env,
+    c.executionCtx as ExecutionContext,
+    customerId,
+    "free",
+    logger
+  );
 
   // Reinstate a free-tier Stripe subscription so usage limits continue to track
   const deletedUserSub = await c.var.db
@@ -591,10 +612,16 @@ async function getOrgMemberUserIds(
 }
 
 /**
- * After a plan change, delete excess connections and archive excess twists.
+ * After a plan change, trim excess connections and twists to match the new
+ * plan's limits. Connections go through `removeAuth` and twists through
+ * `archiveAndDeleteTwist` so the connector/twist lifecycle callbacks run
+ * and threads/links are archived — matching what happens when the user
+ * performs the same action in the app.
  */
 async function enforceDowngradeLimits(
   db: any,
+  env: Bindings,
+  ctx: ExecutionContext,
   stripeCustomerId: string,
   newPlan: string,
   logger: any
@@ -609,70 +636,20 @@ async function enforceDowngradeLimits(
     .executeTakeFirst();
 
   if (userSub) {
-    // Personal downgrade: trim connections
-    if (limits.connections !== Infinity) {
-      const excess = await db
-        .selectFrom("twist_instance_connection as ptc")
-        .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
-        .select(["ptc.twist_instance_id", "ptc.user_id", "ptc.provider"])
-        .where("ptc.user_id", "=", userSub.user_id)
-        .where("pt.archived_at", "is", null)
-        .orderBy("ptc.connected_at", "desc")
-        .offset(limits.connections)
-        .execute();
-
-      for (const row of excess) {
-        await db
-          .deleteFrom("twist_instance_connection")
-          .where("twist_instance_id", "=", row.twist_instance_id)
-          .where("user_id", "=", row.user_id)
-          .where("provider", "=", row.provider)
-          .execute();
-      }
-
-      if (excess.length > 0) {
-        logger.info("Trimmed excess personal connections on downgrade", {
-          user_id: userSub.user_id,
-          removed: excess.length,
-        });
-      }
-    }
-
-    // Personal downgrade: archive excess twists (excluding built-in Plot twist)
-    if (limits.twists !== Infinity) {
-      const excessTwists = await db
-        .selectFrom("twist_instance as pt")
-        .innerJoin("twist as t", "t.id", "pt.twist_id")
-        .select("pt.id")
-        .where("pt.owner_id", "=", userSub.user_id)
-        .where("pt.archived_at", "is", null)
-        .where("t.is_source", "=", false)
-        .where("t.twist_package_id", "!=", BUILTIN_TWIST_PACKAGE_ID)
-        .orderBy("pt.created_at", "desc")
-        .offset(limits.twists)
-        .execute();
-
-      for (const row of excessTwists) {
-        await db
-          .updateTable("twist_instance")
-          .set({ archived_at: new Date().toISOString() })
-          .where("id", "=", row.id)
-          .execute();
-      }
-
-      if (excessTwists.length > 0) {
-        logger.info("Archived excess personal twists on downgrade", {
-          user_id: userSub.user_id,
-          archived: excessTwists.length,
-        });
-      }
-    }
-
+    const factory = twistFactory({ env, ctx, db });
+    await enforcePersonalPlanLimits({
+      db,
+      env,
+      twistFactory: factory,
+      userId: userSub.user_id,
+      limits,
+    });
     return;
   }
 
   // Team downgrades: team ownership of twist_instance has not landed yet,
   // so there's nothing to trim for org subscriptions.
+  void logger;
 }
 
 /**
