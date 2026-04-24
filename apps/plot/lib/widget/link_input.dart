@@ -94,6 +94,16 @@ class LinkModal {
                   .toList(),
             ));
           }
+          final recentLinks = await Link.listRecent();
+          final recentResults = await _loadThreadsForLinks(recentLinks);
+          if (recentResults.isNotEmpty) {
+            groups.add(SelectGroup(
+              title: 'Recent',
+              items: recentResults
+                  .map((r) => _LinkItem.existing(r))
+                  .toList(),
+            ));
+          }
           return groups;
         }
 

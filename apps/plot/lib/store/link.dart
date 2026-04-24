@@ -281,6 +281,17 @@ class Link extends Equatable {
     return rows.map((row) => Link(row)).toList();
   }
 
+  /// Most recently updated links that have a source URL, newest first.
+  static Future<List<Link>> listRecent({int limit = 10}) async {
+    final rows =
+        await (Store.get.select(Store.get.links)
+              ..where((l) => l.sourceUrl.isNotNull())
+              ..orderBy([(l) => OrderingTerm.desc(l.updatedAt)])
+              ..limit(limit))
+            .get();
+    return rows.map((row) => Link(row)).toList();
+  }
+
   /// Get links for a given thread
   static Future<List<Link>> getForThread(ThreadId threadId) async {
     final rows = await (Store.get.select(

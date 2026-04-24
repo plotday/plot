@@ -144,19 +144,9 @@ class SelectModal<T> extends Modal {
     bool? showFilter,
     Future<T?> Function(BuildContext context)? onAdd,
   }) async {
-    // Pre-fetch items for empty search to avoid empty list on first build
-    List<SelectGroup<T>>? initialItems;
-    try {
-      initialItems = await items(null);
-    } catch (e, t) {
-      log.warning('Error pre-fetching items', e, t);
-      // Continue anyway - the modal will handle the error state
-    }
-
-    if (!context.mounted) {
-      return Value.absent();
-    }
-
+    // Open the modal immediately; items are fetched asynchronously so the
+    // modal appears instantly and a spinner is shown below the list while
+    // the first results load.
     final result = await SelectModal<T>(
       items: items,
       itemBuilder: itemBuilder,
@@ -165,7 +155,6 @@ class SelectModal<T> extends Modal {
       prompt: prompt,
       subtitle: subtitle,
       onSelect: onSelect,
-      initialItems: initialItems,
       emptyMessage: emptyMessage,
       onRefreshNeeded: onRefreshNeeded,
       showFilter: showFilter,
@@ -355,13 +344,12 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         return;
       }
 
-      // Only show loading indicator when there are no existing results to display
-      if (_groups.isEmpty && _error == null) {
-        setState(() {
-          _isLoading = true;
-          _error = null;
-        });
-      }
+      // Show the spinner above any existing results; results stay visible
+      // until the new ones arrive so the list doesn't flicker on every keystroke.
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
 
       final currentRequestId = ++_requestId;
 
@@ -421,11 +409,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     if (widget.onAdd != null) return true;
     if (widget.showFilter == false) return false;
     if (widget.showFilter == true) return true;
+    // Keep filter visible while user is actively searching so the field
+    // doesn't disappear mid-keystroke when a fetch is in flight.
+    if (_controller.text.isNotEmpty) return true;
+    // Hide filter during the initial load so only the spinner is visible.
     if (_isLoading) return false;
     // Always show filter when nested so back button shares the row
     if (ModalProvider.of(context).modalStackNotifier.value > 1) return true;
-    // Keep filter visible while user is actively searching
-    if (_controller.text.isNotEmpty) return true;
     final totalItems = _groups.fold<int>(0, (sum, g) => sum + g.items.length);
     return totalItems >= 20;
   }
@@ -602,21 +592,14 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   Widget build(BuildContext context) {
     Widget? loadingIndicator;
-    if (_isLoading && _emptySearchCache == null) {
-      loadingIndicator = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            Spinner(size: 12, color: context.theme.colors.mutedForeground),
-            const SizedBox(width: 8),
-            Text(
-              'Searching...',
-              style: TextStyle(
-                color: context.theme.colors.mutedForeground,
-                fontSize: context.theme.typography.sm.fontSize,
-              ),
-            ),
-          ],
+    if (_isLoading) {
+      loadingIndicator = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: Spinner(
+            size: 12,
+            color: context.theme.colors.mutedForeground,
+          ),
         ),
       );
     }
@@ -842,7 +825,6 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                         ),
                       ),
                     ),
-                  if (loadingIndicator != null) loadingIndicator,
                   if (errorBox != null) errorBox,
                   Flexible(
                     child: ListView.builder(
@@ -1086,6 +1068,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                       },
                     ),
                   ),
+                  if (loadingIndicator != null) loadingIndicator,
                   const SizedBox(height: 8),
                 ],
               ),
