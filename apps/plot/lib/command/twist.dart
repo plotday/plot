@@ -139,11 +139,6 @@ class ManageConnections extends Command {
     _upcomingCache = null; // Reset cache for each new session
     _dataCache = null;
     try {
-      // Track newly activated source so we can open EditSource after
-      // SelectModal closes (avoids a flash of the list between modals).
-      String? activatedSourceId;
-      String? activatedSourceName;
-
       Future<void> Function()? refreshFn;
       await SelectModal.open<_ConnectionItem>(
         context,
@@ -170,15 +165,19 @@ class ManageConnections extends Command {
             await AddSourceDetail(item.twist).run(ctx);
             final activatedId = AddSourceDetail.lastActivatedSourceId;
             AddSourceDetail.lastActivatedSourceId = null;
-            if (activatedId != null) {
-              if (item.twist.providers.isNotEmpty) {
-                // OAuth: close SelectModal so EditSource opens after
-                activatedSourceId = activatedId;
-                activatedSourceName = item.twist.name;
-                return true;
+            if (activatedId != null && item.twist.providers.isNotEmpty) {
+              // OAuth: push EditSource on top of the connections list so the
+              // list isn't visible as a standalone interstitial. Popping
+              // EditSource returns the user to ManageConnections naturally.
+              if (ctx.mounted) {
+                await EditSource(
+                  twistInstanceId: activatedId,
+                  name: item.twist.name,
+                  isNewlyActivated: true,
+                ).run(ctx);
               }
-              // Non-OAuth: channels configured during setup, refresh and stay
             }
+            // Non-OAuth: channels configured during setup, just refresh + stay
           } else if (item is _UpcomingConnection) {
             await _NotifyUpcomingConnection(item).run(ctx);
           }
@@ -201,19 +200,6 @@ class ManageConnections extends Command {
           return false; // Keep SelectModal open
         },
       );
-
-      // Open EditSource after SelectModal has closed
-      if (activatedSourceId != null && context.mounted) {
-        await EditSource(
-          twistInstanceId: activatedSourceId!,
-          name: activatedSourceName!,
-          isNewlyActivated: true,
-        ).run(context);
-        // Re-open ManageConnections so user lands back on connections list
-        if (context.mounted) {
-          return run(context);
-        }
-      }
 
       return const CommandSkipped();
     } on ApiException catch (e, t) {
@@ -394,8 +380,7 @@ class _ActiveSourceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.theme;
 
-    final hasLabel =
-        item.accountLabel != null && item.accountLabel!.isNotEmpty;
+    final hasLabel = item.accountLabel != null && item.accountLabel!.isNotEmpty;
     final subtitle = hasLabel ? item.accountLabel! : 'Set label';
 
     return Padding(
@@ -850,6 +835,18 @@ class EditSource extends ShowForm {
   /// When true, hides the Archive button (source was just set up).
   final bool isNewlyActivated;
 
+  /// Integrations prefetch kicked off by `_activateSource` so the first
+  /// EditSource open after activation doesn't block on a fresh network call
+  /// (which otherwise leaves the ManageConnections list visible with an item
+  /// spinner for ~1s between AddSourceDetail closing and EditSource opening).
+  static Future<TwistIntegrations>? _preloadedIntegrations;
+  static String? _preloadedFor;
+
+  static void preloadIntegrations(String twistInstanceId) {
+    _preloadedFor = twistInstanceId;
+    _preloadedIntegrations = TwistApi.getIntegrations(twistInstanceId);
+  }
+
   static Future<FormData> _buildForm(
     String twistInstanceId,
     String name,
@@ -859,8 +856,16 @@ class EditSource extends ShowForm {
     String? logoUrlDark,
     String? initialAccountLabel,
   }) async {
+    Future<TwistIntegrations> integrationsF;
+    if (_preloadedFor == twistInstanceId && _preloadedIntegrations != null) {
+      integrationsF = _preloadedIntegrations!;
+      _preloadedIntegrations = null;
+      _preloadedFor = null;
+    } else {
+      integrationsF = TwistApi.getIntegrations(twistInstanceId);
+    }
     final results = await Future.wait([
-      TwistApi.getIntegrations(twistInstanceId),
+      integrationsF,
       ManageConnections._dataCache?.usage != null
           ? Future.value(ManageConnections._dataCache!.usage!)
           : UpgradeApi.getUsage(),
@@ -899,14 +904,13 @@ class EditSource extends ShowForm {
     // current scope.
     final initialTeamId = twistInstance?.teamId != null
         ? twistInstance!.teamId.toString()
-        : (isNewlyActivated && teams.isNotEmpty
-            ? teams.first.id
-            : 'personal');
+        : (isNewlyActivated && teams.isNotEmpty ? teams.first.id : 'personal');
     // Prefer the server-fresh account_label from the integrations response
     // (which reflects the activateDraft fallback) over the potentially stale
     // local-store value. Then fall back to the team name or 'Personal' so the
     // Label field is never blank by default.
-    final storedLabel = initialAccountLabel ??
+    final storedLabel =
+        initialAccountLabel ??
         integrations.accountLabel ??
         twistInstance?.accountLabel;
     String fallbackLabel() {
@@ -918,6 +922,7 @@ class EditSource extends ShowForm {
       }
       return 'Personal';
     }
+
     final existingLabel = (storedLabel != null && storedLabel.isNotEmpty)
         ? storedLabel
         : fallbackLabel();
@@ -1399,8 +1404,8 @@ class AddSourceDetail extends ShowForm {
                       onScopeGroupsChanged: (groups) {
                         scopeGroupSelections[provider.provider.name] = groups;
                       },
-                      onSuccess: () {
-                        _activateAfterOAuth(
+                      onSuccess: () async {
+                        await _activateAfterOAuth(
                           formContext,
                           draftId,
                           twist.name,
@@ -1516,8 +1521,8 @@ class AddSourceDetail extends ShowForm {
                       onScopeGroupsChanged: (groups) {
                         scopeGroupSelections[provider.provider.name] = groups;
                       },
-                      onSuccess: () {
-                        _activateAfterOAuth(
+                      onSuccess: () async {
+                        await _activateAfterOAuth(
                           formContext,
                           draftId,
                           twist.name,
@@ -1668,6 +1673,10 @@ class AddSourceDetail extends ShowForm {
 
       lastActivatedSourceId = draftId;
       clearDraft();
+
+      // Start fetching integrations for the upcoming EditSource in parallel
+      // with the modal-pop animation, so the next modal can open immediately.
+      EditSource.preloadIntegrations(draftId);
 
       if (context.mounted) {
         Modal.pop<CommandReturn>(context, Value(const CommandDone()));
@@ -2219,9 +2228,7 @@ class ShowTwistInfo extends ShowForm {
     // have teams, let them reach the setup form and pick a scope — the
     // save-time check in SetupTwist will gate against the chosen owner.
     final atTwistLimit =
-        usage != null &&
-        usage.teams.isEmpty &&
-        usage.personal.twists.isAtLimit;
+        usage != null && usage.teams.isEmpty && usage.personal.twists.isAtLimit;
 
     return FormData(
       title: twist.name,
@@ -2395,8 +2402,8 @@ class SetupTwist extends ShowForm {
                 label: 'Scope',
                 // Prefer a team over personal so the twist counts against
                 // team quota by default. User can switch in the selector.
-                initialValue: availableScopes
-                        .firstWhereOrNull((s) => s != 'personal') ??
+                initialValue:
+                    availableScopes.firstWhereOrNull((s) => s != 'personal') ??
                     (availableScopes.isNotEmpty
                         ? availableScopes.first
                         : 'personal'),
@@ -2665,7 +2672,7 @@ class ConnectConnectorAccount extends ShowForm {
                       provider: provider.provider,
                       scopes: provider.scopes,
                       twistInstanceId: twist.id.toString(),
-                      onSuccess: () {
+                      onSuccess: () async {
                         TwistInstance.pullUpdates();
                         if (formContext.mounted) {
                           Modal.pop<CommandReturn>(
@@ -2905,7 +2912,7 @@ class ShowAddIntegrationAccount extends ShowForm {
                       provider: provider.provider,
                       scopes: provider.scopes,
                       twistInstanceId: twistInstanceId,
-                      onSuccess: () {
+                      onSuccess: () async {
                         onAccountAdded();
                         if (formContext.mounted) {
                           Modal.pop<CommandReturn>(
@@ -2937,7 +2944,7 @@ class _AuthWithScopeToggles extends StatefulWidget {
 
   final TwistProvider provider;
   final String twistInstanceId;
-  final VoidCallback onSuccess;
+  final Future<void> Function() onSuccess;
   final Set<String>? initialEnabledGroups;
   final ValueChanged<Set<String>>? onScopeGroupsChanged;
 

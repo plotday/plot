@@ -21,6 +21,7 @@ import 'package:plot/widget/toast.dart';
 import 'package:plot/store/store.dart' show AuthUserAction;
 import 'package:plot/store/types.dart' show AuthProvider;
 import 'package:plot/api/api.dart' as api;
+import 'package:plot/api/api_exception.dart' show ApiException;
 import 'package:plot/api/twist_api.dart' show TwistApi, TwistAuthUrl;
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/style/layout.dart';
@@ -122,7 +123,7 @@ class AuthButton extends StatefulWidget {
     required this.provider,
     required this.scopes,
     required String twistInstanceId,
-    required VoidCallback onSuccess,
+    required Future<void> Function() onSuccess,
     List<String>? enabledScopeGroups,
     this.onError,
     super.key,
@@ -177,7 +178,7 @@ class AuthButton extends StatefulWidget {
   final AuthUserAction? _link;
   final String? _twistInstanceId;
   final List<String>? _enabledScopeGroups;
-  final VoidCallback? _onSuccess;
+  final Future<void> Function()? _onSuccess;
   final void Function(String error)? onError;
 
   @override
@@ -187,6 +188,13 @@ class AuthButton extends StatefulWidget {
 class _AuthButtonState extends State<AuthButton>
     with WidgetsBindingObserver {
   bool _isLoading = false;
+
+  /// True only when the loading spinner was started by a flow that navigates
+  /// the browser away and never returns to the awaiting Dart code (i.e. the
+  /// Clerk web-redirect flow). Other flows await the auth session and reset
+  /// _isLoading in their own `finally` blocks — clearing it on resume would
+  /// drop the spinner while post-OAuth work (e.g. activation) is still running.
+  bool _resetLoadingOnResume = false;
 
   /// Pre-computed nonce so GoogleSignIn is ready when the user taps.
   /// Re-generated after each sign-in attempt.
@@ -232,8 +240,14 @@ class _AuthButtonState extends State<AuthButton>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _isLoading && mounted) {
-      setState(() => _isLoading = false);
+    if (state == AppLifecycleState.resumed &&
+        _isLoading &&
+        _resetLoadingOnResume &&
+        mounted) {
+      setState(() {
+        _isLoading = false;
+        _resetLoadingOnResume = false;
+      });
     }
   }
 
@@ -668,7 +682,10 @@ class _AuthButtonState extends State<AuthButton>
         if (widget._link != null) {
           _startOAuth();
         } else if (widget._onRedirectAuth != null) {
-          setState(() => _isLoading = true);
+          setState(() {
+            _isLoading = true;
+            _resetLoadingOnResume = true;
+          });
           widget._onRedirectAuth!();
         } else {
           _startOAuth();
@@ -735,7 +752,10 @@ class _AuthButtonState extends State<AuthButton>
         await _startTwistBrowser(authUrl, redirectUri);
       }
 
-      widget._onSuccess?.call();
+      // Keep the button's spinner on through the activation step the caller
+      // performs here; otherwise the modal redisplays a clickable auth button
+      // during the tail-end network work and users can trigger a second flow.
+      await widget._onSuccess?.call();
     } on GoogleSignInException catch (e, t) {
       if (e.code == GoogleSignInExceptionCode.canceled) {
         log.info('Google sign-in cancelled');
@@ -744,6 +764,20 @@ class _AuthButtonState extends State<AuthButton>
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
       Tracker.captureException(e, t);
       if (mounted) _showTwistAuthError();
+    } on ApiException catch (e, t) {
+      // Surface server-provided messages for client errors (e.g. 409 when the
+      // account is already linked to another Plot user). 5xx descriptions may
+      // contain internal details, so fall back to the generic message there.
+      log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
+      if (e.statusCode >= 500) Tracker.captureException(e, t);
+      if (mounted) {
+        final serverMessage = e.statusCode >= 400 && e.statusCode < 500
+            ? e.description.trim()
+            : '';
+        _showTwistAuthError(
+          message: serverMessage.isEmpty ? null : serverMessage,
+        );
+      }
     } catch (e, t) {
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
       Tracker.captureException(e, t);
@@ -821,15 +855,16 @@ class _AuthButtonState extends State<AuthButton>
     await api.post<Map<String, dynamic>>(callbackUri.toString());
   }
 
-  void _showTwistAuthError() {
+  void _showTwistAuthError({String? message}) {
     final providerName =
         widget.provider.name[0].toUpperCase() +
         widget.provider.name.substring(1);
-    final message = 'Unable to connect with $providerName. Please try again.';
+    final finalMessage =
+        message ?? 'Unable to connect with $providerName. Please try again.';
     if (widget.onError != null) {
-      widget.onError!(message);
+      widget.onError!(finalMessage);
     } else {
-      context.showToast(message: message, isError: true);
+      context.showToast(message: finalMessage, isError: true);
     }
   }
 
