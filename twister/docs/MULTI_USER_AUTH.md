@@ -46,8 +46,8 @@ When a twist needs to write back to an external system (e.g., posting a comment 
 The simplest approach passes the actor's ID as the `authToken` parameter. The tool's `getClient()` method will look it up via `integrations.get(provider, actorId)`:
 
 ```typescript
-private async onNoteCreated(note: Note): Promise<void> {
-  const provider = activity.meta?.provider;
+private async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+  const provider = thread.meta?.provider;
   const tool = this.getProviderTool(provider);
 
   // Try actor's credentials first, then installer's
@@ -63,8 +63,10 @@ private async onNoteCreated(note: Note): Promise<void> {
 
   for (const authToken of authTokensToTry) {
     try {
-      await tool.addIssueComment(authToken, activity.meta, note.content, note.id);
-      return; // Success
+      // addIssueComment returns { key, externalContent } — returning it
+      // directly lets the runtime set note.key AND record the sync
+      // baseline so future re-syncs preserve Plot's markdown.
+      return await tool.addIssueComment(authToken, thread.meta, note.content, note.id);
     } catch {
       continue; // Try next token
     }

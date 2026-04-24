@@ -310,6 +310,20 @@ export class AirtableAPI {
     );
   }
 
+  async updateComment(
+    baseId: string,
+    tableId: string,
+    recordId: string,
+    commentId: string,
+    body: { text: string }
+  ): Promise<AirtableComment> {
+    return this.req<AirtableComment>(
+      "PATCH",
+      `/v0/${baseId}/${tableId}/${recordId}/comments/${commentId}`,
+      body
+    );
+  }
+
   async createWebhook(
     baseId: string,
     notificationUrl: string,

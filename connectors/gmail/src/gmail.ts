@@ -1,4 +1,9 @@
-import { Connector, type ToolBuilder, Tag } from "@plotday/twister";
+import {
+  Connector,
+  type NoteWriteBackResult,
+  type ToolBuilder,
+  Tag,
+} from "@plotday/twister";
 import type { Actor, ActorId, Note, Thread, Link } from "@plotday/twister/plot";
 import {
   AuthProvider,
@@ -509,7 +514,10 @@ export class Gmail extends Connector<Gmail> {
     }
   }
 
-  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+  async onNoteCreated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const channelId = (meta.channelId ?? meta.syncableId) as string;
     if (!channelId) {
@@ -604,6 +612,15 @@ export class Gmail extends Connector<Gmail> {
 
     // Store sent message ID for dedup when synced back
     await this.set(`sent:${result.id}`, true);
+
+    // Return the Gmail message id as the note key so the runtime links this
+    // Plot note to the sent message. We intentionally do NOT provide
+    // `externalContent`: Gmail does not return the normalized message body
+    // from `send`, and fetching + parsing the multipart payload just to
+    // compute a baseline is expensive. The first incremental sync-in of the
+    // sent message will establish the baseline naturally (runtime records
+    // the stored content as the baseline on first external ingest).
+    return { key: result.id };
   }
 
   async onThreadRead(

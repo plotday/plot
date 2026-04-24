@@ -18,6 +18,57 @@ import { Twist } from "./twist";
  * The platform attaches the returned `NewLinkWithNotes` to the originating
  * thread once `onCreateLink` resolves.
  */
+/**
+ * Result returned from {@link Connector.onNoteCreated} and
+ * {@link Connector.onNoteUpdated} to report what the external system now
+ * has stored for the note.
+ *
+ * The runtime hashes `externalContent` and stores it as the note's sync
+ * baseline. On the next sync-in, if the incoming content hashes to the
+ * same value, the runtime knows the external side hasn't changed and
+ * preserves Plot's (possibly formatted) content. When the external side
+ * is edited, the hash diverges and the runtime overwrites Plot's content
+ * with the new external version.
+ *
+ * Omitting `externalContent` skips baseline tracking — the next sync-in
+ * will overwrite Plot's content (previous behavior). Always provide it
+ * when the write-back's return value reflects what the external system
+ * actually stored (often lossy plain-text), so the round-trip does not
+ * clobber the original Plot markdown.
+ *
+ * The hash covers only the content string — the runtime intentionally
+ * does not include a content-type in the hash, so write-back and sync-in
+ * do not have to agree on a content-type label for the same underlying
+ * bytes. Return exactly the string your connector's sync-in path will
+ * emit as `NewNote.content` for this note on the next re-ingest.
+ *
+ * For back-compat, `onNoteCreated` may also return a plain string, which
+ * is treated as `{ key }` with no baseline.
+ */
+export type NoteWriteBackResult = {
+  /**
+   * External system identifier assigned to this note. Set as the note's
+   * `key` for future upsert matching. Required when the runtime does not
+   * already know the key (i.e., from `onNoteCreated`); ignored from
+   * `onNoteUpdated` when the key was already established on create.
+   */
+  key?: string;
+  /**
+   * The content string as the external system now stores it, post-write.
+   * For systems whose write-back returns a representation of what was
+   * actually stored (e.g. Google Drive comment `content` after a create),
+   * pass that verbatim. For systems that only accept plain text, this
+   * will often be a lossy plain-text version of the Plot markdown — that
+   * is exactly the point: storing the lossy form as baseline lets the
+   * next sync-in recognize it and skip overwriting the richer Plot
+   * version.
+   *
+   * Must exactly match the string your connector's sync-in path emits as
+   * `NewNote.content` for this note on re-ingest.
+   */
+  externalContent?: string;
+};
+
 export type CreateLinkDraft = {
   /** The channel (account + resource) the new item belongs to. */
   channelId: string;
@@ -270,29 +321,39 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * Override to write back comments to the external service
    * (e.g., adding a comment to a Linear issue).
    *
-   * Returning a string sets the note's `key` for future upsert matching,
-   * linking the Plot note to its external counterpart so that subsequent
-   * syncs (reactions, edits) update the existing note instead of creating duplicates.
+   * Returning a string or {@link NoteWriteBackResult} links the Plot note
+   * to its external counterpart. A plain string sets the note's `key`.
+   * A `NoteWriteBackResult` additionally sets a sync baseline (via
+   * `externalContent`) so the next sync-in can recognize the round-tripped
+   * content and preserve Plot's formatted version. See
+   * {@link NoteWriteBackResult} for details.
    *
    * @param note - The created note
    * @param thread - The thread the note belongs to (includes thread.meta with connector-specific data)
-   * @returns Optional note key for external deduplication
+   * @returns Optional note key or NoteWriteBackResult for external dedup + baseline tracking
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
+  onNoteCreated(note: Note, thread: Thread): Promise<string | NoteWriteBackResult | void> {
     return Promise.resolve();
   }
 
   /**
    * Called when a note on a thread owned by this connector is updated.
    * Override to write back changes to the external service
-   * (e.g., syncing reaction tags as emoji reactions).
+   * (e.g., syncing reaction tags as emoji reactions, or editing a comment
+   * whose content changed in Plot).
+   *
+   * Return a {@link NoteWriteBackResult} with `externalContent` to update
+   * the sync baseline after a successful write-back, so the next sync-in
+   * recognizes the external version as already-seen and preserves Plot's
+   * content.
    *
    * @param note - The updated note (includes current tags)
    * @param thread - The thread the note belongs to (includes thread.meta with connector-specific data)
+   * @returns Optional NoteWriteBackResult for baseline tracking
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onNoteUpdated(note: Note, thread: Thread): Promise<void> {
+  onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     return Promise.resolve();
   }
 

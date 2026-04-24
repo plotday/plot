@@ -9,7 +9,7 @@ import {
   NewContact,
 } from "@plotday/twister";
 import { Tag } from "@plotday/twister/tag";
-import { Connector } from "@plotday/twister/connector";
+import { Connector, type NoteWriteBackResult } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
   AuthProvider,
@@ -682,9 +682,57 @@ export class Jira extends Connector<Jira> {
 
   /**
    * Called when a note is created on a thread owned by this connector.
+   *
+   * Returns a {@link NoteWriteBackResult} so the runtime can set the note's
+   * key to `comment-{id}` and record the ADF-extracted plain text as the
+   * sync baseline. Sync-in (both batch search and webhook paths) runs the
+   * comment's ADF body through `extractTextFromADF` before building the
+   * NewNote, so we mirror that same extraction here — when nothing has
+   * changed on the Jira side the hash matches and Plot's richer content is
+   * preserved.
    */
-  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
-    await this.addIssueComment(thread.meta ?? {}, note.content ?? "");
+  async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    return this.addIssueComment(thread.meta ?? {}, note.content ?? "");
+  }
+
+  /**
+   * Called when a Plot user edits an existing note on a Jira-owned thread.
+   * Pushes the new content (converted to ADF) to the corresponding Jira
+   * comment and refreshes the sync baseline from the Jira-stored ADF.
+   */
+  async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    if (!note.key) return;
+    const commentMatch = note.key.match(/^comment-(.+)$/);
+    if (!commentMatch) return;
+    const commentId = commentMatch[1];
+
+    const issueKey = thread.meta?.issueKey as string | undefined;
+    if (!issueKey) {
+      throw new Error("Jira issue key not found in thread meta");
+    }
+    const projectId = thread.meta?.projectId as string;
+    const client = await this.getClient(projectId);
+
+    const body = note.content ?? "";
+    const adfBody = this.convertTextToADF(body);
+
+    const result = await client.issueComments.updateComment({
+      issueIdOrKey: issueKey,
+      id: commentId,
+      body: adfBody,
+    });
+
+    // Sync-in extracts plain text from the comment's ADF body — mirror that
+    // here so the baseline hash matches on the next sync-in pass.
+    const externalContent = result?.body
+      ? (typeof result.body === "string"
+          ? result.body
+          : this.extractTextFromADF(result.body))
+      : body;
+
+    return {
+      externalContent,
+    };
   }
 
   /**
@@ -698,7 +746,7 @@ export class Jira extends Connector<Jira> {
     meta: import("@plotday/twister").ThreadMeta,
     body: string,
     noteId?: string,
-  ): Promise<string | void> {
+  ): Promise<NoteWriteBackResult | void> {
     const issueKey = meta.issueKey as string | undefined;
     if (!issueKey) {
       throw new Error("Jira issue key not found in thread meta");
@@ -716,7 +764,18 @@ export class Jira extends Connector<Jira> {
     });
 
     if (result?.id) {
-      return `comment-${result.id}`;
+      // Sync-in extracts plain text from the comment's ADF body — mirror
+      // that same extraction here so the next sync-in's hash matches the
+      // baseline we're about to record.
+      const externalContent = result.body
+        ? (typeof result.body === "string"
+            ? result.body
+            : this.extractTextFromADF(result.body))
+        : body;
+      return {
+        key: `comment-${result.id}`,
+        externalContent,
+      };
     }
   }
 

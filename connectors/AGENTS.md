@@ -238,7 +238,7 @@ Populating `thread.contacts` with recipients does NOT automatically admit them. 
 
 ## Note key conventions
 
-`note.key` enables note-level upserts:
+`note.key` enables note-level upserts AND is the only way the runtime can correlate a Plot-authored note with its external counterpart for baseline preservation (see "Sync baseline preservation" above). Bidirectional connectors must assign keys on write-back.
 
 ```
 "description"                 — main body
@@ -331,17 +331,59 @@ async updateIssue(activity: Activity): Promise<void> {
   await client.updateItem(externalId, { title: activity.title, done: /* ... */ });
 }
 
-// Post a comment; return note key so future syncs can dedupe
-async addIssueComment(meta: ActivityMeta, body: string, noteId?: string): Promise<string | void> {
-  const client = await this.getClient(meta.resourceId as string);
-  const comment = await client.createComment(meta.externalId as string, { body });
-  if (comment?.id) return `comment-${comment.id}`;
+// Post a comment. Return a NoteWriteBackResult with externalContent so the
+// runtime can establish a sync baseline (see "Sync baseline preservation"
+// below). Returning just a string still works, but without a baseline the
+// next sync-in will overwrite Plot's (possibly richer-markdown) content
+// with the round-tripped plain text the external system stored.
+async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+  const client = await this.getClient(thread.meta?.resourceId as string);
+  const comment = await client.createComment(thread.meta?.externalId as string, { body: note.content ?? "" });
+  if (!comment?.id) return;
+  return {
+    key: `comment-${comment.id}`,
+    externalContent: comment.body, // what the external system NOW STORES
+  };
+}
+
+// Push a local edit back to the external system. `note.key` identifies the
+// target; refresh the baseline from the response so the next sync-in
+// recognises the round-trip and preserves Plot's edited content.
+async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+  if (!note.key?.startsWith("comment-")) return;
+  const commentId = note.key.slice("comment-".length);
+  const client = await this.getClient(thread.meta?.resourceId as string);
+  const updated = await client.updateComment(commentId, { body: note.content ?? "" });
+  return { externalContent: updated.body };
 }
 ```
 
 **Loop prevention** (in the twist, not the connector): `if (note.author.type === ActorType.Twist) return;`
 
 **`handleReplies`**: bidirectional connectors must set `static readonly handleReplies = true` to enable @-mentions on replies. Read-only connectors should NOT.
+
+### Sync baseline preservation (required for any note round-trip)
+
+When Plot pushes a note to an external system that stores content in a lossier format than Plot does (e.g. plain-text comments APIs, ADF, HTML that gets sanitised), the external's version re-ingested on the next sync would overwrite Plot's original content with the round-tripped form — `1.` → `1\.`, `[name]` → `\[name\]`, etc. To prevent this, the runtime tracks a per-note "external baseline" hash in `note.external_content_hash`:
+
+- **Write-back (`onNoteCreated` / `onNoteUpdated`) returns `NoteWriteBackResult`** with `externalContent` set to what the external system now stores. The runtime hashes this and stores it as the note's baseline. (The hash is over the content string only — no contentType prefix — so write-back and sync-in don't need to agree on a contentType label to match.)
+- **Sync-in** computes the same hash on each incoming `NewNote.content`. Match → preserve Plot's stored content (skip overwrite). Mismatch → external was edited, overwrite.
+
+The hard contract:
+
+> **`externalContent` must exactly equal the `NewNote.content` string your sync-in path will emit for this note on re-ingest.**
+
+If your sync-in runs incoming comment bodies through a transform (e.g. Airtable's `translateMentionsInbound`, Jira's `extractTextFromADF`), apply the same transform to the write-back response before returning it. Pick the value by looking at the sync-in `build*Note` function and returning exactly what ends up in `content`.
+
+For systems that return the stored representation on write (Drive, GitHub, Linear, Slack `chat.postMessage`), use the response directly. For systems that don't (Gmail `messages.send`), either fetch the stored form with an extra API call or skip `externalContent` — the first sync-in after the write will organically establish the baseline. Document the tradeoff.
+
+**Failure modes you must avoid:**
+
+- Returning `externalContent` that differs from what sync-in will produce → every sync-in clobbers Plot's content.
+- Not setting `handleReplies = true` → dispatch never reaches `onNoteCreated`.
+- Calling `integrations.saveLink()` inside `onNoteCreated` to propagate the key → no longer needed (runtime now does it). Remove any such workaround.
+
+**Legacy:** `onNoteCreated` may still return a plain `string` — treated as `{ key }` with no baseline. Don't use this shape in new connectors.
 
 ### Creating new items from Plot (`onCreateLink`)
 
@@ -430,6 +472,8 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 - [ ] Extend `Connector<YourConnector>`; declare `PROVIDER`, `SCOPES`, `Options` (static + `declare readonly`)
 - [ ] `build()` declares Integrations, Network, Callbacks, Tasks (plus GoogleContacts if applicable)
 - [ ] Set `handleReplies = true` only if bidirectional
+- [ ] For bidirectional note sync: `onNoteCreated` / `onNoteUpdated` return `NoteWriteBackResult` with `externalContent` matching what sync-in will emit for this note — no `Promise<string | void>` in new connectors
+- [ ] For bidirectional note sync: implement `onNoteUpdated` if the external supports editing (document the gap if it doesn't)
 - [ ] `onChannelEnabled` uses `runTask()` (NOT `run()`) for webhook setup and initial sync — blocks HTTP response otherwise
 - [ ] Convert parent callbacks to tokens with `createFromParent()`; store via `this.set()`; retrieve with `this.get<Callback>()`
 - [ ] Never pass functions, RPC stubs, or `undefined` to `this.callback()` — use `null`
@@ -465,6 +509,9 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 15. `this.run()` in `onChannelEnabled` → blocks HTTP response until full sync completes; always `runTask()`.
 16. Calling `integrations.saveLink()` inside `onCreateLink` → duplicate thread; just return the link.
 17. Implementing `onCreateLink` without `createDefault: true` on a status → "Create new X" entry never appears.
+18. Returning a bare `string` (key only) from `onNoteCreated` when the external stores content lossily (plain-text comments APIs, ADF, sanitised HTML) → next sync-in clobbers Plot's content with the round-tripped form (e.g. `1.` → `1\.`). Return a `NoteWriteBackResult` with `externalContent` matching sync-in's shape instead.
+19. Returning `externalContent` that doesn't match what sync-in emits for the same note (e.g. post-write raw HTML when sync-in extracts plain text; pre-translation mentions when sync-in translates them) → baseline hash always mismatches and every sync clobbers. Inspect the sync-in `build*Note` path and return exactly what it produces.
+20. Calling `integrations.saveLink()` inside `onNoteCreated` to set the note's `key` → legacy workaround, no longer needed. The runtime sets `key` automatically from the `NoteWriteBackResult` return.
 
 ## Examples
 
@@ -474,7 +521,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 | `google-calendar/` | CalendarConnector | Recurring events; RSVP write-back; watch renewal; shared Google auth |
 | `slack/` | MessagingConnector | Team-sharded webhooks; thread model |
 | `gmail/` | MessagingConnector | PubSub webhooks; HTML contentType; callback-arg `initialSync` |
-| `google-drive/` | DocumentConnector | Document comments; reply threading; file watching |
+| `google-drive/` | DocumentConnector | Document comments; reply threading; file watching; canonical `NoteWriteBackResult` + `onNoteUpdated` example |
 | `jira/` | ProjectConnector | Immutable vs mutable ids; comment metadata dedup |
 | `asana/` | ProjectConnector | HMAC webhook verification; section-based projects |
 | `outlook-calendar/` | CalendarConnector | Microsoft Graph; subscription management |

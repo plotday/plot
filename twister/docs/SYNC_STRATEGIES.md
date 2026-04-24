@@ -764,29 +764,31 @@ When implementing two-way sync where items can be created in Plot and pushed to 
 
 This eliminates a race condition where a webhook for an item you're creating arrives before you've updated the Activity/Note with the external key. Without this pattern, the webhook handler won't find the item by external key and may create a duplicate.
 
+In a connector, return a `NoteWriteBackResult` from `onNoteCreated` — the runtime sets the key atomically and also records the external content as the sync baseline:
+
 ```typescript
-async pushNoteAsComment(note: Note, externalItemId: string): Promise<void> {
-  // Create the comment in the external system, embedding the Note ID in metadata
-  const externalComment = await externalApi.createComment(externalItemId, {
-    body: note.content,
+async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+  const externalComment = await externalApi.createComment(thread.meta.externalItemId, {
+    body: note.content ?? "",
     metadata: { plotNoteId: note.id },  // Embed Plot ID for webhook correlation
   });
-
-  // Update the Note with the external key AFTER creation
-  // A webhook may arrive between these two steps — that's OK because
-  // the webhook handler checks metadata first (see below)
-  await this.tools.plot.updateNote({
-    id: note.id,
+  if (!externalComment?.id) return;
+  return {
     key: `comment-${externalComment.id}`,
-  });
+    // What the external system NOW STORES — must match what your sync-in
+    // path emits as NewNote.content on re-ingest. The runtime hashes this
+    // so the next sync re-listing unchanged content preserves Plot's
+    // (possibly richer-markdown) version instead of clobbering it.
+    externalContent: externalComment.body,
+  };
 }
 
 async onWebhook(payload: WebhookPayload): Promise<void> {
   const comment = payload.comment;
 
-  // Use the Plot ID from metadata if present (handles the race condition
-  // where the webhook arrives before we've set the external key on the Note),
-  // otherwise fall back to upserting by activity source and key
+  // Use the Plot ID from metadata if present (handles the race where the
+  // webhook arrives before onNoteCreated's return has been applied),
+  // otherwise fall back to upserting by activity source and key.
   await this.tools.plot.createNote({
     ...(comment.metadata?.plotNoteId
       ? { id: comment.metadata.plotNoteId }
@@ -796,6 +798,10 @@ async onWebhook(payload: WebhookPayload): Promise<void> {
   });
 }
 ```
+
+For twists that write notes outside the `onNoteCreated` dispatch path (explicit `pushNoteAsComment`-style methods), set `key` via `updateNote` after the external write — see the legacy pattern below. In that path the sync baseline is **not** established, so the next sync-in will overwrite Plot's content with the external version. Prefer the connector `onNoteCreated` flow when round-trip preservation matters.
+
+See `connectors/AGENTS.md` → "Sync baseline preservation" for the full contract on what `externalContent` must equal.
 
 ## Summary
 

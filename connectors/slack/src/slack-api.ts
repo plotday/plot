@@ -275,6 +275,35 @@ export class SlackApi {
     return data.message;
   }
 
+  /**
+   * Edits a message via `chat.update`. Requires `chat:write` user scope and
+   * the message must have been posted by the authenticated user.
+   *
+   * Returns Slack's echoed representation (post-edit), whose `text` field is
+   * the authoritative stored mrkdwn. Falls back to the caller's text if Slack
+   * doesn't include a `message` envelope in the response.
+   */
+  public async updateMessage(
+    channelId: string,
+    ts: string,
+    text: string
+  ): Promise<{ ts: string; text: string }> {
+    const data = await this.call("chat.update", {
+      channel: channelId,
+      ts,
+      text,
+    });
+    // `chat.update` returns `{ ok, channel, ts, text, message: { text, ... } }`.
+    // The message envelope may be absent under some tokens; fall back to the
+    // top-level `text` and `ts`.
+    const echoed =
+      (data.message && typeof data.message.text === "string"
+        ? data.message.text
+        : undefined) ?? (typeof data.text === "string" ? data.text : text);
+    const echoedTs = (typeof data.ts === "string" ? data.ts : ts) as string;
+    return { ts: echoedTs, text: echoed };
+  }
+
   public async addStar(channelId: string, timestamp: string): Promise<void> {
     await this.call("stars.add", { channel: channelId, timestamp });
   }
@@ -358,9 +387,12 @@ function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
 }
 
 /**
- * Converts Slack markdown to plain text for better readability
+ * Converts Slack markdown to plain text for better readability.
+ * Exported so write-back paths can apply the same transform to Slack's
+ * echoed `text` when producing the sync baseline (see `Slack.onNoteCreated`
+ * / `onNoteUpdated`) — baseline must match what sync-in stores.
  */
-function formatSlackText(text: string): string {
+export function formatSlackText(text: string): string {
   return (
     text
       // Convert user mentions

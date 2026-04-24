@@ -1,5 +1,6 @@
 import {
   Connector,
+  type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
 import type { NewActor, Note, Thread } from "@plotday/twister/plot";
@@ -259,14 +260,6 @@ export class MsTeams extends Connector<MsTeams> {
 
       for (const { parent, replies } of result.threads) {
         try {
-          // Filter out messages we sent (dedup)
-          const sentKey = `sent:${parent.id}`;
-          const wasSent = await this.get<boolean>(sentKey);
-          if (wasSent) {
-            await this.clear(sentKey);
-            continue;
-          }
-
           const link = transformChannelThread(
             parent,
             replies,
@@ -521,34 +514,21 @@ export class MsTeams extends Connector<MsTeams> {
       if (messages.length > 0) {
         const memberData = await this.getChatMembersAsActors(api, chatId);
 
-        // Filter out messages we sent (dedup)
-        const filtered: TeamsMessage[] = [];
-        for (const msg of messages) {
-          const wasSent = await this.get<boolean>(`sent:${msg.id}`);
-          if (wasSent) {
-            await this.clear(`sent:${msg.id}`);
-            continue;
-          }
-          filtered.push(msg);
-        }
+        const link = transformDmThread(
+          messages,
+          chatId,
+          memberData,
+          isInitial
+        );
 
-        if (filtered.length > 0) {
-          const link = transformDmThread(
-            filtered,
-            chatId,
-            memberData,
-            isInitial
-          );
+        link.channelId = DM_CHANNEL_ID;
+        link.meta = {
+          ...link.meta,
+          syncProvider: "teams",
+          syncableId: DM_CHANNEL_ID,
+        };
 
-          link.channelId = DM_CHANNEL_ID;
-          link.meta = {
-            ...link.meta,
-            syncProvider: "teams",
-            syncableId: DM_CHANNEL_ID,
-          };
-
-          await this.tools.integrations.saveLink(link);
-        }
+        await this.tools.integrations.saveLink(link);
       }
 
       const nextLink = result["@odata.nextLink"];
@@ -610,9 +590,32 @@ export class MsTeams extends Connector<MsTeams> {
 
   // ---- Write-back: reply from Plot ----
 
-  async onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
+  /**
+   * Build a NoteWriteBackResult from the Graph API response so the runtime
+   * can hash what Teams stored as the sync baseline. The body returned by
+   * Graph may be normalized (e.g. HTML sanitized), so we use the response
+   * `body.content`/`body.contentType` verbatim — that is what the next
+   * sync-in pass will re-ingest as the note's content/contentType.
+   */
+  private buildWriteBackResult(
+    result: TeamsMessage,
+    fallbackContent: string
+  ): NoteWriteBackResult {
+    const body = result.body;
+    const content = body?.content ?? fallbackContent;
+    return {
+      key: result.id,
+      externalContent: content,
+    };
+  }
+
+  async onNoteCreated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const syncableId = meta.syncableId as string;
+    const body = note.content ?? "";
 
     if (syncableId === DM_CHANNEL_ID) {
       // DM reply
@@ -624,10 +627,9 @@ export class MsTeams extends Connector<MsTeams> {
 
       const api = await this.getApi(DM_CHANNEL_ID);
       try {
-        const result = await api.sendChatMessage(chatId, note.content ?? "");
+        const result = await api.sendChatMessage(chatId, body);
         if (result?.id) {
-          await this.set(`sent:${result.id}`, true);
-          return result.id;
+          return this.buildWriteBackResult(result, body);
         }
       } catch (error) {
         console.error("Failed to send Teams DM reply:", error);
@@ -649,14 +651,72 @@ export class MsTeams extends Connector<MsTeams> {
           teamId,
           channelId,
           messageId,
-          note.content ?? ""
+          body
         );
         if (result?.id) {
-          await this.set(`sent:${result.id}`, true);
-          return result.id;
+          return this.buildWriteBackResult(result, body);
         }
       } catch (error) {
         console.error("Failed to send Teams channel reply:", error);
+      }
+    }
+  }
+
+  /**
+   * Pushes Plot-side edits of an existing Teams-owned note back to Graph.
+   * DMs are routed through `/chats/{chatId}/messages/{messageId}`; channel
+   * messages and their replies both use the channel PATCH endpoint (Teams
+   * replies are messages addressable by id).
+   */
+  async onNoteUpdated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
+    if (!note.key) return;
+
+    const meta = thread.meta ?? {};
+    const syncableId = meta.syncableId as string;
+    const body = note.content ?? "";
+    const messageId = note.key;
+
+    if (syncableId === DM_CHANNEL_ID) {
+      const chatId = meta.chatId as string;
+      if (!chatId) {
+        console.error("No chatId in meta for Teams DM update");
+        return;
+      }
+
+      const api = await this.getApi(DM_CHANNEL_ID);
+      try {
+        const result = await api.updateChatMessage(chatId, messageId, body);
+        if (result) {
+          return this.buildWriteBackResult(result, body);
+        }
+      } catch (error) {
+        console.error("Failed to update Teams DM message:", error);
+      }
+    } else {
+      const channelId = meta.channelId as string;
+      const teamId = meta.teamId as string;
+
+      if (!channelId || !teamId) {
+        console.error("Missing meta for Teams channel message update");
+        return;
+      }
+
+      const api = await this.getApi(channelId);
+      try {
+        const result = await api.updateChannelMessage(
+          teamId,
+          channelId,
+          messageId,
+          body
+        );
+        if (result) {
+          return this.buildWriteBackResult(result, body);
+        }
+      } catch (error) {
+        console.error("Failed to update Teams channel message:", error);
       }
     }
   }

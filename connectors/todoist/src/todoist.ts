@@ -3,6 +3,7 @@ import {
   ActionType,
   type Link,
   type Note,
+  type NoteWriteBackResult,
   type Thread,
   ThreadMeta,
   type NewLinkWithNotes,
@@ -29,6 +30,7 @@ import {
   closeTask,
   reopenTask,
   createComment,
+  updateComment,
   listCollaborators,
   verifyWebhookSignature,
   type TodoistTask,
@@ -359,6 +361,7 @@ export class Todoist extends Connector<Todoist> {
             {
               key: `comment-${eventData.id}`,
               content: eventData.content || "",
+              contentType: "text" as const,
               created: eventData.posted_at
                 ? new Date(eventData.posted_at)
                 : undefined,
@@ -515,39 +518,49 @@ export class Todoist extends Connector<Todoist> {
 
   /**
    * Write back new notes as Todoist comments.
+   *
+   * Returns a {@link NoteWriteBackResult} so the runtime assigns the note's
+   * key to `comment-<todoistCommentId>` (matching what sync-in uses) and
+   * records the external sync baseline. Todoist stores comment content as
+   * plain text; hashing the returned `content` as `"text"` lines up with the
+   * sync-in path (webhook `note:added`) so the next incremental sync
+   * preserves Plot's (possibly markdown) note instead of overwriting it.
    */
-  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+  async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const taskId = thread.meta?.taskId as string | undefined;
     const projectId = thread.meta?.projectId as string | undefined;
     if (!taskId || !projectId || !note.content) return;
 
     const token = await this.getToken(projectId);
     const comment = await createComment(token, taskId, note.content);
+    if (!comment?.id) return;
 
-    if (comment?.id) {
-      // Save with comment key for dedup
-      const source = `todoist:task:${taskId}`;
-      const link: NewLinkWithNotes = {
-        source,
-        type: "task",
-        title: thread.title ?? taskId,
-        channelId: projectId,
-        meta: {
-          taskId,
-          projectId,
-          syncProvider: "todoist",
-          channelId: projectId,
-        },
-        notes: [
-          {
-            key: `comment-${comment.id}`,
-            content: note.content,
-            created: new Date(comment.posted_at),
-          } as any,
-        ],
-      };
-      await this.tools.integrations.saveLink(link);
-    }
+    return {
+      key: `comment-${comment.id}`,
+      externalContent: comment.content ?? note.content,
+    };
+  }
+
+  /**
+   * Write back edits to existing Todoist comments.
+   */
+  async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    const taskId = thread.meta?.taskId as string | undefined;
+    const projectId = thread.meta?.projectId as string | undefined;
+    if (!taskId || !projectId) return;
+    if (!note.key) return;
+
+    const match = note.key.match(/^comment-(.+)$/);
+    if (!match) return;
+    const commentId = match[1];
+
+    const body = note.content ?? "";
+    const token = await this.getToken(projectId);
+    const comment = await updateComment(token, commentId, body);
+
+    return {
+      externalContent: comment?.content ?? body,
+    };
   }
 }
 

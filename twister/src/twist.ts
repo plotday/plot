@@ -1,3 +1,4 @@
+import type { NoteWriteBackResult } from "./connector";
 import { type Action, type Actor, type ActorId, type Link, type Note, type Thread, Uuid } from "./plot";
 import type { Tag } from "./tag";
 import { type ITool } from "./tool";
@@ -384,7 +385,7 @@ export abstract class Twist<TSelf> {
    * @returns Optional note key for external deduplication
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onNoteCreated(note: Note, ...args: any[]): Promise<string | void> {
+  onNoteCreated(note: Note, ...args: any[]): Promise<string | NoteWriteBackResult | void> {
     return Promise.resolve();
   }
 

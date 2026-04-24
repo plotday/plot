@@ -183,9 +183,15 @@ async onThreadUpdated(thread: Thread, changes: { tagsAdded, tagsRemoved }): Prom
   if (tool?.updateIssue) await tool.updateIssue(thread);
 }
 
-async onNoteCreated(note: Note): Promise<void> {
+async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
   if (note.author.type === ActorType.Twist) return; // Prevent loops
-  // Sync note to external service as a comment
+  // Sync note to external service as a comment. Return the external
+  // system's id + stored content so the runtime can set note.key AND
+  // record a sync baseline that preserves Plot's content on round-trip.
+  // See connectors/AGENTS.md → "Sync baseline preservation".
+  const comment = await externalApi.createComment(thread.meta.externalId, { body: note.content ?? "" });
+  if (!comment?.id) return;
+  return { key: `comment-${comment.id}`, externalContent: comment.body };
 }
 ```
 

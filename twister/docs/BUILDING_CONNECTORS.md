@@ -16,6 +16,7 @@ Connectors connect Plot to external services like Google Calendar, Slack, Linear
 - [Batch Processing](#batch-processing)
 - [Complete Example](#complete-example)
 - [Creating Items from Plot (`onCreateLink`)](#creating-items-from-plot-oncreatelink)
+- [Bidirectional Note Sync (Comments, Messages, Replies)](#bidirectional-note-sync-comments-messages-replies)
 - [Best Practices](#best-practices)
 
 ---
@@ -487,6 +488,37 @@ async onCreateLink(draft: CreateLinkDraft): Promise<NewLinkWithNotes | null> {
 If creation shouldn't proceed (wrong link type, external API refused,
 user not authorized), return `null`. The Plot thread is still saved; no
 link is attached.
+
+## Bidirectional Note Sync (Comments, Messages, Replies)
+
+When a user adds a note to a thread your connector created, the runtime dispatches `onNoteCreated` (and `onNoteUpdated` when the note is edited). Implement these to push the note to the external system as a comment/message/reply and return a `NoteWriteBackResult`:
+
+```typescript
+import type { NoteWriteBackResult } from "@plotday/twister";
+
+async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+  if (note.author.type === ActorType.Twist) return; // Prevent loops
+  const comment = await client.createComment(thread.meta.externalId, { body: note.content ?? "" });
+  if (!comment?.id) return;
+  return {
+    key: `comment-${comment.id}`,
+    // What the external system NOW STORES, byte-for-byte equal to what
+    // your sync-in path will emit as NewNote.content on re-ingest.
+    externalContent: comment.body,
+  };
+}
+
+async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+  if (!note.key?.startsWith("comment-")) return;
+  const commentId = note.key.slice("comment-".length);
+  const updated = await client.updateComment(commentId, { body: note.content ?? "" });
+  return { externalContent: updated.body };
+}
+```
+
+The `externalContent` field establishes a sync baseline: the runtime hashes it and stores it on `note.external_content_hash`. On the next sync-in, the incoming content is hashed the same way — if the hashes match, the external side hasn't changed since we wrote, so Plot's stored content (which may be richer markdown than what the external system round-tripped) is preserved. If the hashes differ, the external was edited and Plot is overwritten.
+
+**Contract**: `externalContent` must exactly equal the `NewNote.content` your sync-in's `build*Note` function emits for this note on re-ingest. If sync-in runs a transform (ADF extraction, mention translation, HTML sanitisation), apply the same transform to the write-back response before returning it. Bidirectional connectors must also set `static readonly handleReplies = true` so the dispatch reaches your hooks. See **[Connector Development Guide](../../connectors/AGENTS.md)** → "Sync baseline preservation" for the full contract and failure modes.
 
 ## Best Practices
 

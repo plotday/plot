@@ -385,14 +385,18 @@ export async function handlePRCommentWebhook(
 }
 
 /**
- * Add a general comment to a pull request
+ * Add a general (conversation-level) comment to a pull request.
+ *
+ * Conversation comments on a PR are stored as issue comments on GitHub —
+ * same endpoint, same body shape. Returns the created comment's id and
+ * body so callers can record the external sync baseline.
  */
 export async function addPRComment(
   source: GitHub,
   meta: import("@plotday/twister").ThreadMeta,
   body: string,
-  noteId?: string,
-): Promise<string | void> {
+  _noteId?: string,
+): Promise<{ id: number; body: string } | void> {
   const owner = meta.owner as string;
   const repo = meta.repo as string;
   const prNumber = meta.prNumber as number;
@@ -422,7 +426,7 @@ export async function addPRComment(
 
   const comment = await response.json();
   if (comment?.id) {
-    return `comment-${comment.id}`;
+    return { id: comment.id, body: comment.body ?? body };
   }
 }
 

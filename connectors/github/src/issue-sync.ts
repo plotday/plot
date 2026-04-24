@@ -368,13 +368,16 @@ export async function updateIssue(
 }
 
 /**
- * Add a comment to a GitHub issue
+ * Add a comment to a GitHub issue.
+ *
+ * Returns the created comment's id and body so callers can record the
+ * external sync baseline (GitHub stores comment bodies as markdown).
  */
 export async function addIssueComment(
   source: GitHub,
   meta: import("@plotday/twister").ThreadMeta,
   body: string,
-): Promise<string | void> {
+): Promise<{ id: number; body: string } | void> {
   const owner = meta.owner as string;
   const repo = meta.repo as string;
   const issueNumber = meta.issueNumber as number;
@@ -404,6 +407,52 @@ export async function addIssueComment(
 
   const comment = await response.json();
   if (comment?.id) {
-    return `comment-${comment.id}`;
+    return { id: comment.id, body: comment.body ?? body };
   }
+}
+
+/**
+ * Update an existing GitHub issue or PR comment.
+ *
+ * GitHub stores both issue and PR (conversation-level) comments under the
+ * same `/repos/{owner}/{repo}/issues/comments/{commentId}` endpoint, so a
+ * single helper covers both.
+ *
+ * Returns the updated comment's body (GitHub markdown) so callers can
+ * refresh the external sync baseline.
+ */
+export async function updateIssueComment(
+  source: GitHub,
+  meta: import("@plotday/twister").ThreadMeta,
+  commentId: number,
+  body: string,
+): Promise<{ body: string } | void> {
+  const owner = meta.owner as string;
+  const repo = meta.repo as string;
+  const syncableId = `${owner}/${repo}`;
+
+  if (!owner || !repo) {
+    throw new Error("Owner and repo required in thread meta");
+  }
+
+  const token = await source.getToken(syncableId);
+
+  const response = await source.githubFetch(
+    token,
+    `/repos/${owner}/${repo}/issues/comments/${commentId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to update issue comment: ${response.status} ${await response.text()}`,
+    );
+  }
+
+  const comment = await response.json();
+  return { body: comment?.body ?? body };
 }

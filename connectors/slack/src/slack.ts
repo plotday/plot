@@ -1,5 +1,6 @@
 import {
   Connector,
+  type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
 import { Tag } from "@plotday/twister/tag";
@@ -24,6 +25,7 @@ type MessageChannel = {
 import {
   SlackApi,
   SlackRateLimitedError,
+  formatSlackText,
   type SlackChannel,
   type SlackMessage,
   type SlackUserInfo,
@@ -726,7 +728,19 @@ export class Slack extends Connector<Slack> {
 
   // ---- Write-back: reply from Plot ----
 
-  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+  /**
+   * Posts a Plot note as a Slack message via `chat.postMessage`.
+   *
+   * Returns a {@link NoteWriteBackResult} whose `externalContent` matches
+   * what sync-in stores for the same message: `formatSlackText(message.text)`.
+   * That parity is what lets the runtime-hash baseline recognize the
+   * round-trip on the next `conversations.history` read and preserve
+   * Plot's original (richer) content.
+   *
+   * The note `key` matches the sync-in convention — the bare Slack `ts` —
+   * so subsequent sync-ins upsert the same note row.
+   */
+  async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string;
     const threadTs = meta.threadTs as string;
@@ -738,20 +752,37 @@ export class Slack extends Connector<Slack> {
 
     const api = await this.getApi(channelId);
 
-    try {
-      const result = await api.postMessage(
-        channelId,
-        note.content ?? "",
-        threadTs
-      );
+    const body = note.content ?? "";
+    const result = await api.postMessage(channelId, body, threadTs);
+    if (!result?.ts) return;
 
-      // Store sent message ts for dedup when synced back
-      if (result?.ts) {
-        await this.set(`sent:${result.ts}`, true);
-      }
-    } catch (error) {
-      console.error("Failed to send Slack reply:", error);
-    }
+    const externalContent = formatSlackText(result.text ?? body);
+    return {
+      key: result.ts,
+      externalContent,
+    };
+  }
+
+  /**
+   * Pushes an edited Plot note to Slack via `chat.update` and refreshes
+   * the sync baseline from Slack's echoed `text`.
+   *
+   * The note's `key` is the Slack `ts` (set on create). If it's missing
+   * or the thread lacks routing metadata we no-op.
+   */
+  async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    const meta = thread.meta ?? {};
+    const channelId = meta.channelId as string | undefined;
+    if (!channelId) return;
+    if (!note.key) return;
+
+    const api = await this.getApi(channelId);
+    const body = note.content ?? "";
+    const result = await api.updateMessage(channelId, note.key, body);
+    const externalContent = formatSlackText(result.text ?? body);
+    return {
+      externalContent,
+    };
   }
 }
 

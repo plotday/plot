@@ -2,6 +2,7 @@ import {
   type Link,
   type NewLinkWithNotes,
   type Note,
+  type NoteWriteBackResult,
   Connector,
   type Thread,
   type ToolBuilder,
@@ -35,6 +36,7 @@ import {
   handleIssueCommentWebhook,
   updateIssue,
   addIssueComment,
+  updateIssueComment,
 } from "./issue-sync";
 
 // ---------- Exported types (used by pr-sync.ts and issue-sync.ts) ----------
@@ -369,14 +371,56 @@ export class GitHub extends Connector<GitHub> {
 
   /**
    * Called when a note is created on a thread owned by this source.
+   *
+   * Returns a {@link NoteWriteBackResult} so the runtime sets the note's
+   * key to `comment-<githubCommentId>` (matching what sync-in uses) and
+   * records the external sync baseline. GitHub stores comment bodies as
+   * markdown and returns the stored body verbatim, so the hashed baseline
+   * matches what the next incremental sync will surface.
    */
-  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+  async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
+    const body = note.content ?? "";
     if (meta.prNumber) {
-      await addPRComment(this, meta, note.content ?? "");
+      const result = await addPRComment(this, meta, body);
+      if (!result) return;
+      return {
+        key: `comment-${result.id}`,
+        externalContent: result.body,
+      };
     } else if (meta.issueNumber) {
-      await addIssueComment(this, meta, note.content ?? "");
+      const result = await addIssueComment(this, meta, body);
+      if (!result) return;
+      return {
+        key: `comment-${result.id}`,
+        externalContent: result.body,
+      };
     }
+  }
+
+  /**
+   * Called when a Plot user edits an existing note on a GitHub-owned thread.
+   *
+   * Pushes the new content to the corresponding GitHub comment (PR and
+   * issue conversation comments live under the same endpoint) and refreshes
+   * the sync baseline from GitHub's stored markdown body.
+   */
+  async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    const meta = thread.meta ?? {};
+    if (!note.key) return;
+    if (!meta.prNumber && !meta.issueNumber) return;
+
+    const match = note.key.match(/^comment-(\d+)$/);
+    if (!match) return;
+    const commentId = Number(match[1]);
+    if (!Number.isFinite(commentId)) return;
+
+    const body = note.content ?? "";
+    const result = await updateIssueComment(this, meta, commentId, body);
+    if (!result) return;
+    return {
+      externalContent: result.body,
+    };
   }
 
   // ---------- Webhook ----------

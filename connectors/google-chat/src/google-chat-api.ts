@@ -243,6 +243,19 @@ export class GoogleChatApi {
     });
   }
 
+  /**
+   * Patches an existing message's text via `messages.patch` (updateMask=text).
+   * Callers must own the message (only messages authored by the authenticated
+   * user can be edited under user auth). Returns the updated message resource.
+   */
+  async updateMessage(messageName: string, text: string): Promise<Message> {
+    return await this.call(`${this.chatBaseUrl}/${messageName}`, {
+      method: "PATCH",
+      params: { updateMask: "text" },
+      body: { text },
+    });
+  }
+
   // ---- Reactions ----
 
   /**

@@ -204,6 +204,23 @@ export class GraphApi {
     );
   }
 
+  /**
+   * Updates the body of an existing channel message or reply.
+   * Teams treats replies as messages addressable by id.
+   */
+  async updateChannelMessage(
+    teamId: string,
+    channelId: string,
+    messageId: string,
+    content: string
+  ): Promise<TeamsMessage | null> {
+    return this.call<TeamsMessage>(
+      "PATCH",
+      `${this.baseUrl}/teams/${teamId}/channels/${channelId}/messages/${messageId}`,
+      { body: { contentType: "html", content } }
+    );
+  }
+
   // ---- Chats (DMs) ----
 
   async getChats(): Promise<Chat[]> {
@@ -233,6 +250,21 @@ export class GraphApi {
     return this.call<TeamsMessage>(
       "POST",
       `${this.baseUrl}/chats/${chatId}/messages`,
+      { body: { contentType: "html", content } }
+    );
+  }
+
+  /**
+   * Updates the body of an existing chat (DM) message.
+   */
+  async updateChatMessage(
+    chatId: string,
+    messageId: string,
+    content: string
+  ): Promise<TeamsMessage | null> {
+    return this.call<TeamsMessage>(
+      "PATCH",
+      `${this.baseUrl}/chats/${chatId}/messages/${messageId}`,
       { body: { contentType: "html", content } }
     );
   }

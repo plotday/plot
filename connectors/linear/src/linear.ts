@@ -17,7 +17,7 @@ import {
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
-import { Connector, type CreateLinkDraft } from "@plotday/twister/connector";
+import { Connector, type CreateLinkDraft, type NoteWriteBackResult } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
   AuthProvider,
@@ -757,9 +757,41 @@ export class Linear extends Connector<Linear> {
 
   /**
    * Called when a note is created on a thread owned by this connector.
+   *
+   * Returns a {@link NoteWriteBackResult} so the runtime can set the note's
+   * key to `comment-{id}` and record Linear's stored markdown body as the
+   * sync baseline. The next sync-in ingests the same body with
+   * `contentType: "markdown"`, so when nothing has changed on the Linear
+   * side the hash matches and Plot's content is preserved.
    */
-  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
-    await this.addIssueComment(thread.meta ?? {}, note.content ?? "");
+  async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    return this.addIssueComment(thread.meta ?? {}, note.content ?? "");
+  }
+
+  /**
+   * Called when a Plot user edits an existing note on a Linear-owned thread.
+   * Pushes the new markdown body to Linear via `client.updateComment` and
+   * refreshes the sync baseline from the returned comment body.
+   */
+  async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    if (!note.key) return;
+    const commentMatch = note.key.match(/^comment-(.+)$/);
+    if (!commentMatch) return;
+    const commentId = commentMatch[1];
+
+    const projectId = thread.meta?.projectId as string | undefined;
+    if (!projectId) {
+      throw new Error("Project ID not found in thread meta");
+    }
+
+    const body = note.content ?? "";
+    const client = await this.getClient(projectId);
+
+    const payload = await client.updateComment(commentId, { body });
+    const comment = await payload.comment;
+    return {
+      externalContent: comment?.body ?? body,
+    };
   }
 
   /**
@@ -771,7 +803,7 @@ export class Linear extends Connector<Linear> {
   async addIssueComment(
     meta: ThreadMeta,
     body: string
-  ): Promise<string | void> {
+  ): Promise<NoteWriteBackResult | void> {
     const issueId = meta.linearId as string | undefined;
     if (!issueId) {
       throw new Error("Linear issue ID not found in thread meta");
@@ -791,7 +823,10 @@ export class Linear extends Connector<Linear> {
 
     const comment = await payload.comment;
     if (comment?.id) {
-      return `comment-${comment.id}`;
+      return {
+        key: `comment-${comment.id}`,
+        externalContent: comment.body ?? body,
+      };
     }
   }
 

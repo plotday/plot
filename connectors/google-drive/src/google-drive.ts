@@ -6,6 +6,7 @@ import {
   type NewContact,
   type NewNote,
   type Note,
+  type NoteWriteBackResult,
   type Thread,
   Connector,
   type ToolBuilder,
@@ -47,6 +48,8 @@ import {
   listFolders,
   listSharedDrives,
   listSharedWithMe,
+  updateComment,
+  updateReply,
 } from "./google-api";
 
 const VIRTUAL_MY_DRIVE = "my-drive";
@@ -467,72 +470,89 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     await this.clear(`sync_lock_${folderId}`);
   }
 
-  async addDocumentComment(
-    meta: Record<string, unknown>,
-    body: string,
-    _noteId?: string
-  ): Promise<string | void> {
+  /**
+   * Resolve the file/folder/auth channel ids from a thread's meta. Returns
+   * null if the thread isn't a Drive-backed thread.
+   */
+  private resolveDriveContext(
+    meta: Record<string, unknown>
+  ): { fileId: string; folderId: string; authChannelId?: string } | null {
     const fileId = meta.fileId as string | undefined;
     const folderId = meta.folderId as string | undefined;
     const authChannelId = meta.authChannelId as string | undefined;
-    if (!fileId || !folderId) {
-      console.warn("No fileId/folderId in thread meta, cannot add comment");
-      return;
-    }
-
-    const api = await this.getApi(folderId, authChannelId);
-    const comment = await createComment(api, fileId, body);
-    return `comment-${comment.id}`;
-  }
-
-  async addDocumentReply(
-    meta: Record<string, unknown>,
-    commentId: string,
-    body: string,
-    _noteId?: string
-  ): Promise<string | void> {
-    const fileId = meta.fileId as string | undefined;
-    const folderId = meta.folderId as string | undefined;
-    const authChannelId = meta.authChannelId as string | undefined;
-    if (!fileId || !folderId) {
-      console.warn("No fileId/folderId in thread meta, cannot add reply");
-      return;
-    }
-
-    const api = await this.getApi(folderId, authChannelId);
-    const reply = await createReply(api, fileId, commentId, body);
-    return `reply-${commentId}-${reply.id}`;
+    if (!fileId || !folderId) return null;
+    return { fileId, folderId, authChannelId };
   }
 
   /**
    * Called when a user replies to a note on a thread owned by this connector.
-   * Routes the reply back to Google Docs as a comment or comment reply.
+   * Routes the reply back to Google Drive as a comment or comment reply.
+   *
+   * Returns a {@link NoteWriteBackResult} whose `externalContent` is the
+   * Drive-stored plain-text body. The runtime hashes that as the sync
+   * baseline, so the next sync-in recognizes the round-tripped content
+   * and preserves Plot's original markdown.
    */
-  async onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
+  async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    const ctx = this.resolveDriveContext(thread.meta ?? {});
+    if (!ctx) {
+      console.warn("No fileId/folderId in thread meta, cannot write back note");
+      return;
+    }
+    const api = await this.getApi(ctx.folderId, ctx.authChannelId);
+    const body = note.content ?? "";
     const reNoteKey = thread.meta?.reNoteKey as string | undefined;
 
     if (!reNoteKey) {
-      // New top-level comment — create as unanchored comment on the doc
-      return this.addDocumentComment(
-        thread.meta ?? {},
-        note.content ?? "",
-        note.id
-      );
+      const comment = await createComment(api, ctx.fileId, body);
+      return {
+        key: `comment-${comment.id}`,
+        externalContent: comment.content ?? body,
+      };
     }
 
     // Extract commentId from note keys: "comment-{commentId}" or "reply-{commentId}-{replyId}"
     const commentMatch = reNoteKey.match(/^(?:comment-|reply-)([^-]+)/);
     if (!commentMatch) return;
-
     const commentId = commentMatch[1];
-    const fileId = thread.meta?.fileId as string | undefined;
-    console.log(`[google-drive] Write-back: replying to comment ${commentId} on file ${fileId}`);
-    return this.addDocumentReply(
-      thread.meta ?? {},
-      commentId,
-      note.content ?? "",
-      note.id
-    );
+    console.log(`[google-drive] Write-back: replying to comment ${commentId} on file ${ctx.fileId}`);
+    const reply = await createReply(api, ctx.fileId, commentId, body);
+    return {
+      key: `reply-${commentId}-${reply.id}`,
+      externalContent: reply.content ?? body,
+    };
+  }
+
+  /**
+   * Called when a Plot user edits an existing note on a Drive-owned thread.
+   * Pushes the new content to the corresponding Drive comment/reply and
+   * refreshes the sync baseline from Drive's stored representation.
+   */
+  async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
+    const ctx = this.resolveDriveContext(thread.meta ?? {});
+    if (!ctx) return;
+    if (!note.key) return;
+
+    const body = note.content ?? "";
+    const api = await this.getApi(ctx.folderId, ctx.authChannelId);
+
+    const replyMatch = note.key.match(/^reply-([^-]+)-(.+)$/);
+    if (replyMatch) {
+      const [, commentId, replyId] = replyMatch;
+      const reply = await updateReply(api, ctx.fileId, commentId, replyId, body);
+      return {
+        externalContent: reply.content ?? body,
+      };
+    }
+
+    const commentMatch = note.key.match(/^comment-(.+)$/);
+    if (commentMatch) {
+      const commentId = commentMatch[1];
+      const comment = await updateComment(api, ctx.fileId, commentId, body);
+      return {
+        externalContent: comment.content ?? body,
+      };
+    }
   }
 
   // --- Webhooks ---
@@ -605,10 +625,12 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         }
       );
     } catch (error) {
-      console.warn(
-        `Failed to stop drive watch for folder ${folderId}:`,
-        error instanceof Error ? error.message : error
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      // 404/notFound is expected when the channel has already expired on Google's side.
+      if (message.includes("notFound") || message.includes('"code": 404')) {
+        return;
+      }
+      console.warn(`Failed to stop drive watch for folder ${folderId}:`, message);
     }
   }
 
@@ -643,7 +665,6 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   }
 
   private async renewDriveWatch(folderId: string): Promise<void> {
-    console.log(`[google-drive] renewDriveWatch called for ${folderId}`);
     try {
       try {
         await this.stopDriveWatch(folderId);
@@ -834,7 +855,9 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       const authChannelId = state?.virtualChannelId;
       const api = await this.getApi(folderId, authChannelId);
       const result = await listChanges(api, changesToken);
-      console.log(`[google-drive] incrementalSyncBatch for ${folderId}: ${result.changes.length} changes, hasMore=${!!result.nextPageToken}`);
+      if (result.changes.length > 0 || result.nextPageToken) {
+        console.log(`[google-drive] incrementalSyncBatch for ${folderId}: ${result.changes.length} changes, hasMore=${!!result.nextPageToken}`);
+      }
 
       // Determine which files to accept based on channel type
       const isSharedWithMe = state?.virtualChannelId === VIRTUAL_SHARED_WITH_ME;
@@ -854,7 +877,6 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         } else if (trackedFolderIds) {
           // Folder-based: check if file is in a tracked folder
           if (!change.file.parents?.some(p => trackedFolderIds.has(p))) {
-            console.log(`[google-drive] Skipping change ${change.fileId}: parents=${JSON.stringify(change.file.parents)}, tracked=${JSON.stringify([...trackedFolderIds])}`);
             continue;
           }
         }

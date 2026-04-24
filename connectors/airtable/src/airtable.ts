@@ -4,6 +4,7 @@ import {
   type Link,
   type NewLinkWithNotes,
   type Note,
+  type NoteWriteBackResult,
   type Thread,
   type ThreadMeta,
 } from "@plotday/twister";
@@ -1041,7 +1042,10 @@ export class Airtable extends Connector<Airtable> {
     }
   }
 
-  async onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
+  async onNoteCreated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
     const meta = (thread.meta ?? {}) as ThreadMeta;
     const baseId = meta.airtableBaseId as string | undefined;
     const tableId = meta.airtableTableId as string | undefined;
@@ -1057,9 +1061,61 @@ export class Airtable extends Connector<Airtable> {
       const comment = await api.createComment(baseId, tableId, recordId, {
         text: this.translateMentionsOutbound(text),
       });
-      if (comment?.id) return `comment-${comment.id}`;
+      if (comment?.id) {
+        // Sync-in stores comments via translateMentionsInbound (@[token] →
+        // @Name). Match that form here so the baseline hash aligns with
+        // what recordToLink/listComments will produce on the next pass —
+        // otherwise the round-tripped comment would clobber the Plot note
+        // with its lossy Airtable echo.
+        return {
+          key: `comment-${comment.id}`,
+          externalContent: this.translateMentionsInbound(comment),
+        };
+      }
     } catch (error) {
       console.warn("Failed to post Airtable comment:", error);
+    }
+  }
+
+  /**
+   * Push an edit to an existing Airtable comment and refresh the sync
+   * baseline from the updated text. Note keys are `comment-<airtableId>`
+   * (see {@link recordToLink}); non-comment keys (e.g. the synthetic
+   * "description" note) are not editable on the Airtable side.
+   */
+  async onNoteUpdated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
+    if (!note.key) return;
+    const commentMatch = note.key.match(/^comment-(.+)$/);
+    if (!commentMatch) return;
+    const commentId = commentMatch[1];
+
+    const meta = (thread.meta ?? {}) as ThreadMeta;
+    const baseId = meta.airtableBaseId as string | undefined;
+    const tableId = meta.airtableTableId as string | undefined;
+    const recordId = meta.airtableRecordId as string | undefined;
+    if (!baseId || !tableId || !recordId) return;
+
+    const text = (note.content ?? "").trim();
+    if (text.length === 0) return;
+
+    const api = await this.getAPI(baseId);
+    if (!api) return;
+    try {
+      const comment = await api.updateComment(
+        baseId,
+        tableId,
+        recordId,
+        commentId,
+        { text: this.translateMentionsOutbound(text) }
+      );
+      return {
+        externalContent: this.translateMentionsInbound(comment),
+      };
+    } catch (error) {
+      console.warn("Failed to update Airtable comment:", error);
     }
   }
 

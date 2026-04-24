@@ -2,6 +2,7 @@ import {
   type Link,
   type NewLinkWithNotes,
   type Note,
+  type NoteWriteBackResult,
   type Thread,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
@@ -654,14 +655,57 @@ export class Attio extends Connector<Attio> {
     }
   }
 
-  /** Write back notes/comments to Attio as notes on the record. */
-  async onNoteCreated(note: Note, thread: Thread): Promise<void> {
+  /**
+   * Write back notes/comments to Attio as notes on the record.
+   *
+   * Returns a {@link NoteWriteBackResult} so the runtime can (a) key the
+   * Plot note for future upserts and (b) hash the external representation
+   * as the sync baseline. The baseline matches the exact string the
+   * sync-in path ({@link saveNoteOnParent}) will build on the next pass:
+   * Attio falls back to `title = "Comment from Plot"` when we send an
+   * empty title, so sync-in reconstructs the note as
+   * `**Comment from Plot**\n\n{content_plaintext}`.
+   */
+  async onNoteCreated(
+    note: Note,
+    thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
     const recordId = thread.meta?.attioRecordId as string | undefined;
     const objectSlug = thread.meta?.attioObjectSlug as string | undefined;
     if (!recordId || !objectSlug) return;
 
+    const content = note.content ?? "";
     const api = this.getAPI();
-    await api.createNote(objectSlug, recordId, "", note.content ?? "");
+    const result = await api.createNote(objectSlug, recordId, "", content);
+    const noteId = result?.data?.id?.note_id;
+    if (!noteId) return;
+
+    // Must match the form saveNoteOnParent will reconstruct on sync-in.
+    // saveNoteOnParent uses contentType default (= "markdown") — keep that
+    // in sync here so the baseline hash matches.
+    const externalContent = `**Comment from Plot**\n\n${content}`;
+
+    return {
+      key: `note-${noteId}`,
+      externalContent,
+    };
+  }
+
+  /**
+   * Attio's public REST API exposes only create/get/list/delete for notes —
+   * there is no update endpoint (verified against
+   * https://docs.attio.com/rest-api/endpoint-reference/notes). Without a
+   * stable update path we can't safely rewrite an existing note (delete +
+   * recreate would change the note id, breaking the `note-<id>` key that
+   * the next sync pass uses for upsert). Leaving this as a no-op means
+   * edits to Plot notes are not written back; the next full sync will
+   * still reflect any server-side edits from the Attio side.
+   */
+  async onNoteUpdated(
+    _note: Note,
+    _thread: Thread
+  ): Promise<NoteWriteBackResult | void> {
+    return;
   }
 
 }

@@ -290,6 +290,46 @@ export async function createReply(
 }
 
 /**
+ * Update the body of an existing comment. Drive comments accept plain-text
+ * content only — any markdown the caller passes is stored verbatim and
+ * rendered as-is in the Drive UI. The returned content is what Drive will
+ * return on subsequent `listComments` calls, so callers should use it as
+ * the sync baseline.
+ */
+export async function updateComment(
+  api: GoogleApi,
+  fileId: string,
+  commentId: string,
+  content: string
+): Promise<GoogleDriveComment> {
+  return (await api.call(
+    "PATCH",
+    `${DRIVE_API}/files/${fileId}/comments/${commentId}`,
+    { fields: "id,content,author,createdTime,modifiedTime,resolved" },
+    { content }
+  )) as GoogleDriveComment;
+}
+
+/**
+ * Update the body of an existing reply. See {@link updateComment} for
+ * plain-text caveats.
+ */
+export async function updateReply(
+  api: GoogleApi,
+  fileId: string,
+  commentId: string,
+  replyId: string,
+  content: string
+): Promise<GoogleDriveReply> {
+  return (await api.call(
+    "PATCH",
+    `${DRIVE_API}/files/${fileId}/comments/${commentId}/replies/${replyId}`,
+    { fields: "id,content,author,createdTime,modifiedTime" },
+    { content }
+  )) as GoogleDriveReply;
+}
+
+/**
  * Get the changes start page token for incremental sync.
  */
 export async function getChangesStartToken(api: GoogleApi): Promise<string> {

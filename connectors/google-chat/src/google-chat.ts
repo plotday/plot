@@ -1,9 +1,10 @@
 import GoogleContacts from "@plotday/connector-google-contacts";
 import {
   Connector,
+  type NoteWriteBackResult,
   type ToolBuilder,
 } from "@plotday/twister";
-import type { Actor, NewActor, Note, Thread } from "@plotday/twister/plot";
+import type { Actor, ContentType, NewActor, Note, Thread } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
 import {
   AuthProvider,
@@ -1003,7 +1004,21 @@ export class GoogleChat extends Connector<GoogleChat> {
 
   // ---- Write-back: reactions from Plot ----
 
-  async onNoteUpdated(note: Note, thread: Thread): Promise<void> {
+  /**
+   * Pushes note-level updates back to Google Chat.
+   *
+   * Two channels of state are syncable here:
+   * 1. Reactions — mirrored from `note.tags` to Chat reactions owned by the
+   *    authenticated user (pre-existing behavior).
+   * 2. Content — if `note.content` changed, PATCH the message's `text`
+   *    via `messages.patch`. We only return a `NoteWriteBackResult` when
+   *    we actually pushed content; otherwise baseline tracking stays
+   *    untouched for this call.
+   *
+   * Content push runs before reactions so a failed text patch (e.g. user
+   * isn't the message author) doesn't block reaction sync.
+   */
+  async onNoteUpdated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const channelId = (meta.channelId ?? meta.syncableId) as string;
 
@@ -1021,12 +1036,36 @@ export class GoogleChat extends Connector<GoogleChat> {
     const authUser = await this.get<{ googleUserId: string }>("auth_google_user");
     if (!authUser?.googleUserId) return;
 
+    // --- Content sync (best-effort; only the message author can patch) ---
+    let writeBack: NoteWriteBackResult | undefined;
+    if (note.content !== null && note.content !== undefined) {
+      try {
+        const updated = await api.updateMessage(messageName, note.content);
+        // Mirror sync-in: prefer formattedText + "html", else text + "text".
+        // `updateMessage` returns whatever Google stored for this message,
+        // which is what the next list/fetch will also return.
+        const hasFormatted =
+          typeof updated.formattedText === "string" && updated.formattedText.length > 0;
+        const externalContent = hasFormatted
+          ? updated.formattedText!
+          : (updated.text ?? note.content);
+        writeBack = { externalContent };
+      } catch (error) {
+        // Non-fatal: user may not own the message, or the message may be
+        // gone. Fall through to reaction sync and skip baseline update.
+        console.warn(
+          "[google-chat] messages.patch failed; skipping content write-back:",
+          error
+        );
+      }
+    }
+
     // Get current reactions from Google Chat for this message
     let currentReactions: EmojiReaction[];
     try {
       currentReactions = await api.listReactions(messageName);
     } catch {
-      return; // Message may not exist anymore
+      return writeBack; // Message may not exist anymore
     }
 
     // Build set of Plot tags that have emoji mappings (any actor)
@@ -1071,11 +1110,22 @@ export class GoogleChat extends Connector<GoogleChat> {
         console.error("[google-chat] Failed to delete reaction:", error);
       }
     }
+
+    return writeBack;
   }
 
   // ---- Write-back: reply from Plot ----
 
-  async onNoteCreated(note: Note, thread: Thread): Promise<string | void> {
+  /**
+   * Sends a Plot note as a Google Chat message via `messages.create`.
+   *
+   * Returns a {@link NoteWriteBackResult} whose `externalContent` mirrors
+   * the sync-in representation (see `transformChatThread`): prefer
+   * `formattedText` + `"html"` when Chat computed one, else `text` +
+   * `"text"`. That keeps the baseline hash aligned with the next
+   * `listMessages` read so the round-trip preserves Plot's markdown.
+   */
+  async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const channelId = (meta.channelId ?? meta.syncableId) as string;
     const spaceName = meta.spaceName as string;
@@ -1088,20 +1138,23 @@ export class GoogleChat extends Connector<GoogleChat> {
 
     const api = await this.getApi(channelId ?? DM_CHANNEL_ID);
 
-    try {
-      const result = await api.createMessage(
-        spaceName,
-        note.content ?? "",
-        threadName
-      );
+    const body = note.content ?? "";
+    const result = await api.createMessage(spaceName, body, threadName);
 
-      // Store sent message ID for dedup when synced back
-      const msgId = `message-${extractMessageId(result.name)}`;
-      await this.set(`sent:${msgId}`, true);
-      return msgId;
-    } catch (error) {
-      console.error("Failed to send Google Chat reply:", error);
-    }
+    const msgId = `message-${extractMessageId(result.name)}`;
+    // Store sent message ID for dedup when synced back
+    await this.set(`sent:${msgId}`, true);
+
+    const hasFormatted =
+      typeof result.formattedText === "string" && result.formattedText.length > 0;
+    const externalContent = hasFormatted
+      ? result.formattedText!
+      : (result.text ?? body);
+
+    return {
+      key: msgId,
+      externalContent,
+    };
   }
 }
 

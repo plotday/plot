@@ -158,6 +158,22 @@ export async function createComment(
 }
 
 /**
+ * Update an existing comment's content.
+ *
+ * Todoist's REST v2 supports POST /comments/{id} for partial updates.
+ */
+export async function updateComment(
+  token: string,
+  commentId: string,
+  content: string
+): Promise<TodoistComment> {
+  return request<TodoistComment>(token, `/comments/${commentId}`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+/**
  * List collaborators for a project.
  */
 export async function listCollaborators(
