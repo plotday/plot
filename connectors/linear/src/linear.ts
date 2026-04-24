@@ -368,23 +368,9 @@ export class Linear extends Connector<Linear> {
     projectId: string,
     options?: ProjectSyncOptions
   ): Promise<void> {
-    // Cache the authenticated user's info for author resolution
-    try {
-      const client = await this.getClient(projectId);
-      const viewer = await client.viewer;
-      if (viewer) {
-        await this.set(`viewer_info_${projectId}`, {
-          linearId: viewer.id,
-          email: viewer.email,
-          name: viewer.name,
-          avatar: viewer.avatarUrl ?? undefined,
-        });
-      }
-    } catch (error) {
-      console.warn("Failed to fetch Linear viewer info:", error);
-    }
-
-    // Initialize sync state
+    // Initialize sync state. Viewer info is cached lazily on the first
+    // syncBatch run so onChannelEnabled doesn't block the HTTP response on
+    // a Linear GraphQL round-trip.
     await this.set(`sync_state_${projectId}`, {
       after: null,
       batchNumber: 1,
@@ -403,6 +389,29 @@ export class Linear extends Connector<Linear> {
   }
 
   /**
+   * Cache the authenticated user's info for author resolution. Called from
+   * syncBatch on first run (when `viewer_info_{projectId}` isn't set yet).
+   */
+  private async cacheViewerInfo(projectId: string): Promise<void> {
+    const existing = await this.get(`viewer_info_${projectId}`);
+    if (existing) return;
+    try {
+      const client = await this.getClient(projectId);
+      const viewer = await client.viewer;
+      if (viewer) {
+        await this.set(`viewer_info_${projectId}`, {
+          linearId: viewer.id,
+          email: viewer.email,
+          name: viewer.name,
+          avatar: viewer.avatarUrl ?? undefined,
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to fetch Linear viewer info:", error);
+    }
+  }
+
+  /**
    * Process a batch of issues
    */
   private async syncBatch(
@@ -412,6 +421,11 @@ export class Linear extends Connector<Linear> {
     const state = await this.get<SyncState>(`sync_state_${projectId}`);
     if (!state) {
       throw new Error(`Sync state not found for project ${projectId}`);
+    }
+
+    // First-run only: cache viewer info (deferred from onChannelEnabled).
+    if (state.initialSync && state.batchNumber === 1) {
+      await this.cacheViewerInfo(projectId);
     }
 
     const client = await this.getClient(projectId);

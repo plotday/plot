@@ -159,31 +159,40 @@ export class AppleCalendar extends Connector<AppleCalendar> {
 
     await this.set(`sync_enabled_${channel.id}`, true);
 
+    // Queue all initialization work as a task so the HTTP response returns
+    // quickly. initChannel makes a CalDAV request for the starting ctag.
+    const initCallback = await this.callback(this.initChannel, channel.id);
+    await this.runTask(initCallback);
+  }
+
+  /**
+   * Initializes a calendar channel: fetches the starting ctag and kicks off
+   * the initial sync batch. Runs as a task to keep onChannelEnabled fast.
+   */
+  async initChannel(channelId: string): Promise<void> {
     // Store initial ctag for incremental sync
     const client = this.getCalDAV();
-    const ctag = await client.getCalendarCtag(channel.id);
-    if (ctag) await this.set(`ctag_${channel.id}`, ctag);
+    const ctag = await client.getCalendarCtag(channelId);
+    if (ctag) await this.set(`ctag_${channelId}`, ctag);
 
     // Start initial sync (2 years back)
     const now = new Date();
     const min = new Date(now.getFullYear() - 2, 0, 1);
     const end = new Date(now.getFullYear() + 1, 11, 31);
 
-    await this.set(`sync_state_${channel.id}`, {
-      calendarHref: channel.id,
+    await this.set(`sync_state_${channelId}`, {
+      calendarHref: channelId,
       initialSync: true,
       batchNumber: 1,
     } as SyncState);
 
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      channel.id,
+    await this.syncBatch(
+      channelId,
       true, // initialSync
       1, // batchNumber
       toCalDAVTimeString(min),
       toCalDAVTimeString(end)
     );
-    await this.runTask(syncCallback);
   }
 
   /**

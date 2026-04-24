@@ -123,38 +123,43 @@ export class MsTeams extends Connector<MsTeams> {
       const syncCallback = await this.callback(this.syncDmSpaces, true);
       await this.runTask(syncCallback);
     } else {
-      // Resolve and cache team ID for this channel
-      const teamId = await this.findTeamForChannel(channel.id);
-      if (!teamId) {
-        console.error(`Could not find team for channel ${channel.id}`);
-        return;
-      }
-      await this.set(`team_for_channel_${channel.id}`, teamId);
-
-      const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const initialState: SyncState = {
-        channelId: channel.id,
-        oldest: timeMin.toISOString(),
-        initialSync: true,
-      };
-      await this.set(`sync_state_${channel.id}`, initialState);
-
-      const syncCallback = await this.callback(
-        this.syncBatch,
-        1,
-        "full",
-        channel.id,
-        true
-      );
-      await this.runTask(syncCallback);
-
-      // Queue webhook setup as a separate task
-      const webhookCallback = await this.callback(
-        this.setupChannelWebhook,
-        channel.id
-      );
-      await this.runTask(webhookCallback);
+      // Queue all initialization as a task so the HTTP response returns
+      // quickly. initChannel resolves the team ID (Graph API call),
+      // kicks off the first sync batch, and registers the webhook.
+      const initCallback = await this.callback(this.initChannel, channel.id);
+      await this.runTask(initCallback);
     }
+  }
+
+  /**
+   * Initializes a channel: resolves team ID, starts sync, sets up webhook.
+   * Runs as a task so the HTTP response from onChannelEnabled stays fast.
+   */
+  async initChannel(channelId: string): Promise<void> {
+    const teamId = await this.findTeamForChannel(channelId);
+    if (!teamId) {
+      console.error(`Could not find team for channel ${channelId}`);
+      return;
+    }
+    await this.set(`team_for_channel_${channelId}`, teamId);
+
+    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const initialState: SyncState = {
+      channelId,
+      oldest: timeMin.toISOString(),
+      initialSync: true,
+    };
+    await this.set(`sync_state_${channelId}`, initialState);
+
+    // Run first sync batch inline (already in task context), then queue
+    // webhook setup as a separate task.
+    await this.syncBatch(1, "full", channelId, true);
+
+    const webhookCallback = await this.callback(
+      this.setupChannelWebhook,
+      channelId
+    );
+    await this.runTask(webhookCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
