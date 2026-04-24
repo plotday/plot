@@ -444,10 +444,11 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Declare what channels an actor has access to.
-   * Refreshes title and link_types on any existing channel rows for this
-   * twist_instance. Only touches rows that already exist — enable/disable
-   * state is owned by enableSync/disableSync.
+   * Declare what channels an actor has access to. The DO channel_access cache
+   * is the authoritative list; public.channel is a queryable mirror so ops and
+   * support can see the full available list (DO state is not reachable from
+   * psql). New rows are inserted with enabled=false; enable/disable state is
+   * owned by enableSync/disableSync and never overwritten here.
    */
   async setChannels(
     provider: AuthProvider,
@@ -455,23 +456,40 @@ export class Integrations extends Tool implements IAuth {
     channels: Channel[]
   ): Promise<void> {
     await this.store.set(`channel_access:${provider}:${actorId}`, channels);
+    await this.mirrorChannelsToDb(channels);
+  }
 
-    // Offset updated_at by 1ms to ensure the change is picked up by the
-    // next sync pull (the cursor uses millisecond-truncated timestamps).
+  /**
+   * Upsert discovered channels into public.channel. New channels land with
+   * enabled=false; existing rows keep their enabled state and only get
+   * title/link_types refreshed when the refresh provides non-null values.
+   */
+  private async mirrorChannelsToDb(channels: Channel[]): Promise<void> {
     const flat = this.flattenChannels(channels);
+    if (flat.length === 0) return;
     const futureDate = new Date(Date.now() + 1);
     for (const channel of flat) {
-      const update: Record<string, unknown> = { updated_at: futureDate };
-      if (channel.title) update.title = channel.title;
-      if (channel.linkTypes) {
-        update.link_types = JSON.stringify(channel.linkTypes) as any;
-      }
-      if (Object.keys(update).length === 1) continue; // only updated_at — nothing to refresh
+      const linkTypesJson = channel.linkTypes
+        ? JSON.stringify(channel.linkTypes)
+        : null;
       await this.db
-        .updateTable("channel")
-        .set(update as any)
-        .where("twist_instance_id", "=", this.twistInstanceId)
-        .where("channel_id", "=", channel.id)
+        .insertInto("channel")
+        .values({
+          twist_instance_id: this.twistInstanceId,
+          channel_id: channel.id,
+          title: channel.title ?? channel.id,
+          enabled: false,
+          link_types: linkTypesJson as any,
+          updated_at: futureDate,
+        })
+        .onConflict((oc) => {
+          const updateFields: Record<string, unknown> = { updated_at: futureDate };
+          if (channel.title) updateFields.title = channel.title;
+          if (linkTypesJson) updateFields.link_types = linkTypesJson;
+          return oc
+            .columns(["twist_instance_id", "channel_id"])
+            .doUpdateSet(updateFields as any);
+        })
         .execute();
     }
   }
@@ -2331,6 +2349,13 @@ export class Integrations extends Tool implements IAuth {
 
         // Get this actor's channel access (may be a tree)
         const actorChannels = await this.getChannelAccess(provider, actorId as ActorId);
+
+        // Self-heal: mirror the DO access list into public.channel so ops
+        // queries see the full available list even for connections that
+        // predate the dual-write in setChannels.
+        if (actorChannels.length > 0) {
+          await this.mirrorChannelsToDb(actorChannels);
+        }
 
         // Track access for the current user
         if (currentUserContactIds.has(actorId)) {
