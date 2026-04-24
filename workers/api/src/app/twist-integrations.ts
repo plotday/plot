@@ -860,6 +860,177 @@ twistIntegrations.post(
   }
 );
 
+// POST /twist/:id/syncables/batch
+// Apply a batch of channel enable/disable operations in a single request.
+// Loads twist config + factory once and processes each entry against the
+// same twist wrapper — avoids N round-trips plus N factory spin-ups when a
+// user toggles multiple channels in one "Add connection" action.
+twistIntegrations.post(
+  "/twist/:id/syncables/batch",
+  async (c) => {
+    const twistInstanceId = c.req.param("id");
+    const logger = createLogger({ twist_instance_id: twistInstanceId });
+
+    const bodySchema = z.object({
+      enable: z
+        .array(z.object({ provider: z.string(), syncableId: z.string() }))
+        .optional(),
+      disable: z
+        .array(z.object({ provider: z.string(), syncableId: z.string() }))
+        .optional(),
+    });
+
+    const raw = await c.req.json();
+    const parsed = bodySchema.safeParse(raw);
+    if (!parsed.success) {
+      return handleValidationError(parsed.error, raw);
+    }
+
+    const enables = parsed.data.enable ?? [];
+    const disables = parsed.data.disable ?? [];
+    if (enables.length === 0 && disables.length === 0) {
+      return c.json({ success: true, enabled: [], disabled: [], errors: [] });
+    }
+
+    const twistInfo = await resolveTwistInfo(c.var.db, twistInstanceId);
+    if (!twistInfo) {
+      return c.json({ message: "Twist not found" }, 404);
+    }
+
+    const config = await loadTwistConfig(
+      c.env,
+      twistInfo.twistPackageId,
+      twistInfo.version
+    );
+    if (!config) {
+      return c.json({ message: "Twist config not found" }, 404);
+    }
+
+    let currentActorId: string | null = null;
+    if (enables.length > 0) {
+      currentActorId = await getCurrentActorId(c.var.db, c.var.user.id);
+      if (!currentActorId) {
+        return c.json({ message: "No actor found for current user" }, 400);
+      }
+
+      // Connection limit is twist-instance-wide; one check covers every
+      // provider/channel we're about to enable.
+      const limitCheck = await checkChannelConnectionLimit(
+        c.var.db,
+        c.var.user.id,
+        twistInstanceId
+      );
+      if (!limitCheck.allowed) {
+        return c.json(limitCheck.error.toJSON(), 403);
+      }
+    }
+
+    const factory = twistFactory({
+      env: c.env,
+      ctx: c.executionCtx as ExecutionContext,
+      db: c.var.db,
+    });
+    const twistWrapper = await factory({ twistInstanceId });
+
+    const enabled: Array<{ provider: string; syncableId: string }> = [];
+    const disabled: Array<{ provider: string; syncableId: string }> = [];
+    const errors: Array<{
+      op: "enable" | "disable";
+      provider: string;
+      syncableId: string;
+      message: string;
+    }> = [];
+
+    for (const { provider, syncableId } of enables) {
+      const integrationsPathStr = config.integrationsMap[provider];
+      if (!integrationsPathStr) {
+        errors.push({
+          op: "enable",
+          provider,
+          syncableId,
+          message: `Provider ${provider} not configured`,
+        });
+        continue;
+      }
+      try {
+        const result = await twistWrapper.callCallback(
+          integrationsPathStr.split(":"),
+          "enableSync",
+          provider,
+          syncableId,
+          currentActorId!,
+          undefined
+        );
+        disposeRpc(result);
+        enabled.push({ provider, syncableId });
+      } catch (error) {
+        if (error instanceof PlanLimitError) {
+          return c.json(error.toJSON(), 403);
+        }
+        logger.warn("Batch enable failed for channel", {
+          provider,
+          syncable_id: syncableId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        errors.push({
+          op: "enable",
+          provider,
+          syncableId,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    for (const { provider, syncableId } of disables) {
+      const integrationsPathStr = config.integrationsMap[provider];
+      if (!integrationsPathStr) {
+        errors.push({
+          op: "disable",
+          provider,
+          syncableId,
+          message: `Provider ${provider} not configured`,
+        });
+        continue;
+      }
+      try {
+        const result = await twistWrapper.callCallback(
+          integrationsPathStr.split(":"),
+          "disableSync",
+          provider,
+          syncableId
+        );
+        disposeRpc(result);
+        disabled.push({ provider, syncableId });
+      } catch (error) {
+        logger.warn("Batch disable failed for channel", {
+          provider,
+          syncable_id: syncableId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        errors.push({
+          op: "disable",
+          provider,
+          syncableId,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    logger.info("Channels batch applied", {
+      enabled_count: enabled.length,
+      disabled_count: disabled.length,
+      error_count: errors.length,
+    });
+
+    return c.json({
+      success: errors.length === 0,
+      enabled,
+      disabled,
+      errors,
+    });
+  }
+);
+
 // PATCH /twist/:id/syncables/:provider/:syncableId
 // Legacy no-op: channels no longer store per-channel routing.
 // Kept so existing clients don't 404 when they try to write an obsolete

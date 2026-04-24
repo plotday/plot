@@ -3109,45 +3109,54 @@ class SaveSource extends Command {
           .map((k) => k.split(':').first)
           .toSet();
 
-      // 2. Enable/disable channels (skip removed providers)
+      // 2. Enable/disable channels (skip removed providers) in one batched
+      // request so the server reuses a single twist wrapper and returns
+      // after queuing background sync tasks, instead of paying per-channel
+      // HTTP + DO spin-up + inline refresh costs. Any heavy sync the
+      // connectors do (initial pulls, webhook setup) runs in background
+      // tasks after this response returns.
       final toEnable = changes.selectedChannels.difference(initialEnabled);
       final toDisable = initialEnabled.difference(changes.selectedChannels);
 
-      for (final key in toEnable) {
+      Map<String, String>? asEntry(String key) {
         final parts = key.split(':');
         final provider = parts[0];
-        if (removedProviders.contains(provider)) continue;
-        final channelId = parts.sublist(1).join(':');
-        await TwistApi.enableChannel(
-          twistInstanceId: twistInstanceId,
-          provider: provider,
-          channelId: channelId,
-        );
+        if (removedProviders.contains(provider)) return null;
+        return {
+          'provider': provider,
+          'syncableId': parts.sublist(1).join(':'),
+        };
       }
 
-      for (final key in toDisable) {
-        final parts = key.split(':');
-        final provider = parts[0];
-        if (removedProviders.contains(provider)) continue;
-        final channelId = parts.sublist(1).join(':');
-        await TwistApi.disableChannel(
-          twistInstanceId: twistInstanceId,
-          provider: provider,
-          channelId: channelId,
-        );
-      }
+      final enableEntries = toEnable
+          .map(asEntry)
+          .whereType<Map<String, String>>()
+          .toList();
+      final disableEntries = toDisable
+          .map(asEntry)
+          .whereType<Map<String, String>>()
+          .toList();
 
-      // 3. Remove accounts
-      for (final accountKey in changes.removedAccounts) {
-        final parts = accountKey.split(':');
-        final provider = parts[0];
-        final actorId = parts.sublist(1).join(':');
-        await TwistApi.removeIntegration(
-          twistInstanceId: twistInstanceId,
-          provider: provider,
-          actorId: actorId,
-        );
-      }
+      await TwistApi.applyChannelsBatch(
+        twistInstanceId: twistInstanceId,
+        enable: enableEntries,
+        disable: disableEntries,
+      );
+
+      // 3. Remove accounts in parallel — each call is an independent HTTP
+      // request against a different provider actor, nothing to batch.
+      await Future.wait(
+        changes.removedAccounts.map((accountKey) {
+          final parts = accountKey.split(':');
+          final provider = parts[0];
+          final actorId = parts.sublist(1).join(':');
+          return TwistApi.removeIntegration(
+            twistInstanceId: twistInstanceId,
+            provider: provider,
+            actorId: actorId,
+          );
+        }),
+      );
 
       return CommandMessage('Connection "$name" saved');
     } catch (e, t) {
@@ -3275,45 +3284,46 @@ class SaveTwist extends Command {
           .map((k) => k.split(':').first)
           .toSet();
 
-      // 3. Enable/disable channels (skip removed providers)
+      // 3. Enable/disable channels (skip removed providers) via the batch
+      // endpoint — one round-trip, one twist wrapper, background sync.
       final toEnable = changes.selectedChannels.difference(initialEnabled);
       final toDisable = initialEnabled.difference(changes.selectedChannels);
 
-      for (final key in toEnable) {
+      Map<String, String>? asEntry(String key) {
         final parts = key.split(':');
         final provider = parts[0];
-        if (removedProviders.contains(provider)) continue;
-        final channelId = parts.sublist(1).join(':');
-        await TwistApi.enableChannel(
-          twistInstanceId: ptId,
-          provider: provider,
-          channelId: channelId,
-        );
+        if (removedProviders.contains(provider)) return null;
+        return {
+          'provider': provider,
+          'syncableId': parts.sublist(1).join(':'),
+        };
       }
 
-      for (final key in toDisable) {
-        final parts = key.split(':');
-        final provider = parts[0];
-        if (removedProviders.contains(provider)) continue;
-        final channelId = parts.sublist(1).join(':');
-        await TwistApi.disableChannel(
-          twistInstanceId: ptId,
-          provider: provider,
-          channelId: channelId,
-        );
-      }
+      await TwistApi.applyChannelsBatch(
+        twistInstanceId: ptId,
+        enable: toEnable
+            .map(asEntry)
+            .whereType<Map<String, String>>()
+            .toList(),
+        disable: toDisable
+            .map(asEntry)
+            .whereType<Map<String, String>>()
+            .toList(),
+      );
 
-      // 4. Remove accounts
-      for (final accountKey in changes.removedAccounts) {
-        final parts = accountKey.split(':');
-        final provider = parts[0];
-        final actorId = parts.sublist(1).join(':');
-        await TwistApi.removeIntegration(
-          twistInstanceId: ptId,
-          provider: provider,
-          actorId: actorId,
-        );
-      }
+      // 4. Remove accounts in parallel
+      await Future.wait(
+        changes.removedAccounts.map((accountKey) {
+          final parts = accountKey.split(':');
+          final provider = parts[0];
+          final actorId = parts.sublist(1).join(':');
+          return TwistApi.removeIntegration(
+            twistInstanceId: ptId,
+            provider: provider,
+            actorId: actorId,
+          );
+        }),
+      );
 
       return CommandMessage('Twist "${name!}" saved');
     } catch (e, t) {

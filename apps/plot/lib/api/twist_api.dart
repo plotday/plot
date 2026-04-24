@@ -310,6 +310,26 @@ class TwistApi {
     );
   }
 
+  /// Apply a batch of channel enable/disable operations in a single request.
+  /// Server reuses one twist wrapper for the whole batch — avoids per-channel
+  /// round-trips and DO spin-ups.
+  ///
+  /// Each entry is `{ 'provider': ..., 'syncableId': ... }`.
+  static Future<void> applyChannelsBatch({
+    required String twistInstanceId,
+    List<Map<String, String>> enable = const [],
+    List<Map<String, String>> disable = const [],
+  }) async {
+    if (enable.isEmpty && disable.isEmpty) return;
+    await api.post<Map<String, dynamic>>(
+      '/twist/$twistInstanceId/syncables/batch',
+      body: <String, dynamic>{
+        if (enable.isNotEmpty) 'enable': enable,
+        if (disable.isNotEmpty) 'disable': disable,
+      },
+    );
+  }
+
   /// Get available source channels for link observation
   static Future<List<LinkChannel>> getAvailableLinkChannels(
     String twistInstanceId,
