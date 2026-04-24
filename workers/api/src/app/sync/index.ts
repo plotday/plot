@@ -11,6 +11,7 @@ import actors from "./actors";
 import noteTags from "./note-tags";
 import notes from "./notes";
 import priorities from "./priorities";
+import prioritySuggestions from "./priority-suggestions";
 import twistInstances from "./twist-instances";
 import sessions from "./sessions";
 import channels from "./channels";
@@ -26,6 +27,7 @@ const sync = new Hono<{ Bindings: Bindings }>();
 
 sync.route("/", actors);
 sync.route("/", priorities);
+sync.route("/", prioritySuggestions);
 sync.route("/", twistInstances);
 sync.route("/", channels);
 sync.route("/", threads);
