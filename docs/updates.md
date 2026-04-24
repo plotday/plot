@@ -1,3 +1,5 @@
+- Fixed onboarding threads (Welcome, Priorities, Connections, etc.) not appearing for new sign-ups whose email had been shared on a thread before they joined — every new user now gets the full set of onboarding threads on their agenda
+- New sign-ups now see their 30-day Core trial right on the Welcome to Plot! thread, with reminders before it ends
 - Filter the search bar by thread type — pick any type represented in the current priority, including connector link types like Linear issues or Attio deals, each with its own logo
 - Airtable now syncs every task-like record from your bases, not only records assigned to you — records with an assignee still come in pre-assigned
 - Calendar event notes synced from Outlook and Teams look cleaner — "Manage Booking" and "Join" style links now appear as real clickable links instead of raw URLs, and long meeting URLs are shown as the site name instead of filling the screen

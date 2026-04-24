@@ -3,6 +3,7 @@ import { sql } from "kysely";
 
 import type { DB } from "../db-types";
 import type { Bindings } from "../env";
+import { createStripeClient } from "../stripe/utils";
 import { BUILTIN_TWIST_PACKAGE_ID, PLAN_LIMITS } from "./limits";
 import { createLogger } from "@plotday/worker-util";
 
@@ -197,32 +198,28 @@ export async function completeTrialTodos(
 }
 
 /**
- * Find the trial thread for a user in the @plot.app priority.
+ * Find the trial thread for a user: their private welcome-user thread in
+ * Using Plot (seeded by activate_invited_user). Reminder/upgrade/expiry
+ * notes land on the same thread alongside the welcome message.
  */
 async function findTrialThread(
-  db: Kysely<DB>
+  db: Kysely<DB>,
+  userId: string
 ): Promise<{ threadId: string; priorityId: string; plotTwistInstanceId: string | null } | null> {
-  const plotAppPriority = await db
-    .selectFrom("priority")
-    .select("id")
-    .where("key", "=", "@plot.app")
-    .executeTakeFirst();
-
-  if (!plotAppPriority) return null;
-
-  const thread = await db
+  const row = await db
     .selectFrom("thread")
     .innerJoin("thread_priority", "thread_priority.thread_id", "thread.id")
-    .select("thread.id")
-    .where("thread_priority.priority_id", "=", plotAppPriority.id)
-    .where("thread.key", "=", "core-trial")
+    .select(["thread.id as thread_id", "thread_priority.priority_id"])
+    .where("thread.key", "=", "welcome-user")
+    .where("thread_priority.user_id", "=", userId)
+    .where("thread.archived_at", "is", null)
     .executeTakeFirst();
 
-  if (!thread) return null;
+  if (!row) return null;
 
-  const plotTwistInstanceId = await getPlotTwistInstanceId(db, plotAppPriority.id);
+  const plotTwistInstanceId = await getPlotTwistInstanceId(db, row.priority_id);
 
-  return { threadId: thread.id, priorityId: plotAppPriority.id, plotTwistInstanceId };
+  return { threadId: row.thread_id, priorityId: row.priority_id, plotTwistInstanceId };
 }
 
 /**
@@ -236,7 +233,7 @@ export async function handleTrialUpgrade(
 ): Promise<void> {
   const logger = createLogger({ operation: "handleTrialUpgrade", user_id: userId });
 
-  const trial = await findTrialThread(db);
+  const trial = await findTrialThread(db, userId);
   if (!trial) {
     logger.warn("Trial thread not found for upgrade celebration", { user_id: userId });
     return;
@@ -326,6 +323,32 @@ export async function expireTrial(
     .where("user_id", "=", userId)
     .execute();
 
+  // Update the trial sub's Stripe metadata so future webhook firings
+  // (monthly billing-cycle renewals on the $0 free_monthly price) don't
+  // resurrect plan='core' from the now-stale metadata. Best effort.
+  if (stripeCustomerId) {
+    try {
+      const stripeClient = createStripeClient(env.STRIPE_SECRET_KEY);
+      const subs = await stripeClient.subscriptions.list({
+        customer: stripeCustomerId,
+        status: "active",
+        limit: 10,
+      });
+      for (const s of subs.data) {
+        if (s.metadata.is_trial === "true") {
+          await stripeClient.subscriptions.update(s.id, {
+            metadata: { ...s.metadata, plan: "free", is_trial: "false" },
+          });
+        }
+      }
+    } catch (error) {
+      logger.error("Failed to clear trial metadata on Stripe sub", error as Error, {
+        user_id: userId,
+        stripe_customer_id: stripeCustomerId,
+      });
+    }
+  }
+
   // Enforce limits (archive excess twists, delete excess connections)
   if (stripeCustomerId) {
     // Reuse the existing enforceDowngradeLimits logic inline since it's in stripe.ts
@@ -393,7 +416,7 @@ export async function expireTrial(
   }
 
   // Add final note to trial thread
-  const trial = await findTrialThread(db);
+  const trial = await findTrialThread(db, userId);
   if (trial) {
     const siteRoot = env.SITE_ROOT || "https://plot.day";
 

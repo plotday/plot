@@ -194,6 +194,10 @@ async function handleSubscriptionUpdate(
   const plan = validPlans.includes(subscription.metadata.plan)
     ? (subscription.metadata.plan as PlanKey)
     : ("free" as PlanKey);
+  // Reverse-trial subs are tagged is_trial='true' by createFreeSubscription.
+  // They get plan='core' for access while keeping trial_ends_at and the
+  // TrialReminder DO running.
+  const isTrial = subscription.metadata.is_trial === "true";
 
   // Read the old plan before updating (for sync history expansion detection)
   const oldUserSub = await c.var.db
@@ -215,7 +219,10 @@ async function handleSubscriptionUpdate(
         billing_cycle_start: start.toISOString(),
         billing_cycle_end: end.toISOString(),
         // Clear any lingering reverse-trial state once the user is on a paid plan.
-        ...(plan !== "free" ? { trial_ends_at: null } : {}),
+        // Skip when this webhook is the initial trial sub itself — clearing
+        // trial_ends_at here would silently end the reverse trial seconds
+        // after signup.
+        ...(plan !== "free" && !isTrial ? { trial_ends_at: null } : {}),
       })
       .where("stripe_customer_id", "=", customerId)
       .executeTakeFirst();
@@ -323,8 +330,11 @@ async function handleSubscriptionUpdate(
     );
   }
 
-  // Detect mid-trial upgrade: if user was on a reverse trial and just upgraded
-  if (plan !== "free") {
+  // Detect mid-trial upgrade: if user was on a reverse trial and just upgraded.
+  // Skip when this is the initial trial sub itself — otherwise we'd post the
+  // "you upgraded!" celebration note seconds after signup and cancel the
+  // reminder DO before any reminders ever fire.
+  if (plan !== "free" && !isTrial) {
     try {
       const trialUser = await c.var.db
         .selectFrom("user_subscription")

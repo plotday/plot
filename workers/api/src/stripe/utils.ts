@@ -157,7 +157,16 @@ export async function createFreeSubscription(
     ],
     metadata: {
       user_id: userId,
-      plan: "free",
+      // Stripe-side this is the $0 free_monthly price, but Plot grants Core
+      // access for the 30-day reverse trial. The webhook reads metadata.plan
+      // to populate user_subscription.plan, so 'core' here is what makes the
+      // trial actually take effect for limits/features.
+      plan: "core",
+      // Marker the webhook checks to avoid two anti-features kicking in for
+      // the initial trial sub: clearing trial_ends_at, and treating it as a
+      // mid-trial upgrade (which would post a celebration note and cancel
+      // the reminder DO).
+      is_trial: "true",
     },
   });
 }

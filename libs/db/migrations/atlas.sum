@@ -1,4 +1,4 @@
-h1:+tcqTTHH/GIBNv8CAb+Kea40iJFRKWgfo5ssbp74KiI=
+h1:zQYho/HZ7zYQOBmrif80Tkq362CVelvdlUBA+f1j48k=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -301,3 +301,4 @@ h1:+tcqTTHH/GIBNv8CAb+Kea40iJFRKWgfo5ssbp74KiI=
 20260421193650_add_priority_default_sharing.sql h1:8GKm0pjAafqe89KSuxgzzp37i60fXZiWcRKmh1Gp0S4=
 20260423125631_fix_upsert_schedule_race_and_contacts_deadlock.sql h1:14IYZ18S5xhfgO7QrwMRZtT5dB4hMfPFpfik2G/r6y4=
 20260423155835_dispatch_archived_thread_schedules.sql h1:NZYL6FeyYZ0RF3AhAKVl34gf/nCIT9+cWk4qsVpO8n0=
+20260424000644_fix_everyone_add_on_pre_existing_contact.sql h1:w7rj6QuwqFcs9rK5jOqArIuLcJ4RTUsgC4VXav0cuiM=

@@ -365,6 +365,57 @@ account.post("/activate", async (c) => {
     );
   }
 
+  // Step 6b: Schedule reverse-trial reminder alarms (7-day, 2-day, expire)
+  // against the welcome-user thread seeded by activate_invited_user. Only
+  // runs when the user is actually on a Core trial — a re-activation for a
+  // user who's already on Pro/Team will skip this block. Non-blocking.
+  try {
+    const sub = await c.var.db
+      .selectFrom("user_subscription")
+      .select(["plan", "trial_ends_at"])
+      .where("user_id", "=", user.id)
+      .executeTakeFirst();
+
+    if (sub?.plan === "core" && sub.trial_ends_at) {
+      const welcomeThread = await c.var.db
+        .selectFrom("thread")
+        .innerJoin("thread_priority", "thread_priority.thread_id", "thread.id")
+        .select("thread.id")
+        .where("thread.key", "=", "welcome-user")
+        .where("thread_priority.user_id", "=", user.id)
+        .where("thread.archived_at", "is", null)
+        .executeTakeFirst();
+
+      if (welcomeThread) {
+        const trialReminderId = c.env.TRIAL_REMINDER.idFromName(user.id);
+        const trialReminderDO = c.env.TRIAL_REMINDER.get(trialReminderId);
+        const userId = user.id;
+        const trialThreadId = welcomeThread.id;
+        const trialEndsAtMs = new Date(sub.trial_ends_at).getTime();
+        c.executionCtx.waitUntil(
+          trialReminderDO
+            .fetch(
+              new Request("http://do/start", {
+                method: "POST",
+                body: JSON.stringify({ userId, trialThreadId, trialEndsAt: trialEndsAtMs }),
+              })
+            )
+            .catch((err) => {
+              const logger = createLogger(extractRequestContext(c));
+              logger.error("Failed to start trial reminder DO", err as Error, {
+                user_id: userId,
+              });
+            })
+        );
+      }
+    }
+  } catch (err) {
+    const logger = createLogger(extractRequestContext(c));
+    logger.error("Failed to schedule trial reminder (non-blocking)", err as Error, {
+      user_id: user.id,
+    });
+  }
+
   // Step 7: Install and activate Plot twist on root priority if not already installed
   // First, look up the Plot twist
   let plotTwist: { id: number; version: string } | undefined;

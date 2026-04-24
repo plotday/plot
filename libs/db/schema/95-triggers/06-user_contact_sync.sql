@@ -7,6 +7,7 @@ CREATE OR REPLACE FUNCTION public.upsert_user_contact (user_id uuid, user_email 
 DECLARE
     _contact_id uuid;
     _existing_user_id uuid;
+    _should_be_primary boolean;
 BEGIN
     -- Check if this email is already linked to a different user
     SELECT c.user_id INTO _existing_user_id
@@ -20,24 +21,30 @@ BEGIN
             USING ERRCODE = 'unique_violation';
     END IF;
 
+    -- Decide up front whether this contact should be the user's primary.
+    -- Setting primary on the INSERT itself (instead of a follow-up UPDATE)
+    -- is load-bearing: sync_user_contact_from_contact → auto_maintain_everyone_group
+    -- only adds the user to the Everyone group on user_contact INSERT with
+    -- primary=TRUE. A later primary-flip fires the UPDATE branch, which
+    -- only handles eviction — the user would never be added.
+    _should_be_primary := upsert_user_contact.user_id IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1 FROM public.contact c
+            WHERE c.user_id = upsert_user_contact.user_id AND c."primary"
+        );
+
     -- Upsert contact record for the user
-    INSERT INTO public.contact (email, name, avatar_url, user_id)
-        VALUES (user_email, user_name, avatar_url, user_id)
+    INSERT INTO public.contact (email, name, avatar_url, user_id, "primary")
+        VALUES (user_email, user_name, avatar_url, user_id, _should_be_primary)
     ON CONFLICT (email)
         DO UPDATE SET
             name = COALESCE(EXCLUDED.name, contact.name),
             avatar_url = COALESCE(EXCLUDED.avatar_url, contact.avatar_url),
             user_id = COALESCE(EXCLUDED.user_id, contact.user_id),
+            "primary" = contact."primary" OR _should_be_primary,
             updated_at = now()
         RETURNING
             id INTO _contact_id;
-    -- Ensure user has a primary contact
-    IF NOT EXISTS (
-        SELECT 1 FROM public.contact c
-        WHERE c.user_id = upsert_user_contact.user_id AND c."primary" = true
-    ) THEN
-        UPDATE public.contact SET "primary" = true WHERE id = _contact_id;
-    END IF;
     RETURN _contact_id;
 END;
 $function$;
