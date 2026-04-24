@@ -8,6 +8,7 @@ import { twistFactory } from "../twist";
 import { Integrations } from "../twist/tools/integrations";
 import { Store } from "../twist/tools/store";
 import { createLogger } from "@plotday/worker-util";
+import { enqueueChannelRouter } from "../state/channel-router";
 import type { ProviderDeclaration } from "../twist/tools/factory";
 import { disposeRpc } from "../utils/rpc";
 import { checkChannelConnectionLimit, PlanLimitError } from "../utils/limits";
@@ -763,6 +764,13 @@ twistIntegrations.post(
         channel_id: channelId,
         actor_id: currentActorId,
       });
+
+      // A newly-enabled channel has no default priority yet. Enqueue a
+      // debounced router run so the LLM assigns one before threads start
+      // streaming in. Fire-and-forget.
+      c.executionCtx.waitUntil(
+        enqueueChannelRouter(c.env, c.var.user.id).catch(() => {})
+      );
 
       return c.json({ success: true });
     } catch (error) {

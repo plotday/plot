@@ -30,11 +30,15 @@ priorityMoves.post("/sync/priority-moves", async (c) => {
 
   const result = await withUserDb(c.var.db, userId, async (trx) => {
     const updated = await sql<{ thread_id: string }>`
-      INSERT INTO public.thread_priority (thread_id, user_id, priority_id, user_moved)
-      VALUES (${threadId}::uuid, ${userId}::uuid, ${priorityId}::uuid, TRUE)
+      INSERT INTO public.thread_priority (thread_id, user_id, priority_id, user_moved, applied_default_channel_id)
+      VALUES (${threadId}::uuid, ${userId}::uuid, ${priorityId}::uuid, TRUE, NULL)
       ON CONFLICT (thread_id, user_id) DO UPDATE
         SET priority_id = EXCLUDED.priority_id,
             user_moved = TRUE,
+            -- Explicit user move is not a default placement. Clear the
+            -- marker so apply_channel_default does not later pull this row
+            -- back when the channel default changes.
+            applied_default_channel_id = NULL,
             archived_at = NULL,
             updated_at = now()
       RETURNING thread_id

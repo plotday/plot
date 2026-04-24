@@ -45,13 +45,35 @@ BEGIN
     -- so the topic short-circuit had nothing to match. Now that topic is set,
     -- re-classify any thread_priority row that the user has not explicitly
     -- moved. user_moved = TRUE rows are sticky and are never overwritten.
+    -- Also stamp applied_default_channel_id when the new priority matches
+    -- this channel's default — the marker lets apply_channel_default find
+    -- the row later when the default changes again.
     UPDATE public.thread_priority tp
-    SET priority_id = public.classify_thread_for_user(tp.user_id, NEW.thread_id),
+    SET priority_id = classified.new_priority_id,
+        applied_default_channel_id = public.channel_default_marker (
+            tp.user_id, NEW.thread_id, classified.new_priority_id
+        ),
         updated_at = now()
-    WHERE tp.thread_id = NEW.thread_id
+    FROM (
+        SELECT
+            tp2.user_id,
+            tp2.thread_id,
+            tp2.priority_id AS current_priority_id,
+            tp2.applied_default_channel_id AS current_marker,
+            public.classify_thread_for_user(tp2.user_id, NEW.thread_id) AS new_priority_id
+        FROM public.thread_priority tp2
+        WHERE tp2.thread_id = NEW.thread_id
+          AND tp2.user_moved = FALSE
+    ) classified
+    WHERE tp.thread_id = classified.thread_id
+      AND tp.user_id = classified.user_id
       AND tp.user_moved = FALSE
-      AND public.classify_thread_for_user(tp.user_id, NEW.thread_id)
-          IS DISTINCT FROM tp.priority_id;
+      AND (
+          classified.new_priority_id IS DISTINCT FROM classified.current_priority_id
+          OR public.channel_default_marker (
+                 tp.user_id, NEW.thread_id, classified.new_priority_id
+             ) IS DISTINCT FROM classified.current_marker
+      );
 
     RETURN NEW;
 END;

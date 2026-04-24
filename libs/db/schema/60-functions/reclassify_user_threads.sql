@@ -110,6 +110,9 @@ BEGIN
     updated AS (
         UPDATE public.thread_priority tp
         SET priority_id = r.new_priority_id,
+            applied_default_channel_id = public.channel_default_marker (
+                p_user_id, r.thread_id, r.new_priority_id
+            ),
             updated_at = now()
         FROM reclass r
         WHERE tp.thread_id = r.thread_id

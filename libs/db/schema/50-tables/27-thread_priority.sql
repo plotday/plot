@@ -25,6 +25,17 @@ CREATE TABLE "public"."thread_priority" (
     -- threads, and by reclassify_user_threads as a "sticky" guard — rows
     -- with user_moved = TRUE are never overwritten by automatic re-filing.
     "user_moved" boolean NOT NULL DEFAULT FALSE,
+    -- Non-null marks a row that was placed by this channel's current
+    -- default_priority_id. Consulted by apply_channel_default to find rows
+    -- eligible for re-file when the channel default changes. Cleared when
+    -- the user explicitly moves the thread, or when classify no longer
+    -- yields the channel default for this row.
+    --
+    -- Weak reference to channel.id (no FK, since channel is defined after
+    -- thread_priority in schema order). A channel delete cascades via
+    -- twist_instance → thread → thread_priority anyway, so a stale marker
+    -- is unreachable in practice.
+    "applied_default_channel_id" bigint,
     PRIMARY KEY ("thread_id", "user_id")
 );
 
@@ -51,6 +62,12 @@ CREATE INDEX idx_thread_priority_updated_at
 CREATE INDEX idx_thread_priority_user_moved
     ON "public"."thread_priority" ("user_id")
     WHERE user_moved = TRUE;
+
+-- Fast lookup of default-placed rows for a given channel, consumed by
+-- apply_channel_default when a channel's default_priority_id changes.
+CREATE INDEX idx_thread_priority_applied_default
+    ON "public"."thread_priority" ("applied_default_channel_id")
+    WHERE applied_default_channel_id IS NOT NULL;
 
 CREATE TRIGGER set_thread_priority_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_priority"

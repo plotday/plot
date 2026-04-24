@@ -86,6 +86,10 @@
     {
       "tag": "v20",
       "deleted_classes": ["TrialReminder"]
+    },
+    {
+      "tag": "v21",
+      "new_sqlite_classes": ["ChannelRouter"]
     }
   ],
   "env": {
@@ -289,6 +293,10 @@
           {
             "name": "EMAIL_NOTIFY",
             "class_name": "EmailNotify"
+          },
+          {
+            "name": "CHANNEL_ROUTER",
+            "class_name": "ChannelRouter"
           }
         ]
       },
@@ -511,6 +519,10 @@
           {
             "name": "EMAIL_NOTIFY",
             "class_name": "EmailNotify"
+          },
+          {
+            "name": "CHANNEL_ROUTER",
+            "class_name": "ChannelRouter"
           }
         ]
       },

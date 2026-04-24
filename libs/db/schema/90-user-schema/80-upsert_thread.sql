@@ -420,14 +420,33 @@ BEGIN
     -- we record their primary contact in pending_contacts and defer filing.
     IF v_caller_attested THEN
         -- Normal path: the caller can file the thread under their priority.
-        INSERT INTO thread_priority (thread_id, user_id, priority_id)
-        VALUES (v_result.id, upsert_thread.user_id, v_priority_id)
+        -- Stamp applied_default_channel_id when the chosen priority matches
+        -- the thread's channel default, but only when the caller did not
+        -- pass an explicit priority_id (an explicit pick is never a default).
+        INSERT INTO thread_priority (thread_id, user_id, priority_id, applied_default_channel_id)
+        VALUES (
+            v_result.id,
+            upsert_thread.user_id,
+            v_priority_id,
+            CASE
+                WHEN p_thread ? 'priority_id' THEN NULL
+                ELSE public.channel_default_marker (
+                    upsert_thread.user_id, v_result.id, v_priority_id
+                )
+            END
+        )
         ON CONFLICT ON CONSTRAINT thread_priority_pkey
         DO UPDATE SET
             priority_id = CASE
                 WHEN p_thread ? 'priority_id' THEN EXCLUDED.priority_id
                 WHEN v_is_archived THEN EXCLUDED.priority_id
                 ELSE thread_priority.priority_id
+            END,
+            -- An explicit caller priority_id is not a default placement.
+            -- Preserve the existing marker otherwise.
+            applied_default_channel_id = CASE
+                WHEN p_thread ? 'priority_id' THEN NULL
+                ELSE thread_priority.applied_default_channel_id
             END,
             -- Un-archive on a legitimate re-file.
             archived_at = NULL,
@@ -471,8 +490,15 @@ BEGIN
             LOOP
                 v_peer_priority := public.classify_thread_for_user(r.peer_user_id, v_result.id);
                 IF v_peer_priority IS NOT NULL THEN
-                    INSERT INTO thread_priority (thread_id, user_id, priority_id)
-                    VALUES (v_result.id, r.peer_user_id, v_peer_priority)
+                    INSERT INTO thread_priority (thread_id, user_id, priority_id, applied_default_channel_id)
+                    VALUES (
+                        v_result.id,
+                        r.peer_user_id,
+                        v_peer_priority,
+                        public.channel_default_marker (
+                            r.peer_user_id, v_result.id, v_peer_priority
+                        )
+                    )
                     ON CONFLICT ON CONSTRAINT thread_priority_pkey
                     DO UPDATE SET archived_at = NULL, updated_at = now();
 

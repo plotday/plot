@@ -42,6 +42,9 @@ BEGIN
     END IF;
 
     -- thread_priority for ALL contacts (idempotent via ON CONFLICT DO NOTHING).
+    -- Each peer classifies against their own channels — channel_default_marker
+    -- only stamps when the peer themselves owns the channel with this topic
+    -- and its default matches the chosen priority.
     FOR r IN
         SELECT DISTINCT uc.user_id AS peer_user_id
         FROM unnest(NEW.contacts) AS arr(contact_id)
@@ -53,8 +56,15 @@ BEGIN
     LOOP
         v_peer_priority_id := public.classify_thread_for_user(r.peer_user_id, NEW.id);
         IF v_peer_priority_id IS NOT NULL THEN
-            INSERT INTO thread_priority (thread_id, user_id, priority_id)
-            VALUES (NEW.id, r.peer_user_id, v_peer_priority_id)
+            INSERT INTO thread_priority (thread_id, user_id, priority_id, applied_default_channel_id)
+            VALUES (
+                NEW.id,
+                r.peer_user_id,
+                v_peer_priority_id,
+                public.channel_default_marker (
+                    r.peer_user_id, NEW.id, v_peer_priority_id
+                )
+            )
             ON CONFLICT ON CONSTRAINT thread_priority_pkey DO NOTHING;
         END IF;
     END LOOP;

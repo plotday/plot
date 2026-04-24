@@ -5,6 +5,16 @@ CREATE TABLE "public"."channel" (
     "title" text NOT NULL,
     "enabled" boolean NOT NULL DEFAULT false,
     "link_types" jsonb,
+    -- LLM-assigned default priority for threads from this channel. Read by
+    -- classify_thread_for_user (channel topic short-circuit) after the
+    -- user_moved topic check. NULL means "no default; fall back to scoring".
+    -- ON DELETE SET NULL so an archived/deleted priority does not cascade to
+    -- the channel row; the router re-run on priority-tree change repopulates.
+    "default_priority_id" uuid REFERENCES public.priority (id) ON DELETE SET NULL,
+    -- LLM rationale for the current default, kept for observability only.
+    -- Never read by runtime code; queryable from psql when diagnosing a
+    -- routing decision. Overwritten on every router re-run.
+    "default_priority_reason" text,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     UNIQUE (twist_instance_id, channel_id)

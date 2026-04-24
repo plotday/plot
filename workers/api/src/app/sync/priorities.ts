@@ -4,6 +4,7 @@ import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { rpcUser } from "../../rpc";
+import { enqueueChannelRouter } from "../../state/channel-router";
 import { notifySync, notifyUserSync } from "./notify";
 
 const priorities = new Hono<{ Bindings: Bindings }>();
@@ -64,6 +65,15 @@ priorities.post("/sync/priorities", async (c) => {
   for (const row of displacedUsers) {
     notifyUserSync(c, row.user_id);
   }
+
+  // Any priority mutation — create, rename, archive — can shift which
+  // channel should default to which priority. Enqueue a debounced router
+  // run. Safe to fire-and-forget; the DO coalesces repeated calls.
+  c.executionCtx.waitUntil(
+    enqueueChannelRouter(c.env, userId).catch(() => {
+      // Router enqueue failures are non-fatal for the priority upsert.
+    })
+  );
 
   return c.json(result as any);
 });

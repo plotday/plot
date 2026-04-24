@@ -4,6 +4,7 @@ import { type TwistBuilder } from "../";
 import { type RunMessage } from "./twist/tools/tasks";
 import { type Broadcast } from "./state/broadcast";
 import { type CallbacksState } from "./state/callbacks";
+import { type ChannelRouter } from "./state/channel-router";
 import { type LogStream } from "./state/log-stream";
 import { type LogSubscriptions } from "./state/log-subscriptions";
 import { type SdkTokenStore } from "./state/sdk-token-store";
@@ -242,6 +243,7 @@ export type Bindings = {
   readonly SYNC_NOTIFY: DurableObjectNamespace<SyncNotify>;
   readonly SYNC_RECOVERY: DurableObjectNamespace<SyncRecovery>;
   readonly PRIVACY_REPORTING: DurableObjectNamespace<PrivacyReporting>;
+  readonly CHANNEL_ROUTER: DurableObjectNamespace<ChannelRouter>;
   readonly TWIST_MODULES_BUCKET: R2Bucket;
   readonly FILES_BUCKET: R2Bucket;
 };

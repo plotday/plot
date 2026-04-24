@@ -135,6 +135,8 @@ export type Database = {
         Row: {
           channel_id: string
           created_at: string
+          default_priority_id: string | null
+          default_priority_reason: string | null
           enabled: boolean
           id: number
           link_types: Json | null
@@ -145,6 +147,8 @@ export type Database = {
         Insert: {
           channel_id: string
           created_at?: string
+          default_priority_id?: string | null
+          default_priority_reason?: string | null
           enabled?: boolean
           id?: never
           link_types?: Json | null
@@ -155,6 +159,8 @@ export type Database = {
         Update: {
           channel_id?: string
           created_at?: string
+          default_priority_id?: string | null
+          default_priority_reason?: string | null
           enabled?: boolean
           id?: never
           link_types?: Json | null
@@ -163,6 +169,24 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "channel_default_priority_id_fkey"
+            columns: ["default_priority_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_default_priority_id_fkey"
+            columns: ["default_priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "channel_default_priority_id_fkey"
+            columns: ["default_priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
           {
             foreignKeyName: "channel_twist_instance_id_fkey"
             columns: ["twist_instance_id"]
@@ -720,6 +744,7 @@ export type Database = {
           created_by: string
           draft: boolean
           embedding: unknown
+          external_content_hash: string | null
           id: string
           key: string | null
           mentions: string[] | null
@@ -741,6 +766,7 @@ export type Database = {
           created_by: string
           draft?: boolean
           embedding?: unknown
+          external_content_hash?: string | null
           id?: string
           key?: string | null
           mentions?: string[] | null
@@ -762,6 +788,7 @@ export type Database = {
           created_by?: string
           draft?: boolean
           embedding?: unknown
+          external_content_hash?: string | null
           id?: string
           key?: string | null
           mentions?: string[] | null
@@ -1697,6 +1724,7 @@ export type Database = {
       }
       thread_priority: {
         Row: {
+          applied_default_channel_id: number | null
           archived_at: string | null
           created_at: string
           priority_id: string
@@ -1706,6 +1734,7 @@ export type Database = {
           user_moved: boolean
         }
         Insert: {
+          applied_default_channel_id?: number | null
           archived_at?: string | null
           created_at?: string
           priority_id: string
@@ -1715,6 +1744,7 @@ export type Database = {
           user_moved?: boolean
         }
         Update: {
+          applied_default_channel_id?: number | null
           archived_at?: string | null
           created_at?: string
           priority_id?: string
@@ -3703,9 +3733,14 @@ export type Database = {
         Args: { p_contact_ids: string[]; p_group_id: string; p_user_id: string }
         Returns: undefined
       }
+      apply_channel_default: { Args: { p_channel_id: number }; Returns: number }
       archive_links: {
         Args: { p_created_by: string; p_filter?: Json }
         Returns: string[]
+      }
+      channel_default_marker: {
+        Args: { p_priority_id: string; p_thread_id: string; p_user_id: string }
+        Returns: number
       }
       classify_thread_for_user: {
         Args: {
@@ -3976,6 +4011,8 @@ export type Database = {
         Row: {
           channel_id: string | null
           created_at: string | null
+          default_priority_id: string | null
+          default_priority_reason: string | null
           enabled: boolean | null
           id: number | null
           link_types: Json | null
@@ -4553,13 +4590,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

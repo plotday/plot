@@ -1,3 +1,4 @@
+- Connector channels (calendars, mailboxes, projects) now route their threads to the right priority automatically — when you add a priority or a connection, Plot picks a home for each channel based on your priority names and channel context, and existing threads from that channel move too. Your own moves still override the default.
 - Fixed contact names showing a trailing " via Plot" or similar from Google Groups and other mailing lists — sender names in lists and mentions are now shown cleanly
 - Fixed adding a new connection showing the auth button without its spinner after authorizing — the button could be accidentally re-tapped mid-setup, which could disrupt the flow. The spinner now stays on through the entire setup.
 - Fixed onboarding threads (Welcome, Priorities, Connections, etc.) not appearing for new sign-ups whose email had been shared on a thread before they joined — every new user now gets the full set of onboarding threads on their agenda

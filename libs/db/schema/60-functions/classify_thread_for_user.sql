@@ -13,6 +13,12 @@
 --      to also require contact/group/embedding overlap. This is the path
 --      that carries siblings from a connector channel into the same priority
 --      after one explicit user move.
+--   2.5. Channel default: if topic is of the form 'channel:<pk>' and the
+--      channel has a non-archived default_priority_id, return it. Defaults
+--      are LLM-assigned (per the channel router) and are always overridden
+--      by a user_moved example (step 2 runs first). The caller is
+--      responsible for stamping thread_priority.applied_default_channel_id
+--      when this branch is taken.
 --   3. When no user_moved example shares the topic, score every moved thread:
 --        sem = cosine similarity, thresholded at 0.5, scaled to [0,1], squared
 --        con = Jaccard on expanded contacts (linked-alias-aware), squared
@@ -78,6 +84,35 @@ BEGIN
         IF v_matched IS NOT NULL THEN
             RETURN v_matched;
         END IF;
+    END IF;
+
+    -- 2.5. Channel default. When the thread topic is of the form
+    --      'channel:<pk>' and the channel has a non-archived
+    --      default_priority_id, return it. This is the LLM-assigned default
+    --      that kicks in before scoring. Step 2 (user_moved topic match)
+    --      ran first, so a user move will always trump the default.
+    IF v_topic LIKE 'channel:%' THEN
+        DECLARE
+            v_channel_pk bigint;
+        BEGIN
+            v_channel_pk := NULLIF(substring(v_topic FROM 9), '')::bigint;
+            IF v_channel_pk IS NOT NULL THEN
+                SELECT c.default_priority_id INTO v_matched
+                FROM public.channel c
+                JOIN public.priority p ON p.id = c.default_priority_id
+                WHERE c.id = v_channel_pk
+                  AND c.default_priority_id IS NOT NULL
+                  AND p.user_id = p_user_id
+                  AND p.archived_at IS NULL;
+                IF v_matched IS NOT NULL THEN
+                    RETURN v_matched;
+                END IF;
+            END IF;
+        EXCEPTION WHEN invalid_text_representation THEN
+            -- Topic looked like 'channel:...' but the suffix wasn't numeric.
+            -- Fall through to scoring.
+            NULL;
+        END;
     END IF;
 
     -- 3. Score all moved threads when no topic match was available.
@@ -189,4 +224,4 @@ BEGIN
 END;
 $function$;
 
-COMMENT ON FUNCTION public.classify_thread_for_user IS 'Classify a thread into a priority by looking up the user''s explicitly-moved threads (thread_priority.user_moved = TRUE). Topic match is a direct short-circuit (mode of same-topic moves). Otherwise scores by contact/group/embedding overlap (weights 0.35/0.15/0.5 after squaring) and keeps the best match above 0.15. Falls back to the priority:{KEY} prefix lookup, then to the user''s root priority.';
+COMMENT ON FUNCTION public.classify_thread_for_user IS 'Classify a thread into a priority. Order: (1) topic short-circuit on user_moved siblings, (2) channel.default_priority_id when topic is ''channel:<pk>'', (3) semantic/contact/group scoring against user_moved examples, (4) priority:{KEY} prefix, (5) root priority fallback.';
