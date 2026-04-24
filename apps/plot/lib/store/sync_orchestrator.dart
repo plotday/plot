@@ -19,6 +19,11 @@ class SyncOrchestrator {
   final Map<SyncEntity, Completer<bool>> _pushCompleters = {};
   final Map<SyncEntity, Completer<void>> _pullCompleters = {};
 
+  // Entities marked dirty during an in-flight pull. After the in-flight pull
+  // completes, each dirty entity is pulled again so updates that arrived
+  // mid-pull aren't deferred until the next broadcast cycle.
+  final Set<SyncEntity> _pullDirty = {};
+
   // 429 rate-limit cooldown tracking
   DateTime? _lastRateLimitAt;
   Duration _rateLimitCooldown = const Duration(seconds: 5);
@@ -402,12 +407,16 @@ class SyncOrchestrator {
 
   /// Pulls a single entity
   ///
-  /// If the entity is already being pulled, returns the in-flight completer.
+  /// If the entity is already being pulled, marks it dirty (so a follow-up
+  /// pull runs after the current one completes) and returns the in-flight
+  /// completer.
   Future<void> pull(SyncEntity entity) async {
     // Check if already pulling
     if (_pullCompleters.containsKey(entity)) {
+      _pullDirty.add(entity);
       _syncOrchestratorLog.fine(
-        'Pull already in progress for ${entity.debugName}, waiting...',
+        'Pull already in progress for ${entity.debugName}, '
+        'marked dirty for follow-up pull',
       );
       return _pullCompleters[entity]!.future;
     }
@@ -449,6 +458,16 @@ class SyncOrchestrator {
       }
     } finally {
       _pullCompleters.remove(entity);
+    }
+
+    // If broadcasts arrived during the pull, run a fresh pull immediately so
+    // mid-pull updates aren't stranded until the next broadcast cycle. Don't
+    // await — the original caller resolves on the in-flight completer above.
+    if (_pullDirty.remove(entity) && Store.isAvailable) {
+      _syncOrchestratorLog.fine(
+        'Re-pulling ${entity.debugName} (dirty during in-flight pull)',
+      );
+      Future<void>.microtask(() => pull(entity));
     }
 
     return completer.future;

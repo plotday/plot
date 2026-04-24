@@ -690,11 +690,13 @@ class Store extends _$Store {
   final _bufferedTables = <String>{};
 
   // Adaptive batch debouncer for sync requests — collects entity names
-  // and syncs them together to eliminate redundant dependency pulls
+  // and syncs them together to eliminate redundant dependency pulls.
+  // Sized to align with server-side UserSync batching (MIN_WAIT_MS=300ms,
+  // MAX_WAIT_MS=2000ms): one server batch maps to one client batch.
   late final BatchDebouncer<String> _syncDebouncer = BatchDebouncer(
-    maxInitialMs: 200,
-    maxSubsequentMs: 500,
-    waitMs: 250,
+    maxInitialMs: 300,
+    maxSubsequentMs: 2000,
+    waitMs: 500,
     onBatchAll: _handleBatchSync,
   );
 
@@ -1747,36 +1749,51 @@ class Store extends _$Store {
 
   Future<void> _handleBroadcastMessage(Map<String, dynamic> message) async {
     if (_closing) return;
-    final table = message['table'] as String?;
 
-    if (table == null) {
-      log.warning("Received broadcast message without table field: $message");
+    // Newer servers send `tables: [...]`; older servers send `table: '...'`.
+    // Read whichever is present.
+    final tablesRaw = message['tables'];
+    final List<String> tables;
+    if (tablesRaw is List) {
+      tables = tablesRaw.whereType<String>().toList();
+    } else {
+      final single = message['table'] as String?;
+      tables = single == null ? const [] : [single];
+    }
+
+    if (tables.isEmpty) {
+      log.warning("Received broadcast message without table(s) field: $message");
       return;
     }
 
-    // Handle subscription changes (not a standard sync entity)
-    if (table == 'subscription') {
-      log.info("plot.store: Received subscription change broadcast");
-      onSubscriptionChanged?.call();
-      return;
+    for (final table in tables) {
+      // Handle subscription changes (not a standard sync entity)
+      if (table == 'subscription') {
+        log.info("plot.store: Received subscription change broadcast");
+        onSubscriptionChanged?.call();
+        continue;
+      }
+
+      // Resolve to entity name before debouncing — prevents multiple table
+      // names (e.g. thread, schedule, thread_read) from triggering redundant
+      // syncs.
+      final entity = SyncOrchestrator.getEntityByTableName(table);
+      if (entity == null) {
+        log.warning("Unknown table update for $table");
+        continue;
+      }
+
+      log.info(
+        "plot.store: Received broadcast table=$table entity=${entity.debugName}",
+      );
+
+      if (_isBufferingBroadcasts) {
+        _bufferedTables.add(entity.debugName);
+        continue;
+      }
+
+      _syncDebouncer(entity.debugName);
     }
-
-    // Resolve to entity name before debouncing — prevents multiple table names
-    // (e.g. thread, schedule, thread_read) from triggering redundant syncs
-    final entity = SyncOrchestrator.getEntityByTableName(table);
-    if (entity == null) {
-      log.warning("Unknown table update for $table");
-      return;
-    }
-
-    log.info("plot.store: Received broadcast table=$table entity=${entity.debugName}");
-
-    if (_isBufferingBroadcasts) {
-      _bufferedTables.add(entity.debugName);
-      return;
-    }
-
-    _syncDebouncer(entity.debugName);
   }
 
   Future<bool> _hasNetworkConnectivity() async {

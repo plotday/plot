@@ -16,7 +16,6 @@ import { type SyncRecovery } from "./state/sync-recovery";
 import { type PrivacyReporting } from "./state/privacy-reporting";
 import { type Usage } from "./state/usage";
 import { type UserAiUsage } from "./state/user-ai-usage";
-import { type TrialReminder } from "./state/trial-reminder";
 import { type UserSync } from "./state/user-sync";
 import type {
   NoteCreate,
@@ -34,11 +33,16 @@ export type TwistEnvironment = "personal" | "private" | "review" | "public";
 
 /**
  * User sync broadcast message.
- * Simple notification that tells clients to re-fetch data for a specific table.
- * No entity data is included - clients pull fresh data themselves.
+ * Simple notification that tells clients to re-fetch data for one or more
+ * tables. No entity data is included — clients pull fresh data themselves.
+ *
+ * `tables` is the canonical field. `table` is the legacy single-entity field
+ * kept for backwards compatibility with older clients; new code should read
+ * `tables` (which always contains `table` as its first element).
  */
 export type UserSyncMessage = {
   type: "sync";
+  tables: string[];
   table: string;
 };
 
@@ -231,7 +235,6 @@ export type Bindings = {
   readonly LOG_SUBSCRIPTIONS: DurableObjectNamespace<LogSubscriptions>;
   readonly LOG_STREAM: DurableObjectNamespace<LogStream>;
   readonly SDK_TOKEN_STORE: DurableObjectNamespace<SdkTokenStore>;
-  readonly TRIAL_REMINDER: DurableObjectNamespace<TrialReminder>;
   readonly USER_SYNC: DurableObjectNamespace<UserSync>;
   readonly TWIST_SYNC: DurableObjectNamespace<TwistSync>;
   readonly PUSH_NOTIFY: DurableObjectNamespace<PushNotify>;

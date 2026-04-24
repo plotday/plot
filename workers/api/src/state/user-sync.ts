@@ -8,13 +8,17 @@ import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 
 // Debouncing configuration (compile-time constants)
-const MIN_WAIT_MS = 100; // Minimum time to wait before sending, allowing batching
-const MAX_WAIT_MS = 2000; // Maximum time to wait if updates keep arriving
+const MIN_WAIT_MS = 300; // Minimum time to wait before sending, allowing batching
+const MAX_WAIT_MS = 2000; // Maximum time a batch can sit waiting before forced flush
 const MIN_INTERVAL_MS = 500; // Minimum gap between sync deliveries
 
 interface UserSyncState {
   lastNotifyTime: number;
   lastSyncTime: number;
+  // Time of the first notify in the current batch — anchors MAX_WAIT_MS so a
+  // continuous stream of notifies can't keep rescheduling the alarm forever.
+  // Reset to 0 after each successful broadcast.
+  batchStartTime: number;
   pendingAlarm: boolean;
 }
 
@@ -27,6 +31,7 @@ export class UserSync extends DurableObject<Bindings> {
     this.state = {
       lastNotifyTime: 0,
       lastSyncTime: 0,
+      batchStartTime: 0,
       pendingAlarm: false,
     };
     // Load userId from storage on DO initialization to avoid storage reads
@@ -89,6 +94,9 @@ export class UserSync extends DurableObject<Bindings> {
 
     const now = Date.now();
     this.state.lastNotifyTime = now;
+    if (this.state.batchStartTime === 0) {
+      this.state.batchStartTime = now;
+    }
 
     // If we have a pending alarm, let it handle the sync
     if (this.state.pendingAlarm) {
@@ -143,21 +151,22 @@ export class UserSync extends DurableObject<Bindings> {
 
     try {
       const now = Date.now();
-      if (now - this.state.lastNotifyTime < MIN_WAIT_MS) {
-        // More notifications came in recently, reschedule
-        const delayMs = MIN_WAIT_MS - (now - this.state.lastNotifyTime);
+      const sinceLastNotify = now - this.state.lastNotifyTime;
+      const batchAge =
+        this.state.batchStartTime > 0 ? now - this.state.batchStartTime : 0;
+
+      // If notifies are still arriving rapidly AND we haven't held this batch
+      // open for too long, reschedule to keep coalescing. The MAX_WAIT_MS cap
+      // guarantees the batch fires even under sustained load.
+      if (sinceLastNotify < MIN_WAIT_MS && batchAge < MAX_WAIT_MS) {
+        const delayMs = Math.min(
+          MIN_WAIT_MS - sinceLastNotify,
+          MAX_WAIT_MS - batchAge
+        );
         this.state.pendingAlarm = true;
         currentStep = "setAlarmReschedule";
         await this.ctx.storage.setAlarm(now + delayMs);
         return;
-      }
-
-      // Enforce MAX_WAIT_MS - if we've been waiting too long, sync now
-      if (
-        this.state.lastNotifyTime > 0 &&
-        now - this.state.lastNotifyTime > MAX_WAIT_MS
-      ) {
-        // Waited long enough, proceed with sync
       }
 
       // Check if there are connected clients
@@ -205,6 +214,7 @@ export class UserSync extends DurableObject<Bindings> {
             })
         );
         this.state.lastSyncTime = now;
+        this.state.batchStartTime = 0;
         return;
       }
 
@@ -230,18 +240,22 @@ export class UserSync extends DurableObject<Bindings> {
 
         if (pendingUpdates.length === 0) {
           this.state.lastSyncTime = now;
+          this.state.batchStartTime = 0;
           return;
         }
 
-        // Send sync messages for each entity
+        // Send a single sync message carrying all dirty tables. `table` is
+        // included for backwards compatibility with older clients that only
+        // read the singular field — they'll pull at least one entity, then
+        // the next broadcast catches the rest.
+        const tables = pendingUpdates.map((u) => u.entity);
         const tSend = Date.now();
         currentStep = "broadcastSend";
-        for (const update of pendingUpdates) {
-          await broadcast.send({
-            type: "sync",
-            table: update.entity,
-          });
-        }
+        await broadcast.send({
+          type: "sync",
+          tables,
+          table: tables[0],
+        });
         markStep("broadcastSendMs", tSend);
 
         // Advance last_sync_at = last_update_at directly in SQL to preserve
@@ -301,6 +315,7 @@ export class UserSync extends DurableObject<Bindings> {
         }
 
         this.state.lastSyncTime = now;
+        this.state.batchStartTime = 0;
 
         if (timingEnabled) {
           logger.info("User sync dispatch timing", {
