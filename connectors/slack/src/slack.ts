@@ -10,7 +10,6 @@ import {
   type Authorization,
   Integrations,
   type Channel,
-  type SyncContext,
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
@@ -22,12 +21,9 @@ type MessageChannel = {
   primary: boolean;
 };
 
-type MessageSyncOptions = {
-  timeMin?: Date;
-};
-
 import {
   SlackApi,
+  SlackRateLimitedError,
   type SlackChannel,
   type SlackMessage,
   type SlackUserInfo,
@@ -111,6 +107,20 @@ export class Slack extends Connector<Slack> {
     await this.set("auth", context.auth);
   }
 
+  /**
+   * Schedule `callback` at `runAt`, logging why. Used to defer work when
+   * Slack rate-limits a call (typically 1 rpm for `conversations.*` under
+   * the 2025-05-29 non-Marketplace app limits).
+   */
+  private async rescheduleAt(
+    callback: Parameters<typeof this.runTask>[0],
+    runAt: Date,
+    reason: string
+  ): Promise<void> {
+    console.log(`Slack: rescheduling ${reason} at ${runAt.toISOString()}`);
+    await this.runTask(callback, { runAt });
+  }
+
   async getChannels(
     _auth: Authorization,
     token: AuthToken
@@ -131,47 +141,37 @@ export class Slack extends Connector<Slack> {
     return filtered.map((c: SlackChannel) => ({ id: c.id, title: c.name }));
   }
 
-  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    // Check if we've already synced with a wider or equal range
-    const syncHistoryMin = context?.syncHistoryMin;
-    if (syncHistoryMin) {
-      const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
-      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
-        return; // Already synced with wider range
-      }
-      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
-    }
-
+  async onChannelEnabled(channel: Channel): Promise<void> {
     await this.set(`sync_enabled_${channel.id}`, true);
 
-    // Use syncHistoryMin if provided, otherwise default to 30 days of history
-    const timeMin = syncHistoryMin ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const oldest = (timeMin.getTime() / 1000).toString();
-
-    const initialState: SyncState = {
-      channelId: channel.id,
-      oldest,
-    };
-
-    await this.set(`sync_state_${channel.id}`, initialState);
-
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      "full",
-      channel.id,
-      true
+    // Pin the forward-sync floor to enable-time so the first webhook-driven
+    // incremental sync doesn't backfill the preceding hour (see
+    // `startIncrementalSync`). Stored in Slack ts format (seconds).
+    await this.set(
+      `enabled_at_${channel.id}`,
+      (Date.now() / 1000).toString()
     );
-    await this.runTask(syncCallback);
 
-    // Queue webhook setup as a separate task to avoid blocking the HTTP response
+    // No historical message backfill. Slack reduced `conversations.history`
+    // and `conversations.replies` rate limits for non-Marketplace apps to
+    // 1 rpm / 15 objects per call (2025-05-29 changelog), which makes
+    // bulk-importing a channel's history impractical. Instead we watch for
+    // new messages via the webhook and only backfill starred ("later")
+    // items so users keep their saved-for-later.
+
+    // Webhook registration is queued as a separate task so it doesn't block
+    // the HTTP response from `onChannelEnabled`.
     const webhookCallback = await this.callback(
       this.setupChannelWebhook,
       channel.id
     );
     await this.runTask(webhookCallback);
 
-    const backfillCallback = await this.callback(this.backfillStars, channel.id);
+    const backfillCallback = await this.callback(
+      this.backfillStars,
+      channel.id,
+      null
+    );
     await this.runTask(backfillCallback);
   }
 
@@ -204,42 +204,11 @@ export class Slack extends Connector<Slack> {
       }));
   }
 
-  async startSync(
-    options: {
-      channelId: string;
-    } & MessageSyncOptions,
-  ): Promise<void> {
-    const { channelId } = options;
-
-    // Setup webhook for this channel (Slack Events API)
-    await this.setupChannelWebhook(channelId);
-
-    // Calculate oldest timestamp for sync
-    let oldest: string | undefined;
-    if (options?.timeMin) {
-      const timeMin =
-        typeof options.timeMin === "string"
-          ? new Date(options.timeMin)
-          : options.timeMin;
-      oldest = (timeMin.getTime() / 1000).toString();
-    }
-
-    const initialState: SyncState = {
-      channelId,
-      oldest,
-    };
-
-    await this.set(`sync_state_${channelId}`, initialState);
-
-    // Start sync batch using run tool for long-running operation
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      "full",
-      channelId,
-      true
-    );
-    await this.runTask(syncCallback);
+  async startSync(options: { channelId: string }): Promise<void> {
+    // Historical sync is no longer performed (see `onChannelEnabled` for
+    // context on Slack's 2025-05-29 rate-limit change). Just (re)register
+    // the webhook so new messages flow in.
+    await this.setupChannelWebhook(options.channelId);
   }
 
   async stopSync(channelId: string): Promise<void> {
@@ -253,6 +222,7 @@ export class Slack extends Connector<Slack> {
     }
     await this.clear(`channel_webhook_${channelId}`);
     await this.clear(`sync_state_${channelId}`);
+    await this.clear(`enabled_at_${channelId}`);
 
     // Sweep per-thread state for this channel so a re-enable starts clean.
     const starredKeys = await this.tools.store.list(`starred:${channelId}:`);
@@ -326,6 +296,22 @@ export class Slack extends Connector<Slack> {
         }
       }
     } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        const runAt = new Date(Date.now() + error.retryAfterMs);
+        const retry = await this.callback(
+          this.syncBatch,
+          batchNumber,
+          mode,
+          channelId,
+          isInitial
+        );
+        await this.rescheduleAt(
+          retry,
+          runAt,
+          `syncBatch ${batchNumber} ${channelId} (${error.method})`
+        );
+        return;
+      }
       console.error(
         `Error in sync batch ${batchNumber} for channel ${channelId}:`,
         error
@@ -491,16 +477,47 @@ export class Slack extends Connector<Slack> {
 
     const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${parentTs}`;
 
-    await this.tools.integrations.setThreadToDo(canonicalUrl, actorId, isStarred);
+    try {
+      if (isStarred) {
+        // Since we no longer backfill history, the starred thread may not
+        // exist in Plot yet. Fetching + saving is idempotent (saveLink
+        // upserts by source) and ensures status="later" regardless of prior
+        // state.
+        const api = await this.getApi(channelId);
+        await this.saveStarredThread(api, channelId, parentTs);
+      } else {
+        await this.tools.integrations.setThreadToDo(
+          canonicalUrl,
+          actorId,
+          false
+        );
+      }
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        // Drop the event rather than queue a retry: Slack will redeliver the
+        // webhook, and we have no per-star task to reschedule.
+        console.warn(
+          `handleStarEvent: rate limited on ${error.method}; dropping event for ${channelId}/${parentTs}`
+        );
+        return;
+      }
+      console.warn(
+        `handleStarEvent failed for ${channelId}/${parentTs}`,
+        error
+      );
+    }
 
-    // Block the onThreadToDo callback that Plot will queue in response.
+    // Block the onThreadToDo/onLinkUpdated callback that Plot will queue.
     await this.set(this.skipKey(channelId, parentTs), true);
 
     // Record the new state so subsequent duplicate events short-circuit.
     await this.set(this.starredKey(channelId, parentTs), isStarred);
   }
 
-  async backfillStars(channelId: string): Promise<void> {
+  async backfillStars(
+    channelId: string,
+    resumeCursor?: string | null
+  ): Promise<void> {
     const actorId = await this.get<ActorId>("auth_actor_id");
     if (!actorId) return;
 
@@ -512,40 +529,108 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
-    let cursor: string | undefined = undefined;
-    do {
-      const { items, nextCursor } = await api.listStars(cursor);
+    let cursor: string | undefined = resumeCursor ?? undefined;
+    try {
+      do {
+        const { items, nextCursor } = await api.listStars(cursor);
 
-      for (const item of items) {
-        if (item.type !== "message") continue;
-        if (item.channel !== channelId) continue;
+        for (const item of items) {
+          if (item.type !== "message") continue;
+          if (item.channel !== channelId) continue;
 
-        const messageTs = item.message?.ts;
-        const parentTs = item.message?.thread_ts ?? messageTs;
-        if (!parentTs) continue;
+          const messageTs = item.message?.ts;
+          const parentTs = item.message?.thread_ts ?? messageTs;
+          if (!parentTs) continue;
 
-        const alreadyStarred = await this.get<boolean>(
-          this.starredKey(channelId, parentTs)
-        );
-        if (alreadyStarred) continue;
+          const alreadyStarred = await this.get<boolean>(
+            this.starredKey(channelId, parentTs)
+          );
+          if (alreadyStarred) continue;
 
-        const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${parentTs}`;
+          try {
+            await this.saveStarredThread(api, channelId, parentTs);
+          } catch (error) {
+            if (error instanceof SlackRateLimitedError) throw error;
+            console.warn(
+              `backfillStars: failed to save starred thread ${channelId}/${parentTs}`,
+              error
+            );
+            // Continue with other items.
+          }
 
-        try {
-          await this.tools.integrations.setThreadToDo(canonicalUrl, actorId, true);
-        } catch (error) {
-          console.warn("backfillStars: setThreadToDo failed", parentTs, error);
-          // Continue with other items.
+          await this.set(this.starredKey(channelId, parentTs), true);
         }
 
-        // Block the onThreadToDo callback that Plot will queue, since the
-        // item is already saved-for-later in Slack — no need to write again.
-        await this.set(this.skipKey(channelId, parentTs), true);
-        await this.set(this.starredKey(channelId, parentTs), true);
+        cursor = nextCursor;
+      } while (cursor);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        const runAt = new Date(Date.now() + error.retryAfterMs);
+        const retry = await this.callback(
+          this.backfillStars,
+          channelId,
+          cursor ?? null
+        );
+        await this.rescheduleAt(
+          retry,
+          runAt,
+          `backfillStars ${channelId} (${error.method})`
+        );
+        return;
       }
+      throw error;
+    }
+  }
 
-      cursor = nextCursor;
-    } while (cursor);
+  /**
+   * Fetch a Slack thread by its parent ts, resolve author identities, and
+   * save it as a Plot link with status="later" (i.e. saved-for-later /
+   * todo). `saveLink` upserts by `source`, so this is idempotent and safe
+   * to call on a thread we've already seen.
+   */
+  private async saveStarredThread(
+    api: SlackApi,
+    channelId: string,
+    threadTs: string
+  ): Promise<void> {
+    const messages = await api.getThread(channelId, threadTs);
+    if (messages.length === 0) return;
+
+    const userIds = new Set<string>();
+    for (const message of messages) {
+      if (message.user) userIds.add(message.user);
+      if (message.reactions) {
+        for (const reaction of message.reactions) {
+          for (const userId of reaction.users) userIds.add(userId);
+        }
+      }
+    }
+
+    let userInfos: SlackUserInfoMap | undefined;
+    try {
+      userInfos = await this.resolveUserInfos(api, [...userIds]);
+    } catch (error) {
+      console.warn(
+        "saveStarredThread: resolveUserInfos failed; proceeding without real names",
+        error
+      );
+    }
+
+    const link = transformSlackThread(messages, channelId, userInfos, true);
+    if (!link.notes || link.notes.length === 0) return;
+
+    link.status = "later";
+    link.channelId = channelId;
+    link.meta = {
+      ...link.meta,
+      syncProvider: "slack",
+      syncableId: channelId,
+    };
+
+    // Suppress the onLinkUpdated echo Plot will fire from this write;
+    // handleStarEvent / backfillStars is already the source of truth.
+    await this.set(this.skipKey(channelId, threadTs), true);
+    await this.tools.integrations.saveLink(link);
   }
 
   private async startIncrementalSync(channelId: string): Promise<void> {
@@ -555,11 +640,20 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
-    // For incremental sync, we only fetch recent messages
+    const nowSec = Date.now() / 1000;
+    const enabledAtStr = await this.get<string>(`enabled_at_${channelId}`);
+    const enabledAt = enabledAtStr ? parseFloat(enabledAtStr) : 0;
+
+    // Fetch from max(enabled_at, now - 15min) so we don't backfill messages
+    // from before the user enabled this channel. The 15-minute cap gives us
+    // slack for delayed webhook delivery without dragging in yesterday.
+    const windowFloor = nowSec - 15 * 60;
+    const oldest = Math.max(enabledAt, windowFloor);
+
     const incrementalState: SyncState = {
       channelId,
-      latest: (Date.now() / 1000).toString(),
-      oldest: ((Date.now() - 60 * 60 * 1000) / 1000).toString(), // Last hour
+      latest: nowSec.toString(),
+      oldest: oldest.toString(),
     };
 
     await this.set(`sync_state_${channelId}`, incrementalState);

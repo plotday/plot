@@ -74,6 +74,37 @@ export type StarsListItem = {
   };
 };
 
+/**
+ * Thrown when Slack rate-limits a call. Callers should catch this and
+ * reschedule via `runTask(cb, { runAt })` rather than retry in-process —
+ * Slack's `conversations.*` rate limits for non-Marketplace apps are 1 rpm,
+ * so waits are typically too long to burn worker CPU on.
+ */
+export class SlackRateLimitedError extends Error {
+  constructor(
+    public readonly method: string,
+    public readonly retryAfterMs: number
+  ) {
+    super(
+      `Slack rate limited on ${method}; retry after ${retryAfterMs}ms`
+    );
+    this.name = "SlackRateLimitedError";
+  }
+}
+
+function parseRetryAfterMs(header: string | null): number {
+  // Slack documents Retry-After in seconds; fall back to 60s when missing
+  // (their published default for `ratelimited`).
+  if (!header) return 60_000;
+  const n = parseInt(header, 10);
+  if (!Number.isFinite(n) || n <= 0) return 60_000;
+  return n * 1000;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class SlackApi {
   constructor(public accessToken: string) {}
 
@@ -106,6 +137,20 @@ export class SlackApi {
       body: body.toString(),
     });
 
+    // HTTP 429: rate limited. Respect Retry-After. Short waits (<=2s) are
+    // retried in-process; longer ones bubble up so the enclosing task can
+    // reschedule itself via runTask({ runAt }).
+    if (response.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(
+        response.headers.get("retry-after")
+      );
+      if (retryAfterMs <= 2_000) {
+        await sleep(retryAfterMs);
+        return this.call(method, params);
+      }
+      throw new SlackRateLimitedError(method, retryAfterMs);
+    }
+
     if (!response.ok) {
       throw new Error(
         `Slack API error (${method}): ${response.status} ${response.statusText}`
@@ -115,6 +160,16 @@ export class SlackApi {
     const data = await response.json();
 
     if (!data.ok) {
+      // Slack also returns `ratelimited` as an application-level error on a
+      // 200 response (usually with a Retry-After header). Treat it the same
+      // as a 429 so the caller can reschedule.
+      if (data.error === "ratelimited") {
+        const retryAfterMs = parseRetryAfterMs(
+          response.headers.get("retry-after")
+        );
+        throw new SlackRateLimitedError(method, retryAfterMs);
+      }
+
       const details = data.response_metadata?.messages?.length
         ? ` (${data.response_metadata.messages.join("; ")})`
         : "";
@@ -180,17 +235,28 @@ export class SlackApi {
     };
   }
 
-  public async getThreadReplies(
+  public async getThread(
     channelId: string,
     threadTs: string
   ): Promise<SlackMessage[]> {
+    // Returns the full thread: parent message first, then replies. Used by
+    // backfills (saving a starred thread from scratch) that need the parent
+    // too, whereas the incremental sync path already has the parent and just
+    // wants replies.
     const data = await this.call("conversations.replies", {
       channel: channelId,
       ts: threadTs,
     });
+    return (data.messages || []) as SlackMessage[];
+  }
 
-    // First message in replies is always the parent, so we skip it
-    return (data.messages || []).slice(1);
+  public async getThreadReplies(
+    channelId: string,
+    threadTs: string
+  ): Promise<SlackMessage[]> {
+    // First message in replies is always the parent, so we skip it.
+    const messages = await this.getThread(channelId, threadTs);
+    return messages.slice(1);
   }
 
   public async postMessage(
@@ -502,9 +568,21 @@ export async function syncSlackChannel(
       parentMessage.reply_count &&
       parentMessage.reply_count > 0
     ) {
-      // Fetch all replies for this thread
-      const replies = await api.getThreadReplies(state.channelId, threadTs);
-      threads.push([parentMessage, ...replies]);
+      // One malformed thread_ts or a permission quirk on a single parent
+      // (e.g. `invalid_arguments` / `thread_not_found`) used to surface from
+      // `conversations.replies` and abort the whole batch, wedging sync on
+      // that cursor indefinitely. Degrade to the parent-only path so the
+      // rest of the channel still advances.
+      try {
+        const replies = await api.getThreadReplies(state.channelId, threadTs);
+        threads.push([parentMessage, ...replies]);
+      } catch (error) {
+        console.warn(
+          `conversations.replies failed for ${state.channelId}/${threadTs}; falling back to parent-only`,
+          error
+        );
+        threads.push([parentMessage]);
+      }
     } else {
       // No replies, just the parent message
       threads.push(messagesInThread);
