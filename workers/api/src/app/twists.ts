@@ -1,6 +1,9 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
+import type { OptionsSchema } from "@plotday/twister/options";
+import { createLogger } from "@plotday/worker-util";
+
 import type { Bindings } from "../env";
 import { twistFactory } from "../twist";
 import {
@@ -11,18 +14,16 @@ import {
   deleteDraft,
   deleteTwist,
   getAll as getAllTwists,
-  getById as getTwistById,
   getByFilter,
+  getById as getTwistById,
   update as updateTwist,
 } from "../twist/management";
 import { resolveOptions } from "../twist/tools/factory";
-import type { OptionsSchema } from "@plotday/twister/options";
-import { saveSecureOptions } from "../utils/secure-options";
+import { PlanLimitError, SingleInstanceError } from "../utils/limits";
 import { extractRequestContext } from "../utils/log-context";
-import { createLogger } from "@plotday/worker-util";
+import { saveSecureOptions } from "../utils/secure-options";
 import { handleValidationError } from "../utils/validation";
 import { notifyUserSync } from "./sync/notify";
-import { PlanLimitError, SingleInstanceError } from "../utils/limits";
 
 const twists = new Hono<{ Bindings: Bindings }>();
 
@@ -110,7 +111,10 @@ twists.get("/sources", async (c) => {
     const logger = createLogger(context);
     logger.error("Error fetching connectors", error as Error);
     if (error instanceof Error) {
-      return c.json({ message: `Error fetching connectors: ${error.message}` }, 400);
+      return c.json(
+        { message: `Error fetching connectors: ${error.message}` },
+        400
+      );
     }
     throw error;
   }
@@ -202,7 +206,10 @@ twists.get("/sources/summary", async (c) => {
     const logger = createLogger(context);
     logger.error("Error fetching source summaries", error as Error);
     if (error instanceof Error) {
-      return c.json({ message: `Error fetching source summaries: ${error.message}` }, 400);
+      return c.json(
+        { message: `Error fetching source summaries: ${error.message}` },
+        400
+      );
     }
     throw error;
   }
@@ -233,7 +240,10 @@ twists.get("/twist", async (c) => {
       .where("user_id", "=", c.var.user.id)
       .executeTakeFirst();
     if (!membership) {
-      return c.json({ message: "Forbidden: you are not a member of this team" }, 403);
+      return c.json(
+        { message: "Forbidden: you are not a member of this team" },
+        403
+      );
     }
   }
   const twists = await getByFilter(c.var.db, c.var.user.id, teamId);
@@ -358,7 +368,10 @@ twists.post("/twist/draft/:id/activate", async (c) => {
       return c.json(error.toJSON(), 409);
     }
     if (error instanceof Error) {
-      return c.json({ message: `Error activating draft: ${error.message}` }, 400);
+      return c.json(
+        { message: `Error activating draft: ${error.message}` },
+        400
+      );
     }
     throw error;
   }
@@ -397,13 +410,20 @@ twists.patch("/twist/:id", async (c) => {
       const oldRecord = await c.var.db
         .selectFrom("twist_instance")
         .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-        .select(["twist_instance.options", "twist_instance.twist_id", "twist.options_schema", "twist.environment"])
+        .select([
+          "twist_instance.options",
+          "twist_instance.twist_id",
+          "twist.options_schema",
+          "twist.environment",
+        ])
         .where("twist_instance.id", "=", twistId)
         .where("twist_instance.archived_at", "is", null)
         .executeTakeFirst();
       if (oldRecord) {
         oldConfig = oldRecord.options
-          ? (typeof oldRecord.options === "string" ? JSON.parse(oldRecord.options) : oldRecord.options as Record<string, unknown>)
+          ? typeof oldRecord.options === "string"
+            ? JSON.parse(oldRecord.options)
+            : (oldRecord.options as Record<string, unknown>)
           : {};
       }
     }
@@ -419,9 +439,11 @@ twists.patch("/twist/:id", async (c) => {
         .executeTakeFirst();
 
       if (twistRecord0?.options_schema && c.env.AI_KEY_ENCRYPTION_KEY) {
-        const optSchema = (typeof twistRecord0.options_schema === "string"
-          ? JSON.parse(twistRecord0.options_schema)
-          : twistRecord0.options_schema) as OptionsSchema;
+        const optSchema = (
+          typeof twistRecord0.options_schema === "string"
+            ? JSON.parse(twistRecord0.options_schema)
+            : twistRecord0.options_schema
+        ) as OptionsSchema;
 
         cleanedConfig = await saveSecureOptions(
           c.var.db,
@@ -443,14 +465,20 @@ twists.patch("/twist/:id", async (c) => {
       const twistRecord = await c.var.db
         .selectFrom("twist_instance")
         .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-        .select(["twist_instance.twist_id", "twist.options_schema", "twist.environment"])
+        .select([
+          "twist_instance.twist_id",
+          "twist.options_schema",
+          "twist.environment",
+        ])
         .where("twist_instance.id", "=", twistId)
         .executeTakeFirst();
 
       if (twistRecord?.options_schema) {
-        const schema = (typeof twistRecord.options_schema === "string"
-          ? JSON.parse(twistRecord.options_schema)
-          : twistRecord.options_schema) as OptionsSchema;
+        const schema = (
+          typeof twistRecord.options_schema === "string"
+            ? JSON.parse(twistRecord.options_schema)
+            : twistRecord.options_schema
+        ) as OptionsSchema;
 
         if (Object.keys(schema).length > 0) {
           const oldOptions = resolveOptions(schema, oldConfig);
@@ -473,11 +501,18 @@ twists.patch("/twist/:id", async (c) => {
                 environment: twistRecord.environment as any,
                 twistInstanceId: twistId,
               });
-              await twistInstance.callCallback([], "onOptionsChanged", oldOptions, newOptions);
+              await twistInstance.callCallback(
+                [],
+                "onOptionsChanged",
+                oldOptions,
+                newOptions
+              );
             } catch (error) {
               const context = extractRequestContext(c);
               const logger = createLogger(context);
-              logger.warn("Failed to dispatch onOptionsChanged", { error: String(error) });
+              logger.warn("Failed to dispatch onOptionsChanged", {
+                error: String(error),
+              });
             }
           }
         }
@@ -524,9 +559,17 @@ twists.get("/twist/:id/available-link-channels", async (c) => {
 
     const channels = await c.var.db
       .selectFrom("channel")
-      .innerJoin("twist_instance", "twist_instance.id", "channel.twist_instance_id")
+      .innerJoin(
+        "twist_instance",
+        "twist_instance.id",
+        "channel.twist_instance_id"
+      )
       .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-      .innerJoin("user as source_owner", "source_owner.id", "twist_instance.owner_id")
+      .innerJoin(
+        "user as source_owner",
+        "source_owner.id",
+        "twist_instance.owner_id"
+      )
       .select([
         "channel.channel_id",
         "channel.title",
@@ -560,15 +603,25 @@ twists.get("/twist/:id/link-channels", async (c) => {
   try {
     const channels = await c.var.db
       .selectFrom("twist_instance_channel")
-      .innerJoin(
-        "channel",
-        (join) =>
-          join
-            .onRef("channel.twist_instance_id", "=", "twist_instance_channel.source_twist_instance_id")
-            .onRef("channel.channel_id", "=", "twist_instance_channel.channel_id")
+      .innerJoin("channel", (join) =>
+        join
+          .onRef(
+            "channel.twist_instance_id",
+            "=",
+            "twist_instance_channel.source_twist_instance_id"
+          )
+          .onRef("channel.channel_id", "=", "twist_instance_channel.channel_id")
       )
-      .innerJoin("twist_instance", "twist_instance.id", "twist_instance_channel.source_twist_instance_id")
-      .innerJoin("user as source_owner", "source_owner.id", "twist_instance.owner_id")
+      .innerJoin(
+        "twist_instance",
+        "twist_instance.id",
+        "twist_instance_channel.source_twist_instance_id"
+      )
+      .innerJoin(
+        "user as source_owner",
+        "source_owner.id",
+        "twist_instance.owner_id"
+      )
       .select([
         "twist_instance_channel.id",
         "twist_instance_channel.source_twist_instance_id",
@@ -636,7 +689,11 @@ twists.put("/twist/:id/link-channels", async (c) => {
         })
         .onConflict((oc) =>
           oc
-            .columns(["twist_instance_id", "source_twist_instance_id", "channel_id"])
+            .columns([
+              "twist_instance_id",
+              "source_twist_instance_id",
+              "channel_id",
+            ])
             .doUpdateSet({ enabled: ch.enabled })
         )
         .execute();
