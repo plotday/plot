@@ -326,8 +326,7 @@ class TagActors extends DelegatingList<ActorId> {
   /// Total count of actors including hidden ones.
   final int count;
 
-  TagActors(super.actors, [int? count])
-      : count = count ?? actors.length;
+  TagActors(super.actors, [int? count]) : count = count ?? actors.length;
 
   /// Create a TagActors with no count override.
   factory TagActors.from(List<ActorId> actors) => TagActors(actors);

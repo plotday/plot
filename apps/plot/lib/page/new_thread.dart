@@ -1013,6 +1013,9 @@ class NewThreadPageState extends State<NewThreadPage> {
         prefix: FaIcon(
           selected ? FontAwesomeIcons.user : FontAwesomeIcons.plus,
           size: context.theme.iconSizes.sm,
+          color: (!selected && !hovered)
+              ? context.theme.plotColors.veryMuted
+              : null,
         ),
         child: Text(
           actor.name ?? actor.email ?? 'Unknown',
