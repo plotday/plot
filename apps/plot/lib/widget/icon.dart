@@ -118,6 +118,11 @@ class PlotIcon {
   static const wave = FontAwesomeIcons.handWave;
   static const question = FontAwesomeIcons.commentsQuestion;
   static const flag = FontAwesomeIcons.flag;
+  static const thinking = FontAwesomeIcons.faceThinking;
+  static const remember = FontAwesomeIcons.handPointRibbon;
+  static const agreed = FontAwesomeIcons.handshake;
+  static const send = FontAwesomeIcons.paperPlane;
+  static const noted = FontAwesomeIcons.noteSticky;
 
   // Emotions
   static const smile = FontAwesomeIcons.faceSmileBeam;
@@ -125,6 +130,10 @@ class PlotIcon {
   static const heartEyes = FontAwesomeIcons.faceGrinHearts;
   static const cry = FontAwesomeIcons.faceSadTear;
   static const laugh = FontAwesomeIcons.faceLaughBeam;
+  static const relieved = FontAwesomeIcons.faceRelieved;
+  static const surprised = FontAwesomeIcons.faceAstonished;
+  static const confused = FontAwesomeIcons.faceConfused;
+  static const dismayed = FontAwesomeIcons.faceAnguished;
 
   // RSVPs
   static const attend = FontAwesomeIcons.userCheck;
