@@ -1,4 +1,6 @@
-import GoogleContacts from "@plotday/connector-google-contacts";
+import GoogleContacts, {
+  enrichLinkContactsFromGoogle,
+} from "@plotday/connector-google-contacts";
 import {
   type Action,
   ActionType,
@@ -1019,6 +1021,24 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     // recurring meetings) into a single cross-runtime call.
     const batch = Array.from(linksBySource.values());
     if (batch.length > 0) {
+      // Enrich attendee/organizer contacts with names + avatars from the
+      // user's Google Contacts and "other contacts". Calendar already
+      // merges GoogleContacts.SCOPES into its scopes, so the People API
+      // is reachable without a separate connector install.
+      try {
+        const token = await this.tools.integrations.get(calendarId);
+        if (token) {
+          await enrichLinkContactsFromGoogle(batch, token.token, token.scopes);
+        }
+      } catch (err) {
+        // Best-effort — Gravatar fallback in the client still covers
+        // anyone the People API doesn't return.
+        console.warn(
+          "Failed to enrich Google Calendar contacts (non-blocking):",
+          err
+        );
+      }
+
       await this.tools.integrations.saveLinks(batch);
     }
   }

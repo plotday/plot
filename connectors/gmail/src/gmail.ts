@@ -15,6 +15,10 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 
+import {
+  GOOGLE_PEOPLE_SCOPES,
+  enrichLinkContactsFromGoogle,
+} from "@plotday/connector-google-contacts";
 
 import {
   GmailApi,
@@ -58,7 +62,14 @@ export class Gmail extends Connector<Gmail> {
   static readonly SCOPES = ["https://www.googleapis.com/auth/gmail.modify"];
 
   readonly provider = AuthProvider.Google;
-  readonly scopes = Gmail.SCOPES;
+  // Merge in People API scopes so we can enrich email-only contacts (Gmail
+  // headers carry name + address but no avatar) with photos from the user's
+  // Google Contacts and "other contacts" — without requiring the separate
+  // Google Contacts connector to be installed.
+  readonly scopes = Integrations.MergeScopes(
+    Gmail.SCOPES,
+    GOOGLE_PEOPLE_SCOPES,
+  );
   readonly linkTypes = [
     {
       type: "email",
@@ -430,11 +441,48 @@ export class Gmail extends Connector<Gmail> {
     channelId: string,
     initialSync: boolean
   ): Promise<void> {
+    // Pre-build all plot threads, then enrich every contact email across the
+    // batch in one People API pass. Gmail headers don't carry avatars, so
+    // without this every email-only contact lands with `avatar = undefined`
+    // and shows initials forever.
+    const transformed: { thread: GmailThread; plot: ReturnType<typeof transformGmailThread> }[] = [];
+    const allEmails = new Set<string>();
     for (const thread of threads) {
-      try {
-        // Transform Gmail thread to NewLinkWithNotes
-        const plotThread = transformGmailThread(thread);
+      const plot = transformGmailThread(thread);
+      if (!plot.notes || plot.notes.length === 0) continue;
+      transformed.push({ thread, plot });
+      for (const c of plot.accessContacts ?? []) {
+        if (c && typeof c === "object" && "email" in c && c.email) allEmails.add(c.email);
+      }
+      for (const note of plot.notes) {
+        const author = (note as { author?: { email?: string } }).author;
+        if (author?.email) allEmails.add(author.email);
+        const noteContacts = (note as { accessContacts?: Array<{ email?: string }> }).accessContacts;
+        for (const c of noteContacts ?? []) {
+          if (c?.email) allEmails.add(c.email);
+        }
+      }
+    }
 
+    if (allEmails.size > 0) {
+      try {
+        const token = await this.tools.integrations.get(channelId);
+        if (token) {
+          await enrichLinkContactsFromGoogle(
+            transformed.map((t) => t.plot),
+            token.token,
+            token.scopes,
+          );
+        }
+      } catch (err) {
+        // Enrichment is best-effort — Gravatar fallback in the client still
+        // covers anyone the People API doesn't return.
+        console.warn("Failed to enrich Gmail contacts (non-blocking):", err);
+      }
+    }
+
+    for (const { thread, plot: plotThread } of transformed) {
+      try {
         if (!plotThread.notes || plotThread.notes.length === 0) continue;
 
         // Filter out notes for messages we sent (dedup)
