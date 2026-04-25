@@ -1,5 +1,14 @@
 # @plotday/twister
 
+## 0.49.0
+
+### Added
+
+- `Integrations.saveLinks(links)` batch API. Connectors that sync many items per page should prefer this over looping `saveLink` — each call crosses the runtime boundary and counts against the per-execution request budget. ([`a0eb4a5`](https://github.com/plotday/plot/commit/a0eb4a56d36b57eb11fb17448c779fd68b04a881))
+- `@plotday/twister/utils/markdown` with `markdownToPlainText(markdown)` for connectors that write back to external systems storing content verbatim as plain text (Google Drive comments, Todoist comments, Airtable cells, Attio notes). Renumbers lists, keeps bullet markers and paragraph breaks, strips emphasis/code syntax, and renders mentions as `@Name`. Pure in-process function — no RPC cost on `onNoteCreated` / `onNoteUpdated`. ([`b72c582`](https://github.com/plotday/plot/commit/b72c58285f073fa17f4da98e9e279801e29aebc7))
+- new count tags for note reactions — Thinking, Remember, Agreed, Relieved, Send, Noted, Laugh, Surprised, Confused, Dismayed ([`fc81aab`](https://github.com/plotday/plot/commit/fc81aabb999634852e00f6e7de5aae02fb909da6))
+- `NoteWriteBackResult` type and widened `onNoteCreated`/`onNoteUpdated` return types to accept it. Connectors performing two-way note sync can now return `{ key?, externalContent? }` so the runtime tracks a sync baseline of what the external system stored, preventing the next sync-in from clobbering Plot's (potentially richer-markdown) version with the round-tripped plain text. Back-compat preserved: `onNoteCreated` still accepts a plain string return. ([`960c614`](https://github.com/plotday/plot/commit/960c614e4a6d3ed4586b8b1da64b10ac39cdc22f))
+
 ## 0.48.0
 
 ### Added
