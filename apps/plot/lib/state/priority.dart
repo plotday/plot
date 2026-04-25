@@ -1029,18 +1029,10 @@ class PriorityBloc extends Cubit<PriorityState> {
     // and won't naturally settle in the new one.
     _optimisticOverrides.clear();
 
-    // Load or create draft for new priority
+    // Load or create draft for new priority.
     log.info(
       '[setPriority] Switching to priority: ${newPriority.id} (${newPriority.title})',
     );
-    final drafts = await Thread.get(
-      priorityId: newPriority.id,
-      draft: true,
-      archived: false, // Only get active (non-archived) drafts
-    );
-    // Sort by updatedAt descending to get the latest
-    drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    final existingDraft = drafts.firstOrNull;
 
     // Enrich the priority so computed fields are populated
     final enrichedList = await Priority.get(id: newPriority.id, archived: null);
@@ -1048,11 +1040,18 @@ class PriorityBloc extends Cubit<PriorityState> {
         ? enrichedList.first
         : newPriority;
 
+    // Look up the most recent draft anywhere in the priority chain
+    // (ancestor, equal, or descendant). This keeps a draft sticky as the
+    // user navigates within the branch, and only forces a fresh draft when
+    // they switch to a sibling branch (e.g. Personal vs Work).
+    final existingDraft = await Thread.getDraftInChain(contextPriority);
+
     Thread newDraft;
     if (existingDraft != null) {
-      newDraft = existingDraft.copyWith(priority: contextPriority);
+      // Preserve the draft's filed priority — don't reassign to context.
+      newDraft = existingDraft;
       log.info(
-        '[setPriority] Loaded existing draft: id=${existingDraft.id}, priority=${existingDraft.priority.id} (${existingDraft.priority.title}), archived=${existingDraft.archivedAt != null}',
+        '[setPriority] Loaded existing chain draft: id=${existingDraft.id}, priority=${existingDraft.priority.id} (${existingDraft.priority.title}), archived=${existingDraft.archivedAt != null}',
       );
     } else {
       newDraft = Thread(priority: contextPriority, draft: true);
@@ -1061,13 +1060,19 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     }
 
-    // Clean up orphaned drafts (keep only the latest)
-    if (drafts.length > 1) {
+    // Clean up duplicate drafts at the chosen draft's priority (legacy).
+    final sameIdDrafts = await Thread.get(
+      priorityId: newDraft.priority.id,
+      draft: true,
+      archived: false,
+    );
+    if (sameIdDrafts.length > 1) {
+      sameIdDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       log.info(
-        '[setPriority] Cleaning up ${drafts.length - 1} extra drafts for priority ${newPriority.id}',
+        '[setPriority] Cleaning up ${sameIdDrafts.length - 1} extra drafts for priority ${newDraft.priority.id}',
       );
-      for (final stale in drafts.skip(1)) {
-        await stale.delete();
+      for (final stale in sameIdDrafts.skip(1)) {
+        if (stale.id != newDraft.id) await stale.delete();
       }
     }
 
@@ -1238,6 +1243,12 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     if (threadChanged) {
       await thread.save();
+    } else if (note != null && noteChanged) {
+      // Note is changing but no thread-level fields are. The thread row
+      // may still be in-memory only (Thread() constructs but updateDraft
+      // skips save() unless thread fields change). Persist it so chain /
+      // priority draft lookups can find this draft after navigation.
+      await thread.ensurePersisted();
     }
     if (note != null && noteChanged) {
       log.info(
@@ -1532,21 +1543,23 @@ class PriorityBloc extends Cubit<PriorityState> {
     });
   }
 
-  /// Loads draft from database for the given priority.
+  /// Loads draft from database for the given priority. Looks across the
+  /// chain (ancestor / equal / descendant) so a draft started elsewhere in
+  /// the branch follows the user as they navigate.
   /// Skips if the draft has already been modified by user actions to avoid
   /// overwriting user-initiated changes with stale DB state.
   Future<void> _loadDraft(Priority priority) async {
-    final existingDraft = await Thread.getDraftByPriority(priority.id);
+    final existingDraft = await Thread.getDraftInChain(priority);
     if (existingDraft != null) {
       if (_draftModified) return;
 
       // Load the corresponding draft note for this thread
       final draftNote = await Note.getDraftByActivity(existingDraft.id);
 
-      // Use state.context (enriched in setPriority)
+      // Preserve the draft's filed priority — don't reassign to context.
       emit(
         state.copyWith(
-          draft: existingDraft.copyWith(priority: state.context),
+          draft: existingDraft,
           draftNote: draftNote,
         ),
       );

@@ -912,19 +912,28 @@ class Thread extends Equatable implements Comparable<Thread> {
         .cast<Thread>();
   }
 
-  /// Get the most recent draft thread for a specific priority
-  /// Returns the draft with the most recent updatedAt timestamp
-  static Future<Thread?> getDraftByPriority(PriorityId priorityId) async {
+  /// Get the most recent draft thread filed at any priority on the same
+  /// chain as [priority] — that is, an ancestor, [priority] itself, or any
+  /// descendant. This makes a draft "sticky" within a branch: the user can
+  /// navigate up or down inside Work and keep editing the same draft, while
+  /// switching to a sibling branch (e.g. Personal) yields a fresh draft.
+  static Future<Thread?> getDraftInChain(Priority priority) async {
     final drafts = await _get(
-      priorityId: priorityId,
       draft: true,
       archived: false,
       order: ThreadOrder.sorted,
     );
     if (drafts.isEmpty) return null;
-    // Sort by updatedAt descending to get the most recent
-    drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    return drafts.first;
+    final pathStr = priority.path.value;
+    final chainDrafts = drafts.where((d) {
+      final dp = d.priority.path.value;
+      return dp == pathStr ||
+          pathStr.startsWith('$dp.') || // ancestor
+          dp.startsWith('$pathStr.'); // descendant
+    }).toList();
+    if (chainDrafts.isEmpty) return null;
+    chainDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return chainDrafts.first;
   }
 
   /// Watch all tags present in threads within a priority and its descendants.
@@ -3662,6 +3671,19 @@ class Thread extends Equatable implements Comparable<Thread> {
       log.warning('[saveOrder] "$title" has no userSchedule — nothing to save');
     }
     Thread.push();
+  }
+
+  /// Insert this thread's row into the local DB if it doesn't already
+  /// exist. Used for new in-memory drafts on first content edit, where
+  /// only the note has changed and a regular [save] would skip the row
+  /// (because [_activityDirty] is false). Without this, the thread row
+  /// never lands locally and chain/priority draft lookups can't find it.
+  Future<void> ensurePersisted() async {
+    if (!Store.isAvailable) return;
+    await Store.get.into(Store.get.threads).insert(
+      _thread.toCompanion(false),
+      mode: InsertMode.insertOrIgnore,
+    );
   }
 
   Future<void> save() async {
