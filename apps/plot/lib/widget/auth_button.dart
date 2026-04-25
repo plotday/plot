@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/foundation.dart'
     show kIsWeb, kReleaseMode, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
@@ -488,6 +489,10 @@ class _AuthButtonState extends State<AuthButton>
         state: authUrl.state,
       );
     } catch (e, t) {
+      if (_isUserCanceledAuth(e)) {
+        log.info('OAuth flow cancelled by user (${widget.provider.name})');
+        return;
+      }
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
       Tracker.captureException(e, t);
       if (mounted) {
@@ -783,6 +788,10 @@ class _AuthButtonState extends State<AuthButton>
         );
       }
     } catch (e, t) {
+      if (_isUserCanceledAuth(e)) {
+        log.info('OAuth flow cancelled by user (${widget.provider.name})');
+        return;
+      }
       log.warning('OAuth flow failed for ${widget.provider.name}', e, t);
       Tracker.captureException(e, t);
       if (mounted) _showTwistAuthError();
@@ -885,6 +894,13 @@ class _AuthButtonState extends State<AuthButton>
     } else {
       context.showToast(message: finalMessage, isError: true);
     }
+  }
+
+  /// True if [e] is a user-cancellation from the auth web view
+  /// (FlutterWebAuth2 throws PlatformException(CANCELED, ...) when the user
+  /// dismisses the OAuth browser). Not a bug — don't report.
+  static bool _isUserCanceledAuth(Object e) {
+    return e is PlatformException && e.code == 'CANCELED';
   }
 
   /// Generate a random nonce string for Apple Sign In.
