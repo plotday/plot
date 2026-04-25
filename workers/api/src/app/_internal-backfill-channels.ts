@@ -46,6 +46,16 @@ internalBackfill.post("/_internal/backfill-channels/:id", async (c) => {
   const parsed = JSON.parse(raw);
   const providersDecl: ProviderDeclaration[] = parsed.providers ?? [];
   const integrationsMap: Record<string, string> = parsed.integrationsMap ?? {};
+  const sourceProvider = parsed.sourceProvider ?? null;
+
+  const debug: any = {
+    twistPackageId: twistInfo.twistPackageId,
+    version: twistInfo.version,
+    integrationsMap,
+    providersDecl,
+    sourceProvider,
+    perPath: [] as any[],
+  };
 
   const pathToProviders = new Map<string, ProviderDeclaration[]>();
   for (const [provider, pathStr] of Object.entries(integrationsMap)) {
@@ -73,6 +83,26 @@ internalBackfill.post("/_internal/backfill-channels/:id", async (c) => {
       twistInstanceId,
     });
 
+    // Diagnostic: enumerate raw KV-style keys this Store sees.
+    const allKeys = await store.list("");
+    const channelAccessKeys = await store.list("channel_access:");
+    const authTokenKeys = await store.list("auth_token:");
+    const channelAccessSamples: any[] = [];
+    for (const key of channelAccessKeys.slice(0, 5)) {
+      const value = await store.get(key);
+      channelAccessSamples.push({ key, value });
+    }
+
+    debug.perPath.push({
+      pathStr,
+      path,
+      providers: providerConfigs.map((p) => p.provider),
+      keyCount: allKeys.length,
+      channelAccessKeys,
+      authTokenKeys,
+      channelAccessSamples,
+    });
+
     const integrations = new Integrations({
       path,
       store,
@@ -82,14 +112,14 @@ internalBackfill.post("/_internal/backfill-channels/:id", async (c) => {
       twistId: twistInfo.twistPackageId,
       environment: twistInfo.environment as any,
       integrationOptions: { providers: providerConfigs },
+      sourceProvider,
     });
 
-    // getIntegrationData triggers mirrorChannelsToDb in its per-actor loop.
     const data = await integrations.getIntegrationData();
     allChannels.push(...data.syncables);
   }
 
-  return c.json({ ok: true, twistInstanceId, syncables: allChannels });
+  return c.json({ ok: true, twistInstanceId, syncables: allChannels, debug });
 });
 
 export { internalBackfill };
