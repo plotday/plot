@@ -1,4 +1,6 @@
-import GoogleContacts from "@plotday/connector-google-contacts";
+import GoogleContacts, {
+  enrichLinkContactsFromGoogle,
+} from "@plotday/connector-google-contacts";
 import {
   type Action,
   ActionType,
@@ -329,6 +331,36 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   }
 
   /**
+   * Save a thread, first enriching its contacts with names + avatars from
+   * Google's People API. Drive's file/comment author and mention contacts
+   * arrive with email addresses but no avatars; this fills in what the
+   * People API knows so we don't render initials for everyone.
+   *
+   * Best-effort — failures are swallowed and the unenriched thread is still
+   * saved.
+   */
+  private async saveEnrichedLink(
+    thread: NewLinkWithNotes,
+    folderId: string,
+    authChannelId?: string,
+  ): Promise<void> {
+    try {
+      const token = await this.tools.integrations.get(authChannelId ?? folderId);
+      if (token) {
+        await enrichLinkContactsFromGoogle([thread], token.token, token.scopes);
+      }
+    } catch (err) {
+      // Gravatar fallback in the client still covers anyone the People
+      // API doesn't return.
+      console.warn(
+        "Failed to enrich Google Drive contacts (non-blocking):",
+        err,
+      );
+    }
+    await this.tools.integrations.saveLink(thread);
+  }
+
+  /**
    * Discover sub-channel IDs for a virtual parent channel.
    */
   private async discoverSubChannels(api: GoogleApi, virtualChannelId: string): Promise<string[]> {
@@ -373,7 +405,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         const thread = await this.buildThreadFromFile(
           api, file, subChannelId, false, virtualChannelId
         );
-        await this.tools.integrations.saveLink(thread);
+        await this.saveEnrichedLink(thread, subChannelId, virtualChannelId);
         if (file.modifiedTime) {
           await this.set(`last_modified_${file.id}`, file.modifiedTime);
         }
@@ -761,7 +793,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
             const thread = await this.buildThreadFromFile(
               api, file, file.parents?.[0] ?? folderId, initialSync, state.virtualChannelId
             );
-            await this.tools.integrations.saveLink(thread);
+            await this.saveEnrichedLink(thread, folderId, authChannelId);
             if (file.modifiedTime) {
               await this.set(`last_modified_${file.id}`, file.modifiedTime);
             }
@@ -797,7 +829,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
             const thread = await this.buildThreadFromFile(
               api, file, currentSubId, initialSync, state.virtualChannelId
             );
-            await this.tools.integrations.saveLink(thread);
+            await this.saveEnrichedLink(thread, currentSubId, state.virtualChannelId);
             if (file.modifiedTime) {
               await this.set(`last_modified_${file.id}`, file.modifiedTime);
             }
@@ -824,7 +856,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         for (const file of result.files) {
           try {
             const thread = await this.buildThreadFromFile(api, file, folderId, initialSync);
-            await this.tools.integrations.saveLink(thread);
+            await this.saveEnrichedLink(thread, folderId);
             if (file.modifiedTime) {
               await this.set(`last_modified_${file.id}`, file.modifiedTime);
             }
@@ -901,7 +933,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           const thread = await this.buildThreadFromFile(
             api, change.file, fileFolderId, false, authChannelId
           );
-          await this.tools.integrations.saveLink(thread);
+          await this.saveEnrichedLink(thread, fileFolderId, authChannelId);
           if (change.file.modifiedTime) {
             await this.set(`last_modified_${change.fileId}`, change.file.modifiedTime);
           }
