@@ -8,7 +8,6 @@ import device from "./app/device";
 import invitation from "./app/invitation";
 import twists from "./app/twists";
 import twistIntegrations from "./app/twist-integrations";
-import { internalBackfill } from "./app/_internal-backfill-channels";
 // Import app routes and middleware
 import { authMiddleware as appAuthMiddleware } from "./app/auth";
 import authBridgeRoutes from "./app/authBridge";
@@ -231,10 +230,6 @@ app.get("/health", dbMiddleware, async (c) => {
   await c.var.db.selectFrom("priority").select("id").limit(1).execute();
   return c.text("ok");
 });
-
-// TEMPORARY: one-shot channel mirror backfill, token-authenticated.
-// Remove after use along with the imported file.
-app.route("/", internalBackfill);
 
 // Public unsubscribe endpoint — token-authenticated, no session required
 app.route("/", unsubscribe);
