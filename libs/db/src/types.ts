@@ -2226,6 +2226,9 @@ export type Database = {
         Row: {
           actor_id: string
           connected_at: string
+          initial_sync_completed_at: string | null
+          initial_sync_started_at: string | null
+          needs_reauth_at: string | null
           provider: string
           twist_instance_id: string
           user_id: string
@@ -2233,6 +2236,9 @@ export type Database = {
         Insert: {
           actor_id: string
           connected_at?: string
+          initial_sync_completed_at?: string | null
+          initial_sync_started_at?: string | null
+          needs_reauth_at?: string | null
           provider: string
           twist_instance_id: string
           user_id: string
@@ -2240,6 +2246,9 @@ export type Database = {
         Update: {
           actor_id?: string
           connected_at?: string
+          initial_sync_completed_at?: string | null
+          initial_sync_started_at?: string | null
+          needs_reauth_at?: string | null
           provider?: string
           twist_instance_id?: string
           user_id?: string
@@ -4596,6 +4605,61 @@ export type Database = {
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      twist_connection: {
+        Row: {
+          actor_id: string | null
+          connected_at: string | null
+          initial_sync_completed_at: string | null
+          initial_sync_started_at: string | null
+          initial_syncing: boolean | null
+          needs_reauth: boolean | null
+          needs_reauth_at: string | null
+          provider: string | null
+          twist_instance_id: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          connected_at?: string | null
+          initial_sync_completed_at?: string | null
+          initial_sync_started_at?: string | null
+          initial_syncing?: never
+          needs_reauth?: never
+          needs_reauth_at?: string | null
+          provider?: string | null
+          twist_instance_id?: string | null
+          updated_at?: never
+          user_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          connected_at?: string | null
+          initial_sync_completed_at?: string | null
+          initial_sync_started_at?: string | null
+          initial_syncing?: never
+          needs_reauth?: never
+          needs_reauth_at?: string | null
+          provider?: string | null
+          twist_instance_id?: string | null
+          updated_at?: never
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "twist_instance_connection_twist_instance_id_fkey"
+            columns: ["twist_instance_id"]
+            referencedRelation: "twist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "twist_instance_connection_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]

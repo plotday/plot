@@ -394,21 +394,38 @@ END;
 $function$;
 
 -- User sync trigger function for twist_instance_connection changes
--- When a user connects/disconnects, notify that user so their twist_instance data refreshes
+-- When a user connects/disconnects OR a connection's status fields change
+-- (needs_reauth_at, initial_sync_started_at, initial_sync_completed_at),
+-- notify that user so their user.twist + user.twist_connection data refreshes.
 CREATE OR REPLACE FUNCTION public.sync_user_for_twist_instance_connection ()
     RETURNS TRIGGER
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $function$
 DECLARE
-    v_max_connected_at timestamptz;
+    v_max_at timestamptz;
     v_user_id uuid;
 BEGIN
+    -- Use the most recent lifecycle stamp on each row -- this matches the
+    -- `updated_at` projected by the user.twist_connection view so client
+    -- incremental cursors line up.
     SELECT
-        MAX(connected_at) INTO v_max_connected_at
+        MAX(GREATEST(
+            connected_at,
+            needs_reauth_at,
+            initial_sync_started_at,
+            initial_sync_completed_at
+        ))
+    INTO v_max_at
     FROM
         new_table;
-    -- Notify each affected user directly
+    -- Fall back to now() for DELETE (transition table values are deleted rows).
+    IF v_max_at IS NULL THEN
+        v_max_at := now();
+    END IF;
+    -- Notify each affected user directly. Bump both `twist_instance` (legacy
+    -- consumer; user.twist surfaces user_connected) and `twist_connection`
+    -- (new entity for needs_reauth / initial_syncing signals).
     FOR v_user_id IN SELECT DISTINCT
         user_id
     FROM
@@ -416,7 +433,12 @@ BEGIN
     ORDER BY
         user_id LOOP
             INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'twist_instance', v_max_connected_at)
+                VALUES (v_user_id, 'twist_instance', v_max_at)
+            ON CONFLICT (user_id, entity)
+                DO UPDATE SET
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+            INSERT INTO user_sync (user_id, entity, last_update_at)
+                VALUES (v_user_id, 'twist_connection', v_max_at)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
                     last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);

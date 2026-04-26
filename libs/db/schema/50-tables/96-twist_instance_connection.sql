@@ -4,6 +4,14 @@ CREATE TABLE "public"."twist_instance_connection" (
     "provider" text NOT NULL,
     "actor_id" uuid NOT NULL,
     "connected_at" timestamptz NOT NULL DEFAULT now(),
+    -- Set when a permanent OAuth refresh failure (or equivalent) means the user
+    -- must re-authenticate this connection. NULL = OK. Cleared on successful re-auth.
+    "needs_reauth_at" timestamptz NULL,
+    -- Initial bulk sync lifecycle for this connection. The derived
+    -- `initial_syncing` boolean exposed in user.twist_connection is
+    -- (initial_sync_started_at IS NOT NULL AND initial_sync_completed_at IS NULL).
+    "initial_sync_started_at" timestamptz NULL,
+    "initial_sync_completed_at" timestamptz NULL,
     PRIMARY KEY ("twist_instance_id", "user_id", "provider")
 );
 

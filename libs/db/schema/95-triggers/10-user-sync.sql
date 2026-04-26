@@ -167,6 +167,12 @@ CREATE TRIGGER user_sync_twist_instance_connection_insert
   FOR EACH STATEMENT
   EXECUTE FUNCTION sync_user_for_twist_instance_connection();
 
+CREATE TRIGGER user_sync_twist_instance_connection_update
+  AFTER UPDATE ON twist_instance_connection
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION sync_user_for_twist_instance_connection();
+
 CREATE TRIGGER user_sync_twist_instance_connection_delete
   AFTER DELETE ON twist_instance_connection
   REFERENCING OLD TABLE AS new_table
