@@ -8,6 +8,7 @@ import 'package:plot/state/layout.dart';
 import 'package:plot/state/priorities.dart';
 import 'package:plot/router.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/widget/bottom_navigation_provider.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/widget/icon.dart';
@@ -313,7 +314,21 @@ class _PrioritiesShellState extends State<PrioritiesShell> with AutoRouteAware {
                               label: _buildNavLabel('New'),
                             ),
                             FBottomNavigationBarItem(
-                              icon: Icon(PlotIcon.menu),
+                              icon: StreamBuilder<List<TwistConnectionRow>>(
+                                stream: TwistConnection.watchAll(),
+                                initialData: const [],
+                                builder: (context, snap) {
+                                  final needsReauth = (snap.data ?? const [])
+                                      .any((c) => c.needsReauth);
+                                  if (needsReauth) {
+                                    return Icon(
+                                      PlotIcon.plugCircleExclamation,
+                                      color: context.theme.colors.destructive,
+                                    );
+                                  }
+                                  return Icon(PlotIcon.menu);
+                                },
+                              ),
                               label: _buildNavLabel('More'),
                             ),
                           ],

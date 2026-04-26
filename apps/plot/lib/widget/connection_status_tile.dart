@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import 'package:plot/analytics/conventions.dart';
 import 'package:plot/api/broadcast.dart';
 import 'package:plot/command/command.dart';
+import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/icon.dart';
 import 'package:plot/widget/list_tile.dart';
@@ -21,36 +22,24 @@ import 'package:plot/widget/pulsing_icon.dart';
 class ConnectionStatusTile extends StatelessWidget {
   const ConnectionStatusTile({super.key});
 
-  // TODO(connection-signals): wire to a real per-connection stream once the
-  // server-side `needs_reauth` flag lands on twist_instance. The stream should
-  // emit display names for connections requiring reauthorization.
-  static Stream<List<String>> _reauthNeededStream() =>
-      Stream<List<String>>.value(const []);
-
-  // TODO(connection-signals): wire to a real per-connection stream once the
-  // server pushes per-connection sync status. The stream should emit display
-  // names for connections currently syncing.
-  static Stream<List<String>> _syncingStream() =>
-      Stream<List<String>>.value(const []);
-
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: BroadcastClient.instance.connectionState,
       builder: (context, online, _) {
-        return StreamBuilder<List<String>>(
-          stream: _reauthNeededStream(),
+        return StreamBuilder<List<TwistConnectionRow>>(
+          stream: TwistConnection.watchAll(),
           initialData: const [],
-          builder: (context, reauthSnap) {
-            return StreamBuilder<List<String>>(
-              stream: _syncingStream(),
+          builder: (context, connSnap) {
+            return StreamBuilder<List<TwistInstance>>(
+              stream: TwistInstance.watch(),
               initialData: const [],
-              builder: (context, syncSnap) {
+              builder: (context, instSnap) {
                 return _buildTile(
                   context,
                   online: online,
-                  reauthNeeded: reauthSnap.data ?? const [],
-                  syncing: syncSnap.data ?? const [],
+                  connections: connSnap.data ?? const [],
+                  instances: instSnap.data ?? const [],
                 );
               },
             );
@@ -63,8 +52,8 @@ class ConnectionStatusTile extends StatelessWidget {
   Widget _buildTile(
     BuildContext context, {
     required bool online,
-    required List<String> reauthNeeded,
-    required List<String> syncing,
+    required List<TwistConnectionRow> connections,
+    required List<TwistInstance> instances,
   }) {
     final textStyle = context.theme.typography.sm;
 
@@ -78,11 +67,14 @@ class ConnectionStatusTile extends StatelessWidget {
       );
     }
 
+    final reauthNeeded = _names(
+      connections.where((c) => c.needsReauth),
+      instances,
+    );
     if (reauthNeeded.isNotEmpty) {
       return ListTile(
         title: 'Reconnect ${reauthNeeded.join(', ')}',
-        textStyle: textStyle,
-        muted: true,
+        textStyle: textStyle.copyWith(color: context.theme.colors.destructive),
         command: _OpenManageConnections(
           title: 'Reconnect ${reauthNeeded.join(', ')}',
           iconBuilder: (c) => Icon(
@@ -94,6 +86,10 @@ class ConnectionStatusTile extends StatelessWidget {
       );
     }
 
+    final syncing = _names(
+      connections.where((c) => c.initialSyncing),
+      instances,
+    );
     if (syncing.isNotEmpty) {
       return ListTile(
         title: 'Syncing ${syncing.join(', ')}',
@@ -118,6 +114,25 @@ class ConnectionStatusTile extends StatelessWidget {
       command: _OpenManageConnections(title: 'Add connection'),
     );
   }
+
+  /// Resolve display names for the twist instances referenced by the supplied
+  /// connection rows. Multiple connections on the same instance dedupe, and
+  /// rows whose instance hasn't synced yet are skipped.
+  List<String> _names(
+    Iterable<TwistConnectionRow> rows,
+    List<TwistInstance> instances,
+  ) {
+    final byId = {for (final i in instances) i.id: i};
+    final seen = <TwistInstanceId>{};
+    final names = <String>[];
+    for (final row in rows) {
+      if (!seen.add(row.twistInstanceId)) continue;
+      final instance = byId[row.twistInstanceId];
+      if (instance == null) continue;
+      names.add(instance.displayName(allInstances: instances));
+    }
+    return names;
+  }
 }
 
 /// Internal command that opens the manage-connections modal when the tile is
@@ -125,10 +140,7 @@ class ConnectionStatusTile extends StatelessWidget {
 /// surface a destructive or pulsing icon.
 class _OpenManageConnections extends Command {
   _OpenManageConnections({required super.title, this.iconBuilder})
-    : super(
-        eventObject: EventObject.twist,
-        eventAction: EventAction.opened,
-      );
+    : super(eventObject: EventObject.twist, eventAction: EventAction.opened);
 
   final Widget Function(BuildContext context)? iconBuilder;
 

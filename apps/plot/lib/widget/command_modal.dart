@@ -106,12 +106,14 @@ class CommandModal {
               : null,
           details: command.description != null
               ? Builder(
-                  builder: (context) => Text(
-                    command.description!,
-                    style: context.theme.typography.sm.copyWith(
-                      color: context.theme.plotColors.muted,
-                    ),
-                  ),
+                  builder: (context) =>
+                      command.buildDescription(context) ??
+                      Text(
+                        command.description!,
+                        style: context.theme.typography.sm.copyWith(
+                          color: context.theme.plotColors.muted,
+                        ),
+                      ),
                 )
               : null,
           onRun: (context, result) async {

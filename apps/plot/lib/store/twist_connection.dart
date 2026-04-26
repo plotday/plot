@@ -63,6 +63,10 @@ class TwistConnection {
     await Store.get.pull(table, TwistConnectionsBase());
   }
 
+  static Stream<List<TwistConnectionRow>> watchAll() {
+    return Store.get.select(table).watch();
+  }
+
   static Stream<List<TwistConnectionRow>> watchForInstance(
     TwistInstanceId twistInstanceId,
   ) {

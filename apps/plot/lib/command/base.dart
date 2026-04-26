@@ -120,6 +120,10 @@ abstract class Command {
 
   /// Override to provide custom body content for the command in modals/lists.
   Widget? buildBody(BuildContext context) => null;
+
+  /// Override to provide a custom description widget rendered below the title
+  /// in command modals. Takes precedence over the static [description] field.
+  Widget? buildDescription(BuildContext context) => null;
 }
 
 class CommandWrapper extends Command {
@@ -172,6 +176,10 @@ class CommandWrapper extends Command {
 
   @override
   Widget? buildBody(BuildContext context) => command.buildBody(context);
+
+  @override
+  Widget? buildDescription(BuildContext context) =>
+      command.buildDescription(context);
 }
 
 /// A command for showing a set of commands.

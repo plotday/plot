@@ -17,6 +17,7 @@ import 'package:plot/api/upgrade_api.dart';
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/api/twist_permission.dart' show PermissionFlag;
 import 'package:plot/env.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/style/spacing.dart';
 import 'package:plot/widget/setup_link_channels.dart';
@@ -121,6 +122,53 @@ class ManageConnections extends Command {
         eventObject: EventObject.twist,
         eventAction: EventAction.opened,
       );
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
+    return StreamBuilder<List<TwistConnectionRow>>(
+      stream: TwistConnection.watchAll(),
+      initialData: const [],
+      builder: (context, snap) {
+        final needsReauth = (snap.data ?? const []).any(
+          (c) => c.needsReauth,
+        );
+        return FaIcon(
+          needsReauth
+              ? PlotIcon.plugCircleExclamation
+              : PlotIcon.connection,
+          size: context.theme.iconSizes.base,
+          color: needsReauth ? context.theme.colors.destructive : null,
+        );
+      },
+    );
+  }
+
+  @override
+  Widget? buildDescription(BuildContext context) {
+    return StreamBuilder<List<TwistConnectionRow>>(
+      stream: TwistConnection.watchAll(),
+      initialData: const [],
+      builder: (context, snap) {
+        final needsReauth = (snap.data ?? const []).any(
+          (c) => c.needsReauth,
+        );
+        if (!needsReauth) {
+          return Text(
+            description!,
+            style: context.theme.typography.sm.copyWith(
+              color: context.theme.plotColors.muted,
+            ),
+          );
+        }
+        return Text(
+          'Action required to reconnect.',
+          style: context.theme.typography.sm.copyWith(
+            color: context.theme.colors.destructive,
+          ),
+        );
+      },
+    );
+  }
 
   /// Cached upcoming connections data, fetched once per ManageConnections session.
   static ({List<UpcomingConnection> connections, Set<String> votedByUser})?
@@ -385,6 +433,17 @@ class _ActiveSourceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<List<TwistConnectionRow>>(
+      stream: TwistConnection.watchForInstance(Uuid.fromString(item.id)),
+      initialData: const [],
+      builder: (context, snap) {
+        final needsReauth = (snap.data ?? const []).any((c) => c.needsReauth);
+        return _buildRow(context, needsReauth: needsReauth);
+      },
+    );
+  }
+
+  Widget _buildRow(BuildContext context, {required bool needsReauth}) {
     final theme = context.theme;
 
     final hasLabel = item.accountLabel != null && item.accountLabel!.isNotEmpty;
@@ -399,6 +458,12 @@ class _ActiveSourceRow extends StatelessWidget {
               size: theme.iconSizes.base,
               color: theme.colors.mutedForeground,
             )
+          else if (needsReauth)
+            FaIcon(
+              PlotIcon.plugCircleExclamation,
+              size: theme.iconSizes.base,
+              color: theme.colors.destructive,
+            )
           else
             _SourceLogo(
               logoUrl: item.logoUrl,
@@ -410,6 +475,16 @@ class _ActiveSourceRow extends StatelessWidget {
           Expanded(
             child: Row(
               children: [
+                if (needsReauth) ...[
+                  Text(
+                    'Reconnect',
+                    style: TextStyle(
+                      fontSize: theme.typography.md.fontSize,
+                      color: theme.colors.destructive,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 Text(
                   item.twistName ?? item.name,
                   overflow: TextOverflow.ellipsis,
@@ -3130,10 +3205,7 @@ class SaveSource extends Command {
         final parts = key.split(':');
         final provider = parts[0];
         if (removedProviders.contains(provider)) return null;
-        return {
-          'provider': provider,
-          'syncableId': parts.sublist(1).join(':'),
-        };
+        return {'provider': provider, 'syncableId': parts.sublist(1).join(':')};
       }
 
       final enableEntries = toEnable
@@ -3301,18 +3373,12 @@ class SaveTwist extends Command {
         final parts = key.split(':');
         final provider = parts[0];
         if (removedProviders.contains(provider)) return null;
-        return {
-          'provider': provider,
-          'syncableId': parts.sublist(1).join(':'),
-        };
+        return {'provider': provider, 'syncableId': parts.sublist(1).join(':')};
       }
 
       await TwistApi.applyChannelsBatch(
         twistInstanceId: ptId,
-        enable: toEnable
-            .map(asEntry)
-            .whereType<Map<String, String>>()
-            .toList(),
+        enable: toEnable.map(asEntry).whereType<Map<String, String>>().toList(),
         disable: toDisable
             .map(asEntry)
             .whereType<Map<String, String>>()
