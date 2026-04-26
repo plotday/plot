@@ -264,6 +264,34 @@ export abstract class Integrations extends ITool {
     options?: { date?: Date | string }
   ): Promise<void>;
 
+  /**
+   * Signals the initial bulk-sync state for a channel so the Flutter app
+   * can surface a "syncing…" indicator on the connection while a freshly
+   * enabled channel is backfilling history.
+   *
+   * Connectors call this at the boundaries of their initial sync:
+   * - `setInitialSyncing(channelId, true)` at the start of initial sync
+   *   (e.g. the first batch dispatched after `onChannelEnabled`).
+   * - `setInitialSyncing(channelId, false)` once initial sync has fully
+   *   completed (no more pages, all phases exhausted).
+   *
+   * Idempotent: safe to call repeatedly with the same value. The runtime
+   * stores the first `started_at` and the latest `completed_at`, so calling
+   * `true` on every batch is fine — prefer placing the call where it reads
+   * naturally rather than gating it with extra state.
+   *
+   * Avoid calling `false` until the initial backfill is genuinely done;
+   * incremental syncs should not toggle this flag.
+   *
+   * No-op when no auth/user mapping exists for the channel (e.g. key-based
+   * connectors that don't have a per-user OAuth association).
+   *
+   * @param channelId - The channel resource ID being synced
+   * @param syncing - true at the start of initial sync; false when complete
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract setInitialSyncing(channelId: string, syncing: boolean): Promise<void>;
+
 }
 
 /**

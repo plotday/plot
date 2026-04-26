@@ -317,6 +317,10 @@ export class GoogleDrive extends Connector<GoogleDrive> {
 
     await this.setupDriveWatch(channelId);
 
+    // Mark initial sync as in progress so the Flutter app can show a
+    // "syncing…" indicator on the connection.
+    await this.tools.integrations.setInitialSyncing(channelId, true);
+
     // Run first batch inline (we're already in a task context) to avoid an
     // extra queue cycle delay. Subsequent batches are queued as tasks.
     await this.syncBatch(1, channelId, true);
@@ -852,6 +856,10 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         } else {
           await this.set(`sync_state_${folderId}`, { ...state, pageToken: undefined });
           await this.clear(`sync_lock_${folderId}`);
+          // Initial backfill done for shared-with-me — clear the indicator.
+          if (initialSync) {
+            await this.tools.integrations.setInitialSyncing(folderId, false);
+          }
         }
       } else if (state.subChannelIds) {
         // My Drive / Shared drives: iterate sub-channels
@@ -861,6 +869,10 @@ export class GoogleDrive extends Connector<GoogleDrive> {
             ...state, pageToken: undefined, currentSubChannelIndex: undefined,
           });
           await this.clear(`sync_lock_${folderId}`);
+          // All sub-channels processed — initial backfill complete.
+          if (initialSync) {
+            await this.tools.integrations.setInitialSyncing(folderId, false);
+          }
           return;
         }
 
@@ -915,6 +927,10 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         } else {
           await this.set(`sync_state_${folderId}`, { ...state, pageToken: undefined });
           await this.clear(`sync_lock_${folderId}`);
+          // Initial backfill done for single-folder sync — clear the indicator.
+          if (initialSync) {
+            await this.tools.integrations.setInitialSyncing(folderId, false);
+          }
         }
       }
     } catch (error) {

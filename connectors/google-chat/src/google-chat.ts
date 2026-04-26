@@ -193,6 +193,10 @@ export class GoogleChat extends Connector<GoogleChat> {
 
     await this.set(`sync_enabled_${channel.id}`, true);
 
+    // Mark initial sync as in progress so the Flutter app can show a
+    // "syncing…" indicator on the connection.
+    await this.tools.integrations.setInitialSyncing(channel.id, true);
+
     // Start initial sync
     const initialState: SyncState = {
       channelId: channel.id,
@@ -313,6 +317,10 @@ export class GoogleChat extends Connector<GoogleChat> {
       } else {
         if (mode === "full") {
           await this.clear(`sync_state_${channelId}`);
+          // Initial backfill complete for this named space — clear the indicator.
+          if (isInitial) {
+            await this.tools.integrations.setInitialSyncing(channelId, false);
+          }
         }
       }
     } catch (error) {
@@ -466,10 +474,21 @@ export class GoogleChat extends Connector<GoogleChat> {
         'spaceType = "DIRECT_MESSAGE" OR spaceType = "GROUP_CHAT"'
       );
 
-      for (const space of spaces) {
-        // Skip bot DMs
-        if (space.singleUserBotDm) continue;
+      // Track how many DM spaces still need to finish their initial sync, so
+      // syncDmBatch can clear the channel-level "syncing…" indicator only
+      // when the last one drains. Reset on each entry to syncDmSpaces.
+      const dmSpacesToSync = spaces.filter((s) => !s.singleUserBotDm);
+      if (isInitial && dmSpacesToSync.length > 0) {
+        await this.set(
+          `dm_initial_sync_remaining`,
+          dmSpacesToSync.length
+        );
+      } else if (isInitial) {
+        // No DM spaces to sync — clear the indicator immediately.
+        await this.tools.integrations.setInitialSyncing(DM_CHANNEL_ID, false);
+      }
 
+      for (const space of dmSpacesToSync) {
         const dmState: SyncState = {
           channelId: space.name,
           initialSync: isInitial,
@@ -567,6 +586,23 @@ export class GoogleChat extends Connector<GoogleChat> {
         await this.runTask(syncCallback);
       } else {
         await this.clear(`sync_state_${spaceName}`);
+
+        // Initial backfill done for this DM space. If this was the last
+        // outstanding space, clear the channel-level "syncing…" indicator.
+        if (isInitial) {
+          const remaining =
+            (await this.get<number>(`dm_initial_sync_remaining`)) ?? 0;
+          const next = Math.max(0, remaining - 1);
+          if (next === 0) {
+            await this.clear(`dm_initial_sync_remaining`);
+            await this.tools.integrations.setInitialSyncing(
+              DM_CHANNEL_ID,
+              false
+            );
+          } else {
+            await this.set(`dm_initial_sync_remaining`, next);
+          }
+        }
       }
     } catch (error) {
       console.error(

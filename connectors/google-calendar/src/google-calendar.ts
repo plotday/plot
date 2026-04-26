@@ -229,6 +229,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
     await this.set(`sync_state_${resolvedCalendarId}`, initialState);
 
+    // Mark initial sync as in progress so the Flutter app can show a
+    // "syncing…" indicator on the connection.
+    await this.tools.integrations.setInitialSyncing(resolvedCalendarId, true);
+
     // Start first sync batch
     const syncCallback = await this.callback(
       this.syncBatch,
@@ -700,6 +704,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           }
 
           await this.clear(`sync_state_${calendarId}`);
+
+          // Initial sync (quick + full passes) is fully complete — clear the
+          // "syncing…" indicator on the connection.
+          if (initialSync) {
+            await this.tools.integrations.setInitialSyncing(calendarId, false);
+          }
         }
         // Always clear lock when sync completes (no more batches)
         await this.clear(`sync_lock_${calendarId}`);

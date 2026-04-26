@@ -131,6 +131,10 @@ export class Gmail extends Connector<Gmail> {
     };
     await this.set(`sync_state_${channel.id}`, initialState);
 
+    // Mark initial sync as in progress so the Flutter app can show a
+    // "syncing…" indicator on the connection.
+    await this.tools.integrations.setInitialSyncing(channel.id, true);
+
     // Queue sync batch as a separate task so onChannelEnabled returns quickly
     const syncCallback = await this.callback(
       this.syncBatch,
@@ -434,6 +438,10 @@ export class Gmail extends Connector<Gmail> {
       } else {
         if (mode === "full") {
           await this.clear(`sync_state_${channelId}`);
+          // Initial backfill is done — clear the "syncing…" indicator.
+          if (isInitial) {
+            await this.tools.integrations.setInitialSyncing(channelId, false);
+          }
         }
       }
     } catch (error) {
