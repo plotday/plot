@@ -24,6 +24,7 @@ type MessageChannel = {
 
 import {
   SlackApi,
+  SlackPermanentError,
   SlackRateLimitedError,
   formatSlackText,
   type SlackChannel,
@@ -314,6 +315,13 @@ export class Slack extends Connector<Slack> {
         );
         return;
       }
+      if (error instanceof SlackPermanentError) {
+        console.warn(
+          `syncBatch ${batchNumber} for ${channelId} stopped: ${error.method} → ${error.slackError}`
+        );
+        if (mode === "full") await this.clear(`sync_state_${channelId}`);
+        return;
+      }
       console.error(
         `Error in sync batch ${batchNumber} for channel ${channelId}:`,
         error
@@ -553,6 +561,12 @@ export class Slack extends Connector<Slack> {
             await this.saveStarredThread(api, channelId, parentTs);
           } catch (error) {
             if (error instanceof SlackRateLimitedError) throw error;
+            if (error instanceof SlackPermanentError) {
+              console.warn(
+                `backfillStars: skipping ${channelId}/${parentTs}: ${error.method} → ${error.slackError}`
+              );
+              continue;
+            }
             console.warn(
               `backfillStars: failed to save starred thread ${channelId}/${parentTs}`,
               error
@@ -577,6 +591,12 @@ export class Slack extends Connector<Slack> {
           retry,
           runAt,
           `backfillStars ${channelId} (${error.method})`
+        );
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        console.warn(
+          `backfillStars stopped for ${channelId}: ${error.method} → ${error.slackError}`
         );
         return;
       }

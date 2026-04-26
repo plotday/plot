@@ -92,6 +92,39 @@ export class SlackRateLimitedError extends Error {
   }
 }
 
+/**
+ * Thrown when Slack returns an error that retrying won't fix: bad arguments
+ * we can't repair, missing scope, revoked token, channel that's gone, etc.
+ * Callers should log it and stop the task instead of rescheduling — otherwise
+ * the queue retries the same callback forever and floods error tracking.
+ */
+export class SlackPermanentError extends Error {
+  constructor(
+    public readonly method: string,
+    public readonly slackError: string
+  ) {
+    super(`Slack ${method} permanently failed: ${slackError}`);
+    this.name = "SlackPermanentError";
+  }
+}
+
+const PERMANENT_SLACK_ERRORS = new Set([
+  "invalid_arguments",
+  "invalid_argument",
+  "invalid_auth",
+  "not_authed",
+  "token_revoked",
+  "token_expired",
+  "account_inactive",
+  "missing_scope",
+  "no_permission",
+  "channel_not_found",
+  "not_in_channel",
+  "is_archived",
+  "thread_not_found",
+  "message_not_found",
+]);
+
 function parseRetryAfterMs(header: string | null): number {
   // Slack documents Retry-After in seconds; fall back to 60s when missing
   // (their published default for `ratelimited`).
@@ -168,6 +201,10 @@ export class SlackApi {
           response.headers.get("retry-after")
         );
         throw new SlackRateLimitedError(method, retryAfterMs);
+      }
+
+      if (PERMANENT_SLACK_ERRORS.has(data.error)) {
+        throw new SlackPermanentError(method, data.error);
       }
 
       const details = data.response_metadata?.messages?.length
