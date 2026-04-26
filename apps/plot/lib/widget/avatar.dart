@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
 
 import 'package:plot/state/theme.dart';
@@ -182,12 +183,17 @@ double _avatarSize(BuildContext context) {
 /// Shows up to [maxVisible] avatars overlapping horizontally. If
 /// [totalCount] exceeds the number of visible avatar slots, the last slot
 /// becomes a "+N" counter indicating how many contacts are hidden.
+///
+/// A single tooltip wraps the entire group rather than each avatar, listing
+/// contacts (with RSVP icons when [scheduleContacts] is provided) sorted
+/// attending → declined → tentative/unknown.
 class AvatarGroup extends StatelessWidget {
   const AvatarGroup({
     required this.actors,
     this.totalCount,
     this.maxVisible = 3,
     this.size,
+    this.scheduleContacts,
     super.key,
   }) : assert(maxVisible >= 1);
 
@@ -204,6 +210,12 @@ class AvatarGroup extends StatelessWidget {
   /// Diameter of each avatar circle. Defaults to the ambient `IconTheme` size
   /// so the group matches sibling icons in the same row.
   final double? size;
+
+  /// When non-null and non-empty, the tooltip lists each contact with a
+  /// check / X / question icon for their RSVP, sorted attending first,
+  /// declined next, then tentative/unknown. When null or empty, the tooltip
+  /// falls back to a plain list of actor names.
+  final List<ScheduleContact>? scheduleContacts;
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +256,9 @@ class AvatarGroup extends StatelessWidget {
     final ringColor = context.colour.background;
 
     // Build right-to-left so leftmost avatars sit on top of those to their
-    // right (later Stack children paint above earlier ones).
+    // right (later Stack children paint above earlier ones). Per-avatar
+    // tooltips are disabled so the unified group tooltip below is the only
+    // hover affordance.
     final children = <Widget>[
       if (hasOverflow)
         Positioned(
@@ -261,12 +275,12 @@ class AvatarGroup extends StatelessWidget {
           child: _Ring(
             size: size,
             color: ringColor,
-            child: Avatar(actor: visible[i], size: size),
+            child: Avatar(actor: visible[i], size: size, tooltip: false),
           ),
         ),
     ];
 
-    return SizedBox(
+    final stack = SizedBox(
       width: totalWidth,
       height: size,
       child: Stack(
@@ -275,6 +289,176 @@ class AvatarGroup extends StatelessWidget {
         children: children,
       ),
     );
+
+    final tooltipBuilder = _tooltipBuilder(context);
+    if (tooltipBuilder == null) return stack;
+    return FTooltip(tipBuilder: tooltipBuilder, child: stack);
+  }
+
+  /// Builds a single tooltip for the whole group. When [scheduleContacts] is
+  /// provided, lists each contact with a check / X / question icon for their
+  /// RSVP (attending → declined → tentative/unknown). Otherwise lists the
+  /// names of actors that have one. Returns null when neither source has
+  /// anything worth showing.
+  Widget Function(BuildContext, FTooltipController)? _tooltipBuilder(
+    BuildContext context,
+  ) {
+    final contacts = scheduleContacts;
+    if (contacts != null && contacts.isNotEmpty) {
+      final attending = <ScheduleContact>[];
+      final declined = <ScheduleContact>[];
+      final other = <ScheduleContact>[];
+      for (final c in contacts) {
+        switch (c.status) {
+          case 'attend':
+            attending.add(c);
+          case 'skip':
+            declined.add(c);
+          default:
+            other.add(c);
+        }
+      }
+      final sorted = [...attending, ...declined, ...other];
+      if (sorted.isEmpty) return null;
+      return (context, controller) => _RsvpTooltipContent(contacts: sorted);
+    }
+
+    final visible = [
+      for (final a in actors)
+        if ((a.name != null && a.name!.isNotEmpty) ||
+            (a.email != null && a.email!.isNotEmpty))
+          a,
+    ];
+    if (visible.isEmpty) return null;
+    return (context, controller) => _ActorListTooltipContent(actors: visible);
+  }
+}
+
+class _ActorListTooltipContent extends StatelessWidget {
+  const _ActorListTooltipContent({required this.actors});
+
+  final List<Actor> actors;
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = context.theme.typography.sm;
+    final mutedStyle = textStyle.copyWith(color: context.colour.muted);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final a in actors)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            child: _actorLabel(a, textStyle, mutedStyle),
+          ),
+      ],
+    );
+  }
+
+  Widget _actorLabel(Actor a, TextStyle textStyle, TextStyle mutedStyle) {
+    final hasName = a.name != null && a.name!.isNotEmpty;
+    final hasEmail = a.email != null && a.email!.isNotEmpty;
+    if (hasName && hasEmail) {
+      return Text.rich(
+        TextSpan(
+          style: textStyle,
+          children: [
+            TextSpan(text: a.name),
+            const TextSpan(text: '  '),
+            TextSpan(text: a.email, style: mutedStyle),
+          ],
+        ),
+      );
+    }
+    return Text(hasName ? a.name! : a.email!, style: textStyle);
+  }
+}
+
+class _RsvpTooltipContent extends StatelessWidget {
+  const _RsvpTooltipContent({required this.contacts});
+
+  final List<ScheduleContact> contacts;
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = context.theme.typography.sm;
+    final iconSize = (textStyle.fontSize ?? 14) * 0.9;
+    final mutedStyle = textStyle.copyWith(color: context.colour.muted);
+    // Match the colors used by the ThreadWidget RSVP summary: attend uses
+    // ThemeColor(0) muted, skip uses ThemeColor(5) muted, undecided uses
+    // veryMuted.
+    final attendColor = context.colour.colours.fromTheme(
+      ThemeColor(0),
+      muted: true,
+    );
+    final skipColor = context.colour.colours.fromTheme(
+      ThemeColor(5),
+      muted: true,
+    );
+    final undecidedColor = context.colour.veryMuted;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final c in contacts)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FaIcon(
+                  _iconFor(c.status),
+                  size: iconSize,
+                  color: switch (c.status) {
+                    'attend' => attendColor,
+                    'skip' => skipColor,
+                    _ => undecidedColor,
+                  },
+                ),
+                const SizedBox(width: 6),
+                Flexible(child: _contactLabel(c, textStyle, mutedStyle)),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _contactLabel(
+    ScheduleContact c,
+    TextStyle textStyle,
+    TextStyle mutedStyle,
+  ) {
+    final hasName = c.contactName != null && c.contactName!.isNotEmpty;
+    final hasEmail = c.contactEmail != null && c.contactEmail!.isNotEmpty;
+    if (hasName && hasEmail) {
+      return Text.rich(
+        TextSpan(
+          style: textStyle,
+          children: [
+            TextSpan(text: c.contactName),
+            const TextSpan(text: '  '),
+            TextSpan(text: c.contactEmail, style: mutedStyle),
+          ],
+        ),
+      );
+    }
+    return Text(
+      hasName ? c.contactName! : (hasEmail ? c.contactEmail! : 'Unknown'),
+      style: textStyle,
+    );
+  }
+
+  static IconData _iconFor(String? status) {
+    switch (status) {
+      case 'attend':
+        return FontAwesomeIcons.check;
+      case 'skip':
+        return FontAwesomeIcons.xmark;
+      default:
+        return FontAwesomeIcons.question;
+    }
   }
 }
 
@@ -313,8 +497,20 @@ class _OverflowBadge extends StatelessWidget {
     size: size,
     style: FAvatarStyleDelta.delta(
       backgroundColor: context.colour.editableBackground,
+      textStyle: TextStyleDelta.delta(
+        fontSize: context.theme.typography.xs.fontSize,
+      ),
     ),
-    child: Text('+$count'),
+    // Scale down so multi-digit counts (e.g. "+20", "+150") never spill past
+    // the circle. A bit of horizontal padding keeps even the scaled-down
+    // glyphs from kissing the ring border on either side.
+    child: Padding(
+      padding: EdgeInsets.symmetric(horizontal: size * 0.1),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text('+$count', softWrap: false, maxLines: 1),
+      ),
+    ),
   );
 }
 

@@ -765,71 +765,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       reorderableIndex: reorderableIndex,
     );
 
-    if (!activity.hasOtherAttendees) return listTile;
-
-    return FTooltip(
-      tipBuilder: (context, controller) {
-        final contacts = activity.scheduleContacts;
-        final attending = contacts.where((c) => c.status == 'attend').toList();
-        final declined = contacts.where((c) => c.status == 'skip').toList();
-        final noResponse = contacts
-            .where((c) => c.status != 'attend' && c.status != 'skip')
-            .toList();
-
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (attending.isNotEmpty) ...[
-              Text(
-                'Attending',
-                style: context.theme.typography.sm.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              ...attending.map(
-                (c) => Text(
-                  c.contactName ?? c.contactEmail ?? 'Unknown',
-                  style: context.theme.typography.sm,
-                ),
-              ),
-            ],
-            if (declined.isNotEmpty) ...[
-              if (attending.isNotEmpty) const SizedBox(height: 4),
-              Text(
-                'Skipping',
-                style: context.theme.typography.sm.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              ...declined.map(
-                (c) => Text(
-                  c.contactName ?? c.contactEmail ?? 'Unknown',
-                  style: context.theme.typography.sm,
-                ),
-              ),
-            ],
-            if (noResponse.isNotEmpty) ...[
-              if (attending.isNotEmpty || declined.isNotEmpty)
-                const SizedBox(height: 4),
-              Text(
-                'No response',
-                style: context.theme.typography.sm.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              ...noResponse.map(
-                (c) => Text(
-                  c.contactName ?? c.contactEmail ?? 'Unknown',
-                  style: context.theme.typography.sm,
-                ),
-              ),
-            ],
-          ],
-        );
-      },
-      child: listTile,
-    );
+    return listTile;
   }
 
   @override
@@ -1221,11 +1157,19 @@ class SharedCommandButton extends HookWidget {
     ).data;
     final actors = loadedActors ?? command.sharedDisplayActors;
 
+    // Surface RSVP info in the unified avatar tooltip when the thread is a
+    // calendar event with other invitees. Otherwise the tooltip falls back
+    // to plain actor names.
+    final scheduleContacts = thread.hasOtherAttendees
+        ? thread.scheduleContacts
+        : null;
+
     final Widget child = shared
         ? AvatarGroup(
             actors: actors,
             totalCount: command.sharedTotalCount,
             size: avatarSize,
+            scheduleContacts: scheduleContacts,
           )
         : SizedBox(
             width: iconSize,
@@ -1235,37 +1179,44 @@ class SharedCommandButton extends HookWidget {
             ),
           );
 
-    return FTooltip(
-      tipBuilder: (context, controller) => Text(command.title),
-      child: FButton.icon(
-        style: FButtonStyleDelta.delta(
-          decoration: FVariantsDelta.delta([
-            FVariantOperation.all(
-              DecorationDelta.boxDelta(
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ]),
-          iconContentStyle: FButtonIconContentStyleDelta.delta(
-            // Keep horizontal padding so this button hugs the row edge the
-            // same way as sibling icon buttons; zero vertical so the avatar
-            // fills the full button height.
-            padding: EdgeInsetsGeometryDelta.value(
-              EdgeInsets.symmetric(horizontal: iconPadding.left),
-            ),
-            // Drop the default minWidth (36) so the button hugs the avatar
-            // group's natural width — narrower groups (1–2 avatars) shouldn't
-            // get padded out to the size of a 3-slot group. Keep minHeight so
-            // vertical alignment with sibling icon buttons is preserved.
-            constraints: BoxConstraints(
-              minHeight: iconContentStyle.constraints.minHeight,
+    final button = FButton.icon(
+      style: FButtonStyleDelta.delta(
+        decoration: FVariantsDelta.delta([
+          FVariantOperation.all(
+            DecorationDelta.boxDelta(
+              borderRadius: BorderRadius.circular(999),
             ),
           ),
+        ]),
+        iconContentStyle: FButtonIconContentStyleDelta.delta(
+          // Keep horizontal padding so this button hugs the row edge the
+          // same way as sibling icon buttons; zero vertical so the avatar
+          // fills the full button height.
+          padding: EdgeInsetsGeometryDelta.value(
+            EdgeInsets.symmetric(horizontal: iconPadding.left),
+          ),
+          // Drop the default minWidth (36) so the button hugs the avatar
+          // group's natural width — narrower groups (1–2 avatars) shouldn't
+          // get padded out to the size of a 3-slot group. Keep minHeight so
+          // vertical alignment with sibling icon buttons is preserved.
+          constraints: BoxConstraints(
+            minHeight: iconContentStyle.constraints.minHeight,
+          ),
         ),
-        variant: FButtonVariant.ghost,
-        onPress: () => context.run(command),
-        child: child,
       ),
+      variant: FButtonVariant.ghost,
+      onPress: () => context.run(command),
+      child: child,
+    );
+
+    // When shared, the AvatarGroup renders its own unified tooltip listing
+    // contacts (with RSVP icons when applicable) — a generic "Shared" tooltip
+    // would shadow it. Keep the title tooltip only for the unshared share
+    // icon state.
+    if (shared) return button;
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(command.title),
+      child: button,
     );
   }
 }
