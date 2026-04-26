@@ -2480,9 +2480,20 @@ export class Integrations extends Tool implements IAuth {
 
         // Self-heal: mirror the DO access list into public.channel so ops
         // queries see the full available list even for connections that
-        // predate the dual-write in setChannels.
+        // predate the dual-write in setChannels. A FK violation here means
+        // the twist_instance was deleted out from under stale DO storage —
+        // shouldn't fail the read path.
         if (actorChannels.length > 0) {
-          await this.mirrorChannelsToDb(actorChannels);
+          try {
+            await this.mirrorChannelsToDb(actorChannels);
+          } catch (error) {
+            const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+            logger.warn("mirrorChannelsToDb self-heal failed", {
+              provider,
+              actor_id: actorId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
 
         // Track access for the current user
