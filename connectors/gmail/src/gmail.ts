@@ -401,7 +401,17 @@ export class Gmail extends Connector<Gmail> {
         return;
       }
 
-      const api = await this.getApi(channelId);
+      const token = await this.tools.integrations.get(channelId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for channel ${channelId} at batch ${batchNumber}, skipping`
+        );
+        return;
+      }
+      const api = new GmailApi(token.token);
 
       // Use smaller batch size for Gmail (20 threads) to avoid timeouts
       const result = await syncGmailChannel(api, state, 20);
