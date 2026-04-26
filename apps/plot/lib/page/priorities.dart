@@ -15,6 +15,7 @@ import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/list_tile.dart';
 import 'package:plot/widget/icon.dart';
+import 'package:plot/widget/connection_status_tile.dart';
 import 'package:plot/widget/unified_header.dart';
 import 'package:plot/style/colors.dart';
 import 'package:plot/style/theme.dart';
@@ -118,6 +119,7 @@ class PrioritiesPage extends StatelessWidget {
                                       return Column(
                                         children: [
                                           SizedBox(height: 8),
+                                          const ConnectionStatusTile(),
                                           BlocBuilder<UserBloc, UserState>(
                                             builder: (context, userState) {
                                               if (userState is UserReady) {

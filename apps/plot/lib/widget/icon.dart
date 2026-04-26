@@ -98,6 +98,10 @@ class PlotIcon {
   static const warning = FontAwesomeIcons.triangleExclamation;
   static const twist = FontAwesomeIcons.wavesSine;
   static const connection = FontAwesomeIcons.plug;
+  static const plugCircleXmark = FontAwesomeIcons.plugCircleXmark;
+  static const plugCircleExclamation = FontAwesomeIcons.plugCircleExclamation;
+  static const plugCircleBolt = FontAwesomeIcons.plugCircleBolt;
+  static const plugCirclePlus = FontAwesomeIcons.plugCirclePlus;
   static const star = FontAwesomeIcons.star;
   static const idea = FontAwesomeIcons.lightbulb;
   static const unread = FontAwesomeIcons.messageDot;
