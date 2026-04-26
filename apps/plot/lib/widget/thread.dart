@@ -16,6 +16,7 @@ import 'package:plot/state/theme.dart';
 
 import 'package:plot/state/layout.dart';
 import 'package:plot/util/hooks.dart';
+import 'package:plot/util/shortcut.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ThreadWidget extends StatefulWidget {
@@ -564,14 +565,12 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                         children: [
                           Expanded(
                             child: hasBodyLabel
-                                ? PriorityLabel(
-                                    priority: activity.priority,
-                                    context: priorityContext,
-                                    color: headerFg,
+                                ? _PriorityHoverArea(
+                                    activity: activity,
+                                    priorityContext: priorityContext,
+                                    headerFg: headerFg,
                                     fontSize:
                                         context.theme.typography.xs.fontSize,
-                                    height: 1,
-                                    muted: headerFg == null,
                                   )
                                 : const SizedBox.shrink(),
                           ),
@@ -600,13 +599,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                         children: [
                           if (hasBodyLabel)
                             Flexible(
-                              child: PriorityLabel(
-                                priority: activity.priority,
-                                context: priorityContext,
-                                color: headerFg,
+                              child: _PriorityHoverArea(
+                                activity: activity,
+                                priorityContext: priorityContext,
+                                headerFg: headerFg,
                                 fontSize: context.theme.typography.xs.fontSize,
-                                height: 1,
-                                muted: headerFg == null,
                               ),
                             ),
                           if (hasBodyLabel && hasScheduleLabel) Text(' · '),
@@ -653,7 +650,12 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                           SizedBox(
                             width: 16,
                             height: 16,
-                            child: _ThreadLogo(activity: activity),
+                            child:
+                                isHighlighted &&
+                                    !activity.priority.isViewer &&
+                                    !widget.isOutsidePriority
+                                ? _ScheduleHoverIcon(activity: activity)
+                                : _ThreadLogo(activity: activity),
                           ),
                           SizedBox(width: buildContext.theme.spacing.md),
                           Expanded(
@@ -956,8 +958,7 @@ class ThreadCommands extends HookWidget {
       [activity.id, activity.tags],
     );
 
-    // Get commands (only if showCommands is true)
-    final isNarrow = !context.isMultiPanel;
+    // Get commands (only if showCommands is true).
     // Share affordance lives in the trailing slot (as an [AvatarGroup]) when
     // the thread is shared, so we drop it from the hover-command pool to avoid
     // duplication. When not shared, we keep it in hover commands AND hoist it
@@ -970,19 +971,19 @@ class ThreadCommands extends HookWidget {
       skipInfrequent: true,
       showEventTiming: showEventTiming,
     ).toList();
+    // PickScheduleThread is surfaced via the thread-icon hover swap, so
+    // exclude it from the trailing command row to avoid duplication.
+    final filteredHoverCommands = rawHoverCommands.where(
+      (cmd) => cmd is! PickScheduleThread,
+    );
     final hoverCommands = isShared
-        ? rawHoverCommands.where((cmd) => cmd is! PickThreadShared)
+        ? filteredHoverCommands.where((cmd) => cmd is! PickThreadShared)
         : <Command>[
-            ...rawHoverCommands.whereType<PickThreadShared>(),
-            ...rawHoverCommands.where((cmd) => cmd is! PickThreadShared),
+            ...filteredHoverCommands.whereType<PickThreadShared>(),
+            ...filteredHoverCommands.where((cmd) => cmd is! PickThreadShared),
           ];
     final threadCommandButtons = showCommands
-        ? [
-            if (isNarrow) Button.icon(PickScheduleThread(activity)),
-            ...hoverCommands
-                .where((cmd) => !isNarrow || cmd is! PickScheduleThread)
-                .map((cmd) => Button.icon(cmd)),
-          ]
+        ? hoverCommands.map((cmd) => Button.icon(cmd)).toList()
         : <Widget>[];
 
     // Conferencing/RSVP buttons only for threads shown by their own event
@@ -1183,9 +1184,7 @@ class SharedCommandButton extends HookWidget {
       style: FButtonStyleDelta.delta(
         decoration: FVariantsDelta.delta([
           FVariantOperation.all(
-            DecorationDelta.boxDelta(
-              borderRadius: BorderRadius.circular(999),
-            ),
+            DecorationDelta.boxDelta(borderRadius: BorderRadius.circular(999)),
           ),
         ]),
         iconContentStyle: FButtonIconContentStyleDelta.delta(
@@ -1395,6 +1394,123 @@ class _ThreadLeadingCommand extends CommandWrapper {
       return SizedBox(width: baseSize, height: baseSize);
     }
     return null;
+  }
+}
+
+/// Replaces the small thread logo when the row is hovered, surfacing the
+/// schedule/reschedule action without crowding the trailing command row.
+class _ScheduleHoverIcon extends StatelessWidget {
+  const _ScheduleHoverIcon({required this.activity});
+
+  final Thread activity;
+
+  @override
+  Widget build(BuildContext context) {
+    final command = PickScheduleThread(activity);
+    final iconData = activity.on != null
+        ? PlotIcon.reschedule
+        : PlotIcon.schedule;
+    final shortcutText = hasPhysicalKeyboard() && command.shortcut != null
+        ? formatShortcut(command.shortcut)
+        : '';
+    return FTooltip(
+      tipBuilder: (ctx, controller) {
+        if (shortcutText.isNotEmpty) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(command.title),
+              Text(
+                shortcutText,
+                style: ctx.theme.typography.xs.copyWith(
+                  color: ctx.theme.colors.mutedForeground,
+                ),
+              ),
+            ],
+          );
+        }
+        return Text(command.title);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => context.run(command),
+        child: Center(
+          child: FaIcon(iconData, size: 14, color: context.colour.muted),
+        ),
+      ),
+    );
+  }
+}
+
+/// Wraps the priority label in the top-of-row meta strip with a hover state
+/// and a trailing veryMuted select icon. Hover unmutes the label and tints
+/// the select icon with the accent colour; clicking anywhere in the area
+/// opens the move modal.
+class _PriorityHoverArea extends StatefulWidget {
+  const _PriorityHoverArea({
+    required this.activity,
+    required this.priorityContext,
+    required this.headerFg,
+    required this.fontSize,
+  });
+
+  final Thread activity;
+  final Priority? priorityContext;
+  final Color? headerFg;
+  final double? fontSize;
+
+  @override
+  State<_PriorityHoverArea> createState() => _PriorityHoverAreaState();
+}
+
+class _PriorityHoverAreaState extends State<_PriorityHoverArea> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final command = MoveThreadToPriority(widget.activity);
+    final shortcutText = hasPhysicalKeyboard() && command.shortcut != null
+        ? formatShortcut(command.shortcut)
+        : '';
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: FTooltip(
+        tipBuilder: (ctx, controller) {
+          if (shortcutText.isNotEmpty) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(command.title),
+                Text(
+                  shortcutText,
+                  style: ctx.theme.typography.xs.copyWith(
+                    color: ctx.theme.colors.mutedForeground,
+                  ),
+                ),
+              ],
+            );
+          }
+          return Text(command.title);
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => context.run(command),
+          child: PriorityLabel(
+            priority: widget.activity.priority,
+            context: widget.priorityContext,
+            color: widget.headerFg,
+            fontSize: widget.fontSize,
+            height: 1,
+            muted: widget.headerFg == null && !_hovered,
+            onSelect: (_) => context.run(command),
+          ),
+        ),
+      ),
+    );
   }
 }
 
