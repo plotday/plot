@@ -60,6 +60,7 @@ part 'sync_orchestrator.dart';
 part 'actor.dart';
 part 'priority.dart';
 part 'twist_instance.dart';
+part 'twist_connection.dart';
 part 'user_action.dart';
 part 'thread.dart';
 part 'link.dart';
@@ -357,6 +358,7 @@ abstract class BaseTable {
     Actors,
     Priorities,
     TwistInstances,
+    TwistConnections,
     Threads,
     Links,
     Notes,
@@ -2051,7 +2053,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 316;
+  int get schemaVersion => 317;
 
   @override
   MigrationStrategy get migration {
@@ -2945,6 +2947,12 @@ class Store extends _$Store {
       await m.database.customStatement(
         "DELETE FROM sync_states WHERE entity LIKE 'user_actors%'",
       );
+    }
+    if (from < 317) {
+      // New per-(twist_instance, provider, actor) status mirror for
+      // user.twist_connection. Surfaces re-auth and initial-sync state to
+      // the app without overloading user.twist.
+      await m.createTable(twistConnections);
     }
   }
 

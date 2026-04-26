@@ -45,6 +45,7 @@ import superjson from "superjson";
 import type { Storage } from "../../state/storage";
 import { createLogger } from "@plotday/worker-util";
 import { rpc, rpcUser } from "../../rpc";
+import { notifyUserSyncByEnv } from "../../app/sync/notify";
 import { getEffectivePlan } from "../../utils/plan";
 import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
 import { getRpcFunctionName } from "../../utils/rpc";
@@ -1934,14 +1935,17 @@ export class Integrations extends Tool implements IAuth {
                 .executeTakeFirst();
 
               if (reauthContact?.user_id) {
-                await this.db
+                const result = await this.db
                   .updateTable("twist_instance_connection")
                   .set({ needs_reauth_at: new Date().toISOString() })
                   .where("twist_instance_id", "=", this.twistInstanceId)
                   .where("user_id", "=", reauthContact.user_id)
                   .where("provider", "=", provider)
                   .where("needs_reauth_at", "is", null)
-                  .execute();
+                  .executeTakeFirst();
+                if ((result.numUpdatedRows ?? 0n) > 0n) {
+                  await notifyUserSyncByEnv(this.env, reauthContact.user_id);
+                }
               } else {
                 logger.debug(
                   `Skipped needs_reauth_at: actor ${actorId} has no linked user_id`,
@@ -2043,10 +2047,11 @@ export class Integrations extends Tool implements IAuth {
     const logger = createLogger({ twist_instance_id: this.twistInstanceId });
     try {
       const nowIso = new Date().toISOString();
+      let result;
       if (syncing) {
         // Start (or restart): preserve an existing started_at, but clear any
         // prior completed_at so the UI knows we're syncing again.
-        await this.db
+        result = await this.db
           .updateTable("twist_instance_connection")
           .set((eb) => ({
             initial_sync_started_at: eb.fn.coalesce(
@@ -2058,11 +2063,11 @@ export class Integrations extends Tool implements IAuth {
           .where("twist_instance_id", "=", this.twistInstanceId)
           .where("user_id", "=", contact.user_id)
           .where("provider", "=", provider)
-          .execute();
+          .executeTakeFirst();
       } else {
         // Stop: only stamp completion when a sync actually started and
         // hasn't already been marked complete (idempotent).
-        await this.db
+        result = await this.db
           .updateTable("twist_instance_connection")
           .set({ initial_sync_completed_at: nowIso })
           .where("twist_instance_id", "=", this.twistInstanceId)
@@ -2070,7 +2075,10 @@ export class Integrations extends Tool implements IAuth {
           .where("provider", "=", provider)
           .where("initial_sync_started_at", "is not", null)
           .where("initial_sync_completed_at", "is", null)
-          .execute();
+          .executeTakeFirst();
+      }
+      if ((result.numUpdatedRows ?? 0n) > 0n) {
+        await notifyUserSyncByEnv(this.env, contact.user_id);
       }
     } catch (dbError) {
       logger.warn(
@@ -2201,6 +2209,7 @@ export class Integrations extends Tool implements IAuth {
               })
           )
           .execute();
+        await notifyUserSyncByEnv(this.env, contact.user_id);
       } catch (error) {
         const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.error("Failed to record twist_instance_connection", error as Error);

@@ -83,6 +83,17 @@ class SyncOrchestrator {
     pullFn: Channel.pull,
   );
 
+  /// Per-(twist_instance, provider, actor) connection status (read-only).
+  /// Surfaces needs_reauth and initial_syncing signals from
+  /// user.twist_connection. Bumped server-side by the user_sync trigger on
+  /// twist_instance_connection.
+  static final twistConnection = SyncEntity(
+    debugName: 'twist_connection',
+    dependsOn: [twistInstance],
+    pushFn: () async => true, // Read-only — re-auth happens via OAuth flow
+    pullFn: TwistConnection.pull,
+  );
+
   /// Thread entity (depends on priority and actor)
   /// Note: Thread.push() and Thread.pull() also handle Schedules, Links, and ThreadTags
   static final thread = SyncEntity(
@@ -122,6 +133,7 @@ class SyncOrchestrator {
     priority,
     twistInstance,
     channel,
+    twistConnection,
     thread,
     session,
     note,
@@ -182,6 +194,7 @@ class SyncOrchestrator {
       'user_priority' || 'priority' => priority,
       'user_twist' || 'twist_instance' => twistInstance,
       'user_channel' || 'channel' => channel,
+      'user_twist_connection' || 'twist_connection' => twistConnection,
       'user_thread' || 'user_link' || 'user_schedule' || 'user_thread_tags' ||
       'thread' || 'thread_read' || 'schedule' =>
         thread,
@@ -273,6 +286,8 @@ class SyncOrchestrator {
 
     // Complete twistInstance updates (initial was done in critical)
     await pull(twistInstance);
+    // twistConnection depends on twistInstance — pull after it's settled.
+    await pull(twistConnection);
 
     // Push phase - all entities
     final pushLevels = _computePushLevels();
