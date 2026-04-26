@@ -149,6 +149,17 @@ class Base {
     final base = Base._(authService);
     Injector.appInstance.registerSingleton<Base>(() => base);
 
+    // Listen for asynchronous Clerk session-invalidation signals (e.g. the
+    // background token poller surfacing `authentication_invalid`). Without
+    // this, the SDK's cached JWT keeps superficially looking valid and the
+    // user gets stuck with a dead session until they manually sign out.
+    authService.sessionInvalidatedStream.listen((_) {
+      log.warning('Clerk reported session invalid via error stream');
+      handleTokenResult(
+        (token: null, failure: TokenFailureReason.sessionInvalid),
+      );
+    });
+
     // Step 3: Try to restore identity from local storage (no network needed)
     try {
       await base._restoreIdentity();

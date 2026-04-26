@@ -155,7 +155,15 @@ Future<http.Response> _retryOn401(
     // _checkAuthError refreshes the token; retry with fresh headers
     headers = await getHeaders();
     response = await request(headers);
-    // If still 401, fall through to normal error handling
+    // Two consecutive 401s on the same request — the token Clerk just
+    // handed us was rejected. Treat the session as definitively dead so
+    // the user gets signed out instead of being wedged on stale errors.
+    if (response.statusCode == 401) {
+      log.warning("Auth error: 401 on retry of $url — forcing sign-out");
+      Base.handleTokenResult(
+        (token: null, failure: TokenFailureReason.sessionInvalid),
+      );
+    }
   }
 
   return response;

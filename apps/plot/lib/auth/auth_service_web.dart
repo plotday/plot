@@ -258,6 +258,9 @@ class ClerkJsAuthService implements AuthService {
     }
   }
 
+  @override
+  Stream<void> get sessionInvalidatedStream => const Stream<void>.empty();
+
   // -- Activate session after completion -------------------------------------
 
   Future<void> _activateIfComplete(String? status, String? sessionId) async {

@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:forui/forui.dart';
 
+import 'package:plot/analytics/tracker.dart';
+import 'package:plot/api/api_exception.dart';
+import 'package:plot/api/network_exception.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/widget/list_view_selector.dart';
 import 'package:plot/util/platform.dart';
@@ -395,6 +398,12 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       });
     } catch (e, t) {
       log.warning('Error loading items', e, t);
+      // Skip noise from offline / expected API errors; report unexpected
+      // failures so we can diagnose modals stuck on "Loading failed."
+      if (e is! NetworkException &&
+          !(e is ApiException && e.statusCode < 500)) {
+        Tracker.captureException(e, t);
+      }
       if (!_isDisposed) {
         setState(() {
           _error = 'Loading failed.';

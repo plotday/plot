@@ -6,6 +6,7 @@
 /// DO NOT import this file directly — import `auth_service.dart` instead.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:clerk_auth/clerk_auth.dart' as clerk;
@@ -25,17 +26,54 @@ Future<AuthService> createAuthServiceImpl({
     getCacheDirectory: () async => cacheDir,
   );
 
-  final clerkAuth = clerk.Auth(
+  final sessionInvalidated = StreamController<void>.broadcast();
+  final clerkAuth = _PlotClerkAuth(
     config: clerk.AuthConfig(
       publishableKey: publishableKey,
       persistor: persistor,
     ),
+    onSessionInvalidated: () => sessionInvalidated.add(null),
   );
 
-  final service = ClerkDartAuthService._(clerkAuth, publishableKey, profile);
+  final service = ClerkDartAuthService._(
+    clerkAuth,
+    publishableKey,
+    profile,
+    sessionInvalidated,
+  );
 
   await clerkAuth.initialize().timeout(const Duration(seconds: 10));
   return service;
+}
+
+/// `clerk_auth`'s default [clerk.Auth.handleError] just rethrows. That works
+/// for inline callers wrapped in try/catch, but the periodic
+/// `_pollForSessionToken` runs from a [Timer] callback — when its renewal
+/// hits `authentication_invalid` / `signed_out`, the throw escapes into the
+/// zone unhandled. The app never finds out the session is dead.
+///
+/// This subclass intercepts those errors and notifies [Base] via
+/// [onSessionInvalidated] so we can force sign-out, then preserves the throw
+/// so existing inline callers (sign-in flow, [_guard]) keep working.
+class _PlotClerkAuth extends clerk.Auth {
+  _PlotClerkAuth({
+    required super.config,
+    required this.onSessionInvalidated,
+  });
+
+  final void Function() onSessionInvalidated;
+
+  @override
+  void handleError(Object error) {
+    if (error is clerk.ClerkError &&
+        error.code == clerk.ClerkErrorCode.serverErrorResponse) {
+      final subCode = error.errors?.error.code;
+      if (subCode == 'authentication_invalid' || subCode == 'signed_out') {
+        onSessionInvalidated();
+      }
+    }
+    super.handleError(error);
+  }
 }
 
 Future<Directory> _getClerkCacheDirectory(String? profile) async {
@@ -104,11 +142,32 @@ Future<T> _guard<T>(Future<T> Function() fn) async {
 // ---------------------------------------------------------------------------
 
 class ClerkDartAuthService implements AuthService {
-  ClerkDartAuthService._(this._auth, this._publishableKey, this._profile);
+  ClerkDartAuthService._(
+    this._auth,
+    this._publishableKey,
+    this._profile,
+    this._sessionInvalidated,
+  );
 
   clerk.Auth _auth;
   final String _publishableKey;
   final String? _profile;
+  final StreamController<void> _sessionInvalidated;
+
+  @override
+  Stream<void> get sessionInvalidatedStream => _sessionInvalidated.stream;
+
+  _PlotClerkAuth _buildAuth(clerk.Persistor persistor) => _PlotClerkAuth(
+        config: clerk.AuthConfig(
+          publishableKey: _publishableKey,
+          persistor: persistor,
+        ),
+        onSessionInvalidated: () {
+          if (!_sessionInvalidated.isClosed) {
+            _sessionInvalidated.add(null);
+          }
+        },
+      );
 
   /// Create a fresh Clerk [Auth] instance, discarding any stale state.
   ///
@@ -129,12 +188,7 @@ class ClerkDartAuthService implements AuthService {
     final persistor = clerk.DefaultPersistor(
       getCacheDirectory: () async => cacheDir,
     );
-    _auth = clerk.Auth(
-      config: clerk.AuthConfig(
-        publishableKey: _publishableKey,
-        persistor: persistor,
-      ),
-    );
+    _auth = _buildAuth(persistor);
     await _auth.initialize().timeout(const Duration(seconds: 10));
   }
 
@@ -152,12 +206,7 @@ class ClerkDartAuthService implements AuthService {
     final persistor = clerk.DefaultPersistor(
       getCacheDirectory: () async => cacheDir,
     );
-    _auth = clerk.Auth(
-      config: clerk.AuthConfig(
-        publishableKey: _publishableKey,
-        persistor: persistor,
-      ),
-    );
+    _auth = _buildAuth(persistor);
     await _auth.initialize().timeout(const Duration(seconds: 10));
   }
 

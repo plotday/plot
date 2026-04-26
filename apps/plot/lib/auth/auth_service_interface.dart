@@ -101,6 +101,12 @@ abstract class AuthService {
     );
   }
 
+  /// Fires when the underlying auth provider asynchronously discovers that
+  /// the session is no longer valid (e.g. clerk_auth's background token
+  /// poller surfaces `authentication_invalid` / `signed_out`). Lets [Base]
+  /// force sign-out without waiting for the next API request to 401.
+  Stream<void> get sessionInvalidatedStream => const Stream<void>.empty();
+
   // -- Sign-in ---------------------------------------------------------------
 
   /// Sign in using an id-token obtained from a native OAuth SDK
@@ -194,6 +200,9 @@ class FailedAuthService implements AuthService {
   @override
   Future<TokenResult> getSessionTokenWithReason() async =>
       (token: null, failure: TokenFailureReason.networkError);
+
+  @override
+  Stream<void> get sessionInvalidatedStream => const Stream<void>.empty();
 
   @override
   Future<void> signInWithIdToken({
