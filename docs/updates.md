@@ -1,4 +1,25 @@
 - Contact avatars now show in more places — your own photo from your sign-in account, photos from connectors that supply them (Linear, GitHub, Jira, Slack), photos pulled in from your Google Contacts when you have Gmail or Calendar connected (no separate Google Contacts connector required), and a Gravatar fallback for anyone else. Contacts without any photo still show the colored initials.
+- React to notes with a quick tap — pick from Thinking, Remember, Agreed, Relieved, Send, Noted, Laugh, Surprised, Confused, or Dismayed to acknowledge a note without writing a reply
+- Create new items in connected tools right from Plot — when adding a link to a thread, pick "Create new Linear issue" (and similar for other connectors) and Plot creates the item in the external tool and links it back automatically
+- Smarter onboarding — after your first connections sync, Plot suggests starter priorities based on what's coming in from your calendar, mailbox, and chats, so you don't have to design your priority tree from scratch
+- Search now also returns matches from the server, not just what's already on your device — and shows a hint when there are matching archived items you might want to include
+- Auto-sync new channels — turn on "Sync new channels" in a connection to have Plot automatically enable newly added Slack channels, Airtable bases, Linear projects, etc. as they appear
+- Most twists are now single-instance by default — you install them once per workspace or team instead of needing a separate copy per priority
+- Code blocks in notes are now selectable — drag to copy just part of a snippet instead of having to copy the whole block
+- Share a thread with a whole team or group, not just individuals — groups now appear alongside contacts in the thread sharing UI
+- Connection names are now set automatically as "Connector (account)" — no more blank or stale labels, and the field is no longer editable since it's derived from the connected account
+- New thread drafts stick across a priority chain — start a draft in Work and it follows you as you navigate within Work and its sub-priorities, only resetting when you switch to a different branch
+- "Add to agenda" replaces "Start" throughout the app — clearer wording for putting a thread on your agenda
+- Google connection consent now shows only the new scopes you're granting — Plot uses incremental authorization so you don't have to re-approve scopes you've already granted
+- Cmd+Shift+X now toggles a note as your own to-do (moved from Cmd+Shift+T, which conflicted with the agenda/activity tab toggle)
+- Improved Slack admin handoff — if your Slack workspace requires admin approval, members now see a clear error with a "Copy message for admin" button, and admins can install via plot.day/slack
+- Added a "Help and feedback" command to the Settings menu — opens a new thread in Using Plot so you can send feedback to the Plot team in one step
+- Fixed silent sign-outs — when your session expires, you now see a banner on the sign-in page (and a one-off notification on mobile) instead of just stopping receiving updates
+- Cleaner Done button on notes — a single Done button toggles your own status instead of three different states crowding the note
+- Improved Add link modal — when the search field is empty, you'll see your recent links and "Create new" options for your connected tools instead of an empty results message
+- Fixed bidirectional Gmail star ↔ Plot to-do sync — starring a message in Gmail now reliably creates a to-do in Plot, and toggling the to-do in Plot stars/unstars in Gmail
+- Faster agenda — opening a priority's agenda now renders significantly more quickly by skipping redundant rebuilds and trimming empty-day headers
+- Faster Add connection — channel setup now happens in batches in the background instead of blocking the save
 - When your Core trial ends (or you downgrade to Free), Plot now cleans up any connections and twists over your new plan's limits the same way removing them from the app would — including archiving the threads from each trimmed connection, so nothing stale is left on your agenda
 - Connector channels (calendars, mailboxes, projects) now route their threads to the right priority automatically — when you add a priority or a connection, Plot picks a home for each channel based on your priority names and channel context, and existing threads from that channel move too. Your own moves still override the default.
 - Fixed contact names showing a trailing " via Plot" or similar from Google Groups and other mailing lists — sender names in lists and mentions are now shown cleanly
@@ -18,6 +39,9 @@
 - More keyboard shortcuts: Cmd+P switches priorities (Cmd+Option+P on web), and on the new thread page you can now change the priority with Cmd+Shift+P (Cmd+Option+Shift+P on web), edit the title with Cmd+Shift+H, and change the thread type with Cmd+Shift+I
 - Keyboard shortcut updates: Cmd+Shift+A focuses the current list and switches between agenda and activity on a second press, Cmd+T makes the focused note a task, Cmd+Shift+T assigns it, and new thread on web is now Cmd+Option+N (so browsers stop stealing Cmd+Shift+N)
 - Contact pickers and @mentions no longer suggest notification-only addresses like no-reply@, mailer-daemon@, or bounces@ — pick from real people only
+
+---
+
 - The Using Plot and Twist Development priorities now show only the activity feed — the agenda tab is hidden on these feedback-style priorities. Messages you start in Using Plot are also automatically tagged as feedback and shared with the Plot team.
 - You can now respond to calendar invites directly from the activity feed — Attend and Skip buttons appear on calendar event threads without needing to open them or switch to the agenda. For recurring events, the buttons act on the next upcoming occurrence (or the most recent past one if there's no upcoming).
 - Fixed archiving a thread with outstanding tasks not sticking — the thread would disappear and then reappear on the agenda after syncing
