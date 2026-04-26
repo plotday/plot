@@ -187,29 +187,6 @@ class _NoteWidgetState extends State<NoteWidget> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // NoteCommands can expand to full width
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Transform.translate(
-                    offset: Offset(
-                      6 -
-                          context
-                              .theme
-                              .buttonStyles
-                              .ghost
-                              .md
-                              .iconContentStyle
-                              .padding
-                              .resolve(TextDirection.ltr)
-                              .left,
-                      0,
-                    ),
-                    child: NoteCommands(
-                      note: widget.note,
-                      showCommands: highlighted,
-                    ),
-                  ),
-                ),
                 // Author/timestamp positioned on the right, overlapping if needed
                 Positioned(
                   right: 0,
@@ -270,6 +247,56 @@ class _NoteWidgetState extends State<NoteWidget> {
                         },
                       );
                     },
+                  ),
+                ),
+                // NoteCommands overlays the author row with a solid
+                // background and gradient fade so the author/timestamp
+                // truncates cleanly rather than bleeding through the
+                // icons. Mirrors the ThreadCommands treatment.
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Transform.translate(
+                    offset: Offset(
+                      6 -
+                          context
+                              .theme
+                              .buttonStyles
+                              .ghost
+                              .md
+                              .iconContentStyle
+                              .padding
+                              .resolve(TextDirection.ltr)
+                              .left,
+                      0,
+                    ),
+                    child: Builder(
+                      builder: (context) {
+                        final tileBg = context.colour.background;
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ColoredBox(
+                              color: tileBg,
+                              child: NoteCommands(
+                                note: widget.note,
+                                showCommands: highlighted,
+                              ),
+                            ),
+                            Container(
+                              width: 24,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    tileBg,
+                                    tileBg.withValues(alpha: 0),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
               ],
