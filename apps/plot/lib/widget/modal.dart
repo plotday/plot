@@ -342,12 +342,15 @@ class _ModalProviderState extends State<ModalProvider> {
           useSafeArea: true,
           mainAxisMaxRatio: 1,
           builder: (dialogContext) {
-            return FToaster(
-              child: material.Material(
-                child: Container(
-                  color: dialogContext.theme.colors.background,
-                  child: buildModalContent(dialogContext),
-                ),
+            // Don't wrap in FToaster: forui 0.21+ FToaster wraps with
+            // Overlay.wrap, which forces its child to fill the available
+            // constraints — that breaks the sheet's shrink-wrap to content.
+            // The app-level FToaster in app.dart is still an ancestor of
+            // root-navigator routes, so showFToast calls keep working.
+            return material.Material(
+              child: Container(
+                color: dialogContext.theme.colors.background,
+                child: buildModalContent(dialogContext),
               ),
             );
           },
