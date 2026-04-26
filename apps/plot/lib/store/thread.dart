@@ -926,6 +926,12 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (drafts.isEmpty) return null;
     final pathStr = priority.path.value;
     final chainDrafts = drafts.where((d) {
+      // System priorities (@plot, @plot.app, @plot.twist-dev) are
+      // infrastructure, not user branches — their drafts must not follow
+      // the user out of that context (otherwise a stray twist-dev draft
+      // gets loaded at root and NewThreadPage shows its "Select a thread"
+      // twist-dev placeholder instead of the editor).
+      if (d.priority.isPlot) return false;
       final dp = d.priority.path.value;
       return dp == pathStr ||
           pathStr.startsWith('$dp.') || // ancestor
