@@ -1053,6 +1053,16 @@ class PriorityBloc extends Cubit<PriorityState> {
       log.info(
         '[setPriority] Loaded existing chain draft: id=${existingDraft.id}, priority=${existingDraft.priority.id} (${existingDraft.priority.title}), archived=${existingDraft.archivedAt != null}',
       );
+
+      // Auto-organize is only meaningful in the root priority. If the chain
+      // draft was auto-filed at root and we're entering a non-root context,
+      // drop the auto flag and re-file to the new context priority so the
+      // chip reflects "where the user is working" instead of "Auto".
+      if (!contextPriority.root &&
+          ThreadsBase.autoFileIds.remove(newDraft.id.toString())) {
+        newDraft = newDraft.copyWith(priority: contextPriority);
+        await newDraft.save();
+      }
     } else {
       newDraft = Thread(priority: contextPriority, draft: true);
       log.info(
