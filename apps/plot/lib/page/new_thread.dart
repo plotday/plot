@@ -6,6 +6,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:plot/widget/widget.dart';
 import 'package:plot/state/priority.dart';
+import 'package:plot/state/theme.dart' show ThemeBloc;
 
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/layout.dart';
@@ -18,6 +19,7 @@ import 'package:plot/store/store.dart';
 import 'package:plot/style/button.dart' show ghostSizedStyleDelta;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
+import 'package:plot/style/spacing.dart';
 import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
@@ -155,6 +157,21 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
+  /// Adds the current draft to [ThreadsBase.autoFileIds] when the user is in
+  /// the root context and hasn't explicitly picked or remembered a priority.
+  /// Wraps the static-set mutation in setState so the priority chip rebuilds.
+  void _applyDefaultAutoFile() {
+    final bloc = context.read<PriorityBloc>();
+    final hasExplicitPriority =
+        widget.priorityId != null || bloc.newThreadDefaultPriority != null;
+    if (bloc.state.context.root && !hasExplicitPriority) {
+      final draftId = bloc.state.draft.id.toString();
+      if (ThreadsBase.autoFileIds.add(draftId)) {
+        setState(() {});
+      }
+    }
+  }
+
   void _resolveDefaultTwist() {
     final twists = _draftTwists ?? context.read<PriorityBloc>().state.twists;
     if (twists.isEmpty) {
@@ -189,12 +206,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     // priority. In a non-root context, the default is the most recent picker
     // priority (session-remembered) or the current context priority — never
     // auto — so the thread goes where the user is working.
-    final bloc = context.read<PriorityBloc>();
-    final hasExplicitPriority =
-        widget.priorityId != null || bloc.newThreadDefaultPriority != null;
-    if (bloc.state.context.root && !hasExplicitPriority) {
-      ThreadsBase.autoFileIds.add(bloc.state.draft.id.toString());
-    }
+    _applyDefaultAutoFile();
 
     // Load recently shared contacts for suggestion chips
     _loadRecentContacts();
@@ -404,14 +416,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         const SizedBox(height: 8),
         _buildPriorityChipRow(context, state),
         const SizedBox(height: 8),
-        Center(
-          child: Text(
-            'with',
-            style: context.theme.typography.sm.copyWith(
-              color: context.theme.plotColors.veryMuted,
-            ),
-          ),
-        ),
+        _buildWithLabel(context, state),
         const SizedBox(height: 8),
         _buildWithSelector(context, state),
       ],
@@ -631,22 +636,18 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// defaults. See C2 merge semantics in the design.
   Thread _applyChainDefaults(Thread draft, Priority newPriority) {
     final oldPriority = draft.priority;
-    final oldContactDefaults = oldPriority.inheritedDefaultSharedContacts.toSet();
+    final oldContactDefaults = oldPriority.inheritedDefaultSharedContacts
+        .toSet();
     final oldGroupDefaults = oldPriority.inheritedDefaultSharedGroups.toSet();
-    final oldEmailDefaults =
-        oldPriority.inheritedDefaultSharedInviteEmails.toSet();
+    final oldEmailDefaults = oldPriority.inheritedDefaultSharedInviteEmails
+        .toSet();
 
     final newContactDefaults = newPriority.inheritedDefaultSharedContacts;
     final newGroupDefaults = newPriority.inheritedDefaultSharedGroups;
     final newEmailDefaults = newPriority.inheritedDefaultSharedInviteEmails;
 
-    List<T> merge<T>(
-      List<T> current,
-      Set<T> oldDefaults,
-      List<T> newDefaults,
-    ) {
-      final userAdded =
-          current.where((e) => !oldDefaults.contains(e)).toList();
+    List<T> merge<T>(List<T> current, Set<T> oldDefaults, List<T> newDefaults) {
+      final userAdded = current.where((e) => !oldDefaults.contains(e)).toList();
       final seen = <T>{...userAdded};
       final result = [...userAdded];
       for (final e in newDefaults) {
@@ -655,12 +656,21 @@ class NewThreadPageState extends State<NewThreadPage> {
       return result;
     }
 
-    final mergedContacts =
-        merge(draft.contacts, oldContactDefaults, newContactDefaults);
-    final mergedGroups =
-        merge(draft.groups, oldGroupDefaults, newGroupDefaults);
-    final mergedEmails =
-        merge(draft.inviteEmails, oldEmailDefaults, newEmailDefaults);
+    final mergedContacts = merge(
+      draft.contacts,
+      oldContactDefaults,
+      newContactDefaults,
+    );
+    final mergedGroups = merge(
+      draft.groups,
+      oldGroupDefaults,
+      newGroupDefaults,
+    );
+    final mergedEmails = merge(
+      draft.inviteEmails,
+      oldEmailDefaults,
+      newEmailDefaults,
+    );
 
     return draft.copyWith(
       priority: newPriority,
@@ -869,6 +879,45 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
   }
 
+  /// Renders the "with" label between the priority chip and the contact
+  /// chips. When the draft has no contacts, groups, or pending email
+  /// invites, shows a "Private" chip with a lock icon instead. Layout
+  /// height is locked to the chip's height so toggling between modes
+  /// does not shift the rest of the page.
+  Widget _buildWithLabel(BuildContext context, PriorityState state) {
+    final draft = state.draft;
+    final isPrivate =
+        draft.contacts.isEmpty &&
+        draft.groups.isEmpty &&
+        draft.inviteEmails.isEmpty;
+
+    final labelStyle = context.theme.typography.sm.copyWith(
+      color: isPrivate
+          ? context.theme.plotColors.muted
+          : context.theme.plotColors.veryMuted,
+    );
+
+    return Padding(
+      padding: .only(top: context.theme.spacing.md),
+      child: Center(
+        child: isPrivate
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FaIcon(
+                    FontAwesomeIcons.lock,
+                    size: labelStyle.fontSize,
+                    color: context.theme.plotColors.muted,
+                  ),
+                  const SizedBox(width: 6),
+                  Text('Private', style: labelStyle),
+                ],
+              )
+            : Text('with', style: labelStyle),
+      ),
+    );
+  }
+
   /// Build the "With" chip row: the current user can tap recent contacts
   /// to add or remove them from the thread, or tap the `+` button to open
   /// a searchable picker modal. Selected contacts flow into
@@ -885,8 +934,9 @@ class NewThreadPageState extends State<NewThreadPage> {
     final displayedSelectedContacts = _pinnedActors
         .where((a) => selectedIds.contains(a.id.toUuid()))
         .length;
-    final displayedGroups =
-        _pinnedGroups.where((g) => groupIds.contains(g.id)).length;
+    final displayedGroups = _pinnedGroups
+        .where((g) => groupIds.contains(g.id))
+        .length;
     final hasMore =
         selectedIds.length > displayedSelectedContacts ||
         pendingEmails.length > _pinnedEmails.length ||
@@ -981,8 +1031,11 @@ class NewThreadPageState extends State<NewThreadPage> {
     } else {
       current.add(group.id);
     }
-    await bloc.updateDraft(bloc.state.draft
-        .copyWith(groups: Value(current.isEmpty ? null : current)));
+    await bloc.updateDraft(
+      bloc.state.draft.copyWith(
+        groups: Value(current.isEmpty ? null : current),
+      ),
+    );
   }
 
   Widget _buildContactChip(
@@ -995,6 +1048,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       horizontal: 10,
       vertical: isMobilePlatform() ? 10 : 5,
     );
+    final isDark = context.read<ThemeBloc>().isDarkMode(context);
     Widget buildChip(bool hovered) {
       return FButton(
         onPress: () => _toggleWithContact(actor),
@@ -1011,7 +1065,7 @@ class NewThreadPageState extends State<NewThreadPage> {
         ),
         mainAxisSize: MainAxisSize.min,
         prefix: Opacity(
-          opacity: selected || hovered ? 1.0 : 0.4,
+          opacity: selected || hovered ? 1.0 : (isDark ? 0.5 : 0.9),
           child: Avatar(
             actor: actor,
             size: context.theme.iconSizes.sm,
@@ -1252,167 +1306,181 @@ class NewThreadPageState extends State<NewThreadPage> {
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
-        return BlocBuilder<PriorityBloc, PriorityState>(
-          builder: (context, state) {
-            final isViewerMode = state.draft.priority.isViewer;
+        return BlocListener<PriorityBloc, PriorityState>(
+          // Chain drafts load async after the page mounts (e.g. on initial app
+          // open at root) and after submitting a thread. Re-apply the default
+          // auto-file flag when the draft id changes so the chip shows "Auto"
+          // instead of "Everything" when appropriate.
+          listenWhen: (prev, curr) => prev.draft.id != curr.draft.id,
+          listener: (context, _) {
+            if (!_hasAppliedQueryParams) return;
+            _applyDefaultAutoFile();
+          },
+          child: BlocBuilder<PriorityBloc, PriorityState>(
+            builder: (context, state) {
+              final isViewerMode = state.draft.priority.isViewer;
 
-            if (state.draft.priority.isTwistDev) {
-              return Scaffold(
-                translucent: true,
-                scrollable: false,
-                childPad: false,
-                body: Center(
-                  child: Text(
-                    'Select a thread',
-                    style: context.theme.typography.sm.copyWith(
-                      color: context.theme.plotColors.muted,
+              if (state.draft.priority.isTwistDev) {
+                return Scaffold(
+                  translucent: true,
+                  scrollable: false,
+                  childPad: false,
+                  body: Center(
+                    child: Text(
+                      'Select a thread',
+                      style: context.theme.typography.sm.copyWith(
+                        color: context.theme.plotColors.muted,
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              return PopScope(
+                canPop: false,
+                onPopInvokedWithResult: (didPop, result) {
+                  if (!didPop) {
+                    if (ModalProvider.tryDismissTopModal(context)) return;
+                    final provider = ActivityPanelControllerProvider.maybeOf(
+                      context,
+                    );
+                    if (provider != null && provider.tryCloseSearch()) return;
+                    if (!context.isMultiPanel) {
+                      context.run(ChangeCurrentThread(null));
+                    }
+                  }
+                },
+                child: CallbackShortcuts(
+                  bindings: _buildThreadShortcuts(context, state),
+                  child: Scaffold(
+                    translucent: true,
+                    scrollable: false,
+                    childPad: false,
+                    body: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Single panel mode: editor at bottom, edge-to-edge
+                        if (!layoutState.multiPanel) {
+                          return Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              if (!isViewerMode) ...[
+                                Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: context.contentPaddingH,
+                                  ),
+                                  child: _buildThreadTypeSelector(
+                                    context,
+                                    state,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              if (!isViewerMode)
+                                Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: context.contentPaddingH,
+                                  ),
+                                  child: _buildAutoOrganizeLine(context, state),
+                                ),
+
+                              Flexible(
+                                child: NoteEditor(
+                                  key: _threadEditorKey,
+                                  draft: state.draftNote,
+                                  thread: state.draft,
+                                  twists: _draftTwists ?? state.twists,
+                                  actors: state.actors,
+                                  onDraftChanged: _handleDraftChanged,
+                                  flushToBottom: true,
+                                  showScheduleActions: false,
+                                  hint: state.draft.priority.isPlotApp
+                                      ? 'Ask for help or share feedback'
+                                      : _editorHint,
+                                  additionalMentions: _twistMentions,
+                                  onSubmitted: _onChatSubmitted,
+                                  assignNote: !isViewerMode,
+                                  viewerMode: isViewerMode,
+                                  selectedTwist: _selectedTwist,
+                                  onTwistSelected: _selectTwist,
+                                  onNavigateToThread: (thread) {
+                                    context.run(ChangeCurrentThread(thread));
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+
+                        // Multi-panel mode: centered layout
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: [
+                              Flexible(
+                                child: SizedBox(
+                                  height: constraints.maxHeight * 0.25,
+                                ),
+                              ),
+
+                              if (!isViewerMode) ...[
+                                _buildThreadTypeSelector(context, state),
+
+                                SizedBox(height: 16),
+                              ],
+
+                              Flexible(
+                                flex: 2,
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxHeight: constraints.maxHeight * 0.5,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (!isViewerMode)
+                                        _buildAutoOrganizeLine(context, state),
+                                      Flexible(
+                                        child: NoteEditor(
+                                          key: _threadEditorKey,
+                                          draft: state.draftNote,
+                                          thread: state.draft,
+                                          twists: _draftTwists ?? state.twists,
+                                          actors: state.actors,
+                                          onDraftChanged: _handleDraftChanged,
+                                          flushToBottom: false,
+                                          showScheduleActions: false,
+                                          hint: state.draft.priority.isPlotApp
+                                              ? 'Ask for help or share feedback'
+                                              : _editorHint,
+                                          additionalMentions: _twistMentions,
+                                          onSubmitted: _onChatSubmitted,
+                                          assignNote: !isViewerMode,
+                                          viewerMode: isViewerMode,
+                                          selectedTwist: _selectedTwist,
+                                          onTwistSelected: _selectTwist,
+                                          onNavigateToThread: (thread) {
+                                            context.run(
+                                              ChangeCurrentThread(thread),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
               );
-            }
-
-            return PopScope(
-              canPop: false,
-              onPopInvokedWithResult: (didPop, result) {
-                if (!didPop) {
-                  if (ModalProvider.tryDismissTopModal(context)) return;
-                  final provider = ActivityPanelControllerProvider.maybeOf(
-                    context,
-                  );
-                  if (provider != null && provider.tryCloseSearch()) return;
-                  if (!context.isMultiPanel) {
-                    context.run(ChangeCurrentThread(null));
-                  }
-                }
-              },
-              child: CallbackShortcuts(
-                bindings: _buildThreadShortcuts(context, state),
-                child: Scaffold(
-                  translucent: true,
-                  scrollable: false,
-                  childPad: false,
-                  body: LayoutBuilder(
-                    builder: (context, constraints) {
-                      // Single panel mode: editor at bottom, edge-to-edge
-                      if (!layoutState.multiPanel) {
-                        return Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            if (!isViewerMode) ...[
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: context.contentPaddingH,
-                                ),
-                                child: _buildThreadTypeSelector(context, state),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-
-                            if (!isViewerMode)
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: context.contentPaddingH,
-                                ),
-                                child: _buildAutoOrganizeLine(context, state),
-                              ),
-
-                            Flexible(
-                              child: NoteEditor(
-                                key: _threadEditorKey,
-                                draft: state.draftNote,
-                                thread: state.draft,
-                                twists: _draftTwists ?? state.twists,
-                                actors: state.actors,
-                                onDraftChanged: _handleDraftChanged,
-                                flushToBottom: true,
-                                showScheduleActions: false,
-                                hint: state.draft.priority.isPlotApp
-                                    ? 'Ask for help or share feedback'
-                                    : _editorHint,
-                                additionalMentions: _twistMentions,
-                                onSubmitted: _onChatSubmitted,
-                                assignNote: !isViewerMode,
-                                viewerMode: isViewerMode,
-                                selectedTwist: _selectedTwist,
-                                onTwistSelected: _selectTwist,
-                                onNavigateToThread: (thread) {
-                                  context.run(ChangeCurrentThread(thread));
-                                },
-                              ),
-                            ),
-                          ],
-                        );
-                      }
-
-                      // Multi-panel mode: centered layout
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          children: [
-                            Flexible(
-                              child: SizedBox(
-                                height: constraints.maxHeight * 0.25,
-                              ),
-                            ),
-
-                            if (!isViewerMode) ...[
-                              _buildThreadTypeSelector(context, state),
-
-                              SizedBox(height: 16),
-                            ],
-
-                            Flexible(
-                              flex: 2,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxHeight: constraints.maxHeight * 0.5,
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (!isViewerMode)
-                                      _buildAutoOrganizeLine(context, state),
-                                    Flexible(
-                                      child: NoteEditor(
-                                        key: _threadEditorKey,
-                                        draft: state.draftNote,
-                                        thread: state.draft,
-                                        twists: _draftTwists ?? state.twists,
-                                        actors: state.actors,
-                                        onDraftChanged: _handleDraftChanged,
-                                        flushToBottom: false,
-                                        showScheduleActions: false,
-                                        hint: state.draft.priority.isPlotApp
-                                            ? 'Ask for help or share feedback'
-                                            : _editorHint,
-                                        additionalMentions: _twistMentions,
-                                        onSubmitted: _onChatSubmitted,
-                                        assignNote: !isViewerMode,
-                                        viewerMode: isViewerMode,
-                                        selectedTwist: _selectedTwist,
-                                        onTwistSelected: _selectTwist,
-                                        onNavigateToThread: (thread) {
-                                          context.run(
-                                            ChangeCurrentThread(thread),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            );
-          },
+            },
+          ),
         );
       },
     );
