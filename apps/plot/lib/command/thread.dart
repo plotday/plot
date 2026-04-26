@@ -19,14 +19,10 @@ import 'logging.dart';
 
 /// Holds data for creating a new Thread with its first Note
 class ThreadWithNote {
-  ThreadWithNote({required this.thread, this.note, this.assignNote = true});
+  ThreadWithNote({required this.thread, this.note});
 
   final Thread thread;
   final Note? note;
-
-  /// Whether to assign the note to the current user (adding Tag.todo).
-  /// True for task-type threads, false for note-type threads with todo.
-  final bool assignNote;
 }
 
 abstract class ThreadCommand extends Command {
@@ -361,7 +357,6 @@ class AddThreadWithNote extends Command {
     final savedThread = await priorityBloc.add(
       _data.thread,
       note: _data.note,
-      assignNote: _data.assignNote,
     );
 
     // Only navigate if requested

@@ -5,7 +5,6 @@ class LocalPreferencesState extends Equatable {
   const LocalPreferencesState({
     required this.mentionMruIds,
     this.showAllPriorities = false,
-    this.lastNewThreadType,
   });
 
   /// Most-recently-used mention IDs (TwistInstance IDs), ordered with most recent first
@@ -15,22 +14,17 @@ class LocalPreferencesState extends Equatable {
   /// false = active only (default), true = show all
   final bool showAllPriorities;
 
-  /// Last-used thread type on NewThreadPage (persisted across sessions)
-  final String? lastNewThreadType;
-
   /// Create a copy with updated properties
   LocalPreferencesState copyWith({
     List<String>? mentionMruIds,
     bool? showAllPriorities,
-    String? lastNewThreadType,
   }) {
     return LocalPreferencesState(
       mentionMruIds: mentionMruIds ?? this.mentionMruIds,
       showAllPriorities: showAllPriorities ?? this.showAllPriorities,
-      lastNewThreadType: lastNewThreadType ?? this.lastNewThreadType,
     );
   }
 
   @override
-  List<Object?> get props => [mentionMruIds, showAllPriorities, lastNewThreadType];
+  List<Object?> get props => [mentionMruIds, showAllPriorities];
 }

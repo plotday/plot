@@ -33,7 +33,6 @@ class NoteEditor extends StatefulWidget {
     this.hint,
     this.additionalMentions,
     this.onSubmitted,
-    this.assignNote = true,
     this.viewerMode = false,
     // Twist selection (new-thread mode)
     this.selectedTwist,
@@ -66,10 +65,6 @@ class NoteEditor extends StatefulWidget {
 
   /// Called after the thread is submitted. Only used in new-thread mode.
   final VoidCallback? onSubmitted;
-
-  /// Whether to assign the note to the current user when the thread is a todo.
-  /// True for task-type threads, false for note/link/chat types with todo.
-  final bool assignNote;
 
   /// When true, hides all toolbar controls for viewer-created content in
   /// readonly priorities. Notes are auto-private.
@@ -1506,13 +1501,9 @@ class NoteEditorState extends State<NoteEditor> {
       );
     }
 
-    // Cmd-Enter (alt) adds the thread to agenda (Do Now scheduling) but
-    // should not auto-assign the note to self. Users who want the note
-    // assigned can toggle "Add task" explicitly before submitting.
-    return ThreadWithNote(
-      thread: thread,
-      note: note,
-      assignNote: widget.assignNote && !alt,
-    );
+    // Cmd-Enter (alt) adds the thread to agenda (Do Now scheduling).
+    // Note assignment is never automatic — users toggle "Add task" in the
+    // editor when they want a note assigned to themselves.
+    return ThreadWithNote(thread: thread, note: note);
   }
 }

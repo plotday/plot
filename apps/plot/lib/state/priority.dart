@@ -1584,7 +1584,6 @@ class PriorityBloc extends Cubit<PriorityState> {
   Future<Thread> add(
     Thread thread, {
     Note? note,
-    bool assignNote = true,
   }) async {
     // Convert the draft to a non-draft
     final savedThread = thread.copyWith(draft: false);
@@ -1610,19 +1609,16 @@ class PriorityBloc extends Cubit<PriorityState> {
 
     await savedThread.save();
 
-    // Convert draft note to published if provided
+    // Convert draft note to published if provided. Tags on the note (including
+    // self-assignment via Tag.todo) come from explicit user toggles in the
+    // editor — never auto-applied here.
     if (note != null &&
         note.content != null &&
         note.content!.trim().isNotEmpty) {
-      var publishedNote = note.copyWith(threadId: savedThread.id, draft: false);
-
-      // If the thread is a task and note assignment is requested, assign the
-      // note to the current user — but only if no one is already assigned
-      // (e.g. the user explicitly assigned someone else on the new thread page).
-      if (savedThread.todo && assignNote && !publishedNote.isAssigned()) {
-        publishedNote = publishedNote.assignTo(Base.actorId);
-      }
-
+      final publishedNote = note.copyWith(
+        threadId: savedThread.id,
+        draft: false,
+      );
       await publishedNote.save();
     }
 

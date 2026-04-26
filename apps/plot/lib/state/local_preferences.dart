@@ -16,7 +16,6 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
 
   static const String _kMentionMruKey = 'mention_mru_ids';
   static const String _kShowAllPrioritiesKey = 'show_all_priorities';
-  static const String _kLastNewThreadTypeKey = 'last_new_thread_type';
   static const String _kSubTypeMruPrefix = 'thread_subtype_mru:';
   static const int _maxMruItems = 50;
 
@@ -70,12 +69,6 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
       });
   }
 
-  /// Record the last-used thread type on NewThreadPage
-  Future<void> recordLastNewThreadType(String type) async {
-    emit(state.copyWith(lastNewThreadType: type));
-    await _persistState();
-  }
-
   /// Toggle showing all priorities (active + archived) vs active only
   Future<void> toggleShowAllPriorities() async {
     emit(state.copyWith(showAllPriorities: !state.showAllPriorities));
@@ -125,14 +118,12 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     final prefs = ProfilePreferences.instance;
     final idsString = prefs.getString(_kMentionMruKey);
     final showAllPriorities = prefs.getBool(_kShowAllPrioritiesKey) ?? false;
-    final lastNewThreadType = prefs.getString(_kLastNewThreadTypeKey);
 
     emit(state.copyWith(
       mentionMruIds: idsString != null && idsString.isNotEmpty
           ? idsString.split(',')
           : null,
       showAllPriorities: showAllPriorities,
-      lastNewThreadType: lastNewThreadType,
     ));
   }
 
@@ -141,8 +132,5 @@ class LocalPreferencesBloc extends Cubit<LocalPreferencesState> {
     final prefs = ProfilePreferences.instance;
     await prefs.setString(_kMentionMruKey, state.mentionMruIds.join(','));
     await prefs.setBool(_kShowAllPrioritiesKey, state.showAllPriorities);
-    if (state.lastNewThreadType != null) {
-      await prefs.setString(_kLastNewThreadTypeKey, state.lastNewThreadType!);
-    }
   }
 }

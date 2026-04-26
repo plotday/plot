@@ -25,8 +25,6 @@ import 'package:plot/util/shortcut.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'logging.dart';
 
-enum NewThreadType { note, task, link, chat }
-
 /// Tracks hover state and rebuilds its child via [builder]. Used to apply
 /// a "very muted until hovered" effect to unselected chips.
 class _HoverBuilder extends StatefulWidget {
@@ -97,8 +95,6 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Twists for the selected draft priority (may differ from context priority)
   List<TwistInstance>? _draftTwists;
 
-  late NewThreadType _selectedType;
-
   /// Contacts the user has recently shared threads with, for suggestions.
   List<Actor> _recentContacts = const [];
 
@@ -142,17 +138,9 @@ class NewThreadPageState extends State<NewThreadPage> {
       );
     });
 
-    // Apply query parameters and default type to draft
+    // Apply query parameters to draft
     if (!_hasAppliedQueryParams) {
       _hasAppliedQueryParams = true;
-      if (widget.sharedUrl != null) {
-        log.info(
-          'NewThreadPage: opened with sharedUrl=${widget.sharedUrl} — defaulting to link type',
-        );
-        _selectedType = NewThreadType.link;
-      } else {
-        _selectedType = _loadDefaultType();
-      }
       _initializeDraft();
     }
   }
@@ -172,34 +160,11 @@ class NewThreadPageState extends State<NewThreadPage> {
     }
   }
 
-  void _resolveDefaultTwist() {
-    final twists = _draftTwists ?? context.read<PriorityBloc>().state.twists;
-    if (twists.isEmpty) {
-      setState(() => _selectedTwist = null);
-      return;
-    }
-    final sorted = context.read<LocalPreferencesBloc>().sortByMentionMru(
-      twists,
-      (t) => t.id.toString(),
-    );
-    setState(() => _selectedTwist = sorted.first);
-    // Set icon on draft
-    final bloc = context.read<PriorityBloc>();
-    bloc.updateDraftLocal(
-      bloc.state.draft.copyWith(
-        icon: Value('twist:${_selectedTwist!.twistId}'),
-      ),
-    );
-  }
-
-  /// Sequences query parameter application and default type initialization.
-  /// Must be async because _applyQueryParametersToDraft awaits DB lookups;
-  /// _applyDefaultType must run AFTER those complete so its draft changes
-  /// (icon, todo) aren't overwritten by the stale copyWith in the query method.
+  /// Sequences query parameter application and post-load setup.
+  /// Async because _applyQueryParametersToDraft awaits DB lookups.
   Future<void> _initializeDraft() async {
     await _applyQueryParametersToDraft();
     if (!mounted) return;
-    _applyDefaultType();
 
     // Auto-organize is ON by default only in the root ("Everything") priority
     // context and when the user has not explicitly picked or carried over a
@@ -324,14 +289,11 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// Loads twists for the given priority and updates local state.
   /// Twists are workspace-level now, so the same list applies regardless of
   /// which priority is selected. Kept as a no-op hook so callers don't need to
-  /// branch, and so draft mode still triggers default-twist resolution.
+  /// branch.
   Future<void> _loadTwistsForPriority(Priority priority) async {
     setState(() {
       _draftTwists = null;
     });
-    if (_selectedType == NewThreadType.chat) {
-      _resolveDefaultTwist();
-    }
   }
 
   /// Loads contacts for the "with" suggestion chips, sorted MRU → frequent →
@@ -1279,29 +1241,6 @@ class NewThreadPageState extends State<NewThreadPage> {
     _provider?.tryCloseSearch();
   }
 
-  NewThreadType _loadDefaultType() {
-    final saved = context.read<LocalPreferencesBloc>().state.lastNewThreadType;
-    if (saved != null) {
-      for (final type in NewThreadType.values) {
-        if (type.name == saved) return type;
-      }
-    }
-    return NewThreadType.task;
-  }
-
-  void _applyDefaultType() {
-    final bloc = context.read<PriorityBloc>();
-    final draft = bloc.state.draft;
-    if (_selectedType == NewThreadType.task && !draft.todo) {
-      bloc.updateDraftLocal(draft.toggleTag(Tag.todo));
-    } else if (_selectedType != NewThreadType.task && draft.todo) {
-      bloc.updateDraftLocal(draft.toggleTag(Tag.todo));
-    }
-    if (_selectedType == NewThreadType.chat) {
-      _resolveDefaultTwist();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<LayoutBloc, LayoutState>(
@@ -1399,7 +1338,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                       : _editorHint,
                                   additionalMentions: _twistMentions,
                                   onSubmitted: _onChatSubmitted,
-                                  assignNote: !isViewerMode,
                                   viewerMode: isViewerMode,
                                   selectedTwist: _selectedTwist,
                                   onTwistSelected: _selectTwist,
@@ -1456,7 +1394,6 @@ class NewThreadPageState extends State<NewThreadPage> {
                                               : _editorHint,
                                           additionalMentions: _twistMentions,
                                           onSubmitted: _onChatSubmitted,
-                                          assignNote: !isViewerMode,
                                           viewerMode: isViewerMode,
                                           selectedTwist: _selectedTwist,
                                           onTwistSelected: _selectTwist,
