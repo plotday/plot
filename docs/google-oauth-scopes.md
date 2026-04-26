@@ -188,6 +188,157 @@ Yes. Our privacy policy (https://plot.day/privacy) explicitly states compliance 
 - Data is not read by humans except with consent, for security, or for legal compliance
 - Data is not transferred to third parties except for service provision, legal compliance, or asset sale with data protection obligations
 
+## Steps to Exercise Each Scope
+
+These steps are written for the Google OAuth review team. They assume the reviewer has already added the relevant connection to a Plot priority (covered separately) and that an initial sync has completed so synced items are visible in the priority's thread list.
+
+Throughout, "thread" means a single item in Plot — a synced calendar event, email, Drive document, task, or Chat conversation appears as a thread inside the priority where the connection was enabled.
+
+### Google Calendar — `calendar.calendarlist.readonly`, `calendar.events`
+
+**Choose which calendars sync** (`calendar.calendarlist.readonly`)
+
+1. Open the Google Calendar connection in the priority's connections settings.
+2. The list of the user's calendars loads — this is the read of the calendar list.
+3. Toggle one or more calendars on or off. Enabled calendars sync their events into the priority.
+
+**RSVP to a calendar event** (`calendar.events`, write)
+
+1. In the priority, open a synced calendar event that has other attendees (it appears as a thread with a date/time and attendee list).
+2. Two buttons appear at the top of the thread: **Attend** and **Skip**.
+3. Tap **Attend** to RSVP yes, or **Skip** to RSVP no. The button state updates immediately and the RSVP is written back to Google Calendar via `events.patch`.
+4. Open the same event in Google Calendar (web or mobile) to confirm the RSVP status changed.
+
+**Read calendar events** (`calendar.events`, read) is exercised passively — events from enabled calendars appear in the thread list as they sync.
+
+---
+
+### Google Contacts — `contacts.readonly`, `contacts.other.readonly`
+
+These scopes are exercised passively. Once the Google Contacts connection is added, Plot reads the user's Contacts and Other Contacts to resolve email addresses to names and avatars across every other synced service.
+
+To verify:
+
+1. Open any synced Gmail thread, calendar event, Drive document, or Chat thread that involves people who are in the user's Google Contacts.
+2. Confirm that participant names and profile pictures appear next to email addresses in the thread (instead of bare email addresses). The names and avatars are sourced from Google Contacts.
+3. Optionally, type `@` while replying in a thread to bring up an autocomplete of contacts — entries from Google Contacts appear in the suggestions.
+
+---
+
+### Google Tasks — `tasks`
+
+**Choose which task lists sync** (`tasks`, read)
+
+1. Open the Google Tasks connection in the priority's connections settings.
+2. The list of the user's task lists loads.
+3. Enable one or more task lists. Their tasks sync into the priority as threads.
+
+**Complete a Google Task** (`tasks`, write)
+
+1. Open a synced task in the priority.
+2. Tap the checkbox at the top of the thread (or use the **Done** action) to mark the task complete.
+3. The completion is written back to Google Tasks. Open Google Tasks to confirm the task is now checked off.
+
+**Create a new task that syncs to Google Tasks** (`tasks`, write)
+
+1. In a priority that has a Google Tasks list enabled, create a new thread and choose **Task** as the type, picking the Google Tasks list as the destination.
+2. Enter a title and save.
+3. The task is created in Google Tasks via `tasks.insert`. Open Google Tasks to confirm.
+
+---
+
+### Gmail — `gmail.modify`
+
+**Choose which labels sync** (`gmail.modify`, read)
+
+1. Open the Gmail connection in the priority's connections settings.
+2. The list of the user's Gmail labels loads.
+3. Enable one or more labels. Email threads with those labels sync into the priority.
+
+**Reply to an email thread** (`gmail.modify`, send)
+
+1. Open a synced email thread in the priority.
+2. Type a reply in the message composer at the bottom of the thread.
+3. Send the reply. Plot calls `messages.send` to post the reply to the original Gmail thread.
+4. Open the same thread in Gmail (web or mobile) to confirm the reply appears in-thread.
+
+**Archive an email thread** (`gmail.modify`, label modification)
+
+1. Open a synced email thread in the priority.
+2. Tap the **Archive** action (also available via the keyboard shortcut shown on the menu).
+3. Plot calls `messages.modify` to remove the `INBOX` label from the thread in Gmail.
+4. Open Gmail to confirm the thread is no longer in the inbox.
+
+---
+
+### Google Drive — `drive`
+
+**Choose which folders sync** (`drive`, folder enumeration)
+
+1. Open the Google Drive connection in the priority's connections settings.
+2. The folder picker loads, listing My Drive, shared drives, and folders. This exercises folder enumeration, which `drive.file` does not provide.
+3. Enable one or more folders. Documents in the selected folders sync into the priority as threads.
+
+**Reply to a document comment** (`drive`, comment write)
+
+1. Open a synced Drive document in the priority. Existing comments appear as replies on the thread.
+2. Type a reply in the message composer at the bottom of the thread.
+3. Send. Plot calls the Drive `comments.replies.create` endpoint to post the reply on the original comment thread.
+4. Open the same document in Google Drive and confirm the reply appears under the same comment.
+
+**Add a new comment to a document** (`drive`, comment create)
+
+1. Open a synced Drive document in the priority.
+2. Add a new top-level reply (the first reply on a document creates a new comment thread via `comments.create`).
+3. Open the document in Google Drive to confirm the new comment appears.
+
+Reading documents and comments (`drive`, read) is exercised passively as documents from enabled folders sync into the priority.
+
+---
+
+### Google Chat — `chat.spaces.readonly`, `chat.messages`, `chat.memberships.readonly`, `chat.users.readstate`
+
+Google Chat with user authentication requires a Google Workspace account. The Plot Chat connector is only offered to Workspace users.
+
+**Choose which spaces sync** (`chat.spaces.readonly`)
+
+1. Open the Google Chat connection in the priority's connections settings.
+2. The list of the user's Chat spaces loads — this is the read of the spaces list.
+3. Enable one or more spaces. Their message threads sync into the priority.
+
+**See members on a Chat thread** (`chat.memberships.readonly`)
+
+1. Open a synced Chat thread in the priority.
+2. The thread shows participant names and avatars. These are resolved from Chat space membership data.
+
+**Reply to a Chat thread** (`chat.messages`, write)
+
+1. Open a synced Chat thread in the priority.
+2. Type a reply in the message composer at the bottom of the thread.
+3. Send. Plot calls `messages.create` to post the reply into the same Chat thread.
+4. Open the same space in Google Chat to confirm the message appears in-thread, posted as the user.
+
+**Edit a Chat message** (`chat.messages`, update)
+
+1. In a synced Chat thread, open one of the user's own previously-sent messages.
+2. Edit the message text.
+3. Plot calls `messages.patch`. Confirm the edit reflects in Google Chat.
+
+**React to a Chat message** (`chat.messages`, reactions)
+
+1. In a synced Chat thread, add an emoji reaction to a message (Plot maps its reaction tags to Chat emoji).
+2. Plot calls `reactions.create`. Confirm the reaction appears in Google Chat.
+3. Remove the reaction in Plot. Plot calls `reactions.delete`. Confirm the reaction disappears in Google Chat.
+
+**Sync read state** (`chat.users.readstate`)
+
+1. In Google Chat, leave a Chat thread with unread messages. The thread shows as unread in Plot.
+2. Open the thread in Plot. Plot updates the user's read state for that space via the read-state API.
+3. Refresh Google Chat — the thread is no longer marked unread.
+4. The reverse also works: marking a thread read in Google Chat causes Plot to clear the unread indicator on the next sync.
+
+---
+
 ## CASA Assessment Preparation
 
 ### What Assessors Will Review
