@@ -2051,7 +2051,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 315;
+  int get schemaVersion => 316;
 
   @override
   MigrationStrategy get migration {
@@ -2932,8 +2932,18 @@ class Store extends _$Store {
       await _safeAddColumn(m, actors, actors.primary);
       // Clear the actors sync cursor so the next sync re-pulls every row
       // and stamps the correct primary flag (existing rows default to true).
+      // Entity name is 'user_actors' (BaseTable.name = '${table}s', table = 'user_actor').
       await m.database.customStatement(
-        "DELETE FROM sync_states WHERE entity LIKE 'actors%'",
+        "DELETE FROM sync_states WHERE entity LIKE 'user_actors%'",
+      );
+    }
+    if (from < 316) {
+      // v315 used the wrong sync_states LIKE pattern ('actors%' instead of
+      // 'user_actors%'), so the cursor never got cleared and existing local
+      // actor rows kept the default primary=true. Re-clear with the correct
+      // pattern so the next sync re-pulls every row with the server flag.
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'user_actors%'",
       );
     }
   }
