@@ -16,7 +16,30 @@ FVariantsDelta<FButtonVariantConstraint, FButtonVariant, FButtonSizeStyles,
   FTypography typography,
   PlotIconSizes iconSizes,
 ) {
+  // forui 0.21 added BoxConstraints(minWidth/minHeight: 36) defaults to
+  // FButtonContentStyle and FButtonIconContentStyle on desktop. Plot's
+  // buttons (chips, ghost icon buttons) sized themselves entirely from
+  // padding, so the new minimums grow them. Reinstate "no minimum" once
+  // here for every variant + size; per-call-site overrides aren't needed.
+  final removeMinConstraints = FVariantOperation<FButtonVariantConstraint,
+      FButtonVariant, FButtonSizeStyles, FButtonSizesDelta>.all(
+    FButtonSizesDelta.delta([
+      FVariantOperation<FButtonSizeVariantConstraint, FButtonSizeVariant,
+          FButtonStyle, FButtonStyleDelta>.all(
+        FButtonStyleDelta.delta(
+          contentStyle: FButtonContentStyleDelta.delta(
+            constraints: const BoxConstraints(),
+          ),
+          iconContentStyle: FButtonIconContentStyleDelta.delta(
+            constraints: const BoxConstraints(),
+          ),
+        ),
+      ),
+    ]),
+  );
+
   return FVariantsDelta.delta([
+    removeMinConstraints,
     // Primary button
     FVariantOperation.exact(
       {FButtonVariantConstraint.primary},

@@ -1010,12 +1010,13 @@ class NewThreadPageState extends State<NewThreadPage> {
           ),
         ),
         mainAxisSize: MainAxisSize.min,
-        prefix: FaIcon(
-          selected ? FontAwesomeIcons.user : FontAwesomeIcons.plus,
-          size: context.theme.iconSizes.sm,
-          color: (!selected && !hovered)
-              ? context.theme.plotColors.veryMuted
-              : null,
+        prefix: Opacity(
+          opacity: selected || hovered ? 1.0 : 0.4,
+          child: Avatar(
+            actor: actor,
+            size: context.theme.iconSizes.sm,
+            tooltip: false,
+          ),
         ),
         child: Text(
           actor.name ?? actor.email ?? 'Unknown',

@@ -1022,12 +1022,24 @@ class ThreadCommands extends HookWidget {
 
     // Get commands (only if showCommands is true)
     final isNarrow = !context.isMultiPanel;
-    final hoverCommands = threadCommands(
+    // Share affordance lives in the trailing slot (as an [AvatarGroup]) when
+    // the thread is shared, so we drop it from the hover-command pool to avoid
+    // duplication. When not shared, we keep it in hover commands AND hoist it
+    // to the front so the tag/command take() limit below can't truncate it
+    // when a thread already carries multiple tag buttons.
+    final isShared = isThreadShared(activity);
+    final rawHoverCommands = threadCommands(
       activity,
       skipPrimary: true,
       skipInfrequent: true,
       showEventTiming: showEventTiming,
-    );
+    ).toList();
+    final hoverCommands = isShared
+        ? rawHoverCommands.where((cmd) => cmd is! PickThreadShared)
+        : <Command>[
+            ...rawHoverCommands.whereType<PickThreadShared>(),
+            ...rawHoverCommands.where((cmd) => cmd is! PickThreadShared),
+          ];
     final threadCommandButtons = showCommands
         ? [
             if (isNarrow) Button.icon(PickScheduleThread(activity)),
@@ -1153,9 +1165,107 @@ class ThreadCommands extends HookWidget {
             if (attendButton != null) attendButton,
             if (skipButton != null) skipButton,
             if (rsvpButton != null) rsvpButton,
+            // Trailing AvatarGroup slot — only present when the thread is
+            // actually shared. When not shared we leave the slot empty (no
+            // padding, no tooltip); the share command is reachable via the
+            // hover commands list instead.
+            if (isShared) SharedCommandButton(thread: activity),
           ],
         );
       },
+    );
+  }
+}
+
+/// Renders the "Share" / "Shared" command. When the thread is shared, the
+/// button hugs an [AvatarGroup] so the avatars sit at the row's natural
+/// height. When the thread is not yet shared, it shows the share icon at the
+/// same visual weight so the share affordance stays visible — callers that
+/// don't want an empty-state icon (e.g. [ThreadCommands], which surfaces the
+/// share command via hover commands instead) should gate this widget on
+/// `isThreadShared(thread)`.
+class SharedCommandButton extends HookWidget {
+  const SharedCommandButton({required this.thread, super.key});
+
+  final Thread thread;
+
+  @override
+  Widget build(BuildContext context) {
+    final command = PickThreadShared(thread);
+    final shared = isThreadShared(thread);
+
+    // Expand the avatar circle into the button's icon padding so the
+    // initials are legible while the button's overall height still matches
+    // neighbouring icon buttons (icon + padding == avatar + zero padding).
+    // Use `iconSizes.base` as the baseline because Plot's `Button.icon`
+    // wraps icons in a `SizedBox(height: iconSizes.base)` regardless of
+    // forui's `iconContentStyle.iconStyle.size` (which is `lg`); using `lg`
+    // here makes the avatar 2px taller than sibling buttons and grows the
+    // surrounding row height.
+    final iconContentStyle =
+        context.theme.buttonStyles.ghost.md.iconContentStyle;
+    final iconPadding = iconContentStyle.padding.resolve(TextDirection.ltr);
+    final iconSize = context.theme.iconSizes.base;
+    final avatarSize = iconSize + iconPadding.top + iconPadding.bottom;
+
+    // The synchronous `sharedDisplayActors` getter only returns actors
+    // already in the in-memory cache. On first render in the agenda the
+    // contacts haven't been fetched yet, so it returns an empty list and
+    // the avatar group renders nothing. Kick off an async resolve so the
+    // cache fills; once it does, this widget rebuilds with the resolved
+    // actors AND any other ThreadWidget sharing the same contacts gets a
+    // cache hit on its next build.
+    final contactsKey = thread.contacts.map((u) => u.toString()).join('|');
+    final loadedActors = useFuture(
+      useMemoized(() => command.loadSharedDisplayActors(), [contactsKey]),
+    ).data;
+    final actors = loadedActors ?? command.sharedDisplayActors;
+
+    final Widget child = shared
+        ? AvatarGroup(
+            actors: actors,
+            totalCount: command.sharedTotalCount,
+            size: avatarSize,
+          )
+        : SizedBox(
+            width: iconSize,
+            height: iconSize,
+            child: Center(
+              child: FaIcon(command.icon ?? PlotIcon.shareAdd, size: iconSize),
+            ),
+          );
+
+    return FTooltip(
+      tipBuilder: (context, controller) => Text(command.title),
+      child: FButton.icon(
+        style: FButtonStyleDelta.delta(
+          decoration: FVariantsDelta.delta([
+            FVariantOperation.all(
+              DecorationDelta.boxDelta(
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ]),
+          iconContentStyle: FButtonIconContentStyleDelta.delta(
+            // Keep horizontal padding so this button hugs the row edge the
+            // same way as sibling icon buttons; zero vertical so the avatar
+            // fills the full button height.
+            padding: EdgeInsetsGeometryDelta.value(
+              EdgeInsets.symmetric(horizontal: iconPadding.left),
+            ),
+            // Drop the default minWidth (36) so the button hugs the avatar
+            // group's natural width — narrower groups (1–2 avatars) shouldn't
+            // get padded out to the size of a 3-slot group. Keep minHeight so
+            // vertical alignment with sibling icon buttons is preserved.
+            constraints: BoxConstraints(
+              minHeight: iconContentStyle.constraints.minHeight,
+            ),
+          ),
+        ),
+        variant: FButtonVariant.ghost,
+        onPress: () => context.run(command),
+        child: child,
+      ),
     );
   }
 }

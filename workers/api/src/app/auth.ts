@@ -11,7 +11,9 @@ declare module "hono" {
     tracker: Tracker;
     db: Kysely<DB>;
     user: AuthUser;
-    /** Set when JWT is valid but user doesn't exist in DB (new user hitting /activate). */
+    /** Verified Clerk JWT claims. Set whenever the JWT verifies, regardless of
+     * whether the DB user exists (new users hitting /activate, existing users
+     * on any endpoint that wants to read fresh Clerk-side fields like avatar). */
     clerkClaims: ClerkClaims;
   }
 }
@@ -67,6 +69,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
 
   if (user) {
     c.set("user", user);
+    if (claims) c.set("clerkClaims", claims);
     return next();
   }
 

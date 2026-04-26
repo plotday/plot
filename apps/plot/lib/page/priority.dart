@@ -2163,7 +2163,7 @@ class _DesktopTabState extends State<_DesktopTab> {
                     Text(
                       widget.label,
                       style: theme.typography.sm.copyWith(
-                        fontFamily: theme.typography.defaultFontFamily,
+                        fontFamily: theme.typography.fontFamily,
                         color: textColor,
                         fontWeight: widget.selected
                             ? FontWeight.w600

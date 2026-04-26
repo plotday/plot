@@ -215,81 +215,62 @@ class _NoteWidgetState extends State<NoteWidget> {
                   right: 0,
                   top: 0,
                   bottom: 0,
-                  child: widget.showAuthor
-                      ? FutureBuilder<Actor?>(
-                          future: widget.note.getAuthor(),
-                          builder: (context, snapshot) {
-                            final actor = snapshot.data;
-                            final authorName = actor == null
-                                ? null
-                                : (widget.note.authorId.isCurrentUser
-                                      ? 'You'
-                                      : actor.nameOrEmail);
-                            return Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (authorName != null &&
-                                    authorName.isNotEmpty) ...[
-                                  if (actor?.email != null &&
-                                      actor!.email != authorName)
-                                    FTooltip(
-                                      tipBuilder: (context, controller) =>
-                                          Text(actor.email!),
-                                      child: Text(
-                                        authorName,
-                                        style: context.theme.typography.xs
-                                            .copyWith(
-                                              color: context.colour.muted,
-                                            ),
-                                      ),
-                                    )
-                                  else
-                                    Text(
-                                      authorName,
-                                      style: context.theme.typography.xs
-                                          .copyWith(
-                                            color: context.colour.muted,
-                                          ),
-                                    ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '•',
-                                    style: context.theme.typography.xs.copyWith(
-                                      color: context.colour.muted,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                ],
-                                FTooltip(
-                                  tipBuilder: (context, controller) => Text(
-                                    widget.note.sourceCreatedAt
-                                        .toLocal()
-                                        .format('MMM d, yyyy, h:mm a'),
-                                  ),
-                                  child: Text(
-                                    widget.note.sourceCreatedAt.toTimeAgo(),
-                                    style: context.theme.typography.xs.copyWith(
-                                      color: context.colour.muted,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        )
-                      : FTooltip(
-                          tipBuilder: (context, controller) => Text(
-                            widget.note.sourceCreatedAt.toLocal().format(
-                              'MMM d, yyyy, h:mm a',
-                            ),
-                          ),
-                          child: Text(
-                            widget.note.sourceCreatedAt.toTimeAgo(),
-                            style: context.theme.typography.xs.copyWith(
-                              color: context.colour.muted,
-                            ),
+                  child: Builder(
+                    builder: (context) {
+                      final mutedXs = context.theme.typography.xs.copyWith(
+                        color: context.colour.muted,
+                      );
+                      final timeAgo = FTooltip(
+                        tipBuilder: (context, controller) => Text(
+                          widget.note.sourceCreatedAt.toLocal().format(
+                            'MMM d, yyyy, h:mm a',
                           ),
                         ),
+                        child: Text(
+                          widget.note.sourceCreatedAt.toTimeAgo(),
+                          style: mutedXs,
+                        ),
+                      );
+                      if (!widget.showAuthor) return timeAgo;
+                      return FutureBuilder<Actor?>(
+                        future: widget.note.getAuthor(),
+                        builder: (context, snapshot) {
+                          final actor = snapshot.data;
+                          final authorName = actor == null
+                              ? null
+                              : (widget.note.authorId.isCurrentUser
+                                    ? 'You'
+                                    : actor.nameOrEmail);
+                          if (authorName == null || authorName.isEmpty) {
+                            return timeAgo;
+                          }
+                          Widget authorText = Text(authorName, style: mutedXs);
+                          if (actor?.email != null &&
+                              actor!.email != authorName) {
+                            authorText = FTooltip(
+                              tipBuilder: (context, controller) =>
+                                  Text(actor.email!),
+                              child: authorText,
+                            );
+                          }
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (actor != null) ...[
+                                Avatar(actor: actor, tooltip: false),
+                                const SizedBox(width: 4),
+                              ],
+                              authorText,
+                              const SizedBox(width: 4),
+                              Text('•', style: mutedXs),
+                              const SizedBox(width: 4),
+                              timeAgo,
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
               ],
             ),

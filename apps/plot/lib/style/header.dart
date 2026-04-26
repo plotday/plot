@@ -9,6 +9,12 @@ FVariantsDelta<FHeaderVariantConstraint, FHeaderVariant, FHeaderStyle,
   ColourSchemeData colourScheme,
 ) {
   return FVariantsDelta.delta([
+    // forui 0.21 added a default BoxConstraints(minHeight: 54) (desktop) on
+    // FHeader. Plot lets the title row drive header height across all
+    // header variants, so reinstate "no minimum" once at the theme level.
+    FVariantOperation.all(
+      FHeaderStyleDelta.delta(constraints: const BoxConstraints()),
+    ),
     FVariantOperation.exact(
       {FHeaderVariantConstraint.root},
       FHeaderStyleDelta.delta(

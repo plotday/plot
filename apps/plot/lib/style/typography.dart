@@ -23,7 +23,7 @@ FTypography buildTypography(BuildContext context, FColors colorScheme) {
 
   final baseTypography = FTypography.inherit(
     colors: colorScheme,
-    defaultFontFamily: 'Figtree',
+    fontFamily: 'Figtree',
     touch: false,
   );
   final baseStyle = baseTypography.md;

@@ -16,6 +16,7 @@ export type ClerkClaims = {
   clerkId: string;
   email: string | undefined;
   name: string | undefined;
+  picture: string | undefined;
 };
 
 export type GetUserResult = {
@@ -45,6 +46,9 @@ export async function getUser(
       clerkId,
       email,
       name: (claims as any).name as string | undefined,
+      picture: ((claims as any).picture
+        ?? (claims as any).image_url
+        ?? (claims as any).imageUrl) as string | undefined,
     };
 
     if (userId) {
@@ -91,7 +95,7 @@ export async function getUser(
         email: email ?? "",
         name,
       },
-      claims: null,
+      claims: clerkClaims,
       error: null,
     };
   } catch (error) {

@@ -22,6 +22,41 @@ class Window extends StatefulWidget {
   /// Height of the Windows window controls area, matching the header bar height.
   static const double windowControlsHeight = 46.0;
 
+  /// Default macOS traffic light button height in points.
+  static const double _trafficLightHeight = 14.0;
+
+  /// Original x positions (from window left) of the macOS traffic light
+  /// buttons, captured at init time so we can re-position them while keeping
+  /// their horizontal layout intact.
+  static List<double>? _trafficLightOriginalX;
+  static double? _lastAppliedTrafficLightY;
+
+  /// Vertically centers the macOS traffic light buttons within a header of
+  /// [headerHeight] points. No-op on non-macOS platforms.
+  static Future<void> alignTrafficLightsToHeader(double headerHeight) async {
+    if (!Platform.instance.isMacOS) return;
+    final originals = _trafficLightOriginalX;
+    if (originals == null) return;
+    final y = ((headerHeight - _trafficLightHeight) / 2)
+        .clamp(0.0, double.infinity);
+    if (_lastAppliedTrafficLightY != null &&
+        (_lastAppliedTrafficLightY! - y).abs() < 0.5) {
+      return;
+    }
+    _lastAppliedTrafficLightY = y;
+    const types = [
+      NSWindowButtonType.closeButton,
+      NSWindowButtonType.miniaturizeButton,
+      NSWindowButtonType.zoomButton,
+    ];
+    for (var i = 0; i < types.length; i++) {
+      await macos_win.WindowManipulator.overrideStandardWindowButtonPosition(
+        buttonType: types[i],
+        offset: Offset(originals[i], y),
+      );
+    }
+  }
+
   static Future<void> init() async {
     // Initialize cross-platform window manager on desktop platforms
     if (Platform.instance.isMacOS || Platform.instance.isWindows) {
@@ -44,11 +79,19 @@ class Window extends StatefulWidget {
       );
 
       toolbarHeight = await macos_win.WindowManipulator.getTitlebarHeight();
-      final lastWindowButtonPos =
+      const buttonTypes = [
+        NSWindowButtonType.closeButton,
+        NSWindowButtonType.miniaturizeButton,
+        NSWindowButtonType.zoomButton,
+      ];
+      final buttonRects = [
+        for (final type in buttonTypes)
           await macos_win.WindowManipulator.getStandardWindowButtonPosition(
-            buttonType: NSWindowButtonType.zoomButton,
-          );
-      toolbarPadding = EdgeInsets.only(left: lastWindowButtonPos.right);
+            buttonType: type,
+          ),
+      ];
+      _trafficLightOriginalX = [for (final r in buttonRects) r.left];
+      toolbarPadding = EdgeInsets.only(left: buttonRects.last.right);
     } else if (Platform.instance.isWindows) {
       await windowManager.setTitleBarStyle(
         TitleBarStyle.hidden,

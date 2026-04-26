@@ -6,7 +6,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'command.dart';
-import 'package:plot/style/plot_icon_sizes.dart';
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/util/shortcut.dart';
@@ -140,10 +139,7 @@ class NewThread extends Command {
         eventObject: EventObject.activity,
         eventAction: EventAction.opened,
         icon: PlotIcon.addNote,
-        shortcut: platformSingleActivator(
-          LogicalKeyboardKey.keyN,
-          alt: kIsWeb,
-        ),
+        shortcut: platformSingleActivator(LogicalKeyboardKey.keyN, alt: kIsWeb),
       );
 
   @override
@@ -1828,22 +1824,31 @@ class PickThreadShared extends ShowCommands {
          showFilter: true,
          eventObject: EventObject.activity,
          eventAction: EventAction.updated,
-         shortcut: platformSingleActivator(LogicalKeyboardKey.keyS, shift: true),
+         shortcut: platformSingleActivator(
+           LogicalKeyboardKey.keyS,
+           shift: true,
+         ),
        );
 
   final Thread thread;
 
-  @override
-  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
-    final iconData = icon;
-    if (iconData == null) return null;
-    final count = _sharedCount(thread);
-    if (count < 2) return null;
-    return CountBadge(
-      count: count,
-      child: FaIcon(iconData, size: context.theme.iconSizes.base),
-    );
-  }
+  /// Non-self contacts on the thread resolved from the in-memory Actor cache,
+  /// suitable for sync rendering in an [AvatarGroup].
+  List<Actor> get sharedDisplayActors => _sharedDisplayActors(thread);
+
+  /// Like [sharedDisplayActors], but resolves uncached contacts via
+  /// [Actor.getOne]. The first time a thread's contacts are rendered they
+  /// may not yet be in [Actor]'s in-memory cache (the agenda doesn't eagerly
+  /// load them), so the synchronous getter returns an empty list and the
+  /// avatar group renders nothing. Awaiting this future populates the cache,
+  /// which lets subsequent builds — and other widgets sharing the same
+  /// contacts — resolve synchronously.
+  Future<List<Actor>> loadSharedDisplayActors() =>
+      _loadSharedDisplayActors(thread);
+
+  /// Total number of shared targets on the thread (self + other contacts +
+  /// groups + pending email invites), used for the overflow counter.
+  int get sharedTotalCount => _sharedCount(thread);
 }
 
 Future<void> _persistSharedChange(Thread thread) async {
@@ -1929,34 +1934,109 @@ class _ShareCandidatesCache {
 }
 
 String _computeSharedTitle(Thread thread) {
-  return _hasOtherShared(thread) ? 'Shared' : 'Share';
+  return isThreadShared(thread) ? 'Shared' : 'Share';
 }
 
 IconData _computeSharedIcon(Thread thread) {
-  return _hasOtherShared(thread) ? PlotIcon.user : PlotIcon.shareAdd;
+  return isThreadShared(thread) ? PlotIcon.user : PlotIcon.shareAdd;
 }
 
-bool _hasOtherShared(Thread thread) {
+/// Canonical check for whether a thread is shared with anyone other than the
+/// current user. Drives every "is this thread shared?" decision in the UI:
+/// whether to show an [AvatarGroup] vs. the plain share icon, whether to hoist
+/// the share command into the hover row, and the share modal's title/icon.
+///
+/// Returns true iff the thread has at least one of:
+/// - a pending email invite,
+/// - a non-system group it's been shared into, or
+/// - a non-self, non-twist contact.
+///
+/// System participants don't count as user-initiated sharing:
+/// - twist-instance contacts (a thread shared only with twists is unshared);
+/// - auto-maintained groups (e.g. workspace-wide "Everyone"/announce groups
+///   that twists publish into) — the viewer didn't initiate that share.
+///
+/// [_sharedCount] and [_sharedDisplayActors] apply the same filters so the
+/// count, the rendered actors, and this predicate can never disagree.
+bool isThreadShared(Thread thread) {
   if (thread.inviteEmails.isNotEmpty) return true;
-  if (thread.groups.isNotEmpty) return true;
+  if (thread.groups.any((id) => !_isSystemGroup(id))) return true;
   if (thread.contacts.isEmpty) return false;
   final selfUuids = Actor.getCurrentUserActorIds()
       .map((a) => a.toUuid())
       .toSet();
-  return thread.contacts.any((id) => !selfUuids.contains(id));
+  return thread.contacts.any(
+    (id) => !selfUuids.contains(id) && !_isTwistContact(id),
+  );
 }
+
+bool _isTwistContact(Uuid id) {
+  final actorId = ActorId.fromUuid(id);
+  // Either cache is authoritative on its own; check both so a thread doesn't
+  // briefly look "shared" during cold start before the Actor cache fills.
+  if (actorId.isTwist) return true;
+  return Actor.fromCache(actorId)?.type == ActorType.twistInstance;
+}
+
+/// True for groups whose membership the system manages — e.g. workspace
+/// "Everyone" announce groups twists publish into. The viewer can't add or
+/// remove themselves from these groups, so a thread filed only into such a
+/// group isn't "shared" from a user-initiated standpoint. Cache misses
+/// conservatively return false so a synced-but-uncached group keeps its
+/// existing visible behaviour.
+bool _isSystemGroup(Uuid id) => Group.fromCache(id)?.autoMaintained ?? false;
 
 int _sharedCount(Thread thread) {
   final selfUuids = Actor.getCurrentUserActorIds()
       .map((a) => a.toUuid())
       .toSet();
-  final others = thread.contacts.where((id) => !selfUuids.contains(id)).length;
-  final groupsCount = thread.groups.length;
+  final others = thread.contacts
+      .where((id) => !selfUuids.contains(id) && !_isTwistContact(id))
+      .length;
+  final groupsCount = thread.groups.where((id) => !_isSystemGroup(id)).length;
   // When a group is on the thread, it implicitly represents the current user
   // (either directly or because the user is a member). Don't also add the
   // separate +1 for self in that case.
   final selfCount = groupsCount > 0 ? 0 : 1;
   return selfCount + others + groupsCount + thread.inviteEmails.length;
+}
+
+/// Resolves the actors to display in the Avatar group for a shared thread,
+/// using only the in-memory Actor cache so the lookup is synchronous. The
+/// current user is excluded — the button label/count conveys self presence.
+List<Actor> _sharedDisplayActors(Thread thread) {
+  final selfUuids = Actor.getCurrentUserActorIds()
+      .map((a) => a.toUuid())
+      .toSet();
+  final seen = <ActorId>{};
+  final result = <Actor>[];
+  for (final contactId in thread.contacts) {
+    if (selfUuids.contains(contactId)) continue;
+    final actor = Actor.fromCache(ActorId.fromUuid(contactId));
+    if (actor == null) continue;
+    if (actor.type == ActorType.twistInstance) continue;
+    if (seen.add(actor.id)) result.add(actor);
+  }
+  return result;
+}
+
+Future<List<Actor>> _loadSharedDisplayActors(Thread thread) async {
+  final selfUuids = Actor.getCurrentUserActorIds()
+      .map((a) => a.toUuid())
+      .toSet();
+  final seen = <ActorId>{};
+  final result = <Actor>[];
+  for (final contactId in thread.contacts) {
+    if (selfUuids.contains(contactId)) continue;
+    try {
+      final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+      if (actor.type == ActorType.twistInstance) continue;
+      if (seen.add(actor.id)) result.add(actor);
+    } catch (_) {
+      // Skip contacts whose actors can't be resolved.
+    }
+  }
+  return result;
 }
 
 Future<Commands> _buildSharedCommands(
@@ -2078,7 +2158,8 @@ class _ThreadShareContactsGroup extends CommandGroup {
         .toList(growable: false);
 
     final commands = <Command>[
-      for (final actor in actors) ShareThreadActor(thread, actor, onUpdate: onUpdate),
+      for (final actor in actors)
+        ShareThreadActor(thread, actor, onUpdate: onUpdate),
     ];
 
     if (search != null && _isValidShareEmail(search)) {
@@ -2107,7 +2188,7 @@ Future<CommandReturn?> _checkSelfRemoval(
   BuildContext context,
   Thread thread,
 ) async {
-  if (!_hasOtherShared(thread)) {
+  if (!isThreadShared(thread)) {
     return CommandMessage(
       'Add someone else before removing yourself.',
       isError: true,
@@ -2159,6 +2240,10 @@ class ShareThreadActor extends Command {
 
   @override
   String? get subtitle => actor.name != null ? actor.email : null;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      Avatar(actor: actor);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
@@ -2255,6 +2340,10 @@ class InviteThreadEmail extends Command {
   final String email;
   final Future<void> Function(Thread) onUpdate;
   final bool _isInvited;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      Avatar(email: email);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

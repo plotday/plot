@@ -246,6 +246,11 @@ export function cleanConvertedMarkdown(markdown: string): string {
   // Leave regular whitespace alone so real paragraph spacing survives.
   markdown = markdown.replace(INVISIBLE_CHARS_RE, "");
 
+  // Drop empty-text links like `[](http://...)`. Email signatures wrap social
+  // icons in `<a><img></a>`; once images are stripped these collapse to empty
+  // links that no Markdown renderer can show as clickable.
+  markdown = markdown.replace(/\[\s*\]\([^)]*\)/g, "");
+
   // ai.toMarkdown() sometimes joins paragraphs on one line with double spaces
   // instead of proper newlines. Convert inline double-space separators to paragraph breaks.
   // Exclude pipes from both sides so we don't shred table rows like `|  | cell |`.

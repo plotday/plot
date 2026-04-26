@@ -179,14 +179,19 @@ class Actor extends ActorRow {
   }
 
   /// Returns non-self, non-archived user/contact actors ordered for thread
-  /// sharing:
-  ///   1. MRU — actors who appear on the most-recent threads in scope,
-  ///      ordered by the recency of their most-recent thread.
-  ///   2. Frequent — remaining actors on any in-scope thread, ordered by
-  ///      thread count (ties → alphabetical). When [priority] is provided
-  ///      and no actor has an MRU entry, this list carries the "most
-  ///      frequently shared in the priority" fallback.
-  ///   3. Rest — actors the user has no sharing history with in scope.
+  /// sharing. Threads whose `topic` starts with `channel:` are
+  /// connection-imported (calendar events, emails, etc.) and often pull in
+  /// contacts the user never chose, so explicit-thread history takes
+  /// precedence over connection-thread history at every band:
+  ///   1. Explicit MRU — actors on the most-recent in-scope explicit
+  ///      threads, ordered by recency of their most-recent explicit thread.
+  ///   2. Explicit frequent — remaining actors on any in-scope explicit
+  ///      thread, ordered by explicit-thread count (ties → alphabetical).
+  ///   3. Channel-only frequent — actors with no in-scope explicit history
+  ///      but who appear on in-scope channel threads, ordered by count
+  ///      (ties → alphabetical). Channel threads never contribute to MRU
+  ///      because they're auto-imported, not user-selected.
+  ///   4. Rest — actors the user has no sharing history with in scope.
   ///      When [priority] is provided, this falls back to the user's
   ///      cross-priority MRU/frequent ordering before alphabetical.
   ///
@@ -229,26 +234,42 @@ class Actor extends ActorRow {
     int byName(Actor a, Actor b) =>
         a.nameOrEmail.toLowerCase().compareTo(b.nameOrEmail.toLowerCase());
 
-    final seen = <Actor>[];
+    final explicitSeen = <Actor>[];
+    final channelOnlySeen = <Actor>[];
     final unseenInScope = <Actor>[];
     for (final actor in candidates) {
-      if (scoped.firstSeenIndex.containsKey(actor.id.toUuid())) {
-        seen.add(actor);
+      final id = actor.id.toUuid();
+      if (scoped.explicitFirstSeenIndex.containsKey(id)) {
+        explicitSeen.add(actor);
+      } else if (scoped.firstSeenIndex.containsKey(id)) {
+        channelOnlySeen.add(actor);
       } else {
         unseenInScope.add(actor);
       }
     }
 
-    // MRU within scope: order by first-seen index (lower = more recent).
-    seen.sort((a, b) {
-      final ai = scoped.firstSeenIndex[a.id.toUuid()]!;
-      final bi = scoped.firstSeenIndex[b.id.toUuid()]!;
+    // MRU within explicit threads: order by first-seen index (lower = more
+    // recent). Tie-break alphabetically.
+    explicitSeen.sort((a, b) {
+      final ai = scoped.explicitFirstSeenIndex[a.id.toUuid()]!;
+      final bi = scoped.explicitFirstSeenIndex[b.id.toUuid()]!;
       if (ai != bi) return ai.compareTo(bi);
       return byName(a, b);
     });
 
-    final mru = seen.take(mruSize).toList();
-    final frequent = seen.skip(mruSize).toList()
+    final mru = explicitSeen.take(mruSize).toList();
+    final frequent = explicitSeen.skip(mruSize).toList()
+      ..sort((a, b) {
+        final ca = scoped.explicitCounts[a.id.toUuid()] ?? 0;
+        final cb = scoped.explicitCounts[b.id.toUuid()] ?? 0;
+        if (ca != cb) return cb.compareTo(ca);
+        return byName(a, b);
+      });
+
+    // Channel-only band: actors only seen on connection-imported threads.
+    // No MRU here — connector threads are auto-imported, so recency tells
+    // us nothing about user intent. Sort by count, ties alphabetical.
+    final channelFrequent = channelOnlySeen
       ..sort((a, b) {
         final ca = scoped.counts[a.id.toUuid()] ?? 0;
         final cb = scoped.counts[b.id.toUuid()] ?? 0;
@@ -279,7 +300,13 @@ class Actor extends ActorRow {
     });
     tailUnseen.sort(byName);
 
-    return [...mru, ...frequent, ...tailSeen, ...tailUnseen];
+    return [
+      ...mru,
+      ...frequent,
+      ...channelFrequent,
+      ...tailSeen,
+      ...tailUnseen,
+    ];
   }
 
   static Future<_ThreadScanResult> _scanThreadsForSharing({
@@ -296,14 +323,27 @@ class Actor extends ActorRow {
     );
     final firstSeenIndex = <Uuid, int>{};
     final counts = <Uuid, int>{};
+    final explicitFirstSeenIndex = <Uuid, int>{};
+    final explicitCounts = <Uuid, int>{};
     for (var i = 0; i < threads.length; i++) {
-      for (final contactId in threads[i].contacts) {
+      final thread = threads[i];
+      final isExplicit = !(thread.topic?.startsWith('channel:') ?? false);
+      for (final contactId in thread.contacts) {
         if (selfIds.contains(contactId)) continue;
         firstSeenIndex.putIfAbsent(contactId, () => i);
         counts[contactId] = (counts[contactId] ?? 0) + 1;
+        if (isExplicit) {
+          explicitFirstSeenIndex.putIfAbsent(contactId, () => i);
+          explicitCounts[contactId] = (explicitCounts[contactId] ?? 0) + 1;
+        }
       }
     }
-    return _ThreadScanResult(firstSeenIndex: firstSeenIndex, counts: counts);
+    return _ThreadScanResult(
+      firstSeenIndex: firstSeenIndex,
+      counts: counts,
+      explicitFirstSeenIndex: explicitFirstSeenIndex,
+      explicitCounts: explicitCounts,
+    );
   }
 
   /// Returns all actor IDs that belong to the current user.
@@ -475,10 +515,24 @@ class Actor extends ActorRow {
 }
 
 class _ThreadScanResult {
-  _ThreadScanResult({required this.firstSeenIndex, required this.counts});
+  _ThreadScanResult({
+    required this.firstSeenIndex,
+    required this.counts,
+    required this.explicitFirstSeenIndex,
+    required this.explicitCounts,
+  });
 
+  /// First-seen index and counts across all scanned threads.
   final Map<Uuid, int> firstSeenIndex;
   final Map<Uuid, int> counts;
+
+  /// Same, but restricted to threads the user explicitly created — i.e.
+  /// `topic` does not start with `channel:`. Connection-imported threads
+  /// (calendar events, emails, etc.) often pull in contacts the user
+  /// never chose, so we use this to prioritize contacts from threads the
+  /// user actually started.
+  final Map<Uuid, int> explicitFirstSeenIndex;
+  final Map<Uuid, int> explicitCounts;
 }
 
 /// Drift converter for ActorId

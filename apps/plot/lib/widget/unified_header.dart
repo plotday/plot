@@ -23,6 +23,7 @@ import 'package:plot/widget/priority.dart';
 import 'package:plot/widget/priority_selector.dart';
 import 'button.dart';
 import 'icon.dart';
+import 'thread.dart';
 import 'window.dart';
 
 /// A single header spanning the full window width, placed above all panels.
@@ -39,6 +40,8 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
   PriorityShortcutsProviderState? _panelController;
+  final GlobalKey _headerKey = GlobalKey();
+  double? _lastMeasuredHeaderHeight;
 
   @override
   void initState() {
@@ -129,8 +132,25 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     super.dispose();
   }
 
+  void _scheduleTrafficLightAlignment() {
+    if (!Platform.instance.isMacOS) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final box =
+          _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) return;
+      final height = box.size.height;
+      if (_lastMeasuredHeaderHeight != null &&
+          (_lastMeasuredHeaderHeight! - height).abs() < 0.5) {
+        return;
+      }
+      _lastMeasuredHeaderHeight = height;
+      Window.alignTrafficLightsToHeader(height);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _scheduleTrafficLightAlignment();
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
         // On the Priorities tab in single-panel mode there is no
@@ -312,7 +332,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       if (thread != null) Button.icon(EditThread(thread)),
 
       // Share thread (when thread is visible)
-      if (thread != null) Button.icon(PickThreadShared(thread)),
+      if (thread != null) SharedCommandButton(thread: thread),
 
       // New Thread button (multiPanel only, since bottom nav has it otherwise)
       if (layoutState.multiPanel && !state.context.isTwistDev)
@@ -333,6 +353,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) => ClipRect(
+          key: _headerKey,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: context.theme.colors.background,
@@ -619,6 +640,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       data: darkenTheme(context, context.theme, context.colour, steps: 2),
       child: Builder(
         builder: (context) => ClipRect(
+          key: _headerKey,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: context.theme.colors.background,

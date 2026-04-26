@@ -269,6 +269,10 @@ class ShareSelectionActor extends Command {
   String? get subtitle => actor.name != null ? actor.email : null;
 
   @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      Avatar(actor: actor);
+
+  @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
       final contactUuid = actor.id.toUuid();
@@ -341,6 +345,10 @@ class ShareSelectionInvite extends Command {
   final String email;
   final Future<void> Function(SharedSelection) onUpdate;
   final bool _isInvited;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      Avatar(email: email);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

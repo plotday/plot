@@ -689,6 +689,10 @@ class AssignNoteActor extends NoteCommand {
   String? get subtitle => actor.name != null ? actor.email : null;
 
   @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      Avatar(actor: actor);
+
+  @override
   Future<CommandReturn> run(BuildContext context) async {
     if (_isDone) {
       return const CommandMessage('Only they can change their done status');
@@ -1114,6 +1118,10 @@ class _AssignDraftNoteActor extends NoteCommand {
 
   @override
   String? get subtitle => actor.name != null ? actor.email : null;
+
+  @override
+  Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) =>
+      Avatar(actor: actor);
 
   @override
   Future<CommandReturn> run(BuildContext context) async {

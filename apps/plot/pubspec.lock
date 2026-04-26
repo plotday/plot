@@ -795,18 +795,18 @@ packages:
     dependency: "direct main"
     description:
       name: forui
-      sha256: "196e4735ab8cf2c4cb5e59c25c74464b44121d89fefda505522870e0812b9266"
+      sha256: b900e9851dcb82bed58f43014d5891a874e9bb45cf74070d3b336a96ca305484
       url: "https://pub.dev"
     source: hosted
-    version: "0.20.0"
+    version: "0.21.2"
   forui_assets:
     dependency: transitive
     description:
       name: forui_assets
-      sha256: ccadc44338f4cfc24f1bb24312573d4fc5203c017d4936bea74603b492484035
+      sha256: f83517074a11f6458986dbb5d0a0b364cebf6861a4e143acb2d51e6626ecf813
       url: "https://pub.dev"
     source: hosted
-    version: "0.20.0"
+    version: "0.21.0"
   freezed_annotation:
     dependency: transitive
     description:

@@ -327,6 +327,9 @@ importers:
 
   public/connectors/gmail:
     dependencies:
+      '@plotday/connector-google-contacts':
+        specifier: workspace:^
+        version: link:../google-contacts
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister

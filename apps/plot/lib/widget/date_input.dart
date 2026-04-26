@@ -104,7 +104,8 @@ class _DateInputState extends State<DateInput> {
           child: FDateField.calendar(
             control: .lifted(date: widget.value, onChange: widget.onChanged),
             focusNode: _focusNode,
-            format: DateFormat.yMMMEd(),
+            format: (context, value, format) =>
+                DateFormat.yMMMEd().format(value),
             textAlign: TextAlign.center,
             prefixBuilder: null,
             start: Time.now(),

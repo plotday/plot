@@ -39,19 +39,24 @@ account.post("/activate", async (c) => {
       return c.json({ message: "Unauthorized" }, 401);
     }
 
-    let { clerkId, email, name } = claims;
+    let { clerkId, email, name, picture } = claims;
 
     // Clerk JWTs may not include the email claim (e.g. OAuth "already signed in" path).
     // Fall back to fetching the user from Clerk's API.
-    if (!email) {
+    if (!email || !picture) {
       try {
         const clerk = createClerkClient({ secretKey: c.env.CLERK_SECRET_KEY });
         const clerkUser = await clerk.users.getUser(clerkId);
-        email = clerkUser.emailAddresses.find(
-          (e) => e.id === clerkUser.primaryEmailAddressId
-        )?.emailAddress;
+        if (!email) {
+          email = clerkUser.emailAddresses.find(
+            (e) => e.id === clerkUser.primaryEmailAddressId
+          )?.emailAddress;
+        }
         if (!name) {
           name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || undefined;
+        }
+        if (!picture) {
+          picture = clerkUser.imageUrl || undefined;
         }
       } catch (err) {
         const context = extractRequestContext(c);
@@ -84,7 +89,11 @@ account.post("/activate", async (c) => {
         // Existing user with different/no clerk_id — link them
         row = await c.var.db
           .updateTable("user")
-          .set({ clerk_id: clerkId, name: name ?? existingByEmail.name })
+          .set({
+            clerk_id: clerkId,
+            name: name ?? existingByEmail.name,
+            ...(picture ? { avatar_url: picture } : {}),
+          })
           .where("id", "=", existingByEmail.id)
           .returning(["id", "email", "name"])
           .executeTakeFirstOrThrow();
@@ -96,11 +105,13 @@ account.post("/activate", async (c) => {
             clerk_id: clerkId,
             email,
             name: name ?? null,
+            avatar_url: picture ?? null,
           })
           .onConflict((oc) =>
             oc.column("clerk_id").doUpdateSet({
               email,
               name: name ?? null,
+              ...(picture ? { avatar_url: picture } : {}),
             })
           )
           .returning(["id", "email", "name"])
@@ -126,12 +137,14 @@ account.post("/activate", async (c) => {
           name: name ?? null,
           user_id: user.id,
           primary: true,
+          avatar_url: picture ?? null,
           inviteable: classifyInviteable(email, name ?? null),
         })
         .onConflict((oc) => oc.column("email").doUpdateSet({
           name: name ?? null,
           user_id: user!.id,
           primary: true,
+          ...(picture ? { avatar_url: picture } : {}),
         }))
         .execute();
     } catch (err) {
@@ -163,6 +176,41 @@ account.post("/activate", async (c) => {
         clerk_id: clerkId,
       });
     }
+  }
+
+  // Backfill avatar_url from Clerk for users who activated before we started
+  // collecting it. Cheap: one SELECT, and writes only fire when the user row
+  // is missing an avatar AND Clerk has one to give. After the first hit the
+  // SELECT short-circuits all future activations.
+  try {
+    const claimsForBackfill = c.var.clerkClaims;
+    if (claimsForBackfill?.picture) {
+      const current = await c.var.db
+        .selectFrom("user")
+        .select(["avatar_url"])
+        .where("id", "=", user.id)
+        .executeTakeFirst();
+      if (current && !current.avatar_url) {
+        await c.var.db
+          .updateTable("user")
+          .set({ avatar_url: claimsForBackfill.picture })
+          .where("id", "=", user.id)
+          .execute();
+        await c.var.db
+          .updateTable("contact")
+          .set({ avatar_url: claimsForBackfill.picture })
+          .where("user_id", "=", user.id)
+          .where("primary", "=", true)
+          .where("avatar_url", "is", null)
+          .execute();
+      }
+    }
+  } catch (err) {
+    const logger = createLogger(extractRequestContext(c));
+    logger.warn("Failed to backfill avatar from Clerk (non-blocking)", {
+      user_id: user.id,
+      error: (err as Error).message,
+    });
   }
 
   // Step 1: Check if root priority already exists

@@ -81,6 +81,11 @@ String _preprocessMarkdown(String markdown) {
     (match) => 'mention', // Generic fallback for old format without name
   );
 
+  // Drop empty-text links like `[](http://...)` (common in email-signature
+  // icon links). super_editor would warn and skip the attribution anyway, and
+  // every other Markdown renderer shows them as invisible/unclickable.
+  processed = processed.replaceAll(RegExp(r'\[\s*\]\([^)]*\)'), '');
+
   return processed;
 }
 
