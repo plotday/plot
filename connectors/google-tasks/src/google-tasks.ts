@@ -7,7 +7,7 @@ import {
   type ActorId,
 } from "@plotday/twister";
 import { Tag } from "@plotday/twister/tag";
-import { Connector } from "@plotday/twister/connector";
+import { Connector, type CreateLinkDraft } from "@plotday/twister/connector";
 import type { ToolBuilder } from "@plotday/twister/tool";
 import {
   AuthProvider,
@@ -21,6 +21,7 @@ import { Network } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
 
 import {
+  createTask,
   listTaskLists,
   listTasks,
   updateTask,
@@ -60,7 +61,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
       logo: "https://plot.day/assets/logo-google-tasks.svg",
       logoMono: "https://api.iconify.design/simple-icons/googletasks.svg",
       statuses: [
-        { status: "open", label: "Open", todo: true },
+        { status: "open", label: "Open", todo: true, createDefault: true },
         { status: "done", label: "Done", tag: Tag.Done, done: true },
       ],
       supportsAssignee: false,
@@ -400,6 +401,54 @@ export class GoogleTasks extends Connector<GoogleTasks> {
         : {}),
       ...(initialSync ? { unread: false } : {}),
       ...(initialSync ? { archived: false } : {}),
+    };
+  }
+
+  /**
+   * Create a new Google Task from a Plot thread. The `draft.channelId`
+   * is the Google Tasks list id; `draft.status` is "open" or "done".
+   */
+  async onCreateLink(
+    draft: CreateLinkDraft
+  ): Promise<NewLinkWithNotes | null> {
+    if (draft.type !== "task") return null;
+
+    const token = await this.getToken(draft.channelId);
+    const authActorId = await this.get<ActorId>("auth_actor_id");
+
+    const task = await createTask(token, draft.channelId, {
+      title: draft.title,
+      ...(draft.noteContent ? { notes: draft.noteContent } : {}),
+      status: draft.status === "done" ? "completed" : "needsAction",
+    });
+
+    const taskUrl =
+      task.webViewLink ??
+      `https://tasks.google.com/task/${encodeURIComponent(task.id)}`;
+
+    const actions: Action[] = [
+      {
+        type: ActionType.external,
+        title: "Open in Google Tasks",
+        url: taskUrl,
+      },
+    ];
+
+    return {
+      source: `google-tasks:task:${task.id}`,
+      type: "task",
+      title: task.title,
+      status: draft.status,
+      channelId: draft.channelId,
+      meta: {
+        taskId: task.id,
+        listId: draft.channelId,
+        syncProvider: "google-tasks",
+        channelId: draft.channelId,
+      },
+      actions,
+      sourceUrl: taskUrl,
+      assignee: authActorId ? { id: authActorId } : null,
     };
   }
 

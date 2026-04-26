@@ -148,3 +148,26 @@ export async function updateTask(
     }
   );
 }
+
+/**
+ * Create a new task in a task list.
+ */
+export async function createTask(
+  token: string,
+  listId: string,
+  task: {
+    title: string;
+    notes?: string;
+    status?: "needsAction" | "completed";
+    due?: string;
+  }
+): Promise<GoogleTask> {
+  return request<GoogleTask>(
+    token,
+    `/lists/${encodeURIComponent(listId)}/tasks`,
+    {
+      method: "POST",
+      body: JSON.stringify(task),
+    }
+  );
+}
