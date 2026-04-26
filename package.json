@@ -13,7 +13,7 @@
     "deploy:workers:vars": "nx run-many -t deploy:vars --projects=tag:worker",
     "deploy:workers:changed": "nx affected -t deploy --projects=tag:worker",
     "dev": "pnpm -r run --parallel dev",
-    "workers": "pnpm --filter @plotday/dev-worker run dev",
+    "workers": "pnpm tunnel:start && pnpm --filter @plotday/dev-worker run dev",
     "site": "pnpm --filter @plotday/site run dev",
     "types": "nx run-many -t types --exclude plot",
     "diff-db-schema": "pnpm --filter @plotday/db run diff-db-schema",
