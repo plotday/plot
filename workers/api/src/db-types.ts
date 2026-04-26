@@ -119,6 +119,8 @@ export interface Channel {
    */
   channel_id: string;
   created_at: Generated<Timestamp>;
+  default_priority_id: string | null;
+  default_priority_reason: string | null;
   enabled: Generated<boolean>;
   id: Generated<Int8>;
   link_types: Json | null;
@@ -696,6 +698,7 @@ export interface ThreadAssociation {
 }
 
 export interface ThreadPriority {
+  applied_default_channel_id: Int8 | null;
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   priority_id: string;
@@ -923,6 +926,9 @@ export interface TwistInstanceChannelNoteCreate {
 export interface TwistInstanceConnection {
   actor_id: string;
   connected_at: Generated<Timestamp>;
+  initial_sync_completed_at: Timestamp | null;
+  initial_sync_started_at: Timestamp | null;
+  needs_reauth_at: Timestamp | null;
   provider: string;
   twist_instance_id: string;
   user_id: string;
@@ -1145,6 +1151,8 @@ export interface UserActor {
 export interface UserChannel {
   channel_id: string | null;
   created_at: Timestamp | null;
+  default_priority_id: string | null;
+  default_priority_reason: string | null;
   enabled: boolean | null;
   id: Int8 | null;
   link_types: Json | null;
@@ -1436,6 +1444,20 @@ export interface UserTwist {
   user_id: string | null;
 }
 
+export interface UserTwistConnection {
+  actor_id: string | null;
+  connected_at: Timestamp | null;
+  initial_sync_completed_at: Timestamp | null;
+  initial_sync_started_at: Timestamp | null;
+  initial_syncing: boolean | null;
+  needs_reauth: boolean | null;
+  needs_reauth_at: Timestamp | null;
+  provider: string | null;
+  twist_instance_id: string | null;
+  updated_at: Timestamp | null;
+  user_id: string | null;
+}
+
 export interface DB {
   actor: Actor;
   ai_key: AiKey;
@@ -1524,4 +1546,5 @@ export interface DB {
   "user.thread_association": UserThreadAssociation;
   "user.thread_tags": UserThreadTags;
   "user.twist": UserTwist;
+  "user.twist_connection": UserTwistConnection;
 }

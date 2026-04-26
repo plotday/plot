@@ -1922,6 +1922,39 @@ export class Integrations extends Tool implements IAuth {
             );
             // Refresh_token is genuinely dead — user must re-authenticate.
             await this.store.clear(foundTokenKey);
+
+            // Flag the user's twist_instance_connection so the UI can prompt
+            // them to re-authenticate. Resolve user_id from the actor's
+            // contact row; orphan contacts (no user_id) are skipped.
+            try {
+              const reauthContact = await this.db
+                .selectFrom("contact")
+                .select("user_id")
+                .where("id", "=", actorId)
+                .executeTakeFirst();
+
+              if (reauthContact?.user_id) {
+                await this.db
+                  .updateTable("twist_instance_connection")
+                  .set({ needs_reauth_at: new Date().toISOString() })
+                  .where("twist_instance_id", "=", this.twistInstanceId)
+                  .where("user_id", "=", reauthContact.user_id)
+                  .where("provider", "=", provider)
+                  .where("needs_reauth_at", "is", null)
+                  .execute();
+              } else {
+                logger.debug(
+                  `Skipped needs_reauth_at: actor ${actorId} has no linked user_id`,
+                  { provider, actor_id: actorId }
+                );
+              }
+            } catch (dbError) {
+              logger.warn(
+                `Failed to set needs_reauth_at for ${provider} actor ${actorId}: ${(dbError as Error)?.message ?? String(dbError)}`,
+                { provider, actor_id: actorId }
+              );
+            }
+
             return null;
           }
 
@@ -1962,6 +1995,89 @@ export class Integrations extends Tool implements IAuth {
         ? config?.extractMetadata?.(tokenData.providerData)
         : undefined,
     };
+  }
+
+  /**
+   * Mark a channel as initially syncing (or completed) for the user who
+   * enabled it. Updates `twist_instance_connection.initial_sync_started_at`
+   * / `initial_sync_completed_at`. Idempotent: safe to call multiple times.
+   * No-ops gracefully when there's no provider, no channel config, no actor,
+   * no linked user, or no twist_instance_connection row.
+   */
+  async setInitialSyncing(channelId: string, syncing: boolean): Promise<void> {
+    // Connector must have at least one OAuth provider — key-based connectors
+    // don't track per-user connections in twist_instance_connection.
+    const provider = this.providerConfigs[0]?.provider;
+    if (!provider) return;
+
+    // Resolve the actor that enabled this channel, mirroring `get()`.
+    const config = await this.getChannelConfig(provider, channelId);
+    let actorId: ActorId | undefined = config?.enabled
+      ? (config.enabledBy as ActorId | undefined)
+      : undefined;
+
+    // Migration fallback: no channel_config exists for pre-redesign users.
+    // Find any actor with a stored token for this provider.
+    if (!actorId) {
+      const tokenKeys = await this.store.list(`auth_token:${provider}:`);
+      for (const key of tokenKeys) {
+        const candidate = key.slice(`auth_token:${provider}:`.length) as ActorId;
+        if (candidate) {
+          actorId = candidate;
+          break;
+        }
+      }
+    }
+
+    if (!actorId) return;
+
+    // Resolve user_id from the actor's contact row.
+    const contact = await this.db
+      .selectFrom("contact")
+      .select("user_id")
+      .where("id", "=", actorId)
+      .executeTakeFirst();
+
+    if (!contact?.user_id) return;
+
+    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+    try {
+      const nowIso = new Date().toISOString();
+      if (syncing) {
+        // Start (or restart): preserve an existing started_at, but clear any
+        // prior completed_at so the UI knows we're syncing again.
+        await this.db
+          .updateTable("twist_instance_connection")
+          .set((eb) => ({
+            initial_sync_started_at: eb.fn.coalesce(
+              "initial_sync_started_at",
+              eb.val(nowIso)
+            ),
+            initial_sync_completed_at: null,
+          }))
+          .where("twist_instance_id", "=", this.twistInstanceId)
+          .where("user_id", "=", contact.user_id)
+          .where("provider", "=", provider)
+          .execute();
+      } else {
+        // Stop: only stamp completion when a sync actually started and
+        // hasn't already been marked complete (idempotent).
+        await this.db
+          .updateTable("twist_instance_connection")
+          .set({ initial_sync_completed_at: nowIso })
+          .where("twist_instance_id", "=", this.twistInstanceId)
+          .where("user_id", "=", contact.user_id)
+          .where("provider", "=", provider)
+          .where("initial_sync_started_at", "is not", null)
+          .where("initial_sync_completed_at", "is", null)
+          .execute();
+      }
+    } catch (dbError) {
+      logger.warn(
+        `Failed to update initial sync state for ${provider} channel ${channelId}: ${(dbError as Error)?.message ?? String(dbError)}`,
+        { provider, channel_id: channelId, syncing }
+      );
+    }
   }
 
   /**
@@ -2061,7 +2177,9 @@ export class Integrations extends Tool implements IAuth {
       );
     }
 
-    // Record user connection for per-user connection tracking
+    // Record user connection for per-user connection tracking. Successful
+    // (re-)auth also clears any prior `needs_reauth_at` flag so the UI's
+    // "needs reauth" prompt disappears immediately.
     if (contact?.user_id) {
       try {
         await this.db
@@ -2079,6 +2197,7 @@ export class Integrations extends Tool implements IAuth {
               .doUpdateSet({
                 actor_id: actor.id,
                 connected_at: new Date().toISOString(),
+                needs_reauth_at: null,
               })
           )
           .execute();
