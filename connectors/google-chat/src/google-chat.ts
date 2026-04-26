@@ -270,7 +270,17 @@ export class GoogleChat extends Connector<GoogleChat> {
         throw new Error("No sync state found");
       }
 
-      const api = await this.getApi(channelId);
+      const token = await this.tools.integrations.get(channelId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for channel ${channelId} at batch ${batchNumber}, skipping`
+        );
+        return;
+      }
+      const api = new GoogleChatApi(token.token);
       const result = await syncChatSpace(api, state, 100);
 
       if (result.threads.length > 0) {
@@ -441,7 +451,17 @@ export class GoogleChat extends Connector<GoogleChat> {
     const isInitial = initialSync ?? true;
 
     try {
-      const api = await this.getApi(DM_CHANNEL_ID);
+      const token = await this.tools.integrations.get(DM_CHANNEL_ID);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for DM channel during syncDmSpaces, skipping`
+        );
+        return;
+      }
+      const api = new GoogleChatApi(token.token);
       const spaces = await api.listSpaces(
         'spaceType = "DIRECT_MESSAGE" OR spaceType = "GROUP_CHAT"'
       );
@@ -487,7 +507,17 @@ export class GoogleChat extends Connector<GoogleChat> {
         throw new Error("No sync state found for DM space");
       }
 
-      const api = await this.getApi(DM_CHANNEL_ID);
+      const token = await this.tools.integrations.get(DM_CHANNEL_ID);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for DM channel during syncDmBatch ${batchNumber} for ${spaceName}, skipping`
+        );
+        return;
+      }
+      const api = new GoogleChatApi(token.token);
       const result = await syncChatSpace(api, state, 100);
 
       if (result.threads.length > 0) {
@@ -568,7 +598,17 @@ export class GoogleChat extends Connector<GoogleChat> {
       );
       console.log(`[google-chat] Created Pub/Sub topic: ${topicName}`);
 
-      const api = await this.getApi(channelId);
+      const token = await this.tools.integrations.get(channelId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for channel ${channelId} during setupRealtimeSync, skipping`
+        );
+        return;
+      }
+      const api = new GoogleChatApi(token.token);
       let subscription: Subscription;
       try {
         subscription = await api.createSubscription(
@@ -740,7 +780,17 @@ export class GoogleChat extends Connector<GoogleChat> {
     }
 
     // Handle message created/updated: sync the message
-    const api = await this.getApi(channelId);
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) {
+      // Auth token was cleared (channel disabled, OAuth revoked,
+      // integration deleted) — abort instead of throwing to prevent
+      // infinite queue retries.
+      console.warn(
+        `Auth token missing for channel ${channelId} during onChatWebhook, skipping`
+      );
+      return;
+    }
+    const api = new GoogleChatApi(token.token);
     let message: Message | null = null;
 
     if (eventMessage && eventMessage.text !== undefined) {
@@ -842,7 +892,17 @@ export class GoogleChat extends Connector<GoogleChat> {
     }
 
     try {
-      const api = await this.getApi(channelId);
+      const token = await this.tools.integrations.get(channelId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for channel ${channelId} during handleReactionEvent, skipping`
+        );
+        return;
+      }
+      const api = new GoogleChatApi(token.token);
 
       // Fetch the parent message and its reactions
       const [message, reactions] = await Promise.all([
@@ -950,7 +1010,17 @@ export class GoogleChat extends Connector<GoogleChat> {
         return;
       }
 
-      const api = await this.getApi(channelId);
+      const token = await this.tools.integrations.get(channelId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for channel ${channelId} during renewSubscription, skipping`
+        );
+        return;
+      }
+      const api = new GoogleChatApi(token.token);
       const renewed = await api.renewSubscription(subData.subscriptionName);
 
       // Update stored data with new expiry

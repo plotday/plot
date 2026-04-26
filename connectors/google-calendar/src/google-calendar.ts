@@ -621,7 +621,19 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         state.max = new Date(state.max);
       }
 
-      const api = await this.getApi(calendarId);
+      const token = await this.tools.integrations.get(calendarId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for calendar ${calendarId} at batch ${batchNumber}, skipping`
+        );
+        await this.clear(`sync_lock_${calendarId}`);
+        await this.clear(`sync_state_${calendarId}`);
+        return;
+      }
+      const api = new GoogleApi(token.token);
       const result = await syncGoogleCalendar(api, calendarId, state);
 
       if (result.events.length > 0) {

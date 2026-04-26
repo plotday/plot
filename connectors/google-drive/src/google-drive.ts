@@ -275,7 +275,18 @@ export class GoogleDrive extends Connector<GoogleDrive> {
    * Runs as a task to avoid blocking the HTTP response from onChannelEnabled.
    */
   async initChannel(channelId: string, timeMinISO?: string | null): Promise<void> {
-    const api = await this.getApi(channelId);
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) {
+      // Auth token was cleared (channel disabled, OAuth revoked,
+      // integration deleted) — abort instead of throwing to prevent
+      // infinite queue retries.
+      console.warn(
+        `Auth token missing for channel ${channelId} during initChannel, skipping`
+      );
+      await this.clear(`sync_lock_${channelId}`);
+      return;
+    }
+    const api = new GoogleApi(token.token);
     const changesToken = await getChangesStartToken(api);
     const timeMin = timeMinISO ? new Date(timeMinISO) : undefined;
 
@@ -397,7 +408,17 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     subChannelId: string,
     pageToken?: string
   ): Promise<void> {
-    const api = await this.getApi(virtualChannelId, virtualChannelId);
+    const token = await this.tools.integrations.get(virtualChannelId);
+    if (!token) {
+      // Auth token was cleared (channel disabled, OAuth revoked,
+      // integration deleted) — abort instead of throwing to prevent
+      // infinite queue retries.
+      console.warn(
+        `Auth token missing for virtual channel ${virtualChannelId} during syncNewSubChannel, skipping`
+      );
+      return;
+    }
+    const api = new GoogleApi(token.token);
     const result = await listFilesInFolder(api, subChannelId, pageToken);
 
     for (const file of result.files) {
@@ -607,7 +628,18 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     }
 
     try {
-      const api = await this.getApi(folderId, isVirtualChannel(folderId) ? folderId : undefined);
+      const authChannelId = isVirtualChannel(folderId) ? folderId : undefined;
+      const token = await this.tools.integrations.get(authChannelId ?? folderId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for folder ${folderId} during setupDriveWatch, skipping`
+        );
+        return;
+      }
+      const api = new GoogleApi(token.token);
       const watchId = crypto.randomUUID();
 
       // Watch for changes using the Drive changes API
@@ -783,7 +815,18 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       }
 
       const authChannelId = state.virtualChannelId;
-      const api = await this.getApi(folderId, authChannelId);
+      const token = await this.tools.integrations.get(authChannelId ?? folderId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for folder ${folderId} at batch ${batchNumber}, skipping`
+        );
+        await this.clear(`sync_lock_${folderId}`);
+        return;
+      }
+      const api = new GoogleApi(token.token);
 
       if (state.virtualChannelId === VIRTUAL_SHARED_WITH_ME) {
         // Shared with me: query-based sync
@@ -890,7 +933,17 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     try {
       const state = await this.get<SyncState>(`sync_state_${folderId}`);
       const authChannelId = state?.virtualChannelId;
-      const api = await this.getApi(folderId, authChannelId);
+      const token = await this.tools.integrations.get(authChannelId ?? folderId);
+      if (!token) {
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for folder ${folderId} during incremental sync, skipping`
+        );
+        return;
+      }
+      const api = new GoogleApi(token.token);
       const result = await listChanges(api, changesToken);
       if (result.changes.length > 0 || result.nextPageToken) {
         console.log(`[google-drive] incrementalSyncBatch for ${folderId}: ${result.changes.length} changes, hasMore=${!!result.nextPageToken}`);

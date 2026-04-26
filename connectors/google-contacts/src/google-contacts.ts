@@ -106,9 +106,14 @@ export default class GoogleContacts
     try {
       const token = await this.tools.integrations.get(syncableId);
       if (!token) {
-        throw new Error(
-          "No authentication token available for the provided syncableId"
+        // Auth token was cleared (channel disabled, OAuth revoked,
+        // integration deleted) — abort instead of throwing to prevent
+        // infinite queue retries.
+        console.warn(
+          `Auth token missing for syncableId ${syncableId} at batch ${batchNumber}, skipping`
         );
+        await this.clear(`sync_state:${syncableId}`);
+        return;
       }
 
       const state = await this.get<ContactSyncState>(`sync_state:${syncableId}`);
