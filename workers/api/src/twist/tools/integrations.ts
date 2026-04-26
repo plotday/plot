@@ -115,6 +115,91 @@ type PendingActAs = {
   noteId?: string;
 };
 
+/**
+ * Error thrown by refreshToken() that distinguishes permanent OAuth failures
+ * (refresh_token revoked / client de-authorized — must re-auth) from
+ * transient ones (5xx, rate limit, network blip — retry on next webhook).
+ *
+ * Permanent: caller should clear the stored token. Transient: caller should
+ * preserve the token so the next sync can retry.
+ */
+class TokenRefreshError extends Error {
+  readonly permanent: boolean;
+  readonly status?: number;
+  readonly oauthError?: string;
+  readonly body?: string;
+
+  constructor(
+    message: string,
+    permanent: boolean,
+    extras?: { status?: number; oauthError?: string; body?: string; cause?: unknown }
+  ) {
+    super(message);
+    this.name = "TokenRefreshError";
+    this.permanent = permanent;
+    this.status = extras?.status;
+    this.oauthError = extras?.oauthError;
+    this.body = extras?.body;
+    if (extras?.cause !== undefined) {
+      (this as { cause?: unknown }).cause = extras.cause;
+    }
+  }
+}
+
+/**
+ * RFC 6749 OAuth error codes that mean the refresh_token (or client) is
+ * permanently dead. Per Google's OAuth 2.0 docs and RFC 6749:
+ *  - invalid_grant: refresh_token revoked, expired, or malformed
+ *  - invalid_client: client credentials wrong / app de-authorized
+ *  - unauthorized_client: client not authorized for this grant type
+ *  - invalid_request: malformed request (won't succeed without code change)
+ *  - unsupported_grant_type: provider no longer accepts refresh grants here
+ */
+const PERMANENT_OAUTH_ERRORS = new Set([
+  "invalid_grant",
+  "invalid_client",
+  "unauthorized_client",
+  "invalid_request",
+  "unsupported_grant_type",
+]);
+
+/**
+ * Decide whether an HTTP failure from the provider's token endpoint means the
+ * stored refresh_token is permanently dead. Errors of unknown shape are
+ * treated as transient — better to retry an extra time than silently lose a
+ * working connection.
+ */
+function classifyRefreshHttpError(
+  status: number,
+  body: string
+): { permanent: boolean; oauthError?: string } {
+  // 5xx, 408, 429 — provider-side or rate-limit, always transient.
+  if (status >= 500 || status === 408 || status === 429) {
+    return { permanent: false };
+  }
+
+  // Try to parse OAuth error code from the body.
+  let oauthError: string | undefined;
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    if (typeof parsed?.error === "string") {
+      oauthError = parsed.error;
+    }
+  } catch {
+    // Non-JSON body; fall through.
+  }
+
+  if (oauthError && PERMANENT_OAUTH_ERRORS.has(oauthError)) {
+    return { permanent: true, oauthError };
+  }
+
+  // 4xx without a recognized OAuth error code: don't assume permanent. A
+  // misconfigured proxy, transient WAF block, or unfamiliar provider response
+  // shouldn't nuke a user's auth. Leave the token in place; next retry will
+  // either succeed or yield a clearer error.
+  return { permanent: false, oauthError };
+}
+
 // @ts-ignore - class correctly implements IAuth but TS can't verify due to Kysely type differences
 export class Integrations extends Tool implements IAuth {
   private store: Store;
@@ -1819,17 +1904,53 @@ export class Integrations extends Tool implements IAuth {
           };
         } catch (error) {
           const logger = createLogger({ twist_instance_id: this.twistInstanceId });
-          logger.error("Failed to refresh token", error as Error, {
-            provider,
-            actor_id: actorId,
-          });
-          // Clear expired token
-          await this.store.clear(foundTokenKey);
+          const refreshErr =
+            error instanceof TokenRefreshError ? error : null;
+          const reason = refreshErr
+            ? `${refreshErr.message}${refreshErr.oauthError ? ` [${refreshErr.oauthError}]` : ""}`
+            : (error as Error)?.message ?? String(error);
+
+          if (refreshErr?.permanent) {
+            logger.warn(
+              `OAuth refresh permanently failed for ${provider} actor ${actorId}: ${reason}`,
+              {
+                provider,
+                actor_id: actorId,
+                status: refreshErr.status,
+                oauth_error: refreshErr.oauthError,
+              }
+            );
+            // Refresh_token is genuinely dead — user must re-authenticate.
+            await this.store.clear(foundTokenKey);
+            return null;
+          }
+
+          // Transient failure (5xx, 429, 408, network error, unknown shape).
+          // Preserve the token so the next webhook / sync can retry.
+          logger.warn(
+            `OAuth refresh transiently failed for ${provider} actor ${actorId}: ${reason}; will retry`,
+            {
+              provider,
+              actor_id: actorId,
+              status: refreshErr?.status,
+              oauth_error: refreshErr?.oauthError,
+            }
+          );
+          if (!refreshErr) {
+            // Unexpected error shape (not a TokenRefreshError). Surface it so
+            // we notice if a new failure mode slips through this classifier.
+            logger.error(
+              "Unexpected error shape from refreshToken",
+              error as Error,
+              { provider, actor_id: actorId }
+            );
+          }
           return null;
         }
       }
 
-      // No refresh token or refresh failed, clear expired token
+      // No refresh token available — token is unrecoverable; clear it so the
+      // user sees an explicit re-auth prompt rather than a silent expired token.
       await this.store.clear(foundTokenKey);
       return null;
     }
@@ -3058,7 +3179,13 @@ export class Integrations extends Tool implements IAuth {
   }> {
     const config = PROVIDER_CONFIGS[provider];
     if (!config) {
-      throw new Error(`Token refresh not implemented for ${provider}`);
+      // Programmer error / misconfiguration — not a transient issue, but also
+      // not an OAuth credential failure. Treat as permanent so we don't keep
+      // an unrefreshable token around forever.
+      throw new TokenRefreshError(
+        `Token refresh not implemented for ${provider}`,
+        true
+      );
     }
 
     const clientSecret = Integrations.SecretFromId(
@@ -3082,15 +3209,34 @@ export class Integrations extends Tool implements IAuth {
       headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
     }
 
-    const response = await fetch(config.tokenUrl, {
-      method: "POST",
-      headers,
-      body: params.toString(),
-    });
+    let response: Response;
+    try {
+      response = await fetch(config.tokenUrl, {
+        method: "POST",
+        headers,
+        body: params.toString(),
+      });
+    } catch (error) {
+      // Network-layer failure (DNS, TCP reset, TLS, fetch threw). Always
+      // transient — the refresh_token itself is still valid.
+      throw new TokenRefreshError(
+        `Token refresh network error: ${(error as Error)?.message ?? String(error)}`,
+        false,
+        { cause: error }
+      );
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Token refresh failed: ${response.status} ${errorText}`);
+      const { permanent, oauthError } = classifyRefreshHttpError(
+        response.status,
+        errorText
+      );
+      throw new TokenRefreshError(
+        `Token refresh failed: ${response.status}${oauthError ? ` (${oauthError})` : ""} ${errorText}`,
+        permanent,
+        { status: response.status, oauthError, body: errorText }
+      );
     }
 
     const tokenData = (await response.json()) as {
