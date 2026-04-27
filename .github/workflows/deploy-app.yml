@@ -89,6 +89,9 @@ jobs:
           flutter pub run build_runner build
           flutter build web --release --source-maps --base-href=/ --build-number="${{ steps.version.outputs.build_number }}"
 
+      - name: Cache-bust web font URLs
+        run: cd apps/plot && bash scripts/cache-bust-fonts.sh
+
       - name: Install wrangler
         run: pnpm install -w wrangler --ignore-scripts
 
