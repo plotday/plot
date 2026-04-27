@@ -1127,14 +1127,20 @@ class EditSource extends ShowForm {
               buildCommand: (values) {
                 final owner = values['team_id'] as String? ?? initialTeamId;
 
-                // Always check the selected scope's limit. The button label
-                // updates reactively when the user picks a different scope.
-                final team = teams.firstWhereOrNull((t) => t.id == owner);
-                final atLimit = team != null
-                    ? team.connections.isAtLimit
-                    : usage.personal.connections.isAtLimit;
-                if (atLimit) {
-                  return _UpgradeCommand('Upgrade to add more connections');
+                // Only enforce the limit when the user is moving the connection
+                // to a different scope. An existing connection already counts
+                // toward its current scope, so saving in place must not be
+                // blocked even if that scope is at limit.
+                if (owner != initialTeamId) {
+                  final team = teams.firstWhereOrNull((t) => t.id == owner);
+                  final atLimit = team != null
+                      ? team.connections.isAtLimit
+                      : usage.personal.connections.isAtLimit;
+                  if (atLimit) {
+                    return _UpgradeCommand(
+                      'Upgrade to add more connections',
+                    );
+                  }
                 }
 
                 final label =
