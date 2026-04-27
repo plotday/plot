@@ -421,8 +421,11 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     // Keep filter visible while user is actively searching so the field
     // doesn't disappear mid-keystroke when a fetch is in flight.
     if (_controller.text.isNotEmpty) return true;
-    // Hide filter during the initial load so only the spinner is visible.
-    if (_isLoading) return false;
+    // Hide filter only during the initial cold load (no items yet) so the
+    // spinner is the sole content. On a refresh — e.g. after a nested modal
+    // like EditSource pops back — _groups still holds the previous items, so
+    // the filter must stay visible to avoid a flash of missing chrome.
+    if (_isLoading && _groups.isEmpty) return false;
     // Always show filter when nested so back button shares the row
     if (ModalProvider.of(context).modalStackNotifier.value > 1) return true;
     final totalItems = _groups.fold<int>(0, (sum, g) => sum + g.items.length);
@@ -605,10 +608,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       loadingIndicator = Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
-          child: Spinner(
-            size: 12,
-            color: context.theme.colors.mutedForeground,
-          ),
+          child: Spinner(size: 12, color: context.theme.colors.mutedForeground),
         ),
       );
     }
