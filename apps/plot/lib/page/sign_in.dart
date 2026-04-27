@@ -228,9 +228,8 @@ class _SignInPageState extends State<SignInPage> {
                         children: [
                           Center(
                             child: SvgPicture.asset(
-                              "assets/p.svg",
-                              width: 120,
-                              height: 120,
+                              "assets/plot.svg",
+                              width: 240,
                             ),
                           ),
                           if (Base.wasForceSignedOut)
