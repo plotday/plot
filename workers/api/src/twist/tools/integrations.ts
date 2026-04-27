@@ -335,10 +335,17 @@ export class Integrations extends Tool implements IAuth {
 
   /**
    * Builds the SyncContext to pass to onChannelEnabled.
+   *
+   * @param recovering - When true, marks this dispatch as a recovery
+   *   sync after the connection's auth was restored. Connectors should
+   *   drop persisted incremental cursors and re-walk history.
    */
-  private async buildSyncContext(): Promise<SyncContext> {
+  private async buildSyncContext(recovering = false): Promise<SyncContext> {
     const syncHistoryMin = await this.getSyncHistoryMin();
-    return syncHistoryMin ? { syncHistoryMin } : {};
+    const ctx: SyncContext = {};
+    if (syncHistoryMin) ctx.syncHistoryMin = syncHistoryMin;
+    if (recovering) ctx.recovering = true;
+    return ctx;
   }
 
   // ============================================================================
@@ -629,9 +636,16 @@ export class Integrations extends Tool implements IAuth {
 
   /**
    * Persist enable for a channel and build the onChannelEnabled dispatch entry.
-   * Shared between enableSync (user-triggered) and setChannels (auto-enable on
-   * newly-discovered channels). Caller is responsible for assembling the
-   * resulting `{ __dispatch }` envelope.
+   * Shared between enableSync (user-triggered), setChannels (auto-enable on
+   * newly-discovered channels), and onAuth (recovery after re-auth). Caller is
+   * responsible for assembling the resulting `{ __dispatch }` envelope.
+   *
+   * Stamps the connection's initial-sync state to "syncing" before the
+   * dispatch fires (was previously the connector's responsibility via
+   * `setInitialSyncing(channelId, true)`). Attaches an `onFailure` handler
+   * to the dispatch entry so an unhandled exception in `onChannelEnabled`
+   * automatically clears the syncing state — preventing the UI from being
+   * stuck on "syncing" forever.
    */
   private async applyChannelEnabled(
     provider: AuthProvider,
@@ -660,10 +674,29 @@ export class Integrations extends Tool implements IAuth {
       .where("channel_id", "=", channel.id)
       .execute();
 
+    // Mark the connection as initially-syncing so the Flutter app shows
+    // a spinner. Recovery dispatches re-stamp `started_at` to now (instead
+    // of coalescing to a possibly-ancient prior timestamp) so the
+    // "syncing since" indicator reflects the current sync.
+    await this.markChannelSyncStarted(provider, channel.id);
+
     const channelArg = { id: channel.id, title };
+    // Failure dispatch: when onChannelEnabled throws, entrypoint.ts routes
+    // through `tool.callCallback(functionName, ...args)` on the same
+    // built-in tool whose dispatch produced this entry — i.e. the
+    // Integrations tool itself. Calling __failChannelSync clears the
+    // syncing state so the UI doesn't get stuck on "syncing" forever.
+    const onFailure = {
+      functionName: "__failChannelSync",
+      args: [provider, channel.id],
+    };
 
     if (this.sourceProvider) {
-      return { sourceMethod: "onChannelEnabled", args: [channelArg, syncContext] };
+      return {
+        sourceMethod: "onChannelEnabled",
+        args: [channelArg, syncContext],
+        onFailure,
+      };
     }
     const providerIndex = this.providerConfigs.findIndex(
       (p) => p.provider === provider
@@ -672,6 +705,7 @@ export class Integrations extends Tool implements IAuth {
     return {
       optionPath: ["providers", providerIndex, "onChannelEnabled"],
       args: [channelArg, syncContext],
+      onFailure,
     };
   }
 
@@ -2055,26 +2089,20 @@ export class Integrations extends Tool implements IAuth {
   }
 
   /**
-   * Mark a channel as initially syncing (or completed) for the user who
-   * enabled it. Updates `twist_instance_connection.initial_sync_started_at`
-   * / `initial_sync_completed_at`. Idempotent: safe to call multiple times.
-   * No-ops gracefully when there's no provider, no channel config, no actor,
-   * no linked user, or no twist_instance_connection row.
+   * Resolve the user_id that owns a given (provider, channelId) — i.e. the
+   * actor that enabled the channel. Migration fallback finds any actor with
+   * a stored token for the provider when no channel_config exists.
+   * Returns null when no user mapping exists (key-based connectors).
    */
-  async setInitialSyncing(channelId: string, syncing: boolean): Promise<void> {
-    // Connector must have at least one OAuth provider — key-based connectors
-    // don't track per-user connections in twist_instance_connection.
-    const provider = this.providerConfigs[0]?.provider;
-    if (!provider) return;
-
-    // Resolve the actor that enabled this channel, mirroring `get()`.
+  private async resolveChannelUser(
+    provider: AuthProvider,
+    channelId: string
+  ): Promise<{ userId: string } | null> {
     const config = await this.getChannelConfig(provider, channelId);
     let actorId: ActorId | undefined = config?.enabled
       ? (config.enabledBy as ActorId | undefined)
       : undefined;
 
-    // Migration fallback: no channel_config exists for pre-redesign users.
-    // Find any actor with a stored token for this provider.
     if (!actorId) {
       const tokenKeys = await this.store.list(`auth_token:${provider}:`);
       for (const key of tokenKeys) {
@@ -2086,57 +2114,121 @@ export class Integrations extends Tool implements IAuth {
       }
     }
 
-    if (!actorId) return;
+    if (!actorId) return null;
 
-    // Resolve user_id from the actor's contact row.
     const contact = await this.db
       .selectFrom("contact")
       .select("user_id")
       .where("id", "=", actorId)
       .executeTakeFirst();
 
-    if (!contact?.user_id) return;
+    if (!contact?.user_id) return null;
+    return { userId: contact.user_id };
+  }
+
+  /**
+   * Stamp the connection as initially syncing for the user who enabled the
+   * channel. Re-stamps `started_at = now` (no coalesce) so a recovery
+   * dispatch resets the "syncing since" timestamp instead of preserving
+   * an ancient prior value. Clears any prior `completed_at` so the UI
+   * shows the spinner again.
+   *
+   * Called automatically by {@link applyChannelEnabled}. Connectors do not
+   * call this directly.
+   */
+  private async markChannelSyncStarted(
+    provider: AuthProvider,
+    channelId: string
+  ): Promise<void> {
+    const resolved = await this.resolveChannelUser(provider, channelId);
+    if (!resolved) return;
 
     const logger = createLogger({ twist_instance_id: this.twistInstanceId });
     try {
       const nowIso = new Date().toISOString();
-      let result;
-      if (syncing) {
-        // Start (or restart): preserve an existing started_at, but clear any
-        // prior completed_at so the UI knows we're syncing again.
-        result = await this.db
-          .updateTable("twist_instance_connection")
-          .set((eb) => ({
-            initial_sync_started_at: eb.fn.coalesce(
-              "initial_sync_started_at",
-              eb.val(nowIso)
-            ),
-            initial_sync_completed_at: null,
-          }))
-          .where("twist_instance_id", "=", this.twistInstanceId)
-          .where("user_id", "=", contact.user_id)
-          .where("provider", "=", provider)
-          .executeTakeFirst();
-      } else {
-        // Stop: only stamp completion when a sync actually started and
-        // hasn't already been marked complete (idempotent).
-        result = await this.db
-          .updateTable("twist_instance_connection")
-          .set({ initial_sync_completed_at: nowIso })
-          .where("twist_instance_id", "=", this.twistInstanceId)
-          .where("user_id", "=", contact.user_id)
-          .where("provider", "=", provider)
-          .where("initial_sync_started_at", "is not", null)
-          .where("initial_sync_completed_at", "is", null)
-          .executeTakeFirst();
-      }
+      const result = await this.db
+        .updateTable("twist_instance_connection")
+        .set({
+          initial_sync_started_at: nowIso,
+          initial_sync_completed_at: null,
+        })
+        .where("twist_instance_id", "=", this.twistInstanceId)
+        .where("user_id", "=", resolved.userId)
+        .where("provider", "=", provider)
+        .executeTakeFirst();
       if ((result.numUpdatedRows ?? 0n) > 0n) {
-        await notifyUserSyncByEnv(this.env, contact.user_id);
+        await notifyUserSyncByEnv(this.env, resolved.userId);
       }
     } catch (dbError) {
       logger.warn(
-        `Failed to update initial sync state for ${provider} channel ${channelId}: ${(dbError as Error)?.message ?? String(dbError)}`,
-        { provider, channel_id: channelId, syncing }
+        `Failed to mark sync started for ${provider} channel ${channelId}: ${(dbError as Error)?.message ?? String(dbError)}`,
+        { provider, channel_id: channelId }
+      );
+    }
+  }
+
+  /**
+   * Connector-facing API: signal that the initial backfill (or recovery
+   * sync) for a channel has fully completed. Stamps
+   * `initial_sync_completed_at` so the Flutter app clears the syncing
+   * indicator. Idempotent. No-op when the channel has no user mapping.
+   */
+  async channelSyncCompleted(channelId: string): Promise<void> {
+    const provider = this.providerConfigs[0]?.provider;
+    if (!provider) return;
+    await this.clearChannelSyncing(provider, channelId);
+  }
+
+  /**
+   * Internal: invoked by the dispatch failure handler when
+   * `onChannelEnabled` throws. Clears the syncing state so the UI doesn't
+   * get stuck on "syncing" forever after an unhandled exception.
+   *
+   * Connectors should not call this directly; see {@link channelSyncCompleted}
+   * for the success path.
+   */
+  async __failChannelSync(provider: AuthProvider, channelId: string): Promise<void> {
+    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+    logger.warn(
+      `onChannelEnabled threw for ${provider} channel ${channelId}; clearing syncing state`,
+      { provider, channel_id: channelId }
+    );
+    await this.clearChannelSyncing(provider, channelId);
+  }
+
+  /**
+   * Stamp `initial_sync_completed_at = now` for the connection that owns
+   * the given channel. Only stamps when a sync actually started and
+   * hasn't already been marked complete (idempotent). Shared between the
+   * success path (`channelSyncCompleted`) and the failure path
+   * (`__failChannelSync`).
+   */
+  private async clearChannelSyncing(
+    provider: AuthProvider,
+    channelId: string
+  ): Promise<void> {
+    const resolved = await this.resolveChannelUser(provider, channelId);
+    if (!resolved) return;
+
+    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+    try {
+      const nowIso = new Date().toISOString();
+      const result = await this.db
+        .updateTable("twist_instance_connection")
+        .set({ initial_sync_completed_at: nowIso })
+        .where("twist_instance_id", "=", this.twistInstanceId)
+        .where("user_id", "=", resolved.userId)
+        .where("provider", "=", provider)
+        .where("initial_sync_started_at", "is not", null)
+        .where("initial_sync_completed_at", "is", null)
+        .executeTakeFirst();
+      if ((result.numUpdatedRows ?? 0n) > 0n) {
+        await notifyUserSyncByEnv(this.env, resolved.userId);
+      }
+    } catch (dbError) {
+      logger.warn(
+        `Failed to clear syncing state for ${provider} channel ${channelId}: ${(dbError as Error)?.message ?? String(dbError)}`,
+        { provider, channel_id: channelId }
       );
     }
   }
@@ -2241,6 +2333,14 @@ export class Integrations extends Tool implements IAuth {
     // Record user connection for per-user connection tracking. Successful
     // (re-)auth also clears any prior `needs_reauth_at` flag so the UI's
     // "needs reauth" prompt disappears immediately.
+    //
+    // We also capture whether `needs_reauth_at` was set on the prior row.
+    // When it was, this is a recovery dispatch — the connection had been
+    // broken and the user just re-authorized. After the row is updated we
+    // dispatch `onChannelEnabled` for every channel that was already
+    // enabled, with `recovering: true` in the SyncContext, so the
+    // connector drops stale cursors and re-walks history.
+    let isRecovery = false;
     if (contact?.user_id) {
       try {
         // Capture the previous actor_id (if any) so we can migrate
@@ -2249,12 +2349,13 @@ export class Integrations extends Tool implements IAuth {
         // now-invalid old actor, and the next sync would re-flag reauth.
         const previousRow = await this.db
           .selectFrom("twist_instance_connection")
-          .select("actor_id")
+          .select(["actor_id", "needs_reauth_at"])
           .where("twist_instance_id", "=", this.twistInstanceId)
           .where("user_id", "=", contact.user_id)
           .where("provider", "=", tokenInfo.provider)
           .executeTakeFirst();
         const previousActorId = previousRow?.actor_id ?? null;
+        isRecovery = previousRow?.needs_reauth_at != null;
 
         await this.db
           .insertInto("twist_instance_connection")
@@ -2393,6 +2494,14 @@ export class Integrations extends Tool implements IAuth {
 
     // 3. Return dispatch for getChannels — called locally by entrypoint with proper this binding,
     // result forwarded to setChannels via forwardTo directive.
+    //
+    // On recovery (the prior row had `needs_reauth_at` set), also dispatch
+    // `onChannelEnabled` for every channel that was already enabled by this
+    // actor with `recovering: true` in the SyncContext. This signals the
+    // connector to drop persisted incremental cursors / sync tokens and
+    // re-walk history so events that changed during the auth gap aren't
+    // missed. Each dispatch entry is wrapped through {@link applyChannelEnabled}
+    // so it gets the same auto-failure handling as a fresh enable.
     const authToken: AuthToken = {
       token: token.access_token,
       scopes: token.scopes,
@@ -2402,14 +2511,60 @@ export class Integrations extends Tool implements IAuth {
       prependArgs: [tokenInfo.provider, actor.id],
     };
 
+    const recoveryDispatches: any[] = [];
+    if (isRecovery) {
+      try {
+        // Iterate channel_config keys rather than channel_access: the
+        // migration block above re-keys channel_config to the new actor
+        // when re-auth uses a different linked email, but channel_access
+        // is keyed by actorId and hasn't been migrated yet (the about-to-
+        // run getChannels→setChannels rewrites it). channel_config is
+        // therefore the authoritative source of "what is currently
+        // enabled" at this point in onAuth.
+        const configKeyPrefix = `channel_config:${tokenInfo.provider}:`;
+        const configKeys = await this.store.list(configKeyPrefix);
+        const recoveryContext = await this.buildSyncContext(true);
+        for (const key of configKeys) {
+          const channelConfig = await this.store.get<ChannelConfig>(key);
+          if (
+            !channelConfig?.enabled ||
+            channelConfig.enabledBy !== (actor.id as ActorId)
+          ) {
+            continue;
+          }
+          const channelId = key.slice(configKeyPrefix.length);
+          const channel: Channel = {
+            id: channelId,
+            title: channelConfig.title ?? channelId,
+          };
+          const entry = await this.applyChannelEnabled(
+            tokenInfo.provider,
+            actor.id as ActorId,
+            channel,
+            recoveryContext
+          );
+          if (entry) recoveryDispatches.push(entry);
+        }
+      } catch (error) {
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+        logger.warn(
+          `Failed to build recovery dispatches for ${tokenInfo.provider} actor ${actor.id}: ${(error as Error)?.message ?? String(error)}`,
+          { provider: tokenInfo.provider, actor_id: actor.id }
+        );
+      }
+    }
+
     // Source pattern: dispatch directly to source method
     if (this.sourceProvider) {
       return {
-        __dispatch: [{
-          sourceMethod: "getChannels",
-          args: [authorization, authToken],
-          forwardTo,
-        }],
+        __dispatch: [
+          {
+            sourceMethod: "getChannels",
+            args: [authorization, authToken],
+            forwardTo,
+          },
+          ...recoveryDispatches,
+        ],
       } as any;
     }
 
@@ -2419,11 +2574,14 @@ export class Integrations extends Tool implements IAuth {
     );
     if (providerIndex >= 0) {
       return {
-        __dispatch: [{
-          optionPath: ["providers", providerIndex, "getChannels"],
-          args: [authorization, authToken],
-          forwardTo,
-        }],
+        __dispatch: [
+          {
+            optionPath: ["providers", providerIndex, "getChannels"],
+            args: [authorization, authToken],
+            forwardTo,
+          },
+          ...recoveryDispatches,
+        ],
       } as any;
     }
   }

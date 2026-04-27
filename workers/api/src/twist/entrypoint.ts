@@ -611,20 +611,43 @@ export default class extends WorkerEntrypoint {
       // This solves the RPC stub \`this\` binding issue where callbacks like
       // onSyncEnabled/onSyncDisabled lose their context when called via RPC.
       if (result && result.__dispatch && Array.isArray(result.__dispatch)) {
+        // Helper: route an error through the dispatch entry's onFailure
+        // handler (if any) before rethrowing. onFailure is currently used
+        // by Integrations.applyChannelEnabled to clear the channel's
+        // syncing state when onChannelEnabled throws — without this the
+        // UI sticks on "syncing" forever after an unhandled exception.
+        const runFailureHandler = async (callbackInfo, error) => {
+          const f = callbackInfo?.onFailure;
+          if (!f || !f.functionName || !Array.isArray(f.args)) return;
+          try {
+            await tool.callCallback(f.functionName, ...f.args);
+          } catch (failureError) {
+            console.warn(
+              "onFailure handler threw for " + f.functionName + ":",
+              failureError
+            );
+          }
+        };
+
         for (const callbackInfo of result.__dispatch) {
           // sourceMethod dispatch: call method directly on twist instance (Source pattern)
           if (callbackInfo?.sourceMethod && callbackInfo?.args) {
             const method = twist[callbackInfo.sourceMethod];
             if (typeof method === 'function') {
-              if (callbackInfo.forwardTo) {
-                const cbResult = await method.call(twist, ...callbackInfo.args);
-                await tool.callCallback(
-                  callbackInfo.forwardTo.functionName,
-                  ...callbackInfo.forwardTo.prependArgs,
-                  cbResult
-                );
-              } else {
-                await method.call(twist, ...callbackInfo.args);
+              try {
+                if (callbackInfo.forwardTo) {
+                  const cbResult = await method.call(twist, ...callbackInfo.args);
+                  await tool.callCallback(
+                    callbackInfo.forwardTo.functionName,
+                    ...callbackInfo.forwardTo.prependArgs,
+                    cbResult
+                  );
+                } else {
+                  await method.call(twist, ...callbackInfo.args);
+                }
+              } catch (error) {
+                await runFailureHandler(callbackInfo, error);
+                throw error;
               }
             }
           }
@@ -662,6 +685,7 @@ export default class extends WorkerEntrypoint {
                   await cb.call(context, ...callbackInfo.args);
                 }
               } catch (error) {
+                await runFailureHandler(callbackInfo, error);
                 throw error;
               }
             }
@@ -694,7 +718,7 @@ export default class extends WorkerEntrypoint {
   // tool (e.g. Integrations) adds a NEW dispatch field — forwardTo variants,
   // new deferred* hooks, etc. — you MUST mirror the handling into BOTH
   // functions, or callbacks routed through one path silently no-op.
-  // Existing fields: sourceMethod, optionPath, args, forwardTo,
+  // Existing fields: sourceMethod, optionPath, args, forwardTo, onFailure,
   // deferredTagRemoval, deferredNoteKeyUpdate. Grep each to verify.
   // (No backticks in this file — it is consumed as a template literal; see
   // the escaped \` usages in console.debug below.)
@@ -719,6 +743,24 @@ export default class extends WorkerEntrypoint {
           // The Twisting tag is cleared fail-closed in the API queue handler
           // (workers/api/src/queue/updates.ts), not here — each callback just
           // runs its body and surfaces any errors.
+          // Helper: route an error through the dispatch entry's onFailure
+          // handler (if any) before rethrowing. Mirrors the runFailureHandler
+          // in callCallback above. Used by Integrations.applyChannelEnabled
+          // to clear "syncing" state when onChannelEnabled throws.
+          const runFailureHandler = async (callbackInfo, error) => {
+            const f = callbackInfo?.onFailure;
+            if (!f || !f.functionName || !Array.isArray(f.args)) return;
+            if (typeof tool.callCallback !== 'function') return;
+            try {
+              await tool.callCallback(f.functionName, ...f.args);
+            } catch (failureError) {
+              console.warn(
+                "onFailure handler threw for " + f.functionName + ":",
+                failureError
+              );
+            }
+          };
+
           for (const callbackInfo of callbacks) {
             // sourceMethod dispatch: call method directly on twist instance (Source pattern)
             if (callbackInfo?.sourceMethod && callbackInfo?.args) {
@@ -761,6 +803,7 @@ export default class extends WorkerEntrypoint {
                     }
                   }
                 } catch (error) {
+                  await runFailureHandler(callbackInfo, error);
                   const errorData = {
                     message: error instanceof Error ? error.message : String(error),
                     twistStack: error instanceof Error ? error.stack || '' : '',
@@ -801,6 +844,7 @@ export default class extends WorkerEntrypoint {
 
                   await callback.call(callbackContext, ...callbackInfo.args);
                 } catch (error) {
+                  await runFailureHandler(callbackInfo, error);
                   // Wrap in TwistError to preserve stack across RPC boundary
                   const errorData = {
                     message: error instanceof Error ? error.message : String(error),
