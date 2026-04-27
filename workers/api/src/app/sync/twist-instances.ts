@@ -9,6 +9,7 @@ import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { rpcUser } from "../../rpc";
 import { notifyUserSync } from "./notify";
 import { syncUserTwistStats } from "../../utils/twist-stats";
+import { Store } from "../../twist/tools/store";
 import { createLogger } from "@plotday/worker-util";
 
 const twistInstances = new Hono<{ Bindings: Bindings }>();
@@ -116,13 +117,16 @@ async function reconcileSourceConnections(
       let lastKnown: { provider: string; actorId: string } | null = null;
 
       for (const [provider, pathStr] of Object.entries(integrationsMap)) {
-        const path = pathStr.split(":");
-        const toolPath = path.slice(0, -1);
-        const doName = `${row.id}:${toolPath.join(":")}`;
-        const storageId = c.env.STORAGE.idFromName(doName);
-        const storageDO = c.env.STORAGE.get(storageId);
+        // Channel_config values are SuperJSON-encoded by the runtime's
+        // Store wrapper — go through the same wrapper here so the parse
+        // chain matches (SuperJSON → JSON fallback → raw string).
+        const store = new Store({
+          storage: c.env.STORAGE,
+          twistInstanceId: row.id,
+          path: pathStr.split(":"),
+        });
 
-        const tokenKeys = await storageDO.list(`auth_token:${provider}:`);
+        const tokenKeys = await store.list(`auth_token:${provider}:`);
         for (const key of tokenKeys) {
           const actorId = key.split(":").slice(2).join(":");
           if (contactIds.has(actorId)) {
@@ -133,18 +137,12 @@ async function reconcileSourceConnections(
         if (connected) break;
 
         if (!lastKnown) {
-          const configKeys = await storageDO.list(
-            `channel_config:${provider}:`
-          );
+          const configKeys = await store.list(`channel_config:${provider}:`);
           for (const key of configKeys) {
-            const raw = await storageDO.get(key);
-            if (!raw) continue;
-            let parsed: { enabled?: boolean; enabledBy?: string };
-            try {
-              parsed = JSON.parse(raw);
-            } catch {
-              continue;
-            }
+            const parsed = await store.get<{
+              enabled?: boolean;
+              enabledBy?: string;
+            }>(key);
             if (
               parsed?.enabled &&
               parsed.enabledBy &&
