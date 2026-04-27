@@ -149,6 +149,12 @@ class _OpenManageConnections extends Command {
       iconBuilder?.call(context);
 
   @override
-  Future<CommandReturn> run(BuildContext context) =>
-      ManageConnections().run(context);
+  Future<CommandReturn> run(BuildContext context) async {
+    // Prefetch so the modal opens with content already populated. The host
+    // ListTile shows its spinner during this load — far more legible than a
+    // blank modal that just contains a spinner.
+    await ManageConnections.prewarm();
+    if (!context.mounted) return const CommandSkipped();
+    return ManageConnections(keepCache: true).run(context);
+  }
 }

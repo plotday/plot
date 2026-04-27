@@ -114,7 +114,7 @@ class _UpcomingConnection extends _ConnectionItem {
 }
 
 class ManageConnections extends Command {
-  ManageConnections()
+  ManageConnections({this.keepCache = false})
     : super(
         title: 'Connections',
         description: 'Sync your accounts and data into Plot.',
@@ -122,6 +122,22 @@ class ManageConnections extends Command {
         eventObject: EventObject.twist,
         eventAction: EventAction.opened,
       );
+
+  /// Skip clearing [_dataCache] / [_upcomingCache] when opening the modal so
+  /// callers that prewarmed via [prewarm] don't immediately discard their work.
+  final bool keepCache;
+
+  /// Populate [_dataCache] (and [_upcomingCache]) without opening the modal so
+  /// the modal can render its content immediately on first frame. Errors are
+  /// swallowed — the modal will retry and surface failures normally.
+  static Future<void> prewarm() async {
+    if (_dataCache != null) return;
+    try {
+      await _loadData();
+    } catch (_) {
+      // Modal will retry and surface errors via _fetchItems.
+    }
+  }
 
   @override
   Widget? buildIcon(BuildContext context, {bool hoverIcon = false}) {
@@ -186,8 +202,10 @@ class ManageConnections extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    _upcomingCache = null; // Reset cache for each new session
-    _dataCache = null;
+    if (!keepCache) {
+      _upcomingCache = null; // Reset cache for each new session
+      _dataCache = null;
+    }
     try {
       Future<void> Function()? refreshFn;
       await SelectModal.open<_ConnectionItem>(
