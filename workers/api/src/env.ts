@@ -203,6 +203,9 @@ export type Bindings = {
   // 256-bit hex key for encrypting user-provided AI API keys at rest (AES-256-GCM)
   readonly AI_KEY_ENCRYPTION_KEY: string;
 
+  // Bearer token gating /admin/* endpoints (e.g. on-demand refreshAllChannels).
+  readonly ADMIN_API_KEY?: string;
+
   readonly SYNC_TIMING_ENABLED?: string;
   readonly NOTIFICATION_DELAY_MULTIPLIER?: string;
 

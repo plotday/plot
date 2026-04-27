@@ -4,6 +4,7 @@ import { PostHog } from "posthog-node";
 
 import { Tracker } from "./utils/tracker";
 import account from "./app/account";
+import admin from "./app/admin";
 import device from "./app/device";
 import invitation from "./app/invitation";
 import twists from "./app/twists";
@@ -233,6 +234,9 @@ app.get("/health", dbMiddleware, async (c) => {
 
 // Public unsubscribe endpoint — token-authenticated, no session required
 app.route("/", unsubscribe);
+
+// Admin endpoints — gated by ADMIN_API_KEY bearer token (no app/sdk auth).
+app.route("/", admin);
 
 // Mount webhook route at top level
 app.route("/", webhook);
