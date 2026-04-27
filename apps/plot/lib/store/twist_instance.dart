@@ -148,6 +148,10 @@ class TwistInstance extends TwistInstanceRow {
   }
 
   static Stream<List<TwistInstance>> watch({bool? archived = false}) {
+    // Defensive check: Return empty stream if Store is not available (user signing out)
+    if (!Injector.appInstance.exists<Store>()) {
+      return Stream.value([]);
+    }
     final query = _get(archived: archived);
     return query.watch().map((rows) {
       final twists = rows.map((row) => TwistInstance(row)).toList();
@@ -180,6 +184,10 @@ class TwistInstance extends TwistInstanceRow {
 
   /// Watch source accounts (all active, non-draft source twists).
   static Stream<List<TwistInstance>> watchSourceAccounts() {
+    // Defensive check: Return empty stream if Store is not available (user signing out)
+    if (!Injector.appInstance.exists<Store>()) {
+      return Stream.value([]);
+    }
     final query = Store.get.select(table)
       ..where((t) => t.draft.equals(false))
       ..where((t) => t.isSource.equals(true))

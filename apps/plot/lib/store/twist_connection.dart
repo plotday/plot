@@ -67,6 +67,10 @@ class TwistConnection {
   }
 
   static Stream<List<TwistConnectionRow>> watchAll() {
+    // Defensive check: Return empty stream if Store is not available (user signing out)
+    if (!Injector.appInstance.exists<Store>()) {
+      return Stream.value(const []);
+    }
     return Store.get.select(table).watch();
   }
 
