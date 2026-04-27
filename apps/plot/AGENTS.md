@@ -5,6 +5,30 @@
 - **Lint**: `cd apps/plot && flutter analyze`
 - **Build**: The Flutter app is already running with hot reload enabled.
 
+## Web font cache-busting
+
+`pnpm build:web` runs `scripts/cache-bust-fonts.sh` after `flutter build web`,
+which appends `?v=$FONT_CACHE_VERSION` to every font URL in
+`build/web/assets/FontManifest.json`.
+
+This is required because Flutter web tree-shakes icon fonts (Font Awesome,
+etc.) but keeps the output filenames stable. When you change which icons the
+app uses, the served font's contents change but its URL doesn't — browsers
+keep serving the cached older font and new glyphs render as "tofu" boxes.
+
+**Bump `FONT_CACHE_VERSION` in `scripts/cache-bust-fonts.sh` whenever you:**
+
+1. Add or remove a Font Awesome icon (most commonly in
+   `lib/widget/icon.dart`, but anywhere a `FontAwesomeIcons.*` is referenced
+   counts).
+2. Add, change, or replace a font file in `pubspec.yaml`.
+3. Upgrade `font_awesome_flutter` or any other font-providing dependency.
+
+If unsure, bump it — the cost of an unnecessary bump is one extra font
+refetch per user; the cost of forgetting is broken icons until each user's
+browser cache expires. After bumping, commit, then `pnpm build:web` and
+redeploy.
+
 ## Code Structure
 
 -"lib/store/" contains entities and models
