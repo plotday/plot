@@ -2053,7 +2053,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 317;
+  int get schemaVersion => 318;
 
   @override
   MigrationStrategy get migration {
@@ -2953,6 +2953,29 @@ class Store extends _$Store {
       // user.twist_connection. Surfaces re-auth and initial-sync state to
       // the app without overloading user.twist.
       await m.createTable(twistConnections);
+    }
+    if (from < 318) {
+      // PK was (twist_instance_id, provider, actor_id) but the server's
+      // per-user effective PK is (twist_instance_id, provider). When a
+      // re-auth changed actor_id (e.g. user signed in with a different
+      // linked email), pull's insertOrReplace inserted a new row alongside
+      // the stale one, leaving needs_reauth=true behind and making the
+      // re-auth button stick. Dedupe to the freshest row, then rebuild
+      // the table with the corrected PK.
+      await m.database.customStatement('''
+        DELETE FROM twist_connections
+        WHERE rowid NOT IN (
+          SELECT rowid FROM (
+            SELECT rowid,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY twist_instance_id, provider
+                     ORDER BY COALESCE(connected_at, '') DESC, rowid DESC
+                   ) AS rn
+            FROM twist_connections
+          ) WHERE rn = 1
+        )
+      ''');
+      await m.alterTable(TableMigration(twistConnections));
     }
   }
 

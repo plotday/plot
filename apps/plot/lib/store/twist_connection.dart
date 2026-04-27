@@ -2,8 +2,11 @@ part of 'store.dart';
 
 /// Local mirror of the `user.twist_connection` view.
 ///
-/// One row per (twist_instance, user, provider, actor_id) — the per-account
-/// status surface for connections (re-auth needed, initial sync running, etc.).
+/// One row per (twist_instance, provider) — the server's `twist_instance_connection`
+/// PK is `(twist_instance_id, user_id, provider)` and the local store is
+/// always scoped to a single user, so `actor_id` is *not* part of the PK.
+/// Re-authing with a different linked email changes `actor_id` on the same
+/// row; including it in the PK would leave the stale row behind on pull.
 @DataClassName('TwistConnectionRow')
 class TwistConnections extends Table with SyncableTable {
   BlobColumn get twistInstanceId => blob().map(const UuidConverter())();
@@ -22,7 +25,7 @@ class TwistConnections extends Table with SyncableTable {
       boolean().withDefault(const Constant(false))();
 
   @override
-  Set<Column> get primaryKey => {twistInstanceId, provider, actorId};
+  Set<Column> get primaryKey => {twistInstanceId, provider};
 }
 
 class TwistConnectionsBase extends BaseTable {

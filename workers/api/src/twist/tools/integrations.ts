@@ -2243,6 +2243,19 @@ export class Integrations extends Tool implements IAuth {
     // "needs reauth" prompt disappears immediately.
     if (contact?.user_id) {
       try {
+        // Capture the previous actor_id (if any) so we can migrate
+        // channel_config.enabledBy below — re-authing with a different
+        // linked email would otherwise leave channels owned by the
+        // now-invalid old actor, and the next sync would re-flag reauth.
+        const previousRow = await this.db
+          .selectFrom("twist_instance_connection")
+          .select("actor_id")
+          .where("twist_instance_id", "=", this.twistInstanceId)
+          .where("user_id", "=", contact.user_id)
+          .where("provider", "=", tokenInfo.provider)
+          .executeTakeFirst();
+        const previousActorId = previousRow?.actor_id ?? null;
+
         await this.db
           .insertInto("twist_instance_connection")
           .values({
@@ -2262,6 +2275,44 @@ export class Integrations extends Tool implements IAuth {
               })
           )
           .execute();
+
+        // If actor_id changed (re-auth with a different linked email),
+        // migrate channel_config.enabledBy from any of this user's
+        // contacts to the new actor so subsequent token lookups hit the
+        // freshly stored token instead of the cleared one.
+        if (previousActorId && previousActorId !== actor.id) {
+          try {
+            const userContacts = await this.db
+              .selectFrom("contact")
+              .select("id")
+              .where("user_id", "=", contact.user_id)
+              .execute();
+            const userContactIds = new Set(userContacts.map((r) => r.id));
+            const configKeys = await this.store.list(
+              `channel_config:${tokenInfo.provider}:`
+            );
+            for (const key of configKeys) {
+              const channelConfig = await this.store.get<ChannelConfig>(key);
+              if (
+                channelConfig?.enabledBy &&
+                channelConfig.enabledBy !== actor.id &&
+                userContactIds.has(channelConfig.enabledBy)
+              ) {
+                await this.store.set(key, {
+                  ...channelConfig,
+                  enabledBy: actor.id,
+                });
+              }
+            }
+          } catch (error) {
+            const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+            logger.warn(
+              `Failed to migrate channel_config.enabledBy from ${previousActorId} to ${actor.id}: ${(error as Error)?.message ?? String(error)}`,
+              { provider: tokenInfo.provider }
+            );
+          }
+        }
+
         await notifyUserSyncByEnv(this.env, contact.user_id);
       } catch (error) {
         const logger = createLogger({ twist_instance_id: this.twistInstanceId });
