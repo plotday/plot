@@ -1186,6 +1186,12 @@ class EditSource extends ShowForm {
               key: 'auth_${provider.provider.name}',
               divider: false,
               builder: (formContext) {
+                // Pre-select the account that needs re-auth so the provider
+                // can skip its account chooser when possible. Only Google and
+                // Microsoft honor this on the server (login_hint).
+                final existingAccount = integrations.accounts.firstWhereOrNull(
+                  (a) => a.provider == provider.provider,
+                );
                 return Padding(
                   padding: formContext.theme.spacing.padding.copyWith(top: 0),
                   child: _AuthWithScopeToggles(
@@ -1196,6 +1202,7 @@ class EditSource extends ShowForm {
                     onScopeGroupsChanged: (groups) {
                       scopeGroupSelections[provider.provider.name] = groups;
                     },
+                    accountHint: existingAccount?.email,
                     onSuccess: () async {
                       // Pull fresh connection state so needs_reauth flips
                       // off, then refresh the form to swap to the normal
@@ -3165,6 +3172,7 @@ class _AuthWithScopeToggles extends StatefulWidget {
     required this.onSuccess,
     this.initialEnabledGroups,
     this.onScopeGroupsChanged,
+    this.accountHint,
   });
 
   final TwistProvider provider;
@@ -3172,6 +3180,7 @@ class _AuthWithScopeToggles extends StatefulWidget {
   final Future<void> Function() onSuccess;
   final Set<String>? initialEnabledGroups;
   final ValueChanged<Set<String>>? onScopeGroupsChanged;
+  final String? accountHint;
 
   @override
   State<_AuthWithScopeToggles> createState() => _AuthWithScopeTogglesState();
@@ -3244,6 +3253,7 @@ class _AuthWithScopeTogglesState extends State<_AuthWithScopeToggles> {
             enabledScopeGroups: _enabledGroups.isNotEmpty
                 ? _enabledGroups.toList()
                 : null,
+            accountHint: widget.accountHint,
             onSuccess: widget.onSuccess,
           ),
         ),

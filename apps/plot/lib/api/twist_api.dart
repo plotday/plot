@@ -262,6 +262,7 @@ class TwistApi {
     required String redirectUri,
     String? platform,
     List<String>? enabledScopeGroups,
+    String? accountHint,
   }) async {
     final response = await api.post<Map<String, dynamic>>(
       '/twist/$twistInstanceId/integrations/auth',
@@ -271,6 +272,7 @@ class TwistApi {
         if (platform != null) 'platform': platform,
         if (enabledScopeGroups != null)
           'enabledScopeGroups': enabledScopeGroups,
+        if (accountHint != null) 'accountHint': accountHint,
       },
     );
     return TwistAuthUrl.fromJson(response);

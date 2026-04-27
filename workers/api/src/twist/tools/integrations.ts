@@ -3775,6 +3775,7 @@ export class Integrations extends Tool implements IAuth {
     env,
     storage,
     enabledScopeGroups,
+    accountHint,
   }: {
     provider: AuthProvider;
     scopes: string[];
@@ -3784,6 +3785,7 @@ export class Integrations extends Tool implements IAuth {
     env: Bindings;
     storage: DurableObjectNamespace<Storage>;
     enabledScopeGroups?: string[];
+    accountHint?: string;
   }): Promise<{ url: string; clientId: string; state: string } | null> {
     const config = PROVIDER_CONFIGS[provider];
     if (!config) {
@@ -3863,9 +3865,20 @@ export class Integrations extends Tool implements IAuth {
     // For sign-in flows (no callback), use simplified Google OAuth params
     // For authorization flows (has callback), use full params from config
     const isSignInFlow = !callback && provider === "google";
-    const additionalParams = isSignInFlow
-      ? { prompt: "select_account" }
-      : config.additionalParams;
+    const additionalParams: Record<string, string> = {
+      ...(isSignInFlow ? { prompt: "select_account" } : config.additionalParams),
+    };
+
+    // Re-auth: caller knows which account to reconnect, so pre-select it via
+    // login_hint and drop prompt=select_account so Google can skip the chooser
+    // when the user is already signed into that account. login_hint is also a
+    // standard OAuth param honored by Microsoft.
+    if (accountHint && (provider === "google" || provider === "microsoft")) {
+      additionalParams.login_hint = accountHint;
+      if (provider === "google") {
+        delete additionalParams.prompt;
+      }
+    }
 
     const scopeParam = config.scopeParam ?? "scope";
     const params = new URLSearchParams({

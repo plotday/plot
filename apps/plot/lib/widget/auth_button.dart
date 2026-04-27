@@ -97,6 +97,7 @@ class AuthButton extends StatefulWidget {
        _onRedirectAuth = onRedirectAuth,
        _twistInstanceId = null,
        _enabledScopeGroups = null,
+       _accountHint = null,
        _onSuccess = null;
 
   // Run an OAuth authorization flow for the given link
@@ -113,6 +114,7 @@ class AuthButton extends StatefulWidget {
        _onRedirectAuth = null,
        _twistInstanceId = null,
        _enabledScopeGroups = null,
+       _accountHint = null,
        _onSuccess = null,
        scopes = link.scopes;
 
@@ -126,6 +128,7 @@ class AuthButton extends StatefulWidget {
     required String twistInstanceId,
     required Future<void> Function() onSuccess,
     List<String>? enabledScopeGroups,
+    String? accountHint,
     this.onError,
     super.key,
   }) : _link = null,
@@ -135,6 +138,7 @@ class AuthButton extends StatefulWidget {
        _onRedirectAuth = null,
        _twistInstanceId = twistInstanceId,
        _enabledScopeGroups = enabledScopeGroups,
+       _accountHint = accountHint,
        _onSuccess = onSuccess;
 
   Future<void> onComplete({
@@ -179,6 +183,7 @@ class AuthButton extends StatefulWidget {
   final AuthUserAction? _link;
   final String? _twistInstanceId;
   final List<String>? _enabledScopeGroups;
+  final String? _accountHint;
   final Future<void> Function()? _onSuccess;
   final void Function(String error)? onError;
 
@@ -749,6 +754,7 @@ class _AuthButtonState extends State<AuthButton>
         redirectUri: redirectUri,
         platform: platform,
         enabledScopeGroups: widget._enabledScopeGroups,
+        accountHint: widget._accountHint,
       );
 
       if (_useNativeGoogleSignInForTwist) {
