@@ -108,9 +108,15 @@ export class SlackPermanentError extends Error {
   }
 }
 
-const PERMANENT_SLACK_ERRORS = new Set([
-  "invalid_arguments",
-  "invalid_argument",
+/**
+ * Slack errors that indicate the user must re-authenticate. The connector
+ * uses this to drive `integrations.markNeedsReauth(channelId)`.
+ *
+ * Subset of {@link PERMANENT_SLACK_ERRORS} — excludes per-resource failures
+ * like `channel_not_found` or `thread_not_found` that don't invalidate the
+ * token itself.
+ */
+export const SLACK_AUTH_ERRORS = new Set([
   "invalid_auth",
   "not_authed",
   "token_revoked",
@@ -118,6 +124,12 @@ const PERMANENT_SLACK_ERRORS = new Set([
   "account_inactive",
   "missing_scope",
   "no_permission",
+]);
+
+const PERMANENT_SLACK_ERRORS = new Set([
+  "invalid_arguments",
+  "invalid_argument",
+  ...SLACK_AUTH_ERRORS,
   "channel_not_found",
   "not_in_channel",
   "is_archived",

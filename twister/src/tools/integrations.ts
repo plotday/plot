@@ -292,6 +292,27 @@ export abstract class Integrations extends ITool {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract setInitialSyncing(channelId: string, syncing: boolean): Promise<void>;
 
+  /**
+   * Flag a connection as needing re-authentication so the Flutter app
+   * surfaces a re-auth prompt on the next sync.
+   *
+   * Call this when a connector's API call returns a permanent auth-style
+   * error that the runtime can't observe through token refresh — e.g.
+   * Slack `invalid_auth` / `token_revoked` / `not_authed`, or a 401 on a
+   * provider that doesn't refresh. The runtime already flags reauth
+   * automatically when an OAuth refresh permanently fails or when the
+   * stored token is missing on a get(); only call this for cases the
+   * runtime can't see.
+   *
+   * Idempotent: safe to call repeatedly; existing reauth flags are not
+   * overwritten. No-op when the channel has no `enabledBy` actor (e.g.
+   * key-based connectors).
+   *
+   * @param channelId - The channel resource ID whose token is bad
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract markNeedsReauth(channelId: string): Promise<void>;
+
 }
 
 /**

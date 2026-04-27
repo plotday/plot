@@ -23,6 +23,7 @@ type MessageChannel = {
 };
 
 import {
+  SLACK_AUTH_ERRORS,
   SlackApi,
   SlackPermanentError,
   SlackRateLimitedError,
@@ -319,6 +320,9 @@ export class Slack extends Connector<Slack> {
         console.warn(
           `syncBatch ${batchNumber} for ${channelId} stopped: ${error.method} → ${error.slackError}`
         );
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
         if (mode === "full") await this.clear(`sync_state_${channelId}`);
         return;
       }
@@ -562,6 +566,12 @@ export class Slack extends Connector<Slack> {
           } catch (error) {
             if (error instanceof SlackRateLimitedError) throw error;
             if (error instanceof SlackPermanentError) {
+              if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+                // Auth is broken — every remaining star will fail the same
+                // way. Flag reauth and stop the backfill instead of looping.
+                await this.tools.integrations.markNeedsReauth(channelId);
+                throw error;
+              }
               console.warn(
                 `backfillStars: skipping ${channelId}/${parentTs}: ${error.method} → ${error.slackError}`
               );
@@ -598,6 +608,9 @@ export class Slack extends Connector<Slack> {
         console.warn(
           `backfillStars stopped for ${channelId}: ${error.method} → ${error.slackError}`
         );
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
         return;
       }
       throw error;
