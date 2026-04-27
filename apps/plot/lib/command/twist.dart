@@ -459,10 +459,16 @@ class _ActiveSourceRow extends StatelessWidget {
               color: theme.colors.mutedForeground,
             )
           else if (needsReauth)
-            FaIcon(
-              PlotIcon.plugCircleExclamation,
-              size: theme.iconSizes.base,
-              color: theme.colors.destructive,
+            SizedBox(
+              width: theme.iconSizes.base,
+              height: theme.iconSizes.base,
+              child: Center(
+                child: FaIcon(
+                  PlotIcon.plugCircleExclamation,
+                  size: theme.iconSizes.base,
+                  color: theme.colors.destructive,
+                ),
+              ),
             )
           else
             _SourceLogo(
@@ -939,6 +945,8 @@ class EditSource extends ShowForm {
     String? logoUrlDark,
     String? initialAccountLabel,
   }) async {
+    final twistInstanceUuid = Uuid.fromString(twistInstanceId);
+
     Future<TwistIntegrations> integrationsF;
     if (_preloadedFor == twistInstanceId && _preloadedIntegrations != null) {
       integrationsF = _preloadedIntegrations!;
@@ -952,9 +960,11 @@ class EditSource extends ShowForm {
       ManageConnections._dataCache?.usage != null
           ? Future.value(ManageConnections._dataCache!.usage!)
           : UpgradeApi.getUsage(),
+      TwistConnection.getForInstance(twistInstanceUuid),
     ]);
-    final integrations = results[0] as TwistIntegrations;
+    var integrations = results[0] as TwistIntegrations;
     final usage = results[1] as UsageData;
+    var connections = results[2] as List<TwistConnectionRow>;
     final teams = usage.teams;
 
     final refreshNotifier = ValueNotifier<int>(0);
@@ -969,14 +979,9 @@ class EditSource extends ShowForm {
       return result;
     }
 
-    final initialEnabled = collectEnabled(integrations.channels);
-    var integrationChanges = IntegrationChanges(
-      selectedChannels: Set.of(initialEnabled),
-    );
-
     // Look up the current twist instance to get its current team_id and
     // account_label (fallback when not passed in explicitly).
-    final currentTwistId = Uuid.fromString(twistInstanceId);
+    final currentTwistId = twistInstanceUuid;
     TwistInstanceRow? twistInstance = TwistInstance.fromCache(currentTwistId);
     twistInstance ??= await (Store.get.select(
       TwistInstance.table,
@@ -988,42 +993,63 @@ class EditSource extends ShowForm {
     final initialTeamId = twistInstance?.teamId != null
         ? twistInstance!.teamId.toString()
         : (isNewlyActivated && teams.isNotEmpty ? teams.first.id : 'personal');
-    // Prefer the server-fresh account_label from the integrations response
-    // (which reflects the activateDraft fallback) over the potentially stale
-    // local-store value. Then fall back to the team name or 'Personal' so the
-    // Label field is never blank by default.
-    final storedLabel =
-        initialAccountLabel ??
-        integrations.accountLabel ??
-        twistInstance?.accountLabel;
-    String fallbackLabel() {
-      final teamName = integrations.teamName;
-      if (teamName != null && teamName.isNotEmpty) return teamName;
-      if (initialTeamId != 'personal') {
-        final team = teams.firstWhereOrNull((t) => t.id == initialTeamId);
-        if (team != null) return team.name;
+
+    // Default scope group selections per provider, used by both the setup-
+    // style reauth path and any future scope tweaks.
+    final scopeGroupSelections = <String, Set<String>>{};
+    for (final provider in integrations.providers) {
+      if (provider.optionalScopes != null) {
+        scopeGroupSelections[provider.provider.name] = {
+          for (final group in provider.optionalScopes!)
+            if (group.defaultEnabled) group.id,
+        };
       }
-      return 'Personal';
     }
 
-    final existingLabel = (storedLabel != null && storedLabel.isNotEmpty)
-        ? storedLabel
-        : fallbackLabel();
+    Set<String> reauthProviderNames() => connections
+        .where((c) => c.needsReauth)
+        .map((c) => c.provider)
+        .toSet();
 
-    // Build option form items for no-provider connectors
-    final hasOptions =
-        integrations.optionsSchema != null &&
-        integrations.optionsSchema!.isNotEmpty;
-    final optionItems = hasOptions
-        ? TwistOptionItems(
-            options: integrations.optionsSchema!,
-            initialConfig: integrations.optionsConfig,
-          )
-        : null;
+    List<StaticFormGroup> buildEditGroups() {
+      // Prefer the server-fresh account_label from the integrations response
+      // (which reflects the activateDraft fallback) over the potentially stale
+      // local-store value. Then fall back to the team name or 'Personal' so
+      // the Label field is never blank by default.
+      final storedLabel =
+          initialAccountLabel ??
+          integrations.accountLabel ??
+          twistInstance?.accountLabel;
+      String fallbackLabel() {
+        final teamName = integrations.teamName;
+        if (teamName != null && teamName.isNotEmpty) return teamName;
+        if (initialTeamId != 'personal') {
+          final team = teams.firstWhereOrNull((t) => t.id == initialTeamId);
+          if (team != null) return team.name;
+        }
+        return 'Personal';
+      }
 
-    return FormData(
-      title: isNewlyActivated ? 'Set up $name' : name,
-      groups: [
+      final existingLabel = (storedLabel != null && storedLabel.isNotEmpty)
+          ? storedLabel
+          : fallbackLabel();
+
+      final hasOptions =
+          integrations.optionsSchema != null &&
+          integrations.optionsSchema!.isNotEmpty;
+      final optionItems = hasOptions
+          ? TwistOptionItems(
+              options: integrations.optionsSchema!,
+              initialConfig: integrations.optionsConfig,
+            )
+          : null;
+
+      final initialEnabled = collectEnabled(integrations.channels);
+      var integrationChanges = IntegrationChanges(
+        selectedChannels: Set.of(initialEnabled),
+      );
+
+      return [
         StaticFormGroup(
           items: [
             FormTextInput(
@@ -1118,7 +1144,91 @@ class EditSource extends ShowForm {
             ],
           ],
         ),
-      ],
+      ];
+    }
+
+    StaticFormGroup buildReauthGroup() {
+      final reauthFilter = reauthProviderNames();
+      final providersNeedingReauth = integrations.providers
+          .where((p) => reauthFilter.contains(p.provider.name))
+          .toList();
+
+      return StaticFormGroup(
+        items: [
+          FormInfo(
+            key: 'reauth_message',
+            text: providersNeedingReauth.length > 1
+                ? 'Reconnect to keep $name in sync.'
+                : 'Reconnect $name to resume syncing.',
+          ),
+          for (final provider in providersNeedingReauth)
+            FormInfo(
+              key: 'auth_${provider.provider.name}',
+              divider: false,
+              builder: (formContext) {
+                return Padding(
+                  padding: formContext.theme.spacing.padding.copyWith(top: 0),
+                  child: _AuthWithScopeToggles(
+                    provider: provider,
+                    twistInstanceId: twistInstanceId,
+                    initialEnabledGroups:
+                        scopeGroupSelections[provider.provider.name],
+                    onScopeGroupsChanged: (groups) {
+                      scopeGroupSelections[provider.provider.name] = groups;
+                    },
+                    onSuccess: () async {
+                      // Pull fresh connection state so needs_reauth flips
+                      // off, then refresh the form to swap to the normal
+                      // edit view.
+                      await TwistConnection.pull();
+                      if (formContext.mounted) {
+                        await FormScope.of(formContext)?.refresh?.call();
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
+        ],
+      );
+    }
+
+    List<StaticFormGroup> buildAllGroups() {
+      if (reauthProviderNames().isNotEmpty) {
+        return [
+          buildReauthGroup(),
+          if (!isNewlyActivated)
+            StaticFormGroup(
+              items: [
+                FormButton(
+                  key: 'archive',
+                  skipValidation: true,
+                  buildCommand: (_) => PromptToArchiveSource(
+                    twistInstanceId: twistInstanceId,
+                    name: name,
+                  ),
+                ),
+              ],
+            ),
+        ];
+      }
+      return buildEditGroups();
+    }
+
+    Future<List<StaticFormGroup>> refresh() async {
+      final refreshed = await Future.wait([
+        TwistApi.getIntegrations(twistInstanceId),
+        TwistConnection.getForInstance(twistInstanceUuid),
+      ]);
+      integrations = refreshed[0] as TwistIntegrations;
+      connections = refreshed[1] as List<TwistConnectionRow>;
+      return buildAllGroups();
+    }
+
+    return FormData(
+      title: isNewlyActivated ? 'Set up $name' : name,
+      onRefresh: refresh,
+      groups: buildAllGroups(),
     );
   }
 }

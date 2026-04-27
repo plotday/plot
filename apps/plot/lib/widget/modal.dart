@@ -461,6 +461,7 @@ class _ModalProviderState extends State<ModalProvider> {
   }
 
   void _notifyStackChanged() {
+    if (!mounted) return;
     _modalStackNotifier.value = _modalStack.length;
   }
 
