@@ -210,9 +210,15 @@ class Actor extends ActorRow {
       inviteable: true,
       primary: true,
     );
-    candidates.removeWhere((a) => a.self);
 
     final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+    // `a.self` alone isn't enough: a contact synced before being linked to
+    // the user can persist locally with self=false. Cross-check against
+    // [getCurrentUserActorIds] (which always includes the primary contact)
+    // so the user's own contacts never show up as sharing suggestions.
+    candidates.removeWhere(
+      (a) => a.self || selfIds.contains(a.id.toUuid()),
+    );
 
     final scoped = await _scanThreadsForSharing(
       selfIds: selfIds,
@@ -347,23 +353,18 @@ class Actor extends ActorRow {
   }
 
   /// Returns all actor IDs that belong to the current user.
-  /// Uses the Actor cache for synchronous lookup.
-  /// Falls back to Base.actorId if cache is empty, or returns empty list
-  /// if actorId is not yet available.
+  /// Uses the Actor cache for synchronous lookup, and always unions in
+  /// [Base.actorIdOrNull] so the user's primary contact is included even when
+  /// the local actor row is stale (e.g. synced before the contact was linked
+  /// to the user) or the cache hasn't been populated yet.
   static List<ActorId> getCurrentUserActorIds() {
-    final userActorIds = _cache.values
-        .where((actor) => actor.self)
-        .map((actor) => actor.id)
-        .toList();
-
-    // Fallback to Base.actorId if cache is empty
-    if (userActorIds.isEmpty) {
-      final id = Base.actorIdOrNull;
-      if (id != null) return [id];
-      return [];
+    final ids = <ActorId>{};
+    for (final actor in _cache.values) {
+      if (actor.self) ids.add(actor.id);
     }
-
-    return userActorIds;
+    final basePrimary = Base.actorIdOrNull;
+    if (basePrimary != null) ids.add(basePrimary);
+    return ids.toList();
   }
 
   /// Get Actor by auth user ID (via contact.user_id lookup).

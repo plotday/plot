@@ -320,7 +320,16 @@ class NewThreadPageState extends State<NewThreadPage> {
   Future<void> _refreshPinnedChips() async {
     final bloc = context.read<PriorityBloc>();
     final draft = bloc.state.draft;
-    final selectedIds = draft.contacts.toSet();
+    final selfUuids = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    // Drop any contact linked to the current user — it can sneak into
+    // draft.contacts via inherited priority defaults or stale data. The
+    // user is implicitly part of every thread they author, so showing a
+    // self chip is always wrong.
+    final selectedIds = draft.contacts
+        .where((id) => !selfUuids.contains(id))
+        .toSet();
     final pendingEmails = draft.inviteEmails;
     final groupIds = draft.groups;
 
@@ -351,6 +360,7 @@ class NewThreadPageState extends State<NewThreadPage> {
 
     final suggestions = _recentContacts
         .where((a) => !selectedIds.contains(a.id.toUuid()))
+        .where((a) => !selfUuids.contains(a.id.toUuid()))
         .take(suggestionSlots)
         .toList();
 
@@ -886,7 +896,15 @@ class NewThreadPageState extends State<NewThreadPage> {
   /// `state.draft.contacts`. Up to 3 chips are shown (selected actors +
   /// pending email invites + recent suggestions), plus a more/add button.
   Widget _buildWithSelector(BuildContext context, PriorityState state) {
-    final selectedIds = state.draft.contacts.toSet();
+    // Self contacts are excluded from the chip row entirely (see
+    // [_refreshPinnedChips]), so exclude them here too — otherwise hasMore
+    // counts an invisible chip and the +more button shows incorrectly.
+    final selfUuids = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    final selectedIds = state.draft.contacts
+        .where((id) => !selfUuids.contains(id))
+        .toSet();
     final pendingEmails = state.draft.inviteEmails.toSet();
 
     // Render from pinned lists so chips stay stable when toggled via tap.
