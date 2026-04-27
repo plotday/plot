@@ -1633,7 +1633,7 @@ class EditorState extends State<Editor> {
               end: DocumentPosition(
                 nodeId: insertPosition.nodeId,
                 nodePosition:
-                    TextNodePosition(offset: insertOffset + span.end),
+                    TextNodePosition(offset: insertOffset + span.end + 1),
               ),
             ),
             attributions: {span.attribution},
@@ -1709,7 +1709,7 @@ class EditorState extends State<Editor> {
                 end: DocumentPosition(
                   nodeId: cursorNode.id,
                   nodePosition:
-                      TextNodePosition(offset: offset + span.end),
+                      TextNodePosition(offset: offset + span.end + 1),
                 ),
               ),
               attributions: {span.attribution},
