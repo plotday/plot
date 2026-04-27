@@ -275,8 +275,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           );
         } else if (!isTodo) {
           leadingCommand = StartThread(activity);
-        } else if (isScheduled) {
-          leadingCommand = PickScheduleThread(activity);
         } else {
           leadingCommand = FinishThread(
             activity,
@@ -305,7 +303,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         } else if (!isTodo && !isAssoc) {
           leadingTitle = 'Add to agenda';
         } else {
-          leadingTitle = isScheduled ? 'Reschedule' : 'Remove from agenda';
+          leadingTitle = 'Remove from agenda';
         }
         if (isAssoc && !hasPending) {
           // Associated thread without outstanding tasks: show association icon
@@ -317,7 +315,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               showFill: activity.unread,
               iconHoverColor: _leadingHovered
                   ? buildContext.colour.foreground
-                  : null,
+                  : buildContext.colour.muted,
               hoverIcon: Value(FontAwesomeIcons.xmark),
               title: leadingTitle,
             ),
@@ -338,7 +336,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                   : null,
               iconHoverColor: _leadingHovered
                   ? buildContext.colour.foreground
-                  : null,
+                  : buildContext.colour.muted,
               hoverIcon: Value(PlotIcon.todo),
               title: leadingTitle,
             ),
@@ -358,8 +356,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               : PlotIcon.todoFilled;
           final hoverActionIcon = hasPending
               ? FontAwesomeIcons.circleCheck
-              : isScheduled
-              ? PlotIcon.schedule
               : PlotIcon.finish;
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
@@ -369,7 +365,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               showFill: activity.unread,
               iconHoverColor: _leadingHovered
                   ? buildContext.colour.foreground
-                  : null,
+                  : buildContext.colour.muted,
               hoverIcon: Value(hoverActionIcon),
               title: leadingTitle,
             ),
@@ -1399,15 +1395,22 @@ class _ThreadLeadingCommand extends CommandWrapper {
 
 /// Replaces the small thread logo when the row is hovered, surfacing the
 /// schedule/reschedule action without crowding the trailing command row.
-class _ScheduleHoverIcon extends StatelessWidget {
+class _ScheduleHoverIcon extends StatefulWidget {
   const _ScheduleHoverIcon({required this.activity});
 
   final Thread activity;
 
   @override
+  State<_ScheduleHoverIcon> createState() => _ScheduleHoverIconState();
+}
+
+class _ScheduleHoverIconState extends State<_ScheduleHoverIcon> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final command = PickScheduleThread(activity);
-    final iconData = activity.on != null
+    final command = PickScheduleThread(widget.activity);
+    final iconData = widget.activity.on != null
         ? PlotIcon.reschedule
         : PlotIcon.schedule;
     final shortcutText = hasPhysicalKeyboard() && command.shortcut != null
@@ -1432,11 +1435,19 @@ class _ScheduleHoverIcon extends StatelessWidget {
         }
         return Text(command.title);
       },
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => context.run(command),
-        child: Center(
-          child: FaIcon(iconData, size: 14, color: context.colour.muted),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => context.run(command),
+          child: Center(
+            child: FaIcon(
+              iconData,
+              size: 14,
+              color: _hovered ? context.colour.foreground : context.colour.muted,
+            ),
+          ),
         ),
       ),
     );
