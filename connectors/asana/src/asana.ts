@@ -109,7 +109,7 @@ export class Asana extends Connector<Asana> {
     const syncHistoryMin = context?.syncHistoryMin;
     if (syncHistoryMin) {
       const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
-      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+      if (storedMin && new Date(storedMin) <= syncHistoryMin && !context?.recovering) {
         return; // Already synced with wider range
       }
       await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());

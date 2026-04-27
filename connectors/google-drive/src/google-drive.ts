@@ -250,12 +250,20 @@ export class GoogleDrive extends Connector<GoogleDrive> {
    * Called when a channel folder is enabled for syncing.
    */
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    // Check if we've already synced with a wider or equal range
     const syncHistoryMin = context?.syncHistoryMin;
-    if (syncHistoryMin) {
+    if (context?.recovering) {
+      // Recovery dispatch after re-auth: drop persisted change cursor
+      // and stale sync_lock so the next pass re-walks history. The
+      // changesToken from before the auth gap may be invalid.
+      await this.clear(`sync_state_${channel.id}`);
+      await this.clear(`sync_lock_${channel.id}`);
+    } else if (syncHistoryMin) {
+      // Skip when stored window is already at least as wide. Bypassed on
+      // recovery so the recovery pass re-walks even when the window
+      // hasn't widened.
       const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
       if (storedMin && new Date(storedMin) <= syncHistoryMin) {
-        return; // Already synced with wider range
+        return;
       }
       await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
     }
@@ -316,10 +324,6 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     }
 
     await this.setupDriveWatch(channelId);
-
-    // Mark initial sync as in progress so the Flutter app can show a
-    // "syncing…" indicator on the connection.
-    await this.tools.integrations.setInitialSyncing(channelId, true);
 
     // Run first batch inline (we're already in a task context) to avoid an
     // extra queue cycle delay. Subsequent batches are queued as tasks.
@@ -858,7 +862,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           await this.clear(`sync_lock_${folderId}`);
           // Initial backfill done for shared-with-me — clear the indicator.
           if (initialSync) {
-            await this.tools.integrations.setInitialSyncing(folderId, false);
+            await this.tools.integrations.channelSyncCompleted(folderId);
           }
         }
       } else if (state.subChannelIds) {
@@ -871,7 +875,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           await this.clear(`sync_lock_${folderId}`);
           // All sub-channels processed — initial backfill complete.
           if (initialSync) {
-            await this.tools.integrations.setInitialSyncing(folderId, false);
+            await this.tools.integrations.channelSyncCompleted(folderId);
           }
           return;
         }
@@ -929,7 +933,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           await this.clear(`sync_lock_${folderId}`);
           // Initial backfill done for single-folder sync — clear the indicator.
           if (initialSync) {
-            await this.tools.integrations.setInitialSyncing(folderId, false);
+            await this.tools.integrations.channelSyncCompleted(folderId);
           }
         }
       }

@@ -56,10 +56,6 @@ export default class GoogleContacts
 
     await this.set(`sync_state:${channel.id}`, initialState);
 
-    // Mark initial sync as in progress so the Flutter app can show a
-    // "syncing…" indicator on the connection.
-    await this.tools.integrations.setInitialSyncing(channel.id, true);
-
     const syncCallback = await this.callback(this.syncBatch, 1, channel.id);
     await this.runTask(syncCallback);
   }
@@ -148,7 +144,7 @@ export default class GoogleContacts
       } else {
         await this.clear(`sync_state:${syncableId}`);
         // No further pages — initial backfill is complete.
-        await this.tools.integrations.setInitialSyncing(syncableId, false);
+        await this.tools.integrations.channelSyncCompleted(syncableId);
       }
     } catch (error) {
       console.error(`Error in sync batch ${batchNumber}:`, error);

@@ -173,10 +173,30 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   /**
    * Called when a channel calendar is enabled for syncing.
    * Auto-starts sync for the calendar.
+   *
+   * Three cases (see SyncContext docs):
+   *  - Initial enable: full backfill from scratch.
+   *  - Already-enabled history-min refresh: skips when stored window is
+   *    already at least as wide.
+   *  - Recovery (`context.recovering = true`): the user re-authorized a
+   *    previously-broken connection. Drop the persisted sync token and
+   *    sync lock so the next pass re-walks history and picks up events
+   *    that changed during the auth gap (Google invalidates syncTokens
+   *    after ~7 days, so the prior cursor is likely useless anyway).
    */
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    // Store sync_history_min if provided and not already stored with an equal/earlier value
-    if (context?.syncHistoryMin) {
+    const resolvedCalendarId = await this.resolveCalendarId(channel.id);
+    if (context?.recovering) {
+      // Wipe incremental cursor + any stale sync_lock from before the
+      // outage so initCalendar can run unimpeded.
+      await this.clear(`last_sync_token_${resolvedCalendarId}`);
+      await this.clear(`last_sync_token_${channel.id}`);
+      await this.clear(`sync_lock_${resolvedCalendarId}`);
+      await this.clear(`sync_state_${resolvedCalendarId}`);
+    } else if (context?.syncHistoryMin) {
+      // Store sync_history_min if provided and not already stored with an
+      // equal/earlier value. Skipped on recovery so the recovery pass
+      // re-walks even when the window hasn't widened.
       const key = `sync_history_min_${channel.id}`;
       const stored = await this.get<string>(key);
       if (stored && new Date(stored) <= context.syncHistoryMin) {
@@ -241,10 +261,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     };
 
     await this.set(`sync_state_${resolvedCalendarId}`, initialState);
-
-    // Mark initial sync as in progress so the Flutter app can show a
-    // "syncing…" indicator on the connection.
-    await this.tools.integrations.setInitialSyncing(resolvedCalendarId, true);
 
     // Start first sync batch
     const syncCallback = await this.callback(
@@ -723,7 +739,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           // Initial sync (quick + full passes) is fully complete — clear the
           // "syncing…" indicator on the connection.
           if (initialSync) {
-            await this.tools.integrations.setInitialSyncing(calendarId, false);
+            await this.tools.integrations.channelSyncCompleted(calendarId);
           }
         }
         // Always clear lock when sync completes (no more batches)

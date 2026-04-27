@@ -113,12 +113,20 @@ export class Gmail extends Connector<Gmail> {
   }
 
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    // Check if we've already synced with a wider or equal range
     const syncHistoryMin = context?.syncHistoryMin;
-    if (syncHistoryMin) {
+    if (context?.recovering) {
+      // Recovery dispatch after re-auth: drop the stored history cursor so
+      // the next sync re-walks the window. Gmail history records expire
+      // after ~7 days, so a stale historyId from before the auth gap is
+      // probably already invalid.
+      await this.clear(`sync_state_${channel.id}`);
+    } else if (syncHistoryMin) {
+      // Skip when stored window is already at least as wide. Bypassed on
+      // recovery so the recovery pass re-walks even when the window
+      // hasn't widened.
       const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
       if (storedMin && new Date(storedMin) <= syncHistoryMin) {
-        return; // Already synced with wider range
+        return;
       }
       await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
     }
@@ -130,10 +138,6 @@ export class Gmail extends Connector<Gmail> {
       lastSyncTime: syncHistoryMin ?? undefined,
     };
     await this.set(`sync_state_${channel.id}`, initialState);
-
-    // Mark initial sync as in progress so the Flutter app can show a
-    // "syncing…" indicator on the connection.
-    await this.tools.integrations.setInitialSyncing(channel.id, true);
 
     // Queue sync batch as a separate task so onChannelEnabled returns quickly
     const syncCallback = await this.callback(
@@ -440,7 +444,7 @@ export class Gmail extends Connector<Gmail> {
           await this.clear(`sync_state_${channelId}`);
           // Initial backfill is done — clear the "syncing…" indicator.
           if (isInitial) {
-            await this.tools.integrations.setInitialSyncing(channelId, false);
+            await this.tools.integrations.channelSyncCompleted(channelId);
           }
         }
       }

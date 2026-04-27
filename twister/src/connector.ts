@@ -240,6 +240,29 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   /**
    * Called when a channel resource is enabled for syncing.
    *
+   * The framework dispatches this in three cases:
+   *  1. **Initial enable** — user toggled the channel on for the first time.
+   *  2. **Auto-enable** — `setChannels` discovered a new channel on a
+   *     connection with `auto_enable_new_channels` set.
+   *  3. **Recovery after re-auth** — the user re-authorized a previously-
+   *     broken connection. The framework calls `onChannelEnabled` for every
+   *     channel that was already enabled at the time of re-auth, with
+   *     `context.recovering = true`. See {@link SyncContext.recovering}.
+   *
+   * Implementations should be **idempotent and overwrite stored state**:
+   * the same channel may receive multiple `onChannelEnabled` calls across
+   * its lifetime. Use unconditional `this.set()` writes rather than
+   * coalesce/skip-if-present logic so a recovery dispatch wipes stale
+   * cursors and state from the prior session.
+   *
+   * **Sync state tracking is automatic.** The framework stamps the
+   * connection as "syncing" when it dispatches this method and clears
+   * that state when:
+   *  - the connector calls `tools.integrations.channelSyncCompleted(id)`
+   *    once the initial backfill is done, OR
+   *  - this method throws an unhandled exception (auto-cleared so the UI
+   *    doesn't get stuck in "syncing" forever).
+   *
    * **IMPORTANT: This method runs inline in the HTTP request handler.**
    * Any long-running work (webhook setup, API calls, sync) MUST be queued
    * as a separate task via `this.runTask()`, not executed inline. Blocking
@@ -250,8 +273,12 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    *
    * @example
    * ```typescript
-   * async onChannelEnabled(channel: Channel): Promise<void> {
-   *   await this.set(`sync_enabled_${channel.id}`, true);
+   * async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+   *   // Recovery: drop stale cursors so the next sync re-walks history.
+   *   if (context?.recovering) {
+   *     await this.clear(`last_sync_token_${channel.id}`);
+   *   }
+   *
    *   await this.set(`sync_state_${channel.id}`, { channelId: channel.id });
    *
    *   // Queue sync as a task — do NOT use this.run() or call sync methods inline
@@ -265,7 +292,7 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
    * ```
    *
    * @param channel - The channel that was enabled
-   * @param context - Optional sync context with plan-based hints (e.g. syncHistoryMin)
+   * @param context - Optional sync context (plan-based hints, recovery flag)
    */
   abstract onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void>;
 

@@ -181,21 +181,25 @@ export class GoogleChat extends Connector<GoogleChat> {
   }
 
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    // Check if we've already synced with a wider or equal range
     const syncHistoryMin = context?.syncHistoryMin;
-    if (syncHistoryMin) {
+    if (context?.recovering) {
+      // Recovery dispatch after re-auth: drop persisted sync state so the
+      // next pass re-walks history and picks up messages that arrived
+      // during the auth gap.
+      await this.clear(`sync_state_${channel.id}`);
+      await this.clear(`dm_initial_sync_remaining`);
+    } else if (syncHistoryMin) {
+      // Skip when stored window is already at least as wide. Bypassed on
+      // recovery so the recovery pass re-walks even when the window
+      // hasn't widened.
       const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
       if (storedMin && new Date(storedMin) <= syncHistoryMin) {
-        return; // Already synced with wider range
+        return;
       }
       await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
     }
 
     await this.set(`sync_enabled_${channel.id}`, true);
-
-    // Mark initial sync as in progress so the Flutter app can show a
-    // "syncing…" indicator on the connection.
-    await this.tools.integrations.setInitialSyncing(channel.id, true);
 
     // Start initial sync
     const initialState: SyncState = {
@@ -319,7 +323,7 @@ export class GoogleChat extends Connector<GoogleChat> {
           await this.clear(`sync_state_${channelId}`);
           // Initial backfill complete for this named space — clear the indicator.
           if (isInitial) {
-            await this.tools.integrations.setInitialSyncing(channelId, false);
+            await this.tools.integrations.channelSyncCompleted(channelId);
           }
         }
       }
@@ -485,7 +489,7 @@ export class GoogleChat extends Connector<GoogleChat> {
         );
       } else if (isInitial) {
         // No DM spaces to sync — clear the indicator immediately.
-        await this.tools.integrations.setInitialSyncing(DM_CHANNEL_ID, false);
+        await this.tools.integrations.channelSyncCompleted(DM_CHANNEL_ID);
       }
 
       for (const space of dmSpacesToSync) {
@@ -595,10 +599,7 @@ export class GoogleChat extends Connector<GoogleChat> {
           const next = Math.max(0, remaining - 1);
           if (next === 0) {
             await this.clear(`dm_initial_sync_remaining`);
-            await this.tools.integrations.setInitialSyncing(
-              DM_CHANNEL_ID,
-              false
-            );
+            await this.tools.integrations.channelSyncCompleted(DM_CHANNEL_ID);
           } else {
             await this.set(`dm_initial_sync_remaining`, next);
           }

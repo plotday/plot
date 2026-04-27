@@ -151,7 +151,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
     if (context?.syncHistoryMin) {
       const key = `sync_history_min_${channel.id}`;
       const stored = await this.get<string>(key);
-      if (stored && new Date(stored) <= context.syncHistoryMin) {
+      if (stored && new Date(stored) <= context.syncHistoryMin && !context?.recovering) {
         return; // Already synced with equal or earlier history min
       }
       await this.set(key, context.syncHistoryMin.toISOString());

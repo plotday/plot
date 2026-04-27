@@ -88,6 +88,29 @@ export type SyncContext = {
    * Undefined when no limit applies.
    */
   syncHistoryMin?: Date;
+
+  /**
+   * True when this is a recovery dispatch after the connection's auth was
+   * restored (the user re-authorized a previously-broken connection).
+   *
+   * The framework calls `onChannelEnabled` again for every channel that was
+   * already enabled at the time of re-auth so the connector can recover from
+   * the auth gap. Connectors should:
+   *
+   * 1. Drop any persisted incremental sync cursors / sync tokens so the
+   *    next sync re-walks history (the cursor may be stale or invalid —
+   *    Google Calendar invalidates syncTokens after ~7 days).
+   * 2. Re-register webhooks (any prior subscription may have been
+   *    invalidated during the auth outage).
+   * 3. Treat this as a backfill that walks history but does NOT spam
+   *    notifications — set `unread: false` and `archived: false` on
+   *    items as you would during initial sync.
+   *
+   * Most connectors can take the same code path as a fresh
+   * `onChannelEnabled` for `recovering: true` as long as that path
+   * overwrites stored state rather than appending to it.
+   */
+  recovering?: boolean;
 };
 
 /**
@@ -265,32 +288,29 @@ export abstract class Integrations extends ITool {
   ): Promise<void>;
 
   /**
-   * Signals the initial bulk-sync state for a channel so the Flutter app
-   * can surface a "syncing…" indicator on the connection while a freshly
-   * enabled channel is backfilling history.
+   * Signal that initial bulk-sync (or recovery sync) for a channel is fully
+   * complete. The Flutter app uses this to clear the "syncing…" indicator
+   * on the connection.
    *
-   * Connectors call this at the boundaries of their initial sync:
-   * - `setInitialSyncing(channelId, true)` at the start of initial sync
-   *   (e.g. the first batch dispatched after `onChannelEnabled`).
-   * - `setInitialSyncing(channelId, false)` once initial sync has fully
-   *   completed (no more pages, all phases exhausted).
+   * The framework automatically marks a channel as syncing when it dispatches
+   * `onChannelEnabled` (whether initial-enable, auto-enable from
+   * `setChannels`, or recovery after re-auth). Connectors do NOT need to
+   * call anything to start tracking — only to signal completion.
    *
-   * Idempotent: safe to call repeatedly with the same value. The runtime
-   * stores the first `started_at` and the latest `completed_at`, so calling
-   * `true` on every batch is fine — prefer placing the call where it reads
-   * naturally rather than gating it with extra state.
+   * Call this exactly once when the initial backfill has finished (no more
+   * pages, all phases exhausted). Do NOT call it on every incremental sync.
    *
-   * Avoid calling `false` until the initial backfill is genuinely done;
-   * incremental syncs should not toggle this flag.
+   * If `onChannelEnabled` throws an unhandled exception, the framework
+   * automatically clears the syncing state — connectors don't need a
+   * `try/catch` to clear state on failure.
    *
    * No-op when no auth/user mapping exists for the channel (e.g. key-based
    * connectors that don't have a per-user OAuth association).
    *
-   * @param channelId - The channel resource ID being synced
-   * @param syncing - true at the start of initial sync; false when complete
+   * @param channelId - The channel resource ID whose initial sync just finished
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  abstract setInitialSyncing(channelId: string, syncing: boolean): Promise<void>;
+  abstract channelSyncCompleted(channelId: string): Promise<void>;
 
   /**
    * Flag a connection as needing re-authentication so the Flutter app

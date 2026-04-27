@@ -186,7 +186,7 @@ export class Attio extends Connector<Attio> {
     const syncHistoryMin = context?.syncHistoryMin;
     if (syncHistoryMin) {
       const storedMin = await this.get<string>("sync_history_min");
-      if (storedMin && new Date(storedMin) <= syncHistoryMin) {
+      if (storedMin && new Date(storedMin) <= syncHistoryMin && !context?.recovering) {
         return; // Already synced with wider range
       }
       await this.set("sync_history_min", syncHistoryMin.toISOString());
