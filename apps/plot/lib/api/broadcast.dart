@@ -137,14 +137,14 @@ class BroadcastClient with WidgetsBindingObserver {
       _offlineDebounceTimer = null;
       connectionState.value = true;
     } else {
-      // Start debounce timer — only mark offline after sustained disconnection
-      if (_offlineDebounceTimer == null || !_offlineDebounceTimer!.isActive) {
-        _offlineDebounceTimer = Timer(_offlineDebounceDelay, () {
-          if (!_isConnected) {
-            connectionState.value = false;
-          }
-        });
-      }
+      if (connectionState.value == false) return;
+      if (_offlineDebounceTimer?.isActive == true) return;
+      _offlineDebounceTimer = Timer(_offlineDebounceDelay, () {
+        _offlineDebounceTimer = null;
+        if (!_isConnected) {
+          connectionState.value = false;
+        }
+      });
     }
   }
 
@@ -272,7 +272,10 @@ class BroadcastClient with WidgetsBindingObserver {
     _pingTimer = null;
   }
 
-  /// Disconnect from the WebSocket
+  /// Disconnect from the WebSocket. Tears down all transient state but keeps
+  /// the singleton (and its [connectionState] notifier) alive so UI listeners
+  /// stay subscribed across the disconnect/reconnect cycles triggered by every
+  /// full sync.
   void disconnect() {
     _cancelPingTimer();
 
@@ -289,8 +292,6 @@ class BroadcastClient with WidgetsBindingObserver {
     _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
 
-    WidgetsBinding.instance.removeObserver(this);
-
     _isConnected = false;
     _offlineDebounceTimer?.cancel();
     _offlineDebounceTimer = null;
@@ -299,7 +300,6 @@ class BroadcastClient with WidgetsBindingObserver {
     _messageHandler = null;
     _onReconnected = null;
     _clientId = null;
-    _instance = null;
   }
 
   /// Handle incoming WebSocket messages
