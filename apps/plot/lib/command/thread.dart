@@ -638,6 +638,7 @@ class EditThread extends ShowForm {
                   ),
                   FormButton(
                     key: 'save',
+                    isPrimary: true,
                     buildCommand: (values) {
                       final title = values['title'] as String;
                       final priority = values['priority'] as Priority;

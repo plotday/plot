@@ -837,6 +837,7 @@ class NewThreadPageState extends State<NewThreadPage> {
                   ),
                   FormButton(
                     key: 'save',
+                    isPrimary: true,
                     buildCommand: (values) => _SaveDraftTitle(
                       (values['title'] as String?) ?? '',
                       priorityBloc: priorityBloc,

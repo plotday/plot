@@ -144,6 +144,7 @@ class ShowAttentionSettings extends ShowForm {
     final actionItems = <FormItem>[
       FormButton(
         key: 'save_window',
+        isPrimary: true,
         buildCommand: (values) {
           return _WindowSaveCommand(
             dayToggles: dayToggles,
@@ -298,6 +299,7 @@ class ShowAttentionSettings extends ShowForm {
           items: [
             FormButton(
               key: 'save',
+              isPrimary: true,
               buildCommand: (values) {
                 final windowValues = values['windows'] as List<AttentionWindow>;
                 final selectedSeeWithinRequests =

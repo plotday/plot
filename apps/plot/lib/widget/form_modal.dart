@@ -194,9 +194,9 @@ class FormModalState extends State<_FormModal> {
     // Find initial focus index based on form state
     _highlightedIndex = _findInitialFocusIndex();
 
-    // Wire up onSubmitted for text inputs, isPrimary for first button,
-    // and add listeners for form state changes
-    bool foundPrimaryButton = false;
+    // Wire up onSubmitted for text inputs and add listeners for form state
+    // changes. The primary button is set explicitly on each FormButton via
+    // its `isPrimary` flag — there is no auto-assignment.
     for (var group in _formGroups) {
       for (var item in group.items) {
         item.addChangeListener(_onFormChanged);
@@ -211,9 +211,6 @@ class FormModalState extends State<_FormModal> {
           item.addListener(_onFormChanged);
         } else if (item is FormChannelList) {
           item.addListener(_onFormChanged);
-        } else if (item is FormButton && !foundPrimaryButton) {
-          item.isPrimary = true;
-          foundPrimaryButton = true;
         }
       }
     }
@@ -519,11 +516,11 @@ class FormModalState extends State<_FormModal> {
     return values;
   }
 
-  /// Find the first button (primary button)
+  /// Find the explicit primary button, if any.
   FormButton? _getPrimaryButton() {
     for (var group in _formGroups) {
       for (var item in group.items) {
-        if (item is FormButton) {
+        if (item is FormButton && item.isPrimary) {
           return item;
         }
       }

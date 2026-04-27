@@ -542,7 +542,6 @@ class ChangeAiPreference extends ShowForm {
           ...providerItems,
           FormButton(
             key: 'addProvider',
-            isPrimary: false,
             buildCommand: (_) => _AddAiProvider(orgId: orgId),
           ),
         ],
@@ -834,7 +833,6 @@ class OrgAiPreferences extends ShowForm {
           ...providerItems,
           FormButton(
             key: 'addProvider',
-            isPrimary: false,
             buildCommand: (_) => _AddAiProvider(orgId: orgId),
           ),
         ],
@@ -1005,6 +1003,7 @@ class _ConfigureAiProvider extends ShowForm {
           items: [
             FormButton(
               key: 'save',
+              isPrimary: true,
               buildCommand: (values) => _SaveAiProvider(
                 provider: provider,
                 apiKey: values['apiKey'] as String?,

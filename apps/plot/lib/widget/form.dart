@@ -479,27 +479,19 @@ class FormButton extends FormItem {
     required super.key,
     required this.buildCommand,
     this.skipValidation = false,
-    bool? isPrimary,
-  })  : _isPrimaryOverride = isPrimary,
-        _isPrimary = isPrimary ?? false,
-        super(required: false, label: '');
+    this.isPrimary = false,
+  }) : super(required: false, label: '');
 
   final Command Function(Map<String, dynamic> values) buildCommand;
 
   /// When true, this button remains enabled even when form validation fails.
   final bool skipValidation;
 
-  /// Explicit override for primary styling, or null to use auto-assignment.
-  final bool? _isPrimaryOverride;
-
-  /// Whether this is the primary (first) button, styled with accent color.
-  bool _isPrimary;
-
-  bool get isPrimary => _isPrimary;
-  set isPrimary(bool value) {
-    // Only allow auto-assignment when no explicit override was set.
-    if (_isPrimaryOverride == null) _isPrimary = value;
-  }
+  /// Whether this is the primary submit button — styled with accent color and
+  /// triggered when the user presses Enter from a text input. Forms should
+  /// mark exactly one button primary; forms with no obvious submit (e.g. an
+  /// auth widget that handles its own action) may have none.
+  final bool isPrimary;
 
   @override
   dynamic getValue() => null;

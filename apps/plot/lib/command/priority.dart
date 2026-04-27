@@ -268,6 +268,7 @@ Future<FormData> _buildNewPriorityForm(
           ),
           FormButton(
             key: 'create',
+            isPrimary: true,
             buildCommand: (values) {
               final title = values['title'] as String;
               final selectedParent = values['parent'] as Priority;
@@ -446,6 +447,7 @@ class EditPriorityCommand extends ShowForm {
                   ),
                   FormButton(
                     key: 'save',
+                    isPrimary: true,
                     buildCommand: (values) {
                       final title = values['title'] as String;
                       final newParent = values['parent'] as Priority?;

@@ -748,6 +748,7 @@ class _NotifyUpcomingConnection extends ShowForm {
             if (!item.hasVoted)
               FormButton(
                 key: 'vote',
+                isPrimary: true,
                 buildCommand: (_) => _VoteForConnectionCommand(item),
               ),
           ],
@@ -1122,6 +1123,7 @@ class EditSource extends ShowForm {
           items: [
             FormButton(
               key: 'save',
+              isPrimary: true,
               buildCommand: (values) {
                 final owner = values['team_id'] as String? ?? initialTeamId;
 
@@ -1280,6 +1282,7 @@ class PromptToArchiveSource extends ShowForm {
             FormDivider(key: 'divider'),
             FormButton(
               key: 'archive',
+              isPrimary: true,
               buildCommand: (_) => _ArchiveSourceCommand(twistInstanceId, name),
             ),
           ],
@@ -1596,6 +1599,7 @@ class AddSourceDetail extends ShowForm {
               if (initialAtLimit) {
                 return FormButton(
                   key: 'upgrade_${provider.provider.name}',
+                  isPrimary: true,
                   buildCommand: (_) =>
                       _UpgradeCommand('Upgrade to add more connections'),
                 );
@@ -1637,6 +1641,7 @@ class AddSourceDetail extends ShowForm {
                 refreshed.isEmpty)
               FormButton(
                 key: 'connect',
+                isPrimary: true,
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
@@ -1676,6 +1681,7 @@ class AddSourceDetail extends ShowForm {
               ),
               FormButton(
                 key: 'add_connection',
+                isPrimary: true,
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
                   return _ActivateNoProviderSource(
@@ -1713,6 +1719,7 @@ class AddSourceDetail extends ShowForm {
               if (initialAtLimit) {
                 return FormButton(
                   key: 'upgrade_${provider.provider.name}',
+                  isPrimary: true,
                   buildCommand: (_) =>
                       _UpgradeCommand('Upgrade to add more connections'),
                 );
@@ -1755,6 +1762,7 @@ class AddSourceDetail extends ShowForm {
               // Not yet connected: show Connect button
               FormButton(
                 key: 'connect',
+                isPrimary: true,
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
                   final team = teams.firstWhereOrNull((t) => t.id == owner);
@@ -1795,6 +1803,7 @@ class AddSourceDetail extends ShowForm {
               ),
               FormButton(
                 key: 'add_connection',
+                isPrimary: true,
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? 'personal';
                   return _ActivateNoProviderSource(
@@ -2240,6 +2249,7 @@ class EditTwist extends ShowForm {
             items: [
               FormButton(
                 key: 'save',
+                isPrimary: true,
                 buildCommand: (values) {
                   final owner = values['team_id'] as String? ?? initialTeamId;
 
@@ -2299,6 +2309,7 @@ class EditTwist extends ShowForm {
               FormDivider(key: 'divider'),
               FormButton(
                 key: 'save',
+                isPrimary: true,
                 buildCommand: (values) {
                   final name = values['name'] as String;
                   return EditTwistName(twistInstance, name: name);
@@ -2458,6 +2469,7 @@ class ShowTwistInfo extends ShowForm {
             if (!blocked)
               FormButton(
                 key: 'add',
+                isPrimary: true,
                 buildCommand: (_) => atTwistLimit
                     ? _UpgradeCommand('Upgrade to add more twists')
                     : SetupTwist(twist),
@@ -2697,6 +2709,7 @@ class SetupTwist extends ShowForm {
             if (hasVisibleContentAboveAddButton) FormDivider(key: 'divider'),
             FormButton(
               key: 'add',
+              isPrimary: true,
               buildCommand: (values) {
                 final owner = values['team_id'] as String? ?? 'personal';
 
@@ -2927,6 +2940,7 @@ class ConnectConnectorAccount extends ShowForm {
             ...optionItems.items,
             FormButton(
               key: 'connect',
+              isPrimary: true,
               skipValidation: true,
               buildCommand: (_) => ConnectNoProviderCommand(
                 twistInstanceId: twist.id.toString(),
@@ -3622,6 +3636,7 @@ class PromptToArchiveTwist extends ShowForm {
             FormDivider(key: 'divider'),
             FormButton(
               key: 'archive',
+              isPrimary: true,
               buildCommand: (_) => ArchiveTwist(twist),
             ),
           ],
@@ -3704,6 +3719,7 @@ class ArchiveActivitiesCreatedByTwist extends ShowForm {
             if (count > 0)
               FormButton(
                 key: 'archive',
+                isPrimary: true,
                 buildCommand: (_) => _ArchiveActivitiesCommand(twist, count),
               ),
           ],
