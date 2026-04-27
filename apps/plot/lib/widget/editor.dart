@@ -36,6 +36,7 @@ import 'editor_mention_popover.dart';
 import 'editor_link_detector.dart';
 import 'editor_link_toolbar.dart';
 import 'editor_link_modal.dart';
+import 'plot_image_component.dart';
 import 'task_component.dart';
 import 'logging.dart';
 
@@ -738,6 +739,7 @@ class EditorState extends State<Editor> {
                       ).copyWith(color: context.theme.plotColors.muted),
                     ),
                   PlotTaskComponentBuilder(_editor),
+                  const PlotImageComponentBuilder(),
                   ...defaultComponentBuilders,
                 ],
                 keyboardActions: [
@@ -2184,7 +2186,7 @@ class ViewerState extends State<Viewer> {
             ),
             const ParagraphComponentBuilder(),
             const ListItemComponentBuilder(),
-            const ImageComponentBuilder(),
+            const PlotImageComponentBuilder(),
             const HorizontalRuleComponentBuilder(),
             PlotTaskComponentBuilder(_editor),
           ],
