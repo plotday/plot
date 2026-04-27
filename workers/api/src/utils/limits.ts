@@ -99,25 +99,31 @@ export class SingleInstanceError extends Error {
 }
 
 /**
- * Count personal connections: DISTINCT (twist_instance_id, provider, actor_id)
- * tuples where the connection belongs to a twist_instance owned by this
- * user personally (team_id IS NULL) and has at least one enabled channel.
+ * Count personal connections: active source twist_instances owned by the
+ * user personally (team_id IS NULL) with at least one enabled channel.
+ *
+ * This matches what the Connections modal shows in its "Active connections"
+ * list (`/sources/summary` in app/twists.ts), so the count and the list are
+ * always self-consistent. Counting `twist_instance_connection` rows would
+ * undercount when a source borrows auth from a private auth twist or has
+ * had its connection rows pruned while channels remain enabled.
  */
 export async function getPersonalConnectionCount(
   db: Kysely<DB>,
   userId: string
 ): Promise<number> {
   const result = await db
-    .selectFrom("twist_instance_connection as ptc")
-    .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
-    .select(sql<string>`count(DISTINCT (ptc.twist_instance_id, ptc.provider, ptc.actor_id))`.as("count"))
-    .where("ptc.user_id", "=", userId)
+    .selectFrom("twist_instance as pt")
+    .innerJoin("twist as tw", "tw.id", "pt.twist_id")
+    .select(sql<string>`count(*)`.as("count"))
+    .where("pt.owner_id", "=", userId)
     .where("pt.team_id", "is", null)
     .where("pt.archived_at", "is", null)
+    .where("tw.is_source", "=", true)
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("channel as sc")
-          .whereRef("sc.twist_instance_id", "=", "ptc.twist_instance_id")
+          .whereRef("sc.twist_instance_id", "=", "pt.id")
           .where("sc.enabled", "=", true)
           .select(sql`1`.as("x"))
       )
@@ -128,23 +134,25 @@ export async function getPersonalConnectionCount(
 }
 
 /**
- * Count team connections: DISTINCT (twist_instance_id, provider, actor_id)
- * tuples for twists owned by the given team with at least one enabled channel.
+ * Count team connections: active source twist_instances owned by the given
+ * team with at least one enabled channel. Mirrors the personal count above
+ * so both totals match the Connections modal list.
  */
 export async function getTeamConnectionCount(
   db: Kysely<DB>,
   teamId: string
 ): Promise<number> {
   const result = await db
-    .selectFrom("twist_instance_connection as ptc")
-    .innerJoin("twist_instance as pt", "pt.id", "ptc.twist_instance_id")
-    .select(sql<string>`count(DISTINCT (ptc.twist_instance_id, ptc.provider, ptc.actor_id))`.as("count"))
+    .selectFrom("twist_instance as pt")
+    .innerJoin("twist as tw", "tw.id", "pt.twist_id")
+    .select(sql<string>`count(*)`.as("count"))
     .where("pt.team_id", "=", teamId)
     .where("pt.archived_at", "is", null)
+    .where("tw.is_source", "=", true)
     .where(({ exists, selectFrom }) =>
       exists(
         selectFrom("channel as sc")
-          .whereRef("sc.twist_instance_id", "=", "ptc.twist_instance_id")
+          .whereRef("sc.twist_instance_id", "=", "pt.id")
           .where("sc.enabled", "=", true)
           .select(sql`1`.as("x"))
       )
