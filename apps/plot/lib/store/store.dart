@@ -2053,7 +2053,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 318;
+  int get schemaVersion => 319;
 
   @override
   MigrationStrategy get migration {
@@ -2976,6 +2976,16 @@ class Store extends _$Store {
         )
       ''');
       await m.alterTable(TableMigration(twistConnections));
+    }
+    if (from < 319) {
+      // Carries the contact's underlying user_id so two contact rows for the
+      // same person (e.g. a primary email + a linked alias) collapse to one
+      // entry in AvatarGroup and the share modal. Clear the actors sync
+      // cursor so the next pull populates the column for every existing row.
+      await _safeAddColumn(m, actors, actors.linkedUserId);
+      await m.database.customStatement(
+        "DELETE FROM sync_states WHERE entity LIKE 'user_actors%'",
+      );
     }
   }
 

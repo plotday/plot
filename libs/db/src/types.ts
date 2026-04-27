@@ -4007,6 +4007,7 @@ export type Database = {
           email: string | null
           id: string | null
           inviteable: boolean | null
+          linked_user_id: string | null
           name: string | null
           primary: boolean | null
           self: boolean | null

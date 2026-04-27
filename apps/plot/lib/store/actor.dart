@@ -14,6 +14,12 @@ class Actors extends Table with SyncableTable, CreatedTable, DeletableTable {
   /// authored by those IDs still resolves to a name, but they MUST be excluded
   /// from user-facing pickers (mentions, share, assignee).
   BoolColumn get primary => boolean().withDefault(const Constant(true))();
+  /// The contact's underlying user_id (the human this contact identifies).
+  /// Multiple contact rows on the same thread that share a [linkedUserId]
+  /// represent the same person and are deduped in client-side rendering.
+  /// NULL for unlinked external contacts and twist instances.
+  BlobColumn get linkedUserId =>
+      blob().nullable().map(const UuidConverter())();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -473,6 +479,7 @@ class Actor extends ActorRow {
         self: row.self,
         inviteable: row.inviteable,
         primary: row.primary,
+        linkedUserId: row.linkedUserId,
       );
 
   @override
@@ -488,6 +495,7 @@ class Actor extends ActorRow {
     bool? self,
     bool? inviteable,
     bool? primary,
+    Value<Uuid?> linkedUserId = const Value.absent(),
     Value<int?> pending = const Value.absent(),
   }) => Actor.fromStore(
     super.copyWith(
@@ -502,6 +510,7 @@ class Actor extends ActorRow {
       self: self,
       inviteable: inviteable,
       primary: primary,
+      linkedUserId: linkedUserId,
       pending: pending,
     ),
   );

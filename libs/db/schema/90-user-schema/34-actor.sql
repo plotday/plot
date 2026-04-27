@@ -7,6 +7,12 @@
 -- pickers (one per person). Non-primary linked contacts are still returned
 -- so historical content authored by alternate contact IDs resolves to a
 -- name, but they MUST be filtered out of mention/share/assign pickers.
+--
+-- The "linked_user_id" column carries the contact's underlying user_id
+-- (i.e. the human this contact is one of the identities of). Multiple
+-- contact rows on the same thread that share a linked_user_id represent
+-- the same person and must be deduped in client-side rendering. NULL for
+-- unlinked external contacts and twist instances.
 CREATE OR REPLACE VIEW "user"."actor" --
 AS
 -- Contacts visible via user_contact (primary or external contacts)
@@ -27,7 +33,8 @@ SELECT
             AND c.user_id = uc.user_id
     ) AS self,
     a.inviteable,
-    true AS "primary"
+    true AS "primary",
+    c.user_id AS linked_user_id
 FROM
     user_contact uc
     JOIN contact c ON c.id = uc.contact_id
@@ -50,7 +57,8 @@ SELECT
     a.avatar_url,
     (c.user_id = uc_primary.user_id) AS self,
     a.inviteable,
-    false AS "primary"
+    false AS "primary",
+    c.user_id AS linked_user_id
 FROM
     contact c
     JOIN actor a ON a.id = c.id
@@ -72,7 +80,8 @@ SELECT
     a.avatar_url,
     false AS self,
     a.inviteable,
-    true AS "primary"
+    true AS "primary",
+    NULL::uuid AS linked_user_id
 FROM
     "public"."user" u
     JOIN twist_instance pt ON pt.owner_id = u.id

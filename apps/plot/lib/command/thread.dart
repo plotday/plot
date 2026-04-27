@@ -2000,39 +2000,71 @@ int _sharedCount(Thread thread) {
 /// Resolves the actors to display in the Avatar group for a shared thread,
 /// using only the in-memory Actor cache so the lookup is synchronous. The
 /// current user is excluded — the button label/count conveys self presence.
+///
+/// Two contact rows for the same person (e.g. a primary email + a linked
+/// alias) collapse to a single entry, preferring the primary actor so the
+/// canonical name/avatar wins.
 List<Actor> _sharedDisplayActors(Thread thread) {
   final selfUuids = Actor.getCurrentUserActorIds()
       .map((a) => a.toUuid())
       .toSet();
-  final seen = <ActorId>{};
-  final result = <Actor>[];
+  final actors = <Actor>[];
   for (final contactId in thread.contacts) {
     if (selfUuids.contains(contactId)) continue;
     final actor = Actor.fromCache(ActorId.fromUuid(contactId));
     if (actor == null) continue;
     if (actor.type == ActorType.twistInstance) continue;
-    if (seen.add(actor.id)) result.add(actor);
+    actors.add(actor);
   }
-  return result;
+  return _dedupePerPerson(actors);
 }
 
 Future<List<Actor>> _loadSharedDisplayActors(Thread thread) async {
   final selfUuids = Actor.getCurrentUserActorIds()
       .map((a) => a.toUuid())
       .toSet();
-  final seen = <ActorId>{};
-  final result = <Actor>[];
+  final actors = <Actor>[];
   for (final contactId in thread.contacts) {
     if (selfUuids.contains(contactId)) continue;
     try {
       final actor = await Actor.getOne(ActorId.fromUuid(contactId));
       if (actor.type == ActorType.twistInstance) continue;
-      if (seen.add(actor.id)) result.add(actor);
+      actors.add(actor);
     } catch (_) {
       // Skip contacts whose actors can't be resolved.
     }
   }
-  return result;
+  return _dedupePerPerson(actors);
+}
+
+/// Dedup key that collapses contact rows belonging to the same person.
+/// Falls back to the actor id when [Actor.linkedUserId] is null (unlinked
+/// external contacts), preserving the existing per-contact granularity.
+/// Returns a string so [Uuid] and [ActorId] (unrelated extension types)
+/// can share a single Map keyspace.
+String _personKey(Actor actor) {
+  final linkedUserId = actor.linkedUserId;
+  if (linkedUserId != null) return 'user:$linkedUserId';
+  return 'actor:${actor.id}';
+}
+
+/// Collapses [actors] so each underlying person appears once, in their
+/// original order. When both a primary and a non-primary actor exist for
+/// the same person, the primary wins so the canonical name/avatar is shown.
+List<Actor> _dedupePerPerson(Iterable<Actor> actors) {
+  final byKey = <String, Actor>{};
+  final order = <String>[];
+  for (final actor in actors) {
+    final key = _personKey(actor);
+    final existing = byKey[key];
+    if (existing == null) {
+      byKey[key] = actor;
+      order.add(key);
+    } else if (!existing.primary && actor.primary) {
+      byKey[key] = actor;
+    }
+  }
+  return [for (final key in order) byKey[key]!];
 }
 
 Future<Commands> _buildSharedCommands(
@@ -2050,18 +2082,18 @@ Future<Commands> _buildSharedCommands(
     if (group != null) sharedGroups.add(group);
   }
 
-  // Resolve shared actors, deduping by actor id so a user with multiple
-  // linked contacts doesn't appear twice.
-  final sharedActors = <Actor>[];
-  final seenActorIds = <ActorId>{};
+  // Resolve shared actors, then dedupe per person so a user with multiple
+  // linked contacts doesn't appear twice (and the primary wins over alias
+  // rows).
+  final resolved = <Actor>[];
   for (final contactId in thread.contacts) {
     try {
-      final actor = await Actor.getOne(ActorId.fromUuid(contactId));
-      if (seenActorIds.add(actor.id)) sharedActors.add(actor);
+      resolved.add(await Actor.getOne(ActorId.fromUuid(contactId)));
     } catch (_) {
       // Skip contacts whose actors can't be resolved
     }
   }
+  final sharedActors = _dedupePerPerson(resolved);
 
   // Inject the current user into the shared list on draft threads (the
   // NewThreadPage flow, where self gets saved into thread.contacts), or on
@@ -2081,7 +2113,6 @@ Future<Commands> _buildSharedCommands(
         try {
           final selfActor = await Actor.getOne(primarySelfId);
           sharedActors.insert(0, selfActor);
-          seenActorIds.add(selfActor.id);
         } catch (_) {
           // No self actor available, skip
         }
@@ -2213,8 +2244,32 @@ List<Uuid> _contactsWithoutSelf(Thread thread) {
 /// always treated as shared so they appear fully added in the modal — the
 /// actual [thread.contacts] row is only mutated when self-removal is
 /// explicitly confirmed.
+///
+/// Looks at the whole person, not just [actor.id]: a thread that lists a
+/// linked alias of [actor] (different contact id, same underlying user)
+/// already has that person, so the picker should treat them as shared.
 bool _actorShared(Thread thread, Actor actor) =>
-    actor.self || thread.contacts.contains(actor.id.toUuid());
+    actor.self || _linkedContactIdsOnThread(thread, actor).isNotEmpty;
+
+/// Returns every contact id on [thread] that belongs to the same person as
+/// [actor] — i.e. [actor.id] itself plus any cached actor whose
+/// [_personKey] matches. Used by the share modal so toggling a person off
+/// removes all of their linked contact ids in one go (otherwise alias rows
+/// would linger in [Thread.contacts] after the primary was removed).
+List<Uuid> _linkedContactIdsOnThread(Thread thread, Actor actor) {
+  final personKey = _personKey(actor);
+  final result = <Uuid>[];
+  for (final contactId in thread.contacts) {
+    if (contactId == actor.id.toUuid()) {
+      result.add(contactId);
+      continue;
+    }
+    final cached = Actor.fromCache(ActorId.fromUuid(contactId));
+    if (cached == null) continue;
+    if (_personKey(cached) == personKey) result.add(contactId);
+  }
+  return result;
+}
 
 class ShareThreadActor extends Command {
   ShareThreadActor(this.thread, this.actor, {required this.onUpdate})
@@ -2253,9 +2308,18 @@ class ShareThreadActor extends Command {
         return const CommandRefresh();
       }
       final contactUuid = actor.id.toUuid();
-      final newContacts = _isShared
-          ? thread.contacts.where((id) => id != contactUuid).toList()
-          : [...thread.contacts, contactUuid];
+      final List<Uuid> newContacts;
+      if (_isShared) {
+        // Remove every linked alias for this person, not just actor.id —
+        // otherwise toggling off the primary would leave the alias contact
+        // behind on the thread.
+        final toRemove = _linkedContactIdsOnThread(thread, actor).toSet();
+        newContacts = thread.contacts
+            .where((id) => !toRemove.contains(id))
+            .toList();
+      } else {
+        newContacts = [...thread.contacts, contactUuid];
+      }
       await onUpdate(thread.copyWith(contacts: Value(newContacts)));
       return const CommandRefresh();
     } catch (e, stackTrace) {
