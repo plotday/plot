@@ -196,6 +196,19 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
    * and starts the initial sync. Runs as a task to avoid blocking the HTTP response.
    */
   async initCalendar(calendarId: string): Promise<void> {
+    // Auth-token presence check up front: resolveCalendarId (when called with
+    // "primary") and setupCalendarWatch both call getApi(), which throws
+    // "Authorization no longer available" if the token was cleared. As a
+    // queued task, that throw makes the runtime retry forever and floods
+    // error tracking. Skip cleanly instead.
+    const token = await this.tools.integrations.get(calendarId);
+    if (!token) {
+      console.warn(
+        `Auth token missing for calendar ${calendarId} during initCalendar, skipping`
+      );
+      return;
+    }
+
     // Resolve "primary" to actual calendar ID for consistent storage keys
     const resolvedCalendarId = await this.resolveCalendarId(calendarId);
 
@@ -598,6 +611,20 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     initialSync: boolean
   ): Promise<void> {
     try {
+      // Auth-token presence check must run before ensureUserIdentity (which
+      // calls getApi() and throws "Authorization no longer available" if the
+      // token was cleared). As a queued task, that throw makes the runtime
+      // retry forever and floods error tracking.
+      const token = await this.tools.integrations.get(calendarId);
+      if (!token) {
+        console.warn(
+          `Auth token missing for calendar ${calendarId} at batch ${batchNumber}, skipping`
+        );
+        await this.clear(`sync_lock_${calendarId}`);
+        await this.clear(`sync_state_${calendarId}`);
+        return;
+      }
+
       // Ensure we have the user's identity for RSVP tagging
       if (batchNumber === 1) {
         await this.ensureUserIdentity(calendarId);
@@ -625,18 +652,6 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         state.max = new Date(state.max);
       }
 
-      const token = await this.tools.integrations.get(calendarId);
-      if (!token) {
-        // Auth token was cleared (channel disabled, OAuth revoked,
-        // integration deleted) — abort instead of throwing to prevent
-        // infinite queue retries.
-        console.warn(
-          `Auth token missing for calendar ${calendarId} at batch ${batchNumber}, skipping`
-        );
-        await this.clear(`sync_lock_${calendarId}`);
-        await this.clear(`sync_state_${calendarId}`);
-        return;
-      }
       const api = new GoogleApi(token.token);
       const result = await syncGoogleCalendar(api, calendarId, state);
 
