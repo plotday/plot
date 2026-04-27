@@ -372,7 +372,17 @@ export class Integrations extends Tool implements IAuth {
     const config = await this.getChannelConfig(provider, resolvedChannelId);
 
     if (config?.enabled && config.enabledBy) {
-      return this.getActorToken(provider, config.enabledBy);
+      const token = await this.getActorToken(provider, config.enabledBy);
+      if (!token) {
+        // Channel is enabled but the actor's token is missing/dead.
+        // `getActorToken` already flags reauth on the permanent-refresh and
+        // no-refresh-token paths, but a token that was never stored — or
+        // was cleared by a previous failure that pre-dated this signal —
+        // never goes through those paths. Flag here as a backstop so the
+        // app's reauth prompt fires on the very next sync attempt.
+        await this.flagNeedsReauth(provider, config.enabledBy);
+      }
+      return token;
     }
 
     // Migration fallback: no channel_config exists for pre-redesign users.
@@ -1832,6 +1842,83 @@ export class Integrations extends Tool implements IAuth {
    * Get a token directly for an actor (by actor ID).
    * Used internally and by API endpoints.
    */
+  /**
+   * Flag the user's twist_instance_connection so the UI can prompt them to
+   * re-authenticate. Resolves user_id from the actor's contact row; orphan
+   * contacts (no user_id) are skipped. Idempotent — repeated calls do not
+   * overwrite an existing `needs_reauth_at`.
+   *
+   * Uses INSERT…ON CONFLICT so that connections with no existing
+   * `twist_instance_connection` row (e.g. ones whose original
+   * saveAuth-time write was lost or never ran) still get flagged.
+   */
+  private async flagNeedsReauth(
+    provider: AuthProvider,
+    actorId: ActorId
+  ): Promise<void> {
+    const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+    try {
+      const reauthContact = await this.db
+        .selectFrom("contact")
+        .select("user_id")
+        .where("id", "=", actorId)
+        .executeTakeFirst();
+
+      if (!reauthContact?.user_id) {
+        logger.debug(
+          `Skipped needs_reauth_at: actor ${actorId} has no linked user_id`,
+          { provider, actor_id: actorId }
+        );
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const result = await this.db
+        .insertInto("twist_instance_connection")
+        .values({
+          twist_instance_id: this.twistInstanceId,
+          user_id: reauthContact.user_id,
+          provider,
+          actor_id: actorId,
+          connected_at: now,
+          needs_reauth_at: now,
+        })
+        .onConflict((oc) =>
+          oc
+            .columns(["twist_instance_id", "user_id", "provider"])
+            .doUpdateSet({ needs_reauth_at: now })
+            .where("twist_instance_connection.needs_reauth_at", "is", null)
+        )
+        .executeTakeFirst();
+
+      if ((result.numInsertedOrUpdatedRows ?? 0n) > 0n) {
+        await notifyUserSyncByEnv(this.env, reauthContact.user_id);
+      }
+    } catch (dbError) {
+      logger.warn(
+        `Failed to set needs_reauth_at for ${provider} actor ${actorId}: ${(dbError as Error)?.message ?? String(dbError)}`,
+        { provider, actor_id: actorId }
+      );
+    }
+  }
+
+  /**
+   * Public re-auth signal for connectors. When a connector's API call comes
+   * back with a permanent auth error (e.g. Slack `invalid_auth` /
+   * `token_revoked`), call this with the channel id to surface the re-auth
+   * prompt without waiting for the next refresh-token attempt to fail.
+   *
+   * Resolves the responsible actor from the channel config; no-op if the
+   * channel is not configured or has no `enabledBy`.
+   */
+  async markNeedsReauth(channelId: string): Promise<void> {
+    const provider = this.providerConfigs[0]?.provider;
+    if (!provider) return;
+    const config = await this.getChannelConfig(provider, channelId);
+    if (!config?.enabledBy) return;
+    await this.flagNeedsReauth(provider, config.enabledBy);
+  }
+
   async getActorToken(provider: AuthProvider, actorId: ActorId): Promise<AuthToken | null> {
     // Direct lookup by provider + actor ID
     const tokenKey = `auth_token:${provider}:${actorId}`;
@@ -1923,42 +2010,7 @@ export class Integrations extends Tool implements IAuth {
             );
             // Refresh_token is genuinely dead — user must re-authenticate.
             await this.store.clear(foundTokenKey);
-
-            // Flag the user's twist_instance_connection so the UI can prompt
-            // them to re-authenticate. Resolve user_id from the actor's
-            // contact row; orphan contacts (no user_id) are skipped.
-            try {
-              const reauthContact = await this.db
-                .selectFrom("contact")
-                .select("user_id")
-                .where("id", "=", actorId)
-                .executeTakeFirst();
-
-              if (reauthContact?.user_id) {
-                const result = await this.db
-                  .updateTable("twist_instance_connection")
-                  .set({ needs_reauth_at: new Date().toISOString() })
-                  .where("twist_instance_id", "=", this.twistInstanceId)
-                  .where("user_id", "=", reauthContact.user_id)
-                  .where("provider", "=", provider)
-                  .where("needs_reauth_at", "is", null)
-                  .executeTakeFirst();
-                if ((result.numUpdatedRows ?? 0n) > 0n) {
-                  await notifyUserSyncByEnv(this.env, reauthContact.user_id);
-                }
-              } else {
-                logger.debug(
-                  `Skipped needs_reauth_at: actor ${actorId} has no linked user_id`,
-                  { provider, actor_id: actorId }
-                );
-              }
-            } catch (dbError) {
-              logger.warn(
-                `Failed to set needs_reauth_at for ${provider} actor ${actorId}: ${(dbError as Error)?.message ?? String(dbError)}`,
-                { provider, actor_id: actorId }
-              );
-            }
-
+            await this.flagNeedsReauth(provider, actorId);
             return null;
           }
 
@@ -1989,6 +2041,7 @@ export class Integrations extends Tool implements IAuth {
       // No refresh token available — token is unrecoverable; clear it so the
       // user sees an explicit re-auth prompt rather than a silent expired token.
       await this.store.clear(foundTokenKey);
+      await this.flagNeedsReauth(provider, actorId);
       return null;
     }
 
