@@ -102,6 +102,8 @@ class NoteWidget extends StatefulWidget {
 }
 
 class _NoteWidgetState extends State<NoteWidget> {
+  bool _hovered = false;
+
   @override
   void initState() {
     super.initState();
@@ -269,36 +271,14 @@ class _NoteWidgetState extends State<NoteWidget> {
                               .left,
                       0,
                     ),
-                    child: Builder(
-                      builder: (context) {
-                        final tileBg = context.colour.background;
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ColoredBox(
-                              color: tileBg,
-                              child: NoteCommands(
-                                note: widget.note,
-                                showCommands:
-                                    highlighted &&
-                                    (hasPhysicalKeyboard() ||
-                                        !widget.selected),
-                              ),
-                            ),
-                            Container(
-                              width: 24,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    tileBg,
-                                    tileBg.withValues(alpha: 0),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                    child: NoteCommands(
+                      note: widget.note,
+                      showCommands: _hovered,
+                      tileBg: widget.selected
+                          ? context.theme.colors.primaryForeground
+                          : highlighted
+                          ? context.colour.editableBackground
+                          : context.colour.background,
                     ),
                   ),
                 ),
@@ -339,9 +319,17 @@ class _NoteWidgetState extends State<NoteWidget> {
     }
 
     if (widget.dimmed) {
-      return Opacity(opacity: 0.4, child: result);
+      result = Opacity(opacity: 0.4, child: result);
     }
-    return result;
+    return MouseRegion(
+      onEnter: (_) {
+        if (!_hovered) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
+      child: result,
+    );
   }
 }
 
@@ -349,11 +337,13 @@ class NoteCommands extends StatelessWidget {
   const NoteCommands({
     required this.note,
     this.showCommands = false,
+    this.tileBg,
     super.key,
   });
 
   final Note note;
   final bool showCommands;
+  final Color? tileBg;
 
   @override
   Widget build(BuildContext context) {
@@ -614,9 +604,28 @@ class NoteCommands extends StatelessWidget {
               ];
             }
 
-            return Row(
+            if (visibleButtons.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            final buttonRow = Row(
               mainAxisSize: MainAxisSize.min,
               children: visibleButtons,
+            );
+            final bg = tileBg;
+            if (bg == null) return buttonRow;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ColoredBox(color: bg, child: buttonRow),
+                Container(
+                  width: 24,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [bg, bg.withValues(alpha: 0)],
+                    ),
+                  ),
+                ),
+              ],
             );
           },
         );
