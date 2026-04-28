@@ -1421,8 +1421,48 @@ class MoveThreadToPriority extends ShowCommands {
               .toList(),
         ),
       ],
-      secondaryCommand: (prompt) => NewPriority(parent: thread.priority),
+      secondaryCommand: (prompt) => _CreateAndMoveToNewPriority(thread),
     );
+  }
+}
+
+class _CreateAndMoveToNewPriority extends Command {
+  _CreateAndMoveToNewPriority(this.thread)
+    : super(
+        title: 'Move to new priority',
+        icon: PlotIcon.add,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.moved,
+      );
+
+  final Thread thread;
+
+  @override
+  Future<CommandReturn> run(BuildContext context) async {
+    final priority = await createPriorityInline(
+      context,
+      parent: thread.priority,
+    );
+    if (priority == null) return const CommandSkipped();
+    await thread.copyWith(priority: priority).save();
+    // Best-effort learning signal — fire and forget so the move modal closes
+    // immediately instead of waiting on the network round trip.
+    unawaited(
+      api
+          .post<dynamic>(
+            '/sync/priority-moves',
+            body: {
+              'thread_id': thread.id.toString(),
+              'priority_id': priority.id.toString(),
+            },
+          )
+          .catchError((Object _) {
+            // Offline / transient — the move itself is already synced via
+            // thread save; the learning signal will be re-sent next time.
+            return null;
+          }),
+    );
+    return const CommandDone();
   }
 }
 

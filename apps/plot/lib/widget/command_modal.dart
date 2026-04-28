@@ -186,6 +186,27 @@ class CommandModal {
         };
       },
       showFilter: showFilter,
+      onAdd: _commands.secondaryCommand == null
+          ? null
+          : (modalContext) async {
+              final cmd = _commands.secondaryCommand!('');
+              if (cmd == null) return null;
+              final ctx =
+                  cmd is ShowCommands || cmd is ShowForm || cmd is ShowPage
+                  ? modalContext
+                  : (rootContext.mounted ? rootContext : modalContext);
+              if (!ctx.mounted) return null;
+              final result = await cmd.run(ctx);
+              if (!modalContext.mounted) return null;
+              final shouldClose = await Modal.handleCommandResult(
+                modalContext,
+                result,
+                cmd,
+                rootContext: rootContext,
+                onRefresh: _refreshCallback,
+              );
+              return shouldClose ? cmd : null;
+            },
     );
 
     return result.present ? const CommandDone() : const CommandSkipped();
