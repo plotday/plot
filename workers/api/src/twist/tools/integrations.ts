@@ -459,7 +459,7 @@ export class Integrations extends Tool implements IAuth {
       const token = await this.getActorToken(provider, actorId);
       if (token) {
         // Auto-create channel_config so subsequent calls use the fast path
-        await this.store.set(`channel_config:${provider}:${channelId}`, {
+        await this.store.set(`channel_config:${provider}:${resolvedChannelId}`, {
           enabled: true,
           enabledBy: actorId,
         } satisfies ChannelConfig);
@@ -810,6 +810,16 @@ export class Integrations extends Tool implements IAuth {
     });
     const dispatches: any[] = [];
     for (const key of configKeys) {
+      const channelId = key.slice(configKeyPrefix.length);
+      // Defensive cleanup of legacy bogus keys written by an earlier bug
+      // that interpolated an undefined parameter into the key. Without
+      // this skip we'd dispatch onChannelEnabled with channel.id =
+      // "undefined", which downstream connectors then send to the
+      // provider API (e.g. Gmail returns "Invalid label: undefined").
+      if (!channelId || channelId === "undefined" || channelId === "null") {
+        await this.store.clear(key);
+        continue;
+      }
       const channelConfig = await this.store.get<ChannelConfig>(key);
       if (
         !channelConfig?.enabled ||
@@ -817,7 +827,6 @@ export class Integrations extends Tool implements IAuth {
       ) {
         continue;
       }
-      const channelId = key.slice(configKeyPrefix.length);
       const channel: Channel = {
         id: channelId,
         title: channelConfig.title ?? channelId,
