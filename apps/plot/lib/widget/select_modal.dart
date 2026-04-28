@@ -159,9 +159,22 @@ class SelectModal<T> extends Modal {
     Future<T?> Function(BuildContext context)? onAdd,
     bool Function(T item, String search)? filter,
   }) async {
-    // Open the modal immediately; items are fetched asynchronously so the
-    // modal appears instantly and a spinner is shown below the list while
-    // the first results load.
+    // Pre-fetch items for empty search so the modal opens fully populated.
+    // Callers typically invoke this from inside a Command run, so the trigger
+    // item's icon naturally shows its own spinner during this await — much
+    // less jarring than flashing an empty modal with a spinner inside.
+    List<SelectGroup<T>>? initialItems;
+    try {
+      initialItems = await items(null);
+    } catch (e, t) {
+      log.warning('Error pre-fetching items', e, t);
+      // Continue anyway — the modal will fall back to its own loading state.
+    }
+
+    if (!context.mounted) {
+      return Value.absent();
+    }
+
     final result = await SelectModal<T>(
       items: items,
       itemBuilder: itemBuilder,
@@ -170,6 +183,7 @@ class SelectModal<T> extends Modal {
       prompt: prompt,
       subtitle: subtitle,
       onSelect: onSelect,
+      initialItems: initialItems,
       emptyMessage: emptyMessage,
       onRefreshNeeded: onRefreshNeeded,
       showFilter: showFilter,
