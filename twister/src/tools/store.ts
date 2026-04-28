@@ -146,4 +146,48 @@ export abstract class Store extends ITool {
    * @returns Promise that resolves when all keys are removed
    */
   abstract clearAll(): Promise<void>;
+
+  /**
+   * Acquire a self-expiring lock. Returns true if the caller now holds the
+   * lock, false if another holder has a non-expired lease.
+   *
+   * Use this for any operation where you previously hand-rolled a boolean
+   * "in progress" flag with manual cleanup on every error path. The lock
+   * auto-releases after `ttlMs`, so a crashed/timed-out holder cannot wedge
+   * the system permanently — pick a `ttlMs` comfortably longer than the
+   * worst-case duration of the protected work.
+   *
+   * Acquisition is atomic across concurrent callers (the underlying
+   * Durable Object serializes operations). Lock keys live in a reserved
+   * namespace and never appear in `get` / `list` results.
+   *
+   * @example
+   * ```typescript
+   * if (!(await this.tools.store.acquireLock(`sync_${id}`, 30 * 60_000))) {
+   *   return; // another sync is already running
+   * }
+   * try {
+   *   await this.runSync(id);
+   * } finally {
+   *   await this.tools.store.releaseLock(`sync_${id}`);
+   * }
+   * ```
+   *
+   * @param key Lock identifier (any string).
+   * @param ttlMs Lease duration in milliseconds. After this time the lock
+   *   is considered expired and a new caller can acquire it even if
+   *   `releaseLock` was never called.
+   * @returns Promise resolving to true if acquired, false if held.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract acquireLock(key: string, ttlMs: number): Promise<boolean>;
+
+  /**
+   * Release a lock acquired via {@link acquireLock}. Safe to call even if
+   * the caller never acquired the lock or the lease has already expired.
+   *
+   * @param key The same key that was passed to `acquireLock`.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract releaseLock(key: string): Promise<void>;
 }

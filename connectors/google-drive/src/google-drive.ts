@@ -112,6 +112,15 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     };
   }
 
+  async upgrade(): Promise<void> {
+    // Old boolean sync_lock_* keys are obsolete (Store.acquireLock manages
+    // its own namespace). Clean them up so they don't shadow anything.
+    const keys = await this.tools.store.list("sync_lock_");
+    for (const key of keys) {
+      await this.clear(key);
+    }
+  }
+
   /**
    * Returns available Google Drive folders as a channel tree.
    * Shared drives and root-level My Drive folders appear at the top level,
@@ -249,14 +258,20 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   /**
    * Called when a channel folder is enabled for syncing.
    */
+  // Lock TTL covering the worst-case full backfill across all sub-channels
+  // of a virtual channel (My Drive / Shared drives can paginate every
+  // folder). Self-expires so a crashed worker can't wedge sync forever.
+  private static readonly SYNC_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
+
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     const syncHistoryMin = context?.syncHistoryMin;
     if (context?.recovering) {
-      // Recovery dispatch after re-auth: drop persisted change cursor
-      // and stale sync_lock so the next pass re-walks history. The
-      // changesToken from before the auth gap may be invalid.
+      // Recovery dispatch after re-auth: drop persisted change cursor so
+      // the next pass re-walks history. The changesToken from before the
+      // auth gap may be invalid. The lock is owned by the framework now
+      // and self-expires; release it so the new sync can acquire fresh.
       await this.clear(`sync_state_${channel.id}`);
-      await this.clear(`sync_lock_${channel.id}`);
+      await this.tools.store.releaseLock(`sync_${channel.id}`);
     } else if (syncHistoryMin) {
       // Skip when stored window is already at least as wide. Bypassed on
       // recovery so the recovery pass re-walks even when the window
@@ -269,7 +284,14 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     }
 
     await this.set(`sync_enabled_${channel.id}`, true);
-    await this.set(`sync_lock_${channel.id}`, true);
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${channel.id}`,
+      GoogleDrive.SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) {
+      // Another sync is already in flight for this channel; let it run.
+      return;
+    }
 
     // Queue all initialization work as a task to avoid blocking the HTTP response.
     // initChannel makes multiple API calls (changes token, sub-channel discovery,
@@ -291,7 +313,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
       console.warn(
         `Auth token missing for channel ${channelId} during initChannel, skipping`
       );
-      await this.clear(`sync_lock_${channelId}`);
+      await this.tools.store.releaseLock(`sync_${channelId}`);
       return;
     }
     const api = new GoogleApi(token.token);
@@ -478,14 +500,13 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   ): Promise<void> {
     const { folderId } = options;
 
-    // Check if sync is already in progress for this folder
-    const syncInProgress = await this.get<boolean>(`sync_lock_${folderId}`);
-    if (syncInProgress) {
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${folderId}`,
+      GoogleDrive.SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) {
       return;
     }
-
-    // Set sync lock
-    await this.set(`sync_lock_${folderId}`, true);
 
     // Get changes start token for future incremental syncs
     const api = await this.getApi(folderId);
@@ -526,10 +547,10 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     // Stop watch via Google API
     await this.stopDriveWatch(folderId);
 
-    // Clear sync-related storage
+    // Clear sync-related storage and release the framework-managed lock.
     await this.clear(`drive_watch_${folderId}`);
     await this.clear(`sync_state_${folderId}`);
-    await this.clear(`sync_lock_${folderId}`);
+    await this.tools.store.releaseLock(`sync_${folderId}`);
   }
 
   /**
@@ -778,20 +799,19 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   }
 
   private async startIncrementalSync(folderId: string): Promise<void> {
-    // Check if initial sync is still in progress
-    const syncInProgress = await this.get<boolean>(`sync_lock_${folderId}`);
-    if (syncInProgress) {
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${folderId}`,
+      GoogleDrive.SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) {
       console.log(`[google-drive] Skipping incremental sync for ${folderId}: sync lock held`);
       return;
     }
 
-    // Set sync lock for incremental
-    await this.set(`sync_lock_${folderId}`, true);
-
     const state = await this.get<SyncState>(`sync_state_${folderId}`);
     if (!state?.changesToken) {
       console.error("No changes token found for incremental sync");
-      await this.clear(`sync_lock_${folderId}`);
+      await this.tools.store.releaseLock(`sync_${folderId}`);
       return;
     }
 
@@ -814,11 +834,9 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     try {
       const state = await this.get<SyncState>(`sync_state_${folderId}`);
       if (!state) {
-        const syncLock = await this.get<boolean>(`sync_lock_${folderId}`);
-        if (syncLock) {
-          console.warn(`No sync state found for folder ${folderId}`);
-          await this.clear(`sync_lock_${folderId}`);
-        }
+        // No state means the sync either completed normally or was
+        // superseded by a recovery wipe. Drop any held lock and unwind.
+        await this.tools.store.releaseLock(`sync_${folderId}`);
         return;
       }
 
@@ -831,7 +849,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
         console.warn(
           `Auth token missing for folder ${folderId} at batch ${batchNumber}, skipping`
         );
-        await this.clear(`sync_lock_${folderId}`);
+        await this.tools.store.releaseLock(`sync_${folderId}`);
         return;
       }
       const api = new GoogleApi(token.token);
@@ -859,7 +877,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           await this.runTask(syncCallback);
         } else {
           await this.set(`sync_state_${folderId}`, { ...state, pageToken: undefined });
-          await this.clear(`sync_lock_${folderId}`);
+          await this.tools.store.releaseLock(`sync_${folderId}`);
           // Initial backfill done for shared-with-me — clear the indicator.
           if (initialSync) {
             await this.tools.integrations.channelSyncCompleted(folderId);
@@ -872,7 +890,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           await this.set(`sync_state_${folderId}`, {
             ...state, pageToken: undefined, currentSubChannelIndex: undefined,
           });
-          await this.clear(`sync_lock_${folderId}`);
+          await this.tools.store.releaseLock(`sync_${folderId}`);
           // All sub-channels processed — initial backfill complete.
           if (initialSync) {
             await this.tools.integrations.channelSyncCompleted(folderId);
@@ -930,7 +948,7 @@ export class GoogleDrive extends Connector<GoogleDrive> {
           await this.runTask(syncCallback);
         } else {
           await this.set(`sync_state_${folderId}`, { ...state, pageToken: undefined });
-          await this.clear(`sync_lock_${folderId}`);
+          await this.tools.store.releaseLock(`sync_${folderId}`);
           // Initial backfill done for single-folder sync — clear the indicator.
           if (initialSync) {
             await this.tools.integrations.channelSyncCompleted(folderId);
@@ -1055,11 +1073,11 @@ export class GoogleDrive extends Connector<GoogleDrive> {
             ...(updatedSubChannelIds ? { subChannelIds: updatedSubChannelIds } : {}),
           });
         }
-        await this.clear(`sync_lock_${folderId}`);
+        await this.tools.store.releaseLock(`sync_${folderId}`);
       }
     } catch (error) {
       console.error(`Error in incremental sync for folder ${folderId}:`, error);
-      await this.clear(`sync_lock_${folderId}`);
+      await this.tools.store.releaseLock(`sync_${folderId}`);
       throw error;
     }
   }

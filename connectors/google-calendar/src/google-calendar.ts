@@ -151,7 +151,14 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     };
   }
 
+  // Lock TTL covering the worst-case full backfill (quick + full pass).
+  // The framework releases the lock automatically after this window even
+  // if a worker crashes, so no stuck-sync recovery is needed.
+  private static readonly SYNC_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
+
   async upgrade(): Promise<void> {
+    // Old boolean sync_lock_* keys are obsolete (Store.acquireLock manages
+    // its own namespace). Clean them up so they don't shadow anything.
     const keys = await this.tools.store.list("sync_lock_");
     for (const key of keys) {
       await this.clear(key);
@@ -187,12 +194,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     const resolvedCalendarId = await this.resolveCalendarId(channel.id);
     if (context?.recovering) {
-      // Wipe incremental cursor + any stale sync_lock from before the
-      // outage so initCalendar can run unimpeded.
+      // Wipe incremental cursor + sync state so initCalendar re-walks
+      // history. The lock is owned by the framework now and self-expires;
+      // we don't touch it here.
       await this.clear(`last_sync_token_${resolvedCalendarId}`);
       await this.clear(`last_sync_token_${channel.id}`);
-      await this.clear(`sync_lock_${resolvedCalendarId}`);
       await this.clear(`sync_state_${resolvedCalendarId}`);
+      await this.tools.store.releaseLock(`sync_${resolvedCalendarId}`);
     } else if (context?.syncHistoryMin) {
       // Store sync_history_min if provided and not already stored with an
       // equal/earlier value. Skipped on recovery so the recovery pass
@@ -232,16 +240,15 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     // Resolve "primary" to actual calendar ID for consistent storage keys
     const resolvedCalendarId = await this.resolveCalendarId(calendarId);
 
-    // Check if sync is already in progress
-    const syncInProgress = await this.get<boolean>(
-      `sync_lock_${resolvedCalendarId}`
+    // Acquire sync lock. Self-expires after SYNC_LOCK_TTL_MS so a crashed
+    // worker can't wedge sync forever. Bails if another sync is in flight.
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${resolvedCalendarId}`,
+      GoogleCalendar.SYNC_LOCK_TTL_MS
     );
-    if (syncInProgress) {
+    if (!acquired) {
       return;
     }
-
-    // Set sync lock
-    await this.set(`sync_lock_${resolvedCalendarId}`, true);
 
     // Setup webhook for this calendar
     await this.setupCalendarWatch(resolvedCalendarId);
@@ -391,16 +398,13 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
     // Resolve "primary" to actual calendar ID to ensure consistent storage keys
     const resolvedCalendarId = await this.resolveCalendarId(calendarId);
 
-    // Check if sync is already in progress for this calendar
-    const syncInProgress = await this.get<boolean>(
-      `sync_lock_${resolvedCalendarId}`
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${resolvedCalendarId}`,
+      GoogleCalendar.SYNC_LOCK_TTL_MS
     );
-    if (syncInProgress) {
+    if (!acquired) {
       return;
     }
-
-    // Set sync lock
-    await this.set(`sync_lock_${resolvedCalendarId}`, true);
 
     // Setup webhook for this calendar
     await this.setupCalendarWatch(resolvedCalendarId);
@@ -461,11 +465,11 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
       );
     }
 
-    // 3. Clear sync-related storage
+    // 3. Clear sync-related storage and release the framework-managed lock.
     await this.clear(`calendar_watch_${calendarId}`);
     await this.clear(`sync_state_${calendarId}`);
-    await this.clear(`sync_lock_${calendarId}`);
     await this.clear(`auth_token_${calendarId}`);
+    await this.tools.store.releaseLock(`sync_${calendarId}`);
   }
 
   /**
@@ -636,8 +640,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         console.warn(
           `Auth token missing for calendar ${calendarId} at batch ${batchNumber}, skipping`
         );
-        await this.clear(`sync_lock_${calendarId}`);
         await this.clear(`sync_state_${calendarId}`);
+        await this.tools.store.releaseLock(`sync_${calendarId}`);
         return;
       }
 
@@ -648,15 +652,10 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
       const state = await this.get<SyncState>(`sync_state_${calendarId}`);
       if (!state) {
-        const syncLock = await this.get<boolean>(`sync_lock_${calendarId}`);
-        if (!syncLock) {
-          // Both state and lock are cleared - sync completed normally, stale callback
-        } else {
-          console.warn(
-            `No sync state found for calendar ${calendarId}, sync may have been superseded`
-          );
-          await this.clear(`sync_lock_${calendarId}`);
-        }
+        // No state means the sync either completed normally (state cleared
+        // on the final batch) or was superseded by a recovery wipe. Either
+        // way, drop any held lock and let this stale callback unwind.
+        await this.tools.store.releaseLock(`sync_${calendarId}`);
         return;
       }
 
@@ -742,8 +741,8 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             await this.tools.integrations.channelSyncCompleted(calendarId);
           }
         }
-        // Always clear lock when sync completes (no more batches)
-        await this.clear(`sync_lock_${calendarId}`);
+        // Always release lock when sync completes (no more batches)
+        await this.tools.store.releaseLock(`sync_${calendarId}`);
       }
     } catch (error) {
       console.error(
@@ -751,8 +750,9 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         error
       );
 
-      // Clear lock and state so future syncs aren't permanently blocked
-      await this.clear(`sync_lock_${calendarId}`);
+      // Release lock and clear state so future syncs aren't permanently
+      // blocked. Even if this release fails, the lock's TTL will expire it.
+      await this.tools.store.releaseLock(`sync_${calendarId}`);
       await this.clear(`sync_state_${calendarId}`);
 
       throw error;
@@ -1303,14 +1303,18 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
   }
 
   private async startIncrementalSync(calendarId: string): Promise<void> {
-    const syncInProgress = await this.get<boolean>(`sync_lock_${calendarId}`);
-    if (syncInProgress) {
+    const acquired = await this.tools.store.acquireLock(
+      `sync_${calendarId}`,
+      GoogleCalendar.SYNC_LOCK_TTL_MS
+    );
+    if (!acquired) {
       return;
     }
 
     const watchData = await this.get<any>(`calendar_watch_${calendarId}`);
     if (!watchData) {
       console.error("No calendar watch data found");
+      await this.tools.store.releaseLock(`sync_${calendarId}`);
       return;
     }
 
