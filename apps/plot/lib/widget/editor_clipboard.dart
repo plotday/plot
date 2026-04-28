@@ -64,14 +64,16 @@ String markdownToHtml(String plotMarkdown) {
 }
 
 /// Convert Plot markdown to plain text for clipboard.
-/// Strips all markdown syntax including mention references.
+/// Strips all markdown syntax including mention references, but keeps a
+/// `-` marker on each list item so the list structure survives a paste
+/// into apps that only consume plain text.
 String markdownToPlainText(String plotMarkdown) {
   // Strip mention syntax first: [Name](#@UUID) → Name
   final cleanMarkdown = plotMarkdown.replaceAllMapped(
     _mentionPattern,
     (match) => match.group(1) ?? '',
   );
-  return cleanMarkdown.removeMarkdown();
+  return cleanMarkdown.removeMarkdown(listUnicodeChar: '-');
 }
 
 /// Convert HTML from clipboard to Plot markdown for paste.

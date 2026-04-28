@@ -37,6 +37,7 @@ import 'editor_link_detector.dart';
 import 'editor_link_toolbar.dart';
 import 'editor_link_modal.dart';
 import 'plot_image_component.dart';
+import 'list_item_component.dart';
 import 'task_component.dart';
 import 'logging.dart';
 
@@ -740,6 +741,7 @@ class EditorState extends State<Editor> {
                     ),
                   PlotTaskComponentBuilder(_editor),
                   const PlotImageComponentBuilder(),
+                  const PlotListItemComponentBuilder(),
                   ...defaultComponentBuilders,
                 ],
                 keyboardActions: [
@@ -1661,9 +1663,15 @@ class EditorState extends State<Editor> {
           ? existingText.copyText(offset)
           : AttributedText('');
 
-      // First parsed node merges with text before cursor
+      // Only merge when both sides are plain paragraphs. ListItemNode and
+      // TaskNode also extend TextNode but represent block structure; merging
+      // their text into the cursor's paragraph would silently drop the
+      // bullet/checkbox of the first pasted item.
       final firstParsed = parsedNodes.first;
-      if (firstParsed is TextNode) {
+      final canMergeFirst =
+          cursorNode.runtimeType == ParagraphNode &&
+          firstParsed.runtimeType == ParagraphNode;
+      if (canMergeFirst && firstParsed is TextNode) {
         // Delete text after cursor from current node
         if (existingText.length > offset) {
           requests.add(DeleteContentRequest(
@@ -1718,9 +1726,28 @@ class EditorState extends State<Editor> {
         }
       }
 
-      // Insert middle parsed nodes as new document nodes
+      // When the first parsed node was not merged, the existing text after
+      // the cursor must still be split off into a trailing paragraph.
+      if (!canMergeFirst && existingText.length > offset) {
+        requests.add(DeleteContentRequest(
+          documentRange: DocumentRange(
+            start: DocumentPosition(
+              nodeId: cursorNode.id,
+              nodePosition: TextNodePosition(offset: offset),
+            ),
+            end: DocumentPosition(
+              nodeId: cursorNode.id,
+              nodePosition: TextNodePosition(offset: existingText.length),
+            ),
+          ),
+        ));
+      }
+
+      // Insert remaining parsed nodes as new document nodes (skip the first
+      // one only when it was merged into the cursor paragraph).
       var insertIndex = cursorNodeIndex + 1;
-      for (int i = 1; i < parsedNodes.length; i++) {
+      final firstUnmergedIndex = canMergeFirst ? 1 : 0;
+      for (int i = firstUnmergedIndex; i < parsedNodes.length; i++) {
         requests.add(InsertNodeAtIndexRequest(
           nodeIndex: insertIndex++,
           newNode: parsedNodes[i],
@@ -1737,6 +1764,15 @@ class EditorState extends State<Editor> {
           ),
         ));
       }
+
+      // If the cursor was in an empty paragraph and we inserted structural
+      // content instead of merging, drop the now-empty cursor paragraph so
+      // the paste doesn't leave a stray blank line above it.
+      if (!canMergeFirst &&
+          existingText.length == 0 &&
+          cursorNode is ParagraphNode) {
+        requests.add(DeleteNodeRequest(nodeId: cursorNode.id));
+      }
     } else {
       // Non-text node: just insert all parsed nodes after current
       var insertIndex = cursorNodeIndex + 1;
@@ -1747,6 +1783,27 @@ class EditorState extends State<Editor> {
         ));
       }
     }
+
+    // Place the cursor at the end of the last pasted node so subsequent
+    // typing continues from where the paste ended (rather than wherever the
+    // selection happened to land after the structural edits).
+    final lastPasted = parsedNodes.last;
+    final NodePosition lastPosition;
+    if (lastPasted is TextNode) {
+      lastPosition = TextNodePosition(offset: lastPasted.text.length);
+    } else {
+      lastPosition = const UpstreamDownstreamNodePosition.downstream();
+    }
+    requests.add(ChangeSelectionRequest(
+      DocumentSelection.collapsed(
+        position: DocumentPosition(
+          nodeId: lastPasted.id,
+          nodePosition: lastPosition,
+        ),
+      ),
+      SelectionChangeType.insertContent,
+      SelectionReason.userInteraction,
+    ));
 
     if (requests.isNotEmpty) {
       _editor.execute(requests);
@@ -2185,7 +2242,7 @@ class ViewerState extends State<Viewer> {
               fit: TableComponentFit.scroll,
             ),
             const ParagraphComponentBuilder(),
-            const ListItemComponentBuilder(),
+            const PlotListItemComponentBuilder(),
             const PlotImageComponentBuilder(),
             const HorizontalRuleComponentBuilder(),
             PlotTaskComponentBuilder(_editor),
