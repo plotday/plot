@@ -12,6 +12,7 @@ import { parseReadParams, updatedSinceCursor } from "./helpers";
 import { createLogger } from "@plotday/worker-util";
 import { sendInvitation } from "../invitation";
 import { notifySync } from "./notify";
+import { stripAnnounceContactsFromThreads } from "./viewer";
 import { twistFactory } from "../../twist/factory";
 
 const threads = new Hono<{ Bindings: Bindings }>();
@@ -112,6 +113,8 @@ threads.get("/sync/threads", async (c) => {
     return query.execute();
   });
 
+  await stripAnnounceContactsFromThreads(c.var.db, userId, rows as any);
+
   // Version-gated serialization: apiVersion < 3 clients expect a `topics`
   // array (the legacy name for what is now `groups`). Map groups → topics
   // and drop the new `topic` / `groups` fields for those clients.
@@ -208,6 +211,8 @@ threads.get("/sync/threads/search", async (c) => {
     `.execute(trx);
     return result.rows;
   });
+
+  await stripAnnounceContactsFromThreads(c.var.db, userId, resultRows as any);
 
   // Version-gated serialization: apiVersion < 3 clients expect `topics` instead
   // of `groups` (same shim as GET /sync/threads above).
