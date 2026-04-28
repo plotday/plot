@@ -7,6 +7,19 @@ import { rpc } from "../rpc";
 import type { Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 
+// Cloudflare surfaces DO resets in two shapes: the explicit
+// "storage operation exceeded timeout" message, and a generic
+// "internal error; reference = <id>" wrapper. Both are transient platform
+// noise — the DO is reset and the next notify schedules a fresh alarm.
+function isTransientDoResetError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message;
+  return (
+    msg.includes("storage operation exceeded timeout") ||
+    msg.includes("internal error; reference")
+  );
+}
+
 // Debouncing configuration (compile-time constants)
 const MIN_WAIT_MS = 300; // Minimum time to wait before sending, allowing batching
 const MAX_WAIT_MS = 2000; // Maximum time a batch can sit waiting before forced flush
@@ -196,13 +209,10 @@ export class UserSync extends DurableObject<Bindings> {
               })
             )
             .catch((error) => {
-              // Storage timeouts in PushNotify are transient platform noise;
+              // DO resets in PushNotify are transient platform noise;
               // don't capture, but keep a warn-level breadcrumb.
-              if (
-                error instanceof Error &&
-                error.message.includes("storage operation exceeded timeout")
-              ) {
-                logger.warn("PushNotify DO interrupted by DO storage timeout", {
+              if (isTransientDoResetError(error)) {
+                logger.warn("PushNotify DO interrupted by DO reset", {
                   user_id: this.userId ?? undefined,
                 });
                 return;
@@ -334,15 +344,12 @@ export class UserSync extends DurableObject<Bindings> {
       });
     } catch (error) {
       timings.totalMs = Date.now() - alarmStart;
-      // "storage operation exceeded timeout" is a transient Cloudflare platform
-      // error when the storage backend is slow. The DO resets and will retry on
-      // the next notification — not actionable, so log as warning only. Timings
-      // show which step was in flight when the reset hit.
-      if (
-        error instanceof Error &&
-        error.message.includes("storage operation exceeded timeout")
-      ) {
-        logger.warn("UserSync alarm interrupted by DO storage timeout", {
+      // DO resets are transient Cloudflare platform errors. The DO resets
+      // and will retry on the next notification — not actionable, so log
+      // as warning only. Timings show which step was in flight when the
+      // reset hit.
+      if (isTransientDoResetError(error)) {
+        logger.warn("UserSync alarm interrupted by DO reset", {
           user_id: this.userId,
           in_flight_step: currentStep,
           ...timings,
