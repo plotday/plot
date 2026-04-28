@@ -264,48 +264,69 @@ async function runRouter(
     channels.map((ch) => [ch.pk, ch.current_default_priority_id])
   );
 
+  // Per-channel transactions: apply_channel_default re-files every candidate
+  // thread for one channel and can exceed statement_timeout (30s) for users
+  // with many threads on a single channel. Wrapping each channel in its own
+  // transaction keeps one slow channel from rolling back every other update.
   let changed = 0;
-  await withUserDb(db, userId, async (trx) => {
-    for (const r of results) {
-      const channelPk = Math.trunc(r.channelPk);
-      if (!Number.isFinite(channelPk) || !currentByPk.has(channelPk)) continue;
+  let firstError: Error | null = null;
+  let failedCount = 0;
+  for (const r of results) {
+    const channelPk = Math.trunc(r.channelPk);
+    if (!Number.isFinite(channelPk) || !currentByPk.has(channelPk)) continue;
 
-      const currentId = currentByPk.get(channelPk) ?? null;
-      const nextId =
-        r.priorityId && validPriorityIds.has(r.priorityId)
-          ? r.priorityId
-          : null;
-      const reason = (r.reason ?? "").slice(0, 500) || null;
-      const priorityChanged = nextId !== currentId;
+    const currentId = currentByPk.get(channelPk) ?? null;
+    const nextId =
+      r.priorityId && validPriorityIds.has(r.priorityId)
+        ? r.priorityId
+        : null;
+    const reason = (r.reason ?? "").slice(0, 500) || null;
+    const priorityChanged = nextId !== currentId;
 
-      if (!priorityChanged) {
+    try {
+      await withUserDb(db, userId, async (trx) => {
+        if (!priorityChanged) {
+          await sql`
+            UPDATE public.channel
+            SET default_priority_reason = ${reason}
+            WHERE id = ${channelPk}::bigint
+              AND (default_priority_reason IS DISTINCT FROM ${reason})
+          `.execute(trx);
+          return;
+        }
+
         await sql`
           UPDATE public.channel
-          SET default_priority_reason = ${reason}
+          SET default_priority_id = ${nextId}::uuid,
+              default_priority_reason = ${reason}
           WHERE id = ${channelPk}::bigint
-            AND (default_priority_reason IS DISTINCT FROM ${reason})
         `.execute(trx);
-        continue;
-      }
-
-      await sql`
-        UPDATE public.channel
-        SET default_priority_id = ${nextId}::uuid,
-            default_priority_reason = ${reason}
-        WHERE id = ${channelPk}::bigint
-      `.execute(trx);
-      await rpc(trx, "apply_channel_default", { p_channel_id: channelPk });
-      changed++;
+        await rpc(trx, "apply_channel_default", { p_channel_id: channelPk });
+      });
+      if (priorityChanged) changed++;
+    } catch (error) {
+      failedCount++;
+      if (!firstError) firstError = error as Error;
+      logger.error(
+        "ChannelRouter per-channel update failed",
+        error as Error,
+        { user_id: userId, channel_pk: channelPk }
+      );
     }
-  });
+  }
 
   logger.info("ChannelRouter run complete", {
     user_id: userId,
     channels_evaluated: channels.length,
     priorities_available: priorities.length,
     channels_changed: changed,
+    channels_failed: failedCount,
     duration_ms: Date.now() - start,
   });
+
+  // Surface the first per-channel failure so the alarm catch captures it to
+  // PostHog. Other channels' work has already committed.
+  if (firstError) throw firstError;
 }
 
 async function callLlm(
