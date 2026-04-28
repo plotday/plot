@@ -558,6 +558,8 @@ class NewThreadPageState extends State<NewThreadPage> {
       selectedValue: state.draft.priority,
       prompt: 'Select priority',
       onAdd: (ctx) => createPriorityInline(ctx, parent: state.draft.priority),
+      filter: (priority, search) =>
+          priority.title.toLowerCase().contains(search),
     );
     if (!result.present) return;
     final picked = result.value;

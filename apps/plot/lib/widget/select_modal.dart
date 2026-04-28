@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:drift/drift.dart' show Value;
@@ -61,6 +63,7 @@ class SelectModal<T> extends Modal {
     this.onRefreshNeeded,
     this.showFilter,
     this.onAdd,
+    this.filter,
     super.key,
   }) : super(
          padding: const EdgeInsets.all(0),
@@ -77,6 +80,7 @@ class SelectModal<T> extends Modal {
            onRefreshNeeded: onRefreshNeeded,
            showFilter: showFilter,
            onAdd: onAdd,
+           filter: filter,
          ),
        );
 
@@ -130,6 +134,13 @@ class SelectModal<T> extends Modal {
   /// If the callback returns a non-null value, the modal closes with that value selected.
   final Future<T?> Function(BuildContext context)? onAdd;
 
+  /// Optional predicate for client-side filtering. When provided, after the
+  /// initial empty-search fetch populates the cache, subsequent keystrokes
+  /// filter the cached items locally (case-insensitive `search` is supplied
+  /// pre-lowercased and trimmed) instead of re-running [items]. The fetch is
+  /// only re-issued when the search text is cleared.
+  final bool Function(T item, String search)? filter;
+
   /// Show the select modal and return the selected value wrapped in Value,
   /// or Value.absent() if cancelled.
   static Future<Value<T>> open<T>(
@@ -146,6 +157,7 @@ class SelectModal<T> extends Modal {
     void Function(Future<void> Function() refresh)? onRefreshNeeded,
     bool? showFilter,
     Future<T?> Function(BuildContext context)? onAdd,
+    bool Function(T item, String search)? filter,
   }) async {
     // Open the modal immediately; items are fetched asynchronously so the
     // modal appears instantly and a spinner is shown below the list while
@@ -162,6 +174,7 @@ class SelectModal<T> extends Modal {
       onRefreshNeeded: onRefreshNeeded,
       showFilter: showFilter,
       onAdd: onAdd,
+      filter: filter,
     ).show<T>(context);
 
     return result;
@@ -182,6 +195,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.onRefreshNeeded,
     this.showFilter,
     this.onAdd,
+    this.filter,
   });
 
   final Future<List<SelectGroup<T>>> Function(String? search) items;
@@ -197,6 +211,7 @@ class _SelectModal<T> extends StatefulWidget {
   final void Function(Future<void> Function() refresh)? onRefreshNeeded;
   final bool? showFilter;
   final Future<T?> Function(BuildContext context)? onAdd;
+  final bool Function(T item, String search)? filter;
 
   @override
   _SelectModalState<T> createState() => _SelectModalState<T>();
@@ -218,6 +233,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   bool _enterHandled =
       false; // Prevents double-fire between Shortcuts and onSubmit
   int? _loadingIndex;
+  Timer? _spinnerDelay;
+  Future<void>? _lastFetch;
+  // Trimmed search text whose results are currently displayed. Used to flush
+  // any in-flight fetch on Enter so we activate against fresh results.
+  String _appliedSearch = '';
+
+  static const _spinnerDelayDuration = Duration(milliseconds: 150);
 
   @override
   void initState() {
@@ -232,6 +254,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
           .where((group) => group.items.isNotEmpty || group.infoBuilder != null)
           .toList();
       _emptySearchCache = _groups;
+      _appliedSearch = '';
       final totalItems = _groups.fold<int>(
         0,
         (sum, group) => sum + group.items.length,
@@ -254,12 +277,13 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     // Clear cache to force re-fetch on refresh
     _emptySearchCache = null;
     _isRefreshing = true;
-    _initItems();
+    await _runFetch();
   }
 
   @override
   void dispose() {
     _isDisposed = true;
+    _spinnerDelay?.cancel();
     _listFocusNode.dispose();
     _scrollController.dispose();
     _controller.dispose();
@@ -315,10 +339,95 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   }
 
   void _initItems() {
-    _fetchItems();
+    final trimmedText = _controller.text.trim();
+
+    // Local-filter fast path: if the caller provided `filter` and the empty
+    // search has populated the cache, filter in-memory and skip the data
+    // source entirely. Empty search falls through so the cache hit path in
+    // _fetchItems re-uses the cached groups synchronously.
+    if (trimmedText.isNotEmpty &&
+        widget.filter != null &&
+        _emptySearchCache != null) {
+      _applyLocalFilter(trimmedText);
+      return;
+    }
+
+    _runFetch();
   }
 
-  void _fetchItems() async {
+  /// Kicks off a fetch and stores its Future so [_flushPendingSearch] can
+  /// await the in-flight request before Enter activates an item.
+  Future<void> _runFetch() {
+    return _lastFetch = _fetchItems();
+  }
+
+  /// Awaits any in-flight fetch and, if the search text moved past it
+  /// (user typed more, or the cache was bypassed), kicks a fresh fetch
+  /// before returning. Ensures Enter acts on results that match the
+  /// fully-typed text.
+  Future<void> _flushPendingSearch() async {
+    while (_lastFetch != null) {
+      final fut = _lastFetch;
+      await fut;
+      if (_isDisposed) return;
+      if (identical(fut, _lastFetch)) break;
+      // A newer fetch was kicked off while we awaited — settle it too.
+    }
+    if (_isDisposed) return;
+    final pending = _controller.text.trim();
+    if (pending == _appliedSearch) return;
+    if (pending.isNotEmpty &&
+        widget.filter != null &&
+        _emptySearchCache != null) {
+      _applyLocalFilter(pending);
+      return;
+    }
+    await _runFetch();
+  }
+
+  void _applyLocalFilter(String search) {
+    // Local filtering supersedes any in-flight fetch.
+    _spinnerDelay?.cancel();
+    ++_requestId;
+
+    final lower = search.toLowerCase();
+    final filtered = _emptySearchCache!
+        .map(
+          (g) => SelectGroup<T>(
+            title: g.title,
+            items: g.items.where((it) => widget.filter!(it, lower)).toList(),
+            infoBuilder: g.infoBuilder,
+            hint: g.hint,
+            onActivate: g.onActivate,
+          ),
+        )
+        .where((g) {
+          if (g.items.isNotEmpty) return true;
+          if (g.infoBuilder == null) return false;
+          return g.infoBuilder!(context) != null;
+        })
+        .toList();
+
+    setState(() {
+      _isLoading = false;
+      _error = null;
+      _groups = filtered;
+      _appliedSearch = search;
+      final totalItems = _groups.fold<int>(
+        0,
+        (sum, group) => sum + group.items.length,
+      );
+      final hasInfoOnly = _groups.any(
+        (g) => g.items.isEmpty && g.infoBuilder != null,
+      );
+      if (totalItems == 0 && !hasInfoOnly) {
+        _error = widget.emptyMessage ?? 'No matches';
+      }
+      _updateHighlightedIndex();
+    });
+  }
+
+  Future<void> _fetchItems() async {
     final refreshing = _isRefreshing;
     _isRefreshing = false;
     try {
@@ -326,12 +435,14 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
       final trimmedText = _controller.text.trim();
       final searchText = trimmedText.isEmpty ? null : trimmedText;
 
-      // Use cached results for empty search if available (no debounce needed)
+      // Use cached results for empty search if available (instant, no spinner)
       if (searchText == null && _emptySearchCache != null) {
+        _spinnerDelay?.cancel();
         setState(() {
           _error = null;
           _isLoading = false;
           _groups = _emptySearchCache!;
+          _appliedSearch = '';
           final totalItems = _groups.fold<int>(
             0,
             (sum, group) => sum + group.items.length,
@@ -347,12 +458,17 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         return;
       }
 
-      // Show the spinner above any existing results; results stay visible
-      // until the new ones arrive so the list doesn't flicker on every keystroke.
-      setState(() {
-        _isLoading = true;
-        _error = null;
-      });
+      // Only show the spinner on a cold load (no existing results to display).
+      // Once we have results, every keystroke just keeps showing the prior list
+      // until the new one arrives — no flicker, no per-keystroke spinner. The
+      // spinner is also deferred so fast cold loads don't flash.
+      if (_groups.isEmpty && _error == null) {
+        _spinnerDelay?.cancel();
+        _spinnerDelay = Timer(_spinnerDelayDuration, () {
+          if (_isDisposed) return;
+          setState(() => _isLoading = true);
+        });
+      }
 
       final currentRequestId = ++_requestId;
 
@@ -362,6 +478,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
 
       // Discard stale results
       if (currentRequestId != _requestId) return;
+
+      _spinnerDelay?.cancel();
 
       setState(() {
         _error = null;
@@ -379,6 +497,8 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         if (searchText == null) {
           _emptySearchCache = _groups;
         }
+
+        _appliedSearch = trimmedText;
 
         // Calculate total items across all groups
         final totalItems = _groups.fold<int>(
@@ -405,6 +525,7 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
         Tracker.captureException(e, t);
       }
       if (!_isDisposed) {
+        _spinnerDelay?.cancel();
         setState(() {
           _error = 'Loading failed.';
           _isLoading = false;
@@ -545,11 +666,19 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     });
   }
 
-  void _handleEnter() {
+  Future<void> _handleEnter() async {
     if (_enterHandled) return;
     _enterHandled = true;
     // Reset flag after microtask to allow future Enter presses
     Future.microtask(() => _enterHandled = false);
+
+    // If the user typed quickly and pressed Enter before the latest fetch
+    // returned, settle that fetch (and any successor) so we activate against
+    // results that match the fully-typed text.
+    if (_controller.text.trim() != _appliedSearch || _lastFetch != null) {
+      await _flushPendingSearch();
+    }
+    if (!mounted) return;
 
     final totalDisplay = _getTotalDisplayCount();
     if (_highlightedIndex < 0 || _highlightedIndex >= totalDisplay) return;
@@ -604,7 +733,9 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
   @override
   Widget build(BuildContext context) {
     Widget? loadingIndicator;
-    if (_isLoading) {
+    // Only render the spinner during a cold load (no cached results yet).
+    // Once the empty-search cache is populated, keystrokes never re-show it.
+    if (_isLoading && _emptySearchCache == null) {
       loadingIndicator = Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(

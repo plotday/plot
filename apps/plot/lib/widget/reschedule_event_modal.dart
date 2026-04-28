@@ -77,6 +77,8 @@ class _RescheduleEventModalState extends State<RescheduleEventModal> {
       selectedValue: _selectedPriority,
       prompt: 'Priority',
       onAdd: (ctx) => createPriorityInline(ctx, parent: _selectedPriority),
+      filter: (priority, search) =>
+          priority.title.toLowerCase().contains(search),
     );
 
     if (result.present) {
