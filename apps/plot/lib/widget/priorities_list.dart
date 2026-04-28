@@ -533,7 +533,7 @@ class _PrioritiesListState extends State<PrioritiesList>
                     command: CommandWrapper(
                       NewPriority(parent: widget.root),
                       icon: Value(null),
-                      title: 'Add a Priority',
+                      title: 'Add a priority',
                     ),
                     icon: PlotIcon.add,
                     iconOnly: true,
