@@ -304,6 +304,10 @@ export interface Group {
   created_by: string;
   id: Generated<string>;
   join_policy: Generated<GroupJoinPolicy>;
+  /**
+   * Stable identifier for system-managed groups (e.g. '@plot.team'). Drives special-cased visibility in the user.group view. Nullable; user-created groups have no key.
+   */
+  key: string | null;
   name: string;
   team_id: Int8 | null;
   type: Generated<GroupType>;
@@ -930,6 +934,7 @@ export interface TwistInstanceConnection {
   initial_sync_started_at: Timestamp | null;
   needs_reauth_at: Timestamp | null;
   provider: string;
+  recovery_pending: Generated<boolean>;
   twist_instance_id: string;
   user_id: string;
 }
@@ -1140,6 +1145,7 @@ export interface UserActor {
   email: string | null;
   id: string | null;
   inviteable: boolean | null;
+  linked_user_id: string | null;
   name: string | null;
   primary: boolean | null;
   self: boolean | null;

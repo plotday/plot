@@ -71,7 +71,7 @@ export class Storage extends DurableObject {
 
   list(prefix: string): string[] {
     const results = this.sql.exec(
-      "SELECT key FROM store WHERE key LIKE ?",
+      "SELECT key FROM store WHERE key LIKE ? AND key NOT LIKE '__lock__:%'",
       `${prefix}%`
     );
     return [...results].map((r) => r.key as string);
@@ -83,5 +83,43 @@ export class Storage extends DurableObject {
 
   clearAll() {
     this.sql.exec("DELETE FROM store");
+  }
+
+  /**
+   * Atomic check-and-set lock acquisition. DO method invocations are
+   * serialized, so the read-then-write here is race-free.
+   *
+   * Returns true if the lock was acquired (caller must call releaseLock or
+   * wait for expiry). Returns false if a non-expired lock already exists.
+   * Locks live under a reserved `__lock__:` prefix so list("") / get() never
+   * surface them.
+   *
+   * @param key User-visible lock key (transparently namespaced internally).
+   * @param ttlMs Lease duration. Lock auto-expires after this many ms even
+   *   if releaseLock is never called — protects against orphaned locks
+   *   when a sync crashes.
+   */
+  acquireLock(key: string, ttlMs: number): boolean {
+    const lockKey = `__lock__:${key}`;
+    const now = Date.now();
+    const existing = this.sql
+      .exec("SELECT value FROM store WHERE key = ?", [lockKey])
+      .next();
+    if (!existing.done) {
+      const expiresAt = parseInt(existing.value.value as string, 10);
+      if (Number.isFinite(expiresAt) && expiresAt > now) {
+        return false;
+      }
+    }
+    this.sql.exec(
+      `INSERT INTO store (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      lockKey,
+      String(now + ttlMs)
+    );
+    return true;
+  }
+
+  releaseLock(key: string): void {
+    this.sql.exec("DELETE FROM store WHERE key = ?", `__lock__:${key}`);
   }
 }

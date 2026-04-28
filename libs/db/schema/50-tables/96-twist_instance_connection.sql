@@ -12,6 +12,12 @@ CREATE TABLE "public"."twist_instance_connection" (
     -- (initial_sync_started_at IS NOT NULL AND initial_sync_completed_at IS NULL).
     "initial_sync_started_at" timestamptz NULL,
     "initial_sync_completed_at" timestamptz NULL,
+    -- Set by the runtime when a queued connector callback fails with an
+    -- auth-related error, or after re-auth. The next `onChannelEnabled`
+    -- dispatch (from any path: user toggle, refresh, recovery) reads this
+    -- and automatically passes `recovering: true` in the SyncContext, then
+    -- clears the flag. Connectors do not need to read or write this.
+    "recovery_pending" boolean NOT NULL DEFAULT false,
     PRIMARY KEY ("twist_instance_id", "user_id", "provider")
 );
 

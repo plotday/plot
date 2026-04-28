@@ -7,9 +7,12 @@ describe("Store", () => {
   let mockStorage: any;
   let storageData: Map<string, string>;
 
+  let lockData: Map<string, number>;
+
   beforeEach(() => {
     // Create a simple in-memory storage mock
     storageData = new Map();
+    lockData = new Map();
 
     mockStorage = {
       get: vi.fn((key: string) => storageData.get(key) ?? null),
@@ -21,6 +24,17 @@ describe("Store", () => {
       }),
       clearAll: vi.fn(() => {
         storageData.clear();
+        lockData.clear();
+      }),
+      acquireLock: vi.fn((key: string, ttlMs: number) => {
+        const now = Date.now();
+        const expiresAt = lockData.get(key);
+        if (expiresAt !== undefined && expiresAt > now) return false;
+        lockData.set(key, now + ttlMs);
+        return true;
+      }),
+      releaseLock: vi.fn((key: string) => {
+        lockData.delete(key);
       }),
     };
 
@@ -230,6 +244,45 @@ describe("Store", () => {
 
       expect(result1).toBeNull();
       expect(result2).toBeNull();
+    });
+  });
+
+  describe("acquireLock / releaseLock", () => {
+    it("acquires a free lock", async () => {
+      const acquired = await store.acquireLock("sync_x", 60_000);
+      expect(acquired).toBe(true);
+    });
+
+    it("rejects a second acquirer while a lease is held", async () => {
+      expect(await store.acquireLock("sync_x", 60_000)).toBe(true);
+      expect(await store.acquireLock("sync_x", 60_000)).toBe(false);
+    });
+
+    it("releases the lock so a fresh caller can acquire", async () => {
+      await store.acquireLock("sync_x", 60_000);
+      await store.releaseLock("sync_x");
+      expect(await store.acquireLock("sync_x", 60_000)).toBe(true);
+    });
+
+    it("treats expired leases as free", async () => {
+      const realDateNow = Date.now;
+      let now = 1_000_000;
+      Date.now = () => now;
+      try {
+        expect(await store.acquireLock("sync_x", 1_000)).toBe(true);
+        // Still locked at +500ms
+        now += 500;
+        expect(await store.acquireLock("sync_x", 1_000)).toBe(false);
+        // Expired at +1500ms — re-acquirable
+        now += 1_000;
+        expect(await store.acquireLock("sync_x", 1_000)).toBe(true);
+      } finally {
+        Date.now = realDateNow;
+      }
+    });
+
+    it("releaseLock on a key that was never acquired is a no-op", async () => {
+      await expect(store.releaseLock("never-acquired")).resolves.toBeUndefined();
     });
   });
 });

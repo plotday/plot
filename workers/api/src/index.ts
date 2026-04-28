@@ -52,6 +52,7 @@ import { dbMiddleware } from "./middleware/db";
 import { withDb } from "./db";
 import { syncUserTwistStats } from "./utils/twist-stats";
 import { refreshAllChannels } from "./scheduled/refresh-channels";
+import { recoverPendingConnections } from "./scheduled/recover-pending-connections";
 // Import webhook routes
 import webhook from "./webhook";
 // Import rate limiting middleware
@@ -316,11 +317,26 @@ async function scheduled(
     );
   }
 
+  // Periodic sweep (every 30 min): synthesize recovery dispatches for
+  // connections flagged `recovery_pending = true` whose auth has been
+  // repaired. Backstop for cases where the onAuth recovery dispatch was
+  // expected to fire on re-auth but didn't (queue exhaustion, DO timeout,
+  // worker crash). Without this, an affected connection would stay stuck
+  // until the user toggled a channel.
+  const scheduledTime = new Date(event.scheduledTime);
+  const scheduledMinutes = scheduledTime.getUTCMinutes();
+  if (scheduledMinutes < 5 || (scheduledMinutes >= 30 && scheduledMinutes < 35)) {
+    try {
+      await recoverPendingConnections(env, _ctx);
+    } catch (error) {
+      logger.error("Error in recovery sweep", error as Error);
+    }
+  }
+
   // Daily sweep: re-discover external channels for every active connection so
   // newly-created Slack channels / Airtable bases / Linear projects show up
   // automatically. When the per-connection auto-enable flag is on, new
   // channels are also enabled in the same call.
-  const scheduledTime = new Date(event.scheduledTime);
   if (scheduledTime.getUTCHours() === 5 && scheduledTime.getUTCMinutes() < 5) {
     try {
       await refreshAllChannels(env, _ctx);

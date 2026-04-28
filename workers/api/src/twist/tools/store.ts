@@ -61,4 +61,12 @@ export class Store extends Tool implements IStore {
   async clearAll() {
     await this.storage.clearAll();
   }
+
+  async acquireLock(key: string, ttlMs: number): Promise<boolean> {
+    return await this.storage.acquireLock(key, ttlMs);
+  }
+
+  async releaseLock(key: string): Promise<void> {
+    await this.storage.releaseLock(key);
+  }
 }

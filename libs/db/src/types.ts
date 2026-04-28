@@ -2233,6 +2233,7 @@ export type Database = {
           initial_sync_started_at: string | null
           needs_reauth_at: string | null
           provider: string
+          recovery_pending: boolean
           twist_instance_id: string
           user_id: string
         }
@@ -2243,6 +2244,7 @@ export type Database = {
           initial_sync_started_at?: string | null
           needs_reauth_at?: string | null
           provider: string
+          recovery_pending?: boolean
           twist_instance_id: string
           user_id: string
         }
@@ -2253,6 +2255,7 @@ export type Database = {
           initial_sync_started_at?: string | null
           needs_reauth_at?: string | null
           provider?: string
+          recovery_pending?: boolean
           twist_instance_id?: string
           user_id?: string
         }
