@@ -469,6 +469,7 @@ export type Database = {
           created_by: string
           id: string
           join_policy: Database["public"]["Enums"]["group_join_policy"]
+          key: string | null
           name: string
           team_id: number | null
           type: Database["public"]["Enums"]["group_type"]
@@ -483,6 +484,7 @@ export type Database = {
           created_by: string
           id?: string
           join_policy?: Database["public"]["Enums"]["group_join_policy"]
+          key?: string | null
           name: string
           team_id?: number | null
           type?: Database["public"]["Enums"]["group_type"]
@@ -497,6 +499,7 @@ export type Database = {
           created_by?: string
           id?: string
           join_policy?: Database["public"]["Enums"]["group_join_policy"]
+          key?: string | null
           name?: string
           team_id?: number | null
           type?: Database["public"]["Enums"]["group_type"]

@@ -47,6 +47,11 @@ WHERE
     g.archived_at IS NULL
     AND (
         g.type IN ('public', 'announce')
+        -- Key-identified broadcast groups: visible to every user so they can
+        -- address them as recipients (e.g. submitting feedback to Plot Team).
+        -- Membership and thread-receiving semantics are unchanged — non-members
+        -- still don't see existing threads sent to the group.
+        OR g.key = '@plot.team'
         OR (g.type = 'team' AND EXISTS (
             SELECT 1 FROM team_user tu
             WHERE tu.team_id = g.team_id AND tu.user_id = u.id

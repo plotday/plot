@@ -10,7 +10,9 @@ CREATE TABLE "public"."group" (
     "created_by" uuid NOT NULL REFERENCES public."user" ("id") ON DELETE CASCADE,
     "auto_maintained" boolean NOT NULL DEFAULT FALSE,
     "auto_team_admin_team_id" bigint REFERENCES team ON DELETE CASCADE,
-    "auto_publisher_id" bigint REFERENCES publisher ON DELETE CASCADE
+    "auto_publisher_id" bigint REFERENCES publisher ON DELETE CASCADE,
+    "key" text,
+    CONSTRAINT group_key_unique UNIQUE ("key")
 );
 
 CREATE INDEX idx_group_team_id ON "public"."group" ("team_id")
@@ -53,6 +55,7 @@ CREATE TRIGGER set_group_created_at
 
 COMMENT ON TABLE "public"."group" IS 'Named groups of contacts. Groups can be added to threads for dynamic visibility — adding a member retroactively grants access to all threads the group is on.';
 COMMENT ON COLUMN "public"."group"."auto_maintained" IS 'TRUE for system-managed groups (Everyone, team groups). Membership is maintained by triggers and cannot be modified via API.';
+COMMENT ON COLUMN "public"."group"."key" IS 'Stable identifier for system-managed groups (e.g. ''@plot.team''). Drives special-cased visibility in the user.group view. Nullable; user-created groups have no key.';
 
 CREATE TABLE "public"."group_member" (
     "group_id" uuid NOT NULL REFERENCES "group" ON DELETE CASCADE,

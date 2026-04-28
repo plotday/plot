@@ -17,8 +17,15 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    INSERT INTO "group" (name, type, team_id, created_by, auto_maintained)
-    VALUES (NEW.name || ' Team', 'team', NEW.id, v_first_admin_id, TRUE)
+    INSERT INTO "group" (name, type, team_id, created_by, auto_maintained, key)
+    VALUES (
+        NEW.name || ' Team',
+        'team',
+        NEW.id,
+        v_first_admin_id,
+        TRUE,
+        CASE WHEN NEW.name = 'Plot' THEN '@plot.team' ELSE NULL END
+    )
     ON CONFLICT DO NOTHING;
 
     RETURN NEW;
@@ -54,8 +61,14 @@ BEGIN
     WHERE team_id = v_team_id AND auto_maintained = TRUE AND auto_team_admin_team_id IS NULL;
 
     IF v_group_id IS NULL AND TG_OP != 'DELETE' THEN
-        INSERT INTO "group" (name, type, team_id, created_by, auto_maintained)
-        SELECT t.name || ' Team', 'team', t.id, v_user_id, TRUE
+        INSERT INTO "group" (name, type, team_id, created_by, auto_maintained, key)
+        SELECT
+            t.name || ' Team',
+            'team',
+            t.id,
+            v_user_id,
+            TRUE,
+            CASE WHEN t.name = 'Plot' THEN '@plot.team' ELSE NULL END
         FROM team t WHERE t.id = v_team_id
         ON CONFLICT DO NOTHING
         RETURNING id INTO v_group_id;

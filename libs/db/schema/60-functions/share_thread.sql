@@ -120,21 +120,23 @@ BEGIN
         WHERE g.archived_at IS NULL
     LOOP
         IF v_group.type = 'announce' THEN
+            -- Announce groups stay admin-only post (existing inverted role:
+            -- everyone receives, only admins broadcast).
             IF NOT EXISTS (
                 SELECT 1 FROM group_admin
                 WHERE group_id = v_group.id AND user_id = p_user_id
             ) THEN
                 RAISE EXCEPTION 'Only admins can add announce groups to threads';
             END IF;
-        ELSIF v_group.type IN ('private', 'team') THEN
+        ELSE
+            -- Anyone with picker visibility can address the group. Drives off
+            -- the same user.group view that decides whether the chip renders,
+            -- so "can see it" and "can post to it" are the same gate. Posting
+            -- never grants the poster read access to existing threads — only
+            -- members receive what's sent (via file_thread_priority_for_group_members).
             IF NOT EXISTS (
-                SELECT 1 FROM group_admin
-                WHERE group_id = v_group.id AND user_id = p_user_id
-            ) AND NOT EXISTS (
-                SELECT 1 FROM group_member gm
-                JOIN user_contact uc ON uc.contact_id = gm.contact_id
-                    AND uc.linked = TRUE AND uc.archived_at IS NULL
-                WHERE gm.group_id = v_group.id AND uc.user_id = p_user_id
+                SELECT 1 FROM "user"."group" ug
+                WHERE ug.user_id = p_user_id AND ug.id = v_group.id
             ) THEN
                 RAISE EXCEPTION 'User does not have permission to add this group';
             END IF;
