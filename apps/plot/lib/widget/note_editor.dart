@@ -1502,10 +1502,12 @@ class NoteEditorState extends State<NoteEditor> {
     _finalized = true;
 
     // Store generous preview from body content for client-side display
-    // and server-side AI title generation. Title is left null — the client
-    // derives displayTitle from preview, and the server generates an AI
-    // title on sync.
+    // and server-side AI title generation. Title is left null when the user
+    // hasn't set one — the client derives displayTitle from preview, and the
+    // server generates an AI title on sync. If the user set a title via the
+    // title modal, preserve it and use the body as the preview.
     final previewContent = body.trim().isEmpty ? null : body.trim();
+    final existingTitle = widget.thread!.title;
     log.info('Finalizing draft with preview-based title');
 
     // Apply "Do Now" scheduling only if Cmd-Enter (alt) was used
@@ -1514,7 +1516,7 @@ class NoteEditorState extends State<NoteEditor> {
 
     // Create Thread — title null signals server to generate AI title
     final thread = widget.thread!.copyWith(
-      title: const Value(null),
+      title: Value(existingTitle),
       preview: Value(previewContent),
       draft: false,
       on: shouldSchedule && !hasDateTime
