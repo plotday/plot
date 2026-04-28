@@ -14,10 +14,14 @@ class SettingsBloc extends Cubit<SettingsState> {
 
   /// Initialize by loading from database and watching for changes
   Future<void> _init() async {
-    // Load initial settings
+    // SettingsBloc is provided at app root and constructed lazily on first
+    // watch. If a sign-out fires while a settings-watching widget is still
+    // in the tree, that lazy first watch would otherwise crash on
+    // [Base.userId] inside [UserSettingsEntity.get]/[watch].
+    if (!Base.signedIn) return;
+
     await _loadFromDatabase();
 
-    // Watch for changes from other devices
     UserSettingsEntity.watch().listen((settings) {
       if (settings != null) {
         _updateFromDatabase(settings);
@@ -27,6 +31,7 @@ class SettingsBloc extends Cubit<SettingsState> {
 
   /// Load settings from the database
   Future<void> _loadFromDatabase() async {
+    if (!Base.signedIn) return;
     final settings = await UserSettingsEntity.get();
     if (settings != null) {
       _updateFromDatabase(settings);

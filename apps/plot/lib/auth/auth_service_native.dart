@@ -192,24 +192,6 @@ class ClerkDartAuthService implements AuthService {
     await _auth.initialize().timeout(const Duration(seconds: 10));
   }
 
-  /// Re-initialise Clerk WITHOUT deleting the cache file.
-  ///
-  /// When the app has been suspended by macOS for a long time, the in-memory
-  /// client token can go stale while the persisted session is still valid on
-  /// Clerk's backend. Terminating and re-initialising forces the SDK to go
-  /// through its normal startup flow (read cache → createClient → POST if GET
-  /// fails), which obtains a fresh client token and rediscovers the session.
-  Future<void> _softReinitialize() async {
-    _auth.terminate();
-
-    final cacheDir = await _getClerkCacheDirectory(_profile);
-    final persistor = clerk.DefaultPersistor(
-      getCacheDirectory: () async => cacheDir,
-    );
-    _auth = _buildAuth(persistor);
-    await _auth.initialize().timeout(const Duration(seconds: 10));
-  }
-
   @override
   bool get isSignedIn => _auth.isSignedIn;
 
@@ -235,49 +217,23 @@ class ClerkDartAuthService implements AuthService {
     } on clerk.ClerkError catch (e) {
       log.warning('Session token request failed (ClerkError): $e');
 
-      // Clerk 5xx = transient server error, not a dead session.
-      if (e.code == clerk.ClerkErrorCode.serverErrorResponse) {
-        return (token: null, failure: TokenFailureReason.networkError);
-      }
-
-      // Clerk returned a definitive error. Try recovery via refreshClient.
+      // The only authoritative "session is dead" signal is
+      // `authentication_invalid` / `signed_out` from a Clerk server error
+      // response. `_PlotClerkAuth.handleError` detects those codes and fires
+      // [sessionInvalidatedStream], which triggers force-sign-out
+      // independently. Every other ClerkError (timeouts, transient SDK state
+      // loss after `Auth.initialize()` wipes the cached session, etc.) is
+      // treated as transient — the existing retry-with-backoff in
+      // `Store._handleAuthError` keeps trying and the next successful
+      // `_clientTimer` poll can recover state.
       try {
         log.info('Attempting session recovery via refreshClient');
         await _auth.refreshClient();
         final token = await _auth.sessionToken();
         log.info('Session recovery succeeded');
         return (token: token.jwt, failure: null);
-      } on clerk.ClerkError catch (recoveryError) {
-        // Recovery also got a ClerkError — if it's not a server error,
-        // the session is definitively dead.
-        if (recoveryError.code == clerk.ClerkErrorCode.serverErrorResponse) {
-          return (token: null, failure: TokenFailureReason.networkError);
-        }
-
-        // refreshClient uses the same (possibly stale) client token, so it
-        // can silently fail when macOS has suspended the app for a long time.
-        // Re-initialise Clerk from scratch: this creates a fresh client token
-        // and re-reads the persisted session, recovering the session if it is
-        // still valid on Clerk's backend.
-        try {
-          log.info(
-            'refreshClient failed, attempting full re-initialisation',
-          );
-          await _softReinitialize();
-          if (_auth.isSignedIn) {
-            final token = await _auth.sessionToken();
-            log.info('Session recovery via re-initialisation succeeded');
-            return (token: token.jwt, failure: null);
-          }
-        } catch (reinitError) {
-          log.warning('Re-initialisation recovery failed: $reinitError');
-        }
-
-        log.warning('Session recovery failed (ClerkError): $recoveryError');
-        return (token: null, failure: TokenFailureReason.sessionInvalid);
       } catch (recoveryError) {
-        // Network error during recovery — transient.
-        log.warning('Session recovery failed (network): $recoveryError');
+        log.warning('Session recovery failed: $recoveryError');
         return (token: null, failure: TokenFailureReason.networkError);
       }
     } catch (e) {

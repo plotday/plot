@@ -652,7 +652,13 @@ class Store extends _$Store {
     // If sessionInvalid, Base will sign out — no retry needed.
     if (result.failure == TokenFailureReason.sessionInvalid) return;
 
-    // Network error or stale-token race — schedule retry with backoff.
+    _scheduleAuthRetry();
+  }
+
+  /// Schedule a future `_startSync` with exponential backoff (capped at 5
+  /// minutes). Used when a sync attempt couldn't get an auth token but the
+  /// session isn't definitively dead.
+  static void _scheduleAuthRetry() {
     _syncRetryCount++;
     final delaySec = min(30 * _syncRetryCount, 300);
     log.warning(
@@ -1854,9 +1860,20 @@ class Store extends _$Store {
       await _waitForNetworkConnectivity();
 
       final tokenResult = await Base.getSessionTokenWithReason();
-      if (tokenResult.failure == TokenFailureReason.sessionInvalid) {
-        log.warning('Session invalid before sync — skipping sync');
+      if (tokenResult.failure != null) {
         Base.handleTokenResult(tokenResult);
+        if (tokenResult.failure == TokenFailureReason.sessionInvalid) {
+          log.warning('Session invalid before sync — skipping sync');
+        } else {
+          log.warning(
+            'No session token before sync — skipping and scheduling retry',
+          );
+          _scheduleAuthRetry();
+        }
+        // Token-failure early-return: reset _isSyncing so the scheduled
+        // retry (or any other caller) can actually run. The success path
+        // intentionally leaves _isSyncing true for _startSyncDeferred.
+        _isSyncing = false;
         return;
       }
 
@@ -1929,9 +1946,16 @@ class Store extends _$Store {
       // Validate session before firing parallel sync requests. If the session
       // is definitively dead, bail out early instead of spamming 401s.
       final tokenResult = await Base.getSessionTokenWithReason();
-      if (tokenResult.failure == TokenFailureReason.sessionInvalid) {
-        log.warning('Session invalid before sync — skipping sync');
+      if (tokenResult.failure != null) {
         Base.handleTokenResult(tokenResult);
+        if (tokenResult.failure == TokenFailureReason.sessionInvalid) {
+          log.warning('Session invalid before sync — skipping sync');
+        } else {
+          log.warning(
+            'No session token before sync — skipping and scheduling retry',
+          );
+          _scheduleAuthRetry();
+        }
         return;
       }
 
