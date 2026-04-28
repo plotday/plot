@@ -360,7 +360,7 @@ class NoteEditorState extends State<NoteEditor> {
         final editor = Editor(
           key: _editorKey,
           hint: hint,
-          autofocus: true,
+          autofocus: widget.isNewThreadMode || hasPhysicalKeyboard(),
           focusNode: focusNode,
           twists: twists,
           actors: actors,
