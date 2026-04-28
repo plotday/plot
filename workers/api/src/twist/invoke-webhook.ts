@@ -1,9 +1,10 @@
 import { createLogger } from "@plotday/worker-util";
 
 import { createDb } from "../db";
-import type { Bindings } from "../env";
+import { type Bindings, type TwistEnvironment } from "../env";
 import { CallbackError } from "../errors";
 import type { LoadResult } from "../state/callbacks";
+import { Usage } from "../state/usage";
 import { disposeRpc } from "../utils/rpc";
 import { handleTwistOperation } from "./error-handling";
 import { twistFactory } from "./factory";
@@ -11,11 +12,13 @@ import { twistFactory } from "./factory";
 /**
  * Dispatch a webhook-style callback without holding the CallbacksState DO.
  *
- * The DO only performs the cheap part — token lookup, twist_instance
- * lifecycle checks, and the execution-quota check — via
- * `CallbacksState.validateAndLoad`. The long-running twist worker RPC
- * runs here, in the calling worker's execution context, so the DO's
- * output gate is released long before the twist callback finishes.
+ * The DO performs only a SQLite token lookup via
+ * `CallbacksState.validateAndLoad`. The twist_instance / quota / archive
+ * checks AND the long-running twist worker RPC run here in the calling
+ * worker's execution context, so the DO's output gate is released
+ * immediately. Holding the gate across Hyperdrive queries inside the DO
+ * caused Cloudflare to reset the DO under load with "Internal error in
+ * Durable Object storage caused object to be reset".
  *
  * Call sites: the WEBHOOK_QUEUE consumer (per-message dispatch), the
  * synchronous `/hook-sync/:token` route (needs the return value for the
@@ -48,24 +51,77 @@ export async function invokeWebhookCallback(
   const doId = env.CALLBACKS.idFromString(doIdHex);
   const callbacksStub = env.CALLBACKS.get(doId);
 
-  let load: LoadResult;
-  try {
-    // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
-    load = (await callbacksStub.validateAndLoad(fullToken)) as LoadResult;
-  } finally {
-    // If validateAndLoad threw we still want to drop the stub; the DO RPC
-    // runtime otherwise logs "An RPC stub was not disposed properly".
-  }
+  // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
+  const load = (await callbacksStub.validateAndLoad(fullToken)) as LoadResult;
 
   if ("__error" in load) {
     disposeRpc(callbacksStub);
     throw new CallbackError(load.type, load.context);
   }
 
-  const { callback, twistPackageId, environment } = load;
+  const { callback } = load;
 
   const db = createDb(env);
   try {
+    // Worker-side twist_instance + quota validation. Previously inside
+    // the DO; moved here so Hyperdrive RTT doesn't hold the DO's output
+    // gate.
+    const twistInstance = await db
+      .selectFrom("twist_instance")
+      .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+      .select([
+        "twist_instance.archived_at",
+        "twist_instance.suspended_at",
+        "twist.execution_limit",
+        "twist.environment",
+        "twist.twist_package_id",
+      ])
+      .where("twist_instance.id", "=", callback.twistInstanceId)
+      .executeTakeFirst();
+
+    if (!twistInstance || twistInstance.archived_at) {
+      // Orphaned callback — the twist was deleted or archived. Drop the
+      // row so it stops getting redelivered.
+      try {
+        await callbacksStub.delete(fullToken);
+      } catch {
+        // ignore — best-effort cleanup
+      }
+      disposeRpc(callbacksStub);
+      throw new CallbackError("NOT_FOUND", {
+        operation: "invokeWebhookCallback",
+        twistInstanceId: callback.twistInstanceId,
+        reason: !twistInstance
+          ? "Twist instance deleted"
+          : "Twist instance archived",
+      });
+    }
+
+    if (twistInstance.suspended_at) {
+      disposeRpc(callbacksStub);
+      throw new CallbackError("SUSPENDED", {
+        operation: "invokeWebhookCallback",
+        twistInstanceId: callback.twistInstanceId,
+        reason: "Twist processing suspended due to high usage",
+      });
+    }
+
+    const usage = Usage.Get(env, callback.twistInstanceId);
+    const withinQuota = await usage.checkExecutionQuota(
+      twistInstance.execution_limit
+    );
+    if (!withinQuota) {
+      disposeRpc(callbacksStub);
+      throw new CallbackError("SUSPENDED", {
+        operation: "invokeWebhookCallback",
+        twistInstanceId: callback.twistInstanceId,
+        reason: "Twist processing suspended due to execution quota exceeded",
+      });
+    }
+
+    const twistPackageId = twistInstance.twist_package_id;
+    const environment = twistInstance.environment as TwistEnvironment;
+
     const factory = twistFactory({ env, ctx, db });
     const twistWrapper = await factory({
       version: callback.version,

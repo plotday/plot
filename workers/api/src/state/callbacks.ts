@@ -4,7 +4,7 @@ import superjson from "superjson";
 import { createLogger } from "@plotday/worker-util";
 
 import { createDb, sql, type DB, type Kysely } from "../db";
-import { type Bindings, type TwistEnvironment } from "../env";
+import { type Bindings } from "../env";
 import { CallbackError, type CallbackErrorContext } from "../errors";
 import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
@@ -40,18 +40,16 @@ export type ResolvedCallback = {
 };
 
 /**
- * Result of validateAndLoad(): everything a worker-side caller needs to
- * construct the twist and invoke the callback outside of this DO. Keeping
- * twistFactory + twistWrapper.callCallback out of the DO prevents long
- * twist executions from blocking the DO's output gate (Cloudflare resets
- * the DO when that gate is held past the storage watchdog).
+ * Result of validateAndLoad(): the SQLite-resolved callback row. The
+ * caller (invokeWebhookCallback) does the twist_instance / quota lookup
+ * and the twist worker RPC outside this DO so the output gate is only
+ * held for the cheap SQLite read here. Cloudflare resets the DO if the
+ * gate is held past the storage watchdog (observed in production when
+ * Hyperdrive was contended).
  */
 export type LoadedCallback = {
   ok: true;
   callback: CallbackData;
-  twistId: string;
-  twistPackageId: string;
-  environment: TwistEnvironment;
 };
 
 export type LoadError = {
@@ -296,25 +294,20 @@ export class CallbacksState extends DurableObject<Bindings> {
   }
 
   /**
-   * Validate a callback token and load everything the caller needs to
-   * invoke it, without constructing the twist or calling into the twist
-   * worker. The caller (typically `invokeWebhookCallback`) runs the twist
-   * RPC outside this DO so the output gate is only held for the cheap
-   * SQLite + DB lookups here.
+   * Resolve a callback token from local SQLite. Cheap, no Hyperdrive,
+   * no cross-DO RPC. The caller (typically `invokeWebhookCallback`)
+   * handles the twist_instance / quota / archive checks and the twist
+   * worker RPC outside this DO, because doing them here held the output
+   * gate long enough that Cloudflare reset the DO under load.
    *
-   * Returns either the loaded metadata (`ok: true`) or a `__error` object.
-   * Errors are returned rather than thrown so the DO runtime does not log
-   * expected outcomes (expired / uninstalled twists) as uncaught.
-   *
-   * Side effects: deletes the callback row for `NOT_FOUND` / `EXPIRED`
-   * cases and when the twist was deleted or archived. Does NOT delete on
-   * `SUSPENDED` — the callback will be eligible again once the twist
-   * resumes.
+   * Side effects: deletes the callback row for `EXPIRED`. Cleanup for
+   * "twist deleted/archived" happens in the worker via `delete()` after
+   * the worker-side DB lookup returns.
    *
    * Takes the full `doId:token` format (the same thing `callCallback`
    * accepts).
    */
-  async validateAndLoad(fullToken: string): Promise<LoadResult> {
+  validateAndLoad(fullToken: string): LoadResult {
     if (!fullToken) {
       return {
         __error: true,
@@ -385,84 +378,7 @@ export class CallbacksState extends DurableObject<Bindings> {
       };
     }
 
-    return await this.withDb(async (db) => {
-      const twistInstance = await db
-        .selectFrom("twist_instance")
-        .innerJoin("twist", "twist.id", "twist_instance.twist_id")
-        .select([
-          "twist_instance.twist_id",
-          "twist_instance.archived_at",
-          "twist_instance.suspended_at",
-          "twist.execution_limit",
-          "twist.environment",
-          "twist.twist_package_id",
-        ])
-        .where("twist_instance.id", "=", callback.twistInstanceId)
-        .executeTakeFirst();
-
-      if (!twistInstance) {
-        this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
-        return {
-          __error: true,
-          type: "NOT_FOUND",
-          context: {
-            operation: "validateAndLoad",
-            twistInstanceId: callback.twistInstanceId,
-            reason: "Priority twist deleted",
-          },
-        };
-      }
-
-      if (twistInstance.archived_at) {
-        this.sql.exec("DELETE FROM callbacks WHERE token = ?", token);
-        return {
-          __error: true,
-          type: "NOT_FOUND",
-          context: {
-            operation: "validateAndLoad",
-            twistInstanceId: callback.twistInstanceId,
-            reason: "Priority twist archived",
-          },
-        };
-      }
-
-      if (twistInstance.suspended_at) {
-        return {
-          __error: true,
-          type: "SUSPENDED",
-          context: {
-            operation: "validateAndLoad",
-            twistInstanceId: callback.twistInstanceId,
-            reason: "Twist processing suspended due to high usage",
-          },
-        };
-      }
-
-      const usage = Usage.Get(this.env, callback.twistInstanceId);
-      const withinQuota = await usage.checkExecutionQuota(
-        twistInstance.execution_limit
-      );
-      if (!withinQuota) {
-        return {
-          __error: true,
-          type: "SUSPENDED",
-          context: {
-            operation: "validateAndLoad",
-            twistInstanceId: callback.twistInstanceId,
-            reason:
-              "Twist processing suspended due to execution quota exceeded",
-          },
-        };
-      }
-
-      return {
-        ok: true,
-        callback,
-        twistId: twistInstance.twist_id,
-        twistPackageId: twistInstance.twist_package_id,
-        environment: twistInstance.environment as TwistEnvironment,
-      };
-    });
+    return { ok: true, callback };
   }
 
   async callCallback(
