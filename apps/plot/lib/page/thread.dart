@@ -205,13 +205,19 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         return PopScope(
           canPop: false,
           onPopInvokedWithResult: (didPop, result) {
-            if (!didPop) {
-              if (ModalProvider.tryDismissTopModal(context)) return;
-              final provider = ActivityPanelControllerProvider.maybeOf(context);
-              if (provider != null && provider.tryCloseSearch()) return;
-              if (!layoutStateForPanels.multiPanel) {
-                context.run(ChangeCurrentThread(null));
-              }
+            if (didPop) return;
+            // If the on-screen keyboard is up, dismiss it before
+            // navigating away. Matches the platform back-gesture
+            // convention on Android/iOS.
+            if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+              FocusManager.instance.primaryFocus?.unfocus();
+              return;
+            }
+            if (ModalProvider.tryDismissTopModal(context)) return;
+            final provider = ActivityPanelControllerProvider.maybeOf(context);
+            if (provider != null && provider.tryCloseSearch()) return;
+            if (!layoutStateForPanels.multiPanel) {
+              context.run(ChangeCurrentThread(null));
             }
           },
           child: InfiniteListSelector(
@@ -466,6 +472,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
       count: totalItems,
       reverse: true,
       doneEnd: true,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       fetcher: (first, count) =>
           Future<void>.value(), // No pagination needed for ThreadPage
       itemKey: (index) {

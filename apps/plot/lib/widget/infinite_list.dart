@@ -324,6 +324,9 @@ class InfiniteList extends StatefulWidget {
   /// Called when the scroll offset changes, allowing callers to persist it.
   final ValueChanged<double>? onScrollOffsetChanged;
 
+  /// How dragging the scroll view should dismiss the on-screen keyboard.
+  final ScrollViewKeyboardDismissBehavior keyboardDismissBehavior;
+
   InfiniteList({
     required this.builder,
     required this.count,
@@ -341,6 +344,7 @@ class InfiniteList extends StatefulWidget {
     this.cacheExtent,
     this.initialScrollOffset = 0.0,
     this.onScrollOffsetChanged,
+    this.keyboardDismissBehavior = ScrollViewKeyboardDismissBehavior.manual,
     InfiniteListController? controller,
     super.key,
   }) : doneEnd = doneEnd ?? fetcher == null,
@@ -766,6 +770,7 @@ class InfiniteListState extends State<InfiniteList> {
             controller: _scrollController,
             reverse: widget.reverse,
             cacheExtent: widget.cacheExtent,
+            keyboardDismissBehavior: widget.keyboardDismissBehavior,
             slivers: [
               if (_prefixCount > 0) _buildFixedPrefix(),
               _buildSliverList(),
