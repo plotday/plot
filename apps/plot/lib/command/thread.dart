@@ -1429,7 +1429,7 @@ class MoveThreadToPriority extends ShowCommands {
 class _CreateAndMoveToNewPriority extends Command {
   _CreateAndMoveToNewPriority(this.thread)
     : super(
-        title: 'Move to new priority',
+        title: 'Add a priority',
         icon: PlotIcon.add,
         eventObject: EventObject.activity,
         eventAction: EventAction.moved,

@@ -186,6 +186,7 @@ class CommandModal {
         };
       },
       showFilter: showFilter,
+      addTooltip: _commands.secondaryCommand?.call('')?.title,
       onAdd: _commands.secondaryCommand == null
           ? null
           : (modalContext) async {

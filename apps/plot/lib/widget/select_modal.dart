@@ -63,6 +63,7 @@ class SelectModal<T> extends Modal {
     this.onRefreshNeeded,
     this.showFilter,
     this.onAdd,
+    this.addTooltip,
     this.filter,
     super.key,
   }) : super(
@@ -80,6 +81,7 @@ class SelectModal<T> extends Modal {
            onRefreshNeeded: onRefreshNeeded,
            showFilter: showFilter,
            onAdd: onAdd,
+           addTooltip: addTooltip,
            filter: filter,
          ),
        );
@@ -134,6 +136,9 @@ class SelectModal<T> extends Modal {
   /// If the callback returns a non-null value, the modal closes with that value selected.
   final Future<T?> Function(BuildContext context)? onAdd;
 
+  /// Optional tooltip text shown on hover over the "+" button.
+  final String? addTooltip;
+
   /// Optional predicate for client-side filtering. When provided, after the
   /// initial empty-search fetch populates the cache, subsequent keystrokes
   /// filter the cached items locally (case-insensitive `search` is supplied
@@ -157,6 +162,7 @@ class SelectModal<T> extends Modal {
     void Function(Future<void> Function() refresh)? onRefreshNeeded,
     bool? showFilter,
     Future<T?> Function(BuildContext context)? onAdd,
+    String? addTooltip,
     bool Function(T item, String search)? filter,
   }) async {
     // Pre-fetch items for empty search so the modal opens fully populated.
@@ -188,6 +194,7 @@ class SelectModal<T> extends Modal {
       onRefreshNeeded: onRefreshNeeded,
       showFilter: showFilter,
       onAdd: onAdd,
+      addTooltip: addTooltip,
       filter: filter,
     ).show<T>(context);
 
@@ -209,6 +216,7 @@ class _SelectModal<T> extends StatefulWidget {
     this.onRefreshNeeded,
     this.showFilter,
     this.onAdd,
+    this.addTooltip,
     this.filter,
   });
 
@@ -225,6 +233,7 @@ class _SelectModal<T> extends StatefulWidget {
   final void Function(Future<void> Function() refresh)? onRefreshNeeded;
   final bool? showFilter;
   final Future<T?> Function(BuildContext context)? onAdd;
+  final String? addTooltip;
   final bool Function(T item, String search)? filter;
 
   @override
@@ -888,13 +897,25 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
                                 ),
                               ),
                               if (widget.onAdd != null)
-                                FButton.icon(
-                                  variant: FButtonVariant.ghost,
-                                  onPress: () => _handleAdd(context),
-                                  child: Icon(
-                                    PlotIcon.add,
-                                    size: context.theme.iconSizes.sm,
-                                  ),
+                                Builder(
+                                  builder: (context) {
+                                    final addButton = FButton.icon(
+                                      variant: FButtonVariant.ghost,
+                                      onPress: () => _handleAdd(context),
+                                      child: Icon(
+                                        PlotIcon.add,
+                                        size: context.theme.iconSizes.sm,
+                                      ),
+                                    );
+                                    if (widget.addTooltip == null) {
+                                      return addButton;
+                                    }
+                                    return FTooltip(
+                                      tipBuilder: (ctx, _) =>
+                                          Text(widget.addTooltip!),
+                                      child: addButton,
+                                    );
+                                  },
                                 ),
                             ],
                           ),
