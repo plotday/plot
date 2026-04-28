@@ -39,6 +39,14 @@ type SyncState = {
   syncHistoryMin?: string;
 };
 
+type PeriodicSyncState = {
+  pageToken: string | null;
+  /** ISO timestamp captured at the start of the cycle. Becomes the next
+   * `last_sync_time_<listId>` once every page in the cycle has been processed,
+   * so the following cycle picks up anything modified during this one. */
+  cycleStart: string;
+};
+
 /**
  * Google Tasks connector
  *
@@ -134,6 +142,7 @@ export class GoogleTasks extends Connector<GoogleTasks> {
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.clear(`sync_enabled_${channel.id}`);
     await this.clear(`sync_state_${channel.id}`);
+    await this.clear(`periodic_sync_state_${channel.id}`);
     await this.clear(`last_sync_time_${channel.id}`);
 
     await this.tools.integrations.archiveLinks({
@@ -247,73 +256,103 @@ export class GoogleTasks extends Connector<GoogleTasks> {
   }
 
   /**
-   * Periodic sync: fetch tasks updated since last sync, then reschedule.
+   * Periodic sync entry point: starts a new cycle and hands off to
+   * {@link periodicSyncBatch} so each page is processed in its own task with a
+   * fresh runtime request budget.
    */
   private async periodicSync(listId: string): Promise<void> {
-    // Check if sync is still enabled
     const enabled = await this.get<boolean>(`sync_enabled_${listId}`);
     if (!enabled) return;
+
+    await this.set<PeriodicSyncState>(`periodic_sync_state_${listId}`, {
+      pageToken: null,
+      cycleStart: new Date().toISOString(),
+    });
+
+    const callback = await this.callback(this.periodicSyncBatch, listId);
+    await this.tools.tasks.runTask(callback);
+  }
+
+  /**
+   * Process a single page of incremental updates and either chain to the next
+   * page or finish the cycle and reschedule the next periodic run.
+   */
+  private async periodicSyncBatch(listId: string): Promise<void> {
+    const enabled = await this.get<boolean>(`sync_enabled_${listId}`);
+    if (!enabled) {
+      await this.clear(`periodic_sync_state_${listId}`);
+      return;
+    }
+
+    const state = await this.get<PeriodicSyncState>(
+      `periodic_sync_state_${listId}`
+    );
+    if (!state) return;
 
     const lastSync = await this.get<string>(`last_sync_time_${listId}`);
     const token = await this.getToken(listId);
     const authActorId = await this.get<ActorId>("auth_actor_id");
 
-    let pageToken: string | undefined;
-    do {
-      const result = await listTasks(token, listId, {
-        updatedMin: lastSync ?? undefined,
-        pageToken,
-        maxResults: 50,
+    const result = await listTasks(token, listId, {
+      updatedMin: lastSync ?? undefined,
+      pageToken: state.pageToken ?? undefined,
+      maxResults: 50,
+    });
+
+    const parentTasks: GoogleTask[] = [];
+    const subtasksByParent = new Map<string, GoogleTask[]>();
+
+    for (const task of result.tasks) {
+      if (task.parent) {
+        const existing = subtasksByParent.get(task.parent) ?? [];
+        existing.push(task);
+        subtasksByParent.set(task.parent, existing);
+      } else {
+        parentTasks.push(task);
+      }
+    }
+
+    for (const task of parentTasks) {
+      const subtasks = subtasksByParent.get(task.id) ?? [];
+      const link = this.transformTask(
+        task,
+        listId,
+        false,
+        subtasks,
+        authActorId
+      );
+      await this.tools.integrations.saveLink(link);
+    }
+
+    for (const [parentId, subtasks] of subtasksByParent) {
+      if (!parentTasks.some((t) => t.id === parentId)) {
+        for (const subtask of subtasks) {
+          const link = this.transformTask(
+            subtask,
+            listId,
+            false,
+            [],
+            authActorId
+          );
+          await this.tools.integrations.saveLink(link);
+        }
+      }
+    }
+
+    if (result.nextPageToken) {
+      await this.set<PeriodicSyncState>(`periodic_sync_state_${listId}`, {
+        ...state,
+        pageToken: result.nextPageToken,
       });
-
-      // Separate parent tasks and subtasks
-      const parentTasks: GoogleTask[] = [];
-      const subtasksByParent = new Map<string, GoogleTask[]>();
-
-      for (const task of result.tasks) {
-        if (task.parent) {
-          const existing = subtasksByParent.get(task.parent) ?? [];
-          existing.push(task);
-          subtasksByParent.set(task.parent, existing);
-        } else {
-          parentTasks.push(task);
-        }
-      }
-
-      for (const task of parentTasks) {
-        const subtasks = subtasksByParent.get(task.id) ?? [];
-        const link = this.transformTask(
-          task,
-          listId,
-          false,
-          subtasks,
-          authActorId
-        );
-        await this.tools.integrations.saveLink(link);
-      }
-
-      // Orphan subtasks
-      for (const [parentId, subtasks] of subtasksByParent) {
-        if (!parentTasks.some((t) => t.id === parentId)) {
-          for (const subtask of subtasks) {
-            const link = this.transformTask(
-              subtask,
-              listId,
-              false,
-              [],
-              authActorId
-            );
-            await this.tools.integrations.saveLink(link);
-          }
-        }
-      }
-
-      pageToken = result.nextPageToken;
-    } while (pageToken);
-
-    // Update last sync time and reschedule
-    await this.set(`last_sync_time_${listId}`, new Date().toISOString());
-    await this.schedulePeriodicSync(listId);
+      const next = await this.callback(this.periodicSyncBatch, listId);
+      await this.tools.tasks.runTask(next);
+    } else {
+      // Advance lastSync to the cycle's start time so the next cycle catches
+      // anything modified during this one, then schedule the next run.
+      await this.clear(`periodic_sync_state_${listId}`);
+      await this.set(`last_sync_time_${listId}`, state.cycleStart);
+      await this.schedulePeriodicSync(listId);
+    }
   }
 
   /**
