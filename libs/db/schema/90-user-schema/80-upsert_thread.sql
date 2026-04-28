@@ -174,11 +174,11 @@ BEGIN
        AND NOT "user".user_has_thread_write_access(upsert_thread.user_id, v_existing.id)
     THEN
         IF p_thread ? 'archived_at' THEN
-            UPDATE thread_priority
+            UPDATE thread_priority tp
             SET archived_at = NULLIF(p_thread ->> 'archived_at', '')::timestamptz,
                 updated_at = now()
-            WHERE thread_id = v_existing.id
-              AND user_id = upsert_thread.user_id;
+            WHERE tp.thread_id = v_existing.id
+              AND tp.user_id = upsert_thread.user_id;
             -- Discard any other fields the caller sent — return unchanged.
             RETURN v_existing;
         END IF;
