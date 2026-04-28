@@ -191,6 +191,25 @@ BEGIN
         v_author_id := COALESCE(p_author_id, v_created_by);
     END IF;
 
+    -- Read-only viewer gate. When the writer is a user (not a twist) and
+    -- lacks write access to the thread (i.e. only sees it via an announce
+    -- group), they may only post private notes that they author and may not
+    -- edit other authors' notes.
+    IF v_created_by = upsert_note.user_id
+       AND NOT "user".user_has_thread_write_access(upsert_note.user_id, p_thread_id)
+    THEN
+        IF p_access_contacts IS NULL THEN
+            RAISE EXCEPTION 'Read-only viewers must scope notes via access_contacts';
+        END IF;
+        IF p_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM note
+            WHERE id = p_id
+              AND author_id IS DISTINCT FROM v_author_id
+        ) THEN
+            RAISE EXCEPTION 'User cannot edit another author''s note';
+        END IF;
+    END IF;
+
     IF v_created_by IS DISTINCT FROM user_id THEN
         IF NOT EXISTS (
             SELECT

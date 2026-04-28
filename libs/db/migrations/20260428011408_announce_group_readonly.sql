@@ -1,35 +1,153 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) with archived_at IS NULL — two instances
--- of the same twist that upsert the same key converge on the same thread
--- across users. User-created threads (twist_id IS NULL) do not participate
--- in cross-user dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Create "user_has_thread_write_access" function
+CREATE FUNCTION "user"."user_has_thread_write_access" ("p_user_id" uuid, "p_thread_id" uuid) RETURNS boolean LANGUAGE sql STABLE AS $$
+WITH t AS (
+        SELECT contacts, groups FROM thread WHERE id = p_thread_id
+    )
+    SELECT EXISTS (
+        SELECT 1
+        FROM t
+        WHERE t.contacts && "user".user_contact_ids(p_user_id)
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM t
+        JOIN unnest(t.groups) AS g(id) ON TRUE
+        JOIN "group" gr ON gr.id = g.id
+        WHERE gr.type <> 'announce'
+          AND g.id = ANY ("user".user_group_ids(p_user_id))
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM t
+        JOIN unnest(t.groups) AS g(id) ON TRUE
+        JOIN "group" gr ON gr.id = g.id
+        JOIN group_admin ga ON ga.group_id = g.id
+        WHERE gr.type = 'announce'
+          AND ga.user_id = p_user_id
+    );
+$$;
+-- Modify "upsert_note" function
+CREATE OR REPLACE FUNCTION "user"."upsert_note" ("user_id" uuid, "p_id" uuid, "p_author_id" uuid, "p_created_by" uuid, "p_updated_by" integer, "p_archived_at" timestamptz, "p_thread_id" uuid, "p_draft" boolean, "p_access_contacts" uuid[], "p_content" text, "p_actions" jsonb, "p_mentions" uuid[], "p_re_note_id" uuid, "p_source_created_at" timestamptz, "p_key" text, "p_merged_from_thread_id" uuid DEFAULT NULL::uuid) RETURNS "public"."note" LANGUAGE plpgsql SET "search_path" = public, "user" AS $$
+DECLARE
+    v_priority_id uuid;
+    v_created_by uuid;
+    v_author_id uuid;
+    v_thread_created_by uuid;
+    v_row note;
+BEGIN
+    SELECT
+        tp.priority_id INTO v_priority_id
+    FROM
+        thread_priority tp
+    WHERE
+        tp.thread_id = p_thread_id
+        AND tp.user_id = upsert_note.user_id;
+    IF v_priority_id IS NULL THEN
+        RAISE EXCEPTION 'Thread not found';
+    END IF;
+
+    -- Check thread access via contacts intersection
+    SELECT created_by INTO v_thread_created_by FROM thread WHERE id = p_thread_id;
+    IF v_thread_created_by != upsert_note.user_id
+       AND NOT EXISTS (
+           SELECT 1 FROM thread
+           WHERE id = p_thread_id
+             AND contacts && "user".user_contact_ids(upsert_note.user_id)
+       )
+    THEN
+        RAISE EXCEPTION 'Access denied to thread';
+    END IF;
+
+    v_created_by := COALESCE(p_created_by, user_id);
+    -- When the user creates directly (not via twist), force author to their contact ID.
+    -- This prevents impersonation: clients cannot spoof author_id.
+    -- When a twist creates (created_by != user_id), trust the provided author_id.
+    IF v_created_by = user_id THEN
+        v_author_id := COALESCE("user".user_contact_id(user_id), user_id);
+    ELSE
+        v_author_id := COALESCE(p_author_id, v_created_by);
+    END IF;
+
+    -- Read-only viewer gate. When the writer is a user (not a twist) and
+    -- lacks write access to the thread (i.e. only sees it via an announce
+    -- group), they may only post private notes that they author and may not
+    -- edit other authors' notes.
+    IF v_created_by = upsert_note.user_id
+       AND NOT "user".user_has_thread_write_access(upsert_note.user_id, p_thread_id)
+    THEN
+        IF p_access_contacts IS NULL THEN
+            RAISE EXCEPTION 'Read-only viewers must scope notes via access_contacts';
+        END IF;
+        IF p_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM note
+            WHERE id = p_id
+              AND author_id IS DISTINCT FROM v_author_id
+        ) THEN
+            RAISE EXCEPTION 'User cannot edit another author''s note';
+        END IF;
+    END IF;
+
+    IF v_created_by IS DISTINCT FROM user_id THEN
+        IF NOT EXISTS (
+            SELECT
+                1
+            FROM
+                twist_instance pt
+            WHERE
+                pt.id = v_created_by
+                AND pt.owner_id = upsert_note.user_id) THEN
+            RAISE EXCEPTION 'created_by must be user or owned twist_instance';
+        END IF;
+    END IF;
+
+    IF p_id IS NULL THEN
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        ON CONFLICT (thread_id, key)
+            DO UPDATE SET
+                author_id = note.author_id,
+                created_by = note.created_by,
+                updated_by = EXCLUDED.updated_by,
+                archived_at = EXCLUDED.archived_at,
+                draft = EXCLUDED.draft,
+                access_contacts = EXCLUDED.access_contacts,
+                content = EXCLUDED.content,
+                actions = EXCLUDED.actions,
+                mentions = EXCLUDED.mentions,
+                re_note_id = EXCLUDED.re_note_id,
+                source_created_at = EXCLUDED.source_created_at,
+                key = EXCLUDED.key,
+                merged_from_thread_id = EXCLUDED.merged_from_thread_id,
+                updated_at = now()
+        RETURNING * INTO v_row;
+    ELSE
+        INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
+            VALUES (p_id, v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
+        ON CONFLICT (id)
+            DO UPDATE SET
+                author_id = note.author_id,
+                created_by = note.created_by,
+                updated_by = EXCLUDED.updated_by,
+                archived_at = EXCLUDED.archived_at,
+                thread_id = EXCLUDED.thread_id,
+                draft = EXCLUDED.draft,
+                access_contacts = EXCLUDED.access_contacts,
+                content = EXCLUDED.content,
+                actions = EXCLUDED.actions,
+                mentions = EXCLUDED.mentions,
+                re_note_id = EXCLUDED.re_note_id,
+                source_created_at = EXCLUDED.source_created_at,
+                key = COALESCE(EXCLUDED.key, note.key),
+                merged_from_thread_id = EXCLUDED.merged_from_thread_id,
+                updated_at = now()
+        RETURNING * INTO v_row;
+    END IF;
+
+    RETURN v_row;
+END;
+$$;
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -543,4 +661,4 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;

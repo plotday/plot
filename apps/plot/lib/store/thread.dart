@@ -2282,6 +2282,27 @@ class Thread extends Equatable implements Comparable<Thread> {
   String? get icon => _thread.icon;
   bool get hasEmbedding => _thread.hasEmbedding;
 
+  /// True if the current user only sees this thread via an announce-typed
+  /// group they don't admin (i.e. not a direct contact, not a member of any
+  /// non-announce group on the thread). Read-only viewers cannot edit
+  /// thread metadata, may only post private notes, and archive per-user.
+  bool get isReadOnly {
+    final selfIds = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    if (contacts.any(selfIds.contains)) return false;
+    for (final groupId in groups) {
+      final g = Group.fromCache(groupId);
+      if (g == null) continue;
+      if (g.type == 'announce') {
+        if (g.isAdmin) return false;
+      } else if (g.isMember) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// Resolves a thread icon identifier to a logo URL and fallback icon.
   static ({String? logoUrl, String? logoDarkUrl, IconData fallbackIcon})
   resolveIcon(String? icon) {

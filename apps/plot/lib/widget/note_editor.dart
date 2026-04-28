@@ -1424,6 +1424,7 @@ class NoteEditorState extends State<NoteEditor> {
     // Get replyTo from ThreadBloc state
     final activityBloc = context.read<ThreadBloc>();
     final replyTo = activityBloc.state.replyTo;
+    final thread = activityBloc.state.thread;
 
     // When replying to a private note, auto-private the reply and carry over
     // the original note's author + mentions so they can see it.
@@ -1436,14 +1437,29 @@ class NoteEditorState extends State<NoteEditor> {
     final activeTwistMentions = _getActiveTwistMentions();
     final allAddMentions = [...activeTwistMentions, ...replyAccessContacts];
 
+    // Default share targets for read-only-thread viewers: every contact on
+    // the thread plus members of non-announce groups. The viewer's own
+    // contacts are added implicitly server-side; announce-group members
+    // (other read-only viewers) are intentionally excluded so notes don't
+    // broadcast back through the announce channel.
+    final readOnlyThreadShare = widget.viewerMode && thread.isReadOnly
+        ? _readOnlyDefaultShareTargets(thread)
+        : <ActorId>[];
+
+    final Value<List<ActorId>?> accessContactsValue =
+        (widget.viewerMode || replyRestricted)
+            ? Value(<ActorId>{
+                ...replyAccessContacts,
+                ...readOnlyThreadShare,
+              }.toList())
+            : const Value.absent();
+
     Note note = widget.draft.copyWith(
       content: body.isEmpty ? null : body,
       draft: false,
       reNoteId: replyTo?.id,
       addMentions: allAddMentions.isNotEmpty ? allAddMentions : null,
-      accessContacts: (widget.viewerMode || replyRestricted)
-          ? Value(<ActorId>[...replyAccessContacts])
-          : const Value.absent(),
+      accessContacts: accessContactsValue,
     );
 
     // If Cmd-Enter was pressed, assign the note to current user
@@ -1452,6 +1468,26 @@ class NoteEditorState extends State<NoteEditor> {
     }
 
     return note;
+  }
+
+  /// Default share-target list for a read-only viewer's note: every contact
+  /// listed on the thread plus members of any non-announce group on the
+  /// thread. Announce-group members are excluded so a private note from a
+  /// read-only viewer is visible to the people who can write to the thread,
+  /// but not to other read-only viewers.
+  List<ActorId> _readOnlyDefaultShareTargets(Thread thread) {
+    final result = <ActorId>{};
+    for (final contactId in thread.contacts) {
+      result.add(ActorId.fromUuid(contactId));
+    }
+    for (final groupId in thread.groups) {
+      final group = Group.fromCache(groupId);
+      if (group == null || group.type == 'announce') continue;
+      for (final memberId in group.memberContactIds ?? const <Uuid>[]) {
+        result.add(ActorId.fromUuid(memberId));
+      }
+    }
+    return result.toList();
   }
 
   /// Kept public for note mode compatibility (ThreadPage calls this).

@@ -4968,6 +4968,10 @@ export type Database = {
       user_contact_id: { Args: { p_user_id: string }; Returns: string }
       user_contact_ids: { Args: { p_user_id: string }; Returns: string[] }
       user_group_ids: { Args: { p_user_id: string }; Returns: string[] }
+      user_has_thread_write_access: {
+        Args: { p_thread_id: string; p_user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

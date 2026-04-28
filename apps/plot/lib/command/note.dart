@@ -736,7 +736,9 @@ List<StaticCommandGroup> noteCommandGroups(
   ThreadBloc? activityBloc,
 }) {
   final actorId = Base.actorId;
-  final isViewer = activityBloc?.state.thread.priority.isViewer ?? false;
+  final isViewer =
+      (activityBloc?.state.thread.priority.isViewer ?? false) ||
+      (activityBloc?.state.thread.isReadOnly ?? false);
   final tags = Tag.getAll()
       .where((tag) => !isViewer || tag.type == TagType.count)
       .map((tag) => ToggleNoteTag(note, tag, actorId))
@@ -832,7 +834,9 @@ List<StaticCommandGroup> noteCommandGroups(
 }
 
 List<Command> noteCommands(Note note, {ThreadBloc? activityBloc}) {
-  final isViewer = activityBloc?.state.thread.priority.isViewer ?? false;
+  final isViewer =
+      (activityBloc?.state.thread.priority.isViewer ?? false) ||
+      (activityBloc?.state.thread.isReadOnly ?? false);
 
   // Viewers can only reply (forced private by DB), edit own notes, and copy
   if (isViewer) {

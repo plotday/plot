@@ -328,11 +328,13 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
       // Todo toggle (when thread is visible)
       if (thread != null) _buildTodoToggle(context, thread),
 
-      // Edit thread (when thread is visible)
-      if (thread != null) Button.icon(EditThread(thread)),
+      // Edit thread (when thread is visible). Hidden for read-only viewers.
+      if (thread != null && !thread.isReadOnly)
+        Button.icon(EditThread(thread)),
 
-      // Share thread (when thread is visible)
-      if (thread != null) SharedCommandButton(thread: thread),
+      // Share thread (when thread is visible). Hidden for read-only viewers.
+      if (thread != null && !thread.isReadOnly)
+        SharedCommandButton(thread: thread),
 
       // New Thread button (multiPanel only, since bottom nav has it otherwise)
       if (layoutState.multiPanel && !state.context.isTwistDev)

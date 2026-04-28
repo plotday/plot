@@ -2684,6 +2684,17 @@ List<Command> threadCommands(
     return [if (open) ChangeCurrentThread(thread)];
   }
 
+  // Read-only viewers (announce-group-only access): no metadata edits, no
+  // sharing changes, no merges/splits, no thread tags. Archive routes
+  // per-user server-side. Marking read/unread and per-user filing remain.
+  if (thread.isReadOnly) {
+    return [
+      if (open) ChangeCurrentThread(thread),
+      MoveThreadToPriority(thread),
+      ArchiveThread(thread),
+    ];
+  }
+
   Command? primary;
   if (!skipPrimary) {
     if (thread.todo) {

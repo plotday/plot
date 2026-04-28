@@ -426,6 +426,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                               key: _noteEditorKey,
                               draft: state.draft,
                               flushToBottom: !layoutStateForPanels.multiPanel,
+                              viewerMode: state.thread.isReadOnly,
                             ),
                           ),
                         ),
