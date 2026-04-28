@@ -196,6 +196,7 @@ export function createTool(
           twistInstanceId,
         }),
         env,
+        ctx,
         db,
         twistInstanceId,
         twistId,

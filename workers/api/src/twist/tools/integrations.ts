@@ -38,8 +38,9 @@ import {
   type StoredTokenData,
 } from "../../provider";
 import { hashExternalContent } from "./hash-external-content";
-import { CallbacksState } from "../../state/callbacks";
+import type { CallbacksState } from "../../state/callbacks";
 import { classifyInviteable } from "../../state/contact-classifier";
+import { invokeWebhookCallback } from "../invoke-webhook";
 import superjson from "superjson";
 
 import type { Storage } from "../../state/storage";
@@ -48,7 +49,7 @@ import { rpc, rpcUser } from "../../rpc";
 import { notifyUserSyncByEnv } from "../../app/sync/notify";
 import { getEffectivePlan } from "../../utils/plan";
 import { getSyncHistoryMinDate, type PlanKey } from "../../utils/limits";
-import { getRpcFunctionName } from "../../utils/rpc";
+import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { invokeCallback } from "../invoke-callback";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
@@ -205,6 +206,7 @@ function classifyRefreshHttpError(
 export class Integrations extends Tool implements IAuth {
   private store: Store;
   private env: Bindings;
+  private ctx: { exports: ExecutionContext["exports"] };
   private db: Kysely<DB>;
   private twistInstanceId: string;
   // These are callbacks we create and call
@@ -251,6 +253,7 @@ export class Integrations extends Tool implements IAuth {
   constructor(options: {
     store: Store;
     env: Bindings;
+    ctx: { exports: ExecutionContext["exports"] };
     db: Kysely<DB>;
     twistInstanceId: string;
     twistId: string;
@@ -263,6 +266,7 @@ export class Integrations extends Tool implements IAuth {
     super();
     this.store = options.store;
     this.env = options.env;
+    this.ctx = options.ctx;
     this.db = options.db;
     this.twistInstanceId = options.twistInstanceId;
     this._twistId = options.twistId;
@@ -528,6 +532,8 @@ export class Integrations extends Tool implements IAuth {
       // dispatch path so `this` inside the connector method binds to the full
       // connector instance. See workers/api/src/twist/CALLBACKS.md.
       await invokeCallback(
+        this.env,
+        this.ctx,
         this.callbacks,
         this.twistInstanceId,
         callback,
@@ -2598,11 +2604,17 @@ export class Integrations extends Tool implements IAuth {
       if (authToken) {
         for (const pending of pendingRequests) {
           try {
-            // Call the stored callback with the token
-            using _result = await this.callbacks.callCallback(
+            // Call the stored callback with the token. Routed through
+            // invokeWebhookCallback so the twist worker RPC runs in this
+            // worker context — keeps the CallbacksState DO output gate
+            // free instead of holding it across the connector method.
+            const _result = await invokeWebhookCallback(
+              this.env,
+              this.ctx,
               pending.callbackToken,
               authToken
             );
+            disposeRpc(_result);
           } catch (error) {
             const logger = createLogger({ twist_instance_id: this.twistInstanceId });
             logger.error("Error executing pending actAs callback", error as Error, {
@@ -2619,10 +2631,13 @@ export class Integrations extends Tool implements IAuth {
     // 2. Call legacy callback token if provided (for backward compat / direct request() calls)
     if (callbackToken) {
       try {
-        using _result = await this.callbacks.callCallback(
+        const _result = await invokeWebhookCallback(
+          this.env,
+          this.ctx,
           callbackToken,
           authorization
         );
+        disposeRpc(_result);
       } catch (error) {
         const logger = createLogger({ twist_instance_id: this.twistInstanceId });
         logger.error("Error executing original auth callback", error as Error, {
@@ -3742,9 +3757,9 @@ export class Integrations extends Tool implements IAuth {
 
   static async HandleOauthCallback(
     storage: DurableObjectNamespace<Storage>,
-    callbacks: DurableObjectNamespace<CallbacksState>,
     params: Record<string, string>,
-    env: Bindings
+    env: Bindings,
+    ctx: { exports: ExecutionContext["exports"] }
   ): Promise<Response> {
     try {
       const { state, error, provider, scopes, callback } = params;
@@ -3855,21 +3870,25 @@ export class Integrations extends Tool implements IAuth {
         env,
       });
 
-      // Call the wrapped callback (onAuth) with token info
+      // Call the wrapped callback (onAuth) with token info. Routed
+      // through invokeWebhookCallback so the connector's onAuth runs in
+      // this worker context, not inside the CallbacksState DO.
       if (authState.callback) {
         try {
-          const _result = await CallbacksState.CallCallback(
-            callbacks,
+          const result = await invokeWebhookCallback(
+            env,
+            ctx,
             authState.callback,
             {
-            // Spread all token response fields (provider-specific fields included)
-            ...tokenResponse,
-            // Add our metadata
-            provider: authState.provider,
-            scopes: authState.scopes,
-            client_id: clientId,
+              // Spread all token response fields (provider-specific fields included)
+              ...tokenResponse,
+              // Add our metadata
+              provider: authState.provider,
+              scopes: authState.scopes,
+              client_id: clientId,
             }
           );
+          disposeRpc(result);
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);

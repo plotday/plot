@@ -1,5 +1,7 @@
+import type { Bindings } from "../env";
 import type { CallbacksState } from "../state/callbacks";
 import { disposeRpc, getRpcFunctionName } from "../utils/rpc";
+import { invokeWebhookCallback } from "./invoke-webhook";
 
 /**
  * Invokes a callback method on a twist or tool via the rebuild-and-bind
@@ -12,16 +14,20 @@ import { disposeRpc, getRpcFunctionName } from "../utils/rpc";
  * body — sibling private methods and `this.*` state on the enclosing class
  * are unreachable. The symptom is `TypeError: this.X is not a function`.
  *
- * This helper dispatches the call through `CallbacksState.callCallback`, which
- * runs inside the twist worker, rebuilds the twist instance, and invokes the
- * named method with `method.call(twist, ...)`. The method sees the full class
- * with all its private methods and state.
+ * Dispatch goes through `invokeWebhookCallback`, which runs the twist worker
+ * RPC in the calling worker's execution context. The CallbacksState DO is
+ * only touched for the cheap SQLite token lookup — the long-running twist
+ * RPC stays out of the DO so its output gate is never held across Hyperdrive
+ * queries (Cloudflare resets the DO when the gate stalls).
  *
  * Runtime args come first in the resulting call, extraArgs last — matching
  * the shape used everywhere else in the callback system (e.g. the slow path
  * in `Integrations.actAs` and `Tasks.runTask`).
  *
- * @param callbacks      CallbacksState DO stub for the twist instance.
+ * @param env            Worker bindings (needed for the worker-side twist RPC).
+ * @param ctx            Worker execution context (carries `exports`).
+ * @param callbacks      CallbacksState DO stub for the twist instance, used
+ *                       only to create the one-shot token.
  * @param twistInstanceId The owning `twist_instance.id`.
  * @param callback       Method reference (Rpc.Stub) received across RPC.
  * @param path           Tool path where the method lives. Use `[]` for a
@@ -30,9 +36,11 @@ import { disposeRpc, getRpcFunctionName } from "../utils/rpc";
  * @param extraArgs      Args bound at registration time, appended after
  *                       `args` when the method is invoked.
  * @param args           Args passed in first when the method runs.
- * @returns The method's return value (already unwrapped from the DO response).
+ * @returns The method's return value.
  */
 export async function invokeCallback(
+  env: Bindings,
+  ctx: { exports: ExecutionContext["exports"] },
   callbacks: DurableObjectStub<CallbacksState>,
   twistInstanceId: string,
   callback: (...args: any[]) => any,
@@ -57,5 +65,5 @@ export async function invokeCallback(
     callOnce: true,
   });
 
-  return await callbacks.callCallback(token, ...args);
+  return await invokeWebhookCallback(env, ctx, token, ...args);
 }

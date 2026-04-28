@@ -5,7 +5,7 @@ import type {
 } from "@plotday/twister/tools/callbacks";
 
 import { type Bindings, type TwistEnvironment } from "../../env";
-import { CallbacksState, type ResolvedCallback } from "../../state/callbacks";
+import type { CallbacksState, ResolvedCallback } from "../../state/callbacks";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { invokeWebhookCallback } from "../invoke-webhook";
@@ -81,15 +81,6 @@ export class Callbacks extends Tool implements ICallbackTool {
       extraArgs,
     });
     return token as Callback;
-  }
-
-  // Call a callback from another tool
-  static async CallCallback(
-    callbacks: DurableObjectNamespace<CallbacksState>,
-    callback: Callback,
-    args?: any
-  ): Promise<any> {
-    return await CallbacksState.CallCallback(callbacks, callback, args);
   }
 
   /**

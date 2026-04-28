@@ -69,9 +69,9 @@ authBridgeRoutes.get("/auth/bridge", async (c) => {
   try {
     const result = await Integrations.HandleOauthCallback(
       c.env.STORAGE,
-      c.env.CALLBACKS,
       query,
-      c.env
+      c.env,
+      c.executionCtx as unknown as { exports: ExecutionContext["exports"] }
     );
     // HandleOauthCallback returns JSON; a non-2xx status means the exchange
     // failed and we should render an error bridge page.

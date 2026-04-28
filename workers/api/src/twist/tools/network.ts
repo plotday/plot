@@ -7,7 +7,7 @@ import type { Store as IStore } from "@plotday/twister/tools/store";
 
 import { type TwistEnvironment, type Bindings } from "../../env";
 import { CallbackError } from "../../errors";
-import { CallbacksState } from "../../state/callbacks";
+import type { CallbacksState } from "../../state/callbacks";
 import { createLogger } from "@plotday/worker-util";
 import {
   createPushSubscription,
@@ -128,14 +128,6 @@ export class Network extends Tool implements INetwork {
     return callbacks.get(callbacksId);
   }
 
-  static async HandleWebhook(
-    callbacks: DurableObjectNamespace<CallbacksState>,
-    token: string,
-    request: WebhookRequest
-  ) {
-    return await CallbacksState.CallCallback(callbacks, token, request);
-  }
-
   /**
    * Enumerate Slack callback tokens matching a team + event type.
    *
@@ -173,25 +165,6 @@ export class Network extends Tool implements INetwork {
     return teamCallbacks
       .filter((cb) => checkSlackEventScopes(eventType, cb.meta?.scopes || []))
       .map((cb) => cb.callback);
-  }
-
-  /**
-   * Handles Gmail webhook routing via Google Pub/Sub.
-   * Decodes the callback token from the topic ID and calls the callback directly.
-   */
-  static async HandleGmailWebhook(
-    callbacks: DurableObjectNamespace<CallbacksState>,
-    token: string,
-    request: WebhookRequest
-  ): Promise<any> {
-    if (!token) {
-      const logger = createLogger();
-      logger.warn("Gmail webhook missing token");
-      return { ok: false, error: "Missing token" };
-    }
-
-    // Call the callback directly using the token
-    return await CallbacksState.CallCallback(callbacks, token, request);
   }
 
   /**

@@ -33,9 +33,9 @@ authRoutes.post("/auth", async (c) => {
   try {
     return await Integrations.HandleOauthCallback(
       c.env.STORAGE,
-      c.env.CALLBACKS,
       c.req.query(),
-      c.env
+      c.env,
+      c.executionCtx as unknown as { exports: ExecutionContext["exports"] }
     );
   } catch (error) {
     return captureServerError(c, error, "Internal server error");

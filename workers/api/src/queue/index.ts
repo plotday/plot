@@ -64,7 +64,7 @@ export async function queue(
 
       case "twist-logs-development":
       case "twist-logs-production":
-        await processLogs(batch as MessageBatch<LogMessage>, env, postHog);
+        await processLogs(batch as MessageBatch<LogMessage>, env, ctx, postHog);
         break;
 
       case "mail-development":

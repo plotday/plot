@@ -10,7 +10,6 @@ import { Usage } from "../state/usage";
 import { twistFactory } from "../twist";
 import { handleTwistOperation } from "../twist/error-handling";
 import { validateSerializable } from "../twist/tools/validation";
-import { disposeRpc } from "../utils/rpc";
 
 export type CallbackData = {
   token: string;
@@ -821,50 +820,4 @@ export class CallbacksState extends DurableObject<Bindings> {
     return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
   }
 
-  /**
-   * Static method to call a callback by token.
-   * Parses the token to extract twistInstanceId, gets the correct DO stub,
-   * and executes the callback.
-   */
-  static async CallCallback(
-    callbacks: DurableObjectNamespace<CallbacksState>,
-    token: string,
-    ...args: any[]
-  ): Promise<any> {
-    if (!token || token.trim() === "") {
-      throw new CallbackError("INVALID_TOKEN", {
-        operation: "CallCallback",
-      });
-    }
-
-    const [id] = token.split(":");
-
-    // Validate DO ID format before attempting to create stub
-    if (!isValidDoId(id)) {
-      throw new CallbackError("INVALID_TOKEN_FORMAT", {
-        operation: "CallCallback",
-        token: token.substring(0, 8) + "...",
-      });
-    }
-
-    const callbacksId = callbacks.idFromString(id);
-    const callbacksStub = callbacks.get(callbacksId);
-
-    // @ts-ignore TS2589: Type instantiation is excessively deep and possibly infinite.
-    const result = await callbacksStub.callCallback(token, ...args);
-    disposeRpc(callbacksStub);
-
-    // Check if the result is an error object (returned instead of thrown to prevent "Uncaught" logs)
-    if (
-      result &&
-      typeof result === "object" &&
-      "__error" in result &&
-      result.__error === true
-    ) {
-      // Convert error object back to CallbackError and throw
-      throw new CallbackError(result.type as any, result.context);
-    }
-
-    return result;
-  }
 }

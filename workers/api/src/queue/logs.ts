@@ -1,10 +1,9 @@
 import type { PostHog } from "posthog-node";
 
-import type { Callback } from "@plotday/twister/tools/callbacks";
-
-import { Callbacks } from "../twist/tools/callbacks";
 import { addLogsNote } from "../twist/dev-activities";
 import { type Bindings, type LogMessage } from "../env";
+import { isCallbackError } from "../errors";
+import { invokeWebhookCallback } from "../twist/invoke-webhook";
 import { extractLogQueueContext } from "../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { disposeRpc } from "../utils/rpc";
@@ -12,6 +11,7 @@ import { disposeRpc } from "../utils/rpc";
 export async function processLogs(
   batch: MessageBatch<LogMessage>,
   env: Bindings,
+  ctx: { exports: ExecutionContext["exports"] },
   postHog: PostHog
 ): Promise<void> {
   // Group logs by twist_root_id
@@ -45,19 +45,33 @@ export async function processLogs(
         message: log.message,
       }));
 
-      // Send to callback subscribers
+      // Send to callback subscribers. Routed through invokeWebhookCallback
+      // so the twist worker RPC runs in this consumer's context — keeps the
+      // CallbacksState DO output gate free for the cheap SQLite token
+      // lookup (the legacy DO-hosted callCallback held the gate across
+      // Hyperdrive queries, which Cloudflare resets under load).
       if (subscribers.length > 0) {
         for (const callbackToken of subscribers) {
           try {
-            const result = await Callbacks.CallCallback(
-              env.CALLBACKS,
-              callbackToken as Callback,
+            const result = await invokeWebhookCallback(
+              env,
+              ctx,
+              callbackToken,
               formattedLogs
             );
             disposeRpc(result);
           } catch (error) {
             const context = extractLogQueueContext(logs[0], batch.queue);
             const logger = createLogger(context);
+            // Expired / not-found / suspended callbacks are expected — log
+            // a warning instead of paging via PostHog.
+            if (isCallbackError(error)) {
+              logger.warn("Log callback unavailable", {
+                callback_token: callbackToken,
+                error: String(error),
+              });
+              continue;
+            }
             logger.error("Failed to call log callback", error as Error, {
               callback_token: callbackToken,
             });

@@ -640,7 +640,7 @@ webhook.post("/hook/pubsub/:topicId", webhookAsyncRateLimiter, async (c) => {
 
 /**
  * Extract webhook request data into a form that can be either (a) dispatched
- * synchronously to CallbacksState.CallCallback or (b) serialized onto
+ * synchronously via `invokeWebhookCallback` or (b) serialized onto
  * WEBHOOK_QUEUE for async processing.
  */
 async function parseWebhookRequest(
