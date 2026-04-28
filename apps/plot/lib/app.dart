@@ -5,6 +5,7 @@ import 'package:plot/state/theme.dart';
 import 'package:plot/state/local_preferences.dart';
 import 'package:plot/state/settings.dart';
 import 'package:platform_builder/platform_builder.dart';
+import 'package:flutter/cupertino.dart' show DefaultCupertinoLocalizations;
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -52,9 +53,23 @@ class AppState extends State<App> {
       ],
       child: Directionality(
         textDirection: TextDirection.ltr,
-        child: ColourScheme(
-          child: Builder(
-            builder: (context) => Window(
+        // Provide default Material/Cupertino/Widgets localizations above the
+        // app's overlays (FToaster's Overlay.wrap sits above MaterialApp), so
+        // any widget mounted in any overlay can resolve CupertinoLocalizations.
+        // Without this, the iOS Cupertino selection toolbar's button labels
+        // (Cut/Copy/Paste, etc.) crash with a null check operator on
+        // CupertinoLocalizations.of(context) when shown from an overlay above
+        // the MaterialApp.
+        child: Localizations(
+          locale: const Locale('en'),
+          delegates: const [
+            material.DefaultMaterialLocalizations.delegate,
+            DefaultCupertinoLocalizations.delegate,
+            DefaultWidgetsLocalizations.delegate,
+          ],
+          child: ColourScheme(
+            child: Builder(
+              builder: (context) => Window(
               child: CommandProvider(
                 child: FTheme(
                   data: buildTheme(context, context.colour),
@@ -101,6 +116,7 @@ class AppState extends State<App> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
