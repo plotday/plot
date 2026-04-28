@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.18.3",
   "scripts": {
     "install": "[ -f Gemfile ] && bundle install --quiet || true",
-    "get-env": "nx run-many -t get-env --exclude plot --parallel=false",
+    "get-env": "nx run-many -t get-env --exclude plot --parallel=false && bash scripts/get-claude-env",
     "set-env": "nx run-many -t set-env --exclude plot --",
     "build": "nx run-many -t build --exclude plot",
     "deploy:site": "nx deploy @plotday/site",
@@ -38,7 +38,6 @@
     "prod-db-connect": "pnpm --filter @plotday/db run prod-db-connect",
     "prod-db-disconnect": "pnpm --filter @plotday/db run prod-db-disconnect",
     "prod-db-logs": "pnpm --filter @plotday/db run prod-db-logs",
-    "claude-prod": "pnpm prod-db-connect && PGPASSWORD=$(op read --account plotco.1password.com 'op://Production/Database/readonly/password') claude",
     "gem-prod": "pnpm prod-db-connect && PGPASSWORD=$(op read --account plotco.1password.com 'op://Production/Database/readonly/password') gemini",
     "tunnel": "bash scripts/tunnel start",
     "tunnel:start": "bash scripts/tunnel start-bg",

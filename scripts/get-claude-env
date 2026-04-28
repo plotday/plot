@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Writes Claude Code session env vars to .claude/settings.local.json so they
+# are available when claude starts. Currently sets PGPASSWORD for readonly
+# production database access (paired with `pnpm prod-db-connect`).
+#
+# Run automatically as part of `pnpm get-env`.
+
+set -e
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SETTINGS="$PROJECT_DIR/.claude/settings.local.json"
+
+if ! command -v op >/dev/null 2>&1; then
+  echo "get-claude-env: 1Password CLI (op) not installed; skipping PGPASSWORD" >&2
+  exit 0
+fi
+
+PGPASSWORD=$(op read --account plotco.1password.com 'op://Production/Database/readonly/password')
+if [ -z "$PGPASSWORD" ]; then
+  echo "get-claude-env: failed to read PGPASSWORD from 1Password" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$SETTINGS")"
+[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+
+tmp=$(mktemp)
+jq --arg pw "$PGPASSWORD" '.env = ((.env // {}) + {PGPASSWORD: $pw})' "$SETTINGS" > "$tmp"
+mv "$tmp" "$SETTINGS"
+
+echo "get-claude-env: set PGPASSWORD in $SETTINGS"
