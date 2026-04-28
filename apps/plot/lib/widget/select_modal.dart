@@ -549,6 +549,10 @@ class _SelectModalState<T> extends State<_SelectModal<T>> {
     if (_isLoading && _groups.isEmpty) return false;
     // Always show filter when nested so back button shares the row
     if (ModalProvider.of(context).modalStackNotifier.value > 1) return true;
+    // With a physical keyboard, always show the filter so users can type to
+    // search without first having to reach for the field. The item-count
+    // threshold below only applies on touch-only devices.
+    if (hasPhysicalKeyboard()) return true;
     final totalItems = _groups.fold<int>(0, (sum, g) => sum + g.items.length);
     return totalItems >= 20;
   }
