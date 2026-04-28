@@ -279,7 +279,10 @@ class _NoteWidgetState extends State<NoteWidget> {
                               color: tileBg,
                               child: NoteCommands(
                                 note: widget.note,
-                                showCommands: highlighted,
+                                showCommands:
+                                    highlighted &&
+                                    (hasPhysicalKeyboard() ||
+                                        !widget.selected),
                               ),
                             ),
                             Container(
