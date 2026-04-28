@@ -153,8 +153,19 @@ threads.get("/sync/threads/search", async (c) => {
   }
 
   // Escape ILIKE wildcards and build a contains-pattern.
-  const escaped = q.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+  const escapeIlike = (s: string) =>
+    s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+  const escaped = escapeIlike(q);
   const pattern = `%${escaped}%`;
+
+  // Word-split for contact-name matching: each word must match at least one
+  // contact on the thread (different contacts may match different words,
+  // mirroring the client-side semantics).
+  const contactWords = q
+    .split(/\s+/)
+    .filter((w) => w.length > 0)
+    .map((w) => w.toLowerCase())
+    .filter((w) => w.length >= 2);
 
   const archivedExpr =
     archived === true
@@ -166,6 +177,31 @@ threads.get("/sync/threads/search", async (c) => {
   const priorityExpr = priorityId
     ? sql<boolean>`ut.priority_id IN (SELECT child_id FROM public.priority_child WHERE priority_id = ${priorityId}::uuid)`
     : sql<boolean>`true`;
+
+  // Build the optional contact branch. Skipped when no usable words remain
+  // after the length filter so we don't return every thread that has any
+  // contact on it.
+  let contactBranch: ReturnType<typeof sql<boolean>> | null = null;
+  if (contactWords.length > 0) {
+    const wordClauses = contactWords.map((word) => {
+      const e = escapeIlike(word);
+      const startPattern = `${e}%`;
+      const innerPattern = `% ${e}%`;
+      return sql<boolean>`EXISTS (
+        SELECT 1 FROM public.contact c
+        WHERE c.archived_at IS NULL
+          AND c.id = ANY(ut.contacts)
+          AND (
+            c.name ILIKE ${startPattern}
+            OR c.name ILIKE ${innerPattern}
+            OR c.email ILIKE ${startPattern}
+          )
+      )`;
+    });
+    contactBranch = wordClauses.reduce(
+      (acc, clause) => sql<boolean>`${acc} AND ${clause}`,
+    );
+  }
 
   const matchExpr = sql<boolean>`(
     ut.title ILIKE ${pattern}
@@ -181,6 +217,7 @@ threads.get("/sync/threads/search", async (c) => {
       WHERE l.thread_id = ut.id
         AND (l.title ILIKE ${pattern} OR l.source_url ILIKE ${pattern} OR l.preview ILIKE ${pattern})
     )
+    ${contactBranch ? sql`OR (${contactBranch})` : sql``}
   )`;
 
   if (countOnly) {

@@ -392,6 +392,42 @@ class Actor extends ActorRow {
     }
   }
 
+  /// Returns canonical UUID strings of non-archived user/contact actors
+  /// whose name has a word starting with [word] (anchored at the start of
+  /// any space-separated name part), or whose email starts with [word].
+  /// Matching is case-insensitive for ASCII via SQLite's default LIKE
+  /// behavior. Returns an empty list when [word] is empty.
+  ///
+  /// Includes non-primary alias contacts because `thread.contacts` may
+  /// reference an alias ID rather than the user's primary contact —
+  /// dropping aliases here would silently miss threads the user can see.
+  ///
+  /// Used by thread search to surface threads shared with a contact whose
+  /// name matches the typed query.
+  static Future<List<String>> idsMatchingWordPrefix(String word) async {
+    if (word.isEmpty) return const [];
+    final lower = word.toLowerCase();
+    final a = Store.get.actors;
+    final query = Store.get.select(a)
+      ..where(
+        (row) =>
+            row.archivedAt.isNull() &
+            row.type.isIn(
+              ActorType.values
+                  .where(
+                    (t) => t == ActorType.user || t == ActorType.contact,
+                  )
+                  .map((t) => t.name.toSnakeCase())
+                  .toList(),
+            ) &
+            (row.name.like('$lower%') |
+                row.name.like('% $lower%') |
+                row.email.like('$lower%')),
+      );
+    final rows = await query.get();
+    return rows.map((r) => r.id.toUuid().toString()).toList();
+  }
+
   static MultiSelectable<Actor> _get({
     ActorId? id,
     List<ActorType>? types,

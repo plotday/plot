@@ -736,6 +736,40 @@ class Thread extends Equatable implements Comparable<Thread> {
     return success;
   }
 
+  /// Splits [search] on whitespace, strips FTS5 special chars, and keeps
+  /// words ≥ 2 chars. Shared by the FTS branch and the contact-name match
+  /// resolution so both apply the same gating and word ordering.
+  static List<String> _sanitizeSearchWords(String? search) {
+    if (search == null || search.isEmpty) return const [];
+    return search
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .map(
+          (word) => word.replaceAll(RegExp(r'''['"*()/:+\-^~{}\[\]@#]'''), ''),
+        )
+        .where((word) => word.length >= 2)
+        .toList();
+  }
+
+  /// Resolves contact-name matches for each sanitized search word. Returns
+  /// null if there are no usable words (so the search clause itself will be
+  /// skipped). Each returned sublist is the set of actor UUID strings whose
+  /// name has a word starting with the corresponding search word, or whose
+  /// email starts with it. Empty sublists are kept so positions stay aligned
+  /// with the sanitized words list — the consumer treats any-empty as a
+  /// signal to drop the contacts branch.
+  static Future<List<List<String>>?> _resolveContactIdMatches(
+    String? search,
+  ) async {
+    final words = _sanitizeSearchWords(search);
+    if (words.isEmpty) return null;
+    final result = <List<String>>[];
+    for (final word in words) {
+      result.add(await Actor.idsMatchingWordPrefix(word));
+    }
+    return result;
+  }
+
   static Future<List<Thread>> get({
     DateRange? range,
     ThreadId? id,
@@ -789,24 +823,31 @@ class Thread extends Equatable implements Comparable<Thread> {
     int? limit,
     int? offset,
   }) {
-    return _getQuery(
-      range: range,
-      id: id,
-      priorityId: priorityId,
-      priorityPath: priorityPath,
-      archived: archived,
-      draft: draft,
-      order: order,
-      search: search,
-      self: self,
-      filter: filter,
-      iconFilter: iconFilter,
-      includeAllFutureEvents: includeAllFutureEvents,
-      includeUnscheduled: linkScheduledOnly ? false : includeUnscheduled,
-      linkScheduledOnly: linkScheduledOnly,
-      limit: limit,
-      offset: offset,
-    ).watch().asyncMap((results) async {
+    // Resolve contact-name matches once per search before opening the
+    // change-driven stream. New search text triggers a new subscription,
+    // so we don't need to re-resolve when contacts are inserted/updated.
+    return Stream.fromFuture(_resolveContactIdMatches(search)).asyncExpand((
+      contactIdMatchesPerWord,
+    ) {
+      return _getQuery(
+        range: range,
+        id: id,
+        priorityId: priorityId,
+        priorityPath: priorityPath,
+        archived: archived,
+        draft: draft,
+        order: order,
+        search: search,
+        contactIdMatchesPerWord: contactIdMatchesPerWord,
+        self: self,
+        filter: filter,
+        iconFilter: iconFilter,
+        includeAllFutureEvents: includeAllFutureEvents,
+        includeUnscheduled: linkScheduledOnly ? false : includeUnscheduled,
+        linkScheduledOnly: linkScheduledOnly,
+        limit: limit,
+        offset: offset,
+      ).watch().asyncMap((results) async {
       if (!Store.isAvailable) return (threads: <Thread>[], rawRowCount: 0);
       final threads = await _mapResultsToThreads(
         results,
@@ -823,6 +864,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         });
       }
       return (threads: threads, rawRowCount: results.length);
+    });
     });
   }
 
@@ -1152,6 +1194,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     /* Augmentation */
     bool getParent = true,
   }) async {
+    final contactIdMatchesPerWord = await _resolveContactIdMatches(search);
     final query = _getQuery(
       range: range,
       strictRange: strictRange,
@@ -1164,6 +1207,7 @@ class Thread extends Equatable implements Comparable<Thread> {
       includeAllFutureEvents: includeAllFutureEvents,
       includeUnscheduled: includeUnscheduled,
       search: search,
+      contactIdMatchesPerWord: contactIdMatchesPerWord,
       filter: filter,
       iconFilter: iconFilter,
       order: order,
@@ -1194,6 +1238,13 @@ class Thread extends Equatable implements Comparable<Thread> {
     bool includeUnscheduled = true,
     bool linkScheduledOnly = false,
     String? search,
+    /// Per-search-word lists of actor UUID strings whose name has a word
+    /// starting with that search word (resolved via [Actor.idsMatchingWordPrefix]).
+    /// When non-null and aligned with the sanitized search words, the search
+    /// clause also matches threads whose `contacts` column includes one of
+    /// the listed actors per word (ANDed across words). Resolved by
+    /// [_resolveContactIdMatches] before the query is built.
+    List<List<String>>? contactIdMatchesPerWord,
     List<Tag>? filter,
     List<String>? iconFilter,
 
@@ -1322,15 +1373,7 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
     if (search?.isNotEmpty == true) {
       // Split and sanitize search words once for both FTS5 and LIKE matching
-      final sanitizedWords = search!
-          .split(RegExp(r'\s+'))
-          .where((word) => word.isNotEmpty)
-          .map(
-            // Remove FTS5 special characters to prevent syntax errors
-            (word) => word.replaceAll(RegExp(r'''['"*()/:+\-^~{}\[\]@#]'''), ''),
-          )
-          .where((word) => word.length >= 2)
-          .toList();
+      final sanitizedWords = _sanitizeSearchWords(search);
 
       final ftsWords = sanitizedWords.map((word) => '$word*').join(' ');
 
@@ -1343,6 +1386,30 @@ class Thread extends Equatable implements Comparable<Thread> {
             )
             .join(' AND ');
 
+        // Optional contacts branch: match threads whose `contacts` column
+        // includes at least one resolved actor per search word (ANDed
+        // across words). Only enabled when every word resolved to ≥1
+        // matching actor — otherwise the AND chain would be unsatisfiable
+        // and we skip the branch entirely.
+        String? contactBranch;
+        if (contactIdMatchesPerWord != null &&
+            contactIdMatchesPerWord.length == sanitizedWords.length &&
+            contactIdMatchesPerWord.every((ids) => ids.isNotEmpty)) {
+          final clauses = <String>[];
+          for (final ids in contactIdMatchesPerWord) {
+            // UUIDs are validated when fetched from the actors table, so
+            // direct interpolation is safe.
+            final orParts = ids
+                .map(
+                  (id) =>
+                      "(',' || COALESCE(a.contacts, '') || ',') LIKE '%,$id,%'",
+                )
+                .join(' OR ');
+            clauses.add('($orParts)');
+          }
+          contactBranch = clauses.join(' AND ');
+        }
+
         query.where(
           CustomExpression<bool>('''
             EXISTS (SELECT 1 FROM thread_fts WHERE thread_id = a.id AND thread_fts MATCH '$ftsWords')
@@ -1350,6 +1417,7 @@ class Thread extends Equatable implements Comparable<Thread> {
             EXISTS (SELECT 1 FROM note_fts WHERE thread_id = a.id AND note_fts MATCH '$ftsWords')
             OR
             EXISTS (SELECT 1 FROM links ll WHERE ll.thread_id = a.id AND $linkConditions)
+            ${contactBranch != null ? 'OR ($contactBranch)' : ''}
           '''),
         );
       }
