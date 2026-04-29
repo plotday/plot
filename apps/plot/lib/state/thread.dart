@@ -53,6 +53,7 @@ class ThreadBloc extends Cubit<ThreadState> {
     }
     _tagsSubscription?.cancel();
     _totalCountSubscription?.cancel();
+    _notesSubscription?.cancel();
     return super.close();
   }
 
@@ -256,18 +257,21 @@ class ThreadBloc extends Cubit<ThreadState> {
 
     final isSearchFiltering = state.search.isNotEmpty && !state.showAllNotes;
 
-    _subscriptions.add(
-      Note.watch(
-        state.thread.id,
-        archived: state.showArchived,
-        draft: false,
-        filter: state.filter.isNotEmpty ? state.filter : null,
-        search: isSearchFiltering ? state.search : null,
-        threadNoteId: state.threadNoteId,
-      ).listen((notes) {
-        emit(state.copyWith(notes: notes));
-      }),
-    );
+    // Cancel the prior notes watch before subscribing again. Drift fires
+    // every active stream on each table update, so a leaked subscription
+    // with stale filter args briefly overwrites the latest notes list
+    // during sync — producing a "full → 1 note → full" flash.
+    _notesSubscription?.cancel();
+    _notesSubscription = Note.watch(
+      state.thread.id,
+      archived: state.showArchived,
+      draft: false,
+      filter: state.filter.isNotEmpty ? state.filter : null,
+      search: isSearchFiltering ? state.search : null,
+      threadNoteId: state.threadNoteId,
+    ).listen((notes) {
+      emit(state.copyWith(notes: notes));
+    });
 
     // Watch total (unfiltered) note count when search is actively filtering
     _totalCountSubscription?.cancel();
@@ -288,6 +292,7 @@ class ThreadBloc extends Cubit<ThreadState> {
   final List<StreamSubscription<void>> _subscriptions;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
   StreamSubscription<int>? _totalCountSubscription;
+  StreamSubscription<List<Note>>? _notesSubscription;
 }
 
 class ThreadBlocProvider extends StatefulWidget {
