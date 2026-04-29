@@ -92,6 +92,16 @@ type LinkStatus = NonNullable<LinkTypeConfig["statuses"]>[number];
 
 const RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
 
+// Defense-in-depth cap on reconcileComments self-rescheduling. Reconcile
+// is meant to run on a 30-minute cadence, so a legitimate chain hits this
+// only after weeks of normal operation. The cap exists to bound damage
+// from a runaway scenario where some bug causes the chain to fire faster
+// than its scheduled interval (this happened in production: a single
+// instance enqueued thousands of reconciles in minutes and starved the
+// shared task queue). The counter is reset whenever the prior invocation
+// was at least the expected interval ago.
+const RECONCILE_FAST_CHAIN_CAP = 1000;
+
 export class Airtable extends Connector<Airtable> {
   static readonly PROVIDER = AuthProvider.Airtable;
   static readonly SCOPES = [
@@ -289,6 +299,7 @@ export class Airtable extends Connector<Airtable> {
     await this.clear(`sync_state_${baseId}`);
     await this.clear(`task_tables_${baseId}`);
     await this.clear(`tracked_records_${baseId}`);
+    await this.clear(`reconcile_last_at_${baseId}`);
     // Legacy key from pre-"sync all records" versions; clear for cleanup.
     await this.clear(`viewer_${baseId}`);
   }
@@ -452,7 +463,12 @@ export class Airtable extends Connector<Airtable> {
         initialSync: state.initialSync,
       });
     } else {
+      // All tables exhausted — initial backfill is done. Clear the
+      // syncing indicator (idempotent) so the connection card stops
+      // showing the "Syncing" spinner. See google-contacts for the
+      // canonical pattern.
       await this.clear(`sync_state_${baseId}`);
+      await this.tools.integrations.channelSyncCompleted(baseId);
       return;
     }
 
@@ -896,15 +912,43 @@ export class Airtable extends Connector<Airtable> {
    * Kept under the historical `reconcileComments` name so previously
    * scheduled self-rescheduling tasks continue to dispatch after upgrade.
    */
-  async reconcileComments(baseId: string): Promise<void> {
+  async reconcileComments(baseId: string, chainCount?: number): Promise<void> {
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+
+    // Detect runaway self-rescheduling. Compare the previous fire time to
+    // now: if the gap is roughly the configured interval, treat this as a
+    // healthy periodic chain and reset the depth counter. If many chains
+    // arrive faster than expected, accumulate the depth and bail when it
+    // crosses the cap. Older callbacks serialized before this argument
+    // existed pass `chainCount === undefined`, which we treat as a fresh
+    // chain (depth 0) — this preserves existing scheduled tasks.
+    const lastAt = await this.get<number>(`reconcile_last_at_${baseId}`);
+    const now = Date.now();
+    await this.set(`reconcile_last_at_${baseId}`, now);
+    const fastChain =
+      lastAt !== null &&
+      lastAt !== undefined &&
+      now - lastAt < RECONCILE_INTERVAL_MS - 60_000;
+    const depth = fastChain ? (chainCount ?? 0) : 0;
+    if (depth >= RECONCILE_FAST_CHAIN_CAP) {
+      console.warn(
+        "Airtable reconcile: fast-chain cap reached, bailing out",
+        baseId,
+        depth
+      );
+      return;
+    }
 
     // Don't reconcile while initial sync is still running — the two loops
     // racing on the same records caused duplicate-key errors in saveLink
     // (thread_twist_key_unique). Defer; we'll wake up again on schedule.
     const inProgress = await this.get<SyncState>(`sync_state_${baseId}`);
     if (inProgress) {
-      const cb = await this.callback(this.reconcileComments, baseId);
+      const cb = await this.callback(
+        this.reconcileComments,
+        baseId,
+        depth + 1
+      );
       await this.runTask(cb, {
         runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
       });
@@ -994,7 +1038,18 @@ export class Airtable extends Connector<Airtable> {
     // API. A connected user re-enabling the channel will restart sync via
     // onChannelEnabled, which also reschedules reconcile.
     if (authFailed) return;
-    const cb = await this.callback(this.reconcileComments, baseId);
+
+    // The reconcile completed without an in-progress backfill blocking it,
+    // so the channel is in a steady state. Idempotently clear the syncing
+    // indicator — handles legacy instances whose initial backfill ran
+    // before syncBatch learned to call channelSyncCompleted.
+    await this.tools.integrations.channelSyncCompleted(baseId);
+
+    const cb = await this.callback(
+      this.reconcileComments,
+      baseId,
+      depth + 1
+    );
     await this.runTask(cb, {
       runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
     });
