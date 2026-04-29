@@ -91,7 +91,7 @@ class ConnectionStatusTile extends StatelessWidget {
       instances,
     );
     if (syncing.isNotEmpty) {
-      return ListTile(
+      final tile = ListTile(
         title: 'Syncing ${syncing.join(', ')}',
         textStyle: textStyle,
         muted: true,
@@ -104,6 +104,13 @@ class ConnectionStatusTile extends StatelessWidget {
           ),
         ),
       );
+      if (syncing.length > 1) {
+        return FTooltip(
+          tipBuilder: (context, controller) => Text(syncing.join('\n')),
+          child: tile,
+        );
+      }
+      return tile;
     }
 
     return ListTile(
