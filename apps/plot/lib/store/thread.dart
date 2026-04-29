@@ -64,6 +64,26 @@ class Schedules extends Table with SyncableTable, UuidTable {
     }
   }
 
+  /// Normalize a stored occurrence string to the canonical
+  /// [formatOccurrence] form used by client-generated recurrence instances.
+  /// The server writes occurrence as `Date.toISOString()` (UTC ISO), but
+  /// generated instances are keyed in local-naive `YYYY-MM-DDTHH:MM` form,
+  /// so without this both keys end up in the dedup map and the user sees
+  /// the original instance alongside the rescheduled one.
+  static String canonicalOccurrence(
+    String stored, {
+    required bool dateOnly,
+  }) {
+    final parsed = DateTime.tryParse(stored);
+    if (parsed == null) return stored;
+    // Date-only events are TZ-agnostic (Google sends `originalStartTime.date`
+    // as `YYYY-MM-DD`, which the API serialises as UTC midnight) — keep the
+    // calendar date as-is rather than shifting it across the user's TZ.
+    if (dateOnly) return formatOccurrence(parsed, dateOnly: true);
+    final local = parsed.isUtc ? parsed.toLocal() : parsed;
+    return formatOccurrence(local, dateOnly: false);
+  }
+
   BlobColumn get userId => blob().nullable().map(const UuidConverter())();
   RealColumn get order => real().nullable().map(const OrderConverter())();
   DateTimeColumn get startAt =>
@@ -1944,14 +1964,19 @@ class Thread extends Equatable implements Comparable<Thread> {
               occurrences[occurrence._schedule!.occurrence!] = occurrence;
             }
             // Overwrite occurrences with stored schedule occurrences
+            final overrideDateOnly = baseScheduleRow?.startAt == null;
             for (final result in group) {
               final scheduleRow = result.readTableOrNull(sched);
               if (scheduleRow == null || scheduleRow.occurrence == null) {
                 continue;
               }
+              final overrideKey = Schedules.canonicalOccurrence(
+                scheduleRow.occurrence!,
+                dateOnly: overrideDateOnly,
+              );
               // Remove archived occurrences (e.g. cancelled recurring event instances)
               if (scheduleRow.archivedAt != null) {
-                occurrences.remove(scheduleRow.occurrence!);
+                occurrences.remove(overrideKey);
                 continue;
               }
               final activity = Thread._fromStore(
@@ -1965,7 +1990,7 @@ class Thread extends Equatable implements Comparable<Thread> {
                 linkSourceCreatedAt: linkSourceCreatedAt,
                 rsvpInheritedFromSeries: false,
               );
-              occurrences[scheduleRow.occurrence!] = activity;
+              occurrences[overrideKey] = activity;
             }
           } catch (e, t) {
             log.warning(
@@ -2039,14 +2064,19 @@ class Thread extends Equatable implements Comparable<Thread> {
               );
             }
             // Apply occurrence overrides (replace matching generated entries).
+            final overrideDateOnly = baseRecurring.startAt == null;
             for (final overrideRow in overrides) {
               if (overrideRow.occurrence != null) {
+                final overrideKey = Schedules.canonicalOccurrence(
+                  overrideRow.occurrence!,
+                  dateOnly: overrideDateOnly,
+                );
                 // Remove archived occurrences (e.g. cancelled recurring event instances)
                 if (overrideRow.archivedAt != null) {
-                  occurrences.remove(overrideRow.occurrence!);
+                  occurrences.remove(overrideKey);
                   continue;
                 }
-                occurrences[overrideRow.occurrence!] = Thread._fromStore(
+                occurrences[overrideKey] = Thread._fromStore(
                   activity: activityRow,
                   priority: priority,
                   schedule: overrideRow,
