@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:plot/store/store.dart';
+import 'package:plot/style/plot_colors.dart';
 import 'package:plot/widget/widget.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/state/thread.dart';
@@ -134,6 +135,8 @@ class _NoteWidgetState extends State<NoteWidget> {
     final noteContent = widget.note.content ?? '';
     final noteLinks = widget.note.actions ?? [];
     final activityBloc = context.read<ThreadBloc>();
+
+    final hasFocus = widget.focusNode?.hasFocus ?? false;
 
     final listTile = ListTile(
       padding: const EdgeInsets.only(left: 10, right: 16, top: 8),
@@ -276,9 +279,12 @@ class _NoteWidgetState extends State<NoteWidget> {
                       showCommands: _hovered,
                       tileBg: widget.selected
                           ? context.theme.colors.primaryForeground
-                          : highlighted
-                          ? context.colour.editableBackground
-                          : context.colour.background,
+                          : hasFocus
+                          ? Color.alphaBlend(
+                              context.theme.plotColors.highlight,
+                              context.theme.colors.background,
+                            )
+                          : context.theme.colors.background,
                     ),
                   ),
                 ),
