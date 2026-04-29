@@ -72,6 +72,16 @@ export function twistFactory({
     const environment = twistData.environment!;
     version = twistData.version!;
 
+    // Some callers pass a narrowed ctx (e.g. DO state's `{ exports }` shape)
+    // that lacks waitUntil. Probe at runtime so handleTwistOperation can
+    // skip the PostHog escalation when no real ExecutionContext is in
+    // scope. Request and scheduled-handler callers always pass the full
+    // ctx; permission-introspection paths and the like don't.
+    const operationCtx: { waitUntil: ExecutionContext["waitUntil"] } | undefined =
+      typeof (ctx as { waitUntil?: unknown }).waitUntil === "function"
+        ? (ctx as ExecutionContext)
+        : undefined;
+
     // Track tool instances for permission collection
     const toolInstances: Array<{ path: string[]; id: string; options: any }> =
       [];
@@ -592,7 +602,7 @@ export function twistFactory({
         await handleTwistOperation(
           "activate",
           () => twist.activate(twistInit, context),
-          { env, id, version, environment }
+          { env, id, version, environment, ctx: operationCtx }
         );
       },
 
@@ -602,6 +612,7 @@ export function twistFactory({
           id,
           version,
           environment,
+          ctx: operationCtx,
         });
       },
 
@@ -617,7 +628,7 @@ export function twistFactory({
         await handleTwistOperation(
           "deactivate",
           () => twist.deactivate(twistInit),
-          { env, id, version, environment }
+          { env, id, version, environment, ctx: operationCtx }
         );
       },
 
@@ -669,7 +680,7 @@ export function twistFactory({
           functionName,
           // @ts-ignore - Type instantiation is excessively deep and possibly infinite
           () => twist.callCallback(twistInit, path, functionName, ...args),
-          { env, id, version, environment }
+          { env, id, version, environment, ctx: operationCtx }
         );
       },
     };

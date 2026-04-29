@@ -53,7 +53,7 @@ import { disposeRpc, getRpcFunctionName } from "../../utils/rpc";
 import { invokeCallback } from "../invoke-callback";
 import { fromDbLink } from "./plot/converters";
 import type { Plot } from "./plot/index";
-import type { Store } from "./store";
+import { Store } from "./store";
 import { Tool } from "./tool";
 import { createSchedule } from "../../app/sync/smart-schedule";
 import { unarchiveDoneLinksOnThread } from "../../app/sync/link-tags";
@@ -466,6 +466,41 @@ export class Integrations extends Tool implements IAuth {
         return token;
       }
     }
+
+    // Sub-connector fallback: when this Integrations is built as a sub-tool
+    // of another Connector via merged scopes (e.g. GoogleContacts inside
+    // Google Calendar / Drive / Chat — see public/connectors/google-*/), the
+    // OAuth flow ran on the parent and stored tokens in the parent's DO,
+    // not ours. Our own getChannelConfig and migration fallback both miss
+    // by design. Look one level up before giving up. Skipped when this
+    // tool is at the root (length 1) since there's no parent to consult.
+    if (this.path.length > 1) {
+      const parentStore = new Store({
+        path: ["integrations"],
+        storage: this.env.STORAGE,
+        twistInstanceId: this.twistInstanceId,
+      });
+      const parentKeys = await parentStore.list(`auth_token:${provider}:`);
+      for (const key of parentKeys) {
+        const tokenData = await parentStore.get<StoredTokenData>(key);
+        if (!tokenData) continue;
+        // Skip expired tokens — leave refresh to the parent's getActorToken
+        // on its next call (it owns the lifecycle, including flagNeedsReauth
+        // on permanent failure).
+        if (tokenData.expires_at && Date.now() > tokenData.expires_at) {
+          continue;
+        }
+        const providerConfig = PROVIDER_CONFIGS[provider];
+        return {
+          token: tokenData.access_token,
+          scopes: tokenData.scopes,
+          provider: tokenData.providerData
+            ? providerConfig?.extractMetadata?.(tokenData.providerData)
+            : undefined,
+        };
+      }
+    }
+
     return null;
   }
 

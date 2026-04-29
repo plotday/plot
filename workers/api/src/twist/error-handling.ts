@@ -1,6 +1,9 @@
+import { PostHog } from "posthog-node";
+
 import { type TwistEnvironment, type Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { processStackTrace } from "../utils/stacktrace";
+import { Tracker } from "../utils/tracker";
 
 /**
  * Retrieves the sourcemap for a twist from R2 storage.
@@ -54,6 +57,14 @@ export async function handleTwistOperation<T>(
     id: string;
     version: string;
     environment: TwistEnvironment;
+    /**
+     * Used for `waitUntil(tracker.shutdown(...))` so the PostHog escalation
+     * for unhandled twist exceptions can flush after the response is sent.
+     * Optional — when absent, the escalation step is skipped (logging to
+     * TWIST_LOGS_QUEUE still happens). Pass through from the caller's
+     * request-scoped or scheduled-handler ExecutionContext.
+     */
+    ctx?: { waitUntil: ExecutionContext["waitUntil"] };
   }
 ): Promise<T> {
   try {
@@ -118,7 +129,10 @@ export async function handleTwistOperation<T>(
       message = `\n${errorName}: ${errorMessage}`;
     }
 
-    // Log to twist logs queue ONLY (these are user code errors, not API errors)
+    // Log to twist logs queue (user-facing twist log UI). Connector code runs
+    // in a separately-loaded Worker (see workers/api/src/twist/loader.ts) with
+    // no PostHog observability binding, so this queue is the only sink the
+    // connector's own console.* writes reach.
     try {
       await context.env.TWIST_LOGS_QUEUE.send({
         twistRootId: context.id,
@@ -131,6 +145,35 @@ export async function handleTwistOperation<T>(
       // Only log queue failures to API console (infrastructure issue)
       const logger = createLogger({ twist_id: context.id, environment: context.environment, operation });
       logger.error("Failed to log twist operation error", logError as Error);
+    }
+
+    // Surface the unhandled twist exception to PostHog Error Tracking so
+    // recurring connector failures group into a single issue alongside api
+    // worker errors. Without this, twist throws live only in the per-twist
+    // log queue and aren't visible in our shared error-tracking view.
+    if (context.ctx && context.env.POSTHOG_API_KEY) {
+      try {
+        const surfacedError = new Error(`${errorName}: ${errorMessage}`);
+        surfacedError.name = errorName;
+        if (stackToProcess) surfacedError.stack = stackToProcess;
+        const postHog = new PostHog(context.env.POSTHOG_API_KEY, {
+          host: context.env.POSTHOG_HOST,
+          flushAt: 1,
+          flushInterval: 0,
+        });
+        const tracker = new Tracker(postHog);
+        tracker.captureException(surfacedError, {
+          twist_id: context.id,
+          twist_version: context.version,
+          environment: context.environment,
+          operation,
+          source: "handleTwistOperation",
+        });
+        context.ctx.waitUntil(tracker.shutdown(2000));
+      } catch (escalationError) {
+        const logger = createLogger({ twist_id: context.id, environment: context.environment, operation });
+        logger.error("Failed to escalate twist error to PostHog", escalationError as Error);
+      }
     }
 
     // Rethrow the original error
