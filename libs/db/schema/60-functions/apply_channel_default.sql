@@ -49,7 +49,16 @@ BEGIN
     ORDER BY p.created_at ASC
     LIMIT 1;
 
-    WITH candidates AS (
+    -- AS MATERIALIZED on both CTEs is load-bearing: classify_thread_for_user
+    -- is STABLE, so without the fence the planner inlines `reclass` and
+    -- pushes the outer `r.new_priority_id IS NOT NULL` filter into
+    -- `candidates`'s thread_priority bitmap scan. That broadens the inner
+    -- scan to every (user_id, priority_id=root) row instead of only
+    -- candidates whose thread.topic matches this channel, and classify
+    -- ends up called on every root-filed thread (≫ candidates). With the
+    -- fence, candidates is computed once and classify is called exactly
+    -- once per row. Reproduced 30s timeout vs. 47ms with materialization.
+    WITH candidates AS MATERIALIZED (
         SELECT tp.thread_id, tp.user_id
         FROM public.thread_priority tp
         WHERE tp.applied_default_channel_id = p_channel_id
@@ -67,7 +76,7 @@ BEGIN
           AND t.topic = 'channel:' || p_channel_id::text
           AND t.archived_at IS NULL
     ),
-    reclass AS (
+    reclass AS MATERIALIZED (
         SELECT c.thread_id,
                c.user_id,
                public.classify_thread_for_user(c.user_id, c.thread_id) AS new_priority_id

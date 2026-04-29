@@ -1,32 +1,88 @@
--- Retroactively re-file a user's threads that would now classify to a
--- different priority, given an anchor thread that was just explicitly moved.
---
--- Called asynchronously (via c.executionCtx.waitUntil from the priority-moves
--- sync endpoint). Bounded, index-driven, single function — the worker makes
--- one RPC call and does not iterate.
---
--- Algorithm:
---   1. Load the anchor thread's current signals (topic, embedding,
---      contacts, groups).
---   2. Build a candidate set via an index-backed UNION:
---        - threads with the same topic (idx_thread_topic)
---        - threads within HNSW cosine distance of the anchor's embedding,
---          capped at p_max_candidates (idx_thread_embedding)
---        - threads with contact or group overlap (idx_thread_contacts /
---          idx_thread_groups GIN)
---      Every candidate is currently filed for this user with
---      user_moved = FALSE — explicit moves are sticky and never overwritten.
---   3. For each candidate, call classify_thread_for_user(p_user_id, id).
---      Move candidates whose new priority differs from their current one.
---   4. Return the number of moved rows.
-CREATE OR REPLACE FUNCTION public.reclassify_user_threads (
-    p_user_id uuid,
-    p_anchor_thread_id uuid,
-    p_max_candidates int DEFAULT 500
-)
-    RETURNS int
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "apply_channel_default" function
+CREATE OR REPLACE FUNCTION "public"."apply_channel_default" ("p_channel_id" bigint) RETURNS integer LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner_id uuid;
+    v_root_id uuid;
+    v_updated int;
+BEGIN
+    SELECT ti.owner_id
+    INTO v_owner_id
+    FROM public.channel c
+    JOIN public.twist_instance ti ON ti.id = c.twist_instance_id
+    WHERE c.id = p_channel_id;
+
+    IF v_owner_id IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    SELECT p.id INTO v_root_id
+    FROM public.priority p
+    WHERE p.user_id = v_owner_id
+      AND nlevel(p.path) = 1
+      AND p.archived_at IS NULL
+    ORDER BY p.created_at ASC
+    LIMIT 1;
+
+    -- AS MATERIALIZED on both CTEs is load-bearing: classify_thread_for_user
+    -- is STABLE, so without the fence the planner inlines `reclass` and
+    -- pushes the outer `r.new_priority_id IS NOT NULL` filter into
+    -- `candidates`'s thread_priority bitmap scan. That broadens the inner
+    -- scan to every (user_id, priority_id=root) row instead of only
+    -- candidates whose thread.topic matches this channel, and classify
+    -- ends up called on every root-filed thread (≫ candidates). With the
+    -- fence, candidates is computed once and classify is called exactly
+    -- once per row. Reproduced 30s timeout vs. 47ms with materialization.
+    WITH candidates AS MATERIALIZED (
+        SELECT tp.thread_id, tp.user_id
+        FROM public.thread_priority tp
+        WHERE tp.applied_default_channel_id = p_channel_id
+          AND tp.user_id = v_owner_id
+          AND tp.user_moved = FALSE
+
+        UNION
+
+        SELECT tp.thread_id, tp.user_id
+        FROM public.thread_priority tp
+        JOIN public.thread t ON t.id = tp.thread_id
+        WHERE tp.user_id = v_owner_id
+          AND tp.user_moved = FALSE
+          AND tp.priority_id = v_root_id
+          AND t.topic = 'channel:' || p_channel_id::text
+          AND t.archived_at IS NULL
+    ),
+    reclass AS MATERIALIZED (
+        SELECT c.thread_id,
+               c.user_id,
+               public.classify_thread_for_user(c.user_id, c.thread_id) AS new_priority_id
+        FROM candidates c
+    ),
+    updated AS (
+        UPDATE public.thread_priority tp
+        SET priority_id = r.new_priority_id,
+            applied_default_channel_id = public.channel_default_marker (
+                r.user_id, r.thread_id, r.new_priority_id
+            ),
+            updated_at = now()
+        FROM reclass r
+        WHERE tp.thread_id = r.thread_id
+          AND tp.user_id = r.user_id
+          AND tp.user_moved = FALSE
+          AND r.new_priority_id IS NOT NULL
+          AND (
+              r.new_priority_id IS DISTINCT FROM tp.priority_id
+              OR public.channel_default_marker (
+                     r.user_id, r.thread_id, r.new_priority_id
+                 ) IS DISTINCT FROM tp.applied_default_channel_id
+          )
+        RETURNING 1
+    )
+    SELECT COUNT(*) INTO v_updated FROM updated;
+
+    RETURN v_updated;
+END;
+$$;
+-- Modify "reclassify_user_threads" function
+CREATE OR REPLACE FUNCTION "public"."reclassify_user_threads" ("p_user_id" uuid, "p_anchor_thread_id" uuid, "p_max_candidates" integer DEFAULT 500) RETURNS integer LANGUAGE plpgsql AS $$
 DECLARE
     v_topic text;
     v_embedding halfvec;
@@ -134,6 +190,4 @@ BEGIN
 
     RETURN v_moved_count;
 END;
-$function$;
-
-COMMENT ON FUNCTION public.reclassify_user_threads IS 'After an explicit user move (anchor thread), retroactively re-file other threads that now classify differently. Uses indexed candidate prefilter (topic, HNSW, GIN), runs classify_thread_for_user per candidate, and moves those whose new classification differs — never touching rows where user_moved = TRUE.';
+$$;
