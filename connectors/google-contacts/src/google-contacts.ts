@@ -47,7 +47,16 @@ export default class GoogleContacts
   async onChannelEnabled(channel: Channel): Promise<void> {
     const token = await this.tools.integrations.get(channel.id);
     if (!token) {
-      throw new Error("No Google authentication token available");
+      // Auth token not available — abort instead of throwing so the
+      // recovery dispatch doesn't surface as a failed connection. Same
+      // pattern as syncBatch below. Common for the merged-scopes pattern
+      // (parent connector owns the OAuth, GoogleContacts inherits via
+      // MergeScopes) where channel.id="contacts" never has its own
+      // dedicated token registered.
+      console.warn(
+        `Auth token missing for ${channel.id} during onChannelEnabled, skipping`
+      );
+      return;
     }
 
     const initialState: ContactSyncState = {
@@ -67,9 +76,10 @@ export default class GoogleContacts
   async getContacts(syncableId: string): Promise<NewContact[]> {
     const token = await this.tools.integrations.get(syncableId);
     if (!token) {
-      throw new Error(
-        "No Google authentication token available for the provided syncableId"
+      console.warn(
+        `Auth token missing for syncableId ${syncableId} during getContacts, returning empty list`
       );
+      return [];
     }
 
     const api = new GoogleApi(token.token);
@@ -83,9 +93,10 @@ export default class GoogleContacts
   async startSync(syncableId: string): Promise<void> {
     const token = await this.tools.integrations.get(syncableId);
     if (!token) {
-      throw new Error(
-        "No Google authentication token available for the provided syncableId"
+      console.warn(
+        `Auth token missing for syncableId ${syncableId} during startSync, skipping`
       );
+      return;
     }
 
     const initialState: ContactSyncState = {
