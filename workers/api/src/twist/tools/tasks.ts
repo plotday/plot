@@ -10,6 +10,7 @@ import { extractRunQueueContext } from "../../utils/log-context";
 import { createLogger } from "@plotday/worker-util";
 import { invokeWebhookCallback } from "../invoke-webhook";
 import { disposeRpc } from "../../utils/rpc";
+import { isTransientError } from "../../utils/transient-error";
 import { Tool } from "./tool";
 
 /**

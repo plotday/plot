@@ -4,6 +4,7 @@ import { type TwistEnvironment, type Bindings } from "../env";
 import { createLogger } from "@plotday/worker-util";
 import { processStackTrace } from "../utils/stacktrace";
 import { Tracker } from "../utils/tracker";
+import { isTransientError } from "../utils/transient-error";
 
 /**
  * Retrieves the sourcemap for a twist from R2 storage.
@@ -70,6 +71,16 @@ export async function handleTwistOperation<T>(
   try {
     return await fn();
   } catch (error) {
+    // Cloudflare-side infrastructure blips (cross-worker RPC drops,
+    // Hyperdrive resets, transient Queue producer 5xxs) surface here as
+    // ordinary Errors but are not actionable by twist developers. Queue
+    // consumers (`Tasks.processQueue`, `processWebhooks`) already retry
+    // these silently — escalating them to TWIST_LOGS_QUEUE or PostHog
+    // would just add noise to the user-facing twist log on every retry.
+    if (isTransientError(error)) {
+      throw error;
+    }
+
     // Extract stack trace - use twistStack if this is a TwistError
     // (captured in twist worker before RPC boundary)
     let stackToProcess: string | undefined;

@@ -6,6 +6,7 @@ import { type Bindings, type WebhookMessage } from "../env";
 import { isCallbackError, getCallbackErrorType } from "../errors";
 import { invokeWebhookCallback } from "../twist/invoke-webhook";
 import { disposeRpc } from "../utils/rpc";
+import { isTransientError } from "../utils/transient-error";
 
 // Cloudflare resets a Durable Object when an in-flight call holds its
 // storage gate past the platform's watchdog. The new helper runs the
@@ -15,22 +16,6 @@ import { disposeRpc } from "../utils/rpc";
 function isDurableObjectResetError(error: unknown): boolean {
   const msg = (error as Error)?.message ?? "";
   return msg.includes("Durable Object storage operation exceeded timeout");
-}
-
-// Mirrors workers/api/src/twist/tools/tasks.ts:isTransientError. Both the
-// Tasks queue and the webhook queue talk to the same set of DOs +
-// Hyperdrive, so they classify transient errors the same way.
-function isTransientError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const msg = error.message;
-  return (
-    msg.includes("Network connection lost") ||
-    msg.includes("error code: 1019") ||
-    msg.includes("The Durable Object") ||
-    msg.includes("internal error") ||
-    msg.includes("Queue send failed") ||
-    msg.includes("Bad Gateway")
-  );
 }
 
 /**
