@@ -91,6 +91,10 @@ WHERE
 
 
 -- User-accessible note tags
+--
+-- Driven from "user".thread (per-user) so the planner scopes work to the
+-- user's visible notes instead of aggregating every public.note_tag row in
+-- the database. Mirrors the LATERAL pattern used by user.thread_tags.
 CREATE OR REPLACE VIEW "user"."note_tags"
 --
 AS
@@ -104,9 +108,24 @@ SELECT
     ua.priority_path,
     nt.tags
 FROM
-    note_tags nt
-    JOIN note n ON n.id = nt.note_id
-    JOIN "user".thread ua ON ua.id = n.thread_id
+    "user".thread ua
+    JOIN note n ON n.thread_id = ua.id
+    JOIN LATERAL (
+        SELECT
+            jsonb_object_agg(sq.tag_id, sq.actor_ids) FILTER (WHERE sq.actor_ids IS NOT NULL
+                AND jsonb_array_length(sq.actor_ids) > 0) AS tags,
+            MAX(sq.updated_at) AS updated_at,
+            MAX(sq.seq) AS seq
+        FROM (
+            SELECT
+                nt.tag_id,
+                jsonb_agg(nt.actor_id ORDER BY nt.actor_id) FILTER (WHERE nt.archived_at IS NULL) AS actor_ids,
+                MAX(COALESCE(nt.archived_at, nt.updated_at)) AS updated_at,
+                MAX(nt.seq) AS seq
+            FROM "public"."note_tag" nt
+            WHERE nt.note_id = n.id
+            GROUP BY nt.tag_id) sq
+        HAVING COUNT(*) > 0) nt ON TRUE
 WHERE
     (n.draft = FALSE OR n.created_by = ua.user_id)
     AND (n.access_contacts IS NULL
