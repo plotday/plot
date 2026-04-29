@@ -90,7 +90,54 @@ jobs:
             if [ "$INPUT_BEAT" = "true" ]; then WORKERS+=("\"beat\""); fi
             if [ "$INPUT_MAILER" = "true" ]; then WORKERS+=("\"mailer\""); fi
           else
-            # Automatic deployment: only deploy changed workers
+            # Automatic deployment: only deploy changed workers.
+            #
+            # `nx affected` runs at the workspace root and only sees the
+            # parent repo's diff. A submodule pointer change shows up as a
+            # single "public" path, which nx can't map to a project. Walk
+            # into the submodule and decide whether any worker is actually
+            # affected:
+            #   - public/twister/**  → api (imports @plotday/twister)
+            #   - public/connectors/**, public/twists/**  → NOT a worker
+            #     change. Connectors and twists deploy as their own
+            #     Cloudflare workers (via Deploy Twists & Connectors) and
+            #     are loaded dynamically by the api at runtime via R2,
+            #     not bundled into the api worker.
+            #   - any other submodule path (lockfile, root configs)  →
+            #     conservatively redeploy api.
+            #
+            # Without this narrowing, every "Update public" commit drains
+            # the api worker's dynamic Worker Loader cache, evicting every
+            # warm twist isolate and surfacing as "Network connection
+            # lost" in scheduled tasks that were mid-RPC.
+            SUBMODULE_NEEDS_API="false"
+            SUBMODULE_HANDLED="false"
+            if git diff --name-only "$BEFORE_SHA" HEAD | grep -qx public; then
+              SUBMODULE_HANDLED="true"
+              OLD_COMMIT=$(git diff "$BEFORE_SHA" HEAD -- public | awk '/^-Subproject commit/ {print $3}')
+              NEW_COMMIT=$(git diff "$BEFORE_SHA" HEAD -- public | awk '/^\+Subproject commit/ {print $3}')
+              if [ -n "$OLD_COMMIT" ] && [ -n "$NEW_COMMIT" ]; then
+                SUB_DIFF=$(cd public && git diff --name-only "$OLD_COMMIT" "$NEW_COMMIT" 2>/dev/null || echo "")
+                echo "Submodule pointer: $OLD_COMMIT -> $NEW_COMMIT"
+                echo "Submodule files changed (first 30):"
+                printf '%s\n' "$SUB_DIFF" | head -30 | sed 's/^/  /'
+
+                # Anything outside connectors/ and twists/ may affect a
+                # worker: twister/ exports are bundled into api, and
+                # lockfile / root config changes can shift transitive
+                # bundle output.
+                if printf '%s\n' "$SUB_DIFF" | grep -qvE "^(connectors|twists)/"; then
+                  echo "Submodule change includes non-connector/twist paths — api needs redeploy."
+                  SUBMODULE_NEEDS_API="true"
+                else
+                  echo "Submodule change is connectors/twists only — no worker redeploy needed."
+                fi
+              else
+                echo "Could not determine submodule commit range — conservatively redeploying api."
+                SUBMODULE_NEEDS_API="true"
+              fi
+            fi
+
             echo "Automatic trigger: checking for affected workers"
             for worker_dir in workers/*/; do
               worker=$(basename "$worker_dir")
@@ -120,6 +167,29 @@ jobs:
                   WORKERS+=("\"$worker\"")
                 fi
               done
+            fi
+
+            # Submodule diff says api needs to be in the set, but nx
+            # didn't pick it up (because nx can't see inside the
+            # submodule). Add it.
+            if [ "$SUBMODULE_NEEDS_API" = "true" ]; then
+              if ! printf '%s\n' "${WORKERS[@]}" | grep -qx "\"api\""; then
+                echo "Adding api to deploy set due to submodule change."
+                WORKERS+=("\"api\"")
+              fi
+            fi
+
+            # Conversely: if the ONLY parent-repo change was the submodule
+            # pointer and the submodule diff is connectors/twists only,
+            # nx may have spuriously reported a worker as affected (e.g.
+            # via an implicit dep on `public`). Trust the submodule
+            # narrowing in that case and clear the worker list.
+            if [ "$SUBMODULE_HANDLED" = "true" ] && [ "$SUBMODULE_NEEDS_API" = "false" ]; then
+              PARENT_NON_PUBLIC=$(git diff --name-only "$BEFORE_SHA" HEAD | grep -vx public || true)
+              if [ -z "$PARENT_NON_PUBLIC" ]; then
+                echo "Parent repo only changed the submodule pointer and submodule diff is connectors/twists only — skipping all workers."
+                WORKERS=()
+              fi
             fi
           fi
 
