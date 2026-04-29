@@ -72,9 +72,11 @@ export async function invokeWebhookCallback(
       .select([
         "twist_instance.archived_at",
         "twist_instance.suspended_at",
+        "twist_instance.suspended_version",
         "twist.execution_limit",
         "twist.environment",
         "twist.twist_package_id",
+        "twist.version as current_version",
       ])
       .where("twist_instance.id", "=", callback.twistInstanceId)
       .executeTakeFirst();
@@ -98,15 +100,40 @@ export async function invokeWebhookCallback(
     }
 
     if (twistInstance.suspended_at) {
+      // Auto-suspensions record the active twist version on
+      // `suspended_version`. When the twist is redeployed, that version
+      // no longer matches and we lazy-clear the suspension so each new
+      // version gets a fresh start. Manual suspensions leave
+      // `suspended_version` NULL and remain durable across deploys.
+      if (
+        twistInstance.suspended_version &&
+        twistInstance.suspended_version !== twistInstance.current_version
+      ) {
+        await db
+          .updateTable("twist_instance")
+          .set({ suspended_at: null, suspended_version: null })
+          .where("id", "=", callback.twistInstanceId)
+          .execute();
+      } else {
+        disposeRpc(callbacksStub);
+        throw new CallbackError("SUSPENDED", {
+          operation: "invokeWebhookCallback",
+          twistInstanceId: callback.twistInstanceId,
+          reason: "Twist processing suspended",
+        });
+      }
+    }
+
+    const usage = Usage.Get(env, callback.twistInstanceId);
+    const withinBurst = await usage.checkBurstQuota();
+    if (!withinBurst) {
       disposeRpc(callbacksStub);
       throw new CallbackError("SUSPENDED", {
         operation: "invokeWebhookCallback",
         twistInstanceId: callback.twistInstanceId,
-        reason: "Twist processing suspended due to high usage",
+        reason: "Twist processing suspended due to burst rate limit exceeded",
       });
     }
-
-    const usage = Usage.Get(env, callback.twistInstanceId);
     const withinQuota = await usage.checkExecutionQuota(
       twistInstance.execution_limit
     );

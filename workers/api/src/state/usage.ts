@@ -9,6 +9,7 @@ import type { DB } from "../db-types";
 import { type Bindings } from "../env";
 
 const FLUSH_INTERVAL_MS = 60_000; // 1 minute
+const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 // Cost safety limits per twist_instance
@@ -17,6 +18,18 @@ const COST_LIMIT_30D = 20; // $20 in 30 days
 
 // Execution quota: max invocations per rolling 24h window
 const DEFAULT_EXECUTION_LIMIT = 500;
+
+// Burst rate limit: max worker invocations per rolling 5-minute window per
+// twist_instance. Tripping this auto-suspends the twist; the suspension is
+// lifted automatically on the next deploy (see `recordSuspension`). This
+// catches runaway self-chains (e.g. a callback that re-queues itself with
+// no exit condition) within a minute or two, before they can starve the
+// shared queue for other tenants.
+const BURST_LIMIT_5MIN = 200;
+const BURST_WINDOW_MS = 5 * MINUTE_MS;
+// Keep one extra minute of buckets so the rolling window always has full
+// data even when the bucket boundary just rolled over.
+const BURST_RETENTION_MS = BURST_WINDOW_MS + MINUTE_MS;
 
 type UsageRow = {
   cost_type: string;
@@ -162,11 +175,83 @@ export class Usage extends DurableObject<Bindings> {
       amount
     );
 
+    // Mirror worker invocations into the minute-resolution burst counter
+    // so checkBurstQuota can read a sub-hour rolling window. Other cost
+    // types (AI tokens, CPU ms) are not relevant for burst detection.
+    if (costType === "worker:invocation") {
+      const bucket = this.getCurrentMinuteBucket();
+      this.sql.exec(
+        `
+          INSERT INTO burst_counter (bucket_ms, count)
+          VALUES (?, ?)
+          ON CONFLICT(bucket_ms) DO UPDATE SET
+            count = count + excluded.count
+        `,
+        bucket,
+        amount
+      );
+      this.sql.exec(
+        "DELETE FROM burst_counter WHERE bucket_ms < ?",
+        bucket - BURST_RETENTION_MS
+      );
+    }
+
     if (!this.isDirty) {
       this.isDirty = true;
       this.persistState();
     }
     this.scheduleFlush();
+  }
+
+  /**
+   * Read the rolling 5-minute invocation count and suspend the twist if it
+   * exceeds the burst limit. Returns true if within the limit, false if
+   * the twist was just (or already) suspended.
+   *
+   * Suspensions written here record the active twist version so they
+   * lift automatically on the next deploy — see `invokeWebhookCallback`.
+   */
+  async checkBurstQuota(): Promise<boolean> {
+    const twistInstanceId = this.getTwistInstanceId();
+    const logger = createLogger({
+      durable_object: "Usage",
+      operation: "checkBurstQuota",
+      twist_instance_id: twistInstanceId,
+    });
+
+    try {
+      const cutoff = this.getCurrentMinuteBucket() - BURST_WINDOW_MS;
+      const result = this.sql
+        .exec(
+          `SELECT COALESCE(SUM(count), 0) AS total
+             FROM burst_counter
+            WHERE bucket_ms >= ?`,
+          cutoff
+        )
+        .next();
+      const total = (result.value as { total: number })?.total ?? 0;
+
+      if (total < BURST_LIMIT_5MIN) {
+        return true;
+      }
+
+      logger.info("Burst rate limit exceeded, suspending twist", {
+        total,
+        limit: BURST_LIMIT_5MIN,
+        window_minutes: BURST_WINDOW_MS / MINUTE_MS,
+      });
+
+      await this.recordSuspension({
+        reason: `${total} worker invocations in the last 5 minutes (limit: ${BURST_LIMIT_5MIN})`,
+        cause: "burst",
+      });
+      return false;
+    } catch (error) {
+      // Quota check failures should not block execution
+      logger.error("Failed to check burst quota", error as Error);
+      this.captureException(error as Error);
+      return true;
+    }
   }
 
   /**
@@ -255,10 +340,10 @@ export class Usage extends DurableObject<Bindings> {
     });
 
     try {
-      // Check if already suspended
+      // Skip if already suspended
       const pt = await db
         .selectFrom("twist_instance")
-        .select(["suspended_at", "owner_id", "name"])
+        .select(["suspended_at"])
         .where("id", "=", twistInstanceId)
         .executeTakeFirst();
 
@@ -286,7 +371,6 @@ export class Usage extends DurableObject<Bindings> {
         cost_30d: 0,
       };
 
-      // Check thresholds
       const exceeds4h = cost_4h >= COST_LIMIT_4H;
       const exceeds30d = cost_30d >= COST_LIMIT_30D;
 
@@ -295,12 +379,8 @@ export class Usage extends DurableObject<Bindings> {
       }
 
       const reason = exceeds4h
-        ? `$${cost_4h.toFixed(
-            2
-          )} in the last 4 hours (limit: $${COST_LIMIT_4H})`
-        : `$${cost_30d.toFixed(
-            2
-          )} in the last 30 days (limit: $${COST_LIMIT_30D})`;
+        ? `$${cost_4h.toFixed(2)} in the last 4 hours (limit: $${COST_LIMIT_4H})`
+        : `$${cost_30d.toFixed(2)} in the last 30 days (limit: $${COST_LIMIT_30D})`;
 
       logger.info("Cost limit exceeded, suspending twist", {
         cost_4h,
@@ -308,48 +388,8 @@ export class Usage extends DurableObject<Bindings> {
         reason,
       });
 
-      // Suspend the twist
-      await db
-        .updateTable("twist_instance")
-        .set({ suspended_at: sql`NOW()` })
-        .where("id", "=", twistInstanceId)
-        .execute();
-
-      // Notify the owner via Help & Feedback activity
-      const helpPriority = await db
-        .selectFrom("priority")
-        .select("id")
-        .where("key", "=", `@plot.help-feedback-${pt.owner_id}`)
-        .executeTakeFirst();
-
-      if (helpPriority) {
-        const activity = await db
-          .insertInto("thread")
-          .values({
-            title: "Twist processing suspended due to high usage",
-            created_by: twistInstanceId,
-          })
-          .returning("id")
-          .executeTakeFirstOrThrow();
-
-        await db
-          .insertInto("thread_priority")
-          .values({ thread_id: activity.id, user_id: pt.owner_id, priority_id: helpPriority.id })
-          .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doNothing())
-          .execute();
-
-        await db
-          .insertInto("note")
-          .values({
-            thread_id: activity.id,
-            content: `The twist **${pt.name}** was automatically suspended because it exceeded cost safety limits.\n\n**Reason:** ${reason}\n\nTo resume processing, clear the suspension in the database.`,
-            created_by: twistInstanceId,
-            author_id: twistInstanceId,
-          })
-          .execute();
-      }
+      await this.recordSuspension({ reason, cause: "cost" });
     } catch (error) {
-      // Cost check failures should not break usage tracking
       logger.error("Failed to check cost limit", error as Error);
       this.captureException(error as Error);
     }
@@ -392,56 +432,10 @@ export class Usage extends DurableObject<Bindings> {
         limit: effectiveLimit,
       });
 
-      // Suspend and notify using the same pattern as checkCostLimit
-      await withDb(this.env, async (db) => {
-        const pt = await db
-          .selectFrom("twist_instance")
-          .select(["suspended_at", "owner_id", "name"])
-          .where("id", "=", twistInstanceId)
-          .executeTakeFirst();
-
-        if (!pt || pt.suspended_at) return;
-
-        await db
-          .updateTable("twist_instance")
-          .set({ suspended_at: sql`NOW()` })
-          .where("id", "=", twistInstanceId)
-          .execute();
-
-        const helpPriority = await db
-          .selectFrom("priority")
-          .select("id")
-          .where("key", "=", `@plot.help-feedback-${pt.owner_id}`)
-          .executeTakeFirst();
-
-        if (helpPriority) {
-          const activity = await db
-            .insertInto("thread")
-            .values({
-              title: "Twist processing suspended due to high execution count",
-              created_by: twistInstanceId,
-            })
-            .returning("id")
-            .executeTakeFirstOrThrow();
-
-          await db
-            .insertInto("thread_priority")
-            .values({ thread_id: activity.id, user_id: pt.owner_id, priority_id: helpPriority.id })
-            .onConflict((oc) => oc.columns(["thread_id", "user_id"]).doNothing())
-            .execute();
-
-          await db
-            .insertInto("note")
-            .values({
-              thread_id: activity.id,
-              content: `The twist **${pt.name}** was automatically suspended because it exceeded the execution quota.\n\n**Reason:** ${total} executions in the last 24 hours (limit: ${effectiveLimit})\n\nTo resume processing, clear the suspension in the database.`,
-              created_by: twistInstanceId,
-              author_id: twistInstanceId,
-            })
-            .execute();
-        }
+      await this.recordSuspension({
+        reason: `${total} worker invocations in the last 24 hours (limit: ${effectiveLimit})`,
+        cause: "execution_quota",
       });
-
       return false;
     } catch (error) {
       // Quota check failures should not block execution
@@ -579,5 +573,135 @@ export class Usage extends DurableObject<Bindings> {
    */
   private getCurrentHour(): number {
     return Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
+  }
+
+  /**
+   * Get the current minute timestamp (rounded down to the minute boundary)
+   */
+  private getCurrentMinuteBucket(): number {
+    return Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS;
+  }
+
+  /**
+   * Auto-suspend the twist for exceeding a platform safety limit. Records
+   * the active `twist.version` on `twist_instance.suspended_version` so
+   * `invokeWebhookCallback` can lazy-clear the suspension on the next
+   * deploy. Notifies the twist author through both their twist log
+   * stream (TWIST_LOGS_QUEUE — surfaced in the connector logs UI) and a
+   * note on the Help & Feedback thread.
+   */
+  private async recordSuspension(options: {
+    reason: string;
+    cause: "burst" | "execution_quota" | "cost";
+  }): Promise<void> {
+    const twistInstanceId = this.getTwistInstanceId();
+    const logger = createLogger({
+      durable_object: "Usage",
+      operation: "recordSuspension",
+      twist_instance_id: twistInstanceId,
+      cause: options.cause,
+    });
+
+    try {
+      await withDb(this.env, async (db) => {
+        const ti = await db
+          .selectFrom("twist_instance")
+          .innerJoin("twist", "twist.id", "twist_instance.twist_id")
+          .select([
+            "twist_instance.suspended_at",
+            "twist_instance.owner_id",
+            "twist_instance.name",
+            "twist.version",
+            "twist.twist_package_id",
+            "twist.environment",
+          ])
+          .where("twist_instance.id", "=", twistInstanceId)
+          .executeTakeFirst();
+
+        if (!ti || ti.suspended_at) return;
+
+        await db
+          .updateTable("twist_instance")
+          .set({
+            suspended_at: sql`NOW()`,
+            suspended_version: ti.version,
+          })
+          .where("id", "=", twistInstanceId)
+          .execute();
+
+        // Author-visible log (surfaces in the connector log UI). Phrased
+        // as guidance to the twist author — what tripped, why, and how to
+        // recover.
+        const logMessage =
+          `Twist auto-suspended: ${options.reason}. ` +
+          `Processing is paused to protect shared infrastructure. ` +
+          `This usually indicates a runaway loop (e.g. a callback that re-queues itself with no exit condition) ` +
+          `or a sync that should be paginated via runTask({ runAt }). ` +
+          `Suspension will be lifted automatically on the next deploy of this twist. ` +
+          `Fix the root cause before redeploying — if the same pattern repeats it will trip again immediately.`;
+        try {
+          await this.env.TWIST_LOGS_QUEUE.send({
+            twistRootId: ti.twist_package_id,
+            environment: ti.environment,
+            severity: "error",
+            message: logMessage,
+            timestamp: Date.now(),
+          });
+        } catch (err) {
+          logger.warn("Failed to write suspension log to TWIST_LOGS_QUEUE", {
+            error: String(err),
+          });
+        }
+
+        const helpPriority = await db
+          .selectFrom("priority")
+          .select("id")
+          .where("key", "=", `@plot.help-feedback-${ti.owner_id}`)
+          .executeTakeFirst();
+
+        if (helpPriority) {
+          const noteContent =
+            `The twist **${ti.name}** was automatically suspended.\n\n` +
+            `**Reason:** ${options.reason}\n\n` +
+            `Processing is paused to protect shared infrastructure. ` +
+            `This typically indicates a runaway loop or a sync that needs to be paginated.\n\n` +
+            `**The suspension will be lifted automatically the next time this twist is deployed.** ` +
+            `Each new version starts fresh — but if the same pattern repeats, the twist will be suspended again.`;
+          const activity = await db
+            .insertInto("thread")
+            .values({
+              title: "Twist processing suspended",
+              created_by: twistInstanceId,
+            })
+            .returning("id")
+            .executeTakeFirstOrThrow();
+
+          await db
+            .insertInto("thread_priority")
+            .values({
+              thread_id: activity.id,
+              user_id: ti.owner_id,
+              priority_id: helpPriority.id,
+            })
+            .onConflict((oc) =>
+              oc.columns(["thread_id", "user_id"]).doNothing()
+            )
+            .execute();
+
+          await db
+            .insertInto("note")
+            .values({
+              thread_id: activity.id,
+              content: noteContent,
+              created_by: twistInstanceId,
+              author_id: twistInstanceId,
+            })
+            .execute();
+        }
+      });
+    } catch (error) {
+      logger.error("Failed to record suspension", error as Error);
+      this.captureException(error as Error, { cause: options.cause });
+    }
   }
 }

@@ -2157,6 +2157,7 @@ export type Database = {
           owner_id: string
           seq: unknown
           suspended_at: string | null
+          suspended_version: string | null
           team_id: number | null
           twist_id: number
           updated_at: string
@@ -2172,6 +2173,7 @@ export type Database = {
           owner_id: string
           seq?: unknown
           suspended_at?: string | null
+          suspended_version?: string | null
           team_id?: number | null
           twist_id: number
           updated_at?: string
@@ -2187,6 +2189,7 @@ export type Database = {
           owner_id?: string
           seq?: unknown
           suspended_at?: string | null
+          suspended_version?: string | null
           team_id?: number | null
           twist_id?: number
           updated_at?: string
@@ -3237,6 +3240,7 @@ export type Database = {
           owner_id: string | null
           seq: unknown
           suspended_at: string | null
+          suspended_version: string | null
           team_id: number | null
           twist_environment:
             | Database["public"]["Enums"]["twist_environment"]

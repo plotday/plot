@@ -838,6 +838,7 @@ export interface TwistInstance {
   owner_id: string;
   seq: Generated<string>;
   suspended_at: Timestamp | null;
+  suspended_version: string | null;
   team_id: Int8 | null;
   twist_id: Int8;
   updated_at: Generated<Timestamp>;
@@ -974,6 +975,7 @@ export interface TwistInstanceDetails {
   owner_id: string | null;
   seq: string | null;
   suspended_at: Timestamp | null;
+  suspended_version: string | null;
   team_id: Int8 | null;
   twist_environment: TwistEnvironment | null;
   twist_id: Int8 | null;

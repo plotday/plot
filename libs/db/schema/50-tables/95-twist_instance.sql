@@ -20,6 +20,14 @@ CREATE TABLE "public"."twist_instance" (
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "archived_at" timestamp with time zone,
     "suspended_at" timestamp with time zone,
+    -- Set when an auto-suspension is recorded (rate / quota / cost limit
+    -- triggered by the platform). Stores the twist version that was active
+    -- at the time. invokeWebhookCallback lazy-clears `suspended_at` and
+    -- `suspended_version` on the next request whenever this value differs
+    -- from the current `twist.version`, giving every redeploy a fresh
+    -- start. Manual/operator suspensions leave this NULL so they remain
+    -- durable across deploys.
+    "suspended_version" text,
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 
