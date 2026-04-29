@@ -9,8 +9,17 @@ import { createLogger } from "@plotday/worker-util";
  * `flagNeedsReauth` whenever auth failed) AND `needs_reauth_at IS NULL`
  * (auth has since been repaired), and synthesize an `onChannelEnabled`
  * dispatch with `recovering: true` for every enabled channel of those
- * connections. The flag clears via `consumeRecoveryFlag` inside
- * `buildSyncContext`, so a successful sweep is idempotent.
+ * connections.
+ *
+ * Durability contract: `recovery_pending` is cleared HERE — only after
+ * `wrapper.callCallback("recoverConnection", ...)` returns successfully.
+ * The runtime entrypoint awaits the dispatch envelope's onChannelEnabled
+ * calls before returning, so a successful await means the connector's
+ * onChannelEnabled (and its `runTask(initCallback)` enqueue) actually
+ * ran. If the worker is evicted mid-call or any onChannelEnabled throws,
+ * await throws here, the flag stays true, and the next 30-min cron pass
+ * retries. (`buildRecoveryDispatches` deliberately calls buildSyncContext
+ * without forActor/provider so the eager auto-consume doesn't fire.)
  *
  * This is the backstop for cases where the onAuth recovery dispatch was
  * supposed to fire on re-auth but didn't (queue exhaustion, DO timeout,
@@ -76,8 +85,30 @@ export async function recoverPendingConnections(
           row.actorId
         );
         disposeRpc(result);
+
+        // Dispatch round-trip succeeded — connector's onChannelEnabled
+        // ran (and its runTask enqueue completed). Now safe to clear
+        // recovery_pending. If we instead cleared eagerly inside
+        // buildSyncContext (as before), a mid-flight failure would
+        // strand the row with no retry.
+        const contact = await db
+          .selectFrom("contact")
+          .select("user_id")
+          .where("id", "=", row.actorId)
+          .executeTakeFirst();
+        if (contact?.user_id) {
+          await db
+            .updateTable("twist_instance_connection")
+            .set({ recovery_pending: false })
+            .where("twist_instance_id", "=", row.twistInstanceId)
+            .where("user_id", "=", contact.user_id)
+            .where("provider", "=", row.provider)
+            .where("recovery_pending", "=", true)
+            .execute();
+        }
         success++;
       } catch (error) {
+        // Flag stays true — next cron pass retries this row.
         failed++;
         logger.warn("Recovery dispatch failed for connection", {
           error: (error as Error).message,

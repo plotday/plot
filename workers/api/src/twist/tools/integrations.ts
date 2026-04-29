@@ -838,10 +838,16 @@ export class Integrations extends Tool implements IAuth {
   ): Promise<any[]> {
     const configKeyPrefix = `channel_config:${provider}:`;
     const configKeys = await this.store.list(configKeyPrefix);
+    // Pass `recovering: true` WITHOUT forActor/provider so buildSyncContext
+    // doesn't eagerly consume `recovery_pending`. This dispatch path runs
+    // inside the cron's RPC into the runtime worker and we have no
+    // post-success hook here — a mid-flight eviction or throw between this
+    // line and the connector's runTask call would otherwise leave the
+    // flag cleared with no retry. The cron caller (recoverPendingConnections)
+    // is responsible for clearing the flag only after the whole
+    // wrapper.callCallback round-trip resolves successfully.
     const recoveryContext = await this.buildSyncContext({
       recovering: true,
-      forActor: actorId,
-      provider,
     });
     const dispatches: any[] = [];
     for (const key of configKeys) {
