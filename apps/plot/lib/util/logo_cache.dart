@@ -52,17 +52,12 @@ class LogoCache {
 
   static Future<Uint8List?> _download(String url) async {
     try {
-      final String fetchUrl;
-      final Map<String, String> headers;
-      if (kIsWeb) {
-        // Proxy through our API to avoid CORS errors on external favicons.
-        fetchUrl =
-            '${Env.apiRoot}/favicon?url=${Uri.encodeComponent(url)}';
-        headers = await getHeaders();
-      } else {
-        fetchUrl = url;
-        headers = {};
-      }
+      // Always proxy through our API. The proxy validates content (rejects
+      // HTML error pages served as `.svg`, malformed images, etc.) so the
+      // client never feeds garbage to flutter_svg's isolate parser. Web
+      // additionally needs the proxy to avoid CORS.
+      final fetchUrl = '${Env.apiRoot}/favicon?url=${Uri.encodeComponent(url)}';
+      final headers = await getHeaders();
       final response =
           await http.get(Uri.parse(fetchUrl), headers: headers);
       if (response.statusCode == 200) {

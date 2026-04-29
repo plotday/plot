@@ -22,12 +22,18 @@ class LogoImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (LogoCache.isCached(url)) {
-      return _buildImage(LogoCache.getSync(url));
-    }
-    return FutureBuilder<Uint8List?>(
-      future: LogoCache.get(url),
-      builder: (context, snapshot) => _buildImage(snapshot.data),
+    // Key the subtree by url so list-position element reuse (e.g. inside
+    // ListView.builder, where Flutter reuses Element instances at the same
+    // index when items change) doesn't show a previous item's cached icon
+    // while the new url's bytes load.
+    return KeyedSubtree(
+      key: ValueKey(url),
+      child: LogoCache.isCached(url)
+          ? _buildImage(LogoCache.getSync(url))
+          : FutureBuilder<Uint8List?>(
+              future: LogoCache.get(url),
+              builder: (context, snapshot) => _buildImage(snapshot.data),
+            ),
     );
   }
 
