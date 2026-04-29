@@ -49,6 +49,68 @@ Each execution has:
 - **CPU time limit** - Limited execution time (typically ~60 seconds)
 - **Memory limit** - Limited memory allocation (typically 128MB)
 
+### Rate Limits and Auto-Suspension
+
+In addition to per-execution limits, the platform enforces per-twist-instance rate limits to prevent a single misbehaving twist from starving the shared task queue:
+
+- **Burst limit** — at most **200 worker invocations in any rolling 5-minute window** per twist_instance. Designed to catch runaway loops within ~1 minute.
+- **Daily limit** — at most **500 worker invocations in any rolling 24-hour window** per twist_instance (configurable per-twist). Catches slower runaway patterns.
+- **Cost limit** — at most **$5 in any rolling 4-hour window** and **$20 in any rolling 30-day window** per twist_instance.
+
+When any of these limits is exceeded, the twist is **auto-suspended**:
+
+- All callbacks (webhooks, runTask handlers, scheduled tasks) immediately stop executing.
+- A suspension log is written to the twist log stream (visible in the connector logs UI) and a note is posted to the workspace owner's Help & Feedback thread.
+- **Suspension is lifted automatically on the next deploy of the twist.** Each new version starts with a clean rate-limit budget. If the same pattern repeats, the twist will be re-suspended within minutes — fix the root cause before redeploying.
+
+Manual/operator suspensions (set directly in the database without a recorded version) are durable across deploys.
+
+#### Avoiding auto-suspension
+
+The most common cause of auto-suspension is a callback that re-queues itself with no exit condition:
+
+```typescript
+// ❌ WRONG — unbounded self-chain. Each call queues another with no
+//   completion check. Even with delays, this will exceed the burst
+//   limit (200 / 5 min) in under a minute.
+async reconcileComments() {
+  await this.processOne();
+  const callback = await this.callback("reconcileComments");
+  await this.runTask(callback);  // recurses forever
+}
+
+// ✅ CORRECT — explicit exit condition based on remaining work
+async reconcileComments() {
+  const state = await this.get<{ cursor: string | null }>("reconcile_state");
+  const result = await this.processOne(state?.cursor);
+  if (result.hasMore) {
+    await this.set("reconcile_state", { cursor: result.nextCursor });
+    const callback = await this.callback("reconcileComments");
+    await this.runTask(callback);
+  } else {
+    await this.set("reconcile_state", { cursor: null });
+  }
+}
+
+// ✅ CORRECT — periodic background work uses runAt, not a self-chain
+async pollForChanges() {
+  await this.processBatch();
+  const callback = await this.callback("pollForChanges");
+  // Schedule the next run 5 minutes from now. Cloudflare's queue stays
+  // out of the loop entirely between runs.
+  await this.runTask(callback, {
+    runAt: new Date(Date.now() + 5 * 60 * 1000),
+  });
+}
+```
+
+**Guidelines:**
+
+- Every `runTask` self-chain must have an explicit exit condition (a cursor that ends, a counter that reaches a limit, a `hasMore` flag).
+- For periodic "keep checking" patterns, use `runTask({ runAt })` instead of an immediate self-chain — the queue stays free between runs.
+- Cap recursion depth: store a counter in `this.set` and stop after a sane bound (e.g., 100 batches).
+- For sync flows, paginate with `runTask` per page rather than fanning out hundreds of tasks at once.
+
 ---
 
 ## Limitations
