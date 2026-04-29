@@ -13,38 +13,6 @@ import { disposeRpc } from "../../utils/rpc";
 import { isTransientError } from "../../utils/transient-error";
 import { Tool } from "./tool";
 
-/**
- * Detect transient infrastructure errors that should be retried without
- * paging PostHog Error Tracking. The bar for inclusion is high: we only
- * silence patterns that are unambiguously platform-side and self-resolve
- * within seconds. Generic patterns like "internal error" or "The Durable
- * Object" mask real bugs (the connector worker crashing, a DO output-
- * gate violation, an unhandled throw inside user code that happens to
- * include those words) and stall investigation.
- *
- * If you find yourself wanting to add a broad pattern here to quiet a
- * flood, fix the underlying flake instead. handleTwistOperation already
- * calls tracker.captureException for everything that bubbles up, so
- * silencing here only changes retry semantics — not visibility.
- */
-function isTransientError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const msg = error.message;
-  return (
-    // Cloudflare network blip — typically resolves in seconds.
-    msg.includes("Network connection lost") ||
-    // Cloudflare bot-block / rate-limit — resolves on the next attempt.
-    msg.includes("error code: 1019") ||
-    // DO version churn during a deploy: the platform resets the DO so
-    // the new code can take over. Retry picks up the new version cleanly.
-    msg.includes("Durable Object reset because its code was updated") ||
-    // Queues producer 5xx is well-defined and the only producer-side
-    // path that's worth a silent retry. Anything more generic ("Bad
-    // Gateway", "internal error") could be a real downstream failure.
-    msg.includes("Queue send failed: Internal Server Error")
-  );
-}
-
 export type RunMessage = {
   twistInstanceId: string;
   path: string[];
@@ -125,6 +93,23 @@ export class Tasks extends Tool implements IRun {
       token,
       queuedAt: Date.now(),
     };
+    // Producer-side instrumentation: pairs with the consumer-side
+    // "RunMessage invocation started/finished" logs in processQueue. If
+    // a connector call (e.g. onChannelEnabled → runTask) silently
+    // returns without enqueueing, we'll see the absence of these events
+    // and know the producer never called us. If queue.send fails (or
+    // exhausts retries) we record outcome=failure here. Joinable on
+    // twist_instance_id + token + close-by timestamps.
+    const logger = createLogger({
+      operation: "Tasks.send",
+      twist_instance_id: this.twistInstanceId,
+      tool_path: this.path.join("/"),
+    });
+    const startedAt = Date.now();
+    logger.info("Tasks.send started", {
+      token: token.split(":")[1]?.substring(0, 8) ?? token.substring(0, 8),
+    });
+
     // Retry transient Cloudflare Queues producer errors (e.g. "Queue send
     // failed: Bad Gateway"). Without retry, the alarm handler in
     // CallbacksState clears call_at on throw and the scheduled task is
@@ -134,12 +119,27 @@ export class Tasks extends Tool implements IRun {
     for (let attempt = 0; ; attempt++) {
       try {
         await this.queue.send(message);
+        logger.info("Tasks.send finished", {
+          duration_ms: Date.now() - startedAt,
+          attempt,
+          outcome: "success",
+        });
         return;
       } catch (error) {
         if (attempt < delaysMs.length && isTransientError(error)) {
+          logger.warn("Tasks.send transient error, retrying", {
+            attempt,
+            delay_ms: delaysMs[attempt],
+            error: String(error),
+          });
           await new Promise((r) => setTimeout(r, delaysMs[attempt]));
           continue;
         }
+        logger.error("Tasks.send finished", error as Error, {
+          duration_ms: Date.now() - startedAt,
+          attempt,
+          outcome: "failure",
+        });
         throw error;
       }
     }
