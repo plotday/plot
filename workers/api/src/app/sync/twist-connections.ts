@@ -2,7 +2,13 @@ import { Hono } from "hono";
 
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
-import { parseReadParams, updatedSinceCursor } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 
 const twistConnections = new Hono<{ Bindings: Bindings }>();
 
@@ -23,9 +29,19 @@ const twistConnections = new Hono<{ Bindings: Bindings }>();
 // account), so duplicate or skipped rows are not a practical concern.
 twistConnections.get("/sync/twist-connections", async (c) => {
   const userId = c.var.user.id;
-  const { updatedSince, cursorId, limit, sortBy, sortDir } = parseReadParams(c);
+  const {
+    updatedSince,
+    cursorId,
+    seqSince,
+    pageSeq,
+    pageId,
+    limit,
+    sortBy,
+    sortDir,
+  } = parseReadParams(c);
+  const useSeqCursor = seqSince !== null;
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user.twist_connection")
       .selectAll()
@@ -35,25 +51,36 @@ twistConnections.get("/sync/twist-connections", async (c) => {
     // Apply sort. When paginating with `updated_since`, we always sort by
     // updated_at asc + twist_instance_id asc to match the cursor semantics
     // in `updatedSinceCursor`.
-    if (updatedSince) {
+    if (useSeqCursor) {
+      query = query
+        .orderBy("seq", "asc")
+        .orderBy("twist_instance_id", "asc")
+        .where(seqSinceCursor(seqSince, pageSeq, pageId, "twist_instance_id"));
+    } else if (updatedSince) {
       query = query
         .orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc")
-        .orderBy("twist_instance_id", "asc");
+        .orderBy("twist_instance_id", "asc")
+        .where(updatedSinceCursor(updatedSince, cursorId, "twist_instance_id"));
     } else {
       query = query
         .orderBy(sql.ref(sortBy), sortDir)
         .orderBy("twist_instance_id", sortDir);
     }
 
-    if (updatedSince) {
-      query = query.where(
-        updatedSinceCursor(updatedSince, cursorId, "twist_instance_id"),
-      );
-    }
-
-    return query.execute();
+    const fetchedRows = await query.execute();
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    return { rows: fetchedRows, horizon: horizonValue };
   });
 
+  if (useSeqCursor) {
+    // user.twist_connection has no `id` column — its primary cursor key is
+    // (seq, twist_instance_id). Project twist_instance_id as `id` for
+    // seqEnvelope so next_page.id reflects the right tiebreaker; the client
+    // echoes it back as `page_id` and we feed it to seqSinceCursor's
+    // cursorIdColumn = "twist_instance_id".
+    const envelopeRows = rows.map((r: any) => ({ ...r, id: r.twist_instance_id }));
+    return c.json(seqEnvelope(envelopeRows as any, limit, horizon) as any);
+  }
   return c.json(rows as any);
 });
 

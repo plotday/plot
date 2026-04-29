@@ -3,7 +3,13 @@ import { Hono } from "hono";
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
-import { parseReadParams, updatedSinceCursor } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 import { notifySync, getPriorityForThread } from "./notify";
 import { stripAnnounceTagActors } from "./viewer";
 
@@ -15,6 +21,9 @@ threadTags.get("/sync/thread-tags", async (c) => {
   const {
     updatedSince,
     cursorId,
+    seqSince,
+    pageSeq,
+    pageId,
     archived,
     limit,
     priorityId,
@@ -24,8 +33,9 @@ threadTags.get("/sync/thread-tags", async (c) => {
     sortBy,
     sortDir,
   } = parseReadParams(c);
+  const useSeqCursor = seqSince !== null;
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user.thread_tags")
       .selectAll()
@@ -33,8 +43,12 @@ threadTags.get("/sync/thread-tags", async (c) => {
       .limit(limit);
 
     // Apply sort
-    if (updatedSince) {
-      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
+    if (useSeqCursor) {
+      query = query.orderBy("seq", "asc").orderBy("id", "asc")
+        .where(seqSinceCursor(seqSince, pageSeq, pageId));
+    } else if (updatedSince) {
+      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc")
+        .where(updatedSinceCursor(updatedSince, cursorId));
     } else {
       query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
     }
@@ -56,11 +70,6 @@ threadTags.get("/sync/thread-tags", async (c) => {
       );
     }
 
-    // Composite cursor on (updated_at, id)
-    if (updatedSince) {
-      query = query.where(updatedSinceCursor(updatedSince, cursorId));
-    }
-
     // Pagination range filter on the sort column (thread_tags has no
     // schedule range columns, so filter rows by sortBy timestamp).
     if (rangeStart) {
@@ -70,11 +79,16 @@ threadTags.get("/sync/thread-tags", async (c) => {
       query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
     }
 
-    return query.execute();
+    const fetchedRows = await query.execute();
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    return { rows: fetchedRows, horizon: horizonValue };
   });
 
   await stripAnnounceTagActors(c.var.db, userId, rows, "thread", c.var.apiVersion ?? 0);
 
+  if (useSeqCursor) {
+    return c.json(seqEnvelope(rows as any, limit, horizon) as any);
+  }
   return c.json(rows as any);
 });
 

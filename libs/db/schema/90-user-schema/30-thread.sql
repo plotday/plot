@@ -29,6 +29,13 @@ SELECT
     GREATEST (a.updated_at, COALESCE(a.last_note_created_at, 'epoch'::timestamptz),
         tp.updated_at,
         COALESCE(tu.updated_at, 'epoch'::timestamptz)) AS updated_at,
+    -- seq: xid8 counterpart of updated_at. Same merge as updated_at across
+    -- thread, last_note (denormalized in update_thread_on_note_change),
+    -- thread_priority, and thread_unread, so any constituent change advances
+    -- the user.thread cursor. Sync queries gate on
+    -- `seq < pg_snapshot_xmin(pg_current_snapshot())` to dodge the
+    -- long-transaction cursor-skip race that updated_at has.
+    GREATEST (a.seq, a.last_note_seq, tp.seq, COALESCE(tu.seq, '0'::xid8)) AS seq,
     a.updated_by,
     -- User-visible archived_at is the first of: global thread archive,
     -- per-user thread_priority archive, or per-user priority archive.
@@ -179,6 +186,7 @@ SELECT
     ua.archived_at,
     tt.occurrence,
     tt.updated_at,
+    tt.seq,
     ua.priority_id,
     ua.priority_path,
     tt.tags
@@ -189,13 +197,15 @@ FROM
             sq.occurrence,
             jsonb_object_agg(sq.tag_id, sq.actor_ids) FILTER (WHERE sq.actor_ids IS NOT NULL
                 AND jsonb_array_length(sq.actor_ids) > 0) AS tags,
-            MAX(sq.updated_at) AS updated_at
+            MAX(sq.updated_at) AS updated_at,
+            MAX(sq.seq) AS seq
         FROM (
             SELECT
                 at.occurrence,
                 at.tag_id,
                 jsonb_agg(at.actor_id) FILTER (WHERE at.archived_at IS NULL) AS actor_ids,
-                MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at
+                MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at,
+                MAX(at.seq) AS seq
             FROM
                 "public"."thread_tag" at
             WHERE

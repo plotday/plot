@@ -6,13 +6,20 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_thread ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     -- Get max updated_at from the batch
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Get all users who have this thread filed via thread_priority
     FOR v_user_id IN SELECT DISTINCT
         tp.user_id
@@ -22,11 +29,12 @@ BEGIN
     ORDER BY
         tp.user_id LOOP
             -- Upsert the sync record
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'thread', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'thread', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -40,12 +48,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_note ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Get all users who have the note's thread filed via thread_priority
     FOR v_user_id IN SELECT DISTINCT
         tp.user_id
@@ -54,11 +69,12 @@ BEGIN
         JOIN thread_priority tp ON tp.thread_id = n.thread_id
     ORDER BY
         tp.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'note', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'note', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -72,12 +88,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_priority ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Get all users with access to the priority (including hierarchical access via ancestors)
     FOR v_user_id IN SELECT DISTINCT
         upe.user_id
@@ -88,11 +111,12 @@ BEGIN
         upe.archived_at IS NULL
     ORDER BY
         upe.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'priority', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'priority', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -106,12 +130,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_session ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Only notify the session owner
     FOR v_user_id IN SELECT DISTINCT
         user_id
@@ -119,11 +150,12 @@ BEGIN
         new_table
     ORDER BY
         user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'session', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'session', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -137,12 +169,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_twist_instance ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Notify the owner of each twist_instance
     FOR v_user_id IN SELECT DISTINCT
         n.owner_id
@@ -150,11 +189,12 @@ BEGIN
         new_table n
     ORDER BY
         1 LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'twist_instance', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'twist_instance', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -172,12 +212,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_thread_priority ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Fall back to now() for DELETE (which has no updated_at column).
     IF v_max_updated_at IS NULL THEN
         v_max_updated_at := now();
@@ -188,11 +235,12 @@ BEGIN
         new_table
     ORDER BY
         user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'thread', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'thread', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -206,12 +254,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_thread_read ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Only notify the reading user
     FOR v_user_id IN SELECT DISTINCT
         user_id
@@ -219,11 +274,12 @@ BEGIN
         new_table
     ORDER BY
         user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'thread_read', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'thread_read', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -238,12 +294,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_thread_unread ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Only notify the affected user (the one marked as unread)
     FOR v_user_id IN SELECT DISTINCT
         user_id
@@ -251,11 +314,12 @@ BEGIN
         new_table
     ORDER BY
         user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'thread_read', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'thread_read', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -269,12 +333,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_thread_tag ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Get all users who have the thread filed via thread_priority
     FOR v_user_id IN SELECT DISTINCT
         tp.user_id
@@ -284,11 +355,12 @@ BEGIN
         JOIN thread_priority tp ON tp.thread_id = a.id
     ORDER BY
         tp.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'thread', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'thread', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -302,12 +374,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_note_tag ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Get all users who have the note's thread filed via thread_priority
     FOR v_user_id IN SELECT DISTINCT
         tp.user_id
@@ -317,11 +396,12 @@ BEGIN
         JOIN thread_priority tp ON tp.thread_id = nt.thread_id
     ORDER BY
         tp.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'note', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'note', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -335,12 +415,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_contact ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Contact changes affect all users who have visibility of this contact via user_contact
     FOR v_user_id IN SELECT DISTINCT
         uc.user_id
@@ -351,11 +438,12 @@ BEGIN
         uc.archived_at IS NULL
     ORDER BY
         uc.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'actor', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'actor', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -369,12 +457,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_channel ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Notify the owner of the source account
     FOR v_user_id IN SELECT DISTINCT
         pt.owner_id
@@ -383,11 +478,12 @@ BEGIN
         JOIN twist_instance pt ON pt.id = n.twist_instance_id
     ORDER BY
         pt.owner_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'channel', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'channel', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -404,6 +500,7 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_twist_instance_connection ()
     AS $function$
 DECLARE
     v_max_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     -- Use the most recent lifecycle stamp on each row -- this matches the
@@ -415,13 +512,17 @@ BEGIN
             needs_reauth_at,
             initial_sync_started_at,
             initial_sync_completed_at
-        ))
-    INTO v_max_at
+        )),
+        MAX(seq)
+    INTO v_max_at, v_max_seq
     FROM
         new_table;
     -- Fall back to now() for DELETE (transition table values are deleted rows).
     IF v_max_at IS NULL THEN
         v_max_at := now();
+    END IF;
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
     END IF;
     -- Notify each affected user directly. Bump both `twist_instance` (legacy
     -- consumer; user.twist surfaces user_connected) and `twist_connection`
@@ -432,16 +533,18 @@ BEGIN
         new_table
     ORDER BY
         user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'twist_instance', v_max_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'twist_instance', v_max_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'twist_connection', v_max_at)
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'twist_connection', v_max_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -455,12 +558,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_link ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Get all users who have the link's thread filed via thread_priority,
     -- or who own the link's direct priority (for threadless links)
     FOR v_user_id IN SELECT DISTINCT
@@ -473,11 +583,12 @@ BEGIN
         tp.user_id IS NOT NULL OR p.user_id IS NOT NULL
     ORDER BY
         1 LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'thread', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'thread', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -491,12 +602,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_schedule ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     -- Get all users who have the schedule's thread filed via thread_priority
     -- Handles both direct thread_id and link schedules (via link → thread)
     FOR v_user_id IN SELECT DISTINCT
@@ -507,11 +625,12 @@ BEGIN
         JOIN thread_priority tp ON tp.thread_id = COALESCE(n.thread_id, l.thread_id)
     ORDER BY
         tp.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'schedule', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'schedule', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     -- Also notify per-user schedule owners directly
     FOR v_user_id IN SELECT DISTINCT
@@ -522,11 +641,12 @@ BEGIN
         n.user_id IS NOT NULL
     ORDER BY
         n.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'schedule', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'schedule', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -540,12 +660,19 @@ CREATE OR REPLACE FUNCTION public.sync_user_for_group ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_user_id uuid;
 BEGIN
     SELECT
-        MAX(updated_at) INTO v_max_updated_at
+        MAX(updated_at), MAX(seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table;
+    -- For DELETE (transition table values are deleted rows; seq column is NULL
+    -- on those handled by trigger functions that fall back to now() above)
+    -- and edge-case empty batches, fall back to the current transaction's xid.
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     FOR v_user_id IN SELECT DISTINCT
         ug.user_id
     FROM
@@ -553,11 +680,12 @@ BEGIN
         JOIN "user"."group" ug ON ug.id = n.id
     ORDER BY
         ug.user_id LOOP
-            INSERT INTO user_sync (user_id, entity, last_update_at)
-                VALUES (v_user_id, 'group', v_max_updated_at)
+            INSERT INTO user_sync (user_id, entity, last_update_at, last_update_seq)
+                VALUES (v_user_id, 'group', v_max_updated_at, v_max_seq)
             ON CONFLICT (user_id, entity)
                 DO UPDATE SET
-                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (user_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (user_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;

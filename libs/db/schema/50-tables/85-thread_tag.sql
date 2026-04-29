@@ -8,6 +8,7 @@ CREATE TABLE "public"."thread_tag" (
     "tag_id" integer NOT NULL,
     "updated_by" integer NOT NULL DEFAULT 0,
     "sync_depth" integer,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     UNIQUE NULLS NOT DISTINCT ("actor_id", "thread_id", "occurrence", "tag_id")
 );
 
@@ -19,7 +20,9 @@ WHERE
 
 CREATE INDEX idx_thread_tag_thread_id_all ON "public"."thread_tag" (thread_id);
 
+CREATE INDEX idx_thread_tag_seq ON "public"."thread_tag" ("seq");
+
 CREATE TRIGGER set_thread_tag_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_tag"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();

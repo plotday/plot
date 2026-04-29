@@ -268,9 +268,12 @@ export class UserSync extends DurableObject<Bindings> {
         });
         markStep("broadcastSendMs", tSend);
 
-        // Advance last_sync_at = last_update_at directly in SQL to preserve
-        // full μs precision. Doing this via JS Date loses microseconds, causing
-        // last_update_at > last_sync_at to remain permanently true.
+        // Advance both watermarks atomically in SQL: last_sync_at follows
+        // last_update_at (full μs precision; JS Date would lose microseconds
+        // and leave last_update_at > last_sync_at permanently true) and
+        // last_sync_seq follows last_update_seq (the new xid8 cursor that
+        // sync queries on /sync/* gate on; bumped by sync_user_for_*
+        // triggers).
         const entities = pendingUpdates.map((u) => u.entity).sort();
 
         // Retry logic for deadlock errors (PostgreSQL code 40P01)
@@ -284,7 +287,10 @@ export class UserSync extends DurableObject<Bindings> {
             currentStep = retryCount === 0 ? "updateUserSync" : `updateUserSyncRetry${retryCount}`;
             await db
               .updateTable("user_sync")
-              .set({ last_sync_at: sql`last_update_at` })
+              .set({
+                last_sync_at: sql`last_update_at`,
+                last_sync_seq: sql`last_update_seq`,
+              } as any)
               .where("user_id", "=", userId)
               .where("entity", "in", entities)
               .execute();

@@ -8,6 +8,7 @@ SELECT
     ta.id,
     ta.created_at,
     ta.updated_at,
+    ta.seq,
     ta.archived_at,
     ta.parent_thread_id,
     ta.child_thread_id,

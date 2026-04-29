@@ -40,7 +40,8 @@ CREATE TABLE "public"."link" (
     "logo" text,
     -- Provider-specific channel ID, matches channel.channel_id
     "channel_id" text,
-    "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL
+    "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 
 COMMENT ON COLUMN "public"."link"."source" IS 'External source identifier for deduplication and sync. Used with source_priority_root for upsert behavior.';
@@ -87,13 +88,16 @@ WHERE
 -- Support incremental sync queries filtering on updated_at
 CREATE INDEX idx_link_updated_at ON "public"."link" ("updated_at");
 
+-- Support seq-based incremental sync queries
+CREATE INDEX idx_link_seq ON "public"."link" ("seq");
+
 -- Support twist sync views that filter links by created_by (twist_instance_id)
 CREATE INDEX idx_link_created_by ON "public"."link" ("created_by");
 
 CREATE TRIGGER set_link_updated_at
     BEFORE INSERT OR UPDATE ON "public"."link"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_link_created_at
     BEFORE INSERT ON "public"."link"

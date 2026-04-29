@@ -166,7 +166,6 @@ export class TwistSync extends DurableObject<Bindings> {
       const twistInstanceId = this.twistInstanceId;
       await withDb(this.env, async (db) => {
       // Get the twist_instance with twist info
-      // Read created_at as text to preserve full μs precision for sync cursors
       const twistInstance = await db
         .selectFrom("twist_instance")
         .select([
@@ -174,7 +173,6 @@ export class TwistSync extends DurableObject<Bindings> {
           "twist_instance.archived_at",
           "twist_instance.suspended_at",
         ])
-        .select(sql<string>`twist_instance.created_at::text`.as("created_at_text"))
         .where("twist_instance.id", "=", twistInstanceId)
         .executeTakeFirstOrThrow();
 
@@ -208,28 +206,33 @@ export class TwistSync extends DurableObject<Bindings> {
         this.captureException(error);
         return;
       }
-      // Get sync timestamps as text to preserve full μs precision
+      // Read the safe horizon: anything with seq < horizonSeq is committed and
+      // visible to our snapshot. This is the xmin of the current snapshot.
+      const horizonResult = await sql<{ horizon: string }>`SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS horizon`.execute(db);
+      const horizonSeq = horizonResult.rows[0]?.horizon ?? "0";
+
+      // Get sync seq cursors for all (entity, operation) pairs
       const syncInfos = await db
         .selectFrom("twist_instance_sync")
         .select(["entity", "operation"])
-        .select(sql<string>`last_sync_at::text`.as("last_sync_at_text"))
-        .select(sql<string>`last_update_at::text`.as("last_update_at_text"))
+        .select(sql<string>`last_sync_seq::text`.as("last_sync_seq_text"))
         .where("twist_instance_id", "=", twistInstanceId)
         .execute();
 
-      // Use the twist_instance's created_at (as text) as the minimum sync time
-      // This ensures we don't send notifications for items that existed before the twist was added
-      const minSyncAtText = twistInstance.created_at_text;
+      // Use the twist_instance's seq as the minimum cursor floor.
+      // This ensures we don't send notifications for items that existed before
+      // the twist was installed.
+      const minSyncSeqText = await sql<{ seq: string }>`SELECT seq::text AS seq FROM twist_instance WHERE id = ${twistInstanceId}`.execute(db).then((r) => r.rows[0]?.seq ?? "0");
 
-      // Returns a SQL expression that evaluates to timestamptz with full precision
-      // Uses GREATEST in PG to avoid JS Date comparison losing μs digits
-      const getSyncAtExpr = (entity: string, operation: string) => {
+      // Returns a SQL expression (xid8) for the lower bound of the given entity/operation.
+      // Uses GREATEST in PG so we take whichever is larger: the stored cursor or the
+      // twist_instance floor seq.
+      const getSyncSeqExpr = (entity: string, operation: string) => {
         const info = syncInfos.find(
           (s) => s.entity === entity && s.operation === operation
         );
-        const text = info?.last_sync_at_text;
-        if (!text) return sql<Date>`${minSyncAtText}::timestamptz`;
-        return sql<Date>`GREATEST(${text}::timestamptz, ${minSyncAtText}::timestamptz)`;
+        if (!info) return sql<string>`${minSyncSeqText}::xid8`;
+        return sql<string>`GREATEST(${info.last_sync_seq_text}::xid8, ${minSyncSeqText}::xid8)`;
       };
 
       const viewNames = [
@@ -245,17 +248,16 @@ export class TwistSync extends DurableObject<Bindings> {
       ] as const;
 
       const results = await Promise.allSettled([
-        // Query updated activities (for activity.updated callback)
-        // Uses twist_instance_activity_update view which filters by created_by = twist_id
-        // Note: No created_at filter needed - twists get updates for activities they created,
-        // even if they haven't been through a "create" sync (they don't get create callbacks for their own activities)
+        // Query updated threads (for thread.updated callback)
+        // Uses twist_instance_thread_update view which filters by created_by = twist_id
         db
           .selectFrom("twist_instance_thread_update")
           .selectAll()
-          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("updated_at", ">", getSyncAtExpr("thread", "update"))
-          .orderBy("updated_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("thread", "update"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("id", "asc")
           .limit(100)
           .execute(),
 
@@ -265,10 +267,11 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("twist_instance_note_create")
           .selectAll()
-          .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("created_at", ">", getSyncAtExpr("note", "create"))
-          .orderBy("created_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("note", "create"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("id", "asc")
           .limit(100)
           .execute(),
 
@@ -277,10 +280,11 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("twist_instance_note_update")
           .selectAll()
-          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("updated_at", ">", getSyncAtExpr("note", "update"))
-          .orderBy("updated_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("note", "update"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("id", "asc")
           .limit(100)
           .execute(),
 
@@ -288,10 +292,11 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("twist_instance_channel_link_create")
           .selectAll()
-          .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("created_at", ">", getSyncAtExpr("channel_link", "create"))
-          .orderBy("created_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("channel_link", "create"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("id", "asc")
           .limit(100)
           .execute(),
 
@@ -299,10 +304,11 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("twist_instance_channel_link_update")
           .selectAll()
-          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("updated_at", ">", getSyncAtExpr("channel_link", "update"))
-          .orderBy("updated_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("channel_link", "update"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("id", "asc")
           .limit(100)
           .execute(),
 
@@ -310,10 +316,11 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("twist_instance_channel_note_create")
           .selectAll()
-          .select(sql<string>`MAX(created_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("created_at", ">", getSyncAtExpr("channel_note", "create"))
-          .orderBy("created_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("channel_note", "create"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("id", "asc")
           .limit(100)
           .execute(),
 
@@ -321,10 +328,11 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("twist_instance_thread_read")
           .selectAll()
-          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("updated_at", ">", getSyncAtExpr("thread_read", "update"))
-          .orderBy("updated_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("thread_read", "update"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("thread_id", "asc")
           .limit(100)
           .execute(),
 
@@ -332,10 +340,11 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("twist_instance_thread_schedule")
           .selectAll()
-          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("updated_at", ">", getSyncAtExpr("thread_schedule", "update"))
-          .orderBy("updated_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("thread_schedule", "update"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("schedule_id", "asc")
           .limit(100)
           .execute(),
 
@@ -343,10 +352,11 @@ export class TwistSync extends DurableObject<Bindings> {
         db
           .selectFrom("twist_instance_schedule_contact")
           .selectAll()
-          .select(sql<string>`MAX(updated_at) OVER()::text`.as("_max_ts"))
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("updated_at", ">", getSyncAtExpr("schedule_contact", "update"))
-          .orderBy("updated_at", "asc")
+          .where("seq", ">=", getSyncSeqExpr("schedule_contact", "update"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
+          .orderBy("seq", "asc")
+          .orderBy("schedule_contact_id", "asc")
           .limit(100)
           .execute(),
       ]);
@@ -377,50 +387,16 @@ export class TwistSync extends DurableObject<Bindings> {
       const threadSchedules = extractResult(results[7], 7);
       const scheduleContacts = extractResult(results[8], 8);
 
-      // Extract max timestamps as PG-precision text strings from window functions
-      // null if no items were returned for that query
-      const activityUpdateMaxTs: string | null =
-        updatedActivities.length > 0 ? (updatedActivities[0] as any)._max_ts : null;
-      const noteCreateMaxTs: string | null =
-        newNotes.length > 0 ? (newNotes[0] as any)._max_ts : null;
-      const noteUpdateMaxTs: string | null =
-        updatedNotes.length > 0 ? (updatedNotes[0] as any)._max_ts : null;
-      const channelLinkCreateMaxTs: string | null =
-        channelNewLinks.length > 0 ? (channelNewLinks[0] as any)._max_ts : null;
-      const channelLinkUpdateMaxTs: string | null =
-        channelUpdatedLinks.length > 0 ? (channelUpdatedLinks[0] as any)._max_ts : null;
-
-      const channelNoteCreateMaxTs: string | null =
-        channelNewNotes.length > 0 ? (channelNewNotes[0] as any)._max_ts : null;
-      const threadReadUpdateMaxTs: string | null =
-        threadReads.length > 0 ? (threadReads[0] as any)._max_ts : null;
-      const threadScheduleUpdateMaxTs: string | null =
-        threadSchedules.length > 0 ? (threadSchedules[0] as any)._max_ts : null;
-      const scheduleContactUpdateMaxTs: string | null =
-        scheduleContacts.length > 0 ? (scheduleContacts[0] as any)._max_ts : null;
-
-      // Get the latest update timestamp from sync info as text for tag change upper bound
-      // PG text representation (YYYY-MM-DD HH:MI:SS.ffffff+TZ) is lexicographically sortable
-      const currentSyncTimestampText = syncInfos.length > 0
-        ? syncInfos.reduce((max, info) =>
-            info.last_update_at_text > max ? info.last_update_at_text : max,
-          syncInfos[0].last_update_at_text)
-        : null;
-
-      // Query tag changes for the activity update time range
-      // This provides tagsAdded/tagsRemoved data for the activity.updated callback
-      // Use currentSyncTimestamp as upper bound to capture tag changes that occurred
-      // after activity updates (since tag changes update activity_tag.updated_at, not activity.updated_at)
+      // Query tag changes for the thread update seq range
+      // This provides tagsAdded/tagsRemoved data for the thread.updated callback
       let activityTagChanges: ThreadTagChange[] = [];
       try {
         const tagChanges: TagChangeRow[] = await db
           .selectFrom("twist_instance_thread_tag_change")
           .select(["thread_id", "occurrence", "tag_id", "actor_id", "change_type"])
           .where("twist_instance_id", "=", twistInstanceId)
-          .where("updated_at", ">", getSyncAtExpr("thread", "update"))
-          .where("updated_at", "<=", currentSyncTimestampText
-            ? sql<Date>`${currentSyncTimestampText}::timestamptz`
-            : sql<Date>`now()`)
+          .where("seq", ">=", getSyncSeqExpr("thread", "update"))
+          .where(sql<boolean>`seq < ${horizonSeq}::xid8`)
           .execute();
 
         // Transform tag changes into the expected format, filtering out any with null required fields
@@ -449,45 +425,31 @@ export class TwistSync extends DurableObject<Bindings> {
         });
       }
 
-      // Strip internal _max_ts field from items before building queue messages
-      const stripMaxTs = <T extends Record<string, any>>(items: T[]): T[] =>
-        items.map(({ _max_ts, ...rest }) => rest as T);
-
-      const cleanNewNotes = stripMaxTs(newNotes);
-      const cleanUpdatedNotes = stripMaxTs(updatedNotes);
-      const cleanUpdatedActivities = stripMaxTs(updatedActivities);
-      const cleanChannelNewLinks = stripMaxTs(channelNewLinks);
-      const cleanChannelUpdatedLinks = stripMaxTs(channelUpdatedLinks);
-      const cleanChannelNewNotes = stripMaxTs(channelNewNotes);
-      const cleanThreadReads = stripMaxTs(threadReads);
-      const cleanThreadSchedules = stripMaxTs(threadSchedules);
-      const cleanScheduleContacts = stripMaxTs(scheduleContacts);
-
       // Build size-aware batches to stay under Cloudflare's 128KB queue message limit.
-      // Items are added sequentially (all newNotes, then updatedNotes, then newActivities,
-      // then updatedActivities). The consumer processes each array independently, so
-      // co-location of items from different arrays in the same batch is not required.
+      // Items are added sequentially (all newNotes, then updatedNotes, then updatedActivities, etc.).
+      // The consumer processes each array independently, so co-location of items from different
+      // arrays in the same batch is not required.
       type TaggedItem =
-        | { array: "newNotes"; item: (typeof cleanNewNotes)[number]; size: number }
-        | { array: "updatedNotes"; item: (typeof cleanUpdatedNotes)[number]; size: number }
-        | { array: "updatedActivities"; item: (typeof cleanUpdatedActivities)[number]; size: number }
-        | { array: "channelNewLinks"; item: (typeof cleanChannelNewLinks)[number]; size: number }
-        | { array: "channelUpdatedLinks"; item: (typeof cleanChannelUpdatedLinks)[number]; size: number }
-        | { array: "channelNewNotes"; item: (typeof cleanChannelNewNotes)[number]; size: number }
-        | { array: "threadReads"; item: (typeof cleanThreadReads)[number]; size: number }
-        | { array: "threadSchedules"; item: (typeof cleanThreadSchedules)[number]; size: number }
-        | { array: "scheduleContacts"; item: (typeof cleanScheduleContacts)[number]; size: number };
+        | { array: "newNotes"; item: (typeof newNotes)[number]; size: number }
+        | { array: "updatedNotes"; item: (typeof updatedNotes)[number]; size: number }
+        | { array: "updatedActivities"; item: (typeof updatedActivities)[number]; size: number }
+        | { array: "channelNewLinks"; item: (typeof channelNewLinks)[number]; size: number }
+        | { array: "channelUpdatedLinks"; item: (typeof channelUpdatedLinks)[number]; size: number }
+        | { array: "channelNewNotes"; item: (typeof channelNewNotes)[number]; size: number }
+        | { array: "threadReads"; item: (typeof threadReads)[number]; size: number }
+        | { array: "threadSchedules"; item: (typeof threadSchedules)[number]; size: number }
+        | { array: "scheduleContacts"; item: (typeof scheduleContacts)[number]; size: number };
 
       let taggedItems: TaggedItem[] = [
-        ...cleanNewNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
-        ...cleanUpdatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: JSON.stringify(item).length })),
-        ...cleanUpdatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: JSON.stringify(item).length })),
-        ...cleanChannelNewLinks.map((item) => ({ array: "channelNewLinks" as const, item, size: JSON.stringify(item).length })),
-        ...cleanChannelUpdatedLinks.map((item) => ({ array: "channelUpdatedLinks" as const, item, size: JSON.stringify(item).length })),
-        ...cleanChannelNewNotes.map((item) => ({ array: "channelNewNotes" as const, item, size: JSON.stringify(item).length })),
-        ...cleanThreadReads.map((item) => ({ array: "threadReads" as const, item, size: JSON.stringify(item).length })),
-        ...cleanThreadSchedules.map((item) => ({ array: "threadSchedules" as const, item, size: JSON.stringify(item).length })),
-        ...cleanScheduleContacts.map((item) => ({ array: "scheduleContacts" as const, item, size: JSON.stringify(item).length })),
+        ...newNotes.map((item) => ({ array: "newNotes" as const, item, size: JSON.stringify(item).length })),
+        ...updatedNotes.map((item) => ({ array: "updatedNotes" as const, item, size: JSON.stringify(item).length })),
+        ...updatedActivities.map((item) => ({ array: "updatedActivities" as const, item, size: JSON.stringify(item).length })),
+        ...channelNewLinks.map((item) => ({ array: "channelNewLinks" as const, item, size: JSON.stringify(item).length })),
+        ...channelUpdatedLinks.map((item) => ({ array: "channelUpdatedLinks" as const, item, size: JSON.stringify(item).length })),
+        ...channelNewNotes.map((item) => ({ array: "channelNewNotes" as const, item, size: JSON.stringify(item).length })),
+        ...threadReads.map((item) => ({ array: "threadReads" as const, item, size: JSON.stringify(item).length })),
+        ...threadSchedules.map((item) => ({ array: "threadSchedules" as const, item, size: JSON.stringify(item).length })),
+        ...scheduleContacts.map((item) => ({ array: "scheduleContacts" as const, item, size: JSON.stringify(item).length })),
       ];
 
       // Loop detection: if we keep fetching the same items, skip processing to break the loop
@@ -596,240 +558,57 @@ export class TwistSync extends DurableObject<Bindings> {
         }
       }
 
-      // UPSERT sync cursors with full-precision text timestamps cast to timestamptz
-      // Only upsert when items were found (non-null max timestamp).
-      // UPSERT (INSERT...ON CONFLICT) fixes Bug 1: the trigger only creates rows for the
-      // twist that created the activity, but the create view returns items for other twists.
-      // Text-based timestamps fix Bug 2: no JS Date round-trip means no μs precision loss.
-      const cursorAdvances: Record<string, string> = {};
-      if (activityUpdateMaxTs) cursorAdvances["thread/update"] = activityUpdateMaxTs;
-      if (noteCreateMaxTs) cursorAdvances["note/create"] = noteCreateMaxTs;
-      if (noteUpdateMaxTs) cursorAdvances["note/update"] = noteUpdateMaxTs;
-      if (channelLinkCreateMaxTs) cursorAdvances["channel_link/create"] = channelLinkCreateMaxTs;
-      if (channelLinkUpdateMaxTs) cursorAdvances["channel_link/update"] = channelLinkUpdateMaxTs;
-      if (channelNoteCreateMaxTs) cursorAdvances["channel_note/create"] = channelNoteCreateMaxTs;
-      if (threadReadUpdateMaxTs) cursorAdvances["thread_read/update"] = threadReadUpdateMaxTs;
-      if (threadScheduleUpdateMaxTs) cursorAdvances["thread_schedule/update"] = threadScheduleUpdateMaxTs;
-      if (scheduleContactUpdateMaxTs) cursorAdvances["schedule_contact/update"] = scheduleContactUpdateMaxTs;
-      const syncUpdates: Array<{ name: string; promise: Promise<any> }> = [];
+      // Advance seq cursors to the horizon for all 9 (entity, operation) pairs.
+      // Every pair is upserted unconditionally — the cursor advances to horizonSeq
+      // regardless of whether any items were returned. This keeps SyncRecovery from
+      // seeing perpetually stale cursors and re-notifying every 30s.
+      const cursorEntities = [
+        ["thread", "update"],
+        ["note", "create"],
+        ["note", "update"],
+        ["channel_link", "create"],
+        ["channel_link", "update"],
+        ["channel_note", "create"],
+        ["thread_read", "update"],
+        ["thread_schedule", "update"],
+        ["schedule_contact", "update"],
+      ] as const;
 
-      if (activityUpdateMaxTs) {
-        syncUpdates.push({
-          name: "thread update sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'thread'`,
-              operation: sql`'update'`,
-              last_sync_at: sql`${activityUpdateMaxTs}::timestamptz`,
-              last_update_at: sql`${activityUpdateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${activityUpdateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
+      const cursorUpdates = cursorEntities.map(([entity, operation]) => ({
+        name: `${entity} ${operation} sync`,
+        promise: db
+          .insertInto("twist_instance_sync")
+          .values({
+            twist_instance_id: twistInstanceId,
+            entity: sql`${entity}`,
+            operation: sql`${operation}`,
+            last_update_at: sql`now()`,
+            last_update_seq: sql`${horizonSeq}::xid8`,
+            last_sync_at: sql`now()`,
+            last_sync_seq: sql`${horizonSeq}::xid8`,
+          })
+          .onConflict((oc) =>
+            oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
+              last_sync_at: sql`now()`,
+              last_sync_seq: sql`GREATEST(twist_instance_sync.last_sync_seq, ${horizonSeq}::xid8)`,
+            } as any)
+          )
+          .execute(),
+      }));
 
-      if (noteCreateMaxTs) {
-        syncUpdates.push({
-          name: "note create sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'note'`,
-              operation: sql`'create'`,
-              last_sync_at: sql`${noteCreateMaxTs}::timestamptz`,
-              last_update_at: sql`${noteCreateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${noteCreateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
-
-      if (noteUpdateMaxTs) {
-        syncUpdates.push({
-          name: "note update sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'note'`,
-              operation: sql`'update'`,
-              last_sync_at: sql`${noteUpdateMaxTs}::timestamptz`,
-              last_update_at: sql`${noteUpdateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${noteUpdateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
-
-      if (channelLinkCreateMaxTs) {
-        syncUpdates.push({
-          name: "channel_link create sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'channel_link'`,
-              operation: sql`'create'`,
-              last_sync_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
-              last_update_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${channelLinkCreateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
-
-      if (channelLinkUpdateMaxTs) {
-        syncUpdates.push({
-          name: "channel_link update sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'channel_link'`,
-              operation: sql`'update'`,
-              last_sync_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
-              last_update_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${channelLinkUpdateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
-
-      if (channelNoteCreateMaxTs) {
-        syncUpdates.push({
-          name: "channel_note create sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'channel_note'`,
-              operation: sql`'create'`,
-              last_sync_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
-              last_update_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${channelNoteCreateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
-
-      if (threadReadUpdateMaxTs) {
-        syncUpdates.push({
-          name: "thread_read update sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'thread_read'`,
-              operation: sql`'update'`,
-              last_sync_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
-              last_update_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${threadReadUpdateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
-
-      if (threadScheduleUpdateMaxTs) {
-        syncUpdates.push({
-          name: "thread_schedule update sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'thread_schedule'`,
-              operation: sql`'update'`,
-              last_sync_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
-              last_update_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${threadScheduleUpdateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
-
-      if (scheduleContactUpdateMaxTs) {
-        syncUpdates.push({
-          name: "schedule_contact update sync",
-          promise: db.insertInto("twist_instance_sync")
-            .values({
-              twist_instance_id: twistInstanceId,
-              entity: sql`'schedule_contact'`,
-              operation: sql`'update'`,
-              last_sync_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
-              last_update_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
-            })
-            .onConflict((oc) =>
-              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-                last_sync_at: sql`${scheduleContactUpdateMaxTs}::timestamptz`,
-              })
-            )
-            .execute(),
-        });
-      }
-
-      // Advance last_sync_at for any cursor rows where last_update_at > last_sync_at
-      // but no items were returned (e.g. thread/create rows written by triggers
-      // that TwistSync doesn't query). Without this, SyncRecovery sees them as
-      // perpetually stale and re-notifies TwistSync every 30s.
-      const staleCursors = syncInfos.filter(
-        (s) => s.last_update_at_text > s.last_sync_at_text
-      );
-      for (const stale of staleCursors) {
-        // Skip cursors we already advanced above (they have a matching max timestamp)
-        const key = `${stale.entity}/${stale.operation}`;
-        if (cursorAdvances[key]) continue;
-
-        syncUpdates.push({
-          name: `${stale.entity} ${stale.operation} stale cursor`,
-          promise: db.updateTable("twist_instance_sync")
-            .set({ last_sync_at: sql`last_update_at` })
-            .where("twist_instance_id", "=", twistInstanceId)
-            .where("entity", "=", stale.entity)
-            .where("operation", "=", stale.operation)
-            .execute(),
-        });
-      }
-
-      const syncUpdateResults = await Promise.allSettled(
-        syncUpdates.map((u) => u.promise)
+      const cursorUpdateResults = await Promise.allSettled(
+        cursorUpdates.map((u) => u.promise)
       );
 
-      // Log any failed sync timestamp updates
-      for (let i = 0; i < syncUpdateResults.length; i++) {
-        const result = syncUpdateResults[i];
+      for (let i = 0; i < cursorUpdateResults.length; i++) {
+        const result = cursorUpdateResults[i];
         if (result.status === "rejected") {
           const error = result.reason;
-          logger.error(`Failed to update ${syncUpdates[i].name}`, error as Error, {
+          logger.error(`Failed to update ${cursorUpdates[i].name}`, error as Error, {
             twist_instance_id: twistInstanceId!,
           });
           this.captureException(error as Error, {
-            sync_update: syncUpdates[i].name,
+            sync_update: cursorUpdates[i].name,
           });
         }
       }

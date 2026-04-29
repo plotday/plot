@@ -20,8 +20,11 @@ CREATE TABLE "public"."session" (
     "precedence" smallint NOT NULL DEFAULT 0,
     "pomodoro" smallint CHECK (pomodoro IS NULL OR pomodoro > 0),
     "pomodoro_at" timestamp with time zone,
-    "updated_by" integer NOT NULL DEFAULT 0
+    "updated_by" integer NOT NULL DEFAULT 0,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
+
+CREATE INDEX idx_session_seq ON "public"."session" ("seq");
 
 CREATE INDEX session_at_idx ON "session" USING spgist (at);
 
@@ -33,7 +36,7 @@ WHERE
 CREATE TRIGGER set_session_updated_at
     BEFORE INSERT OR UPDATE ON "public"."session"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_session_created_at
     BEFORE INSERT ON "public"."session"

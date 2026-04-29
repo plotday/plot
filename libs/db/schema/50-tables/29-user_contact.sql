@@ -20,6 +20,7 @@ CREATE TABLE "public"."user_contact" (
     "created_at" timestamptz NOT NULL DEFAULT now(),
     "updated_at" timestamptz NOT NULL DEFAULT now(),
     "archived_at" timestamptz,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     PRIMARY KEY ("user_id", "contact_id"),
     CONSTRAINT user_contact_primary_requires_linked CHECK (NOT "primary" OR "linked")
 );
@@ -32,10 +33,12 @@ CREATE INDEX idx_user_contact_user_id_linked ON "public"."user_contact" ("user_i
 CREATE UNIQUE INDEX idx_user_contact_user_primary_unique ON "public"."user_contact" ("user_id")
     WHERE "primary" = true;
 
+CREATE INDEX idx_user_contact_seq ON "public"."user_contact" ("seq");
+
 CREATE TRIGGER set_user_contact_updated_at
     BEFORE INSERT OR UPDATE ON "public"."user_contact"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_user_contact_created_at
     BEFORE INSERT ON "public"."user_contact"

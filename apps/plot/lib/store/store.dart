@@ -174,19 +174,36 @@ abstract class BaseTable {
 
   /// Build query params for the sync API call.
   /// Subclasses override to add entity-specific params (e.g., priority_path).
+  ///
+  /// Two cursor modes are supported:
+  /// - **seq cursor (preferred)**: pass [lastHorizon] (xid8 as decimal
+  ///   string). The server filters `seq >= last_horizon AND seq <
+  ///   pg_snapshot_xmin(pg_current_snapshot())`. [pageSeq] / [pageId] are
+  ///   the within-pull pagination tiebreakers echoed back from the
+  ///   server's previous `next_page`.
+  /// - **legacy timestamp cursor**: pass [updatedSince] (+ [lastId]).
+  ///   Kept for backwards compatibility while clients on schema <320 drain.
   Map<String, String> buildParams({
     DateTime? updatedSince,
     String? lastId,
+    String? lastHorizon,
+    String? pageSeq,
+    String? pageId,
     bool initial = false,
     bool archived = false,
   }) {
     final params = <String, String>{};
-    if (updatedSince != null) {
+    if (lastHorizon != null) {
+      params['seq_since'] = lastHorizon;
+      if (pageSeq != null) params['page_seq'] = pageSeq;
+      if (pageId != null) params['page_id'] = pageId;
+    } else if (updatedSince != null) {
       params['updated_since'] = updatedSince.toIso8601String();
+      if (lastId != null) params['cursor_id'] = lastId;
     }
-    if (lastId != null) params['cursor_id'] = lastId;
     if (initial) params['initial'] = 'true';
-    if (supportsArchiving && (updatedSince == null || initial || archived)) {
+    if (supportsArchiving &&
+        (updatedSince == null && lastHorizon == null || initial || archived)) {
       params['archived'] = archived.toString();
     }
     if (limit != null) params['limit'] = limit.toString();
@@ -207,24 +224,34 @@ abstract class BaseTable {
       String? lastId,
       DateTimeRange? range,
       bool more,
+      String? nextHorizon,
+      ({String seq, String id})? nextPage,
     )
   >
   get({
     DateTimeRange? range,
     DateTime? updatedSince,
     String? lastId,
+    String? lastHorizon,
+    String? pageSeq,
+    String? pageId,
     bool initial = false,
     bool archived = false,
   }) async {
+    final useSeqCursor = lastHorizon != null;
     final params = buildParams(
       updatedSince: updatedSince,
       lastId: lastId,
+      lastHorizon: lastHorizon,
+      pageSeq: pageSeq,
+      pageId: pageId,
       initial: initial,
       archived: archived,
     );
 
-    // For non-update pulls, add sort params so server sorts consistently
-    if (updatedSince == null) {
+    // For non-cursor pulls, add sort params so server sorts consistently.
+    // (Seq-cursor pulls always sort by `seq, id` server-side.)
+    if (updatedSince == null && !useSeqCursor) {
       if (initial || archived) {
         // Initial and archived pulls must sort by updated_at ASC to match
         // the cursor sort used on page 2+ (when updatedSince is set)
@@ -249,13 +276,33 @@ abstract class BaseTable {
         )
         .join('&');
 
-    // Execute query with auth error detection
+    // Execute query with auth error detection. Seq-cursor responses are
+    // wrapped in `{rows, next_page, next_horizon}`; legacy responses are
+    // a bare array. We branch on `useSeqCursor` (whether we sent
+    // `seq_since`) to know which shape to expect.
     late final List<Map<String, dynamic>> rows;
+    String? nextHorizon;
+    ({String seq, String id})? nextPage;
     try {
-      final result = await api.get<List<dynamic>>(
-        '/sync/$syncEndpoint${queryString.isNotEmpty ? '?$queryString' : ''}',
-      );
-      rows = result.cast<Map<String, dynamic>>();
+      if (useSeqCursor) {
+        final envelope = await api.get<Map<String, dynamic>>(
+          '/sync/$syncEndpoint${queryString.isNotEmpty ? '?$queryString' : ''}',
+        );
+        rows = (envelope['rows'] as List<dynamic>).cast<Map<String, dynamic>>();
+        nextHorizon = envelope['next_horizon']?.toString();
+        final np = envelope['next_page'];
+        if (np is Map) {
+          nextPage = (
+            seq: np['seq'].toString(),
+            id: np['id'].toString(),
+          );
+        }
+      } else {
+        final result = await api.get<List<dynamic>>(
+          '/sync/$syncEndpoint${queryString.isNotEmpty ? '?$queryString' : ''}',
+        );
+        rows = result.cast<Map<String, dynamic>>();
+      }
     } catch (e) {
       if (Store._isAuthError(e)) {
         await Store._handleAuthError();
@@ -280,11 +327,12 @@ abstract class BaseTable {
 
     DateTimeRange? returnRange;
     // returnRange is only meaningful for pullTo() (range-based sync).
-    // For update pulls (updatedSince != null), sort is by updated_at not the
-    // primary order column, so created_at range would be meaningless.
-    if (updatedSince != null || initial || archived) {
+    // For update pulls (updatedSince/lastHorizon != null), sort is by
+    // updated_at/seq not the primary order column, so created_at range
+    // would be meaningless.
+    if (updatedSince != null || useSeqCursor || initial || archived) {
       // Skip range computation for update/initial/archived pulls where sort
-      // is overridden to updated_at ASC (order column values aren't sorted)
+      // is overridden (order column values aren't sorted)
     } else if (range != null) {
       returnRange = range;
     } else if (rows.isNotEmpty) {
@@ -303,7 +351,7 @@ abstract class BaseTable {
     }
     DateTime? lastUpdated;
     String? returnLastId;
-    if (rows.isNotEmpty) {
+    if (rows.isNotEmpty && !useSeqCursor) {
       if (updatedSince != null) {
         // With ASC sort, last row has the max updated_at
         lastUpdated = DateTime.parse(rows.last['updated_at'] as String);
@@ -317,8 +365,12 @@ abstract class BaseTable {
       // Extract last cursor value for composite cursor pagination
       returnLastId = rows.last[cursorColumn]?.toString();
     }
-    final more = limit != null && rows.length >= limit!;
-    return (rows, lastUpdated, returnLastId, returnRange, more);
+    // For legacy: more = rows.length >= limit. For seq cursor: server-driven
+    // via next_page (more iff nextPage != null).
+    final more = useSeqCursor
+        ? (nextPage != null)
+        : (limit != null && rows.length >= limit!);
+    return (rows, lastUpdated, returnLastId, returnRange, more, nextHorizon, nextPage);
   }
 
   Future<void> put(Iterable<Map<String, dynamic>> rows) async {
@@ -1044,68 +1096,57 @@ class Store extends _$Store {
       syncStates,
     )..where((row) => row.entity.equals(entity))).getSingleOrNull();
 
-    // Initial pull: Skip if pulledAt already exists
-    if (initial && syncState?.pulledAt != null) {
+    // Initial pull: skip if a horizon (or legacy pulledAt) already exists.
+    final initialized =
+        syncState?.lastHorizon != null || syncState?.pulledAt != null;
+    if (initial && initialized) {
       return null;
     }
 
-    // Update pull: If we didn't do an initial, just mark now as pullAt
-    // so we get updates from this point on.
-    if (!initial && syncState?.pulledAt == null) {
-      log.fine("No previous pulledAt for ${baseTable.table}, setting to now");
-      // Update pulledAt (and firstPulledAt on initial pull)
-      final lastUpdatedMicros = DateTime.now().microsecondsSinceEpoch;
-      await into(syncStates).insert(
-        SyncStatesCompanion.insert(
-          entity: entity,
-          pulledAt: Value(lastUpdatedMicros),
-          firstPulledAt: Value(lastUpdatedMicros),
-        ),
-        onConflict: DoUpdate(
-          (old) => SyncStatesCompanion(
-            entity: Value(entity),
-            pulledAt: Value(lastUpdatedMicros),
-            firstPulledAt: Value(lastUpdatedMicros),
-            // Preserve existing 'last' and 'noMore' values
-          ),
-        ),
-      );
-      return null;
-    }
-
-    // Fetch items with updated_at > pulledAt (for updates only)
-    final pulledAtMicros = !initial ? syncState?.pulledAt : null;
-    var lastUpdated = pulledAtMicros != null
-        ? DateTime.fromMicrosecondsSinceEpoch(pulledAtMicros, isUtc: true)
-        : null;
-    String? lastId;
-
-    // For updates, loop until all updates are fetched
+    // Determine starting horizon. NULL → "0" (fetch from beginning). On the
+    // first incremental pull post-schema-320 (where the migration nulled
+    // pulledAt), this starts from 0 and re-fetches everything visible —
+    // auto-recovery for users whose updated_at cursor was corrupted by the
+    // long-transaction race.
+    var lastHorizonStr = syncState?.lastHorizon != null
+        ? syncState!.lastHorizon.toString()
+        : "0";
+    String? pageSeq;
+    String? pageId;
+    String? finalHorizon;
     var totalRows = 0;
     var more = false;
 
     do {
       var (
         baseRows,
-        batchLastUpdated,
-        batchLastId,
-        newRange,
+        _,
+        _,
+        _,
         batchMore,
-      ) = (await baseTable.get(
-        updatedSince: lastUpdated,
-        lastId: lastId,
+        nextHorizon,
+        nextPage,
+      ) = await baseTable.get(
+        lastHorizon: lastHorizonStr,
+        pageSeq: pageSeq,
+        pageId: pageId,
         initial: initial,
-      ));
-      final from = newRange?.start?.toString();
-      final to = newRange?.end?.toString();
-      more = batchMore && batchLastUpdated != null;
-      if (batchLastUpdated != null) {
-        lastUpdated = batchLastUpdated;
-        lastId = batchLastId;
+      );
+      more = batchMore;
+      if (nextPage != null) {
+        pageSeq = nextPage.seq;
+        pageId = nextPage.id;
+      }
+      // The server returns next_horizon on every response; we only commit
+      // it to syncStates after the pagination loop completes (when
+      // nextPage == null), so a partial drain doesn't advance the cursor
+      // past unfetched rows.
+      if (nextHorizon != null) {
+        finalHorizon = nextHorizon;
       }
 
       log.fine(
-        "Pulling ${baseRows.length} rows from ${baseTable.table} (initial: $initial, from: $from, to: $to, more: $more)",
+        "Pulling ${baseRows.length} rows from ${baseTable.table} (initial: $initial, more: $more)",
       );
       final storeRows = baseRows.expand<Insertable<DataClass>>((r) {
         try {
@@ -1139,53 +1180,34 @@ class Store extends _$Store {
       log.fine("Synced ${baseTable.name}: $totalRows rows");
     }
 
-    // Update pulledAt after loop completes to ensure all items at same timestamp are pulled
-    if (lastUpdated != null) {
-      final lastUpdatedMicros = lastUpdated.toUtc().microsecondsSinceEpoch;
-
-      // Update pulledAt (and firstPulledAt on initial pull)
-      await into(syncStates).insert(
-        SyncStatesCompanion.insert(
-          entity: entity,
-          pulledAt: Value(lastUpdatedMicros),
-          firstPulledAt: initial
-              ? Value(lastUpdatedMicros)
-              : const Value.absent(),
-        ),
-        onConflict: DoUpdate(
-          (old) => SyncStatesCompanion(
-            entity: Value(entity),
-            pulledAt: Value(lastUpdatedMicros),
-            firstPulledAt: initial
-                ? Value(lastUpdatedMicros)
-                : const Value.absent(),
-            // Preserve existing 'last' and 'noMore' values
-          ),
-        ),
-      );
-    } else if (initial && baseTable.filterName == null) {
-      // Set pulledAt and firstPulledAt for initial pull even if no rows
-      // (marks entity as initialized). Only for global entities — scoped
-      // entities (notes:<threadId>, etc.) shouldn't be stamped on empty
-      // results because an empty response usually signals a transient
-      // visibility gap on the server (missing thread_priority, group
-      // membership) rather than a genuinely-empty scope. Stamping here
-      // would lock the client out of ever retrying: the next open sees
-      // syncState != null, short-circuits _ensureNotesLoadedForActivity,
-      // and the notes stay frozen. See the 2026-04-18 Everyone-eviction
-      // incident for the full failure mode.
+    // Persist the new horizon. Also stamp `pulledAt` to now() so legacy
+    // code paths that check `pulledAt != null` to detect "entity is
+    // initialized" continue to work during the expand-contract rollout.
+    final shouldStamp =
+        finalHorizon != null ||
+        (initial && baseTable.filterName == null);
+    if (shouldStamp) {
+      final horizonInt = finalHorizon != null
+          ? int.tryParse(finalHorizon)
+          : null;
       final nowMicros = DateTime.now().toUtc().microsecondsSinceEpoch;
       await into(syncStates).insert(
         SyncStatesCompanion.insert(
           entity: entity,
+          lastHorizon: horizonInt != null
+              ? Value(horizonInt)
+              : const Value.absent(),
           pulledAt: Value(nowMicros),
-          firstPulledAt: Value(nowMicros),
+          firstPulledAt: initial ? Value(nowMicros) : const Value.absent(),
         ),
         onConflict: DoUpdate(
           (old) => SyncStatesCompanion(
             entity: Value(entity),
+            lastHorizon: horizonInt != null
+                ? Value(horizonInt)
+                : const Value.absent(),
             pulledAt: Value(nowMicros),
-            firstPulledAt: Value(nowMicros),
+            firstPulledAt: initial ? Value(nowMicros) : const Value.absent(),
             // Preserve existing 'last' and 'noMore' values
           ),
         ),
@@ -1248,6 +1270,8 @@ class Store extends _$Store {
         batchLastId,
         _,
         batchMore,
+        _,
+        _,
       ) = await baseTable.get(
         archived: true,
         updatedSince: lastUpdated,
@@ -1519,8 +1543,12 @@ class Store extends _$Store {
 
       log.fine("Requesting range $requestRange");
 
-      var (baseRows, batchLastUpdated, _, newRange, batchMore) = await baseTable
-          .get(range: requestRange, updatedSince: null, archived: archived);
+      var (baseRows, batchLastUpdated, _, newRange, batchMore, _, _) =
+          await baseTable.get(
+        range: requestRange,
+        updatedSince: null,
+        archived: archived,
+      );
       more = batchMore;
       if (batchLastUpdated != null) {
         lastUpdated = batchLastUpdated;
@@ -2077,7 +2105,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 319;
+  int get schemaVersion => 320;
 
   @override
   MigrationStrategy get migration {
@@ -3009,6 +3037,19 @@ class Store extends _$Store {
       await _safeAddColumn(m, actors, actors.linkedUserId);
       await m.database.customStatement(
         "DELETE FROM sync_states WHERE entity LIKE 'user_actors%'",
+      );
+    }
+    if (from < 320) {
+      // Sync cursor switches from updated_at (timestamp) to seq (xid8). Adds
+      // a new column to track the seq watermark, then nulls pulled_at across
+      // the board to force a fresh pull from `seq=0` on every entity. This
+      // auto-recovers any users whose updated_at-based cursor was advanced
+      // past a long-running transaction's rows (the bug we're fixing —
+      // rows stamped with transaction-start time but committed after a
+      // shorter overlapping txn became invisible to the cursor).
+      await _safeAddColumn(m, syncStates, syncStates.lastHorizon);
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = NULL",
       );
     }
   }

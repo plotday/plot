@@ -140,6 +140,7 @@ export type Database = {
           enabled: boolean
           id: number
           link_types: Json | null
+          seq: unknown
           title: string
           twist_instance_id: string
           updated_at: string
@@ -152,6 +153,7 @@ export type Database = {
           enabled?: boolean
           id?: never
           link_types?: Json | null
+          seq?: unknown
           title: string
           twist_instance_id: string
           updated_at?: string
@@ -164,6 +166,7 @@ export type Database = {
           enabled?: boolean
           id?: never
           link_types?: Json | null
+          seq?: unknown
           title?: string
           twist_instance_id?: string
           updated_at?: string
@@ -217,6 +220,7 @@ export type Database = {
           inviteable: boolean
           name: string | null
           primary: boolean
+          seq: unknown
           updated_at: string
           user_id: string | null
         }
@@ -229,6 +233,7 @@ export type Database = {
           inviteable?: boolean
           name?: string | null
           primary?: boolean
+          seq?: unknown
           updated_at?: string
           user_id?: string | null
         }
@@ -241,6 +246,7 @@ export type Database = {
           inviteable?: boolean
           name?: string | null
           primary?: boolean
+          seq?: unknown
           updated_at?: string
           user_id?: string | null
         }
@@ -471,6 +477,7 @@ export type Database = {
           join_policy: Database["public"]["Enums"]["group_join_policy"]
           key: string | null
           name: string
+          seq: unknown
           team_id: number | null
           type: Database["public"]["Enums"]["group_type"]
           updated_at: string
@@ -486,6 +493,7 @@ export type Database = {
           join_policy?: Database["public"]["Enums"]["group_join_policy"]
           key?: string | null
           name: string
+          seq?: unknown
           team_id?: number | null
           type?: Database["public"]["Enums"]["group_type"]
           updated_at?: string
@@ -501,6 +509,7 @@ export type Database = {
           join_policy?: Database["public"]["Enums"]["group_join_policy"]
           key?: string | null
           name?: string
+          seq?: unknown
           team_id?: number | null
           type?: Database["public"]["Enums"]["group_type"]
           updated_at?: string
@@ -612,6 +621,7 @@ export type Database = {
           preview: string | null
           priority_id: string | null
           related_source: string | null
+          seq: unknown
           source: string | null
           source_created_at: string
           source_priority_root: unknown
@@ -639,6 +649,7 @@ export type Database = {
           preview?: string | null
           priority_id?: string | null
           related_source?: string | null
+          seq?: unknown
           source?: string | null
           source_created_at?: string
           source_priority_root?: unknown
@@ -666,6 +677,7 @@ export type Database = {
           preview?: string | null
           priority_id?: string | null
           related_source?: string | null
+          seq?: unknown
           source?: string | null
           source_created_at?: string
           source_priority_root?: unknown
@@ -753,6 +765,7 @@ export type Database = {
           mentions: string[] | null
           merged_from_thread_id: string | null
           re_note_id: string | null
+          seq: unknown
           source_created_at: string
           sync_depth: number | null
           thread_id: string
@@ -775,6 +788,7 @@ export type Database = {
           mentions?: string[] | null
           merged_from_thread_id?: string | null
           re_note_id?: string | null
+          seq?: unknown
           source_created_at?: string
           sync_depth?: number | null
           thread_id: string
@@ -797,6 +811,7 @@ export type Database = {
           mentions?: string[] | null
           merged_from_thread_id?: string | null
           re_note_id?: string | null
+          seq?: unknown
           source_created_at?: string
           sync_depth?: number | null
           thread_id?: string
@@ -872,6 +887,7 @@ export type Database = {
           archived_at: string | null
           id: number
           note_id: string
+          seq: unknown
           sync_depth: number | null
           tag_id: number
           updated_at: string
@@ -882,6 +898,7 @@ export type Database = {
           archived_at?: string | null
           id?: never
           note_id: string
+          seq?: unknown
           sync_depth?: number | null
           tag_id: number
           updated_at?: string
@@ -892,6 +909,7 @@ export type Database = {
           archived_at?: string | null
           id?: never
           note_id?: string
+          seq?: unknown
           sync_depth?: number | null
           tag_id?: number
           updated_at?: string
@@ -939,6 +957,7 @@ export type Database = {
           inherit_members: boolean
           key: string | null
           path: unknown
+          seq: unknown
           sync_depth: number | null
           title: string
           updated_at: string
@@ -959,6 +978,7 @@ export type Database = {
           inherit_members?: boolean
           key?: string | null
           path: unknown
+          seq?: unknown
           sync_depth?: number | null
           title: string
           updated_at?: string
@@ -979,6 +999,7 @@ export type Database = {
           inherit_members?: boolean
           key?: string | null
           path?: unknown
+          seq?: unknown
           sync_depth?: number | null
           title?: string
           updated_at?: string
@@ -1101,6 +1122,7 @@ export type Database = {
           reason: string | null
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
+          seq: unknown
           thread_id: string | null
           updated_at: string
           user_id: string | null
@@ -1119,6 +1141,7 @@ export type Database = {
           reason?: string | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
+          seq?: unknown
           thread_id?: string | null
           updated_at?: string
           user_id?: string | null
@@ -1137,6 +1160,7 @@ export type Database = {
           reason?: string | null
           recurrence_exdates?: string[] | null
           recurrence_rule?: string | null
+          seq?: unknown
           thread_id?: string | null
           updated_at?: string
           user_id?: string | null
@@ -1212,6 +1236,7 @@ export type Database = {
           id: number
           role: string
           schedule_id: string
+          seq: unknown
           status: string | null
           updated_at: string
         }
@@ -1222,6 +1247,7 @@ export type Database = {
           id?: never
           role?: string
           schedule_id: string
+          seq?: unknown
           status?: string | null
           updated_at?: string
         }
@@ -1232,6 +1258,7 @@ export type Database = {
           id?: never
           role?: string
           schedule_id?: string
+          seq?: unknown
           status?: string | null
           updated_at?: string
         }
@@ -1382,6 +1409,7 @@ export type Database = {
           pomodoro_at: string | null
           precedence: number
           priority_id: string | null
+          seq: unknown
           updated_at: string
           updated_by: number
           user_id: string
@@ -1395,6 +1423,7 @@ export type Database = {
           pomodoro_at?: string | null
           precedence?: number
           priority_id?: string | null
+          seq?: unknown
           updated_at?: string
           updated_by?: number
           user_id: string
@@ -1408,6 +1437,7 @@ export type Database = {
           pomodoro_at?: string | null
           precedence?: number
           priority_id?: string | null
+          seq?: unknown
           updated_at?: string
           updated_by?: number
           user_id?: string
@@ -1602,9 +1632,11 @@ export type Database = {
           id: string
           key: string | null
           last_note_created_at: string | null
+          last_note_seq: unknown
           last_note_source_created_at: string | null
           pending_contacts: string[]
           preview: string | null
+          seq: unknown
           sync_depth: number | null
           title: string | null
           topic: string | null
@@ -1624,9 +1656,11 @@ export type Database = {
           id?: string
           key?: string | null
           last_note_created_at?: string | null
+          last_note_seq?: unknown
           last_note_source_created_at?: string | null
           pending_contacts?: string[]
           preview?: string | null
+          seq?: unknown
           sync_depth?: number | null
           title?: string | null
           topic?: string | null
@@ -1646,9 +1680,11 @@ export type Database = {
           id?: string
           key?: string | null
           last_note_created_at?: string | null
+          last_note_seq?: unknown
           last_note_source_created_at?: string | null
           pending_contacts?: string[]
           preview?: string | null
+          seq?: unknown
           sync_depth?: number | null
           title?: string | null
           topic?: string | null
@@ -1666,6 +1702,7 @@ export type Database = {
           id: string
           order: number
           parent_thread_id: string
+          seq: unknown
           updated_at: string
         }
         Insert: {
@@ -1675,6 +1712,7 @@ export type Database = {
           id?: string
           order: number
           parent_thread_id: string
+          seq?: unknown
           updated_at?: string
         }
         Update: {
@@ -1684,6 +1722,7 @@ export type Database = {
           id?: string
           order?: number
           parent_thread_id?: string
+          seq?: unknown
           updated_at?: string
         }
         Relationships: [
@@ -1731,6 +1770,7 @@ export type Database = {
           archived_at: string | null
           created_at: string
           priority_id: string
+          seq: unknown
           thread_id: string
           updated_at: string
           user_id: string
@@ -1741,6 +1781,7 @@ export type Database = {
           archived_at?: string | null
           created_at?: string
           priority_id: string
+          seq?: unknown
           thread_id: string
           updated_at?: string
           user_id: string
@@ -1751,6 +1792,7 @@ export type Database = {
           archived_at?: string | null
           created_at?: string
           priority_id?: string
+          seq?: unknown
           thread_id?: string
           updated_at?: string
           user_id?: string
@@ -1805,6 +1847,7 @@ export type Database = {
         Row: {
           bumped_at: string | null
           read_at: string
+          seq: unknown
           thread_id: string
           updated_at: string
           user_id: string
@@ -1812,6 +1855,7 @@ export type Database = {
         Insert: {
           bumped_at?: string | null
           read_at?: string
+          seq?: unknown
           thread_id: string
           updated_at?: string
           user_id: string
@@ -1819,6 +1863,7 @@ export type Database = {
         Update: {
           bumped_at?: string | null
           read_at?: string
+          seq?: unknown
           thread_id?: string
           updated_at?: string
           user_id?: string
@@ -1856,6 +1901,7 @@ export type Database = {
           archived_at: string | null
           id: number
           occurrence: string | null
+          seq: unknown
           sync_depth: number | null
           tag_id: number
           thread_id: string
@@ -1867,6 +1913,7 @@ export type Database = {
           archived_at?: string | null
           id?: never
           occurrence?: string | null
+          seq?: unknown
           sync_depth?: number | null
           tag_id: number
           thread_id: string
@@ -1878,6 +1925,7 @@ export type Database = {
           archived_at?: string | null
           id?: never
           occurrence?: string | null
+          seq?: unknown
           sync_depth?: number | null
           tag_id?: number
           thread_id?: string
@@ -1910,6 +1958,7 @@ export type Database = {
           bumped_at: string | null
           importance: number
           read_at: string | null
+          seq: unknown
           thread_id: string
           updated_at: string
           urgency: string
@@ -1919,6 +1968,7 @@ export type Database = {
           bumped_at?: string | null
           importance?: number
           read_at?: string | null
+          seq?: unknown
           thread_id: string
           updated_at?: string
           urgency: string
@@ -1928,6 +1978,7 @@ export type Database = {
           bumped_at?: string | null
           importance?: number
           read_at?: string | null
+          seq?: unknown
           thread_id?: string
           updated_at?: string
           urgency?: string
@@ -2104,6 +2155,7 @@ export type Database = {
           name: string
           options: Json
           owner_id: string
+          seq: unknown
           suspended_at: string | null
           team_id: number | null
           twist_id: number
@@ -2118,6 +2170,7 @@ export type Database = {
           name: string
           options?: Json
           owner_id: string
+          seq?: unknown
           suspended_at?: string | null
           team_id?: number | null
           twist_id: number
@@ -2132,6 +2185,7 @@ export type Database = {
           name?: string
           options?: Json
           owner_id?: string
+          seq?: unknown
           suspended_at?: string | null
           team_id?: number | null
           twist_id?: number
@@ -2234,6 +2288,7 @@ export type Database = {
           needs_reauth_at: string | null
           provider: string
           recovery_pending: boolean
+          seq: unknown
           twist_instance_id: string
           user_id: string
         }
@@ -2245,6 +2300,7 @@ export type Database = {
           needs_reauth_at?: string | null
           provider: string
           recovery_pending?: boolean
+          seq?: unknown
           twist_instance_id: string
           user_id: string
         }
@@ -2256,6 +2312,7 @@ export type Database = {
           needs_reauth_at?: string | null
           provider?: string
           recovery_pending?: boolean
+          seq?: unknown
           twist_instance_id?: string
           user_id?: string
         }
@@ -2290,21 +2347,27 @@ export type Database = {
         Row: {
           entity: string
           last_sync_at: string
+          last_sync_seq: unknown
           last_update_at: string
+          last_update_seq: unknown
           operation: Database["public"]["Enums"]["sync_operation"]
           twist_instance_id: string
         }
         Insert: {
           entity: string
           last_sync_at?: string
+          last_sync_seq?: unknown
           last_update_at: string
+          last_update_seq?: unknown
           operation: Database["public"]["Enums"]["sync_operation"]
           twist_instance_id: string
         }
         Update: {
           entity?: string
           last_sync_at?: string
+          last_sync_seq?: unknown
           last_update_at?: string
+          last_update_seq?: unknown
           operation?: Database["public"]["Enums"]["sync_operation"]
           twist_instance_id?: string
         }
@@ -2443,6 +2506,7 @@ export type Database = {
           created_at: string
           linked: boolean
           primary: boolean
+          seq: unknown
           source: string | null
           updated_at: string
           user_id: string
@@ -2453,6 +2517,7 @@ export type Database = {
           created_at?: string
           linked?: boolean
           primary?: boolean
+          seq?: unknown
           source?: string | null
           updated_at?: string
           user_id: string
@@ -2463,6 +2528,7 @@ export type Database = {
           created_at?: string
           linked?: boolean
           primary?: boolean
+          seq?: unknown
           source?: string | null
           updated_at?: string
           user_id?: string
@@ -2488,6 +2554,7 @@ export type Database = {
           email_frequency: Database["public"]["Enums"]["email_frequency"] | null
           email_token: string | null
           enter_behavior: Database["public"]["Enums"]["enter_behavior"] | null
+          seq: unknown
           updated_at: string
           user_id: string
         }
@@ -2498,6 +2565,7 @@ export type Database = {
             | null
           email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          seq?: unknown
           updated_at?: string
           user_id: string
         }
@@ -2508,6 +2576,7 @@ export type Database = {
             | null
           email_token?: string | null
           enter_behavior?: Database["public"]["Enums"]["enter_behavior"] | null
+          seq?: unknown
           updated_at?: string
           user_id?: string
         }
@@ -2573,19 +2642,25 @@ export type Database = {
         Row: {
           entity: string
           last_sync_at: string
+          last_sync_seq: unknown
           last_update_at: string
+          last_update_seq: unknown
           user_id: string
         }
         Insert: {
           entity: string
           last_sync_at?: string
+          last_sync_seq?: unknown
           last_update_at: string
+          last_update_seq?: unknown
           user_id: string
         }
         Update: {
           entity?: string
           last_sync_at?: string
+          last_sync_seq?: unknown
           last_update_at?: string
+          last_update_seq?: unknown
           user_id?: string
         }
         Relationships: [
@@ -2608,6 +2683,7 @@ export type Database = {
           id: string | null
           inviteable: boolean | null
           name: string | null
+          seq: unknown
           type: string | null
           updated_at: string | null
         }
@@ -2701,6 +2777,7 @@ export type Database = {
       note_tags: {
         Row: {
           note_id: string | null
+          seq: unknown
           tags: Json | null
           updated_at: string | null
           updated_by: number | null
@@ -2782,6 +2859,7 @@ export type Database = {
       thread_tags: {
         Row: {
           occurrence: string | null
+          seq: unknown
           tags: Json | null
           thread_id: string | null
           updated_at: string | null
@@ -2821,9 +2899,11 @@ export type Database = {
           id: string | null
           key: string | null
           last_note_created_at: string | null
+          last_note_seq: unknown
           last_note_source_created_at: string | null
           pending_contacts: string[] | null
           preview: string | null
+          seq: unknown
           sync_depth: number | null
           title: string | null
           topic: string | null
@@ -2843,9 +2923,11 @@ export type Database = {
           id?: string | null
           key?: string | null
           last_note_created_at?: string | null
+          last_note_seq?: unknown
           last_note_source_created_at?: string | null
           pending_contacts?: string[] | null
           preview?: string | null
+          seq?: unknown
           sync_depth?: number | null
           title?: string | null
           topic?: string | null
@@ -2865,9 +2947,11 @@ export type Database = {
           id?: string | null
           key?: string | null
           last_note_created_at?: string | null
+          last_note_seq?: unknown
           last_note_source_created_at?: string | null
           pending_contacts?: string[] | null
           preview?: string | null
+          seq?: unknown
           sync_depth?: number | null
           title?: string | null
           topic?: string | null
@@ -2892,6 +2976,7 @@ export type Database = {
           preview: string | null
           priority_id: string | null
           priority_title: string | null
+          seq: unknown
           source: string | null
           source_created_at: string | null
           source_url: string | null
@@ -2977,6 +3062,7 @@ export type Database = {
           preview: string | null
           priority_id: string | null
           priority_title: string | null
+          seq: unknown
           source: string | null
           source_created_at: string | null
           source_url: string | null
@@ -3071,6 +3157,7 @@ export type Database = {
           mentions: string[] | null
           priority_id: string | null
           re_note_id: string | null
+          seq: unknown
           source_created_at: string | null
           sync_depth: number | null
           tags: Json | null
@@ -3176,6 +3263,7 @@ export type Database = {
           name: string | null
           options: Json | null
           owner_id: string | null
+          seq: unknown
           suspended_at: string | null
           team_id: number | null
           twist_environment:
@@ -3288,6 +3376,7 @@ export type Database = {
           mentions: string[] | null
           priority_id: string | null
           re_note_id: string | null
+          seq: unknown
           source_created_at: string | null
           sync_depth: number | null
           tags: Json | null
@@ -3379,6 +3468,7 @@ export type Database = {
           mentions: string[] | null
           priority_id: string | null
           re_note_id: string | null
+          seq: unknown
           source_created_at: string | null
           sync_depth: number | null
           tags: Json | null
@@ -3462,6 +3552,7 @@ export type Database = {
           role: string | null
           schedule_contact_id: number | null
           schedule_id: string | null
+          seq: unknown
           status: string | null
           thread_id: string | null
           twist_instance_id: string | null
@@ -3564,6 +3655,7 @@ export type Database = {
         Row: {
           priority_id: string | null
           read_at: string | null
+          seq: unknown
           thread_id: string | null
           twist_instance_id: string | null
           updated_at: string | null
@@ -3621,6 +3713,7 @@ export type Database = {
           on: unknown
           priority_id: string | null
           schedule_id: string | null
+          seq: unknown
           thread_id: string | null
           twist_instance_id: string | null
           updated_at: string | null
@@ -3676,6 +3769,7 @@ export type Database = {
           actor_id: string | null
           change_type: string | null
           occurrence: string | null
+          seq: unknown
           tag_id: number | null
           thread_id: string | null
           twist_instance_id: string | null
@@ -3713,6 +3807,7 @@ export type Database = {
           preview: string | null
           priority_id: string | null
           priority_title: string | null
+          seq: unknown
           sync_depth: number | null
           tags: Json | null
           title: string | null
@@ -3828,6 +3923,7 @@ export type Database = {
         Returns: {
           entity: string
           last_update_at: string
+          last_update_seq: unknown
         }[]
       }
       get_primary_contact_id: { Args: { p_user_id: string }; Returns: string }
@@ -4017,6 +4113,7 @@ export type Database = {
           name: string | null
           primary: boolean | null
           self: boolean | null
+          seq: unknown
           type: string | null
           updated_at: string | null
           user_id: string | null
@@ -4032,6 +4129,7 @@ export type Database = {
           enabled: boolean | null
           id: number | null
           link_types: Json | null
+          seq: unknown
           title: string | null
           twist_instance_id: string | null
           updated_at: string | null
@@ -4050,6 +4148,7 @@ export type Database = {
           join_policy: Database["public"]["Enums"]["group_join_policy"] | null
           member_contact_ids: string[] | null
           name: string | null
+          seq: unknown
           team_id: number | null
           type: Database["public"]["Enums"]["group_type"] | null
           updated_at: string | null
@@ -4072,6 +4171,7 @@ export type Database = {
           preview: string | null
           priority_id: string | null
           priority_path: unknown
+          seq: unknown
           source: string | null
           source_created_at: string | null
           source_url: string | null
@@ -4126,6 +4226,7 @@ export type Database = {
           mentions: string[] | null
           merged_from_thread_id: string | null
           re_note_id: string | null
+          seq: unknown
           source_created_at: string | null
           thread_id: string | null
           updated_at: string | null
@@ -4197,6 +4298,7 @@ export type Database = {
           mentions: string[] | null
           merged_from_thread_id: string | null
           re_note_id: string | null
+          seq: unknown
           source_created_at: string | null
           thread_id: string | null
           updated_at: string | null
@@ -4260,6 +4362,7 @@ export type Database = {
           id: string | null
           priority_id: string | null
           priority_path: unknown
+          seq: unknown
           tags: Json | null
           updated_at: string | null
           user_id: string | null
@@ -4310,6 +4413,7 @@ export type Database = {
           see_within_requests_set: boolean | null
           see_within_updates: Json | null
           see_within_updates_set: boolean | null
+          seq: unknown
           title: string | null
           top_order: number | null
           unread: boolean | null
@@ -4414,6 +4518,7 @@ export type Database = {
           recurrence_exdates: string[] | null
           recurrence_rule: string | null
           schedule_user_id: string | null
+          seq: unknown
           thread_id: string | null
           updated_at: string | null
           user_id: string | null
@@ -4470,6 +4575,7 @@ export type Database = {
           preview: string | null
           priority_id: string | null
           priority_path: unknown
+          seq: unknown
           title: string | null
           topic: string | null
           unread: boolean | null
@@ -4507,6 +4613,7 @@ export type Database = {
           id: string | null
           order: number | null
           parent_thread_id: string | null
+          seq: unknown
           updated_at: string | null
           user_id: string | null
         }
@@ -4550,6 +4657,7 @@ export type Database = {
           occurrence: string | null
           priority_id: string | null
           priority_path: unknown
+          seq: unknown
           tags: Json | null
           updated_at: string | null
           user_id: string | null
@@ -4593,6 +4701,7 @@ export type Database = {
           name: string | null
           options: Json | null
           owner_id: string | null
+          seq: unknown
           shared: boolean | null
           team_id: number | null
           twist_environment:
@@ -4606,13 +4715,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -4628,6 +4737,7 @@ export type Database = {
           needs_reauth: boolean | null
           needs_reauth_at: string | null
           provider: string | null
+          seq: unknown
           twist_instance_id: string | null
           updated_at: string | null
           user_id: string | null
@@ -4641,6 +4751,7 @@ export type Database = {
           needs_reauth?: never
           needs_reauth_at?: string | null
           provider?: string | null
+          seq?: unknown
           twist_instance_id?: string | null
           updated_at?: never
           user_id?: string | null
@@ -4654,6 +4765,7 @@ export type Database = {
           needs_reauth?: never
           needs_reauth_at?: string | null
           provider?: string | null
+          seq?: unknown
           twist_instance_id?: string | null
           updated_at?: never
           user_id?: string | null
@@ -4805,6 +4917,7 @@ export type Database = {
           see_within_requests_set: boolean | null
           see_within_updates: Json | null
           see_within_updates_set: boolean | null
+          seq: unknown
           title: string | null
           top_order: number | null
           unread: boolean | null

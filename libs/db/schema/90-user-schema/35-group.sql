@@ -5,6 +5,7 @@ SELECT
     g.id,
     g.created_at,
     g.updated_at,
+    g.seq,
     g.archived_at,
     g.name,
     g.type,

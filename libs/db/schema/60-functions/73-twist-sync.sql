@@ -6,34 +6,31 @@ CREATE OR REPLACE FUNCTION public.sync_twist_for_thread ()
 DECLARE
     v_create_timestamp timestamptz;
     v_update_timestamp timestamptz;
+    v_create_seq xid8;
+    v_update_seq xid8;
     v_twist_instance_id uuid;
 BEGIN
     -- Determine timestamps for create and update operations
     IF TG_OP = 'INSERT' THEN
-        -- For inserts, all non-draft rows are creates
         SELECT
-            MAX(created_at) INTO v_create_timestamp
+            MAX(created_at), MAX(seq) INTO v_create_timestamp, v_create_seq
         FROM
             new_table
         WHERE
             draft = FALSE;
     ELSE
-        -- For UPDATE, check for "published" rows (draft true→false) vs regular updates
-        -- "Published" rows: draft changed from TRUE to FALSE - treat as create
+        -- Published rows: draft TRUE -> FALSE
         SELECT
-            MAX(n.updated_at) INTO v_create_timestamp
+            MAX(n.updated_at), MAX(n.seq) INTO v_create_timestamp, v_create_seq
         FROM
             new_table n
             JOIN old_table o ON o.id = n.id
         WHERE
             o.draft = TRUE
             AND n.draft = FALSE;
-        -- Regular updated rows: was already published (not draft) and still not draft
-        -- Only consider rows where meaningful fields actually changed, to avoid
-        -- unnecessary twist_instance_sync updates from no-op upserts (which cause
-        -- SyncRecovery to re-trigger connectors in a feedback loop).
+        -- Regular updates to already-published rows
         SELECT
-            MAX(n.updated_at) INTO v_update_timestamp
+            MAX(n.updated_at), MAX(n.seq) INTO v_update_timestamp, v_update_seq
         FROM
             new_table n
             JOIN old_table o ON o.id = n.id
@@ -48,12 +45,18 @@ BEGIN
                 OR n.icon IS DISTINCT FROM o.icon
                 OR n.updated_by IS DISTINCT FROM o.updated_by);
     END IF;
-    -- Exit early if all changes were to draft threads (nothing to sync)
     IF v_create_timestamp IS NULL AND v_update_timestamp IS NULL THEN
         RETURN NULL;
     END IF;
-    -- Process CREATE operations (new inserts or published drafts)
-    -- Twists are workspace-level; match strictly by created_by.
+    -- Mirror the sync_user_for_* fallback: empty batches / DELETEs leave seq
+    -- NULL; clamp to the current xid so the cursor still advances monotonically.
+    IF v_create_timestamp IS NOT NULL AND v_create_seq IS NULL THEN
+        v_create_seq := pg_current_xact_id();
+    END IF;
+    IF v_update_timestamp IS NOT NULL AND v_update_seq IS NULL THEN
+        v_update_seq := pg_current_xact_id();
+    END IF;
+    -- CREATE
     IF v_create_timestamp IS NOT NULL THEN
         IF TG_OP = 'INSERT' THEN
             FOR v_twist_instance_id IN SELECT DISTINCT
@@ -66,14 +69,14 @@ BEGIN
                 AND pct.archived_at IS NULL
             ORDER BY
                 id LOOP
-                    INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                        VALUES (v_twist_instance_id, 'thread', 'create', v_create_timestamp)
+                    INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                        VALUES (v_twist_instance_id, 'thread', 'create', v_create_timestamp, v_create_seq)
                     ON CONFLICT (twist_instance_id, entity, operation)
                         DO UPDATE SET
-                            last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                            last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                            last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
                 END LOOP;
         ELSE
-            -- UPDATE (publishing draft): reference old_table for draft true→false check
             FOR v_twist_instance_id IN SELECT DISTINCT
                 pct.id
             FROM
@@ -86,15 +89,16 @@ BEGIN
                 AND pct.archived_at IS NULL
             ORDER BY
                 id LOOP
-                    INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                        VALUES (v_twist_instance_id, 'thread', 'create', v_create_timestamp)
+                    INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                        VALUES (v_twist_instance_id, 'thread', 'create', v_create_timestamp, v_create_seq)
                     ON CONFLICT (twist_instance_id, entity, operation)
                         DO UPDATE SET
-                            last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                            last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                            last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
                 END LOOP;
         END IF;
     END IF;
-    -- Process UPDATE operations (regular updates to already-published threads)
+    -- UPDATE
     IF v_update_timestamp IS NOT NULL THEN
         FOR v_twist_instance_id IN SELECT DISTINCT
             pct.id
@@ -108,11 +112,12 @@ BEGIN
             AND pct.archived_at IS NULL
         ORDER BY
             id LOOP
-                INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                    VALUES (v_twist_instance_id, 'thread', 'update', v_update_timestamp)
+                INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                    VALUES (v_twist_instance_id, 'thread', 'update', v_update_timestamp, v_update_seq)
                 ON CONFLICT (twist_instance_id, entity, operation)
                     DO UPDATE SET
-                        last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                        last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                        last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
             END LOOP;
     END IF;
     RETURN NULL;
@@ -126,21 +131,22 @@ CREATE OR REPLACE FUNCTION public.sync_twist_for_thread_tag ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_twist_instance_id uuid;
 BEGIN
-    -- Only consider tags on non-draft threads
     SELECT
-        MAX(n.updated_at) INTO v_max_updated_at
+        MAX(n.updated_at), MAX(n.seq) INTO v_max_updated_at, v_max_seq
     FROM
         new_table n
         JOIN thread a ON a.id = n.thread_id
     WHERE
         a.draft = FALSE;
-    -- Exit early if all changes were to tags on draft threads
     IF v_max_updated_at IS NULL THEN
         RETURN NULL;
     END IF;
-    -- Track sync state for twists that created the affected threads
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     FOR v_twist_instance_id IN SELECT DISTINCT
         pct.id
     FROM
@@ -152,11 +158,12 @@ BEGIN
         AND pct.archived_at IS NULL
     ORDER BY
         id LOOP
-            INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                VALUES (v_twist_instance_id, 'thread', 'update', v_max_updated_at)
+            INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                VALUES (v_twist_instance_id, 'thread', 'update', v_max_updated_at, v_max_seq)
             ON CONFLICT (twist_instance_id, entity, operation)
                 DO UPDATE SET
-                    last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -170,13 +177,13 @@ CREATE OR REPLACE FUNCTION public.sync_twist_for_note ()
 DECLARE
     v_create_timestamp timestamptz;
     v_update_timestamp timestamptz;
+    v_create_seq xid8;
+    v_update_seq xid8;
     v_twist_instance_id uuid;
 BEGIN
-    -- Determine timestamps for create and update operations
     IF TG_OP = 'INSERT' THEN
-        -- For inserts, all non-draft notes on non-draft threads are creates
         SELECT
-            MAX(n.created_at) INTO v_create_timestamp
+            MAX(n.created_at), MAX(n.seq) INTO v_create_timestamp, v_create_seq
         FROM
             new_table n
             JOIN thread a ON a.id = n.thread_id
@@ -184,10 +191,8 @@ BEGIN
             n.draft = FALSE
             AND a.draft = FALSE;
     ELSE
-        -- For UPDATE, check for "published" rows (draft true→false) vs regular updates
-        -- "Published" rows: draft changed from TRUE to FALSE - treat as create
         SELECT
-            MAX(n.updated_at) INTO v_create_timestamp
+            MAX(n.updated_at), MAX(n.seq) INTO v_create_timestamp, v_create_seq
         FROM
             new_table n
             JOIN old_table o ON o.id = n.id
@@ -196,9 +201,8 @@ BEGIN
             o.draft = TRUE
             AND n.draft = FALSE
             AND a.draft = FALSE;
-        -- Regular updated rows: was already published (not draft) and still not draft
         SELECT
-            MAX(n.updated_at) INTO v_update_timestamp
+            MAX(n.updated_at), MAX(n.seq) INTO v_update_timestamp, v_update_seq
         FROM
             new_table n
             JOIN old_table o ON o.id = n.id
@@ -218,11 +222,15 @@ BEGIN
                 OR n.access_contacts IS DISTINCT FROM o.access_contacts
                 OR n.updated_by IS DISTINCT FROM o.updated_by);
     END IF;
-    -- Exit early if all changes were to draft notes or notes on draft threads
     IF v_create_timestamp IS NULL AND v_update_timestamp IS NULL THEN
         RETURN NULL;
     END IF;
-    -- Process CREATE operations: track sync state for twists mentioned in the note.
+    IF v_create_timestamp IS NOT NULL AND v_create_seq IS NULL THEN
+        v_create_seq := pg_current_xact_id();
+    END IF;
+    IF v_update_timestamp IS NOT NULL AND v_update_seq IS NULL THEN
+        v_update_seq := pg_current_xact_id();
+    END IF;
     IF v_create_timestamp IS NOT NULL THEN
         IF TG_OP = 'INSERT' THEN
             FOR v_twist_instance_id IN SELECT DISTINCT
@@ -236,14 +244,14 @@ BEGIN
                 AND n.created_by != pct.id
             ORDER BY
                 id LOOP
-                    INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                        VALUES (v_twist_instance_id, 'note', 'create', v_create_timestamp)
+                    INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                        VALUES (v_twist_instance_id, 'note', 'create', v_create_timestamp, v_create_seq)
                     ON CONFLICT (twist_instance_id, entity, operation)
                         DO UPDATE SET
-                            last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                            last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                            last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
                 END LOOP;
         ELSE
-            -- UPDATE (publishing draft)
             FOR v_twist_instance_id IN SELECT DISTINCT
                 pct.id
             FROM
@@ -257,15 +265,15 @@ BEGIN
                 AND n.created_by != pct.id
             ORDER BY
                 id LOOP
-                    INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                        VALUES (v_twist_instance_id, 'note', 'create', v_create_timestamp)
+                    INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                        VALUES (v_twist_instance_id, 'note', 'create', v_create_timestamp, v_create_seq)
                     ON CONFLICT (twist_instance_id, entity, operation)
                         DO UPDATE SET
-                            last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                            last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                            last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
                 END LOOP;
         END IF;
     END IF;
-    -- Process UPDATE operations: track sync state for twist that created the note
     IF v_update_timestamp IS NOT NULL THEN
         FOR v_twist_instance_id IN SELECT DISTINCT
             pct.id
@@ -279,11 +287,12 @@ BEGIN
             AND pct.archived_at IS NULL
         ORDER BY
             id LOOP
-                INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                    VALUES (v_twist_instance_id, 'note', 'update', v_update_timestamp)
+                INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                    VALUES (v_twist_instance_id, 'note', 'update', v_update_timestamp, v_update_seq)
                 ON CONFLICT (twist_instance_id, entity, operation)
                     DO UPDATE SET
-                        last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                        last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                        last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
             END LOOP;
     END IF;
     RETURN NULL;
@@ -297,12 +306,12 @@ CREATE OR REPLACE FUNCTION public.sync_twist_for_note_tag ()
     AS $function$
 DECLARE
     v_max_updated_at timestamptz;
+    v_max_seq xid8;
     v_twist_instance_id uuid;
 BEGIN
-    -- Only consider tags on non-draft notes on non-draft threads.
     IF TG_OP = 'UPDATE' THEN
         SELECT
-            MAX(n.updated_at) INTO v_max_updated_at
+            MAX(n.updated_at), MAX(n.seq) INTO v_max_updated_at, v_max_seq
         FROM
             new_table n
             JOIN old_table o ON o.id = n.id
@@ -316,7 +325,7 @@ BEGIN
                 OR n.actor_id IS DISTINCT FROM o.actor_id);
     ELSE
         SELECT
-            MAX(n.updated_at) INTO v_max_updated_at
+            MAX(n.updated_at), MAX(n.seq) INTO v_max_updated_at, v_max_seq
         FROM
             new_table n
             JOIN note nt ON nt.id = n.note_id
@@ -325,11 +334,12 @@ BEGIN
             nt.draft = FALSE
             AND a.draft = FALSE;
     END IF;
-    -- Exit early if all changes were to tags on draft notes or draft threads
     IF v_max_updated_at IS NULL THEN
         RETURN NULL;
     END IF;
-    -- Track sync state for twists that created the affected notes
+    IF v_max_seq IS NULL THEN
+        v_max_seq := pg_current_xact_id();
+    END IF;
     FOR v_twist_instance_id IN SELECT DISTINCT
         pct.id
     FROM
@@ -343,11 +353,12 @@ BEGIN
         AND pct.archived_at IS NULL
     ORDER BY
         id LOOP
-            INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                VALUES (v_twist_instance_id, 'note', 'update', v_max_updated_at)
+            INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                VALUES (v_twist_instance_id, 'note', 'update', v_max_updated_at, v_max_seq)
             ON CONFLICT (twist_instance_id, entity, operation)
                 DO UPDATE SET
-                    last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                    last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                    last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
         END LOOP;
     RETURN NULL;
 END;
@@ -363,24 +374,30 @@ CREATE OR REPLACE FUNCTION public.sync_twist_for_link ()
 DECLARE
     v_create_timestamp timestamptz;
     v_update_timestamp timestamptz;
+    v_create_seq xid8;
+    v_update_seq xid8;
     v_twist_instance_id uuid;
 BEGIN
     IF TG_OP = 'INSERT' THEN
         SELECT
-            MAX(created_at) INTO v_create_timestamp
+            MAX(created_at), MAX(seq) INTO v_create_timestamp, v_create_seq
         FROM
             new_table;
     ELSE
         SELECT
-            MAX(n.updated_at) INTO v_update_timestamp
+            MAX(n.updated_at), MAX(n.seq) INTO v_update_timestamp, v_update_seq
         FROM
             new_table n;
     END IF;
-    -- Exit early if nothing to sync
     IF v_create_timestamp IS NULL AND v_update_timestamp IS NULL THEN
         RETURN NULL;
     END IF;
-    -- Process CREATE operations: track sync for the twist that created this link
+    IF v_create_timestamp IS NOT NULL AND v_create_seq IS NULL THEN
+        v_create_seq := pg_current_xact_id();
+    END IF;
+    IF v_update_timestamp IS NOT NULL AND v_update_seq IS NULL THEN
+        v_update_seq := pg_current_xact_id();
+    END IF;
     IF v_create_timestamp IS NOT NULL THEN
         FOR v_twist_instance_id IN SELECT DISTINCT
             pct.id
@@ -391,14 +408,14 @@ BEGIN
             pct.archived_at IS NULL
         ORDER BY
             id LOOP
-                INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                    VALUES (v_twist_instance_id, 'link', 'create', v_create_timestamp)
+                INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                    VALUES (v_twist_instance_id, 'link', 'create', v_create_timestamp, v_create_seq)
                 ON CONFLICT (twist_instance_id, entity, operation)
                     DO UPDATE SET
-                        last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                        last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                        last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
             END LOOP;
     END IF;
-    -- Process UPDATE operations
     IF v_update_timestamp IS NOT NULL THEN
         FOR v_twist_instance_id IN SELECT DISTINCT
             pct.id
@@ -409,11 +426,12 @@ BEGIN
             pct.archived_at IS NULL
         ORDER BY
             id LOOP
-                INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at)
-                    VALUES (v_twist_instance_id, 'link', 'update', v_update_timestamp)
+                INSERT INTO twist_instance_sync (twist_instance_id, entity, operation, last_update_at, last_update_seq)
+                    VALUES (v_twist_instance_id, 'link', 'update', v_update_timestamp, v_update_seq)
                 ON CONFLICT (twist_instance_id, entity, operation)
                     DO UPDATE SET
-                        last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at);
+                        last_update_at = GREATEST (twist_instance_sync.last_update_at, EXCLUDED.last_update_at),
+                        last_update_seq = GREATEST (twist_instance_sync.last_update_seq, EXCLUDED.last_update_seq);
             END LOOP;
     END IF;
     RETURN NULL;

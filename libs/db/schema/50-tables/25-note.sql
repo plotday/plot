@@ -18,7 +18,8 @@ CREATE TABLE "public"."note" (
     "mentions" uuid[],
     "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL,
     "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL,
-    "embedding" halfvec(384)
+    "embedding" halfvec(384),
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 
 COMMENT ON COLUMN "public"."note"."source_created_at" IS 'When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot''s database.';
@@ -57,6 +58,9 @@ CREATE INDEX idx_note_created_at ON "public"."note" ("thread_id", "created_at");
 -- Support incremental sync queries filtering on updated_at
 CREATE INDEX idx_note_updated_at ON "public"."note" ("updated_at");
 
+-- Support seq-based incremental sync queries
+CREATE INDEX idx_note_seq ON "public"."note" ("seq");
+
 -- Composite index for common join + filter pattern in user_thread and other views
 CREATE INDEX idx_note_thread_archived ON "public"."note" ("thread_id", "archived_at");
 
@@ -81,7 +85,7 @@ CREATE INDEX ON note USING hnsw (embedding halfvec_cosine_ops);
 CREATE TRIGGER set_note_updated_at
     BEFORE INSERT OR UPDATE ON "public"."note"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_note_created_at
     BEFORE INSERT ON "public"."note"
@@ -113,18 +117,23 @@ BEGIN
         -- Note: note.updated_at changes do NOT trigger this
         -- Uses GREATEST() instead of MAX subquery since we only need to update if the new value exceeds the current
         -- Also update updated_by to the note's updated_by so webhook-originated notes appear in sync views
+        -- last_note_seq is the sync-cursor counterpart of last_note_created_at:
+        -- the user.thread view exposes GREATEST(thread.seq, last_note_seq, ...)
+        -- so a new note advances /sync/threads' cursor for the parent thread.
         UPDATE
             thread
         SET
             last_note_created_at = GREATEST (last_note_created_at, NEW.created_at),
             last_note_source_created_at = GREATEST (last_note_source_created_at, NEW.source_created_at),
+            last_note_seq = GREATEST (last_note_seq, NEW.seq),
             updated_by = NEW.updated_by
         WHERE
             id = NEW.thread_id
             AND (last_note_created_at IS NULL
                 OR last_note_created_at < NEW.created_at
                 OR last_note_source_created_at IS NULL
-                OR last_note_source_created_at < NEW.source_created_at);
+                OR last_note_source_created_at < NEW.source_created_at
+                OR last_note_seq < NEW.seq);
     END IF;
     RETURN COALESCE(NEW, OLD);
 END;

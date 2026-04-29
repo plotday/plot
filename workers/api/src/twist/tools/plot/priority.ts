@@ -250,8 +250,10 @@ export async function updatePriority(
   // Validate access to the priority
   await plot.validatePriorityAccess(priorityId);
 
-  // Build the update object with only the fields that were provided
-  const dbUpdate: Database["public"]["Tables"]["priority"]["Update"] = {
+  // Build the update object with only the fields that were provided.
+  // `seq` is excluded because xid8 types as `unknown` from the generated
+  // schema and is maintained by the BEFORE UPDATE trigger anyway.
+  const dbUpdate: Omit<Database["public"]["Tables"]["priority"]["Update"], "seq"> = {
     updated_by: plot.getUpdatedBy(),
   };
 

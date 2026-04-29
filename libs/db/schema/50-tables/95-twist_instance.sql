@@ -19,8 +19,11 @@ CREATE TABLE "public"."twist_instance" (
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
     "archived_at" timestamp with time zone,
-    "suspended_at" timestamp with time zone
+    "suspended_at" timestamp with time zone,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
+
+CREATE INDEX idx_twist_instance_seq ON "public"."twist_instance" ("seq");
 
 CREATE INDEX idx_twist_instance_owner_id ON "public"."twist_instance" ("owner_id");
 
@@ -31,7 +34,7 @@ CREATE INDEX idx_twist_instance_twist_id ON "public"."twist_instance" ("twist_id
 CREATE TRIGGER set_twist_instance_updated_at
     BEFORE INSERT OR UPDATE ON "public"."twist_instance"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_twist_instance_created_at
     BEFORE INSERT ON "public"."twist_instance"

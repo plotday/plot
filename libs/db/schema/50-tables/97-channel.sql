@@ -17,8 +17,11 @@ CREATE TABLE "public"."channel" (
     "default_priority_reason" text,
     "created_at" timestamp with time zone NOT NULL DEFAULT now(),
     "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     UNIQUE (twist_instance_id, channel_id)
 );
+
+CREATE INDEX idx_channel_seq ON "public"."channel" ("seq");
 
 COMMENT ON TABLE "public"."channel" IS 'Source channels (calendars, projects, etc.) a connector exposes. Each row represents a channel from an external provider that can be enabled for sync. Routing of resulting threads to priorities is per-user via match_priority_for_user.';
 
@@ -29,7 +32,7 @@ CREATE INDEX idx_channel_twist_instance_id ON "public"."channel" ("twist_instanc
 CREATE TRIGGER set_channel_updated_at
     BEFORE INSERT OR UPDATE ON "public"."channel"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_channel_created_at
     BEFORE INSERT ON "public"."channel"

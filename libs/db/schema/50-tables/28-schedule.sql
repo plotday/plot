@@ -14,7 +14,8 @@ CREATE TABLE "public"."schedule" (
     "reason" text,
     "thread_id" uuid REFERENCES public.thread (id) ON DELETE CASCADE,
     "link_id" uuid REFERENCES public.link (id) ON DELETE CASCADE,
-    "outstanding_tasks" boolean NOT NULL DEFAULT FALSE
+    "outstanding_tasks" boolean NOT NULL DEFAULT FALSE,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 
 -- Recurring schedules:
@@ -106,10 +107,12 @@ WHERE
 
 CREATE INDEX idx_schedule_updated_at ON "public"."schedule" ("updated_at");
 
+CREATE INDEX idx_schedule_seq ON "public"."schedule" ("seq");
+
 CREATE TRIGGER set_schedule_updated_at
     BEFORE INSERT OR UPDATE ON "public"."schedule"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_schedule_created_at
     BEFORE INSERT ON "public"."schedule"

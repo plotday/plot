@@ -9,16 +9,19 @@ CREATE TABLE "public"."contact" (
     "user_id" uuid REFERENCES "public"."user" ("id") ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
     "primary" boolean NOT NULL DEFAULT false,
     "inviteable" boolean NOT NULL DEFAULT true,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     CONSTRAINT contact_email_unique UNIQUE (email),
     CONSTRAINT contact_primary_requires_user CHECK (NOT "primary" OR user_id IS NOT NULL)
 );
+
+CREATE INDEX idx_contact_seq ON "public"."contact" ("seq");
 
 CREATE UNIQUE INDEX contact_user_primary_unique ON contact (user_id) WHERE "primary" = true;
 
 CREATE TRIGGER set_contact_updated_at
     BEFORE INSERT OR UPDATE ON "public"."contact"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_contact_created_at
     BEFORE INSERT ON "public"."contact"

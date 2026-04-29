@@ -699,10 +699,12 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
     // Skip priority access validation for notes - activities may have been moved
     // after creation and the twist should still be able to update notes
 
-    // Build update object (cast needed because @plotday/db types halfvec as unknown)
+    // Build update object (cast needed because @plotday/db types halfvec as
+    // unknown; same applies to seq which is xid8 — never set by callers, the
+    // BEFORE UPDATE trigger maintains it).
     const dbUpdate: Omit<
       Database["public"]["Tables"]["note"]["Update"],
-      "embedding"
+      "embedding" | "seq"
     > = {
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,

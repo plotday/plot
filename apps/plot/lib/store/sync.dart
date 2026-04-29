@@ -48,6 +48,16 @@ class SyncStates extends Table {
   // Replaces in-memory _noMore set with persistent storage
   BoolColumn get noMore => boolean().withDefault(const Constant(false))();
 
+  // xid8 watermark advanced past on the last successful pull (stored as int —
+  // xid8 fits in int64 for ~centuries at current allocation rates). The
+  // server returns this in the pull envelope's `next_horizon`; the client
+  // persists it once `next_page` is null. On the next pull, the client sends
+  // `seq_since=<lastHorizon>` and the server returns rows with
+  // `seq >= lastHorizon AND seq < pg_snapshot_xmin(pg_current_snapshot())` —
+  // a contiguous range that cannot skip rows from long-running transactions
+  // the way `updated_at` could.
+  IntColumn get lastHorizon => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {entity};
 }

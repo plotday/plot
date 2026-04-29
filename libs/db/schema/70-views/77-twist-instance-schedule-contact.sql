@@ -13,6 +13,7 @@ SELECT
     s.thread_id,
     s.link_id,
     sc.updated_at,
+    sc.seq,
     tp.priority_id
 FROM
     twist_instance pt

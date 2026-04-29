@@ -25,7 +25,17 @@ CREATE TABLE "public"."thread" (
     -- Contacts whose own sync attempted to join this thread before being
     -- attested by another user's sync. Promoted into `contacts` when an
     -- attester's upsert includes them. See upsert_thread + file_thread_priority_peers.
-    "pending_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]
+    "pending_contacts" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[],
+    -- Monotonic sync cursor (writing transaction's xid8). Maintained by the
+    -- update_seq_and_updated_at BEFORE INSERT/UPDATE trigger. Sync queries
+    -- gate on `seq < pg_snapshot_xmin(pg_current_snapshot())` to skip rows
+    -- from in-flight transactions, eliminating the long-txn cursor-skip race.
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
+    -- Denormalized GREATEST(note.seq) across non-archived notes on this
+    -- thread, maintained by update_thread_on_note_change. Used by user.thread
+    -- to project view.seq = GREATEST(thread.seq, last_note_seq, ...) so
+    -- note-only changes propagate through the seq cursor.
+    "last_note_seq" xid8 NOT NULL DEFAULT '0'::xid8
 );
 
 ALTER TABLE "public"."thread"
@@ -38,6 +48,9 @@ WHERE
 
 -- Support incremental sync queries filtering on updated_at
 CREATE INDEX idx_thread_updated_at ON "public"."thread" ("updated_at");
+
+-- Support seq-based incremental sync queries
+CREATE INDEX idx_thread_seq ON "public"."thread" ("seq");
 
 -- Index for created_at sorting (critical for pagination queries)
 -- Only indexes non-archived threads (most common case)
@@ -98,7 +111,7 @@ COMMENT ON COLUMN "public"."thread"."last_note_source_created_at" IS 'Cached MAX
 CREATE TRIGGER set_thread_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_thread_created_at
     BEFORE INSERT ON "public"."thread"

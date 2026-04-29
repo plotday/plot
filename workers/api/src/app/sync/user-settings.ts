@@ -1,8 +1,14 @@
 import { Hono } from "hono";
 
-import { sql, withUserDb } from "../../db";
+import { withUserDb } from "../../db";
 import type { Bindings } from "../../env";
-import { parseReadParams } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 import { rpcUser } from "../../rpc";
 import { notifyUserSync } from "./notify";
 
@@ -11,21 +17,34 @@ const userSettings = new Hono<{ Bindings: Bindings }>();
 // GET /sync/user-settings
 userSettings.get("/sync/user-settings", async (c) => {
   const userId = c.var.user.id;
-  const { updatedSince } = parseReadParams(c);
+  const { updatedSince, cursorId, seqSince, pageSeq, pageId, limit } =
+    parseReadParams(c);
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  const useSeqCursor = seqSince !== null;
+
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user_settings")
       .selectAll()
       .where("user_id", "=", userId);
 
-    if (updatedSince) {
-      query = query.where(sql<boolean>`date_trunc('milliseconds', updated_at) > ${updatedSince}::timestamptz`);
+    if (useSeqCursor) {
+      query = query
+        .orderBy("seq", "asc")
+        .orderBy("user_id", "asc")
+        .where(seqSinceCursor(seqSince, pageSeq, pageId, "user_id"));
+    } else if (updatedSince) {
+      query = query.where(updatedSinceCursor(updatedSince, cursorId, "user_id"));
     }
 
-    return query.execute();
+    const fetchedRows = await query.execute();
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    return { rows: fetchedRows, horizon: horizonValue };
   });
 
+  if (useSeqCursor) {
+    return c.json(seqEnvelope(rows as any, limit, horizon) as any);
+  }
   return c.json(rows as any);
 });
 

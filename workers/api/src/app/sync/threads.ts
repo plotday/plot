@@ -8,7 +8,13 @@ import { loadBuiltinProviderConfig, summarizeWithProvider } from "../../utils/ai
 import { cleanTitle } from "../../twist/tools/plot/thread";
 import { titleFromContent, createPreviewFromMarkdown } from "../../twist/tools/plot/thread-helpers";
 import { summarize } from "../summary";
-import { parseReadParams, updatedSinceCursor } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 import { createLogger } from "@plotday/worker-util";
 import { sendInvitation } from "../invitation";
 import { notifySync } from "./notify";
@@ -23,6 +29,9 @@ threads.get("/sync/threads", async (c) => {
   const {
     updatedSince,
     cursorId,
+    seqSince,
+    pageSeq,
+    pageId,
     archived,
     limit,
     priorityId,
@@ -35,14 +44,18 @@ threads.get("/sync/threads", async (c) => {
     sortDir,
   } = parseReadParams(c);
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  const useSeqCursor = seqSince !== null;
+
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user.thread")
       .selectAll()
       .where("user_id", "=", userId);
 
     // Apply sort: use custom sort when not doing cursor pagination
-    if (updatedSince) {
+    if (useSeqCursor) {
+      query = query.orderBy("seq", "asc").orderBy("id", "asc");
+    } else if (updatedSince) {
       query = query.orderBy("updated_at", "asc").orderBy("id", "asc");
     } else {
       // When sorting by agenda_at (a tstzrange), sort by its lower bound
@@ -50,8 +63,12 @@ threads.get("/sync/threads", async (c) => {
       query = query.orderBy(sortExpr, sortDir).orderBy("id", sortDir);
     }
 
-    // Don't apply limit for initial pulls
-    if (!initial) {
+    // Don't apply limit for initial pulls — except when seq-cursor is in use,
+    // where the envelope semantics rely on the limit signaling end-of-page.
+    // Seq-cursor clients paginate naturally from `seq=0` on first pull and
+    // can drain in multiple round-trips; old clients still get the
+    // unbounded initial response.
+    if (!initial || useSeqCursor) {
       query = query.limit(limit);
     }
 
@@ -60,8 +77,11 @@ threads.get("/sync/threads", async (c) => {
       query = query.where("id", "=", id);
     }
 
-    // Cursor pagination (uses date_trunc to match JS Date millisecond precision)
-    if (updatedSince) {
+    // Cursor pagination
+    if (useSeqCursor) {
+      query = query.where(seqSinceCursor(seqSince, pageSeq, pageId));
+    } else if (updatedSince) {
+      // Legacy: uses date_trunc to match JS Date millisecond precision
       query = query.where(updatedSinceCursor(updatedSince, cursorId));
     }
 
@@ -110,7 +130,9 @@ threads.get("/sync/threads", async (c) => {
       }
     }
 
-    return query.execute();
+    const fetchedRows = await query.execute();
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    return { rows: fetchedRows, horizon: horizonValue };
   });
 
   await stripAnnounceContactsFromThreads(c.var.db, userId, rows as any);
@@ -119,15 +141,19 @@ threads.get("/sync/threads", async (c) => {
   // array (the legacy name for what is now `groups`). Map groups → topics
   // and drop the new `topic` / `groups` fields for those clients.
   const apiVersion = c.var.apiVersion ?? 0;
-  if (apiVersion < 3) {
-    const legacyRows = rows.map((row: any) => {
+  const transform = (row: any) => {
+    if (apiVersion < 3) {
       const { groups, topic: _topic, ...rest } = row;
       return { ...rest, topics: groups ?? [] };
-    });
-    return c.json(legacyRows as any);
-  }
+    }
+    return row;
+  };
+  const outRows = rows.map(transform);
 
-  return c.json(rows as any);
+  if (useSeqCursor) {
+    return c.json(seqEnvelope(outRows as any, limit, horizon) as any);
+  }
+  return c.json(outRows as any);
 });
 
 // GET /sync/threads/search - Full-text style search across threads, notes, and links.

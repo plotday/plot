@@ -333,7 +333,7 @@ async function updateThreadsByMatch(
   }
 
   // Build update object - only scalar fields for bulk updates
-  const dbUpdate: Database["public"]["Tables"]["thread"]["Update"] = {
+  const dbUpdate: Omit<Database["public"]["Tables"]["thread"]["Update"], "seq" | "last_note_seq"> = {
     updated_by: plot.getUpdatedBy(),
     sync_depth: plot.syncDepth + 1,
   };
@@ -420,7 +420,7 @@ export async function updateThread(
     }
 
     // Build update object
-    const dbUpdate: Database["public"]["Tables"]["thread"]["Update"] = {
+    const dbUpdate: Omit<Database["public"]["Tables"]["thread"]["Update"], "seq" | "last_note_seq"> = {
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
     };

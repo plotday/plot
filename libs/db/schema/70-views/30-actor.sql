@@ -6,6 +6,7 @@ SELECT
     c.id AS id,
     c.created_at,
     c.updated_at,
+    c.seq,
     CASE WHEN c.user_id IS NOT NULL THEN
         'user'::text
     ELSE
@@ -24,6 +25,7 @@ SELECT
     pt.id AS id,
     pt.created_at,
     pt.updated_at,
+    pt.seq,
     'twist_instance'::text AS type,
     CASE
         WHEN pt.account_label IS NOT NULL AND pt.account_label <> ''

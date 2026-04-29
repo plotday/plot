@@ -32,7 +32,8 @@ CREATE TABLE "public"."priority" (
     -- still remove entries before sending.
     "default_contacts" uuid[] NOT NULL DEFAULT '{}',
     "default_groups" uuid[] NOT NULL DEFAULT '{}',
-    "default_invite_emails" text[] NOT NULL DEFAULT '{}'
+    "default_invite_emails" text[] NOT NULL DEFAULT '{}',
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 
 -- Per-user owner lookups
@@ -45,6 +46,8 @@ CREATE UNIQUE INDEX idx_priority_user_path_unique ON "public"."priority" ("user_
 -- Used heavily in user_thread view filtering
 CREATE INDEX idx_priority_path_gist ON "public"."priority" USING gist ("path");
 
+CREATE INDEX idx_priority_seq ON "public"."priority" ("seq");
+
 -- Ensure keys are unique within each priority root tree
 CREATE UNIQUE INDEX idx_priority_key_per_root ON "public"."priority" ((subltree ("path", 0, 1)), "key")
 WHERE
@@ -53,7 +56,7 @@ WHERE
 CREATE TRIGGER set_priority_updated_at
     BEFORE INSERT OR UPDATE ON "public"."priority"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_priority_created_at
     BEFORE INSERT ON "public"."priority"

@@ -9,6 +9,7 @@ SELECT
     n.id,
     n.created_at,
     n.updated_at,
+    n.seq,
     n.source_created_at,
     n.author_id,
     n.created_by,

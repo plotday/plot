@@ -9,8 +9,11 @@ CREATE TABLE "public"."user_settings" (
     -- Random token issued in notification emails so a recipient can update
     -- their email_frequency preference without signing in. Generated lazily
     -- the first time a notification email is sent.
-    "email_token" uuid
+    "email_token" uuid,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
+
+CREATE INDEX idx_user_settings_seq ON "public"."user_settings" ("seq");
 
 CREATE UNIQUE INDEX idx_user_settings_email_token ON "public"."user_settings" ("email_token")
     WHERE "email_token" IS NOT NULL;
@@ -21,4 +24,4 @@ CREATE INDEX idx_user_settings_user_id ON "public"."user_settings" ("user_id");
 CREATE TRIGGER set_user_settings_updated_at
     BEFORE INSERT OR UPDATE ON "public"."user_settings"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();

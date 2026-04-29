@@ -9,6 +9,7 @@ SELECT
     l.id,
     l.created_at,
     l.updated_at,
+    l.seq,
     l.thread_id,
     l.source,
     l.source_created_at,

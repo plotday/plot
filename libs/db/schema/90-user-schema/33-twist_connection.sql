@@ -29,6 +29,7 @@ SELECT
         tic.needs_reauth_at,
         tic.initial_sync_started_at,
         tic.initial_sync_completed_at
-    ) AS updated_at
+    ) AS updated_at,
+    tic.seq
 FROM
     twist_instance_connection tic;

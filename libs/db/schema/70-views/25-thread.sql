@@ -6,6 +6,7 @@ SELECT
     jsonb_object_agg(sq.tag_id, sq.actor_ids) FILTER (WHERE sq.actor_ids IS NOT NULL
         AND jsonb_array_length(sq.actor_ids) > 0) AS tags,
     MAX(sq.updated_at) AS updated_at,
+    MAX(sq.seq) AS seq,
     (array_agg(sq.updated_by ORDER BY sq.updated_at DESC))[1] AS updated_by
 FROM (
     SELECT
@@ -14,6 +15,7 @@ FROM (
         at.tag_id,
         jsonb_agg(at.actor_id) FILTER (WHERE at.archived_at IS NULL) AS actor_ids,
         MAX(COALESCE(at.archived_at, at.updated_at)) AS updated_at,
+        MAX(at.seq) AS seq,
         (array_agg(at.updated_by ORDER BY at.updated_at DESC))[1] AS updated_by
     FROM
         "public"."thread_tag" at

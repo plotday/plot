@@ -9,6 +9,9 @@
 --      without owning the source connector. Triggers on thread_priority INSERT
 --      and link INSERT bump channel.updated_at so the viewer's incremental
 --      sync cursor picks up newly-relevant channels.
+-- Note: `sc.*` includes the new `seq` column on channel automatically. Sync
+-- queries against user.channel filter and order on `seq` for the new
+-- xid8-based cursor.
 CREATE OR REPLACE VIEW "user"."channel" AS
 SELECT
     pt.owner_id AS user_id,

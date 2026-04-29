@@ -18,8 +18,17 @@ CREATE TABLE "public"."twist_instance_connection" (
     -- and automatically passes `recovering: true` in the SyncContext, then
     -- clears the flag. Connectors do not need to read or write this.
     "recovery_pending" boolean NOT NULL DEFAULT false,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     PRIMARY KEY ("twist_instance_id", "user_id", "provider")
 );
 
 CREATE INDEX idx_twist_instance_connection_user_id ON twist_instance_connection (user_id);
 CREATE INDEX idx_twist_instance_connection_instance ON twist_instance_connection (twist_instance_id);
+CREATE INDEX idx_twist_instance_connection_seq ON twist_instance_connection (seq);
+
+-- twist_instance_connection has no updated_at column — bump seq directly
+-- on UPDATE so sync queries see the change.
+CREATE TRIGGER set_twist_instance_connection_seq
+    BEFORE UPDATE ON "public"."twist_instance_connection"
+    FOR EACH ROW
+    EXECUTE FUNCTION update_seq ();

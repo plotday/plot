@@ -17,6 +17,7 @@ SELECT
     s."at",
     s.archived_at,
     s.updated_at,
+    s.seq,
     tp.priority_id
 FROM
     twist_instance pt

@@ -6,13 +6,16 @@ CREATE TABLE "public"."thread_unread" (
     "importance" smallint NOT NULL DEFAULT 50 CHECK (importance >= 0 AND importance <= 100),
     "read_at" timestamptz,          -- NULL = unread; set when user reads
     "bumped_at" timestamptz,        -- for manual bumps
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     PRIMARY KEY (user_id, thread_id)
 );
 
 -- Trigger for updated_at
 CREATE TRIGGER set_thread_unread_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_unread"
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION update_seq_and_updated_at();
+
+CREATE INDEX idx_thread_unread_seq ON "public"."thread_unread" ("seq");
 
 -- For unread queries (read_at IS NULL)
 CREATE INDEX idx_thread_unread_user_unread ON "public"."thread_unread" ("user_id", "thread_id", "read_at");

@@ -11,6 +11,14 @@ SELECT
     s.id,
     s.created_at,
     s.updated_at,
+    -- seq: GREATEST across schedule + its visible schedule_contact rows so
+    -- RSVP/role changes (which only touch schedule_contact) propagate
+    -- through the cursor for /sync/schedules. The subquery uses LEAST=0
+    -- when no contacts exist.
+    GREATEST(s.seq, COALESCE(
+        (SELECT MAX(sc.seq) FROM schedule_contact sc WHERE sc.schedule_id = s.id),
+        '0'::xid8
+    )) AS seq,
     COALESCE(s.archived_at, upe.archived_at) AS archived_at,
     s.user_id AS schedule_user_id,
     s."order",

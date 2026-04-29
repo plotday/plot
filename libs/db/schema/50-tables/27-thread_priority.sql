@@ -36,6 +36,7 @@ CREATE TABLE "public"."thread_priority" (
     -- twist_instance → thread → thread_priority anyway, so a stale marker
     -- is unreachable in practice.
     "applied_default_channel_id" bigint,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     PRIMARY KEY ("thread_id", "user_id")
 );
 
@@ -57,6 +58,9 @@ CREATE INDEX idx_thread_priority_priority_id
 CREATE INDEX idx_thread_priority_updated_at
     ON "public"."thread_priority" ("updated_at");
 
+CREATE INDEX idx_thread_priority_seq
+    ON "public"."thread_priority" ("seq");
+
 -- Fast lookup of the set of explicitly-moved threads per user — the training
 -- set consumed by classify_thread_for_user on every classification call.
 CREATE INDEX idx_thread_priority_user_moved
@@ -72,7 +76,7 @@ CREATE INDEX idx_thread_priority_applied_default
 CREATE TRIGGER set_thread_priority_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_priority"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_thread_priority_created_at
     BEFORE INSERT ON "public"."thread_priority"

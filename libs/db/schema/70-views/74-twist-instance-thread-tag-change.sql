@@ -17,6 +17,7 @@ SELECT
     at.tag_id,
     at.actor_id,
     at.updated_at,
+    at.seq,
     CASE WHEN at.archived_at IS NULL THEN
         'added'
     ELSE

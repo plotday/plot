@@ -13,7 +13,13 @@ import {
   recordAiUsage,
 } from "../../utils/ai-limits";
 import { assertThreadAccess } from "./authorize";
-import { parseReadParams, updatedSinceCursor } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
 
 const notes = new Hono<{ Bindings: Bindings }>();
@@ -24,6 +30,9 @@ notes.get("/sync/notes", async (c) => {
   const {
     updatedSince,
     cursorId,
+    seqSince,
+    pageSeq,
+    pageId,
     archived,
     limit,
     threadId,
@@ -32,13 +41,17 @@ notes.get("/sync/notes", async (c) => {
     sortDir,
   } = parseReadParams(c);
 
-  // On initial sync (epoch or no updated_since), a fresh client has nothing
-  // to reconcile, so we skip the expensive redacted-stub query entirely.
-  // On incremental sync, updated_since narrows the redacted branch so it's cheap.
-  const isInitialSync =
-    !updatedSince || updatedSince === "1970-01-01T00:00:00.000Z";
+  const useSeqCursor = seqSince !== null;
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  // On initial sync (epoch or no updated_since/seq_since), a fresh client has
+  // nothing to reconcile, so we skip the expensive redacted-stub query
+  // entirely. On incremental sync, updated_since/seq_since narrows the
+  // redacted branch so it's cheap.
+  const isInitialSync = useSeqCursor
+    ? seqSince === "0"
+    : !updatedSince || updatedSince === "1970-01-01T00:00:00.000Z";
+
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     // Sort on the raw updated_at column so the planner can use
     // idx_note_updated_at. date_trunc() is still applied in the cursor
     // WHERE comparison to match JS Date millisecond precision.
@@ -47,7 +60,10 @@ notes.get("/sync/notes", async (c) => {
       .selectAll()
       .where("user_id", "=", userId)
       .limit(limit);
-    if (updatedSince) {
+    if (useSeqCursor) {
+      visibleQ = visibleQ.orderBy("seq", "asc").orderBy("id", "asc")
+        .where(seqSinceCursor(seqSince, pageSeq, pageId));
+    } else if (updatedSince) {
       visibleQ = visibleQ.orderBy("updated_at", "asc").orderBy("id", "asc");
       visibleQ = visibleQ.where(updatedSinceCursor(updatedSince, cursorId));
     } else {
@@ -59,14 +75,18 @@ notes.get("/sync/notes", async (c) => {
     if (threadId) visibleQ = visibleQ.where("thread_id", "=", threadId);
 
     const visible = await visibleQ.execute();
-    if (isInitialSync) return visible;
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    if (isInitialSync) return { rows: visible, horizon: horizonValue };
 
     let redactedQ = trx
       .selectFrom("user.note_redacted")
       .selectAll()
       .where("user_id", "=", userId)
       .limit(limit);
-    if (updatedSince) {
+    if (useSeqCursor) {
+      redactedQ = redactedQ.orderBy("seq", "asc").orderBy("id", "asc")
+        .where(seqSinceCursor(seqSince, pageSeq, pageId));
+    } else if (updatedSince) {
       redactedQ = redactedQ.orderBy("updated_at", "asc").orderBy("id", "asc");
       redactedQ = redactedQ.where(updatedSinceCursor(updatedSince, cursorId));
     } else {
@@ -78,19 +98,30 @@ notes.get("/sync/notes", async (c) => {
     if (threadId) redactedQ = redactedQ.where("thread_id", "=", threadId);
 
     const redacted = await redactedQ.execute();
-    // Merge and re-sort to preserve the (updated_at, id) order across both
-    // sets, then slice to the requested limit. Each server-side query is
-    // already bounded by `limit`; the redacted set is typically tiny.
+    // Merge and re-sort across both sets, then slice to the requested limit.
+    // Each server-side query is already bounded by `limit`; the redacted set
+    // is typically tiny. seq sort takes precedence when seq cursor is in use.
     const merged = [...visible, ...redacted];
-    merged.sort((a, b) => {
-      const au = a.updated_at ? a.updated_at.getTime() : 0;
-      const bu = b.updated_at ? b.updated_at.getTime() : 0;
-      if (au !== bu) return au - bu;
-      const aid = a.id ?? "";
-      const bid = b.id ?? "";
-      return aid < bid ? -1 : aid > bid ? 1 : 0;
-    });
-    return merged.slice(0, limit);
+    if (useSeqCursor) {
+      merged.sort((a, b) => {
+        const as = (a as any).seq ?? "0";
+        const bs = (b as any).seq ?? "0";
+        if (as !== bs) return as < bs ? -1 : 1;
+        const aid = a.id ?? "";
+        const bid = b.id ?? "";
+        return aid < bid ? -1 : aid > bid ? 1 : 0;
+      });
+    } else {
+      merged.sort((a, b) => {
+        const au = a.updated_at ? a.updated_at.getTime() : 0;
+        const bu = b.updated_at ? b.updated_at.getTime() : 0;
+        if (au !== bu) return au - bu;
+        const aid = a.id ?? "";
+        const bid = b.id ?? "";
+        return aid < bid ? -1 : aid > bid ? 1 : 0;
+      });
+    }
+    return { rows: merged.slice(0, limit), horizon: horizonValue };
   });
 
   // Enrich thread actions with current title and priorityId
@@ -131,6 +162,9 @@ notes.get("/sync/notes", async (c) => {
     }
   }
 
+  if (useSeqCursor) {
+    return c.json(seqEnvelope(rows as any, limit, horizon) as any);
+  }
   return c.json(rows as any);
 });
 

@@ -7,12 +7,16 @@ CREATE OR REPLACE FUNCTION public.sync_user_on_connect (p_user_id uuid)
     SET search_path TO 'public'
     AS $function$
 BEGIN
-    -- Update all user_sync rows for this user
-    -- Set last_sync_at to match last_update_at since client has full data
+    -- Update all user_sync rows for this user. Set both watermarks
+    -- (timestamp + seq) to match their respective `last_update_*` since the
+    -- client has full data after the connect-time pull. Both columns are
+    -- maintained during the expand-contract rollout; readers may consult
+    -- either or both.
     UPDATE
         user_sync
     SET
-        last_sync_at = last_update_at
+        last_sync_at = last_update_at,
+        last_sync_seq = last_update_seq
     WHERE
         user_id = p_user_id;
 END;

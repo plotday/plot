@@ -5,7 +5,13 @@ import type { Bindings } from "../../env";
 import { twistFactory } from "../../twist";
 import { resolveOptions } from "../../twist/tools/factory";
 import type { OptionsSchema } from "@plotday/twister/options";
-import { parseReadParams, updatedSinceCursor } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 import { rpcUser } from "../../rpc";
 import { notifyUserSync } from "./notify";
 import { syncUserTwistStats } from "../../utils/twist-stats";
@@ -18,9 +24,20 @@ const twistInstances = new Hono<{ Bindings: Bindings }>();
 // twist_instance table doesn't have user_id; filter by user's accessible priorities
 twistInstances.get("/sync/twist-instances", async (c) => {
   const userId = c.var.user.id;
-  const { updatedSince, cursorId, archived, limit, sortBy, sortDir } = parseReadParams(c);
+  const {
+    updatedSince,
+    cursorId,
+    seqSince,
+    pageSeq,
+    pageId,
+    archived,
+    limit,
+    sortBy,
+    sortDir,
+  } = parseReadParams(c);
+  const useSeqCursor = seqSince !== null;
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user.twist")
       .selectAll()
@@ -28,14 +45,14 @@ twistInstances.get("/sync/twist-instances", async (c) => {
       .limit(limit);
 
     // Apply sort
-    if (updatedSince) {
-      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
+    if (useSeqCursor) {
+      query = query.orderBy("seq", "asc").orderBy("id", "asc")
+        .where(seqSinceCursor(seqSince, pageSeq, pageId));
+    } else if (updatedSince) {
+      query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc")
+        .where(updatedSinceCursor(updatedSince, cursorId));
     } else {
       query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
-    }
-
-    if (updatedSince) {
-      query = query.where(updatedSinceCursor(updatedSince, cursorId));
     }
 
     if (archived === true) {
@@ -44,7 +61,9 @@ twistInstances.get("/sync/twist-instances", async (c) => {
       query = query.where("archived_at", "is", null);
     }
 
-    return query.execute();
+    const fetchedRows = await query.execute();
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    return { rows: fetchedRows, horizon: horizonValue };
   });
 
   // Reconcile twist_instance_connection rows for source twist_instances
@@ -58,6 +77,9 @@ twistInstances.get("/sync/twist-instances", async (c) => {
   //   - Neither → leave the row absent (nothing was ever connected).
   await reconcileSourceConnections(c, rows, userId);
 
+  if (useSeqCursor) {
+    return c.json(seqEnvelope(rows as any, limit, horizon) as any);
+  }
   return c.json(rows as any);
 });
 

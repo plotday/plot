@@ -66,6 +66,7 @@ export interface Actor {
   id: string | null;
   inviteable: boolean | null;
   name: string | null;
+  seq: string | null;
   type: string | null;
   updated_at: Timestamp | null;
 }
@@ -124,6 +125,7 @@ export interface Channel {
   enabled: Generated<boolean>;
   id: Generated<Int8>;
   link_types: Json | null;
+  seq: Generated<string>;
   title: string;
   twist_instance_id: string;
   updated_at: Generated<Timestamp>;
@@ -138,6 +140,7 @@ export interface Contact {
   inviteable: Generated<boolean>;
   name: string | null;
   primary: Generated<boolean>;
+  seq: Generated<string>;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
 }
@@ -309,6 +312,7 @@ export interface Group {
    */
   key: string | null;
   name: string;
+  seq: Generated<string>;
   team_id: Int8 | null;
   type: Generated<GroupType>;
   updated_at: Generated<Timestamp>;
@@ -350,6 +354,7 @@ export interface Link {
    * Cross-connector thread bundling key. Links whose source matches another link's related_source share a thread, regardless of creation order.
    */
   related_source: string | null;
+  seq: Generated<string>;
   /**
    * External source identifier for deduplication and sync. Used with source_priority_root for upsert behavior.
    */
@@ -444,6 +449,7 @@ export interface Note {
   mentions: string[] | null;
   merged_from_thread_id: string | null;
   re_note_id: string | null;
+  seq: Generated<string>;
   /**
    * When this note was originally created in its source system (e.g., email sent date, comment creation date). Defaults to now() but can be set by twists. Used for display and sorting. For unread status, use created_at which tracks when the note entered Plot's database.
    */
@@ -459,6 +465,7 @@ export interface NoteTag {
   archived_at: Timestamp | null;
   id: Generated<Int8>;
   note_id: string;
+  seq: Generated<string>;
   sync_depth: number | null;
   tag_id: number;
   updated_at: Generated<Timestamp>;
@@ -467,6 +474,7 @@ export interface NoteTag {
 
 export interface NoteTags {
   note_id: string | null;
+  seq: string | null;
   tags: Json | null;
   updated_at: Timestamp | null;
   updated_by: number | null;
@@ -486,6 +494,7 @@ export interface Priority {
   inherit_members: Generated<boolean>;
   key: string | null;
   path: string;
+  seq: Generated<string>;
   sync_depth: number | null;
   title: string;
   updated_at: Generated<Timestamp>;
@@ -547,6 +556,7 @@ export interface Schedule {
   reason: string | null;
   recurrence_exdates: ArrayType<Timestamp> | null;
   recurrence_rule: string | null;
+  seq: Generated<string>;
   thread_id: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
@@ -559,6 +569,7 @@ export interface ScheduleContact {
   id: Generated<Int8>;
   role: Generated<string>;
   schedule_id: string;
+  seq: Generated<string>;
   status: string | null;
   updated_at: Generated<Timestamp>;
 }
@@ -594,6 +605,7 @@ export interface Session {
   pomodoro_at: Timestamp | null;
   precedence: Generated<number>;
   priority_id: string | null;
+  seq: Generated<string>;
   updated_at: Generated<Timestamp>;
   updated_by: Generated<number>;
   user_id: string;
@@ -668,6 +680,7 @@ export interface Thread {
    * Cached MAX(note.created_at) for non-draft, non-archived notes. Maintained by trigger. Used for unread status in user_thread and user_priority_unread views.
    */
   last_note_created_at: Timestamp | null;
+  last_note_seq: Generated<string>;
   /**
    * Cached MAX(note.source_created_at) for non-draft, non-archived notes. Maintained by trigger. Used for display, sorting, and range_at computation in user_thread view.
    */
@@ -677,6 +690,7 @@ export interface Thread {
    */
   pending_contacts: Generated<string[]>;
   preview: string | null;
+  seq: Generated<string>;
   sync_depth: number | null;
   title: string | null;
   /**
@@ -698,6 +712,7 @@ export interface ThreadAssociation {
   id: Generated<string>;
   order: number;
   parent_thread_id: string;
+  seq: Generated<string>;
   updated_at: Generated<Timestamp>;
 }
 
@@ -706,6 +721,7 @@ export interface ThreadPriority {
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   priority_id: string;
+  seq: Generated<string>;
   thread_id: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
@@ -715,6 +731,7 @@ export interface ThreadPriority {
 export interface ThreadRead {
   bumped_at: Timestamp | null;
   read_at: Generated<Timestamp>;
+  seq: Generated<string>;
   thread_id: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
@@ -728,6 +745,7 @@ export interface ThreadTag {
    * Original occurrence date/datetime in text format. For dates: YYYY-MM-DD, for datetimes: YYYY-MM-DDTHH:MM
    */
   occurrence: string | null;
+  seq: Generated<string>;
   sync_depth: number | null;
   tag_id: number;
   thread_id: string;
@@ -737,6 +755,7 @@ export interface ThreadTag {
 
 export interface ThreadTags {
   occurrence: string | null;
+  seq: string | null;
   tags: Json | null;
   thread_id: string | null;
   updated_at: Timestamp | null;
@@ -747,6 +766,7 @@ export interface ThreadUnread {
   bumped_at: Timestamp | null;
   importance: Generated<number>;
   read_at: Timestamp | null;
+  seq: Generated<string>;
   thread_id: string;
   updated_at: Generated<Timestamp>;
   urgency: string;
@@ -765,9 +785,11 @@ export interface ThreadX {
   id: string | null;
   key: string | null;
   last_note_created_at: Timestamp | null;
+  last_note_seq: string | null;
   last_note_source_created_at: Timestamp | null;
   pending_contacts: string[] | null;
   preview: string | null;
+  seq: string | null;
   sync_depth: number | null;
   title: string | null;
   topic: string | null;
@@ -821,6 +843,7 @@ export interface TwistInstance {
   name: string;
   options: Generated<Json>;
   owner_id: string;
+  seq: Generated<string>;
   suspended_at: Timestamp | null;
   team_id: Int8 | null;
   twist_id: Int8;
@@ -851,6 +874,7 @@ export interface TwistInstanceChannelLinkCreate {
   preview: string | null;
   priority_id: string | null;
   priority_title: string | null;
+  seq: string | null;
   source: string | null;
   source_created_at: Timestamp | null;
   source_url: string | null;
@@ -879,6 +903,7 @@ export interface TwistInstanceChannelLinkUpdate {
   preview: string | null;
   priority_id: string | null;
   priority_title: string | null;
+  seq: string | null;
   source: string | null;
   source_created_at: Timestamp | null;
   source_url: string | null;
@@ -916,6 +941,7 @@ export interface TwistInstanceChannelNoteCreate {
   mentions: string[] | null;
   priority_id: string | null;
   re_note_id: string | null;
+  seq: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
   tags: Json | null;
@@ -935,6 +961,7 @@ export interface TwistInstanceConnection {
   needs_reauth_at: Timestamp | null;
   provider: string;
   recovery_pending: Generated<boolean>;
+  seq: Generated<string>;
   twist_instance_id: string;
   user_id: string;
 }
@@ -952,6 +979,7 @@ export interface TwistInstanceDetails {
   name: string | null;
   options: Json | null;
   owner_id: string | null;
+  seq: string | null;
   suspended_at: Timestamp | null;
   team_id: Int8 | null;
   twist_environment: TwistEnvironment | null;
@@ -1002,6 +1030,7 @@ export interface TwistInstanceNoteCreate {
   mentions: string[] | null;
   priority_id: string | null;
   re_note_id: string | null;
+  seq: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
   tags: Json | null;
@@ -1030,6 +1059,7 @@ export interface TwistInstanceNoteUpdate {
   mentions: string[] | null;
   priority_id: string | null;
   re_note_id: string | null;
+  seq: string | null;
   source_created_at: Timestamp | null;
   sync_depth: number | null;
   tags: Json | null;
@@ -1050,6 +1080,7 @@ export interface TwistInstanceScheduleContact {
   role: string | null;
   schedule_contact_id: Int8 | null;
   schedule_id: string | null;
+  seq: string | null;
   status: string | null;
   thread_id: string | null;
   twist_instance_id: string | null;
@@ -1059,7 +1090,9 @@ export interface TwistInstanceScheduleContact {
 export interface TwistInstanceSync {
   entity: string;
   last_sync_at: Generated<Timestamp>;
+  last_sync_seq: Generated<string>;
   last_update_at: Timestamp;
+  last_update_seq: Generated<string>;
   operation: SyncOperation;
   twist_instance_id: string;
 }
@@ -1067,6 +1100,7 @@ export interface TwistInstanceSync {
 export interface TwistInstanceThreadRead {
   priority_id: string | null;
   read_at: Timestamp | null;
+  seq: string | null;
   thread_id: string | null;
   twist_instance_id: string | null;
   updated_at: Timestamp | null;
@@ -1079,6 +1113,7 @@ export interface TwistInstanceThreadSchedule {
   on: string | null;
   priority_id: string | null;
   schedule_id: string | null;
+  seq: string | null;
   thread_id: string | null;
   twist_instance_id: string | null;
   updated_at: Timestamp | null;
@@ -1089,6 +1124,7 @@ export interface TwistInstanceThreadTagChange {
   actor_id: string | null;
   change_type: string | null;
   occurrence: string | null;
+  seq: string | null;
   tag_id: number | null;
   thread_id: string | null;
   twist_instance_id: string | null;
@@ -1105,6 +1141,7 @@ export interface TwistInstanceThreadUpdate {
   preview: string | null;
   priority_id: string | null;
   priority_title: string | null;
+  seq: string | null;
   sync_depth: number | null;
   tags: Json | null;
   title: string | null;
@@ -1149,6 +1186,7 @@ export interface UserActor {
   name: string | null;
   primary: boolean | null;
   self: boolean | null;
+  seq: string | null;
   type: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -1162,6 +1200,7 @@ export interface UserChannel {
   enabled: boolean | null;
   id: Int8 | null;
   link_types: Json | null;
+  seq: string | null;
   title: string | null;
   twist_instance_id: string | null;
   updated_at: Timestamp | null;
@@ -1174,6 +1213,7 @@ export interface UserContact {
   created_at: Generated<Timestamp>;
   linked: Generated<boolean>;
   primary: Generated<boolean>;
+  seq: Generated<string>;
   source: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string;
@@ -1189,6 +1229,7 @@ export interface UserGroup {
   join_policy: GroupJoinPolicy | null;
   member_contact_ids: string[] | null;
   name: string | null;
+  seq: string | null;
   team_id: Int8 | null;
   type: GroupType | null;
   updated_at: Timestamp | null;
@@ -1209,6 +1250,7 @@ export interface UserLink {
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
+  seq: string | null;
   source: string | null;
   source_created_at: Timestamp | null;
   source_url: string | null;
@@ -1236,6 +1278,7 @@ export interface UserNote {
   mentions: string[] | null;
   merged_from_thread_id: string | null;
   re_note_id: string | null;
+  seq: string | null;
   source_created_at: Timestamp | null;
   thread_id: string | null;
   updated_at: Timestamp | null;
@@ -1256,6 +1299,7 @@ export interface UserNoteRedacted {
   mentions: string[] | null;
   merged_from_thread_id: string | null;
   re_note_id: string | null;
+  seq: string | null;
   source_created_at: Timestamp | null;
   thread_id: string | null;
   updated_at: Timestamp | null;
@@ -1268,6 +1312,7 @@ export interface UserNoteTags {
   id: string | null;
   priority_id: string | null;
   priority_path: string | null;
+  seq: string | null;
   tags: Json | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -1297,6 +1342,7 @@ export interface UserPriority {
   see_within_requests_set: boolean | null;
   see_within_updates: Json | null;
   see_within_updates_set: boolean | null;
+  seq: string | null;
   title: string | null;
   top_order: number | null;
   unread: boolean | null;
@@ -1340,6 +1386,7 @@ export interface UserSchedule {
   recurrence_exdates: ArrayType<Timestamp> | null;
   recurrence_rule: string | null;
   schedule_user_id: string | null;
+  seq: string | null;
   thread_id: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -1350,6 +1397,7 @@ export interface UserSettings {
   email_frequency: EmailFrequency | null;
   email_token: string | null;
   enter_behavior: EnterBehavior | null;
+  seq: Generated<string>;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -1371,7 +1419,9 @@ export interface UserSubscription {
 export interface UserSync {
   entity: string;
   last_sync_at: Generated<Timestamp>;
+  last_sync_seq: Generated<string>;
   last_update_at: Timestamp;
+  last_update_seq: Generated<string>;
   user_id: string;
 }
 
@@ -1393,6 +1443,7 @@ export interface UserThread {
   preview: string | null;
   priority_id: string | null;
   priority_path: string | null;
+  seq: string | null;
   title: string | null;
   topic: string | null;
   unread: boolean | null;
@@ -1409,6 +1460,7 @@ export interface UserThreadAssociation {
   id: string | null;
   order: number | null;
   parent_thread_id: string | null;
+  seq: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;
 }
@@ -1419,6 +1471,7 @@ export interface UserThreadTags {
   occurrence: string | null;
   priority_id: string | null;
   priority_path: string | null;
+  seq: string | null;
   tags: Json | null;
   updated_at: Timestamp | null;
   user_id: string | null;
@@ -1441,6 +1494,7 @@ export interface UserTwist {
   name: string | null;
   options: Json | null;
   owner_id: string | null;
+  seq: string | null;
   shared: boolean | null;
   team_id: Int8 | null;
   twist_environment: TwistEnvironment | null;
@@ -1459,6 +1513,7 @@ export interface UserTwistConnection {
   needs_reauth: boolean | null;
   needs_reauth_at: Timestamp | null;
   provider: string | null;
+  seq: string | null;
   twist_instance_id: string | null;
   updated_at: Timestamp | null;
   user_id: string | null;

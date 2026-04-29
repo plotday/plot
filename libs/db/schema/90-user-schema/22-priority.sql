@@ -53,6 +53,11 @@ SELECT
         COALESCE(upu.updated_at, 'epoch'::timestamptz),
         inh.updated_at
     ) AS updated_at,
+    -- seq: xid8 cursor counterpart. priority_setting / priority_setting_inherited
+    -- aren't synced individually, so we only project priority.seq here. If a
+    -- setting changes, the priority row itself isn't bumped — that's
+    -- consistent with current behavior (settings live in their own RPCs).
+    p.seq,
     p.archived_at,
     p.created_by,
     p.updated_by,

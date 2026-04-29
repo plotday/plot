@@ -4,7 +4,13 @@ import { sql, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
 import { twistFactory } from "../../twist/factory";
-import { parseReadParams, updatedSinceCursor } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 import { unarchiveDoneLinksOnThread } from "./link-tags";
 import { notifySync } from "./notify";
 
@@ -16,21 +22,27 @@ schedules.get("/sync/schedules", async (c) => {
   const {
     updatedSince,
     cursorId,
+    seqSince,
+    pageSeq,
+    pageId,
     archived,
     limit,
     id,
     sortBy: _sortBy,
     sortDir,
   } = parseReadParams(c);
+  const useSeqCursor = seqSince !== null;
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user.schedule" as any)
       .selectAll()
       .where("user_id", "=", userId);
 
     // Apply sort
-    if (updatedSince) {
+    if (useSeqCursor) {
+      query = query.orderBy("seq", "asc").orderBy("id", "asc");
+    } else if (updatedSince) {
       query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
     } else {
       query = query.orderBy("updated_at", sortDir).orderBy("id", sortDir);
@@ -44,7 +56,9 @@ schedules.get("/sync/schedules", async (c) => {
     }
 
     // Cursor pagination
-    if (updatedSince) {
+    if (useSeqCursor) {
+      query = query.where(seqSinceCursor(seqSince, pageSeq, pageId));
+    } else if (updatedSince) {
       query = query.where(updatedSinceCursor(updatedSince, cursorId));
     }
 
@@ -55,9 +69,14 @@ schedules.get("/sync/schedules", async (c) => {
       query = query.where("archived_at", "is", null);
     }
 
-    return query.execute();
+    const fetchedRows = await query.execute();
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    return { rows: fetchedRows, horizon: horizonValue };
   });
 
+  if (useSeqCursor) {
+    return c.json(seqEnvelope(rows as any, limit, horizon) as any);
+  }
   return c.json(rows as any);
 });
 

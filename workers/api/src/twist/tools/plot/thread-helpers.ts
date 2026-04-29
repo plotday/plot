@@ -18,9 +18,12 @@ import type { Plot } from "./index";
 
 export { markdownToPlainText };
 
-/** Type alias for thread insert operations (DB table is now "thread") */
-type ActivityInsert = Database["public"]["Tables"]["thread"]["Insert"];
-type ActivityUpdate = Database["public"]["Tables"]["thread"]["Update"];
+/** Type alias for thread insert operations (DB table is now "thread").
+ * `seq` and `last_note_seq` are xid8 (typed as `unknown` by the schema
+ * generator) and maintained by triggers — never set by application code.
+ */
+type ActivityInsert = Omit<Database["public"]["Tables"]["thread"]["Insert"], "seq" | "last_note_seq">;
+type ActivityUpdate = Omit<Database["public"]["Tables"]["thread"]["Update"], "seq" | "last_note_seq">;
 
 /**
  * Resolves contact UUIDs to Contact objects with email/name.

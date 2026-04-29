@@ -12,6 +12,7 @@ CREATE TABLE "public"."group" (
     "auto_team_admin_team_id" bigint REFERENCES team ON DELETE CASCADE,
     "auto_publisher_id" bigint REFERENCES publisher ON DELETE CASCADE,
     "key" text,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     CONSTRAINT group_key_unique UNIQUE ("key")
 );
 
@@ -20,6 +21,8 @@ WHERE
     team_id IS NOT NULL;
 
 CREATE INDEX idx_group_updated_at ON "public"."group" ("updated_at");
+
+CREATE INDEX idx_group_seq ON "public"."group" ("seq");
 
 CREATE UNIQUE INDEX idx_group_auto_team ON "public"."group" ("team_id")
 WHERE
@@ -46,7 +49,7 @@ WHERE
 CREATE TRIGGER set_group_updated_at
     BEFORE INSERT OR UPDATE ON "public"."group"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_group_created_at
     BEFORE INSERT ON "public"."group"

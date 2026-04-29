@@ -5,7 +5,8 @@ CREATE TABLE "public"."thread_association" (
     "parent_thread_id" uuid NOT NULL REFERENCES public.thread (id) ON DELETE CASCADE,
     "child_thread_id" uuid NOT NULL REFERENCES public.thread (id) ON DELETE CASCADE,
     "order" double precision NOT NULL,
-    "archived_at" timestamptz
+    "archived_at" timestamptz,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
 
 -- A child can only be actively associated with one parent at a time
@@ -24,10 +25,12 @@ CREATE INDEX idx_thread_association_child ON "public"."thread_association" ("chi
 
 CREATE INDEX idx_thread_association_updated_at ON "public"."thread_association" ("updated_at");
 
+CREATE INDEX idx_thread_association_seq ON "public"."thread_association" ("seq");
+
 CREATE TRIGGER set_thread_association_updated_at
     BEFORE INSERT OR UPDATE ON "public"."thread_association"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 
 CREATE TRIGGER set_thread_association_created_at
     BEFORE INSERT ON "public"."thread_association"

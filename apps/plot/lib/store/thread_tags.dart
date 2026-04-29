@@ -31,12 +31,18 @@ class ThreadTagsBase extends BaseTable {
   Map<String, String> buildParams({
     DateTime? updatedSince,
     String? lastId,
+    String? lastHorizon,
+    String? pageSeq,
+    String? pageId,
     bool initial = false,
     bool archived = false,
   }) {
     final params = super.buildParams(
       updatedSince: updatedSince,
       lastId: lastId,
+      lastHorizon: lastHorizon,
+      pageSeq: pageSeq,
+      pageId: pageId,
       initial: initial,
       archived: archived,
     );

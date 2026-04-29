@@ -3,7 +3,13 @@ import { Hono } from "hono";
 import { sql, withUserDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
-import { parseReadParams, updatedSinceCursor } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 import { notifySync, getPriorityForNote } from "./notify";
 import { createSchedule } from "./smart-schedule";
 import { stripAnnounceTagActors } from "./viewer";
@@ -16,6 +22,9 @@ noteTags.get("/sync/note-tags", async (c) => {
   const {
     updatedSince,
     cursorId,
+    seqSince,
+    pageSeq,
+    pageId,
     archived,
     limit,
     priorityId,
@@ -26,7 +35,9 @@ noteTags.get("/sync/note-tags", async (c) => {
     sortDir,
   } = parseReadParams(c);
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  const useSeqCursor = seqSince !== null;
+
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user.note_tags" as any)
       .selectAll()
@@ -34,7 +45,9 @@ noteTags.get("/sync/note-tags", async (c) => {
       .limit(limit);
 
     // Apply sort
-    if (updatedSince) {
+    if (useSeqCursor) {
+      query = query.orderBy("seq", "asc").orderBy("id", "asc");
+    } else if (updatedSince) {
       query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
     } else {
       query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
@@ -57,8 +70,10 @@ noteTags.get("/sync/note-tags", async (c) => {
       );
     }
 
-    // Composite cursor on (updated_at, id)
-    if (updatedSince) {
+    // Cursor pagination
+    if (useSeqCursor) {
+      query = query.where(seqSinceCursor(seqSince, pageSeq, pageId));
+    } else if (updatedSince) {
       query = query.where(updatedSinceCursor(updatedSince, cursorId));
     }
 
@@ -71,11 +86,16 @@ noteTags.get("/sync/note-tags", async (c) => {
       query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
     }
 
-    return query.execute();
+    const fetchedRows = await query.execute();
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    return { rows: fetchedRows, horizon: horizonValue };
   });
 
   await stripAnnounceTagActors(c.var.db, userId, rows as any, "note", c.var.apiVersion ?? 0);
 
+  if (useSeqCursor) {
+    return c.json(seqEnvelope(rows as any, limit, horizon) as any);
+  }
   return c.json(rows as any);
 });
 

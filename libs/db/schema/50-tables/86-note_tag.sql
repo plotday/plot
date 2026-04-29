@@ -7,6 +7,7 @@ CREATE TABLE "public"."note_tag" (
     "tag_id" integer NOT NULL,
     "updated_by" integer NOT NULL DEFAULT 0,
     "sync_depth" integer,
+    "seq" xid8 NOT NULL DEFAULT pg_current_xact_id(),
     UNIQUE NULLS NOT DISTINCT ("actor_id", "note_id", "tag_id")
 );
 
@@ -18,8 +19,10 @@ WHERE
 -- note_tags view aggregates ALL rows (including archived), so partial index above isn't sufficient
 CREATE INDEX idx_note_tag_note_id_full ON "public"."note_tag" ("note_id");
 
+CREATE INDEX idx_note_tag_seq ON "public"."note_tag" ("seq");
+
 CREATE TRIGGER set_note_tag_updated_at
     BEFORE INSERT OR UPDATE ON "public"."note_tag"
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at ();
+    EXECUTE FUNCTION update_seq_and_updated_at ();
 

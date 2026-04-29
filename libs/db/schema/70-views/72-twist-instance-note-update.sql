@@ -8,6 +8,7 @@ SELECT
     n.id,
     n.created_at,
     GREATEST (n.updated_at, COALESCE(nt.updated_at, 'epoch'::timestamptz)) AS updated_at,
+    GREATEST (n.seq, COALESCE(nt.seq, '0'::xid8)) AS seq,
     n.source_created_at,
     n.author_id,
     n.created_by,

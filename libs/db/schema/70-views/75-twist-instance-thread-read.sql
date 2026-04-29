@@ -8,6 +8,7 @@ SELECT
     tu.user_id,
     tu.read_at,
     tu.updated_at,
+    tu.seq,
     tp.priority_id
 FROM
     twist_instance pt

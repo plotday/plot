@@ -3,7 +3,13 @@ import { Hono } from "hono";
 import { sql, withUserDb, createDb } from "../../db";
 import type { Bindings } from "../../env";
 import { rpcUser } from "../../rpc";
-import { parseReadParams, updatedSinceCursor } from "./helpers";
+import {
+  parseReadParams,
+  readSafeHorizon,
+  seqEnvelope,
+  seqSinceCursor,
+  updatedSinceCursor,
+} from "./helpers";
 import { getPriorityForThread, notifySync } from "./notify";
 import { isLinkStatusDone, propagateLinkStatusTagsFromDb } from "./link-tags";
 import { createSchedule } from "./smart-schedule";
@@ -17,6 +23,9 @@ links.get("/sync/links", async (c) => {
   const {
     updatedSince,
     cursorId,
+    seqSince,
+    pageSeq,
+    pageId,
     limit,
     id,
     sortBy,
@@ -26,15 +35,18 @@ links.get("/sync/links", async (c) => {
     rangeStart,
     rangeEnd,
   } = parseReadParams(c);
+  const useSeqCursor = seqSince !== null;
 
-  const rows = await withUserDb(c.var.db, userId, async (trx) => {
+  const { rows, horizon } = await withUserDb(c.var.db, userId, async (trx) => {
     let query = trx
       .selectFrom("user.link" as any)
       .selectAll()
       .where("user_id", "=", userId);
 
     // Apply sort
-    if (updatedSince) {
+    if (useSeqCursor) {
+      query = query.orderBy("seq", "asc").orderBy("id", "asc");
+    } else if (updatedSince) {
       query = query.orderBy(sql`date_trunc('milliseconds', updated_at)`, "asc").orderBy("id", "asc");
     } else {
       query = query.orderBy(sql.ref(sortBy), sortDir).orderBy("id", sortDir);
@@ -48,7 +60,9 @@ links.get("/sync/links", async (c) => {
     }
 
     // Cursor pagination
-    if (updatedSince) {
+    if (useSeqCursor) {
+      query = query.where(seqSinceCursor(seqSince, pageSeq, pageId));
+    } else if (updatedSince) {
       query = query.where(updatedSinceCursor(updatedSince, cursorId));
     }
 
@@ -71,9 +85,14 @@ links.get("/sync/links", async (c) => {
       query = query.where(sql<boolean>`${sql.ref(sortBy)} < ${rangeEnd}::timestamptz`);
     }
 
-    return query.execute();
+    const fetchedRows = await query.execute();
+    const horizonValue = useSeqCursor ? await readSafeHorizon(trx) : "0";
+    return { rows: fetchedRows, horizon: horizonValue };
   });
 
+  if (useSeqCursor) {
+    return c.json(seqEnvelope(rows as any, limit, horizon) as any);
+  }
   return c.json(rows as any);
 });
 
