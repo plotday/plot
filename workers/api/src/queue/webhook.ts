@@ -27,7 +27,9 @@ function isTransientError(error: unknown): boolean {
     msg.includes("Network connection lost") ||
     msg.includes("error code: 1019") ||
     msg.includes("The Durable Object") ||
-    msg.includes("internal error")
+    msg.includes("internal error") ||
+    msg.includes("Queue send failed") ||
+    msg.includes("Bad Gateway")
   );
 }
 
