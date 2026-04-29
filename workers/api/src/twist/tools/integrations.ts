@@ -839,6 +839,46 @@ export class Integrations extends Tool implements IAuth {
       );
       if (entry) dispatches.push(entry);
     }
+
+    // Self-heal: when no channel_config entry matches the requested actor —
+    // either because the DO storage was wiped, or because enabledBy points
+    // at a prior actor that the onAuth migration above skipped (it only
+    // runs when previousActorId !== actor.id) — fall back to the channel
+    // table. applyChannelEnabled rewrites channel_config with the correct
+    // enabledBy, so subsequent recovery cycles use the fast path.
+    if (dispatches.length === 0) {
+      const enabledChannels = await this.db
+        .selectFrom("channel")
+        .select(["channel_id", "title"])
+        .where("twist_instance_id", "=", this.twistInstanceId)
+        .where("enabled", "=", true)
+        .where("channel_id", "not in", ["undefined", "null", ""])
+        .execute();
+      if (enabledChannels.length > 0) {
+        const logger = createLogger({ twist_instance_id: this.twistInstanceId });
+        logger.warn(
+          "buildRecoveryDispatches: channel_config empty for actor, recovering from channel table",
+          {
+            provider,
+            actor_id: actorId,
+            channel_count: enabledChannels.length,
+          }
+        );
+        for (const row of enabledChannels) {
+          const channel: Channel = {
+            id: row.channel_id,
+            title: row.title,
+          };
+          const entry = await this.applyChannelEnabled(
+            provider,
+            actorId,
+            channel,
+            recoveryContext
+          );
+          if (entry) dispatches.push(entry);
+        }
+      }
+    }
     return dispatches;
   }
 
