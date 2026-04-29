@@ -494,11 +494,12 @@ export async function syncGoogleCalendar(
 
   if (!data) {
     // Requires full sync
-    const newState = {
+    const newState: SyncState = {
       calendarId,
       min: state.min,
       max: state.max,
       sequence: (state.sequence || 1) + 1,
+      phase: state.phase,
     };
     return syncGoogleCalendar(api, calendarId, newState);
   }
@@ -510,6 +511,7 @@ export async function syncGoogleCalendar(
     min: state.min,
     max: state.max,
     sequence: state.sequence,
+    phase: state.phase,
   };
 
   return {

@@ -734,12 +734,14 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           }
 
           await this.clear(`sync_state_${calendarId}`);
+        }
 
-          // Initial sync (quick + full passes) is fully complete — clear the
-          // "syncing…" indicator on the connection.
-          if (initialSync) {
-            await this.tools.integrations.channelSyncCompleted(calendarId);
-          }
+        // Initial sync is fully complete — clear the "syncing…" indicator
+        // on the connection. Gated on initialSync (not mode), so a corrupted
+        // or missing phase that bypassed the quick→full transition still
+        // signals completion instead of leaving the UI stuck on "Syncing".
+        if (initialSync) {
+          await this.tools.integrations.channelSyncCompleted(calendarId);
         }
         // Always release lock when sync completes (no more batches)
         await this.tools.store.releaseLock(`sync_${calendarId}`);
