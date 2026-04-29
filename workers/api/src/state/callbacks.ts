@@ -777,11 +777,19 @@ export class CallbacksState extends DurableObject<Bindings> {
       operation: "alarm",
     });
 
-    // Find all callbacks that should be executed now
+    // Every Tasks.runTask({ runAt }) row stores function_name="scheduledSend"
+    // and extra_args=[taskToken]. Re-enqueue them straight into RUN_QUEUE
+    // here instead of routing through this.callCallback, which runs
+    // withDb (Hyperdrive query) inside the DO and holds the output gate
+    // long enough that Cloudflare resets the DO ("Internal error in
+    // Durable Object storage caused object to be reset"). The companion
+    // commit fb0004010 routed every worker-context caller off of this
+    // DO for the same reason; the alarm self-dispatch was the last
+    // hold-out and was firing this reset 139+ times across users today.
     const now = Date.now();
     const callbackResults = this.sql.exec(
       `
-        SELECT token, extra_args
+        SELECT token, twist_instance_id, path, function_name, extra_args, call_once
         FROM callbacks
         WHERE call_at IS NOT NULL
           AND call_at <= ?
@@ -792,15 +800,75 @@ export class CallbacksState extends DurableObject<Bindings> {
 
     for (const row of callbackResults) {
       const token = row.token as string;
-      try {
-        await this.callCallback(`${this.ctx.id}:${token}`);
-      } catch (error) {
-        logger.error("Callback failed", error as Error, { token });
-      } finally {
-        this.sql.exec(
-          "UPDATE callbacks SET call_at = NULL WHERE token = ?",
-          token
+      const functionName = row.function_name as string;
+
+      if (functionName === "scheduledSend") {
+        try {
+          const twistInstanceId = row.twist_instance_id as string;
+          const path = this.parseWithFallback<string[]>(row.path as string);
+          const extraArgsRaw = row.extra_args as string | null;
+          const extraArgs = extraArgsRaw
+            ? this.parseWithFallback<unknown[]>(extraArgsRaw)
+            : [];
+          const taskToken = extraArgs[0];
+          if (typeof taskToken !== "string") {
+            logger.warn(
+              "scheduledSend row missing string taskToken in extra_args; skipping",
+              { token: token.substring(0, 8) + "..." }
+            );
+          } else {
+            // Stored path is the Tasks tool's selfPath; the queue
+            // consumer's path field matches what Tasks.send writes
+            // (selfPath.slice(0,-1)).
+            const parentPath = path.slice(0, -1);
+            await this.env.RUN_QUEUE.send({
+              twistInstanceId,
+              path: parentPath,
+              token: taskToken,
+              queuedAt: Date.now(),
+            });
+          }
+        } catch (error) {
+          logger.error("Failed to re-enqueue scheduled task", error as Error, {
+            token: token.substring(0, 8) + "...",
+          });
+        } finally {
+          // callOnce defaults to true for scheduled callbacks (see create()).
+          if (Number(row.call_once) === 1) {
+            this.sql.exec(
+              "DELETE FROM callbacks WHERE token = ?",
+              token
+            );
+          } else {
+            this.sql.exec(
+              "UPDATE callbacks SET call_at = NULL WHERE token = ?",
+              token
+            );
+          }
+        }
+      } else {
+        // Legacy / uncommon: a callAt row whose function isn't
+        // scheduledSend. Keep the old this.callCallback path but warn so
+        // we know if any non-Tasks scheduled callbacks exist in the wild.
+        logger.warn(
+          "Alarm firing non-scheduledSend callback via legacy path",
+          {
+            token: token.substring(0, 8) + "...",
+            function_name: functionName,
+          }
         );
+        try {
+          await this.callCallback(`${this.ctx.id}:${token}`);
+        } catch (error) {
+          logger.error("Callback failed", error as Error, {
+            token: token.substring(0, 8) + "...",
+          });
+        } finally {
+          this.sql.exec(
+            "UPDATE callbacks SET call_at = NULL WHERE token = ?",
+            token
+          );
+        }
       }
     }
 
