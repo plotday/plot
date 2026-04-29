@@ -13,20 +13,34 @@ import { disposeRpc } from "../../utils/rpc";
 import { Tool } from "./tool";
 
 /**
- * Detect transient infrastructure errors (DO communication failures,
- * Hyperdrive connection issues, Cloudflare Queues producer 5xx blips)
- * that should be retried silently without reporting to PostHog.
+ * Detect transient infrastructure errors that should be retried without
+ * paging PostHog Error Tracking. The bar for inclusion is high: we only
+ * silence patterns that are unambiguously platform-side and self-resolve
+ * within seconds. Generic patterns like "internal error" or "The Durable
+ * Object" mask real bugs (the connector worker crashing, a DO output-
+ * gate violation, an unhandled throw inside user code that happens to
+ * include those words) and stall investigation.
+ *
+ * If you find yourself wanting to add a broad pattern here to quiet a
+ * flood, fix the underlying flake instead. handleTwistOperation already
+ * calls tracker.captureException for everything that bubbles up, so
+ * silencing here only changes retry semantics — not visibility.
  */
 function isTransientError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const msg = error.message;
   return (
+    // Cloudflare network blip — typically resolves in seconds.
     msg.includes("Network connection lost") ||
+    // Cloudflare bot-block / rate-limit — resolves on the next attempt.
     msg.includes("error code: 1019") ||
-    msg.includes("The Durable Object") ||
-    msg.includes("internal error") ||
-    msg.includes("Queue send failed") ||
-    msg.includes("Bad Gateway")
+    // DO version churn during a deploy: the platform resets the DO so
+    // the new code can take over. Retry picks up the new version cleanly.
+    msg.includes("Durable Object reset because its code was updated") ||
+    // Queues producer 5xx is well-defined and the only producer-side
+    // path that's worth a silent retry. Anything more generic ("Bad
+    // Gateway", "internal error") could be a real downstream failure.
+    msg.includes("Queue send failed: Internal Server Error")
   );
 }
 
@@ -143,17 +157,30 @@ export class Tasks extends Tool implements IRun {
     // Dispatch each message independently: one slow task should not hold
     // up its batch-mates, and invokeWebhookCallback keeps the twist RPC
     // out of the CallbacksState DO so the DO's output gate stays free.
+    //
+    // Every invocation emits a structured `RunMessage invocation finished`
+    // log with duration_ms + outcome ("success" | "transient_retry" |
+    // "callback_error_ack" | "failure_retry"). PostHog ingests these so
+    // we can see queue throughput, slow tasks, and per-twist error rates
+    // without spelunking through individual error-tracking issues.
     const handleMessage = async (
       message: Message<RunMessage>
     ): Promise<void> => {
-      try {
-        if (env.SYNC_TIMING_ENABLED === "true" && message.body.queuedAt) {
-          const queueWaitMs = Date.now() - message.body.queuedAt;
-          const context = extractRunQueueContext(message.body, batch.queue);
-          const logger = createLogger(context);
-          logger.info("Queue wait time", { queue_wait_ms: queueWaitMs });
-        }
+      const baseContext = extractRunQueueContext(message.body, batch.queue);
+      const logger = createLogger({
+        ...baseContext,
+        attempts: message.attempts,
+      });
+      const startedAt = Date.now();
+      const queueWaitMs = message.body.queuedAt
+        ? startedAt - message.body.queuedAt
+        : undefined;
 
+      logger.info("RunMessage invocation started", {
+        ...(queueWaitMs !== undefined ? { queue_wait_ms: queueWaitMs } : {}),
+      });
+
+      try {
         const result = await invokeWebhookCallback(
           env,
           ctx,
@@ -161,12 +188,19 @@ export class Tasks extends Tool implements IRun {
         );
         disposeRpc(result);
         message.ack();
+
+        logger.info("RunMessage invocation finished", {
+          duration_ms: Date.now() - startedAt,
+          ...(queueWaitMs !== undefined ? { queue_wait_ms: queueWaitMs } : {}),
+          outcome: "success",
+        });
       } catch (error) {
-        const context = extractRunQueueContext(message.body, batch.queue);
-        const logger = createLogger(context);
+        const durationMs = Date.now() - startedAt;
 
         if (isTransientError(error)) {
-          logger.warn("Transient error executing callback, retrying", {
+          logger.warn("RunMessage invocation finished", {
+            duration_ms: durationMs,
+            outcome: "transient_retry",
             error: String(error),
           });
           message.retry();
@@ -174,18 +208,29 @@ export class Tasks extends Tool implements IRun {
         }
 
         if (isCallbackError(error)) {
-          logger.warn("Callback error, acking message", {
+          logger.warn("RunMessage invocation finished", {
+            duration_ms: durationMs,
+            outcome: "callback_error_ack",
             error: String(error),
           });
           message.ack();
           return;
         }
 
-        logger.error("Failed to execute callback", error as Error);
+        logger.error(
+          "RunMessage invocation finished",
+          error as Error,
+          {
+            duration_ms: durationMs,
+            outcome: "failure_retry",
+          }
+        );
         postHog.captureException(error as Error, undefined, {
           twist_instance_id: message.body.twistInstanceId,
           path: message.body.path.join("/"),
           queue: batch.queue,
+          attempts: message.attempts,
+          duration_ms: durationMs,
         });
         message.retry();
       }

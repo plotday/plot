@@ -128,6 +128,25 @@ export async function invokeWebhookCallback(
       twistInstanceId: callback.twistInstanceId,
     });
 
+    // Per-callback structured timing. The connector worker is loaded via
+    // LOADER and has no PostHog observability binding (see
+    // workers/api/src/twist/loader.ts), so logs from inside connector
+    // code only flow to TWIST_LOGS_QUEUE. These boundary logs surface
+    // throughput + p50/p99 + outcome to PostHog so we can see when a
+    // specific connector operation is slow or flaking without
+    // instrumenting every connector individually.
+    const invocationLogger = createLogger({
+      operation: "invokeWebhookCallback",
+      twist_instance_id: callback.twistInstanceId,
+      function_name: callback.functionName,
+      tool_path: callback.path.join("/"),
+      twist_id: twistPackageId,
+      twist_version: callback.version,
+      environment,
+    });
+    const rpcStartedAt = Date.now();
+    invocationLogger.info("Twist callback RPC started");
+
     try {
       const callResult = await handleTwistOperation(
         `callback: ${callback.functionName}`,
@@ -147,32 +166,45 @@ export async function invokeWebhookCallback(
         }
       );
 
+      invocationLogger.info("Twist callback RPC finished", {
+        duration_ms: Date.now() - rpcStartedAt,
+        outcome: "success",
+      });
+
       if (callback.callOnce) {
         await callbacksStub.delete(fullToken);
       }
       disposeRpc(callbacksStub);
       return callResult;
     } catch (error) {
+      const durationMs = Date.now() - rpcStartedAt;
+
       // If the tool path no longer exists, the callback is orphaned —
       // delete so it doesn't keep failing on retry.
       if (
         error instanceof Error &&
         error.message.includes("Tool not found at path")
       ) {
-        const logger = createLogger({
-          operation: "invokeWebhookCallback",
-          twist_instance_id: callback.twistInstanceId,
-        });
-        logger.warn("Deleting callback for removed tool", {
+        invocationLogger.warn("Deleting callback for removed tool", {
+          duration_ms: durationMs,
+          outcome: "orphaned_tool",
           token: fullToken.substring(0, 8) + "...",
-          path: callback.path.join(" > "),
-          function_name: callback.functionName,
         });
         try {
           await callbacksStub.delete(fullToken);
         } catch {
           // ignore — we're already in an error path
         }
+      } else {
+        // handleTwistOperation has already captureException'd this; we're
+        // just adding the boundary-level timing/outcome marker so it's
+        // joinable with the started log via twist_instance_id +
+        // function_name + a close-by timestamp.
+        invocationLogger.warn("Twist callback RPC finished", {
+          duration_ms: durationMs,
+          outcome: "failure",
+          error_message: error instanceof Error ? error.message : String(error),
+        });
       }
       disposeRpc(callbacksStub);
       throw error;
