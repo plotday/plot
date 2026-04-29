@@ -525,13 +525,6 @@ export interface PrioritySettingInherited {
   value: Json | null;
 }
 
-export interface PriorityTags {
-  count: Int8 | null;
-  priority_id: string | null;
-  tag_id: number | null;
-  updated_at: Timestamp | null;
-}
-
 export interface Publisher {
   created_at: Generated<Timestamp>;
   created_by: string;
@@ -1548,7 +1541,6 @@ export interface DB {
   priority_child: PriorityChild;
   priority_setting: PrioritySetting;
   priority_setting_inherited: PrioritySettingInherited;
-  priority_tags: PriorityTags;
   publisher: Publisher;
   schedule: Schedule;
   schedule_contact: ScheduleContact;

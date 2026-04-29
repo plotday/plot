@@ -2828,34 +2828,6 @@ export type Database = {
         }
         Relationships: []
       }
-      priority_tags: {
-        Row: {
-          count: number | null
-          priority_id: string | null
-          tag_id: number | null
-          updated_at: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["child_id"]
-          },
-          {
-            foreignKeyName: "thread_priority_priority_id_fkey"
-            columns: ["priority_id"]
-            referencedRelation: "priority_child"
-            referencedColumns: ["priority_id"]
-          },
-        ]
-      }
       thread_tags: {
         Row: {
           occurrence: string | null
