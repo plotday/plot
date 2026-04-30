@@ -28,8 +28,34 @@ import {
   getHeader,
   parseEmailAddresses,
   syncGmailChannel,
+  syncGmailMailboxIncremental,
   transformGmailThread,
 } from "./gmail-api";
+
+/**
+ * Persisted mailbox-wide watch state. There is exactly one Gmail watch per
+ * mailbox — calling `users.watch` twice replaces the previous registration —
+ * so this state is per-twist-instance, not per-channel.
+ */
+type MailboxWebhookState = {
+  topicName: string;
+  historyId: string;
+  expiration: Date;
+  created: string;
+};
+
+/** Persisted per-channel initial-backfill cursor. */
+type InitialSyncState = {
+  pageToken?: string;
+  lastSyncTime?: Date;
+};
+
+/**
+ * Per-channel system labels we route through, in priority order (most
+ * specific first). Threads with custom user labels are handled separately
+ * (custom labels always win over system labels).
+ */
+const SYSTEM_LABEL_ORDER = ["STARRED", "IMPORTANT", "INBOX", "SENT", "DRAFT"];
 
 type MessageChannel = {
   id: string;
@@ -97,6 +123,126 @@ export class Gmail extends Connector<Gmail> {
     await this.set("auth_actor_id", context.actor.id);
   }
 
+  /**
+   * Migration from per-channel watches to a single mailbox-wide watch.
+   *
+   * Old layout (per-channel):
+   *   - `channel_webhook_${id}`, `watch_renewal_task_${id}`, `sync_state_${id}`,
+   *     `sync_enabled_${id}`
+   * New layout (per-twist-instance):
+   *   - `mailbox_webhook`, `mailbox_renewal_task`, `incremental_state`,
+   *     `enabled_channels`, plus `initial_state_${id}` for in-flight backfills
+   *
+   * The Twist runtime API doesn't let connectors enumerate stored keys, so we
+   * probe the system labels we know users can enable. Users with custom
+   * Gmail labels enabled (e.g. `Label_14`) will need to re-toggle them after
+   * this upgrade — without `list()` we can't discover their IDs.
+   */
+  override async upgrade(): Promise<void> {
+    // Already migrated? `mailbox_webhook` is the canonical sentinel.
+    const already = await this.get<MailboxWebhookState>("mailbox_webhook");
+    if (already) return;
+
+    // Stop whatever per-channel watch was last active. Gmail allows only
+    // one watch per mailbox, so a single stopWatch() call covers all of
+    // them — but the call needs an authed API client.
+    const stopApi = await this.findAnyAuthApi();
+    if (stopApi) {
+      try {
+        await stopApi.stopWatch();
+      } catch {
+        // Best effort — old watch may have already expired.
+      }
+    }
+
+    // Probe known system labels for old per-channel state and migrate.
+    let migratedAny = false;
+    for (const labelId of SYSTEM_LABEL_ORDER) {
+      const oldWebhook = await this.get<{ topicName?: string }>(
+        `channel_webhook_${labelId}`
+      );
+      const oldEnabled = await this.get<boolean>(`sync_enabled_${labelId}`);
+      const oldSyncState = await this.get<SyncState>(`sync_state_${labelId}`);
+      const oldRenewalTask = await this.get<string>(
+        `watch_renewal_task_${labelId}`
+      );
+
+      if (
+        !oldWebhook &&
+        !oldEnabled &&
+        !oldSyncState &&
+        !oldRenewalTask
+      ) {
+        continue;
+      }
+
+      // Channel was enabled (presence of any old per-channel key counts).
+      if (oldEnabled || oldWebhook) {
+        await this.addEnabledChannel(labelId);
+        migratedAny = true;
+      }
+
+      // Carry over any in-flight initial-backfill cursor.
+      if (oldSyncState?.pageToken) {
+        await this.set<InitialSyncState>(`initial_state_${labelId}`, {
+          pageToken: oldSyncState.pageToken,
+          lastSyncTime: oldSyncState.lastSyncTime,
+        });
+        // Resume the backfill under the new callback.
+        const next = await this.callback(this.initialSyncBatch, labelId, 1);
+        await this.runTask(next);
+      }
+
+      // Cancel old per-channel renewal task.
+      if (oldRenewalTask) {
+        try {
+          await this.cancelTask(oldRenewalTask);
+        } catch {
+          // Task may have already executed.
+        }
+        await this.clear(`watch_renewal_task_${labelId}`);
+      }
+
+      // Clean up old per-channel topic. The topic still receives no
+      // notifications (Gmail's mailbox watch points elsewhere now), but
+      // leaving it dangling wastes Pub/Sub resources.
+      if (oldWebhook?.topicName) {
+        try {
+          await this.tools.network.deleteWebhook(oldWebhook.topicName);
+        } catch (error) {
+          console.warn(
+            `Failed to delete old per-channel webhook ${labelId}:`,
+            error
+          );
+        }
+      }
+      await this.clear(`channel_webhook_${labelId}`);
+      await this.clear(`sync_state_${labelId}`);
+      await this.clear(`sync_enabled_${labelId}`);
+    }
+
+    if (migratedAny) {
+      await this.setupMailboxWebhook();
+    }
+  }
+
+  private async findAnyAuthApi(): Promise<GmailApi | null> {
+    // Try known system labels and any already-migrated channels in the new
+    // enabled_channels list. Per-channel auth is just the Google account
+    // token, so any channelId works.
+    const candidates = new Set<string>(SYSTEM_LABEL_ORDER);
+    for (const id of await this.getEnabledChannels()) candidates.add(id);
+    for (const channelId of candidates) {
+      try {
+        const token = await this.tools.integrations.get(channelId);
+        if (token?.token) return new GmailApi(token.token);
+      } catch {
+        // Channel unknown to integrations — skip.
+      }
+    }
+    return null;
+  }
+
   async getChannels(
     _auth: Authorization,
     token: AuthToken
@@ -115,11 +261,12 @@ export class Gmail extends Connector<Gmail> {
   async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     const syncHistoryMin = context?.syncHistoryMin;
     if (context?.recovering) {
-      // Recovery dispatch after re-auth: drop the stored history cursor so
-      // the next sync re-walks the window. Gmail history records expire
-      // after ~7 days, so a stale historyId from before the auth gap is
-      // probably already invalid.
-      await this.clear(`sync_state_${channel.id}`);
+      // Recovery dispatch after re-auth: drop the per-channel initial
+      // cursor so this channel re-walks its label. Don't touch
+      // `incremental_state` here — the mailbox-wide cursor is shared
+      // across all channels, and incrementalSyncBatch already self-heals
+      // a stale (>7 day) historyId via the 404 → reseed path.
+      await this.clear(`initial_state_${channel.id}`);
     } else if (syncHistoryMin) {
       // Skip when stored window is already at least as wide. Bypassed on
       // recovery so the recovery pass re-walks even when the window
@@ -131,37 +278,41 @@ export class Gmail extends Connector<Gmail> {
       await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
     }
 
-    await this.set(`sync_enabled_${channel.id}`, true);
+    await this.addEnabledChannel(channel.id);
 
-    const initialState: SyncState = {
-      channelId: channel.id,
+    const initialState: InitialSyncState = {
       lastSyncTime: syncHistoryMin ?? undefined,
     };
-    await this.set(`sync_state_${channel.id}`, initialState);
+    await this.set(`initial_state_${channel.id}`, initialState);
 
-    // Queue sync batch as a separate task so onChannelEnabled returns quickly
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      "full",
+    // Queue per-channel initial backfill (label-scoped paginated thread list)
+    // as a separate task so onChannelEnabled returns quickly.
+    const initialCallback = await this.callback(
+      this.initialSyncBatch,
       channel.id,
-      true
+      1
     );
-    await this.runTask(syncCallback);
+    await this.runTask(initialCallback);
 
-    // Queue webhook setup as a separate task to avoid blocking the HTTP response.
-    // setupChannelWebhook makes multiple API calls (createWebhook, Gmail watch API,
-    // scheduleWatchRenewal) that would block the response if run inline.
-    const webhookCallback = await this.callback(
-      this.setupChannelWebhook,
-      channel.id
-    );
+    // Queue mailbox-wide webhook setup as a separate task to avoid blocking
+    // the HTTP response. ensureMailboxWebhook is idempotent: if the watch
+    // already exists from a previously-enabled channel, this is a no-op
+    // beyond bumping the renewal cadence.
+    const webhookCallback = await this.callback(this.ensureMailboxWebhook);
     await this.runTask(webhookCallback);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
-    await this.stopSync(channel.id);
-    await this.clear(`sync_enabled_${channel.id}`);
+    await this.removeEnabledChannel(channel.id);
+    await this.clear(`initial_state_${channel.id}`);
+    await this.clear(`sync_history_min_${channel.id}`);
+
+    // If no enabled channels remain, tear the mailbox watch down. The next
+    // onChannelEnabled will rebuild it.
+    const enabled = await this.getEnabledChannels();
+    if (enabled.size === 0) {
+      await this.teardownMailboxWebhook();
+    }
   }
 
   private async getApi(channelId: string): Promise<GmailApi> {
@@ -216,8 +367,7 @@ export class Gmail extends Connector<Gmail> {
   ): Promise<void> {
     const { channelId, timeMin } = options;
 
-    const initialState: SyncState = {
-      channelId,
+    const initialState: InitialSyncState = {
       lastSyncTime: timeMin
         ? typeof timeMin === "string"
           ? new Date(timeMin)
@@ -225,256 +375,415 @@ export class Gmail extends Connector<Gmail> {
         : undefined,
     };
 
-    await this.set(`sync_state_${channelId}`, initialState);
+    await this.set(`initial_state_${channelId}`, initialState);
+    await this.addEnabledChannel(channelId);
 
-    // Queue sync and webhook setup as separate tasks
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      "full",
+    const initialCallback = await this.callback(
+      this.initialSyncBatch,
       channelId,
-      true
+      1
     );
-    await this.runTask(syncCallback);
+    await this.runTask(initialCallback);
 
-    const webhookCallback = await this.callback(
-      this.setupChannelWebhook,
-      channelId
-    );
+    const webhookCallback = await this.callback(this.ensureMailboxWebhook);
     await this.runTask(webhookCallback);
   }
 
   async stopSync(channelId: string): Promise<void> {
-    // Cancel scheduled watch renewal
-    const taskToken = await this.get<string>(
-      `watch_renewal_task_${channelId}`
+    await this.removeEnabledChannel(channelId);
+    await this.clear(`initial_state_${channelId}`);
+
+    // Tear down the mailbox watch only if this was the last enabled channel.
+    const enabled = await this.getEnabledChannels();
+    if (enabled.size === 0) {
+      await this.teardownMailboxWebhook();
+    }
+  }
+
+  /**
+   * Idempotently set up the mailbox-wide Gmail watch + Pub/Sub topic.
+   * Called every time a channel is enabled; first call creates the webhook,
+   * subsequent calls are no-ops.
+   *
+   * The watch is registered with no `labelIds`, so Gmail notifies us on every
+   * mailbox change — including replies in existing threads that don't carry
+   * the label of any enabled channel. The connector decides per-thread which
+   * enabled channel(s) the change is relevant to.
+   */
+  async ensureMailboxWebhook(): Promise<void> {
+    const existing = await this.get<MailboxWebhookState>("mailbox_webhook");
+    if (existing) return;
+    await this.setupMailboxWebhook();
+  }
+
+  private async setupMailboxWebhook(): Promise<void> {
+    // createWebhook returns a Pub/Sub topic name when the provider is Google
+    // with Gmail scopes. The webhook delivers no extra args — onGmailWebhook
+    // operates on the single mailbox-wide watch.
+    const topicName = await this.tools.network.createWebhook(
+      {},
+      this.onGmailWebhook
     );
+
+    const api = await this.getApiAny();
+    if (!api) {
+      console.warn(
+        "ensureMailboxWebhook: no enabled channel to source auth from"
+      );
+      return;
+    }
+
+    try {
+      // No labelId → mailbox-wide notifications.
+      const watchResult = await api.setupWatch(topicName);
+      const expiration = new Date(parseInt(watchResult.expiration));
+
+      await this.set<MailboxWebhookState>("mailbox_webhook", {
+        topicName,
+        historyId: watchResult.historyId,
+        expiration,
+        created: new Date().toISOString(),
+      });
+
+      // Seed the incremental cursor so the first webhook has somewhere to
+      // start. Gmail's watch returns the current historyId; any change after
+      // this point will appear in history.list from this seed.
+      const existingIncremental =
+        await this.get<{ historyId?: string }>("incremental_state");
+      if (!existingIncremental?.historyId) {
+        await this.set("incremental_state", {
+          historyId: watchResult.historyId,
+          lastSyncTime: new Date(),
+        });
+      }
+
+      await this.scheduleMailboxRenewal(expiration);
+    } catch (error) {
+      console.error("Failed to setup Gmail mailbox webhook:", error);
+    }
+  }
+
+  /**
+   * Cancel renewal, stop the Gmail watch, delete the Pub/Sub topic, and
+   * clear all mailbox-watch state. Called when the last channel is disabled
+   * (and from preUpgrade for stale per-channel state).
+   */
+  private async teardownMailboxWebhook(): Promise<void> {
+    const taskToken = await this.get<string>("mailbox_renewal_task");
     if (taskToken) {
       try {
         await this.cancelTask(taskToken);
       } catch {
         // Task may have already executed
       }
-      await this.clear(`watch_renewal_task_${channelId}`);
+      await this.clear("mailbox_renewal_task");
     }
 
-    // Stop watching for push notifications
-    const api = await this.getApi(channelId);
-    try {
-      await api.stopWatch();
-    } catch (error) {
-      console.error("Failed to stop Gmail watch:", error);
+    const api = await this.getApiAny();
+    if (api) {
+      try {
+        await api.stopWatch();
+      } catch (error) {
+        console.error("Failed to stop Gmail watch:", error);
+      }
     }
 
-    // Clear webhook
-    await this.clear(`channel_webhook_${channelId}`);
-
-    // Clear sync state
-    await this.clear(`sync_state_${channelId}`);
-  }
-
-  async setupChannelWebhook(channelId: string): Promise<void> {
-    // Create Gmail webhook (returns Pub/Sub topic name, not a URL)
-    // When provider is Google with Gmail scopes, createWebhook returns a Pub/Sub topic name
-    const topicName = await this.tools.network.createWebhook(
-      {},
-      this.onGmailWebhook,
-      channelId
-    );
-
-    const api = await this.getApi(channelId);
-
-    try {
-      // Setup Gmail watch with the Pub/Sub topic name
-      // topicName format: projects/{project_id}/topics/{topic_name}
-      const watchResult = await api.setupWatch(channelId, topicName);
-
-      const expiration = new Date(parseInt(watchResult.expiration));
-
-      // Store webhook data including expiration
-      await this.set(`channel_webhook_${channelId}`, {
-        topicName,
-        channelId,
-        historyId: watchResult.historyId,
-        expiration,
-        created: new Date().toISOString(),
-      });
-
-      // Schedule watch renewal before the 7-day expiry
-      await this.scheduleWatchRenewal(channelId, expiration);
-    } catch (error) {
-      console.error("Failed to setup Gmail webhook:", error);
+    const webhook = await this.get<MailboxWebhookState>("mailbox_webhook");
+    if (webhook?.topicName) {
+      try {
+        await this.tools.network.deleteWebhook(webhook.topicName);
+      } catch (error) {
+        console.error("Failed to delete Gmail webhook:", error);
+      }
     }
+    await this.clear("mailbox_webhook");
+    await this.clear("incremental_state");
   }
 
   /**
-   * Schedules a task to renew the Gmail watch before its expiry.
+   * Schedules a task to renew the Gmail watch before its 7-day expiry.
    * Renews 1 day before expiration.
    */
-  private async scheduleWatchRenewal(
-    channelId: string,
-    expiration: Date
-  ): Promise<void> {
-    // Cancel any existing renewal task
-    const existingTask = await this.get<string>(
-      `watch_renewal_task_${channelId}`
-    );
+  private async scheduleMailboxRenewal(expiration: Date): Promise<void> {
+    const existingTask = await this.get<string>("mailbox_renewal_task");
     if (existingTask) {
       try {
         await this.cancelTask(existingTask);
       } catch {
         // Task may have already executed
       }
-      await this.clear(`watch_renewal_task_${channelId}`);
+      await this.clear("mailbox_renewal_task");
     }
 
-    // Renew 1 day before expiry
     const renewalTime = new Date(expiration.getTime() - 24 * 60 * 60 * 1000);
 
     if (renewalTime <= new Date()) {
       // Already past renewal window, renew immediately
-      await this.renewWatch(channelId);
+      await this.renewMailboxWatch();
       return;
     }
 
-    const renewalCallback = await this.callback(
-      this.renewWatch,
-      channelId
-    );
+    const renewalCallback = await this.callback(this.renewMailboxWatch);
     const taskToken = await this.runTask(renewalCallback, {
       runAt: renewalTime,
     });
     if (taskToken) {
-      await this.set(`watch_renewal_task_${channelId}`, taskToken);
+      await this.set("mailbox_renewal_task", taskToken);
     }
   }
 
   /**
-   * Renews the Gmail watch before it expires.
-   * If renewal fails, falls back to full webhook setup.
+   * Renews the Gmail mailbox watch before it expires. On failure, falls back
+   * to a full mailbox-webhook re-setup.
    */
-  async renewWatch(channelId: string): Promise<void> {
+  async renewMailboxWatch(): Promise<void> {
     try {
-      const api = await this.getApi(channelId);
-      const webhookData = await this.get<{
-        topicName: string;
-        channelId: string;
-      }>(`channel_webhook_${channelId}`);
+      const api = await this.getApiAny();
+      if (!api) return;
 
-      if (!webhookData?.topicName) {
-        // No existing webhook data, do full setup
-        await this.setupChannelWebhook(channelId);
+      const webhook = await this.get<MailboxWebhookState>("mailbox_webhook");
+      if (!webhook?.topicName) {
+        await this.setupMailboxWebhook();
         return;
       }
 
-      // Re-call watch with the same topic
-      const watchResult = await api.setupWatch(channelId, webhookData.topicName);
+      const watchResult = await api.setupWatch(webhook.topicName);
       const expiration = new Date(parseInt(watchResult.expiration));
 
-      await this.set(`channel_webhook_${channelId}`, {
-        ...webhookData,
+      await this.set<MailboxWebhookState>("mailbox_webhook", {
+        ...webhook,
         historyId: watchResult.historyId,
         expiration,
       });
 
-      // Schedule next renewal
-      await this.scheduleWatchRenewal(channelId, expiration);
+      await this.scheduleMailboxRenewal(expiration);
     } catch (error) {
-      console.error(`Failed to renew Gmail watch for ${channelId}:`, error);
-      // Try full setup as fallback
+      console.error("Failed to renew Gmail mailbox watch:", error);
       try {
-        await this.setupChannelWebhook(channelId);
+        await this.setupMailboxWebhook();
       } catch (retryError) {
-        console.error("Failed to recreate Gmail webhook:", retryError);
+        console.error(
+          "Failed to recreate Gmail mailbox webhook:",
+          retryError
+        );
       }
     }
   }
 
-  async syncBatch(
-    batchNumber: number,
-    mode: "full" | "incremental",
+  /**
+   * Per-channel initial backfill. Walks `users.threads.list?labelIds=<id>`
+   * paginated and processes results. Used the FIRST time a channel is
+   * enabled; ongoing changes flow through `incrementalSyncBatch` instead.
+   */
+  async initialSyncBatch(
     channelId: string,
-    initialSync?: boolean
+    batchNumber: number
   ): Promise<void> {
-    const isInitial = initialSync ?? mode === "full";
     try {
-      const state = await this.get<SyncState>(`sync_state_${channelId}`);
-      if (!state) {
-        // State was cleared by a concurrent operation (channel disabled,
-        // incremental sync race, etc.) — return gracefully instead of
-        // throwing to prevent infinite queue retries.
-        console.warn(
-          `Sync state missing for channel ${channelId} at batch ${batchNumber}, skipping`
-        );
+      // Channel may have been disabled between scheduling and execution.
+      if (!(await this.isChannelEnabled(channelId))) {
+        await this.clear(`initial_state_${channelId}`);
+        return;
+      }
+
+      const cursor = await this.get<InitialSyncState>(
+        `initial_state_${channelId}`
+      );
+      if (!cursor) {
+        // Already completed.
         return;
       }
 
       const token = await this.tools.integrations.get(channelId);
       if (!token) {
-        // Auth token was cleared (channel disabled, OAuth revoked,
-        // integration deleted) — abort instead of throwing to prevent
-        // infinite queue retries.
         console.warn(
-          `Auth token missing for channel ${channelId} at batch ${batchNumber}, skipping`
+          `Auth token missing for channel ${channelId} at initial batch ${batchNumber}, skipping`
         );
         return;
       }
       const api = new GmailApi(token.token);
 
-      // Use smaller batch size for Gmail (20 threads) to avoid timeouts
-      const result = await syncGmailChannel(api, state, 20);
+      // Reuse the existing per-channel full-sync helper for label-scoped
+      // pagination. We pass a shim SyncState matching its expectations.
+      const syncState: SyncState = {
+        channelId,
+        pageToken: cursor.pageToken,
+        lastSyncTime: cursor.lastSyncTime,
+      };
+      const result = await syncGmailChannel(api, syncState, 20);
 
       if (result.threads.length > 0) {
-        await this.processEmailThreads(result.threads, channelId, isInitial);
+        // Initial backfill: every fetched thread is in this channel's label
+        // (we asked Gmail for them by label), so route them all here.
+        await this.processEmailThreads(result.threads, true, channelId);
       }
 
-      await this.set(`sync_state_${channelId}`, result.state);
-
       if (result.hasMore) {
-        const syncCallback = await this.callback(
-          this.syncBatch,
-          batchNumber + 1,
-          mode,
+        await this.set<InitialSyncState>(`initial_state_${channelId}`, {
+          pageToken: result.state.pageToken,
+          lastSyncTime: result.state.lastSyncTime,
+        });
+        const next = await this.callback(
+          this.initialSyncBatch,
           channelId,
-          isInitial
+          batchNumber + 1
         );
-        await this.runTask(syncCallback);
+        await this.runTask(next);
       } else {
-        if (mode === "full") {
-          await this.clear(`sync_state_${channelId}`);
-          // Initial backfill is done — clear the "syncing…" indicator.
-          if (isInitial) {
-            await this.tools.integrations.channelSyncCompleted(channelId);
-          }
-        }
+        // Backfill done. Drop the cursor and clear the "syncing…" UI.
+        await this.clear(`initial_state_${channelId}`);
+        await this.tools.integrations.channelSyncCompleted(channelId);
       }
     } catch (error) {
       console.error(
-        `Error in sync batch ${batchNumber} for channel ${channelId}:`,
+        `Error in initial sync batch ${batchNumber} for channel ${channelId}:`,
         error
       );
-
       throw error;
     }
   }
 
+  /**
+   * Mailbox-wide incremental sync. Triggered from a Pub/Sub webhook. Calls
+   * Gmail's history.list with NO label filter so we see every change, then
+   * routes each affected thread to whichever enabled channel(s) it actually
+   * matches (based on its messages' labels). On 404 (history-window
+   * expired), reseeds the cursor from the watch's current historyId — we
+   * don't re-walk every label here, since label-scoped re-walks happen
+   * via a fresh onChannelEnabled if needed.
+   */
+  async incrementalSyncBatch(): Promise<void> {
+    try {
+      const enabled = await this.getEnabledChannels();
+      if (enabled.size === 0) return;
+
+      const state = await this.get<{
+        historyId?: string;
+        lastSyncTime?: Date;
+      }>("incremental_state");
+      if (!state?.historyId) {
+        // Nothing to do — webhook will re-seed on next watch setup.
+        return;
+      }
+
+      const api = await this.getApiAny();
+      if (!api) {
+        console.warn(
+          "incrementalSyncBatch: no enabled channel to source auth from"
+        );
+        return;
+      }
+
+      const result = await syncGmailMailboxIncremental(api, state.historyId);
+      if (result.expired) {
+        // Recover by reseeding from the watch's most recent historyId.
+        const webhook =
+          await this.get<MailboxWebhookState>("mailbox_webhook");
+        if (webhook?.historyId) {
+          await this.set("incremental_state", {
+            historyId: webhook.historyId,
+            lastSyncTime: new Date(),
+          });
+        } else {
+          await this.clear("incremental_state");
+        }
+        console.warn(
+          "Gmail mailbox history expired; reseeded incremental cursor"
+        );
+        return;
+      }
+
+      if (result.threads.length > 0) {
+        await this.processEmailThreads(result.threads, false);
+      }
+
+      await this.set("incremental_state", {
+        historyId: result.historyId,
+        lastSyncTime: new Date(),
+      });
+    } catch (error) {
+      console.error("Error in Gmail incremental sync batch:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Backwards-compatible shim for callbacks deployed under the old
+   * per-channel sync architecture. New deploys should never produce this
+   * callback; this exists so already-queued callbacks finish gracefully.
+   */
+  async syncBatch(
+    _batchNumber: number,
+    mode: "full" | "incremental",
+    channelId: string,
+    _initialSync?: boolean
+  ): Promise<void> {
+    if (mode === "full") {
+      // Forward to the new per-channel initial backfill. Seed the cursor
+      // so initialSyncBatch has something to read.
+      const existing = await this.get<InitialSyncState>(
+        `initial_state_${channelId}`
+      );
+      if (!existing) {
+        await this.set<InitialSyncState>(`initial_state_${channelId}`, {});
+      }
+      await this.initialSyncBatch(channelId, 1);
+      return;
+    }
+    // Old "incremental" callback — forward to mailbox-wide sync.
+    await this.incrementalSyncBatch();
+  }
+
+  /**
+   * Backwards-compatible shim for callbacks deployed under the old
+   * per-channel webhook architecture. Forwards to mailbox-wide setup.
+   */
+  async setupChannelWebhook(_channelId: string): Promise<void> {
+    await this.ensureMailboxWebhook();
+  }
+
+  /**
+   * Backwards-compatible shim for old per-channel watch-renewal tasks.
+   */
+  async renewWatch(_channelId: string): Promise<void> {
+    await this.renewMailboxWatch();
+  }
+
   private async processEmailThreads(
     threads: GmailThread[],
-    channelId: string,
-    initialSync: boolean
+    initialSync: boolean,
+    forceChannelId?: string
   ): Promise<void> {
+    // When forceChannelId is set we already know which channel owns these
+    // threads (per-channel initial backfill). For mailbox-wide incremental
+    // sync we pick a channel per thread by inspecting its message labels.
+    const enabledChannels = forceChannelId
+      ? new Set([forceChannelId])
+      : await this.getEnabledChannels();
+    if (enabledChannels.size === 0) return;
+
     // Pre-build all plot threads, then enrich every contact email across the
     // batch in one People API pass. Gmail headers don't carry avatars, so
     // without this every email-only contact lands with `avatar = undefined`
     // and shows initials forever.
-    const transformed: { thread: GmailThread; plot: ReturnType<typeof transformGmailThread> }[] = [];
+    const transformed: {
+      thread: GmailThread;
+      plot: ReturnType<typeof transformGmailThread>;
+      channelId: string;
+    }[] = [];
     const allEmails = new Set<string>();
     for (const thread of threads) {
       const plot = transformGmailThread(thread);
       if (!plot.notes || plot.notes.length === 0) continue;
-      transformed.push({ thread, plot });
+
+      const chosen =
+        forceChannelId ?? pickChannelForThread(thread, enabledChannels);
+      if (!chosen) continue; // Thread doesn't match any enabled channel.
+
+      transformed.push({ thread, plot, channelId: chosen });
       for (const c of plot.accessContacts ?? []) {
-        if (c && typeof c === "object" && "email" in c && c.email) allEmails.add(c.email);
+        if (c && typeof c === "object" && "email" in c && c.email)
+          allEmails.add(c.email);
       }
       for (const note of plot.notes) {
         const author = (note as { author?: { email?: string } }).author;
@@ -487,23 +796,32 @@ export class Gmail extends Connector<Gmail> {
     }
 
     if (allEmails.size > 0) {
-      try {
-        const token = await this.tools.integrations.get(channelId);
-        if (token) {
-          await enrichLinkContactsFromGoogle(
-            transformed.map((t) => t.plot),
-            token.token,
-            token.scopes,
+      // Auth scope is per-account, not per-channel; any enabled channel ID
+      // sources the same token.
+      const authChannelId =
+        forceChannelId ?? transformed[0]?.channelId ?? null;
+      if (authChannelId) {
+        try {
+          const token = await this.tools.integrations.get(authChannelId);
+          if (token) {
+            await enrichLinkContactsFromGoogle(
+              transformed.map((t) => t.plot),
+              token.token,
+              token.scopes,
+            );
+          }
+        } catch (err) {
+          // Enrichment is best-effort — Gravatar fallback in the client still
+          // covers anyone the People API doesn't return.
+          console.warn(
+            "Failed to enrich Gmail contacts (non-blocking):",
+            err
           );
         }
-      } catch (err) {
-        // Enrichment is best-effort — Gravatar fallback in the client still
-        // covers anyone the People API doesn't return.
-        console.warn("Failed to enrich Gmail contacts (non-blocking):", err);
       }
     }
 
-    for (const { thread, plot: plotThread } of transformed) {
+    for (const { thread, plot: plotThread, channelId } of transformed) {
       try {
         if (!plotThread.notes || plotThread.notes.length === 0) continue;
 
@@ -777,21 +1095,28 @@ export class Gmail extends Connector<Gmail> {
     }
   }
 
+  /**
+   * Pub/Sub webhook handler. Single mailbox-wide watch → single handler.
+   * Decodes Gmail's history-id notification and queues a mailbox-incremental
+   * sync as a separate task so this handler returns quickly to Pub/Sub.
+   *
+   * The optional `_channelId` argument exists for backwards compatibility
+   * with already-deployed per-channel webhook callbacks (which were
+   * registered with `extraArgs: [channelId]`). The new mailbox-wide watch
+   * registers without extraArgs, so newer deploys never pass a channelId.
+   */
   async onGmailWebhook(
     request: WebhookRequest,
-    channelId: string
+    _channelId?: string
   ): Promise<void> {
-    // Gmail sends push notifications via Cloud Pub/Sub
-    // The message body is base64-encoded
     const body = request.body as { message?: { data: string } };
     const message = body?.message;
     if (!message) {
-      console.warn("No message in webhook body");
+      console.warn("No message in Gmail webhook body");
       return;
     }
 
-    // Decode the Pub/Sub message
-    let data: any;
+    let data: { historyId?: string; emailAddress?: string };
     try {
       const decoded = atob(message.data);
       data = JSON.parse(decoded);
@@ -800,68 +1125,118 @@ export class Gmail extends Connector<Gmail> {
       return;
     }
 
-    // Gmail notifications contain historyId for incremental sync
-    if (data.historyId) {
-      await this.startIncrementalSync(channelId, data.historyId);
-    }
-  }
+    if (!data.historyId) return;
 
-  private async startIncrementalSync(
-    channelId: string,
-    historyId: string
-  ): Promise<void> {
-    const webhookData = await this.get<any>(`channel_webhook_${channelId}`);
-    if (!webhookData) {
-      console.error("No channel webhook data found");
-      return;
+    // Renew the watch if its expiration has passed.
+    const webhook = await this.get<MailboxWebhookState>("mailbox_webhook");
+    if (webhook?.expiration && new Date(webhook.expiration) < new Date()) {
+      await this.renewMailboxWatch();
     }
 
-    // Check if watch has expired and renew if needed
-    const expiration = new Date(webhookData.expiration);
-    if (expiration < new Date()) {
-      await this.setupChannelWebhook(channelId);
-    }
-
-    // Don't interrupt an in-progress full sync (has pageToken for pagination).
-    // The full sync will pick up any new changes when it completes.
-    //
-    // If the full sync is stale (hasn't advanced in 10 minutes), treat it as
-    // stuck and overwrite with incremental state. Otherwise a crashed or
-    // abandoned batch blocks every subsequent webhook indefinitely.
-    const existingState = await this.get<SyncState>(`sync_state_${channelId}`);
-    if (existingState?.pageToken) {
-      const lastAdvance = existingState.lastSyncTime
-        ? new Date(existingState.lastSyncTime).getTime()
-        : 0;
-      const stale = Date.now() - lastAdvance > 10 * 60 * 1000;
-      if (!stale) return;
-      console.warn(
-        `Gmail full sync appears stuck on channel ${channelId} (lastSyncTime=${existingState.lastSyncTime}) — switching to incremental`
-      );
-    }
-
-    // Use the stored historyId from the last sync if available, falling back
-    // to the webhook's historyId. The stored ID is our last known position —
-    // querying from there catches all changes. The webhook's historyId may
-    // point past the actual change, causing getHistory() to miss it.
-    const startHistoryId = existingState?.historyId ?? historyId;
-
-    const incrementalState: SyncState = {
-      channelId,
-      historyId: startHistoryId,
-      lastSyncTime: new Date(),
-    };
-
-    await this.set(`sync_state_${channelId}`, incrementalState);
-    const syncCallback = await this.callback(
-      this.syncBatch,
-      1,
-      "incremental",
-      channelId,
-      false
+    // Make sure incremental_state exists (carries our last-acknowledged
+    // historyId). If we somehow lost it, seed from the webhook's historyId
+    // — we'll miss anything that happened between teardown and now, but
+    // that's strictly bounded.
+    const existing = await this.get<{ historyId?: string }>(
+      "incremental_state"
     );
-    await this.runTask(syncCallback);
+    if (!existing?.historyId) {
+      await this.set("incremental_state", {
+        historyId: data.historyId,
+        lastSyncTime: new Date(),
+      });
+    }
+
+    const callback = await this.callback(this.incrementalSyncBatch);
+    await this.runTask(callback);
   }
+
+  // Helpers ------------------------------------------------------------------
+
+  /** Returns the set of channelIds the user currently has enabled. */
+  private async getEnabledChannels(): Promise<Set<string>> {
+    const list = (await this.get<string[]>("enabled_channels")) ?? [];
+    return new Set(list);
+  }
+
+  /** Add a channelId to the enabled set (idempotent, preserves order). */
+  private async addEnabledChannel(channelId: string): Promise<void> {
+    const list = (await this.get<string[]>("enabled_channels")) ?? [];
+    if (list.includes(channelId)) return;
+    list.push(channelId);
+    await this.set("enabled_channels", list);
+  }
+
+  /** Remove a channelId from the enabled set. */
+  private async removeEnabledChannel(channelId: string): Promise<void> {
+    const list = (await this.get<string[]>("enabled_channels")) ?? [];
+    const filtered = list.filter((c) => c !== channelId);
+    if (filtered.length === list.length) return;
+    await this.set("enabled_channels", filtered);
+  }
+
+  /** Whether a channel is currently enabled. */
+  private async isChannelEnabled(channelId: string): Promise<boolean> {
+    const list = (await this.get<string[]>("enabled_channels")) ?? [];
+    return list.includes(channelId);
+  }
+
+  /**
+   * Returns a Gmail API client authed with any enabled channel's token.
+   * Auth is per-Google-account (not per-label), so any enabled channelId
+   * resolves to the same OAuth credential.
+   */
+  private async getApiAny(): Promise<GmailApi | null> {
+    const enabled = await this.getEnabledChannels();
+    for (const channelId of enabled) {
+      const token = await this.tools.integrations.get(channelId);
+      if (token?.token) return new GmailApi(token.token);
+    }
+    return null;
+  }
+}
+
+/**
+ * Pick which enabled channel a thread should be filed under, based on the
+ * labels carried by its messages. Selection precedence (most specific first):
+ *
+ *   1. Custom (user-defined) labels — alphabetically.
+ *   2. STARRED → IMPORTANT → INBOX → SENT → DRAFT (system labels).
+ *
+ * Returns null if no enabled channel matches the thread (the thread came in
+ * via mailbox-wide history but doesn't belong to any channel the user wants).
+ *
+ * Custom labels in Gmail use IDs like `Label_14`. We treat anything not in
+ * the system-label list above as "custom", which matches getChannels()'s
+ * own filter.
+ */
+function pickChannelForThread(
+  thread: GmailThread,
+  enabledChannels: Set<string>
+): string | null {
+  // Collect every label that appears on any message in the thread.
+  const threadLabels = new Set<string>();
+  for (const m of thread.messages ?? []) {
+    for (const l of m.labelIds ?? []) threadLabels.add(l);
+  }
+
+  // Custom labels first, alphabetical for stability.
+  const customMatches: string[] = [];
+  for (const enabled of enabledChannels) {
+    if (SYSTEM_LABEL_ORDER.includes(enabled)) continue;
+    if (threadLabels.has(enabled)) customMatches.push(enabled);
+  }
+  if (customMatches.length > 0) {
+    customMatches.sort();
+    return customMatches[0];
+  }
+
+  // System labels in fixed precedence order.
+  for (const label of SYSTEM_LABEL_ORDER) {
+    if (enabledChannels.has(label) && threadLabels.has(label)) return label;
+  }
+
+  return null;
 }
 
 export default Gmail;
