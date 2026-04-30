@@ -165,13 +165,21 @@ export type ScheduleOccurrence = {
 
   /** Tags for this occurrence */
   tags: Tags;
-
-  /** True if the occurrence is archived */
-  archived: boolean;
 };
 
 /**
  * Type for creating or updating schedule occurrences.
+ *
+ * Use `cancelled: true` to skip a single date in a recurring series
+ * (e.g. an upstream calendar reports one occurrence as cancelled).
+ * Internally this is translated into an addition to the parent
+ * schedule's `recurrenceExdates`; no occurrence schedule row is
+ * persisted for the cancelled date. For seeding the full exception
+ * list on the master at initial sync, use `NewSchedule.recurrenceExdates`
+ * instead.
+ *
+ * Use a normal occurrence record (without `cancelled`) for genuine
+ * overrides — time changes, RSVP differences, etc.
  */
 export type NewScheduleOccurrence = Pick<
   ScheduleOccurrence,
@@ -191,6 +199,14 @@ export type NewScheduleOccurrence = Pick<
 
     /** Contacts to upsert on this occurrence's schedule */
     contacts?: NewScheduleContact[];
+
+    /**
+     * Mark this single date as cancelled. The runtime translates this
+     * into an addition to the parent schedule's `recurrenceExdates` and
+     * archives any pre-existing override row for the same date — no
+     * occurrence schedule row is created.
+     */
+    cancelled?: boolean;
   };
 
 /**

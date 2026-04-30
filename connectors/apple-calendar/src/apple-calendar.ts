@@ -740,7 +740,7 @@ export class AppleCalendar extends Connector<AppleCalendar> {
             : new Date(originalStart),
         start: start instanceof Date ? start : new Date(start),
         end: end,
-        archived: true,
+        cancelled: true,
       };
 
       // During initial sync, buffer the occurrence under a unique key for
