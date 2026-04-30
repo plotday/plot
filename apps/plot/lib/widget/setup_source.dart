@@ -888,11 +888,11 @@ class ProviderIcon extends StatelessWidget {
 
   const ProviderIcon({required this.provider, required this.size, super.key});
 
-  bool get hasIcon => _getIcon() != null;
+  bool get hasIcon => _hasIcon(provider);
 
   @override
   Widget build(BuildContext context) {
-    final icon = _getIcon();
+    final icon = _getIcon(context);
     if (icon == null) return SizedBox(width: size, height: size);
 
     return SizedBox(
@@ -904,7 +904,27 @@ class ProviderIcon extends StatelessWidget {
     );
   }
 
-  String? _getIcon() {
+  static bool _hasIcon(AuthProvider provider) {
+    switch (provider) {
+      case AuthProvider.google:
+      case AuthProvider.microsoft:
+      case AuthProvider.slack:
+      case AuthProvider.atlassian:
+      case AuthProvider.linear:
+      case AuthProvider.asana:
+      case AuthProvider.hubspot:
+      case AuthProvider.airtable:
+      case AuthProvider.monday:
+      case AuthProvider.notion:
+      case AuthProvider.discord:
+      case AuthProvider.github:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  String? _getIcon(BuildContext context) {
     switch (provider) {
       case AuthProvider.google:
         return 'assets/google.svg';
@@ -926,6 +946,10 @@ class ProviderIcon extends StatelessWidget {
         return 'assets/monday.svg';
       case AuthProvider.notion:
         return 'assets/notion.svg';
+      case AuthProvider.github:
+        return context.colour.brightness == Brightness.dark
+            ? 'assets/github_dark.svg'
+            : 'assets/github_light.svg';
       case AuthProvider.discord:
         return 'assets/discord.svg';
       default:
