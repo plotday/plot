@@ -209,9 +209,16 @@ class _TwistBooleanItem extends FormItem {
       isActive: highlightedSubIndex >= 0,
       content: Align(
         alignment: Alignment.centerLeft,
-        child: FSwitch(
-          value: value,
-          onChange: (newValue) => owner._updateValue(optionKey, newValue),
+        child: SizedBox(
+          width: 32,
+          height: 20,
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: FSwitch(
+              value: value,
+              onChange: (newValue) => owner._updateValue(optionKey, newValue),
+            ),
+          ),
         ),
       ),
     );

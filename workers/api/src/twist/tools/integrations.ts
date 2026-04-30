@@ -660,6 +660,18 @@ export class Integrations extends Tool implements IAuth {
     actorId: ActorId,
     channels: Channel[]
   ): Promise<any> {
+    const _setChannelsLogger = createLogger({
+      twist_instance_id: this.twistInstanceId,
+      component: "Integrations.setChannels",
+    });
+    _setChannelsLogger.info("setChannels called", {
+      provider,
+      actor_id: actorId,
+      channel_count: Array.isArray(channels) ? channels.length : -1,
+      sample: Array.isArray(channels)
+        ? channels.slice(0, 5).map((c) => ({ id: c.id, title: c.title }))
+        : null,
+    });
     // Snapshot the set of channels we already know about before mirroring so
     // we can identify newly-discovered ones for auto-enable.
     const flat = this.flattenChannels(channels);
@@ -3298,6 +3310,24 @@ export class Integrations extends Tool implements IAuth {
     for (const [provider, tree] of channelTreesByProvider) {
       const annotated = await annotateChannelTree(provider, tree);
       const visible = filterVisibleTree(annotated);
+      const _gidLogger = createLogger({
+        twist_instance_id: this.twistInstanceId,
+        component: "Integrations.getIntegrationData",
+      });
+      _gidLogger.info("channels for provider", {
+        provider,
+        raw_count: tree.length,
+        annotated_count: annotated.length,
+        visible_count: visible.length,
+        annotated_sample: annotated.slice(0, 5).map((c) => ({
+          id: c.id,
+          title: c.title,
+          enabled: c.enabled,
+          currentUserHasAccess: c.currentUserHasAccess,
+        })),
+        channelAccessByCurrentUser_size: channelAccessByCurrentUser.size,
+        currentUserContactIds_size: currentUserContactIds.size,
+      });
       allChannels.push(...visible);
     }
 
@@ -3354,8 +3384,26 @@ export class Integrations extends Tool implements IAuth {
    * updating channel_access with the latest list.
    */
   async refreshChannels(provider: AuthProvider, actorId: ActorId): Promise<any> {
+    const logger = createLogger({
+      twist_instance_id: this.twistInstanceId,
+      component: "Integrations.refreshChannels",
+    });
+    logger.info("refreshChannels called", { provider, actor_id: actorId });
     const dispatch = await this.buildRefreshDispatch(provider, actorId);
-    if (!dispatch) return;
+    if (!dispatch) {
+      logger.warn("refreshChannels: no dispatch built (no token or no matching provider)", {
+        provider,
+        actor_id: actorId,
+      });
+      return;
+    }
+    logger.info("refreshChannels: dispatching", {
+      provider,
+      actor_id: actorId,
+      dispatch_keys: Object.keys(dispatch),
+      sourceMethod: dispatch.sourceMethod ?? null,
+      optionPath: dispatch.optionPath ?? null,
+    });
     return { __dispatch: [dispatch] } as any;
   }
 
@@ -4106,6 +4154,10 @@ export class Integrations extends Tool implements IAuth {
 
     const headers: Record<string, string> = {
       "Content-Type": "application/x-www-form-urlencoded",
+      // GitHub's token endpoint returns form-encoded by default; Accept: json
+      // forces a JSON body. Other providers already return JSON, so this is a
+      // no-op for them.
+      Accept: "application/json",
     };
     if (useBasicAuth) {
       headers.Authorization = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;

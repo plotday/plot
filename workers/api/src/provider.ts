@@ -115,6 +115,9 @@ async function fetchGitHubUser(accessToken: string): Promise<{ userId: string; e
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/vnd.github.v3+json",
+        // GitHub requires a User-Agent on every request; without one the API
+        // returns 403 and we fall through to a null account label.
+        "User-Agent": "Plot",
       },
     });
 
@@ -547,6 +550,10 @@ export const PROVIDER_CONFIGS: Record<AuthProvider, ProviderConfig> = {
     name: "GitHub",
     authUrl: "https://github.com/login/oauth/authorize",
     tokenUrl: "https://github.com/login/oauth/access_token",
+    // GitHub OAuth Apps only allow a single registered callback URL and
+    // reject custom URI schemes / loopback addresses, so route every flow
+    // through the https bridge endpoint.
+    requiresHttpsRedirect: true,
     emailScopes: ["user:email"],
     parseTokenResponse: parseGitHubTokenResponse,
     extractAccountLabel: (d) => {
