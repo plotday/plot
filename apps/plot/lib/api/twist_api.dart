@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
+import 'package:plot/util/value.dart';
 import 'api.dart' as api;
 import 'twist_permission.dart';
 
@@ -165,21 +166,28 @@ class TwistApi {
     );
   }
 
-  /// Update a twist
+  /// Update a twist.
+  ///
+  /// `teamId` and `accountLabel` use `Value<String?>` so callers can pick
+  /// between "unchanged" (`Value.absent()` — the default) and "set to this
+  /// value, possibly null" (`Value(null)` to clear). A plain nullable would
+  /// erase the distinction and silently drop clears, which previously left
+  /// connections stranded under their old team scope when the user picked
+  /// "Personal" in the setup form.
   static Future<void> updateTwist({
     required String twistInstanceId,
     String? name,
     Map<String, dynamic>? config,
-    String? teamId,
-    String? accountLabel,
+    Value<String?> teamId = const Value.absent(),
+    Value<String?> accountLabel = const Value.absent(),
   }) async {
     await api.patch<Map<String, dynamic>>(
       '/twist/$twistInstanceId',
       body: {
         if (name != null) 'name': name,
         if (config != null) 'config': config,
-        if (teamId != null) 'teamId': teamId,
-        if (accountLabel != null) 'accountLabel': accountLabel,
+        if (teamId.present) 'teamId': teamId.value,
+        if (accountLabel.present) 'accountLabel': accountLabel.value,
       },
     );
   }

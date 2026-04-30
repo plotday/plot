@@ -3310,11 +3310,14 @@ class SaveSource extends Command {
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      // 0. Save updated metadata (teamId and account_label).
+      // 0. Save updated metadata (teamId and account_label). Wrapping in
+      // Value() so a null teamId is sent to the server as a clear, not
+      // omitted — picking "Personal" must move the twist out of any team
+      // scope, otherwise the subsequent batch enable hits the team's quota.
       await TwistApi.updateTwist(
         twistInstanceId: twistInstanceId,
-        teamId: teamId,
-        accountLabel: accountLabel,
+        teamId: Value(teamId),
+        accountLabel: Value(accountLabel),
       );
 
       // Update local database to immediately reflect team/label change.
@@ -3436,7 +3439,7 @@ class SaveTwistSettings extends Command {
         twistInstanceId: twistInstance.id.toString(),
         name: name!,
         config: config,
-        teamId: teamId,
+        teamId: Value(teamId),
       );
 
       // Update local database to immediately reflect name and team changes.
@@ -3504,7 +3507,7 @@ class SaveTwist extends Command {
         twistInstanceId: ptId,
         name: name!,
         config: config,
-        teamId: teamId,
+        teamId: Value(teamId),
       );
 
       // Update local database to immediately reflect name and team changes.
