@@ -87,6 +87,7 @@ class NoteWidget extends StatefulWidget {
     this.onHover,
     this.reorderableIndex,
     this.showAuthor = true,
+    this.searchHighlight,
     super.key,
   });
 
@@ -97,6 +98,7 @@ class NoteWidget extends StatefulWidget {
   final void Function(bool hovered)? onHover;
   final int? reorderableIndex;
   final bool showAuthor;
+  final String? searchHighlight;
 
   @override
   State<NoteWidget> createState() => _NoteWidgetState();
@@ -152,7 +154,10 @@ class _NoteWidgetState extends State<NoteWidget> {
           if (noteContent.isNotEmpty)
             Padding(
               padding: .symmetric(horizontal: 6),
-              child: Viewer(markdown: noteContent),
+              child: Viewer(
+                markdown: noteContent,
+                searchHighlight: widget.searchHighlight,
+              ),
             ),
           if (noteLinks.isNotEmpty)
             Padding(

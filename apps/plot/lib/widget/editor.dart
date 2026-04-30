@@ -91,6 +91,54 @@ String _preprocessMarkdown(String markdown) {
   return processed;
 }
 
+/// Tokenise a search query into the minimum-length terms used for matching.
+/// Mirrors the FTS preprocessing in `Note.watch`: split on whitespace, drop
+/// FTS-special chars, then drop fragments shorter than 2 characters.
+List<String> _searchHighlightTerms(String search) {
+  final terms = <String>[];
+  for (final raw in search.split(RegExp(r'\s+'))) {
+    if (raw.isEmpty) continue;
+    final cleaned = raw.replaceAll(
+      RegExp(r'''['"*()/:+\-^~{}\[\]@#]'''),
+      '',
+    );
+    if (cleaned.length < 2) continue;
+    terms.add(cleaned.toLowerCase());
+  }
+  return terms;
+}
+
+/// Add `searchHighlightAttribution` over every occurrence of any search
+/// term in every text node of [document]. Matches are case-insensitive and
+/// applied in place on each node's [AttributedText] so list/task/code nodes
+/// keep their concrete type.
+void _addSearchHighlightAttributions(MutableDocument document, String search) {
+  final terms = _searchHighlightTerms(search);
+  if (terms.isEmpty) return;
+
+  for (int i = 0; i < document.nodeCount; i++) {
+    final node = document.getNodeAt(i);
+    if (node is! TextNode) continue;
+
+    final text = node.text.toPlainText();
+    if (text.isEmpty) continue;
+    final lowered = text.toLowerCase();
+
+    for (final term in terms) {
+      int searchIndex = 0;
+      while (true) {
+        final index = lowered.indexOf(term, searchIndex);
+        if (index == -1) break;
+        node.text.addAttribution(
+          searchHighlightAttribution,
+          SpanRange(index, index + term.length - 1),
+        );
+        searchIndex = index + term.length;
+      }
+    }
+  }
+}
+
 /// Find and add attributions for a mention in a document
 void _addMentionAttributions(MutableDocument document, _MentionInfo mention) {
   for (int i = 0; i < document.nodeCount; i++) {
@@ -2162,11 +2210,11 @@ class LinkLeaderLayerBuilder implements SuperEditorLayerBuilder {
 }
 
 class Viewer extends StatefulWidget {
-  Viewer({required this.markdown, super.key})
+  Viewer({required this.markdown, this.searchHighlight, super.key})
     : document = deserializeMarkdownToDocument(_preprocessMarkdown(markdown));
 
   final String markdown;
-  // final void Function()? onTap;
+  final String? searchHighlight;
   final Document document;
 
   @override
@@ -2198,15 +2246,20 @@ class ViewerState extends State<Viewer> {
 
   /// Create document with mention attributions
   MutableDocument _createDocumentWithMentions() {
-    return _deserializeMarkdownWithMentions(widget.markdown);
+    final document = _deserializeMarkdownWithMentions(widget.markdown);
+    final highlight = widget.searchHighlight;
+    if (highlight != null && highlight.isNotEmpty) {
+      _addSearchHighlightAttributions(document, highlight);
+    }
+    return document;
   }
 
   @override
   void didUpdateWidget(Viewer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Check if markdown has changed
-    if (oldWidget.markdown != widget.markdown) {
-      // Update the document when the markdown changes
+    // Rebuild the document when markdown or the active search term changes.
+    if (oldWidget.markdown != widget.markdown ||
+        oldWidget.searchHighlight != widget.searchHighlight) {
       _updateDocument();
     }
   }
@@ -2302,6 +2355,16 @@ TextStyle _inlineTextStyler(
       attributions.whereType<CommittedEditorMentionAttribution>().isEmpty &&
       attributions.whereType<LinkAttribution>().isEmpty) {
     style = style.copyWith(color: context.theme.colors.foreground);
+  }
+
+  // Search-term highlight: yellow background tinted to the active theme so
+  // matches stand out without overriding link/mention text colours.
+  if (attributions.contains(searchHighlightAttribution)) {
+    style = style.copyWith(
+      backgroundColor: isDark
+          ? const Color(0xFF7A5A00)
+          : const Color(0xFFFFF1A8),
+    );
   }
 
   return style;

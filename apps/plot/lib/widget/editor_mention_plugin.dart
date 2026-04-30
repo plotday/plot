@@ -3,6 +3,9 @@ import 'package:super_editor/super_editor.dart';
 /// Attribution for editor mentions that are being composed (typed)
 const editorMentionComposingAttribution = NamedAttribution('editorMentionComposing');
 
+/// Attribution for search-term highlights inside read-only notes
+const searchHighlightAttribution = NamedAttribution('searchHighlight');
+
 /// Attribution for completed editor mentions
 class CommittedEditorMentionAttribution extends NamedAttribution {
   const CommittedEditorMentionAttribution({

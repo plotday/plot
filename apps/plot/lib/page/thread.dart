@@ -409,14 +409,6 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
                             ),
                           ),
                         ),
-                        if (state.search.isNotEmpty &&
-                            !state.showAllNotes &&
-                            state.notes.length < state.totalNoteCount)
-                          _SearchFilterHint(
-                            onShowAll: () => context
-                                .read<ThreadBloc>()
-                                .setShowAllNotes(true),
-                          ),
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 300),
                           child: Padding(
@@ -506,6 +498,7 @@ class _ThreadPageContentState extends State<_ThreadPageContent> {
         key: ValueKey(note.id),
         reorderableIndex: reorderableIndex,
         showAuthor: state.hasOtherAuthors,
+        searchHighlight: state.search.isNotEmpty ? state.search : null,
       );
     }
     return const SizedBox.shrink();
@@ -583,47 +576,6 @@ class _ThreadFilterBar extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Hint bar shown when notes are filtered by global search.
-class _SearchFilterHint extends StatelessWidget {
-  const _SearchFilterHint({required this.onShowAll});
-
-  final VoidCallback onShowAll;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.isMultiPanel ? 20.0 : context.contentPaddingH,
-        vertical: 4,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            'Notes filtered by search.',
-            style: context.theme.typography.xs.copyWith(
-              color: context.theme.colors.mutedForeground,
-            ),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: onShowAll,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.basic,
-              child: Text(
-                'Show all',
-                style: context.theme.typography.xs.copyWith(
-                  color: context.theme.colors.primary,
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -344,7 +344,6 @@ class Note extends Equatable implements Comparable<Note> {
     bool? archived = false,
     bool? draft = false,
     List<Tag>? filter,
-    String? search,
     NoteId? threadNoteId,
   }) {
     // Check if notes for this activity have been loaded, if not trigger pull
@@ -405,31 +404,7 @@ class Note extends Equatable implements Comparable<Note> {
       }
     }
 
-    // Add FTS search filtering if search string is provided
-    if (search?.isNotEmpty == true) {
-      // Use FTS5 for full-text search with prefix matching on note content
-      // Split search into words, escape special characters, and add prefix matching
-      final words = search!
-          .split(RegExp(r'\s+'))
-          .where((word) => word.isNotEmpty)
-          .map(
-            // Remove FTS5 special characters to prevent syntax errors
-            (word) => word.replaceAll(RegExp(r'''['"*()/:+\-^~{}\[\]@#]'''), ''),
-          )
-          .where((word) => word.length >= 2)
-          .map((word) => '$word*') // Add prefix matching to each word
-          .join(' '); // AND multiple words together
-      if (words.isNotEmpty) {
-        // Search note content using note_fts
-        query.where(
-          CustomExpression<bool>('''
-            EXISTS (SELECT 1 FROM note_fts WHERE note_id = notes.id AND note_fts MATCH '$words')
-          '''),
-        );
-      }
-    }
-
-    // Watch the query and transform results to Note objects
+// Watch the query and transform results to Note objects
     return query.watch().map((results) {
       // Group results by note ID
       final noteGroups = <Uuid, List<TypedResult>>{};
@@ -452,31 +427,7 @@ class Note extends Equatable implements Comparable<Note> {
 
   /// Watch the count of non-draft notes for a thread.
   /// Lightweight alternative to [watch] when only the count is needed.
-  static Stream<int> watchCount(
-    ThreadId threadId, {
-    bool? archived = false,
-    NoteId? threadNoteId,
-  }) {
-    final n = Store.get.notes;
-    final query = Store.get.selectOnly(n)
-      ..addColumns([n.id.count()])
-      ..where(n.threadId.equalsValue(threadId))
-      ..where(n.draft.equals(false));
-
-    if (archived != null) {
-      query.where(archived ? n.archivedAt.isNotNull() : n.archivedAt.isNull());
-    }
-
-    if (threadNoteId != null) {
-      query.where(
-        n.id.equalsValue(threadNoteId) | n.reNoteId.equalsValue(threadNoteId),
-      );
-    }
-
-    return query.watchSingle().map((row) => row.read(n.id.count()) ?? 0);
-  }
-
-  /// Watch all tags present in an activity and its notes.
+/// Watch all tags present in an activity and its notes.
   /// Returns a stream of (Tag, count) tuples sorted by occurrence count descending.
   static Stream<List<(Tag, int)>> watchTagsForActivity(ThreadId threadId) {
     final at = Store.get.threadTags;

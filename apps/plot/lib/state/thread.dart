@@ -36,14 +36,7 @@ class ThreadBloc extends Cubit<ThreadState> {
 
   void updateSearch(String search) {
     log.info('Updating search to "$search"');
-    emit(state.copyWith(search: search, showAllNotes: false));
-    _loadNotes();
-  }
-
-  void setShowAllNotes(bool showAll) {
-    log.info('Setting showAllNotes to $showAll');
-    emit(state.copyWith(showAllNotes: showAll));
-    _loadNotes();
+    emit(state.copyWith(search: search));
   }
 
   @override
@@ -52,7 +45,6 @@ class ThreadBloc extends Cubit<ThreadState> {
       subscription.cancel();
     }
     _tagsSubscription?.cancel();
-    _totalCountSubscription?.cancel();
     _notesSubscription?.cancel();
     return super.close();
   }
@@ -158,9 +150,6 @@ class ThreadBloc extends Cubit<ThreadState> {
           : const Value.absent(),
     );
 
-    // Show all notes after submitting so the new note is visible
-    final showAll = state.search.isNotEmpty ? true : null;
-
     // Create fresh draft for the thread (in-memory only, will be saved when content is added)
     // Don't save empty draft - it will be saved when content is added via updateDraft()
     // Also clear replyTo and editing state
@@ -169,7 +158,6 @@ class ThreadBloc extends Cubit<ThreadState> {
         draft: Note.draft(threadId: state.thread.id),
         clearReplyTo: true,
         clearEditingNote: true,
-        showAllNotes: showAll,
       ),
     );
 
@@ -178,9 +166,6 @@ class ThreadBloc extends Cubit<ThreadState> {
 
     // Async
     note.save();
-
-    // Reload notes if we toggled showAllNotes
-    if (showAll == true) _loadNotes();
   }
 
   void _loadThread() {
@@ -255,8 +240,6 @@ class ThreadBloc extends Cubit<ThreadState> {
   void _loadNotes() {
     log.info('Getting notes for thread ${state.thread.id}');
 
-    final isSearchFiltering = state.search.isNotEmpty && !state.showAllNotes;
-
     // Cancel the prior notes watch before subscribing again. Drift fires
     // every active stream on each table update, so a leaked subscription
     // with stale filter args briefly overwrites the latest notes list
@@ -267,31 +250,14 @@ class ThreadBloc extends Cubit<ThreadState> {
       archived: state.showArchived,
       draft: false,
       filter: state.filter.isNotEmpty ? state.filter : null,
-      search: isSearchFiltering ? state.search : null,
       threadNoteId: state.threadNoteId,
     ).listen((notes) {
       emit(state.copyWith(notes: notes));
     });
-
-    // Watch total (unfiltered) note count when search is actively filtering
-    _totalCountSubscription?.cancel();
-    if (isSearchFiltering) {
-      _totalCountSubscription = Note.watchCount(
-        state.thread.id,
-        archived: state.showArchived,
-        threadNoteId: state.threadNoteId,
-      ).listen((count) {
-        emit(state.copyWith(totalNoteCount: count));
-      });
-    } else {
-      _totalCountSubscription = null;
-      emit(state.copyWith(totalNoteCount: 0));
-    }
   }
 
   final List<StreamSubscription<void>> _subscriptions;
   StreamSubscription<List<(Tag, int)>>? _tagsSubscription;
-  StreamSubscription<int>? _totalCountSubscription;
   StreamSubscription<List<Note>>? _notesSubscription;
 }
 
