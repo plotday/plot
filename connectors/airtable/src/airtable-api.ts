@@ -2,7 +2,7 @@
  * Minimal typed Airtable REST client.
  *
  * Covers the endpoints the connector needs: whoami, base/table metadata,
- * record list/patch, record comments CRUD, and webhook registration.
+ * record list/patch, and webhook registration.
  *
  * Throttling: Airtable allows 5 req/sec per base. Each AirtableAPI instance
  * paces its own requests to stay just under that ceiling. 429s still get
@@ -29,6 +29,23 @@ export class AirtableAuthError extends Error {
 
 export function isAirtableAuthError(error: unknown): error is AirtableAuthError {
   return error instanceof AirtableAuthError;
+}
+
+export class AirtableNotFoundError extends Error {
+  constructor(
+    public readonly method: string,
+    public readonly path: string,
+    public readonly body: string
+  ) {
+    super(`Airtable ${method} ${path} failed: 404 ${body}`);
+    this.name = "AirtableNotFoundError";
+  }
+}
+
+export function isAirtableNotFoundError(
+  error: unknown
+): error is AirtableNotFoundError {
+  return error instanceof AirtableNotFoundError;
 }
 
 // ---- Response shapes ----
@@ -121,33 +138,6 @@ export type AirtableListRecords = {
   offset?: string;
 };
 
-export type AirtableCommentAuthor = {
-  id: string;
-  email: string;
-  name?: string;
-};
-
-export type AirtableMentioned = Record<
-  string,
-  {
-    type: "user" | "userGroup";
-    id: string;
-    displayName?: string;
-    email?: string;
-    name?: string;
-  }
->;
-
-export type AirtableComment = {
-  id: string;
-  author: AirtableCommentAuthor;
-  text: string;
-  createdTime: string;
-  lastUpdatedTime: string | null;
-  parentCommentId?: string;
-  mentioned?: AirtableMentioned;
-};
-
 export type AirtableWebhook = {
   id: string;
   macSecretBase64: string;
@@ -174,6 +164,11 @@ export type AirtableWebhookTableChange = {
     { createdTime?: string; cellValuesByFieldId?: Record<string, unknown> }
   >;
   destroyedRecordIds?: string[];
+  // Populated when a webhook subscribes to "tableFields". We don't parse
+  // the contents — their presence alone is the signal to re-detect tables.
+  changedFieldsById?: Record<string, unknown>;
+  createdFieldsById?: Record<string, unknown>;
+  destroyedFieldIds?: string[];
 };
 
 export type AirtableWebhookPayload = {
@@ -277,53 +272,6 @@ export class AirtableAPI {
     );
   }
 
-  async listComments(
-    baseId: string,
-    tableId: string,
-    recordId: string
-  ): Promise<AirtableComment[]> {
-    const comments: AirtableComment[] = [];
-    let offset: string | undefined;
-    do {
-      const params = new URLSearchParams({ pageSize: "100" });
-      if (offset) params.set("offset", offset);
-      const res = await this.req<{ comments: AirtableComment[]; offset?: string }>(
-        "GET",
-        `/v0/${baseId}/${tableId}/${recordId}/comments?${params.toString()}`
-      );
-      comments.push(...res.comments);
-      offset = res.offset;
-    } while (offset);
-    return comments;
-  }
-
-  async createComment(
-    baseId: string,
-    tableId: string,
-    recordId: string,
-    body: { text: string; parentCommentId?: string }
-  ): Promise<AirtableComment> {
-    return this.req<AirtableComment>(
-      "POST",
-      `/v0/${baseId}/${tableId}/${recordId}/comments`,
-      body
-    );
-  }
-
-  async updateComment(
-    baseId: string,
-    tableId: string,
-    recordId: string,
-    commentId: string,
-    body: { text: string }
-  ): Promise<AirtableComment> {
-    return this.req<AirtableComment>(
-      "PATCH",
-      `/v0/${baseId}/${tableId}/${recordId}/comments/${commentId}`,
-      body
-    );
-  }
-
   async createWebhook(
     baseId: string,
     notificationUrl: string,
@@ -358,6 +306,23 @@ export class AirtableAPI {
     await this.req<unknown>(
       "DELETE",
       `/v0/bases/${baseId}/webhooks/${webhookId}`
+    );
+  }
+
+  /**
+   * Extends a webhook's expiration by 7 days from now. Returns the new
+   * expiration time. May return `expirationTime: null` for hooks that don't
+   * expire (rare; defensive). Throws AirtableNotFoundError if the webhook
+   * has already been deleted or aged out — callers should treat that as a
+   * cue to recreate the webhook.
+   */
+  async refreshWebhook(
+    baseId: string,
+    webhookId: string
+  ): Promise<{ expirationTime: string | null }> {
+    return this.req<{ expirationTime: string | null }>(
+      "POST",
+      `/v0/bases/${baseId}/webhooks/${webhookId}/refresh`
     );
   }
 
@@ -405,6 +370,10 @@ export class AirtableAPI {
     if (res.status === 401) {
       const text = await res.text().catch(() => "");
       throw new AirtableAuthError(method, path, text);
+    }
+    if (res.status === 404) {
+      const text = await res.text().catch(() => "");
+      throw new AirtableNotFoundError(method, path, text);
     }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
