@@ -97,10 +97,12 @@ class Initials extends StatelessWidget {
     return _buildInitials(context, actor!, initialsSize);
   }
 
-  /// Load actor from database by ID
+  /// Load actor from database by ID. Resolves linked-contact aliases to
+  /// the user's canonical (primary) actor so initials render the same
+  /// regardless of which alias the caller passed in.
   Future<Actor?> _loadActor(ActorId id) async {
     try {
-      return await Actor.getOne(id);
+      return await Actor.getOne(Actor.canonicalId(id));
     } catch (e, t) {
       log.warning('Error loading actor with id $id', e, t);
       return null;

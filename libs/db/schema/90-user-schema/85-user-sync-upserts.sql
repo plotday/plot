@@ -36,6 +36,9 @@ CREATE OR REPLACE FUNCTION "user".upsert_thread_tag (
 DECLARE
     v_priority_id uuid;
     v_tag_type tag_type;
+    v_canonical_actor_id uuid;
+    v_actor_sibling_ids uuid[];
+    v_caller_sibling_ids uuid[];
     v_row thread_tag;
 BEGIN
     SELECT
@@ -58,12 +61,33 @@ BEGIN
     IF v_tag_type != 'count' AND "user".get_effective_role(user_id, v_priority_id) = 'viewer' THEN
         RAISE EXCEPTION 'Viewer members can only modify count tags';
     END IF;
-    IF v_tag_type = 'count' AND NOT (p_actor_id = ANY("user".user_contact_ids(user_id))) THEN
+    -- Resolve actor to canonical primary id and full linked-contact sibling
+    -- set. Linked contacts are equivalent identities for ownership and
+    -- storage of tag rows.
+    v_canonical_actor_id := "user".canonical_contact_id(p_actor_id);
+    v_actor_sibling_ids := "user".sibling_contact_ids(p_actor_id);
+    v_caller_sibling_ids := "user".user_contact_ids(user_id);
+    IF v_tag_type = 'count' AND NOT (v_actor_sibling_ids && v_caller_sibling_ids) THEN
         RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
     END IF;
 
+    -- Archive any sibling-aliased rows so a single canonical row remains.
+    -- This collapses prior writes against a non-primary linked contact id
+    -- (e.g. before primary flipped) into the current primary.
+    IF p_archived_at IS NULL AND array_length(v_actor_sibling_ids, 1) > 1 THEN
+        UPDATE thread_tag
+        SET archived_at = now(),
+            updated_by = COALESCE(p_updated_by, 0)
+        WHERE thread_id = p_thread_id
+          AND tag_id = p_tag_id
+          AND (occurrence IS NOT DISTINCT FROM p_occurrence)
+          AND actor_id = ANY(v_actor_sibling_ids)
+          AND actor_id != v_canonical_actor_id
+          AND archived_at IS NULL;
+    END IF;
+
     INSERT INTO thread_tag (actor_id, thread_id, occurrence, tag_id, updated_by, archived_at)
-        VALUES (p_actor_id, p_thread_id, p_occurrence, p_tag_id, COALESCE(p_updated_by, 0), p_archived_at)
+        VALUES (v_canonical_actor_id, p_thread_id, p_occurrence, p_tag_id, COALESCE(p_updated_by, 0), p_archived_at)
     ON CONFLICT (actor_id, thread_id, occurrence, tag_id)
         DO UPDATE SET
             archived_at = EXCLUDED.archived_at,
@@ -90,6 +114,9 @@ CREATE OR REPLACE FUNCTION "user".upsert_note_tag (
 DECLARE
     v_priority_id uuid;
     v_tag_type tag_type;
+    v_canonical_actor_id uuid;
+    v_actor_sibling_ids uuid[];
+    v_caller_sibling_ids uuid[];
     v_row note_tag;
 BEGIN
     SELECT
@@ -112,12 +139,29 @@ BEGIN
     IF v_tag_type = 'compute' THEN
         RAISE EXCEPTION 'Cannot add computed tag (tag_id: %)', p_tag_id;
     END IF;
-    IF v_tag_type = 'count' AND NOT (p_actor_id = ANY("user".user_contact_ids(user_id))) THEN
+    -- Resolve actor to canonical primary id and full linked-contact sibling
+    -- set. Linked contacts are equivalent identities.
+    v_canonical_actor_id := "user".canonical_contact_id(p_actor_id);
+    v_actor_sibling_ids := "user".sibling_contact_ids(p_actor_id);
+    v_caller_sibling_ids := "user".user_contact_ids(user_id);
+    IF v_tag_type = 'count' AND NOT (v_actor_sibling_ids && v_caller_sibling_ids) THEN
         RAISE EXCEPTION 'Cannot modify count tags for other users (tag_id: %)', p_tag_id;
     END IF;
 
+    -- Archive any sibling-aliased rows so a single canonical row remains.
+    IF p_archived_at IS NULL AND array_length(v_actor_sibling_ids, 1) > 1 THEN
+        UPDATE note_tag
+        SET archived_at = now(),
+            updated_by = COALESCE(p_updated_by, 0)
+        WHERE note_id = p_note_id
+          AND tag_id = p_tag_id
+          AND actor_id = ANY(v_actor_sibling_ids)
+          AND actor_id != v_canonical_actor_id
+          AND archived_at IS NULL;
+    END IF;
+
     INSERT INTO note_tag (actor_id, note_id, tag_id, updated_by, archived_at)
-        VALUES (p_actor_id, p_note_id, p_tag_id, COALESCE(p_updated_by, 0), p_archived_at)
+        VALUES (v_canonical_actor_id, p_note_id, p_tag_id, COALESCE(p_updated_by, 0), p_archived_at)
     ON CONFLICT (actor_id, note_id, tag_id)
         DO UPDATE SET
             archived_at = EXCLUDED.archived_at,

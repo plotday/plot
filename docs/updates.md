@@ -1,3 +1,4 @@
+- Fixed contacts with multiple linked email addresses appearing twice — the same person now shows up once everywhere (assignees, share, mentions, avatars), and assigning or completing a to-do for them stays a single entry even if Plot saw their other email later
 - Fixed "Show archived" turning itself off when you cleared the search bar — archived visibility is now fully independent from search and filters
 - Plot Team is now pre-attached when you start a thread in Using Plot — your feedback and questions go straight to the Plot team without needing to add them as a recipient first
 - Create Google Tasks from Plot — pick "Create new Task" when adding a link to a thread, choose a Google Tasks list, and Plot creates the task in Google Tasks and links it back automatically

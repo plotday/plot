@@ -51,12 +51,22 @@ class Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (actor != null) return _buildForActor(context, actor!);
+    if (actor != null) {
+      // Prefer the canonical (primary) actor so a user with multiple
+      // linked-contact aliases always renders with their primary identity.
+      final canonicalId = Actor.canonicalId(actor!.id);
+      if (canonicalId != actor!.id) {
+        final canonical = Actor.fromCache(canonicalId);
+        if (canonical != null) return _buildForActor(context, canonical);
+      }
+      return _buildForActor(context, actor!);
+    }
     if (actorId != null) {
-      final cached = Actor.fromCache(actorId!);
+      final canonicalId = Actor.canonicalId(actorId!);
+      final cached = Actor.fromCache(canonicalId);
       if (cached != null) return _buildForActor(context, cached);
       return FutureBuilder<Actor>(
-        future: Actor.getOne(actorId!),
+        future: Actor.getOne(canonicalId),
         builder: (context, snapshot) => snapshot.hasData
             ? _buildForActor(context, snapshot.data!)
             : _placeholder(context),

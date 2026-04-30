@@ -46,9 +46,70 @@ class Actor extends ActorRow {
   // In-memory cache for Actor lookups
   static final Map<ActorId, Actor> _cache = {};
 
+  /// Maps a contact's underlying user_id → the user's primary actor id.
+  /// Built incrementally as actors are cached. Lets [canonicalId] collapse
+  /// linked-contact aliases to the primary in O(1).
+  static final Map<Uuid, ActorId> _primaryByUser = {};
+
   /// Clear the entire Actor cache
   static void clearCache() {
     _cache.clear();
+    _primaryByUser.clear();
+  }
+
+  /// Add an actor to the cache, maintaining the primary-by-user index.
+  static void _cacheActor(Actor actor) {
+    _cache[actor.id] = actor;
+    final userId = actor.linkedUserId;
+    if (userId != null && actor.primary) {
+      _primaryByUser[userId] = actor.id;
+    }
+  }
+
+  /// Resolves [actorId] to the canonical actor id for its underlying person.
+  ///
+  /// Linked contacts (multiple email aliases for the same user) collapse to
+  /// the user's current primary contact id. Twist instances and contacts
+  /// not linked to any user pass through unchanged.
+  ///
+  /// Returns the input unchanged when:
+  ///   - the actor is not in the cache,
+  ///   - the actor has no [linkedUserId] (external contact / twist), or
+  ///   - the user's primary actor isn't yet cached.
+  ///
+  /// The cache is populated lazily — call sites that depend on canonical
+  /// resolution should ensure their target actors are loaded before
+  /// rendering. In practice the actor sync (`Actor.pull` / `pullCritical`)
+  /// covers self + thread-visible contacts up front.
+  static ActorId canonicalId(ActorId actorId) {
+    final actor = _cache[actorId];
+    if (actor == null) return actorId;
+    if (actor.primary) return actorId;
+    final userId = actor.linkedUserId;
+    if (userId == null) return actorId;
+    return _primaryByUser[userId] ?? actorId;
+  }
+
+  /// Whether two actor ids represent the same underlying person/twist.
+  /// Equivalent to `canonicalId(a) == canonicalId(b)`, but avoids two map
+  /// lookups when the ids are already equal.
+  static bool sameIdentity(ActorId a, ActorId b) {
+    if (a == b) return true;
+    return canonicalId(a) == canonicalId(b);
+  }
+
+  /// Deduplicate [ids] by canonical identity, preserving the first
+  /// occurrence's order. Useful when reading raw `actor_id` arrays from
+  /// the server (e.g. `note_tag.actor_ids` or `thread.contacts`) where
+  /// linked-contact aliases may surface as multiple ids for one person.
+  static List<ActorId> dedupeByIdentity(Iterable<ActorId> ids) {
+    final seen = <ActorId>{};
+    final out = <ActorId>[];
+    for (final id in ids) {
+      final canonical = canonicalId(id);
+      if (seen.add(canonical)) out.add(canonical);
+    }
+    return out;
   }
 
   static Future<void> pull() async {
@@ -58,6 +119,26 @@ class Actor extends ActorRow {
     await Store.get.pull(table, ActorsBase());
     // Repopulate cache with critical actors (self + twists)
     await pullCritical();
+    // Rebuild the primary-by-user index from Drift so canonicalId() can
+    // resolve any linked-alias actor synchronously without first having
+    // to load the primary individually.
+    await _rebuildPrimaryIndex();
+  }
+
+  /// Rebuilds [_primaryByUser] from the local Drift store. Cheap (one
+  /// query, returns one row per linked user), but covers every linked
+  /// contact the app has synced — so [canonicalId] never returns a stale
+  /// alias id just because the primary hasn't been read into [_cache] yet.
+  static Future<void> _rebuildPrimaryIndex() async {
+    final a = Store.get.actors;
+    final query = Store.get.select(a)
+      ..where((row) => row.linkedUserId.isNotNull() & row.primary.equals(true));
+    final rows = await query.get();
+    _primaryByUser.clear();
+    for (final row in rows) {
+      final userId = row.linkedUserId;
+      if (userId != null) _primaryByUser[userId] = row.id;
+    }
   }
 
   /// Loads only critical actors into cache: self actors and priority twists.
@@ -117,7 +198,7 @@ class Actor extends ActorRow {
 
     // Cache all fetched actors for synchronous lookups
     for (final actor in actors) {
-      _cache[actor.id] = actor;
+      _cacheActor(actor);
     }
 
     return actors;
@@ -171,7 +252,7 @@ class Actor extends ActorRow {
 
     // Store in cache and return
     final actor = actors.first;
-    _cache[id] = actor;
+    _cacheActor(actor);
     return actor;
   }
 

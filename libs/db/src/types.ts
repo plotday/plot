@@ -4767,6 +4767,7 @@ export type Database = {
         Args: { priority_id: string; user_id: string }
         Returns: undefined
       }
+      canonical_contact_id: { Args: { p_contact_id: string }; Returns: string }
       clear_thread_unread: {
         Args: {
           p_bumped_at?: string
@@ -4788,6 +4789,7 @@ export type Database = {
         Args: { priority_id: string; user_id: string }
         Returns: boolean
       }
+      sibling_contact_ids: { Args: { p_contact_id: string }; Returns: string[] }
       update_note_tags: {
         Args: {
           p_actor_id: string

@@ -2345,7 +2345,9 @@ class Thread extends Equatable implements Comparable<Thread> {
         Tag.private,
       ].where((tag) => hasTag(tag)).map((tag) => MapEntry(tag, [Base.actorId])),
     ),
-    ...(_tags?.tags ?? const {}),
+    // Linked-contact aliases collapse to the user's canonical actor.
+    for (final entry in (_tags?.tags ?? const {}).entries)
+      entry.key: Actor.dedupeByIdentity(entry.value),
   };
 
   /// Returns true if this activity is active (computed from query or false if not computed)
@@ -3546,10 +3548,18 @@ class Thread extends Equatable implements Comparable<Thread> {
         isAdding = false; // Removing the tag
       }
     } else if (tag.type == TagType.count) {
-      // Count behavior: add/remove current user while preserving other users
-      if (currentUsers.contains(currentUser)) {
-        // Remove current user from tag
-        currentUsers.remove(currentUser);
+      // Count behavior: add/remove current user while preserving other users.
+      // Linked-contact aliases collapse to the canonical id, so a tag set
+      // for any of the user's linked contacts counts as set for them.
+      final canonicalSelf = Actor.canonicalId(currentUser);
+      final hasSelfEntry = currentUsers.any(
+        (id) => Actor.canonicalId(id) == canonicalSelf,
+      );
+      if (hasSelfEntry) {
+        // Remove every linked-alias entry for the user
+        currentUsers.removeWhere(
+          (id) => Actor.canonicalId(id) == canonicalSelf,
+        );
         if (currentUsers.isEmpty) {
           currentTags.remove(tag);
         } else {
@@ -3557,8 +3567,8 @@ class Thread extends Equatable implements Comparable<Thread> {
         }
         isAdding = false; // Removing the user's count
       } else {
-        // Add current user to tag (increment count)
-        currentUsers.add(currentUser);
+        // Add user to tag (increment count) under canonical id
+        currentUsers.add(canonicalSelf);
         currentTags[tag] = currentUsers;
         isAdding = true; // Adding the user's count
       }
@@ -3927,7 +3937,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
   Future<void> delete() => copyWith(archivedAt: Value(DateTime.now())).save();
 
-  bool hasTag(Tag tag) {
+  bool hasTag(Tag tag, {ActorId? actorId}) {
     switch (tag) {
       case Tag.todo:
         return todo;
@@ -3938,7 +3948,11 @@ class Thread extends Equatable implements Comparable<Thread> {
       default:
         final currentTags = tags;
         final users = currentTags[tag];
-        return users != null && users.isNotEmpty;
+        if (users == null || users.isEmpty) return false;
+        if (actorId == null) return true;
+        // Linked-contact aliases collapse to the canonical id.
+        final canonical = Actor.canonicalId(actorId);
+        return users.any((id) => Actor.canonicalId(id) == canonical);
     }
   }
 

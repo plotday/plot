@@ -655,7 +655,7 @@ class Note extends Equatable implements Comparable<Note> {
   /// Ensures the reply tag exists on the thread for the current user.
   static Future<void> _ensureReplyOnThread(ThreadId threadId) async {
     final thread = await Thread.getOne(threadId);
-    final hasReply = thread.tags[Tag.reply]?.contains(Base.actorId) ?? false;
+    final hasReply = thread.hasTag(Tag.reply, actorId: Base.actorId);
     if (!hasReply) {
       await thread.toggleTag(Tag.reply).save();
     }
@@ -669,7 +669,7 @@ class Note extends Equatable implements Comparable<Note> {
     );
     if (!anyReply) {
       final thread = await Thread.getOne(threadId);
-      final hasReply = thread.tags[Tag.reply]?.contains(Base.actorId) ?? false;
+      final hasReply = thread.hasTag(Tag.reply, actorId: Base.actorId);
       if (hasReply) {
         await thread.toggleTag(Tag.reply).save();
       }
@@ -702,7 +702,10 @@ class Note extends Equatable implements Comparable<Note> {
     // Check links assigned to user (or unassigned) with non-done status
     final links = await Link.getForThread(threadId);
     for (final link in links) {
-      if (link.assigneeId != null && link.assigneeId != actorId) continue;
+      if (link.assigneeId != null &&
+          !Actor.sameIdentity(link.assigneeId!, actorId)) {
+        continue;
+      }
       final doneStatuses =
           link.getTypeConfig()?.statuses?.where((s) => s.done) ?? [];
       if (doneStatuses.isEmpty) continue;
@@ -714,9 +717,16 @@ class Note extends Equatable implements Comparable<Note> {
   Future<void> archive() => copyWith(archivedAt: Value(DateTime.now())).save();
 
   // Tag-related getters
+  //
+  // Each tag's actor list is deduped by canonical identity: linked-contact
+  // aliases (multiple email contacts for the same user) collapse to the
+  // user's primary actor id. The raw `note_tag` rows can target any
+  // linked-contact alias; collapsing here gives the rest of the app a
+  // stable per-user view.
   Map<Tag, List<ActorId>> get tags => {
     if (isPrivate) Tag.private: [authorId],
-    ...(_tags?.tags ?? const {}),
+    for (final entry in (_tags?.tags ?? const {}).entries)
+      entry.key: Actor.dedupeByIdentity(entry.value),
   };
 
   /// Get all actors who have Tag.todo or Tag.done on this note (i.e., assignees).
@@ -770,14 +780,19 @@ class Note extends Equatable implements Comparable<Note> {
     return true;
   }
 
-  /// Check if a specific actor has a given tag
+  /// Check if a specific actor has a given tag.
+  ///
+  /// Linked-contact aliases are equivalent to their primary, so a tag set
+  /// for any of a user's linked contacts counts as set for any other one.
   bool hasTag(Tag tag, [ActorId? actorId]) {
     if (tag == Tag.private) return isPrivate;
     final actors = tags[tag];
     if (actorId == null) {
       return actors?.isNotEmpty == true;
     }
-    return actors?.contains(actorId!) ?? false;
+    if (actors == null) return false;
+    final canonical = Actor.canonicalId(actorId);
+    return actors.any((id) => Actor.canonicalId(id) == canonical);
   }
 
   /// Check if a specific actor is assigned to this note (has Tag.todo)
@@ -824,6 +839,9 @@ class Note extends Equatable implements Comparable<Note> {
     List<ActorId> actorIds, {
     int hiddenCount = 0,
   }) async {
+    // Collapse linked-contact aliases so a user with multiple email
+    // addresses appears once.
+    actorIds = Actor.dedupeByIdentity(actorIds);
     if (actorIds.isEmpty && hiddenCount == 0) return '';
 
     // Fetch actor names from the database
@@ -904,8 +922,14 @@ class Note extends Equatable implements Comparable<Note> {
       return copyWith(accessContacts: Value(value ? [actorId] : null));
     }
 
-    // Count tags can only be set for the current user
-    if (tag.type == TagType.count && actorId != Base.actorId) {
+    // Resolve the target to its canonical (primary) actor id and treat
+    // linked-contact aliases as equivalent to the canonical for both the
+    // self-check and the local optimistic state.
+    final canonicalActorId = Actor.canonicalId(actorId);
+
+    // Count tags can only be set for the current user (any linked alias).
+    if (tag.type == TagType.count &&
+        !Actor.sameIdentity(actorId, Base.actorId)) {
       log.warning(
         'Attempted to set count tag ${tag.name} for actor $actorId, but only current user can modify count tags',
       );
@@ -924,25 +948,34 @@ class Note extends Equatable implements Comparable<Note> {
         : {};
 
     if (value) {
-      // Add actor to tag
+      // Add the canonical actor if no linked-alias entry already covers it.
       currentTags.putIfAbsent(tag, () => []);
-      if (!currentTags[tag]!.contains(actorId)) {
-        currentTags[tag]!.add(actorId);
+      final hasIdentity = currentTags[tag]!.any(
+        (id) => Actor.canonicalId(id) == canonicalActorId,
+      );
+      if (!hasIdentity) {
+        currentTags[tag]!.add(canonicalActorId);
       }
     } else {
-      // Remove actor from tag
+      // Remove every entry that resolves to the same identity — clearing
+      // a tag for a user clears it for all of their linked-contact aliases.
       if (currentTags[tag] != null) {
-        currentTags[tag]!.remove(actorId);
+        currentTags[tag]!.removeWhere(
+          (id) => Actor.canonicalId(id) == canonicalActorId,
+        );
         if (currentTags[tag]!.isEmpty) {
           currentTags.remove(tag);
         }
       }
     }
 
-    // Track which tag changed - use composite key "tagId:actorId" for cross-user tags
-    final tagKey = actorId == Base.actorId
+    // Track which tag changed. Use the canonical actor id in the composite
+    // key so the server stores the row against the user's current primary
+    // contact. The DB function (update_note_tags) sibling-expands the
+    // target on both writes and clears.
+    final tagKey = Actor.sameIdentity(actorId, Base.actorId)
         ? tag.id.toString()
-        : '${tag.id}:$actorId';
+        : '${tag.id}:$canonicalActorId';
     currentTagUpdates[tagKey] = value;
 
     // Create new tags row with updated data

@@ -315,9 +315,12 @@ class ChangeNotePrivacy extends ShowCommands {
     final threadContacts = threadBloc.state.thread.contacts;
 
     final actors = <Actor>[];
+    final seenCanonicalIds = <ActorId>{};
     for (final contactId in threadContacts) {
       try {
-        actors.add(await Actor.getOne(ActorId.fromUuid(contactId)));
+        final canonical = Actor.canonicalId(ActorId.fromUuid(contactId));
+        if (!seenCanonicalIds.add(canonical)) continue;
+        actors.add(await Actor.getOne(canonical));
       } catch (_) {
         // Skip contacts we can't resolve
       }
@@ -601,11 +604,19 @@ class PickNoteAssignee extends ShowCommands {
     final activity = await Thread.getOne(note.threadId);
     // Refresh note to get latest tag state
     final freshNote = await note.refresh();
+    // activeAssignees is already canonical-deduped (Note.tags collapses
+    // linked-contact aliases). The picker keys all comparisons on canonical
+    // identity so a user with multiple linked contacts shows up once.
     final assigneeIds = freshNote.activeAssignees;
+    final assigneeCanonicalIds = assigneeIds.map(Actor.canonicalId).toSet();
 
-    // Resolve assigned actors for the "Assigned" section
+    // Resolve assigned actors for the "Assigned" section. Map each assignee
+    // through its canonical actor so the row renders the user's primary
+    // identity (name/email/avatar), not whichever alias the row was filed on.
     final assignedActors = assigneeIds.isNotEmpty
-        ? await Future.wait(assigneeIds.map(Actor.getOne))
+        ? await Future.wait(
+            assigneeIds.map((id) => Actor.getOne(Actor.canonicalId(id))),
+          )
         : <Actor>[];
 
     // Hidden active assignees (announce-topic-only) — count only, no identity
@@ -615,25 +626,33 @@ class PickNoteAssignee extends ShowCommands {
         ? '+$hiddenActiveCount hidden'
         : null;
 
-    // Resolve thread contacts for the "With" section
+    // Resolve thread contacts for the "With" section. Dedupe by canonical
+    // identity so a contact present via multiple linked aliases (or via
+    // both thread.contacts and a group) collapses to one row.
     final contactActors = <Actor>[];
+    final seenContactCanonicalIds = <ActorId>{};
     for (final contactId in activity.contacts) {
       try {
-        final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+        final canonical = Actor.canonicalId(ActorId.fromUuid(contactId));
+        if (!seenContactCanonicalIds.add(canonical)) continue;
+        final actor = await Actor.getOne(canonical);
         if (!actor.self) contactActors.add(actor);
       } catch (_) {
         // Skip contacts whose actors can't be resolved
       }
     }
-    final contactActorIds = contactActors.map((a) => a.id).toSet();
+    final contactCanonicalIds = contactActors.map((a) => a.id).toSet();
 
     // Exclude already-assigned contacts from the With section
     final unassignedContacts = contactActors
-        .where((a) => !assigneeIds.contains(a.id))
+        .where((a) => !assigneeCanonicalIds.contains(a.id))
         .toList();
 
     // Exclude both assigned and thread contact actors from Contacts
-    final excludeFromContacts = <ActorId>[...assigneeIds, ...contactActorIds];
+    final excludeFromContacts = <ActorId>[
+      ...assigneeCanonicalIds,
+      ...contactCanonicalIds,
+    ];
 
     return Commands(
       prompt: 'Assign to',
@@ -1020,10 +1039,14 @@ class PickDraftNoteAssignee extends ShowCommands {
     Future<void> Function(Note note, {Thread? thread}) onUpdate,
   ) async {
     final assigneeIds = note.activeAssignees;
+    final assigneeCanonicalIds = assigneeIds.map(Actor.canonicalId).toSet();
 
-    // Resolve assigned actors for the "Assigned" section
+    // Resolve assigned actors for the "Assigned" section, mapped through
+    // canonical ids so each row renders the user's primary identity.
     final assignedActors = assigneeIds.isNotEmpty
-        ? await Future.wait(assigneeIds.map(Actor.getOne))
+        ? await Future.wait(
+            assigneeIds.map((id) => Actor.getOne(Actor.canonicalId(id))),
+          )
         : <Actor>[];
 
     // Hidden active assignees (announce-topic-only) — count only, no identity
@@ -1033,25 +1056,31 @@ class PickDraftNoteAssignee extends ShowCommands {
         ? '+$hiddenActiveCount hidden'
         : null;
 
-    // Resolve thread contacts for the "With" section
+    // Resolve thread contacts for the "With" section, deduped by identity.
     final contactActors = <Actor>[];
+    final seenContactCanonicalIds = <ActorId>{};
     for (final contactId in thread.contacts) {
       try {
-        final actor = await Actor.getOne(ActorId.fromUuid(contactId));
+        final canonical = Actor.canonicalId(ActorId.fromUuid(contactId));
+        if (!seenContactCanonicalIds.add(canonical)) continue;
+        final actor = await Actor.getOne(canonical);
         if (!actor.self) contactActors.add(actor);
       } catch (_) {
         // Skip contacts whose actors can't be resolved
       }
     }
-    final contactActorIds = contactActors.map((a) => a.id).toSet();
+    final contactCanonicalIds = contactActors.map((a) => a.id).toSet();
 
     // Exclude already-assigned contacts from the With section
     final unassignedContacts = contactActors
-        .where((a) => !assigneeIds.contains(a.id))
+        .where((a) => !assigneeCanonicalIds.contains(a.id))
         .toList();
 
     // Exclude both assigned and thread contact actors from Contacts
-    final excludeFromContacts = <ActorId>[...assigneeIds, ...contactActorIds];
+    final excludeFromContacts = <ActorId>[
+      ...assigneeCanonicalIds,
+      ...contactCanonicalIds,
+    ];
 
     return Commands(
       prompt: 'Assign to',
