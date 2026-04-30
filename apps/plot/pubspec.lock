@@ -1891,6 +1891,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.0-dev.48"
+  super_editor_spellcheck:
+    dependency: "direct main"
+    description:
+      path: super_editor_spellcheck
+      ref: "291a69308f64863fee813df1bd483515038483f9"
+      resolved-ref: "291a69308f64863fee813df1bd483515038483f9"
+      url: "https://github.com/Flutter-Bounty-Hunters/super_editor.git"
+    source: git
+    version: "0.0.1"
   super_keyboard:
     dependency: transitive
     description:

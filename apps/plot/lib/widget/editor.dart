@@ -5,10 +5,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:super_editor/super_editor.dart' hide Editor;
 import 'package:super_editor/super_editor.dart' as super_editor show Editor;
+import 'package:super_editor_spellcheck/super_editor_spellcheck.dart';
 import 'package:flutter_debouncer/flutter_debouncer.dart';
 import 'package:follow_the_leader/follow_the_leader.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -36,6 +37,7 @@ import 'editor_mention_popover.dart';
 import 'editor_link_detector.dart';
 import 'editor_link_toolbar.dart';
 import 'editor_link_modal.dart';
+import 'editor_spelling_toolbar.dart';
 import 'plot_image_component.dart';
 import 'list_item_component.dart';
 import 'task_component.dart';
@@ -98,10 +100,7 @@ List<String> _searchHighlightTerms(String search) {
   final terms = <String>[];
   for (final raw in search.split(RegExp(r'\s+'))) {
     if (raw.isEmpty) continue;
-    final cleaned = raw.replaceAll(
-      RegExp(r'''['"*()/:+\-^~{}\[\]@#]'''),
-      '',
-    );
+    final cleaned = raw.replaceAll(RegExp(r'''['"*()/:+\-^~{}\[\]@#]'''), '');
     if (cleaned.length < 2) continue;
     terms.add(cleaned.toLowerCase());
   }
@@ -225,8 +224,10 @@ void _trimCodeBlockTrailingNewlines(MutableDocument document) {
 /// Extract language hints from fenced code blocks and attach to document nodes
 void _attachCodeBlockLanguages(String markdown, MutableDocument document) {
   final langRegex = RegExp(r'^```(\w+)', multiLine: true);
-  final languages =
-      langRegex.allMatches(markdown).map((m) => m.group(1)!).toList();
+  final languages = langRegex
+      .allMatches(markdown)
+      .map((m) => m.group(1)!)
+      .toList();
 
   int langIndex = 0;
   for (int i = 0; i < document.nodeCount; i++) {
@@ -285,12 +286,11 @@ class MentionItem {
     TwistInstance twist, {
     required List<TwistInstance> allInstances,
     String? teamName,
-  }) =>
-      MentionItem(
-        id: twist.id.toString(),
-        name: twist.displayName(allInstances: allInstances, teamName: teamName),
-        isTwist: true,
-      );
+  }) => MentionItem(
+    id: twist.id.toString(),
+    name: twist.displayName(allInstances: allInstances, teamName: teamName),
+    isTwist: true,
+  );
 
   /// Create from an Actor
   factory MentionItem.fromActor(Actor actor) => MentionItem(
@@ -379,6 +379,12 @@ class EditorState extends State<Editor> {
       OverlayPortalController();
   bool _showLinkToolbarAbove = false;
   bool _listenersAttached = false;
+
+  // Spellcheck (macOS native, iOS/Android via Flutter's DefaultSpellCheckService;
+  // Windows/Linux/Web are unsupported by super_editor_spellcheck and skipped).
+  SuperEditorAndroidControlsController? _androidControlsController;
+  SuperEditorIosControlsController? _iosControlsController;
+  SpellingAndGrammarPlugin? _spellingPlugin;
   // Saved state for restoring selection after link modal closes
   DocumentSelection? _savedSelection;
   LinkAttribution? _savedExistingLink;
@@ -442,10 +448,9 @@ class EditorState extends State<Editor> {
         // Insert all nodes from new document
         int index = 0;
         for (final node in newDocument.toList()) {
-          requests.add(InsertNodeAtIndexRequest(
-            nodeIndex: index++,
-            newNode: node,
-          ));
+          requests.add(
+            InsertNodeAtIndexRequest(nodeIndex: index++, newNode: node),
+          );
         }
       } else {
         requests.add(ClearDocumentRequest());
@@ -564,9 +569,7 @@ class EditorState extends State<Editor> {
     // Capture undo snapshot: push the previous state onto the undo stack
     // when a real edit occurs (skip if we're restoring from a snapshot).
     if (!_isRestoringSnapshot && _lastSnapshot != null) {
-      final hasContentChange = changeList.any(
-        (e) => e is DocumentEdit,
-      );
+      final hasContentChange = changeList.any((e) => e is DocumentEdit);
       if (hasContentChange) {
         _undoStack.add(_lastSnapshot!);
         if (_undoStack.length > _maxUndoHistory) {
@@ -631,6 +634,8 @@ class EditorState extends State<Editor> {
     );
     _linkLeaderLink = LeaderLink();
 
+    _initSpellcheck();
+
     // Don't call clear() if we have initial content
     // Defer clear until after first frame to ensure SuperEditor layout is ready
     if (widget.initialContent == null || widget.initialContent!.isEmpty) {
@@ -684,13 +689,20 @@ class EditorState extends State<Editor> {
           // Insert all nodes from new document
           int index = 0;
           for (final node in newDocument.toList()) {
-            requests.add(InsertNodeAtIndexRequest(
-              nodeIndex: index++,
-              newNode: node,
-            ));
+            requests.add(
+              InsertNodeAtIndexRequest(nodeIndex: index++, newNode: node),
+            );
           }
 
           _editor.execute(requests);
+        });
+
+        // The spell-check reaction only watches NodeChangeEvents (text edits)
+        // and ignores NodeInsertedEvents, so the bulk insert above doesn't
+        // trigger a spell check on the freshly-loaded draft. Re-run analysis.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _refreshSpellcheckReaction();
         });
       }
     }
@@ -711,7 +723,73 @@ class EditorState extends State<Editor> {
     }
     _mentionDetector.dispose();
     _linkDetector.dispose();
+    _androidControlsController?.dispose();
+    _iosControlsController?.dispose();
     super.dispose();
+  }
+
+  /// Construct the spellcheck plugin and platform controllers.
+  /// macOS gets native NSSpellChecker (spell + grammar). iOS/Android use
+  /// Flutter's DefaultSpellCheckService (spell only). Web/Windows/Linux skip.
+  void _initSpellcheck() {
+    if (kIsWeb) return;
+    final platform = defaultTargetPlatform;
+    final supported =
+        platform == TargetPlatform.macOS ||
+        platform == TargetPlatform.iOS ||
+        platform == TargetPlatform.android;
+    if (!supported) return;
+
+    if (platform == TargetPlatform.android) {
+      _androidControlsController = SuperEditorAndroidControlsController();
+    } else if (platform == TargetPlatform.iOS) {
+      _iosControlsController = SuperEditorIosControlsController();
+    }
+
+    _spellingPlugin = SpellingAndGrammarPlugin(
+      androidControlsController: _androidControlsController,
+      iosControlsController: _iosControlsController,
+      spellCheckDelayAfterEdit: const Duration(milliseconds: 500),
+      toolbarBuilder: editorSpellingToolbarBuilder,
+      ignoreRules: [
+        SpellingIgnoreRules.byAttributionFilter((a) => a is LinkAttribution),
+        SpellingIgnoreRules.byAttributionFilter(
+          (a) => a is CommittedEditorMentionAttribution,
+        ),
+        SpellingIgnoreRules.byAttributionFilter(
+          (a) => a == editorMentionComposingAttribution,
+        ),
+      ],
+    );
+    // The constructor captures spellingErrorUnderlineStyle but never forwards
+    // it to the styler — only the setter does. Apply via setter.
+    _spellingPlugin!.spellingErrorUnderlineStyle = const SquiggleUnderlineStyle(
+      color: Color(0x99E54B4B),
+      thickness: 1,
+      jaggedDeltaY: 1.5,
+    );
+
+    // Grammar: same constructor bug — `isGrammarCheckEnabled: false` doesn't
+    // propagate to the reaction (which defaults to true). The reaction is
+    // created during the plugin's attach() on first SuperEditor build, so
+    // toggle it on the next frame. Same hook re-analyzes the document for
+    // the case where content arrived via didUpdateWidget after attach: the
+    // reaction only watches NodeChangeEvents and skips bulk node inserts.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshSpellcheckReaction(disableGrammar: true);
+    });
+  }
+
+  /// Walk the editor's reaction pipeline to find our spell/grammar reaction
+  /// and (optionally) disable grammar, then trigger a whole-document analysis.
+  void _refreshSpellcheckReaction({bool disableGrammar = false}) {
+    final reaction = _editor.reactionPipeline
+        .whereType<SpellingAndGrammarReaction>()
+        .firstOrNull;
+    if (reaction == null) return;
+    if (disableGrammar) reaction.isGrammarCheckEnabled = false;
+    reaction.analyzeWholeDocument(_editor.context);
   }
 
   @override
@@ -743,79 +821,99 @@ class EditorState extends State<Editor> {
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTap: () => _editorFocusNode.requestFocus(),
-              child: SuperEditor(
-                inputRole: 'plot-note-editor',
-                autofocus: widget.autofocus,
-                editor: _editor,
-                focusNode: _editorFocusNode,
-                shrinkWrap: widget.shrinkWrap,
-                scrollController: _scrollController,
-                documentLayoutKey: _docLayoutKey,
-                inputSource: _inputSource,
-                gestureMode: _gestureMode,
-                documentOverlayBuilders: [
-                  // Platform-specific overlays for mobile
-                  if (defaultTargetPlatform == TargetPlatform.android) ...[
-                    SuperEditorAndroidHandlesDocumentLayerBuilder(
-                      caretColor: context.theme.colors.mutedForeground,
-                    ),
-                    SuperEditorAndroidToolbarFocalPointDocumentLayerBuilder(),
-                  ] else if (defaultTargetPlatform == TargetPlatform.iOS) ...[
-                    SuperEditorIosHandlesDocumentLayerBuilder(),
-                    SuperEditorIosToolbarFocalPointDocumentLayerBuilder(),
-                  ] else ...[
-                    DefaultCaretOverlayBuilder(
-                      caretStyle: CaretStyle().copyWith(
-                        color: context.theme.colors.mutedForeground,
+              child: _wrapWithControlsScopes(
+                SuperEditor(
+                  inputRole: 'plot-note-editor',
+                  autofocus: widget.autofocus,
+                  editor: _editor,
+                  focusNode: _editorFocusNode,
+                  shrinkWrap: widget.shrinkWrap,
+                  scrollController: _scrollController,
+                  documentLayoutKey: _docLayoutKey,
+                  inputSource: _inputSource,
+                  gestureMode: _gestureMode,
+                  plugins: {if (_spellingPlugin != null) _spellingPlugin!},
+                  documentOverlayBuilders: [
+                    // Platform-specific overlays for mobile
+                    if (defaultTargetPlatform == TargetPlatform.android) ...[
+                      SuperEditorAndroidHandlesDocumentLayerBuilder(
+                        caretColor: context.theme.colors.mutedForeground,
                       ),
-                    ),
+                      SuperEditorAndroidToolbarFocalPointDocumentLayerBuilder(),
+                    ] else if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+                      SuperEditorIosHandlesDocumentLayerBuilder(),
+                      SuperEditorIosToolbarFocalPointDocumentLayerBuilder(),
+                    ] else ...[
+                      DefaultCaretOverlayBuilder(
+                        caretStyle: CaretStyle().copyWith(
+                          color: context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ],
+                    // Position leader at caret for mention popover
+                    _buildMentionLeaderOverlay,
+                    // Position leader at selection extent for link toolbar
+                    _buildLinkLeaderOverlay,
                   ],
-                  // Position leader at caret for mention popover
-                  _buildMentionLeaderOverlay,
-                  // Position leader at selection extent for link toolbar
-                  _buildLinkLeaderOverlay,
-                ],
-                stylesheet: _buildStylesheet(context, isDark),
-                selectionStyle: SelectionStyles(
-                  selectionColor: context.theme.colors.primaryForeground,
+                  stylesheet: _buildStylesheet(context, isDark),
+                  selectionStyle: SelectionStyles(
+                    selectionColor: context.theme.colors.primaryForeground,
+                  ),
+                  componentBuilders: [
+                    if (widget.hint != null)
+                      HintComponentBuilder(
+                        widget.hint!,
+                        (context) => _baseTextStyle(
+                          context,
+                        ).copyWith(color: context.theme.plotColors.muted),
+                      ),
+                    PlotTaskComponentBuilder(_editor),
+                    const PlotImageComponentBuilder(),
+                    const PlotListItemComponentBuilder(),
+                    ...defaultComponentBuilders,
+                  ],
+                  keyboardActions: [
+                    _bubbleOverrideKeys,
+                    if (_isEmpty) _bubbleArrowKeys,
+                    _handleMentionPopoverNavigation,
+                    _buildEnterKeyHandler(settingsState.enterBehavior),
+                    _handlePunctuationAfterMention,
+                    _handleBackspaceOverMention,
+                    _handleCmdKForLink,
+                    _handleSmartPaste,
+                    _handleUndoKeyPress,
+                    _handleRedoKeyPress,
+                    // Use IME keyboard actions on mobile, regular keyboard actions on desktop
+                    // (SuperEditor's built-in undo/redo are superseded by our handlers above)
+                    ...(_inputSource == TextInputSource.ime
+                        ? defaultImeKeyboardActions
+                        : defaultKeyboardActions),
+                    _bubbleSpecialKeys, // Process meta key combos first to allow propagation
+                  ],
                 ),
-                componentBuilders: [
-                  if (widget.hint != null)
-                    HintComponentBuilder(
-                      widget.hint!,
-                      (context) => _baseTextStyle(
-                        context,
-                      ).copyWith(color: context.theme.plotColors.muted),
-                    ),
-                  PlotTaskComponentBuilder(_editor),
-                  const PlotImageComponentBuilder(),
-                  const PlotListItemComponentBuilder(),
-                  ...defaultComponentBuilders,
-                ],
-                keyboardActions: [
-                  _bubbleOverrideKeys,
-                  if (_isEmpty) _bubbleArrowKeys,
-                  _handleMentionPopoverNavigation,
-                  _buildEnterKeyHandler(settingsState.enterBehavior),
-                  _handlePunctuationAfterMention,
-                  _handleBackspaceOverMention,
-                  _handleCmdKForLink,
-                  _handleSmartPaste,
-                  _handleUndoKeyPress,
-                  _handleRedoKeyPress,
-                  // Use IME keyboard actions on mobile, regular keyboard actions on desktop
-                  // (SuperEditor's built-in undo/redo are superseded by our handlers above)
-                  ...(_inputSource == TextInputSource.ime
-                      ? defaultImeKeyboardActions
-                      : defaultKeyboardActions),
-                  _bubbleSpecialKeys, // Process meta key combos first to allow propagation
-                ],
               ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  Widget _wrapWithControlsScopes(Widget child) {
+    Widget result = child;
+    if (_iosControlsController != null) {
+      result = SuperEditorIosControlsScope(
+        controller: _iosControlsController!,
+        child: result,
+      );
+    }
+    if (_androidControlsController != null) {
+      result = SuperEditorAndroidControlsScope(
+        controller: _androidControlsController!,
+        child: result,
+      );
+    }
+    return result;
   }
 
   /// Submit from keyboard (Enter key) - includes first-time prompt check
@@ -983,8 +1081,10 @@ class EditorState extends State<Editor> {
   /// Serialize a document selection to markdown with mentions.
   /// Like [_serializeWithMentions] but scoped to the given selection.
   String _serializeSelectionWithMentions(DocumentSelection selection) {
-    String markdown =
-        serializeDocumentToMarkdown(_document, selection: selection);
+    String markdown = serializeDocumentToMarkdown(
+      _document,
+      selection: selection,
+    );
 
     // Get the selected nodes to find mention attributions
     final normalizedSelection = selection.normalize(_document);
@@ -1067,10 +1167,7 @@ class EditorState extends State<Editor> {
     // Insert all nodes from the snapshot document
     int index = 0;
     for (final node in newDocument.toList()) {
-      requests.add(InsertNodeAtIndexRequest(
-        nodeIndex: index++,
-        newNode: node,
-      ));
+      requests.add(InsertNodeAtIndexRequest(nodeIndex: index++, newNode: node));
     }
 
     _editor.execute(requests);
@@ -1178,16 +1275,19 @@ class EditorState extends State<Editor> {
   /// Build the combined mention items list from twists and actors
   List<MentionItem> _buildMentionItems() {
     // Filter out connectors that don't handle replies or aren't connected
-    final mentionableTwists = widget.twists
-        .where((t) => !t.isSource || (t.defaultMentionCreated && t.userConnected));
+    final mentionableTwists = widget.twists.where(
+      (t) => !t.isSource || (t.defaultMentionCreated && t.userConnected),
+    );
     // Twists first, then actors (excluding actors that are already represented by twists)
     final twistActorIds = mentionableTwists.map((t) => t.id.toString()).toSet();
     return [
-      ...mentionableTwists.map((twist) => MentionItem.fromTwist(
-        twist,
-        allInstances: widget.twists,
-        teamName: null,
-      )),
+      ...mentionableTwists.map(
+        (twist) => MentionItem.fromTwist(
+          twist,
+          allInstances: widget.twists,
+          teamName: null,
+        ),
+      ),
       ...widget.actors
           .where((actor) => !twistActorIds.contains(actor.id.toString()))
           .map(MentionItem.fromActor),
@@ -1630,9 +1730,9 @@ class EditorState extends State<Editor> {
     if (_composer.selection != null && !_composer.selection!.isCollapsed) {
       final pastePosition =
           CommonEditorOperations.getDocumentPositionAfterExpandedDeletion(
-        document: _document,
-        selection: _composer.selection!,
-      );
+            document: _document,
+            selection: _composer.selection!,
+          );
       if (pastePosition == null) return;
 
       _editor.execute([
@@ -1677,13 +1777,15 @@ class EditorState extends State<Editor> {
             documentRange: DocumentRange(
               start: DocumentPosition(
                 nodeId: insertPosition.nodeId,
-                nodePosition:
-                    TextNodePosition(offset: insertOffset + span.start),
+                nodePosition: TextNodePosition(
+                  offset: insertOffset + span.start,
+                ),
               ),
               end: DocumentPosition(
                 nodeId: insertPosition.nodeId,
-                nodePosition:
-                    TextNodePosition(offset: insertOffset + span.end + 1),
+                nodePosition: TextNodePosition(
+                  offset: insertOffset + span.end + 1,
+                ),
               ),
             ),
             attributions: {span.attribution},
@@ -1702,8 +1804,7 @@ class EditorState extends State<Editor> {
     final requests = <EditRequest>[];
 
     if (cursorNode is TextNode) {
-      final offset =
-          (insertPosition.nodePosition as TextNodePosition).offset;
+      final offset = (insertPosition.nodePosition as TextNodePosition).offset;
       final existingText = cursorNode.text;
 
       // Text after cursor that will be moved to a new trailing paragraph
@@ -1722,32 +1823,35 @@ class EditorState extends State<Editor> {
       if (canMergeFirst && firstParsed is TextNode) {
         // Delete text after cursor from current node
         if (existingText.length > offset) {
-          requests.add(DeleteContentRequest(
-            documentRange: DocumentRange(
-              start: DocumentPosition(
-                nodeId: cursorNode.id,
-                nodePosition: TextNodePosition(offset: offset),
-              ),
-              end: DocumentPosition(
-                nodeId: cursorNode.id,
-                nodePosition:
-                    TextNodePosition(offset: existingText.length),
+          requests.add(
+            DeleteContentRequest(
+              documentRange: DocumentRange(
+                start: DocumentPosition(
+                  nodeId: cursorNode.id,
+                  nodePosition: TextNodePosition(offset: offset),
+                ),
+                end: DocumentPosition(
+                  nodeId: cursorNode.id,
+                  nodePosition: TextNodePosition(offset: existingText.length),
+                ),
               ),
             ),
-          ));
+          );
         }
 
         // Append the first parsed node's text to current node
         final firstText = firstParsed.text;
         if (firstText.toPlainText().isNotEmpty) {
-          requests.add(InsertTextRequest(
-            documentPosition: DocumentPosition(
-              nodeId: cursorNode.id,
-              nodePosition: TextNodePosition(offset: offset),
+          requests.add(
+            InsertTextRequest(
+              documentPosition: DocumentPosition(
+                nodeId: cursorNode.id,
+                nodePosition: TextNodePosition(offset: offset),
+              ),
+              textToInsert: firstText.toPlainText(),
+              attributions: {},
             ),
-            textToInsert: firstText.toPlainText(),
-            attributions: {},
-          ));
+          );
 
           // Apply attributions from the first parsed node
           final firstSpans = firstText.getAttributionSpansInRange(
@@ -1755,21 +1859,23 @@ class EditorState extends State<Editor> {
             range: SpanRange(0, firstText.length - 1),
           );
           for (final span in firstSpans) {
-            requests.add(AddTextAttributionsRequest(
-              documentRange: DocumentRange(
-                start: DocumentPosition(
-                  nodeId: cursorNode.id,
-                  nodePosition:
-                      TextNodePosition(offset: offset + span.start),
+            requests.add(
+              AddTextAttributionsRequest(
+                documentRange: DocumentRange(
+                  start: DocumentPosition(
+                    nodeId: cursorNode.id,
+                    nodePosition: TextNodePosition(offset: offset + span.start),
+                  ),
+                  end: DocumentPosition(
+                    nodeId: cursorNode.id,
+                    nodePosition: TextNodePosition(
+                      offset: offset + span.end + 1,
+                    ),
+                  ),
                 ),
-                end: DocumentPosition(
-                  nodeId: cursorNode.id,
-                  nodePosition:
-                      TextNodePosition(offset: offset + span.end + 1),
-                ),
+                attributions: {span.attribution},
               ),
-              attributions: {span.attribution},
-            ));
+            );
           }
         }
       }
@@ -1777,18 +1883,20 @@ class EditorState extends State<Editor> {
       // When the first parsed node was not merged, the existing text after
       // the cursor must still be split off into a trailing paragraph.
       if (!canMergeFirst && existingText.length > offset) {
-        requests.add(DeleteContentRequest(
-          documentRange: DocumentRange(
-            start: DocumentPosition(
-              nodeId: cursorNode.id,
-              nodePosition: TextNodePosition(offset: offset),
-            ),
-            end: DocumentPosition(
-              nodeId: cursorNode.id,
-              nodePosition: TextNodePosition(offset: existingText.length),
+        requests.add(
+          DeleteContentRequest(
+            documentRange: DocumentRange(
+              start: DocumentPosition(
+                nodeId: cursorNode.id,
+                nodePosition: TextNodePosition(offset: offset),
+              ),
+              end: DocumentPosition(
+                nodeId: cursorNode.id,
+                nodePosition: TextNodePosition(offset: existingText.length),
+              ),
             ),
           ),
-        ));
+        );
       }
 
       // Insert remaining parsed nodes as new document nodes (skip the first
@@ -1796,21 +1904,25 @@ class EditorState extends State<Editor> {
       var insertIndex = cursorNodeIndex + 1;
       final firstUnmergedIndex = canMergeFirst ? 1 : 0;
       for (int i = firstUnmergedIndex; i < parsedNodes.length; i++) {
-        requests.add(InsertNodeAtIndexRequest(
-          nodeIndex: insertIndex++,
-          newNode: parsedNodes[i],
-        ));
+        requests.add(
+          InsertNodeAtIndexRequest(
+            nodeIndex: insertIndex++,
+            newNode: parsedNodes[i],
+          ),
+        );
       }
 
       // Add trailing paragraph with text after cursor (if any)
       if (afterText.toPlainText().isNotEmpty) {
-        requests.add(InsertNodeAtIndexRequest(
-          nodeIndex: insertIndex,
-          newNode: ParagraphNode(
-            id: super_editor.Editor.createNodeId(),
-            text: afterText,
+        requests.add(
+          InsertNodeAtIndexRequest(
+            nodeIndex: insertIndex,
+            newNode: ParagraphNode(
+              id: super_editor.Editor.createNodeId(),
+              text: afterText,
+            ),
           ),
-        ));
+        );
       }
 
       // If the cursor was in an empty paragraph and we inserted structural
@@ -1825,10 +1937,9 @@ class EditorState extends State<Editor> {
       // Non-text node: just insert all parsed nodes after current
       var insertIndex = cursorNodeIndex + 1;
       for (final node in parsedNodes) {
-        requests.add(InsertNodeAtIndexRequest(
-          nodeIndex: insertIndex++,
-          newNode: node,
-        ));
+        requests.add(
+          InsertNodeAtIndexRequest(nodeIndex: insertIndex++, newNode: node),
+        );
       }
     }
 
@@ -1842,16 +1953,18 @@ class EditorState extends State<Editor> {
     } else {
       lastPosition = const UpstreamDownstreamNodePosition.downstream();
     }
-    requests.add(ChangeSelectionRequest(
-      DocumentSelection.collapsed(
-        position: DocumentPosition(
-          nodeId: lastPasted.id,
-          nodePosition: lastPosition,
+    requests.add(
+      ChangeSelectionRequest(
+        DocumentSelection.collapsed(
+          position: DocumentPosition(
+            nodeId: lastPasted.id,
+            nodePosition: lastPosition,
+          ),
         ),
+        SelectionChangeType.insertContent,
+        SelectionReason.userInteraction,
       ),
-      SelectionChangeType.insertContent,
-      SelectionReason.userInteraction,
-    ));
+    );
 
     if (requests.isNotEmpty) {
       _editor.execute(requests);
@@ -1945,21 +2058,17 @@ class EditorState extends State<Editor> {
     FileFormat format,
   ) async {
     final completer = Completer<Uint8List?>();
-    final progress = reader.getFile(
-      format,
-      (file) async {
-        try {
-          final allBytes = <int>[];
-          await for (final chunk in file.getStream()) {
-            allBytes.addAll(chunk);
-          }
-          completer.complete(Uint8List.fromList(allBytes));
-        } catch (_) {
-          completer.complete(null);
+    final progress = reader.getFile(format, (file) async {
+      try {
+        final allBytes = <int>[];
+        await for (final chunk in file.getStream()) {
+          allBytes.addAll(chunk);
         }
-      },
-      onError: (_) => completer.complete(null),
-    );
+        completer.complete(Uint8List.fromList(allBytes));
+      } catch (_) {
+        completer.complete(null);
+      }
+    }, onError: (_) => completer.complete(null));
     if (progress == null) return null;
     return completer.future;
   }
@@ -2291,9 +2400,7 @@ class ViewerState extends State<Viewer> {
           componentBuilders: <ComponentBuilder>[
             const BlockquoteComponentBuilder(),
             const PlotCodeBlockComponentBuilder(),
-            const MarkdownTableComponentBuilder(
-              fit: TableComponentFit.scroll,
-            ),
+            const MarkdownTableComponentBuilder(fit: TableComponentFit.scroll),
             const ParagraphComponentBuilder(),
             const PlotListItemComponentBuilder(),
             const PlotImageComponentBuilder(),
@@ -2752,4 +2859,3 @@ ExecutionInstruction _handleBackspaceOverMention({
 
   return ExecutionInstruction.haltExecution;
 }
-

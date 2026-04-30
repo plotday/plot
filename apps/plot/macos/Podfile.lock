@@ -144,6 +144,8 @@ PODS:
     - CwlCatchException
     - Flutter
     - FlutterMacOS
+  - super_editor_spellcheck (0.0.1):
+    - FlutterMacOS
   - super_native_extensions (0.0.1):
     - FlutterMacOS
   - url_launcher_macos (0.0.1):
@@ -178,6 +180,7 @@ DEPENDENCIES:
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sign_in_with_apple (from `Flutter/ephemeral/.symlinks/plugins/sign_in_with_apple/macos`)
   - speech_to_text (from `Flutter/ephemeral/.symlinks/plugins/speech_to_text/darwin`)
+  - super_editor_spellcheck (from `Flutter/ephemeral/.symlinks/plugins/super_editor_spellcheck/macos`)
   - super_native_extensions (from `Flutter/ephemeral/.symlinks/plugins/super_native_extensions/macos`)
   - url_launcher_macos (from `Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos`)
   - window_manager (from `Flutter/ephemeral/.symlinks/plugins/window_manager/macos`)
@@ -252,6 +255,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/sign_in_with_apple/macos
   speech_to_text:
     :path: Flutter/ephemeral/.symlinks/plugins/speech_to_text/darwin
+  super_editor_spellcheck:
+    :path: Flutter/ephemeral/.symlinks/plugins/super_editor_spellcheck/macos
   super_native_extensions:
     :path: Flutter/ephemeral/.symlinks/plugins/super_native_extensions/macos
   url_launcher_macos:
@@ -303,6 +308,7 @@ SPEC CHECKSUMS:
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   sign_in_with_apple: 6673c03c9e3643f6c8d33601943fbfa9ae99f94e
   speech_to_text: 3b313d98516d3d0406cea424782ec25470c59d19
+  super_editor_spellcheck: 92756951071ef14c0550e9c115573ebf12c03243
   super_native_extensions: c2795d6d9aedf4a79fae25cb6160b71b50549189
   url_launcher_macos: f87a979182d112f911de6820aefddaf56ee9fbfd
   window_manager: b729e31d38fb04905235df9ea896128991cad99e

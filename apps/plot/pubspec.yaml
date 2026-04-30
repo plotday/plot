@@ -70,6 +70,11 @@ dependencies:
   posthog_flutter: ^5.23.1
   b: ^0.2.0
   super_editor: 0.3.0-dev.48
+  super_editor_spellcheck:
+    git:
+      url: https://github.com/Flutter-Bounty-Hunters/super_editor.git
+      path: super_editor_spellcheck
+      ref: 291a69308f64863fee813df1bd483515038483f9
   sliver_tools: ^0.2.12
   timeago: ^3.7.0
   stack_trace: ^1.12.0
