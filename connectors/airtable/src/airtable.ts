@@ -3,10 +3,6 @@ import {
   ActionType,
   type Link,
   type NewLinkWithNotes,
-  type Note,
-  type NoteWriteBackResult,
-  type Thread,
-  type ThreadMeta,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
 import { Tag } from "@plotday/twister/tag";
@@ -23,13 +19,12 @@ import {
 } from "@plotday/twister/tools/integrations";
 import { Network, type WebhookRequest } from "@plotday/twister/tools/network";
 import { Tasks } from "@plotday/twister/tools/tasks";
-import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 
 import {
   AirtableAPI,
   isAirtableAuthError,
+  isAirtableNotFoundError,
   type AirtableBase,
-  type AirtableComment,
   type AirtableRecord,
   type AirtableTable,
   type AirtableWebhookPayload,
@@ -90,7 +85,8 @@ type SyncState = {
 
 type LinkStatus = NonNullable<LinkTypeConfig["statuses"]>[number];
 
-const RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
+const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const STALE_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
 
 export class Airtable extends Connector<Airtable> {
   static readonly PROVIDER = AuthProvider.Airtable;
@@ -99,11 +95,8 @@ export class Airtable extends Connector<Airtable> {
     "schema.bases:read",
     "data.records:read",
     "data.records:write",
-    "data.recordComments:read",
-    "data.recordComments:write",
     "webhook:manage",
   ];
-  static readonly handleReplies = true;
 
   readonly provider = AuthProvider.Airtable;
   readonly scopes = Airtable.SCOPES;
@@ -261,9 +254,16 @@ export class Airtable extends Connector<Airtable> {
     const webhookCb = await this.callback(this.setupWebhook, baseId);
     await this.runTask(webhookCb);
 
-    const reconcileCb = await this.callback(this.reconcileComments, baseId);
-    await this.runTask(reconcileCb, {
-      runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
+    // Schedule the safety-poll chain. Real-time updates flow through the
+    // webhook delivery path; this 6-hour cadence catches deliveries that
+    // were lost in transit AND keeps the webhook alive (calling /payloads
+    // resets Airtable's 7-day inactivity timer, complementing renewWebhook).
+    // Set the flag so the reconcileComments migration shim doesn't also
+    // bootstrap a duplicate poll chain after upgrade.
+    await this.set(`poll_initialized_${baseId}`, true);
+    const pollCb = await this.callback(this.pollWebhookPayloads, baseId);
+    await this.runTask(pollCb, {
+      runAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
   }
 
@@ -286,6 +286,9 @@ export class Airtable extends Connector<Airtable> {
     await this.clear(`webhook_secret_${baseId}`);
     await this.clear(`webhook_cursor_${baseId}`);
     await this.clear(`webhook_url_${baseId}`);
+    await this.clear(`webhook_expires_at_${baseId}`);
+    await this.clear(`last_activity_at_${baseId}`);
+    await this.clear(`poll_initialized_${baseId}`);
     await this.clear(`sync_state_${baseId}`);
     await this.clear(`task_tables_${baseId}`);
     await this.clear(`tracked_records_${baseId}`);
@@ -300,12 +303,7 @@ export class Airtable extends Connector<Airtable> {
     const api = await this.getAPI(baseId);
     if (!api) return;
 
-    const tables = await api.listTables(baseId);
-    const detected = tables
-      .map((t) => this.scoreTable(t))
-      .filter((d): d is DetectedTable => d !== null);
-
-    await this.set(`task_tables_${baseId}`, detected);
+    const detected = await this.refreshTaskTables(baseId, api);
 
     if (detected.length === 0) return;
 
@@ -317,6 +315,25 @@ export class Airtable extends Connector<Airtable> {
 
     const cb = await this.callback(this.syncBatch, baseId);
     await this.runTask(cb);
+  }
+
+  /**
+   * Re-detect task tables from the live Airtable schema and persist the
+   * cached map. Called by detectAndSync at channel-enable time AND by
+   * applyPayload when a tableFields webhook event signals that the
+   * schema has changed underneath us (status field renamed, new option
+   * added, etc.).
+   */
+  private async refreshTaskTables(
+    baseId: string,
+    api: AirtableAPI
+  ): Promise<DetectedTable[]> {
+    const tables = await api.listTables(baseId);
+    const detected = tables
+      .map((t) => this.scoreTable(t))
+      .filter((d): d is DetectedTable => d !== null);
+    await this.set(`task_tables_${baseId}`, detected);
+    return detected;
   }
 
   /**
@@ -427,8 +444,7 @@ export class Airtable extends Connector<Airtable> {
     // the next reconcile pass.
     for (const record of page.records) {
       try {
-        const comments = await api.listComments(baseId, table.tableId, record.id);
-        const link = this.recordToLink(record, table, baseId, comments, state.initialSync);
+        const link = this.recordToLink(record, table, baseId, state.initialSync);
         await this.tools.integrations.saveLink(link);
       } catch (error) {
         if (isAirtableAuthError(error)) {
@@ -466,7 +482,6 @@ export class Airtable extends Connector<Airtable> {
     record: AirtableRecord,
     table: DetectedTable,
     baseId: string,
-    comments: AirtableComment[],
     initialSync: boolean
   ): NewLinkWithNotes {
     const title = this.deriveTitle(record, table);
@@ -479,27 +494,13 @@ export class Airtable extends Connector<Airtable> {
       { type: ActionType.external, title: "Open in Airtable", url },
     ];
 
-    const notes: Array<{
-      key: string;
-      content: string | null;
-      created?: Date;
-      author?: NewContact;
-    }> = [];
-
-    notes.push({
-      key: DEFAULT_DESCRIPTION_KEY,
-      content: description,
-      created: new Date(record.createdTime),
-    });
-
-    for (const comment of comments) {
-      notes.push({
-        key: `comment-${comment.id}`,
-        content: this.translateMentionsInbound(comment),
-        created: new Date(comment.createdTime),
-        author: this.commentAuthor(comment),
-      });
-    }
+    const notes = [
+      {
+        key: DEFAULT_DESCRIPTION_KEY,
+        content: description,
+        created: new Date(record.createdTime),
+      },
+    ];
 
     return {
       source: `airtable:${baseId}:record:${record.id}`,
@@ -650,36 +651,6 @@ export class Airtable extends Connector<Airtable> {
     };
   }
 
-  private commentAuthor(comment: AirtableComment): NewContact | undefined {
-    if (!comment.author) return undefined;
-    return {
-      ...(comment.author.email ? { email: comment.author.email } : {}),
-      name: comment.author.name ?? comment.author.email ?? "",
-      ...(comment.author.id
-        ? {
-            source: {
-              provider: AuthProvider.Airtable,
-              accountId: comment.author.id,
-            },
-          }
-        : {}),
-    };
-  }
-
-  /** Replace `@[usrXXX]` tokens with `@Name` using the mentioned map. */
-  private translateMentionsInbound(comment: AirtableComment): string {
-    const mentioned = comment.mentioned;
-    if (!mentioned) return comment.text;
-    return comment.text.replace(/@\[([^\]]+)\]/g, (full, token) => {
-      const entry =
-        mentioned[token] ||
-        Object.values(mentioned).find((m) => m.email === token);
-      if (!entry) return full;
-      const name = entry.displayName ?? entry.name ?? entry.email ?? token;
-      return `@${name}`;
-    });
-  }
-
   private stringValue(v: unknown): string | null {
     if (v == null) return null;
     if (typeof v === "string") return v;
@@ -718,9 +689,6 @@ export class Airtable extends Connector<Airtable> {
         return;
       }
 
-      const detected = (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
-      const tableIds = detected.map((d) => d.tableId);
-
       const api = await this.getAPI(baseId);
       if (!api) return;
 
@@ -752,16 +720,19 @@ export class Airtable extends Connector<Airtable> {
         await this.clear(`webhook_cursor_${baseId}`);
       }
 
-      // Airtable allows one notification scope per webhook; register one
-      // webhook per base covering all detected tables. The
-      // recordChangeScope filter only accepts a single table, so when we
-      // have multiple task tables we drop the scope (the webhook will fire
-      // for the whole base) and filter to our tables inside onWebhook.
+      // Subscribe to base-wide events (no recordChangeScope). We filter
+      // payloads to detected task tables inside applyPayload; this keeps
+      // the webhook valid when the set of task tables changes (e.g. a
+      // user adds a status field to a previously plain table — the
+      // tableFields event triggers re-detection and the now-tracked
+      // table starts receiving record updates without webhook recreation).
+      //
+      // tableFields keeps the cached task_tables map fresh when a status
+      // field gains new options, gets renamed, etc.
       const webhook = await api.createWebhook(baseId, webhookUrl, {
         options: {
           filters: {
-            dataTypes: ["tableData"],
-            ...(tableIds.length === 1 ? { recordChangeScope: tableIds[0] } : {}),
+            dataTypes: ["tableData", "tableFields"],
           },
           includes: {
             includeCellValuesInFieldIds: "all",
@@ -772,8 +743,104 @@ export class Airtable extends Connector<Airtable> {
       await this.set(`webhook_id_${baseId}`, webhook.id);
       await this.set(`webhook_secret_${baseId}`, webhook.macSecretBase64);
       await this.set<number>(`webhook_cursor_${baseId}`, 1);
+      await this.set<string | null>(
+        `webhook_expires_at_${baseId}`,
+        webhook.expirationTime ?? null
+      );
+      // Establish the activity baseline. pollWebhookPayloads compares
+      // against this to decide whether to trigger Phase 5 recovery; we
+      // bump it on every successful webhook setup AND on every payload
+      // ingestion in processWebhookPayloads.
+      await this.set(`last_activity_at_${baseId}`, new Date().toISOString());
+      await this.scheduleNextRenewal(baseId, webhook.expirationTime ?? null);
     } catch (error) {
       console.error("Failed to set up Airtable webhook:", error);
+    }
+  }
+
+  /**
+   * Airtable webhooks expire 7 days after creation/refresh and stop
+   * delivering notifications without warning. We schedule a `renewWebhook`
+   * task ~24h before each expiration so the hook stays alive indefinitely
+   * for as long as the channel is enabled. Clamps to "1 minute from now"
+   * minimum to avoid scheduling tasks in the past when the expiration is
+   * already inside the renewal window (e.g. clock skew, slow refresh).
+   */
+  private async scheduleNextRenewal(
+    baseId: string,
+    expirationTime: string | null
+  ): Promise<void> {
+    const expiresMs = expirationTime
+      ? new Date(expirationTime).getTime()
+      : Date.now() + 7 * 24 * 60 * 60 * 1000;
+    const renewalMs = expiresMs - 24 * 60 * 60 * 1000;
+    const runAt = new Date(Math.max(renewalMs, Date.now() + 60_000));
+    const cb = await this.callback(this.renewWebhook, baseId);
+    await this.runTask(cb, { runAt });
+  }
+
+  /**
+   * Periodic webhook keepalive. Calls Airtable's /refresh endpoint to push
+   * the expiration out by another 7 days, then schedules the next renewal.
+   *
+   * Failure handling:
+   * - Auth (401): user reconnect required; bail without rescheduling. The
+   *   user re-enabling the channel will re-run setupWebhook from scratch.
+   * - Not found (404): the webhook has been deleted out from under us
+   *   (manually, or aged out before we got here). Recreate via setupWebhook.
+   * - Other transient errors: retry in 1h. With the 24h buffer ahead of
+   *   expiry, we have ~24 retries before the webhook actually dies — at
+   *   which point the next attempt 404s and we recreate.
+   */
+  async renewWebhook(baseId: string): Promise<void> {
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+
+    const webhookId = await this.get<string>(`webhook_id_${baseId}`);
+    if (!webhookId) {
+      // Lost the webhook id (e.g. setupWebhook never persisted it). Re-run
+      // setup; that will create a fresh hook and reschedule renewal.
+      const cb = await this.callback(this.setupWebhook, baseId);
+      await this.runTask(cb);
+      return;
+    }
+
+    const api = await this.getAPI(baseId);
+    if (!api) return;
+
+    try {
+      const result = await api.refreshWebhook(baseId, webhookId);
+      await this.set<string | null>(
+        `webhook_expires_at_${baseId}`,
+        result.expirationTime
+      );
+      await this.scheduleNextRenewal(baseId, result.expirationTime);
+    } catch (error) {
+      if (isAirtableAuthError(error)) {
+        console.warn("Airtable renewWebhook: auth failed, stopping", baseId);
+        return;
+      }
+      if (isAirtableNotFoundError(error)) {
+        console.warn(
+          "Airtable renewWebhook: webhook gone, recreating",
+          baseId
+        );
+        await this.clear(`webhook_id_${baseId}`);
+        await this.clear(`webhook_secret_${baseId}`);
+        await this.clear(`webhook_cursor_${baseId}`);
+        await this.clear(`webhook_expires_at_${baseId}`);
+        const cb = await this.callback(this.setupWebhook, baseId);
+        await this.runTask(cb);
+        return;
+      }
+      console.warn(
+        "Airtable renewWebhook: refresh failed, retrying in 1h",
+        baseId,
+        error
+      );
+      const cb = await this.callback(this.renewWebhook, baseId);
+      await this.runTask(cb, {
+        runAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
     }
   }
 
@@ -823,43 +890,91 @@ export class Airtable extends Connector<Airtable> {
     return hex === provided;
   }
 
-  private async processWebhookPayloads(baseId: string): Promise<void> {
+  /**
+   * Drains pending webhook payloads from the saved cursor, applying record
+   * changes and reacting to schema (tableFields) events. Self-reschedules
+   * when payloads might still be available beyond this execution's
+   * 10-batch guard, so a busy base eventually catches up across multiple
+   * fresh executions instead of stalling at the cursor.
+   *
+   * Public so it can serve as a runTask callback target — invoked from
+   * onWebhook (real-time delivery), pollWebhookPayloads (6h safety net),
+   * and itself (continuation).
+   */
+  async processWebhookPayloads(baseId: string): Promise<void> {
     const webhookId = await this.get<string>(`webhook_id_${baseId}`);
     if (!webhookId) return;
-    const detected = (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
-    if (detected.length === 0) return;
+    const detected =
+      (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
 
     const api = await this.getAPI(baseId);
     if (!api) return;
     let cursor = (await this.get<number>(`webhook_cursor_${baseId}`)) ?? 1;
-    const tableMap = new Map(detected.map((d) => [d.tableId, d] as const));
+    let tableMap = new Map(detected.map((d) => [d.tableId, d] as const));
 
+    let ingested = false;
+    let drained = false;
     for (let guard = 0; guard < 10; guard++) {
       const payloads = await api.listWebhookPayloads(baseId, webhookId, cursor);
 
       for (const payload of payloads.payloads) {
-        await this.applyPayload(payload, baseId, tableMap, api);
+        ingested = true;
+        tableMap = await this.applyPayload(payload, baseId, tableMap, api);
       }
 
       cursor = payloads.cursor;
       await this.set<number>(`webhook_cursor_${baseId}`, cursor);
 
-      if (!payloads.mightHaveMore) break;
+      if (!payloads.mightHaveMore) {
+        drained = true;
+        break;
+      }
+    }
+
+    if (ingested) {
+      await this.set(`last_activity_at_${baseId}`, new Date().toISOString());
+    }
+    if (!drained) {
+      // Hit the guard with payloads still pending. Queue a continuation
+      // task so the next fresh execution gets its own request budget.
+      const cb = await this.callback(this.processWebhookPayloads, baseId);
+      await this.runTask(cb);
     }
   }
 
+  /**
+   * Process one webhook payload. Returns a (possibly refreshed) tableMap
+   * — when the payload contains schema-change events, the cached
+   * task_tables map is rebuilt from the live Airtable schema before
+   * applying the record-change part of this same payload, so any newly
+   * tracked tables get their record events applied with up-to-date metadata.
+   */
   private async applyPayload(
     payload: AirtableWebhookPayload,
     baseId: string,
     tableMap: Map<string, DetectedTable>,
     api: AirtableAPI
-  ): Promise<void> {
+  ): Promise<Map<string, DetectedTable>> {
     const changedTables = payload.changedTablesById ?? {};
+
+    const hasFieldChange = Object.values(changedTables).some(
+      (c) =>
+        c.changedFieldsById ||
+        c.createdFieldsById ||
+        (c.destroyedFieldIds && c.destroyedFieldIds.length > 0)
+    );
+    let map = tableMap;
+    if (hasFieldChange) {
+      const refreshed = await this.refreshTaskTables(baseId, api);
+      map = new Map(refreshed.map((d) => [d.tableId, d] as const));
+    }
+
     for (const [tableId, change] of Object.entries(changedTables)) {
-      const table = tableMap.get(tableId);
+      const table = map.get(tableId);
       if (!table) continue;
       await this.applyTableChange(change, table, baseId, api);
     }
+    return map;
   }
 
   private async applyTableChange(
@@ -875,8 +990,7 @@ export class Airtable extends Connector<Airtable> {
     for (const recordId of recordIds) {
       try {
         const record = await api.getRecord(baseId, table.tableId, recordId);
-        const comments = await api.listComments(baseId, table.tableId, recordId);
-        const link = this.recordToLink(record, table, baseId, comments, false);
+        const link = this.recordToLink(record, table, baseId, false);
         await this.tools.integrations.saveLink(link);
       } catch (error) {
         console.warn("Failed to sync Airtable record from webhook:", error);
@@ -884,120 +998,154 @@ export class Airtable extends Connector<Airtable> {
     }
   }
 
-  // ---- Reconciliation (catches webhook-missed edits AND backfills) ----
+  // ---- Periodic safety poll ----
 
   /**
-   * Walks every record in every detected task table and re-saves it. This
-   * also serves as the initial backfill when a channel is enabled — the
-   * dedicated syncBatch path still handles the first pass, but a reconcile
-   * tick guarantees eventual consistency even if the batch loop dropped a
-   * record or the webhook missed an update.
+   * Periodic webhook-payload safety poll. Runs every 6 hours per enabled
+   * channel and serves four purposes:
    *
-   * Kept under the historical `reconcileComments` name so previously
-   * scheduled self-rescheduling tasks continue to dispatch after upgrade.
+   *  1. Recovers from missed webhook deliveries (network blip, transient
+   *     5xx on our edge) by draining payloads from the saved cursor — the
+   *     payloads sit in Airtable's 7-day buffer regardless of whether
+   *     delivery fired.
+   *  2. Keeps the webhook alive: hitting /payloads resets Airtable's
+   *     7-day inactivity timer, complementing renewWebhook's 24h-before-
+   *     expiry refresh.
+   *  3. Hard recovery on a 404 from /payloads: the webhook has been
+   *     deleted or aged out; recreate it and re-emit current record state.
+   *  4. Soft recovery after 14 days of total silence: catches the rare
+   *     case where the webhook is still alive on Airtable's side but no
+   *     longer delivering for reasons we can't introspect (subscription
+   *     stuck, regional glitch, etc.). Wasted work for legitimately quiet
+   *     bases — bounded to one recovery per 14 days per base.
+   *
+   * Always reschedules in 6h on exit, regardless of whether work was done
+   * or errors occurred — the poll is the backstop for everything else and
+   * we want it running for as long as the channel is enabled. The exit
+   * condition is "sync_enabled is false," checked at the top.
+   */
+  async pollWebhookPayloads(baseId: string): Promise<void> {
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+
+    let recoverReason: string | null = null;
+
+    const webhookId = await this.get<string>(`webhook_id_${baseId}`);
+    if (!webhookId) {
+      recoverReason = "webhook id missing from storage";
+    } else {
+      try {
+        await this.processWebhookPayloads(baseId);
+      } catch (error) {
+        if (isAirtableNotFoundError(error)) {
+          recoverReason = "webhook returned 404 (deleted or expired)";
+        } else if (isAirtableAuthError(error)) {
+          // Auth has been revoked; reconnection will rebuild state via
+          // onChannelEnabled. Don't try to recover here.
+          console.warn(
+            "Airtable pollWebhookPayloads: auth failed, skipping",
+            baseId
+          );
+        } else {
+          console.warn("Airtable pollWebhookPayloads failed", baseId, error);
+        }
+      }
+
+      if (!recoverReason) {
+        // Soft signal: long silence with no payloads. Migration backfill
+        // for pre-Phase 5 channels with no last_activity_at — assume the
+        // webhook is healthy (we just polled it) and start the clock now.
+        let lastActivityISO = await this.get<string>(
+          `last_activity_at_${baseId}`
+        );
+        if (!lastActivityISO) {
+          lastActivityISO = new Date().toISOString();
+          await this.set(`last_activity_at_${baseId}`, lastActivityISO);
+        }
+        const ageMs = Date.now() - new Date(lastActivityISO).getTime();
+        if (ageMs > STALE_AFTER_MS) {
+          const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+          recoverReason = `no activity in ${ageDays} days`;
+        }
+      }
+    }
+
+    if (recoverReason) {
+      await this.recoverWebhook(baseId, recoverReason);
+    }
+
+    const cb = await this.callback(this.pollWebhookPayloads, baseId);
+    await this.runTask(cb, {
+      runAt: new Date(Date.now() + POLL_INTERVAL_MS),
+    });
+  }
+
+  /**
+   * Reset webhook state and queue a fresh setup + record re-detect. Called
+   * from pollWebhookPayloads when the webhook is confirmed dead (404), the
+   * id has gone missing from storage, or activity has been silent for
+   * long enough to suspect a stuck subscription.
+   *
+   * Bumps last_activity_at to "now" up front so a recovery that fails
+   * quietly (e.g. setupWebhook errors out) doesn't re-fire on the very
+   * next poll — we wait at least one full STALE_AFTER_MS window before
+   * trying again.
+   */
+  private async recoverWebhook(
+    baseId: string,
+    reason: string
+  ): Promise<void> {
+    console.warn(
+      `Airtable: recovering webhook for base ${baseId} (${reason})`
+    );
+    await this.clear(`webhook_id_${baseId}`);
+    await this.clear(`webhook_secret_${baseId}`);
+    await this.clear(`webhook_cursor_${baseId}`);
+    await this.clear(`webhook_expires_at_${baseId}`);
+    await this.set(`last_activity_at_${baseId}`, new Date().toISOString());
+
+    const setupCb = await this.callback(this.setupWebhook, baseId);
+    await this.runTask(setupCb);
+    // Re-emit current record state so anything that changed during the
+    // gap gets a fresh saveLink. initialSync=false so we don't reset
+    // unread/archived flags users may have set in Plot.
+    const detectCb = await this.callback(this.detectAndSync, baseId, false);
+    await this.runTask(detectCb);
+  }
+
+  /**
+   * Migration shim for in-flight tasks queued by pre-Phase-4 deploys. The
+   * runtime resolves callbacks by method name at dispatch time, so
+   * removing this method outright would break any reconcileComments task
+   * already on the queue. Instead we keep the name but neuter the body:
+   * run any pending one-shot migrations (renewWebhook backfill from
+   * Phase 2, pollWebhookPayloads bootstrap from Phase 4) and return
+   * without rescheduling. Each pre-existing in-flight task fires exactly
+   * once after upgrade and then disappears.
+   *
+   * Safe to delete in a future cleanup once we're confident no
+   * reconcileComments tasks remain queued (give it ~1 hour after deploy).
    */
   async reconcileComments(baseId: string): Promise<void> {
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
 
-    // Don't reconcile while initial sync is still running — the two loops
-    // racing on the same records caused duplicate-key errors in saveLink
-    // (thread_twist_key_unique). Defer; we'll wake up again on schedule.
-    const inProgress = await this.get<SyncState>(`sync_state_${baseId}`);
-    if (inProgress) {
-      const cb = await this.callback(this.reconcileComments, baseId);
-      await this.runTask(cb, {
-        runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
-      });
-      return;
+    // Phase 2 backfill: channels created before expiration tracking was
+    // added need renewWebhook scheduled to avoid silent 7-day expiry.
+    const expiresAt = await this.get<string>(`webhook_expires_at_${baseId}`);
+    const webhookId = await this.get<string>(`webhook_id_${baseId}`);
+    if (!expiresAt && webhookId) {
+      const renewCb = await this.callback(this.renewWebhook, baseId);
+      await this.runTask(renewCb);
     }
 
-    const api = await this.getAPI(baseId);
-    let authFailed = false;
-    if (api) {
-      const detected =
-        (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
-      outer: for (const table of detected) {
-        let offset: string | null = null;
-        let failureStreak = 0;
-        do {
-          try {
-            const page = await api.listRecords(baseId, table.tableId, {
-              offset,
-              pageSize: 100,
-            });
-            for (const record of page.records) {
-              try {
-                const comments = await api.listComments(
-                  baseId,
-                  table.tableId,
-                  record.id
-                );
-                const link = this.recordToLink(
-                  record,
-                  table,
-                  baseId,
-                  comments,
-                  false
-                );
-                await this.tools.integrations.saveLink(link);
-                failureStreak = 0;
-              } catch (error) {
-                if (isAirtableAuthError(error)) {
-                  authFailed = true;
-                  console.warn(
-                    "Reconcile: auth failed, stopping",
-                    baseId,
-                    error
-                  );
-                  break outer;
-                }
-                failureStreak++;
-                // Log only the first couple of failures per table. The
-                // previous version produced dozens of near-identical warnings
-                // per reconcile which drowned out useful signal.
-                if (failureStreak <= 2) {
-                  console.warn(
-                    "Reconcile failed for record",
-                    record.id,
-                    error
-                  );
-                } else if (failureStreak === 3) {
-                  console.warn(
-                    "Reconcile failing repeatedly, suppressing further per-record logs",
-                    baseId,
-                    table.tableId
-                  );
-                }
-              }
-            }
-            offset = page.offset ?? null;
-          } catch (error) {
-            if (isAirtableAuthError(error)) {
-              authFailed = true;
-              console.warn("Reconcile listRecords: auth failed, stopping", baseId, error);
-              break outer;
-            }
-            console.warn(
-              "Reconcile listRecords failed",
-              baseId,
-              table.tableId,
-              error
-            );
-            break;
-          }
-        } while (offset);
-      }
+    // Phase 4 backfill: bootstrap the safety-poll chain. The flag is
+    // also set in onChannelEnabled, so newly enabled channels skip this
+    // and we never end up with two parallel poll chains for one base.
+    const polled = await this.get<boolean>(`poll_initialized_${baseId}`);
+    if (!polled) {
+      await this.set(`poll_initialized_${baseId}`, true);
+      const pollCb = await this.callback(this.pollWebhookPayloads, baseId);
+      await this.runTask(pollCb);
     }
-
-    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
-    // Back off reconcile when the token is bad so we don't keep whacking the
-    // API. A connected user re-enabling the channel will restart sync via
-    // onChannelEnabled, which also reschedules reconcile.
-    if (authFailed) return;
-    const cb = await this.callback(this.reconcileComments, baseId);
-    await this.runTask(cb, {
-      runAt: new Date(Date.now() + RECONCILE_INTERVAL_MS),
-    });
   }
 
   // ---- Write-backs ----
@@ -1041,99 +1189,6 @@ export class Airtable extends Connector<Airtable> {
     } catch (error) {
       console.warn("Failed to write Airtable status back:", error);
     }
-  }
-
-  async onNoteCreated(
-    note: Note,
-    thread: Thread
-  ): Promise<NoteWriteBackResult | void> {
-    const meta = (thread.meta ?? {}) as ThreadMeta;
-    const baseId = meta.airtableBaseId as string | undefined;
-    const tableId = meta.airtableTableId as string | undefined;
-    const recordId = meta.airtableRecordId as string | undefined;
-    if (!baseId || !tableId || !recordId) return;
-
-    // Airtable stores comments as plain text, so render Plot markdown to
-    // readable plain text before translating mentions.
-    const text = markdownToPlainText(note.content ?? "").trim();
-    if (text.length === 0) return;
-
-    const api = await this.getAPI(baseId);
-    if (!api) return;
-    try {
-      const comment = await api.createComment(baseId, tableId, recordId, {
-        text: this.translateMentionsOutbound(text),
-      });
-      if (comment?.id) {
-        // Sync-in stores comments via translateMentionsInbound (@[token] →
-        // @Name). Match that form here so the baseline hash aligns with
-        // what recordToLink/listComments will produce on the next pass —
-        // otherwise the round-tripped comment would clobber the Plot note
-        // with its lossy Airtable echo.
-        return {
-          key: `comment-${comment.id}`,
-          externalContent: this.translateMentionsInbound(comment),
-        };
-      }
-    } catch (error) {
-      console.warn("Failed to post Airtable comment:", error);
-    }
-  }
-
-  /**
-   * Push an edit to an existing Airtable comment and refresh the sync
-   * baseline from the updated text. Note keys are `comment-<airtableId>`
-   * (see {@link recordToLink}); non-comment keys (e.g. the synthetic
-   * "description" note) are not editable on the Airtable side.
-   */
-  async onNoteUpdated(
-    note: Note,
-    thread: Thread
-  ): Promise<NoteWriteBackResult | void> {
-    if (!note.key) return;
-    const commentMatch = note.key.match(/^comment-(.+)$/);
-    if (!commentMatch) return;
-    const commentId = commentMatch[1];
-
-    const meta = (thread.meta ?? {}) as ThreadMeta;
-    const baseId = meta.airtableBaseId as string | undefined;
-    const tableId = meta.airtableTableId as string | undefined;
-    const recordId = meta.airtableRecordId as string | undefined;
-    if (!baseId || !tableId || !recordId) return;
-
-    // Airtable stores comments as plain text, so render Plot markdown to
-    // readable plain text before translating mentions.
-    const text = markdownToPlainText(note.content ?? "").trim();
-    if (text.length === 0) return;
-
-    const api = await this.getAPI(baseId);
-    if (!api) return;
-    try {
-      const comment = await api.updateComment(
-        baseId,
-        tableId,
-        recordId,
-        commentId,
-        { text: this.translateMentionsOutbound(text) }
-      );
-      return {
-        externalContent: this.translateMentionsInbound(comment),
-      };
-    } catch (error) {
-      console.warn("Failed to update Airtable comment:", error);
-    }
-  }
-
-  /**
-   * Convert `@email@example.com` or `@[email@example.com]` in Plot note
-   * content to Airtable's mention syntax `@[email@example.com]`. Airtable
-   * accepts user emails directly inside the brackets.
-   */
-  private translateMentionsOutbound(text: string): string {
-    return text.replace(
-      /(^|\s)@\[?([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\]?/g,
-      (_m, lead, email) => `${lead}@[${email}]`
-    );
   }
 
   // ---- Helpers ----
