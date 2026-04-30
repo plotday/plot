@@ -478,6 +478,12 @@ class Store extends _$Store {
       store._connectivitySubscription?.cancel();
       store._connectivitySubscription = null;
       store._unsubscribeFromUpdates();
+      // Wait for any in-flight sync to finish BEFORE removing Store from
+      // the Injector. Sync code calls Store.get throughout — pulling Store
+      // from the Injector mid-sync makes those lookups throw "type Store
+      // is not defined". _drainActiveOperations is bounded (~5s) so an
+      // offline or stuck sync still won't block shutdown.
+      await store._drainActiveOperations();
       // Remove singleton reference BEFORE closing to prevent access during transition
       Injector.appInstance.removeByKey<Store>();
       await store.close();
@@ -506,6 +512,8 @@ class Store extends _$Store {
         old._connectivitySubscription?.cancel();
         old._connectivitySubscription = null;
         old._unsubscribeFromUpdates();
+        // Drain in-flight sync before removing from Injector — see stop().
+        await old._drainActiveOperations();
         Injector.appInstance.removeByKey<Store>();
         await old.close();
       }
