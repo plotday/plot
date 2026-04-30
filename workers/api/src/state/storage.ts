@@ -70,11 +70,27 @@ export class Storage extends DurableObject {
   }
 
   list(prefix: string): string[] {
-    const results = this.sql.exec(
-      "SELECT key FROM store WHERE key LIKE ? AND key NOT LIKE '__lock__:%'",
-      `${prefix}%`
+    // Cloudflare DO SQLite caps LIKE patterns at 50 bytes
+    // (SQLITE_LIMIT_LIKE_PATTERN_LENGTH=50 in workerd), so a LIKE-based
+    // prefix match throws "LIKE or GLOB pattern too complex" once the
+    // prefix exceeds ~40 chars (e.g. `pending_occ:google-calendar:<iCalUID>:`).
+    // Range scan instead, and the prefix is matched literally — `%` / `_`
+    // in the caller's prefix are not interpreted as wildcards.
+    if (prefix.length === 0) {
+      const all = this.sql.exec(
+        "SELECT key FROM store WHERE key NOT LIKE '__lock__:%'"
+      );
+      return [...all].map((r) => r.key as string);
+    }
+    const lastChar = prefix.charCodeAt(prefix.length - 1);
+    const upperBound =
+      prefix.slice(0, -1) + String.fromCharCode(lastChar + 1);
+    const ranged = this.sql.exec(
+      "SELECT key FROM store WHERE key >= ? AND key < ? AND key NOT LIKE '__lock__:%'",
+      prefix,
+      upperBound
     );
-    return [...results].map((r) => r.key as string);
+    return [...ranged].map((r) => r.key as string);
   }
 
   clear(key: string) {
