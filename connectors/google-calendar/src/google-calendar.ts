@@ -726,11 +726,61 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         }
 
         if (mode === "full") {
-          // Discard buffered occurrences whose masters never appeared
-          // (e.g. instances of cancelled/deleted recurring events)
+          // Flush leftover pending_occ buffers as standalone
+          // occurrence-only links. These exist when an instance was
+          // buffered but its master was either saved in a different
+          // batch (so the end-of-batch drain in processCalendarEvents
+          // had nothing in linksBySource to merge into) or never
+          // appeared in the calendar at all (e.g. master deleted).
+          // Either way, forwarding them to saveLinks is the safe
+          // choice: the upsert keys on canonical source, so it
+          // attaches the occurrence to the existing master if one
+          // exists, and otherwise creates a single standalone link.
+          // The previous behavior — silently discarding leftovers —
+          // lost cancellations whenever the master and its instance
+          // didn't land in the same batch.
           const pendingKeys = await this.tools.store.list("pending_occ:");
+          const flushLinks: NewLinkWithNotes[] = [];
           for (const key of pendingKeys) {
+            const pending = await this.get<NewScheduleOccurrence>(key);
+            if (!pending) {
+              await this.clear(key);
+              continue;
+            }
+            const occurrenceDate =
+              pending.occurrence instanceof Date
+                ? pending.occurrence
+                : new Date(pending.occurrence);
+            const suffix = `:${occurrenceDate.toISOString()}`;
+            if (
+              !key.startsWith("pending_occ:") ||
+              !key.endsWith(suffix)
+            ) {
+              // Malformed key — drop it.
+              await this.clear(key);
+              continue;
+            }
+            const canonical = key.slice(
+              "pending_occ:".length,
+              key.length - suffix.length
+            );
+            flushLinks.push({
+              type: "event",
+              title: undefined,
+              source: canonical,
+              channelId: calendarId,
+              meta: { syncProvider: "google", syncableId: calendarId },
+              scheduleOccurrences: [pending],
+              notes: [],
+            });
             await this.clear(key);
+          }
+          if (flushLinks.length > 0) {
+            console.log(
+              `[GoogleCalendar] full-pass flush: calendar=${calendarId} ` +
+                `flushedLinks=${flushLinks.length}`
+            );
+            await this.tools.integrations.saveLinks(flushLinks);
           }
 
           await this.clear(`sync_state_${calendarId}`);
@@ -832,6 +882,27 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
         // Check if this is a recurring event instance (exception)
         if (event.recurringEventId && event.originalStartTime) {
+          if (initialSync) {
+            // Smoking-gun log for the order-dependent buffering bug:
+            // masterAlreadyInBatch=true means the master was processed
+            // earlier in this same response, so the inline drain (now
+            // removed) would have missed this instance and the buffer
+            // would only land via the end-of-batch drain below.
+            const canonical = `google-calendar:${
+              event.iCalUID ?? event.recurringEventId
+            }`;
+            console.log(
+              `[GoogleCalendar] instance: master=${canonical} ` +
+                `status=${event.status ?? "n/a"} ` +
+                `originalStart=${
+                  event.originalStartTime?.dateTime ??
+                  event.originalStartTime?.date ??
+                  "n/a"
+                } ` +
+                `masterAlreadyInBatch=${linksBySource.has(canonical)} ` +
+                `(calendar=${calendarId})`
+            );
+          }
           const instanceLink = await this.prepareEventInstance(
             event,
             calendarId,
@@ -1044,31 +1115,57 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             syncableId: calendarId,
           };
 
-          // Merge any buffered occurrences that arrived before this master
-          // event. Each pending occurrence is stored under its own key
-          // (pending_occ:<master>:<occurrenceIso>) so instance buffering is
-          // O(1) per instance instead of rewriting a growing list — see
-          // prepareEventInstance.
-          const pendingPrefix = `pending_occ:${canonicalUrl}:`;
-          const pendingKeys = await this.tools.store.list(pendingPrefix);
-          if (pendingKeys.length > 0) {
-            const merged: NewScheduleOccurrence[] = [
-              ...(link.scheduleOccurrences || []),
-            ];
-            for (const key of pendingKeys) {
-              const pending = await this.get<NewScheduleOccurrence>(key);
-              if (pending) merged.push(pending);
-              await this.clear(key);
-            }
-            link.scheduleOccurrences = merged;
-          }
-
+          // Merging of buffered occurrences happens at end-of-batch
+          // (see drain block after the events loop) instead of inline
+          // here. Inline merging missed instances that arrived AFTER
+          // their master in the same batch — pending_occ would be
+          // empty when the master was processed, the instance would
+          // then be buffered, and the buffer would sit until the
+          // full-pass cleanup wiped it.
           addLink(link as LinkWithSource);
         }
       } catch (error) {
         console.error(`Failed to process event ${event.id}:`, error);
         // Continue processing other events
       }
+    }
+
+    // Drain pending_occ buffers for any masters present in this batch.
+    // Done here (after the events loop) instead of inline at master-
+    // processing time so the merge is order-independent within a batch:
+    // instances arriving before the master are caught (the original
+    // case), and instances arriving after the master are caught too
+    // (the case the inline drain missed, which silently lost
+    // cancellations whose master happened to come first in the
+    // events.list response).
+    let drainedTotal = 0;
+    for (const [source, link] of linksBySource.entries()) {
+      const pendingPrefix = `pending_occ:${source}:`;
+      const pendingKeys = await this.tools.store.list(pendingPrefix);
+      if (pendingKeys.length === 0) continue;
+      const merged: NewScheduleOccurrence[] = [
+        ...(link.scheduleOccurrences || []),
+      ];
+      for (const key of pendingKeys) {
+        const pending = await this.get<NewScheduleOccurrence>(key);
+        if (pending) {
+          merged.push(pending);
+          drainedTotal += 1;
+        }
+        await this.clear(key);
+      }
+      link.scheduleOccurrences = merged;
+      console.log(
+        `[GoogleCalendar] drain: master=${source} ` +
+          `merged=${pendingKeys.length} (calendar=${calendarId})`
+      );
+    }
+    if (initialSync) {
+      console.log(
+        `[GoogleCalendar] processCalendarEvents end: calendar=${calendarId} ` +
+          `events=${events.length} masters=${linksBySource.size} ` +
+          `drained=${drainedTotal}`
+      );
     }
 
     // Single batched save for the whole page. Collapses what used to be
@@ -1149,7 +1246,7 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         occurrence: new Date(originalStartTime),
         start: start,
         end: end,
-        archived: true,
+        cancelled: true,
       };
 
       // During initial sync, buffer the occurrence under a unique key for
@@ -1162,6 +1259,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           originalStartTime
         ).toISOString()}`;
         await this.set(pendingKey, cancelledOccurrence);
+        console.log(
+          `[GoogleCalendar] buffered cancelled instance: ` +
+            `master=${masterCanonicalUrl} ` +
+            `originalStart=${new Date(originalStartTime).toISOString()} ` +
+            `(calendar=${calendarId})`
+        );
         return null;
       }
 
@@ -1240,6 +1343,12 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
         originalStartTime
       ).toISOString()}`;
       await this.set(pendingKey, occurrence);
+      console.log(
+        `[GoogleCalendar] buffered exception instance: ` +
+          `master=${masterCanonicalUrl} ` +
+          `originalStart=${new Date(originalStartTime).toISOString()} ` +
+          `(calendar=${calendarId})`
+      );
       return null;
     }
 

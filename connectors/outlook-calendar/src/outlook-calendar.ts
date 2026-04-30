@@ -647,7 +647,7 @@ export class OutlookCalendar extends Connector<OutlookCalendar> {
       const cancelledOccurrence: NewScheduleOccurrence = {
         occurrence: new Date(originalStart),
         start: new Date(originalStart),
-        archived: true,
+        cancelled: true,
       };
 
       const occurrenceUpdate: NewLinkWithNotes = {
