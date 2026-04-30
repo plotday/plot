@@ -169,18 +169,23 @@ export class GmailApi {
   }
 
   public async setupWatch(
-    labelId: string,
-    topicName: string
+    topicName: string,
+    labelId?: string
   ): Promise<{
     historyId: string;
     expiration: string;
   }> {
+    const body: { topicName: string; labelIds?: string[] } = { topicName };
+    // Mailbox-wide watch when no labelId is provided. Gmail allows only ONE
+    // active watch per mailbox; calling watch() again replaces the previous.
+    // Omitting labelIds means Gmail notifies on every change — including
+    // replies in existing threads that don't inherit the thread's labels.
+    if (labelId) {
+      body.labelIds = [labelId];
+    }
     const data = await this.call("/watch", {
       method: "POST",
-      body: {
-        labelIds: [labelId],
-        topicName,
-      },
+      body,
     });
 
     return {
@@ -806,6 +811,66 @@ async function syncGmailChannelFull(
     threads,
     state: newState,
     hasMore: !!nextPageToken,
+  };
+}
+
+/**
+ * Mailbox-wide incremental sync. Calls the Gmail History API without a
+ * `labelId` filter, so it returns every change in the mailbox since
+ * `historyId` — including replies in existing threads that don't carry the
+ * label of any enabled channel. The connector decides per-thread whether
+ * the change is relevant to any enabled channel.
+ *
+ * Returns the new `historyId` to persist, and the deduped set of changed
+ * thread IDs (with their fetched full thread payloads). On 404 (history
+ * window expired), returns `expired: true` so the caller can fall back to
+ * a per-channel full re-sync.
+ */
+export async function syncGmailMailboxIncremental(
+  api: GmailApi,
+  historyId: string
+): Promise<
+  | { expired: true }
+  | { expired: false; historyId: string; threads: GmailThread[] }
+> {
+  let historyResult;
+  try {
+    historyResult = await api.getHistory(historyId);
+  } catch (error) {
+    if (error instanceof GmailApiError && error.status === 404) {
+      return { expired: true };
+    }
+    throw error;
+  }
+
+  const changedThreadIds = new Set<string>();
+  for (const entry of historyResult.history) {
+    for (const added of entry.messagesAdded ?? []) {
+      changedThreadIds.add(added.message.threadId);
+    }
+    for (const labeled of entry.labelsAdded ?? []) {
+      if (labeled.message.threadId)
+        changedThreadIds.add(labeled.message.threadId);
+    }
+    for (const labeled of entry.labelsRemoved ?? []) {
+      if (labeled.message.threadId)
+        changedThreadIds.add(labeled.message.threadId);
+    }
+  }
+
+  const threads: GmailThread[] = [];
+  for (const threadId of changedThreadIds) {
+    try {
+      threads.push(await api.getThread(threadId));
+    } catch (error) {
+      console.error(`Failed to fetch thread ${threadId}:`, error);
+    }
+  }
+
+  return {
+    expired: false,
+    historyId: historyResult.historyId,
+    threads,
   };
 }
 
