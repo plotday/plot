@@ -41,7 +41,6 @@ void main() {
       final result = Thread.selectRepresentativeOccurrence(
         generatedInstances: [past, future1, future2],
         overrideRows: const [],
-        archivedOverrideKeys: const {},
         now: now,
       );
 
@@ -65,7 +64,6 @@ void main() {
       final result = Thread.selectRepresentativeOccurrence(
         generatedInstances: [past1, past2],
         overrideRows: const [],
-        archivedOverrideKeys: const {},
         now: now,
       );
 
@@ -88,7 +86,6 @@ void main() {
       final result = Thread.selectRepresentativeOccurrence(
         generatedInstances: [generated],
         overrideRows: [override],
-        archivedOverrideKeys: const {},
         now: now,
       );
 
@@ -96,61 +93,14 @@ void main() {
       expect(result.isOverride, true);
     });
 
-    test('archived override keys remove matching generated instances', () {
-      final futureGen = _row(
-        occurrence: '20260418T120000',
-        start: DateTime(2026, 4, 18, 12, 0),
-        end: DateTime(2026, 4, 18, 13, 0),
-      );
-      final past = _row(
-        occurrence: '20260410T120000',
-        start: DateTime(2026, 4, 10, 12, 0),
-        end: DateTime(2026, 4, 10, 13, 0),
-      );
-
-      final result = Thread.selectRepresentativeOccurrence(
-        generatedInstances: [futureGen, past],
-        overrideRows: const [],
-        archivedOverrideKeys: const {'20260418T120000'},
-        now: now,
-      );
-
-      expect(result!.row.occurrence, '20260410T120000');
-      expect(result.isOverride, false);
-    });
-
     test('returns null when no candidates', () {
       final result = Thread.selectRepresentativeOccurrence(
         generatedInstances: const [],
         overrideRows: const [],
-        archivedOverrideKeys: const {},
         now: now,
       );
 
       expect(result, isNull);
-    });
-
-    test('archived override row is treated as a removal (not a candidate)', () {
-      final upcomingArchived = _row(
-        occurrence: '20260418T120000',
-        start: DateTime(2026, 4, 18, 12, 0),
-        end: DateTime(2026, 4, 18, 13, 0),
-        archivedAt: DateTime(2026, 4, 17),
-      );
-      final past = _row(
-        occurrence: '20260410T120000',
-        start: DateTime(2026, 4, 10, 12, 0),
-        end: DateTime(2026, 4, 10, 13, 0),
-      );
-
-      final result = Thread.selectRepresentativeOccurrence(
-        generatedInstances: const [],
-        overrideRows: [upcomingArchived, past],
-        archivedOverrideKeys: const {'20260418T120000'},
-        now: now,
-      );
-
-      expect(result!.row.occurrence, '20260410T120000');
     });
   });
 }

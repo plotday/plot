@@ -53,6 +53,16 @@ ALTER TABLE "public"."schedule"
 ALTER TABLE "public"."schedule"
     ADD CONSTRAINT schedule_recurrence_xor_occurrence CHECK (NOT (recurrence_rule IS NOT NULL AND occurrence IS NOT NULL));
 
+-- Cancelled occurrences are represented via recurrence_exdates on the base
+-- schedule, never as separate archived schedule rows. The runtime layer in
+-- workers/api/src/twist/tools/plot/schedule.ts (createLinkSchedules)
+-- translates connector-emitted `archived: true` occurrences into exdate
+-- additions on the parent. This constraint enforces the design at the
+-- storage layer so legacy or buggy paths cannot reintroduce the divergent
+-- representation.
+ALTER TABLE "public"."schedule"
+    ADD CONSTRAINT schedule_no_archived_occurrence CHECK (NOT (occurrence IS NOT NULL AND archived_at IS NOT NULL));
+
 -- Exactly one of thread_id/link_id must be set
 ALTER TABLE "public"."schedule"
     ADD CONSTRAINT schedule_thread_xor_link CHECK (

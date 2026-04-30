@@ -1974,11 +1974,6 @@ class Thread extends Equatable implements Comparable<Thread> {
                 scheduleRow.occurrence!,
                 dateOnly: overrideDateOnly,
               );
-              // Remove archived occurrences (e.g. cancelled recurring event instances)
-              if (scheduleRow.archivedAt != null) {
-                occurrences.remove(overrideKey);
-                continue;
-              }
               final activity = Thread._fromStore(
                 activity: activityRow,
                 priority: priority,
@@ -2071,11 +2066,6 @@ class Thread extends Equatable implements Comparable<Thread> {
                   overrideRow.occurrence!,
                   dateOnly: overrideDateOnly,
                 );
-                // Remove archived occurrences (e.g. cancelled recurring event instances)
-                if (overrideRow.archivedAt != null) {
-                  occurrences.remove(overrideKey);
-                  continue;
-                }
                 occurrences[overrideKey] = Thread._fromStore(
                   activity: activityRow,
                   priority: priority,
@@ -4021,11 +4011,10 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// `generatedInstances` are rrule-generated rows (their currentUserStatus
   /// is copied from the series base). `overrideRows` are persisted
   /// schedule rows with `occurrence IS NOT NULL`. Overrides replace
-  /// generated instances at matching occurrence keys, and archived
-  /// override rows remove the matching entry instead.
-  /// `archivedOverrideKeys` is the set of occurrence strings whose
-  /// generated instances should also be filtered out (cancelled instances
-  /// with no surviving override).
+  /// generated instances at matching occurrence keys. Cancelled
+  /// occurrences are excluded earlier via the parent series'
+  /// `recurrenceExdates` (see `generateOccurrences`); they never appear
+  /// here as override rows.
   ///
   /// The returned `isOverride` distinguishes a persisted-override row
   /// from a generated instance — used by the caller to decide the
@@ -4034,7 +4023,6 @@ class Thread extends Equatable implements Comparable<Thread> {
   static ({ScheduleRow row, bool isOverride})? selectRepresentativeOccurrence({
     required List<ScheduleRow> generatedInstances,
     required List<ScheduleRow> overrideRows,
-    required Set<String> archivedOverrideKeys,
     required DateTime now,
   }) {
     final merged = <String, ({ScheduleRow row, bool isOverride})>{};
@@ -4042,17 +4030,12 @@ class Thread extends Equatable implements Comparable<Thread> {
     for (final row in generatedInstances) {
       final key = row.occurrence;
       if (key == null) continue;
-      if (archivedOverrideKeys.contains(key)) continue;
       merged[key] = (row: row, isOverride: false);
     }
 
     for (final override in overrideRows) {
       final key = override.occurrence;
       if (key == null) continue;
-      if (override.archivedAt != null) {
-        merged.remove(key);
-        continue;
-      }
       merged[key] = (row: override, isOverride: true);
     }
 
@@ -4159,20 +4142,14 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     final overrideRows = <ScheduleRow>[];
-    final archivedOverrideKeys = <String>{};
     for (final row in allRows) {
       if (row.occurrence == null) continue; // skip base series row
-      if (row.archivedAt != null) {
-        archivedOverrideKeys.add(row.occurrence!);
-        continue;
-      }
       overrideRows.add(row);
     }
 
     final picked = selectRepresentativeOccurrence(
       generatedInstances: generatedRows,
       overrideRows: overrideRows,
-      archivedOverrideKeys: archivedOverrideKeys,
       now: now,
     );
 

@@ -148,11 +148,6 @@ function convertOccurrenceToDb(
       ? occ.occurrence.toISOString()
       : occ.occurrence;
 
-  // Archived
-  if (occ.archived !== undefined) {
-    dbSchedule.archived_at = occ.archived ? new Date().toISOString() : null;
-  }
-
   return dbSchedule;
 }
 
@@ -166,8 +161,9 @@ function convertOccurrenceToDb(
  * to specific instances of a recurring event. Deleted/cancelled occurrences
  * should NOT have separate schedule rows — they are represented solely via
  * recurrence_exdates on the base schedule. When an occurrence with
- * `archived: true` is passed, it is converted to an exdate addition instead
- * of creating a schedule row.
+ * `cancelled: true` is passed, it is converted to an exdate addition instead
+ * of creating a schedule row. (Legacy `archived: true` is accepted as an
+ * alias for one release with a deprecation warning.)
  *
  * @param plot - The Plot instance
  * @param linkId - The link ID to attach schedules to
@@ -219,9 +215,19 @@ export async function createLinkSchedules(
     const exdatesToRemove: string[] = [];
 
     for (const occ of scheduleOccurrences) {
-      // Archived occurrences are deletions — add an exdate to the base schedule.
+      // Legacy alias: older connector versions sent `archived: true` to mean
+      // "this occurrence won't happen". Accept it for one release and warn.
+      const legacyArchived = (occ as { archived?: boolean }).archived;
+      if (legacyArchived !== undefined) {
+        console.warn(
+          "NewScheduleOccurrence.archived is deprecated; use `cancelled` to skip a single occurrence"
+        );
+      }
+      const cancelled = occ.cancelled ?? legacyArchived;
+
+      // Cancelled occurrences are skipped — add an exdate to the base schedule.
       // Archive any existing occurrence row (e.g. RSVP override) but don't create one.
-      if (occ.archived) {
+      if (cancelled) {
         const occDate =
           occ.occurrence instanceof Date
             ? occ.occurrence.toISOString()
@@ -249,8 +255,8 @@ export async function createLinkSchedules(
       if (result?.id) {
         scheduleIds.push(result.id);
 
-        // Explicitly unarchived occurrence — remove from exdates
-        if (occ.archived === false) {
+        // Explicitly un-cancelled occurrence — remove from exdates
+        if (cancelled === false) {
           const occDate =
             occ.occurrence instanceof Date
               ? occ.occurrence.toISOString()
