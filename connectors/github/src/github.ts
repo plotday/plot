@@ -175,6 +175,8 @@ export class GitHub extends Connector<GitHub> {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${token}`,
         "X-GitHub-Api-Version": "2022-11-28",
+        // GitHub requires a User-Agent on every request.
+        "User-Agent": "Plot",
         ...options?.headers,
       },
     });
@@ -257,24 +259,49 @@ export class GitHub extends Connector<GitHub> {
     _auth: Authorization,
     token: AuthToken,
   ): Promise<Channel[]> {
+    console.log("[github.getChannels] start", {
+      hasToken: !!token?.token,
+      tokenPrefix: token?.token?.slice(0, 8) ?? null,
+    });
+
     const repos: GitHubRepo[] = [];
     let page = 1;
 
     while (true) {
-      const response = await fetch(
-        `https://api.github.com/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100&page=${page}`,
-        {
-          headers: {
-            Accept: "application/vnd.github+json",
-            Authorization: `Bearer ${token.token}`,
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
+      const url = `https://api.github.com/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100&page=${page}`;
+      const response = await fetch(url, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token.token}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "Plot",
         },
-      );
+      });
 
-      if (!response.ok) break;
+      console.log("[github.getChannels] response", {
+        page,
+        status: response.status,
+        ok: response.ok,
+        scopes: response.headers.get("x-oauth-scopes"),
+        rateRemaining: response.headers.get("x-ratelimit-remaining"),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        console.log("[github.getChannels] error body", {
+          page,
+          status: response.status,
+          body: body.slice(0, 500),
+        });
+        break;
+      }
 
       const batch: GitHubRepo[] = await response.json();
+      console.log("[github.getChannels] batch", {
+        page,
+        count: batch.length,
+        sample: batch.slice(0, 3).map((r) => r.full_name),
+      });
       if (batch.length === 0) break;
 
       repos.push(...batch);
@@ -282,10 +309,12 @@ export class GitHub extends Connector<GitHub> {
       page++;
     }
 
-    return repos.map((repo) => ({
+    const channels = repos.map((repo) => ({
       id: repo.full_name,
       title: repo.full_name,
     }));
+    console.log("[github.getChannels] done", { totalRepos: repos.length, totalChannels: channels.length });
+    return channels;
   }
 
   /**
