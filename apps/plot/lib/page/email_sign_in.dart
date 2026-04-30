@@ -25,7 +25,7 @@ enum _AuthMode { signIn, signUp, otpSent, secondFactor }
 class _EmailSignInPageState extends State<EmailSignInPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _otpController = TextEditingController();
+  final _otpController = FOtpController();
   final _emailFocusNode = FocusNode();
   _AuthMode _mode = _AuthMode.signIn;
   bool _isLoading = false;
@@ -431,10 +431,19 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                             style: context.theme.typography.md,
                             textAlign: TextAlign.center,
                           ),
-                          OtpInput(
+                          FOtpField(
                             key: ValueKey('sf_$_otpResetCounter'),
-                            controller: _otpController,
-                            onComplete: _handleVerifySecondFactor,
+                            control: FOtpFieldControl.managed(
+                              controller: _otpController,
+                              onChange: (value) {
+                                if (value.text.length == 6) {
+                                  FocusManager.instance.primaryFocus
+                                      ?.unfocus();
+                                  _handleVerifySecondFactor();
+                                }
+                              },
+                            ),
+                            autofocus: true,
                           ),
                         ],
                       ),
@@ -498,10 +507,19 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                             style: context.theme.typography.md,
                             textAlign: TextAlign.center,
                           ),
-                          OtpInput(
+                          FOtpField(
                             key: ValueKey(_otpResetCounter),
-                            controller: _otpController,
-                            onComplete: _handleVerifyOtp,
+                            control: FOtpFieldControl.managed(
+                              controller: _otpController,
+                              onChange: (value) {
+                                if (value.text.length == 6) {
+                                  FocusManager.instance.primaryFocus
+                                      ?.unfocus();
+                                  _handleVerifyOtp();
+                                }
+                              },
+                            ),
+                            autofocus: true,
                           ),
                         ],
                       ),

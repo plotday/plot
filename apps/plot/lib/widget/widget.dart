@@ -25,7 +25,6 @@ export 'hoverable_link.dart';
 export 'icon.dart';
 export 'icon_input_row.dart';
 export 'input_tile.dart';
-export 'otp_input.dart';
 export 'link.dart';
 export 'link_input.dart';
 export 'logo_image.dart';

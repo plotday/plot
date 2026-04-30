@@ -36,7 +36,6 @@ import 'package:plot/util/platform.dart';
 import 'package:plot/util/shortcut.dart';
 import 'package:plot/main.dart' show navigatorKey;
 import 'package:plot/router.dart';
-import 'package:plot/widget/otp_input.dart';
 import 'package:plot/widget/spinner.dart';
 import 'package:plot/widget/toast.dart';
 import 'command.dart';
@@ -1492,7 +1491,7 @@ class _AddEmailContent extends StatefulWidget {
 
 class _AddEmailContentState extends State<_AddEmailContent> {
   final _emailController = TextEditingController();
-  final _otpController = TextEditingController();
+  final _otpController = FOtpController();
   _AddEmailMode _mode = _AddEmailMode.enterEmail;
   bool _isLoading = false;
   int _otpResetCounter = 0;
@@ -1664,10 +1663,18 @@ class _AddEmailContentState extends State<_AddEmailContent> {
                         style: context.theme.typography.md,
                         textAlign: TextAlign.center,
                       ),
-                      OtpInput(
+                      FOtpField(
                         key: ValueKey(_otpResetCounter),
-                        controller: _otpController,
-                        onComplete: _handleVerifyCode,
+                        control: FOtpFieldControl.managed(
+                          controller: _otpController,
+                          onChange: (value) {
+                            if (value.text.length == 6) {
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              _handleVerifyCode();
+                            }
+                          },
+                        ),
+                        autofocus: true,
                       ),
                     ],
                   ),
