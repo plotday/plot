@@ -578,8 +578,8 @@ class ToggleShowArchived extends Command {
 
 /// Toggle archived visibility across the current priority's threads and
 /// notes (and, via the priorities-list watcher, archived priorities too).
-/// Backed by `Tag.archived` on `PriorityBloc.filter` so it matches what the
-/// old search-filter toggle did.
+/// Backed by `showArchived` on `PriorityBloc` (and `ThreadBloc` when a thread
+/// is open) so it stays independent of search and filter state.
 class ToggleArchivedVisibility extends Command {
   ToggleArchivedVisibility._({required this.showingArchived})
     : super(
@@ -593,11 +593,7 @@ class ToggleArchivedVisibility extends Command {
       );
 
   factory ToggleArchivedVisibility({required BuildContext context}) {
-    final showing = context
-        .read<PriorityBloc>()
-        .state
-        .filter
-        .contains(Tag.archived);
+    final showing = context.read<PriorityBloc>().state.showArchived;
     return ToggleArchivedVisibility._(showingArchived: showing);
   }
 
@@ -605,24 +601,10 @@ class ToggleArchivedVisibility extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    final priorityBloc = context.read<PriorityBloc>();
-    final currentFilters = List<Tag>.from(priorityBloc.state.filter);
-    if (currentFilters.contains(Tag.archived)) {
-      currentFilters.remove(Tag.archived);
-    } else {
-      currentFilters.add(Tag.archived);
-    }
-    priorityBloc.updateFilter(currentFilters);
+    context.read<PriorityBloc>().toggleShowArchived();
 
     try {
-      final threadBloc = context.read<ThreadBloc>();
-      final threadFilters = List<Tag>.from(threadBloc.state.filter);
-      if (threadFilters.contains(Tag.archived)) {
-        threadFilters.remove(Tag.archived);
-      } else {
-        threadFilters.add(Tag.archived);
-      }
-      threadBloc.updateFilter(threadFilters);
+      context.read<ThreadBloc>().toggleShowArchived();
     } on ProviderNotFoundException {
       // No thread open — nothing to toggle.
     }

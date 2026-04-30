@@ -1912,8 +1912,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     }
   }
 
-  bool get _effectiveShowArchived =>
-      state.showArchived || state.filter.contains(Tag.archived);
+  bool get _effectiveShowArchived => state.showArchived;
 
   Future<void> _triggerAgendaSync(Priority priorityToLoad) async {
     final archived = _effectiveShowArchived;

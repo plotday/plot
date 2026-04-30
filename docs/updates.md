@@ -1,3 +1,4 @@
+- Fixed "Show archived" turning itself off when you cleared the search bar — archived visibility is now fully independent from search and filters
 - Plot Team is now pre-attached when you start a thread in Using Plot — your feedback and questions go straight to the Plot team without needing to add them as a recipient first
 - Create Google Tasks from Plot — pick "Create new Task" when adding a link to a thread, choose a Google Tasks list, and Plot creates the task in Google Tasks and links it back automatically
 - Contact avatars now show in more places — your own photo from your sign-in account, photos from connectors that supply them (Linear, GitHub, Jira, Slack), photos pulled in from your Google Contacts when you have Gmail or Calendar connected (no separate Google Contacts connector required), and a Gravatar fallback for anyone else. Contacts without any photo still show the colored initials.

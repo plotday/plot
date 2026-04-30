@@ -10,7 +10,6 @@ import 'package:plot/state/now.dart';
 import 'package:plot/state/layout.dart';
 import 'package:plot/state/user.dart';
 import 'package:plot/state/local_preferences.dart';
-import 'package:plot/store/store.dart';
 import 'package:plot/widget/priorities_list.dart';
 import 'package:plot/widget/scaffold.dart';
 import 'package:plot/widget/list_tile.dart';
@@ -30,13 +29,13 @@ class PrioritiesPage extends StatelessWidget {
       builder: (context, localPrefsState) {
         // PriorityBloc may not be available when the Priorities tab is
         // shown without a priority selected in a sibling route.
-        // Use context.select (not context.read) so filter/search changes
-        // trigger rebuilds of the priorities list.
-        List<Tag>? priorityFilter;
+        // Use context.select (not context.read) so showArchived/search
+        // changes trigger rebuilds of the priorities list.
+        bool priorityShowArchived = false;
         String? prioritySearch;
         try {
-          priorityFilter = context.select<PriorityBloc, List<Tag>>(
-            (bloc) => bloc.state.filter,
+          priorityShowArchived = context.select<PriorityBloc, bool>(
+            (bloc) => bloc.state.showArchived,
           );
           prioritySearch = context.select<PriorityBloc, String>(
             (bloc) => bloc.state.search,
@@ -46,11 +45,10 @@ class PrioritiesPage extends StatelessWidget {
         }
 
         // Sync archived filter: show all if local prefs say so OR if
-        // the search archive filter is active
+        // the priority view is showing archived items.
         final prioritiesBloc = context.read<PrioritiesBloc>();
         final showAll =
-            localPrefsState.showAllPriorities ||
-            (priorityFilter?.contains(Tag.archived) ?? false);
+            localPrefsState.showAllPriorities || priorityShowArchived;
         final expectedFilter = showAll ? null : false;
         if (prioritiesBloc.state.archivedFilter != expectedFilter) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
