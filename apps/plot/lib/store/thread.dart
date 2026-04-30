@@ -2764,6 +2764,7 @@ class Thread extends Equatable implements Comparable<Thread> {
   bool get isDeclinedByUser {
     final contacts = scheduleContacts;
     if (contacts.isEmpty) return false;
+    if (!Base.signedIn) return false;
     final userId = Base.userId.toString();
     String? best;
     for (final c in contacts) {
