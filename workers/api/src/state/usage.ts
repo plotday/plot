@@ -106,6 +106,12 @@ export class Usage extends DurableObject<Bindings> {
         nextFlushTime INTEGER
       ) STRICT
     `);
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS burst_counter (
+        bucket_ms INTEGER PRIMARY KEY,
+        count INTEGER NOT NULL DEFAULT 0
+      )
+    `);
 
     // Migration: Rename priorityAgentId to twistInstanceId for existing DOs
     // This is safe to run multiple times - it will fail silently if column doesn't exist
