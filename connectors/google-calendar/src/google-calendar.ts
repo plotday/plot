@@ -727,20 +727,28 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
         if (mode === "full") {
           // Flush leftover pending_occ buffers as standalone
-          // occurrence-only links. These exist when an instance was
-          // buffered but its master was either saved in a different
-          // batch (so the end-of-batch drain in processCalendarEvents
-          // had nothing in linksBySource to merge into) or never
-          // appeared in the calendar at all (e.g. master deleted).
-          // Either way, forwarding them to saveLinks is the safe
-          // choice: the upsert keys on canonical source, so it
-          // attaches the occurrence to the existing master if one
-          // exists, and otherwise creates a single standalone link.
-          // The previous behavior — silently discarding leftovers —
-          // lost cancellations whenever the master and its instance
-          // didn't land in the same batch.
+          // occurrence-only links — but ONLY when their master was
+          // actually processed during this full pass (and is therefore
+          // in the DB by now). This catches the cross-batch case
+          // (master saved in batch A, instance buffered in batch B):
+          // saveLinks upserts on canonical source and attaches the
+          // occurrence to the existing master link.
+          //
+          // When a leftover's master never appeared in any batch, the
+          // master is gone from Google Calendar (deleted upstream).
+          // Flushing in that case would INSERT a brand-new link/thread
+          // with no schedule, no title, no notes — the cancellation
+          // exdate has no master schedule to attach to. Drop those
+          // orphans silently instead.
+          const seenMasterKeys = await this.tools.store.list(
+            "seen_master:"
+          );
+          const seenMasters = new Set(
+            seenMasterKeys.map((k) => k.slice("seen_master:".length))
+          );
           const pendingKeys = await this.tools.store.list("pending_occ:");
           const flushLinks: NewLinkWithNotes[] = [];
+          let droppedOrphans = 0;
           for (const key of pendingKeys) {
             const pending = await this.get<NewScheduleOccurrence>(key);
             if (!pending) {
@@ -764,6 +772,11 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
               "pending_occ:".length,
               key.length - suffix.length
             );
+            if (!seenMasters.has(canonical)) {
+              droppedOrphans += 1;
+              await this.clear(key);
+              continue;
+            }
             flushLinks.push({
               type: "event",
               title: undefined,
@@ -775,12 +788,20 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
             });
             await this.clear(key);
           }
-          if (flushLinks.length > 0) {
+          if (flushLinks.length > 0 || droppedOrphans > 0) {
             console.log(
               `[GoogleCalendar] full-pass flush: calendar=${calendarId} ` +
-                `flushedLinks=${flushLinks.length}`
+                `flushedLinks=${flushLinks.length} ` +
+                `droppedOrphans=${droppedOrphans}`
             );
+          }
+          if (flushLinks.length > 0) {
             await this.tools.integrations.saveLinks(flushLinks);
+          }
+
+          // Clear master markers for the next initial sync.
+          for (const key of seenMasterKeys) {
+            await this.clear(key);
           }
 
           await this.clear(`sync_state_${calendarId}`);
@@ -1166,6 +1187,16 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
           `events=${events.length} masters=${linksBySource.size} ` +
           `drained=${drainedTotal}`
       );
+
+      // Record every master/regular event saved this batch so the
+      // full-pass cleanup can tell legitimate cross-batch leftovers
+      // (master-in-batch-A, instance-in-batch-B → flush is correct,
+      // upserts onto the existing master link) from orphans whose
+      // master never came through (master deleted upstream → flushing
+      // would create a useless empty Untitled thread).
+      for (const source of linksBySource.keys()) {
+        await this.set(`seen_master:${source}`, true);
+      }
     }
 
     // Single batched save for the whole page. Collapses what used to be
