@@ -432,6 +432,44 @@ function stripQuotedReply(
       return content.substring(0, outlookDivIdx).trim();
     }
 
+    // Outlook (desktop, OWA, and corporate Exchange clients) wraps replies
+    // with a bolded "From: / Sent: / To: / Subject:" header block. The
+    // markup around it varies — sometimes a <div style="border-top:..."
+    // divider, sometimes <hr>, sometimes neither — so detect the stable
+    // header sequence first, then walk back to the nearest structural
+    // boundary.
+    const outlookHeaderRe =
+      /<(b|strong)[^>]*>\s*From:?\s*<\/\1>[\s\S]{0,1000}<(b|strong)[^>]*>\s*Sent:?\s*<\/\2>[\s\S]{0,1000}<(b|strong)[^>]*>\s*To:?\s*<\/\3>[\s\S]{0,1000}<(b|strong)[^>]*>\s*Subject:?\s*<\/\4>/i;
+    const outlookHeaderMatch = content.match(outlookHeaderRe);
+    if (outlookHeaderMatch?.index !== undefined) {
+      const fromIdx = outlookHeaderMatch.index;
+      const lookbackStart = Math.max(0, fromIdx - 1000);
+      const lookback = content.substring(lookbackStart, fromIdx);
+      // Prefer the latest structural divider (border-top div or <hr>)
+      // before the From: tag — that's the user/quoted boundary in
+      // Outlook's standard reply format.
+      const dividerRe =
+        /<hr\b[^>]*>|<div[^>]*style\s*=\s*["'][^"']*border-top\s*:[^"']*["'][^>]*>/gi;
+      let lastDivider = -1;
+      let match: RegExpExecArray | null;
+      while ((match = dividerRe.exec(lookback)) !== null) {
+        lastDivider = match.index;
+      }
+      let cut = fromIdx;
+      if (lastDivider !== -1) {
+        cut = lookbackStart + lastDivider;
+      } else {
+        // No divider — cut at the start of the wrapping <p> or <div>.
+        const lastP = lookback.lastIndexOf("<p");
+        const lastDiv = lookback.lastIndexOf("<div");
+        const wrapper = Math.max(lastP, lastDiv);
+        if (wrapper !== -1) {
+          cut = lookbackStart + wrapper;
+        }
+      }
+      return content.substring(0, cut).trim();
+    }
+
     return content;
   }
 
