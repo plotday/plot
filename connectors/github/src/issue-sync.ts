@@ -48,7 +48,10 @@ export async function syncIssueBatch(
 ): Promise<void> {
   const state = await source.get<IssueSyncState>(`issue_sync_state_${repositoryId}`);
   if (!state) {
-    throw new Error(`Issue sync state not found for repository ${repositoryId}`);
+    // Channel was disabled (stopSync clears state) or sync already completed
+    // (terminal branch clears state) before this queued batch ran. Exit
+    // quietly so the runtime acks the message instead of retrying forever.
+    return;
   }
 
   const token = await source.getToken(repositoryId);
