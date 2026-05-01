@@ -84,6 +84,16 @@ export type GitHubReview = {
   html_url: string;
 };
 
+/**
+ * Channel ids in this connector are either an owner login (e.g. `microsoft`)
+ * for an org/user-level toggle, or `owner/repo` for a single repository.
+ * The `/` is the disambiguator — repo full names always contain one,
+ * owner logins never do.
+ */
+function isRepoChannelId(channelId: string): boolean {
+  return channelId.includes("/");
+}
+
 type GitHubRepo = {
   id: number;
   full_name: string;
@@ -183,9 +193,21 @@ export class GitHub extends Connector<GitHub> {
   }
 
   /**
-   * Get an authenticated token for a channel repository
+   * Get an authenticated token for a channel.
+   *
+   * For org-managed repos (enabled via an owner-level channel), the
+   * `channel_config` lives on the org channel, not the repo. Look that up
+   * first so the right actor's token is selected, falling back to a direct
+   * lookup for repos that were enabled on their own.
    */
   async getToken(channelId: string): Promise<string> {
+    if (isRepoChannelId(channelId)) {
+      const orgId = await this.get<string>(`org_for_repo_${channelId}`);
+      if (orgId) {
+        const orgToken = await this.tools.integrations.get(orgId);
+        if (orgToken) return orgToken.token;
+      }
+    }
     const authToken = await this.tools.integrations.get(channelId);
     if (!authToken) {
       throw new Error("No GitHub authentication token available");
@@ -253,12 +275,10 @@ export class GitHub extends Connector<GitHub> {
   // ---------- Channel lifecycle ----------
 
   /**
-   * Returns available GitHub repositories as channel resources.
+   * Fetch every repository the authenticated user has access to.
+   * Used by both `getChannels` and the org-level enable fan-out.
    */
-  async getChannels(
-    _auth: Authorization,
-    token: AuthToken,
-  ): Promise<Channel[]> {
+  private async fetchAllRepos(token: string): Promise<GitHubRepo[]> {
     const repos: GitHubRepo[] = [];
     let page = 1;
 
@@ -268,7 +288,7 @@ export class GitHub extends Connector<GitHub> {
         {
           headers: {
             Accept: "application/vnd.github+json",
-            Authorization: `Bearer ${token.token}`,
+            Authorization: `Bearer ${token}`,
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "Plot",
           },
@@ -285,58 +305,192 @@ export class GitHub extends Connector<GitHub> {
       page++;
     }
 
-    return repos.map((repo) => ({
-      id: repo.full_name,
-      title: repo.full_name,
-    }));
+    return repos;
   }
 
   /**
-   * Called when a channel repository is enabled for syncing.
+   * Returns available GitHub repositories grouped by owner (user or
+   * organization). Each owner is a parent channel whose children are the
+   * repos the authenticated user has access to under that owner. Toggling
+   * an owner enables sync for every repo it currently exposes; toggling
+   * an individual repo enables only that repo.
    */
-  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    // Check if we've already synced with a wider or equal range
-    const syncHistoryMin = context?.syncHistoryMin;
-    if (syncHistoryMin) {
-      const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
-      if (storedMin && new Date(storedMin) <= syncHistoryMin && !context?.recovering) {
-        // Already synced with a wider range; signal completion immediately so
-        // the connection's `initial_sync_started_at` (auto-stamped by the
-        // runtime on every dispatch) doesn't leave the UI stuck.
-        await this.tools.integrations.channelSyncCompleted(channel.id);
-        return;
-      }
-      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
+  async getChannels(
+    _auth: Authorization,
+    token: AuthToken,
+  ): Promise<Channel[]> {
+    const repos = await this.fetchAllRepos(token.token);
+
+    const byOwner = new Map<string, GitHubRepo[]>();
+    for (const repo of repos) {
+      const owner = repo.owner.login;
+      const list = byOwner.get(owner) ?? [];
+      list.push(repo);
+      byOwner.set(owner, list);
     }
 
-    await this.set(`sync_enabled_${channel.id}`, true);
+    const channels: Channel[] = [];
+    for (const [owner, ownerRepos] of byOwner) {
+      channels.push({
+        id: owner,
+        title: owner,
+        children: ownerRepos.map((repo) => ({
+          id: repo.full_name,
+          title: repo.full_name,
+        })),
+      });
+    }
+    return channels;
+  }
 
-    // Queue webhook setup as a separate task to avoid blocking the HTTP response
-    const webhookCallback = await this.callback(
-      this.setupWebhook,
-      channel.id
-    );
+  /**
+   * Called when a channel is enabled. Routes to repo- or org-level setup
+   * based on whether the id is `owner/repo` or just `owner`.
+   */
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    if (isRepoChannelId(channel.id)) {
+      await this.onRepoEnabled(channel.id, context);
+    } else {
+      await this.onOrgEnabled(channel.id, context);
+    }
+  }
+
+  /**
+   * Called when a channel is disabled. Org-level disables tear down every
+   * repo we provisioned under that owner.
+   */
+  async onChannelDisabled(channel: Channel): Promise<void> {
+    if (isRepoChannelId(channel.id)) {
+      await this.onRepoDisabled(channel.id);
+    } else {
+      await this.onOrgDisabled(channel.id);
+    }
+  }
+
+  /**
+   * Set up webhook + initial sync for a single repo. Used both for
+   * directly-enabled repo channels and for repos provisioned under an
+   * org-level enable.
+   *
+   * When `parentChannelId` is set, the initial-sync completion counter is
+   * tracked on the parent (so the org channel's syncing indicator clears
+   * once all of its repos finish), and `org_for_repo_<repo>` is recorded
+   * so token lookups resolve via the parent.
+   */
+  private async provisionRepo(
+    repositoryId: string,
+    syncHistoryMin: Date | undefined,
+    parentChannelId: string | null,
+  ): Promise<{ pendingTypes: number }> {
+    await this.set(`sync_enabled_${repositoryId}`, true);
+    if (parentChannelId) {
+      await this.set(`org_for_repo_${repositoryId}`, parentChannelId);
+    }
+
+    const webhookCallback = await this.callback(this.setupWebhook, repositoryId);
     await this.runTask(webhookCallback);
 
-    // Start initial sync for enabled types. Track how many sync chains we
-    // expect to complete so the last one can call channelSyncCompleted.
     const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
     const pendingTypes =
       (options.syncPullRequests ? 1 : 0) + (options.syncIssues ? 1 : 0);
+
+    if (options.syncPullRequests) {
+      await startPRBatchSync(this, repositoryId, true, syncHistoryMin);
+    }
+    if (options.syncIssues) {
+      await startIssueBatchSync(this, repositoryId, true, syncHistoryMin);
+    }
+
+    return { pendingTypes };
+  }
+
+  /**
+   * Provision sync for a single repo enabled directly (not under an org).
+   */
+  private async onRepoEnabled(repositoryId: string, context?: SyncContext): Promise<void> {
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(`sync_history_min_${repositoryId}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin && !context?.recovering) {
+        await this.tools.integrations.channelSyncCompleted(repositoryId);
+        return;
+      }
+      await this.set(`sync_history_min_${repositoryId}`, syncHistoryMin.toISOString());
+    }
+
+    const { pendingTypes } = await this.provisionRepo(repositoryId, syncHistoryMin, null);
     if (pendingTypes > 0) {
-      await this.set(`pending_initial_sync_${channel.id}`, pendingTypes);
+      await this.set(`pending_initial_sync_${repositoryId}`, pendingTypes);
     } else {
-      // Nothing to sync; mark complete immediately.
-      await this.tools.integrations.channelSyncCompleted(channel.id);
+      await this.tools.integrations.channelSyncCompleted(repositoryId);
+    }
+  }
+
+  /**
+   * Provision sync for every repo currently visible under an owner.
+   */
+  private async onOrgEnabled(orgId: string, context?: SyncContext): Promise<void> {
+    const syncHistoryMin = context?.syncHistoryMin;
+    if (syncHistoryMin) {
+      const storedMin = await this.get<string>(`sync_history_min_${orgId}`);
+      if (storedMin && new Date(storedMin) <= syncHistoryMin && !context?.recovering) {
+        await this.tools.integrations.channelSyncCompleted(orgId);
+        return;
+      }
+      await this.set(`sync_history_min_${orgId}`, syncHistoryMin.toISOString());
+    }
+
+    await this.set(`org_enabled_${orgId}`, true);
+
+    const token = await this.getToken(orgId);
+    const allRepos = await this.fetchAllRepos(token);
+    const orgRepos = allRepos.filter((r) => r.owner.login === orgId);
+    const repoIds = orgRepos.map((r) => r.full_name);
+    await this.set(`org_repos_${orgId}`, repoIds);
+
+    if (repoIds.length === 0) {
+      await this.tools.integrations.channelSyncCompleted(orgId);
       return;
     }
 
-    if (options.syncPullRequests) {
-      await startPRBatchSync(this, channel.id, true, syncHistoryMin);
+    let totalPending = 0;
+    for (const repoId of repoIds) {
+      const { pendingTypes } = await this.provisionRepo(repoId, syncHistoryMin, orgId);
+      totalPending += pendingTypes;
     }
-    if (options.syncIssues) {
-      await startIssueBatchSync(this, channel.id, true, syncHistoryMin);
+
+    if (totalPending > 0) {
+      await this.set(`pending_initial_sync_${orgId}`, totalPending);
+    } else {
+      await this.tools.integrations.channelSyncCompleted(orgId);
     }
+  }
+
+  /**
+   * Tear down a single repo's webhook + sync state. Shared by direct repo
+   * disables and org-level disables (which iterate their managed repos).
+   */
+  private async teardownRepo(repositoryId: string): Promise<void> {
+    await this.stopSync(repositoryId);
+    await this.clear(`sync_enabled_${repositoryId}`);
+    await this.clear(`org_for_repo_${repositoryId}`);
+  }
+
+  private async onRepoDisabled(repositoryId: string): Promise<void> {
+    await this.teardownRepo(repositoryId);
+    await this.clear(`pending_initial_sync_${repositoryId}`);
+    await this.clear(`sync_history_min_${repositoryId}`);
+  }
+
+  private async onOrgDisabled(orgId: string): Promise<void> {
+    const repoIds = (await this.get<string[]>(`org_repos_${orgId}`)) ?? [];
+    for (const repoId of repoIds) {
+      await this.teardownRepo(repoId);
+    }
+    await this.clear(`org_repos_${orgId}`);
+    await this.clear(`org_enabled_${orgId}`);
+    await this.clear(`pending_initial_sync_${orgId}`);
+    await this.clear(`sync_history_min_${orgId}`);
   }
 
   /**
@@ -345,27 +499,25 @@ export class GitHub extends Connector<GitHub> {
    * `integrations.channelSyncCompleted` so the Flutter app clears the
    * syncing indicator. No-op when the counter is missing (i.e. this wasn't
    * an initial sync).
+   *
+   * For repos provisioned under an org-level enable, the counter lives on
+   * the parent org channel — sync chains pass the repo id, so we redirect
+   * here.
    */
   async markInitialSyncTypeDone(channelId: string): Promise<void> {
-    const key = `pending_initial_sync_${channelId}`;
+    const orgId = await this.get<string>(`org_for_repo_${channelId}`);
+    const counterChannelId = orgId ?? channelId;
+
+    const key = `pending_initial_sync_${counterChannelId}`;
     const remaining = await this.get<number>(key);
     if (remaining == null) return;
     const next = remaining - 1;
     if (next <= 0) {
       await this.clear(key);
-      await this.tools.integrations.channelSyncCompleted(channelId);
+      await this.tools.integrations.channelSyncCompleted(counterChannelId);
     } else {
       await this.set(key, next);
     }
-  }
-
-  /**
-   * Called when a channel repository is disabled.
-   */
-  async onChannelDisabled(channel: Channel): Promise<void> {
-    await this.stopSync(channel.id);
-    await this.clear(`sync_enabled_${channel.id}`);
-    await this.clear(`pending_initial_sync_${channel.id}`);
   }
 
   /**
