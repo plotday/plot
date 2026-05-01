@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:forui/forui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:plot/api/twist_api.dart';
 import 'package:plot/store/types.dart' show AuthProvider;
@@ -673,6 +674,8 @@ class _AccountRow extends StatelessWidget {
         account.email != null && account.email != account.displayName;
 
     final iconSize = theme.iconSizes.base;
+    final manageAccessUrl = account.manageAccessUrl;
+    final manageAccessLabel = _manageAccessLabel(account.provider);
 
     return Opacity(
       opacity: isRemoved ? 0.4 : 1.0,
@@ -681,55 +684,95 @@ class _AccountRow extends StatelessWidget {
           horizontal: context.theme.spacing.xl,
           vertical: context.theme.spacing.sm,
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildProviderIcon(context, iconSize),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      account.displayName,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: theme.typography.md.fontSize,
-                        color: theme.colors.foreground,
-                      ),
-                    ),
-                  ),
-                  if (showEmail) ...[
-                    SizedBox(width: theme.spacing.md),
-                    Flexible(
-                      child: Text(
-                        account.email!,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: theme.typography.md.fontSize,
-                          color: theme.colors.mutedForeground,
+            Row(
+              children: [
+                _buildProviderIcon(context, iconSize),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          account.displayName,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: theme.typography.md.fontSize,
+                            color: theme.colors.foreground,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ],
-              ),
+                      if (showEmail) ...[
+                        SizedBox(width: theme.spacing.md),
+                        Flexible(
+                          child: Text(
+                            account.email!,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: theme.typography.md.fontSize,
+                              color: theme.colors.mutedForeground,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (!isRemoved && onRefresh != null)
+                  FButton.icon(
+                    onPress: isRefreshing ? null : onRefresh,
+                    variant: FButtonVariant.ghost,
+                    child: isRefreshing
+                        ? SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: Spinner(size: 14),
+                          )
+                        : Icon(
+                            FontAwesomeIcons.arrowsRotate,
+                            size: 14,
+                            color: theme.colors.mutedForeground,
+                          ),
+                  ),
+              ],
             ),
-            if (!isRemoved && onRefresh != null)
-              FButton.icon(
-                onPress: isRefreshing ? null : onRefresh,
-                variant: FButtonVariant.ghost,
-                child: isRefreshing
-                    ? SizedBox(width: 14, height: 14, child: Spinner(size: 14))
-                    : Icon(
-                        FontAwesomeIcons.arrowsRotate,
-                        size: 14,
-                        color: theme.colors.mutedForeground,
-                      ),
+            if (!isRemoved &&
+                manageAccessUrl != null &&
+                manageAccessLabel != null)
+              Padding(
+                padding: EdgeInsets.only(
+                  left: iconSize + 12,
+                  top: theme.spacing.xs,
+                ),
+                child: GestureDetector(
+                  onTap: () => launchUrl(Uri.parse(manageAccessUrl)),
+                  child: Text(
+                    manageAccessLabel,
+                    style: theme.typography.sm.copyWith(
+                      color: theme.colors.mutedForeground,
+                      decoration: TextDecoration.underline,
+                      decorationColor: theme.colors.mutedForeground,
+                    ),
+                  ),
+                ),
               ),
           ],
         ),
       ),
     );
+  }
+
+  /// Provider-specific label for the "manage access" link. Returns null when
+  /// the provider has no actionable wording (the link is hidden).
+  String? _manageAccessLabel(AuthProvider provider) {
+    switch (provider) {
+      case AuthProvider.github:
+        return 'Manage organization access on GitHub';
+      default:
+        return 'Manage access';
+    }
   }
 
   Widget _buildProviderIcon(BuildContext context, double size) {

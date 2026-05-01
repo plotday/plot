@@ -808,12 +808,18 @@ class TwistAccount extends Equatable {
   final String? name;
   final bool autoEnableNewChannels;
 
+  /// External URL where the user manages app authorization for this provider
+  /// (e.g. GitHub's per-app connection page where org access is granted).
+  /// Null when no actionable external page exists.
+  final String? manageAccessUrl;
+
   const TwistAccount({
     required this.provider,
     required this.actorId,
     this.email,
     this.name,
     this.autoEnableNewChannels = false,
+    this.manageAccessUrl,
   });
 
   factory TwistAccount.fromJson(Map<String, dynamic> json) {
@@ -826,6 +832,7 @@ class TwistAccount extends Equatable {
       email: json['email'] as String?,
       name: json['name'] as String?,
       autoEnableNewChannels: json['autoEnableNewChannels'] as bool? ?? false,
+      manageAccessUrl: json['manageAccessUrl'] as String?,
     );
   }
 
@@ -833,7 +840,7 @@ class TwistAccount extends Equatable {
 
   @override
   List<Object?> get props =>
-      [provider, actorId, email, name, autoEnableNewChannels];
+      [provider, actorId, email, name, autoEnableNewChannels, manageAccessUrl];
 }
 
 /// A channel resource for a twist integration

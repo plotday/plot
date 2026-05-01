@@ -202,6 +202,30 @@ function classifyRefreshHttpError(
   return { permanent: false, oauthError };
 }
 
+/**
+ * External URL where the user manages app authorization for this provider —
+ * e.g. GitHub's per-app connection page, which is the only place to grant
+ * organization access to an OAuth App after the initial consent screen.
+ *
+ * The URL embeds the provider's client id, which differs per environment, so
+ * it must be built server-side from `env`. Returns null when no actionable
+ * external page exists for the provider.
+ */
+function buildManageAccessUrl(
+  provider: AuthProvider,
+  env: Bindings
+): string | null {
+  switch (provider) {
+    case "github": {
+      const clientId = env.AUTH_GITHUB_ID;
+      if (!clientId) return null;
+      return `https://github.com/settings/connections/applications/${clientId}`;
+    }
+    default:
+      return null;
+  }
+}
+
 // @ts-ignore - class correctly implements IAuth but TS can't verify due to Kysely type differences
 export class Integrations extends Tool implements IAuth {
   private store: Store;
@@ -660,18 +684,6 @@ export class Integrations extends Tool implements IAuth {
     actorId: ActorId,
     channels: Channel[]
   ): Promise<any> {
-    const _setChannelsLogger = createLogger({
-      twist_instance_id: this.twistInstanceId,
-      component: "Integrations.setChannels",
-    });
-    _setChannelsLogger.info("setChannels called", {
-      provider,
-      actor_id: actorId,
-      channel_count: Array.isArray(channels) ? channels.length : -1,
-      sample: Array.isArray(channels)
-        ? channels.slice(0, 5).map((c) => ({ id: c.id, title: c.title }))
-        : null,
-    });
     // Snapshot the set of channels we already know about before mirroring so
     // we can identify newly-discovered ones for auto-enable.
     const flat = this.flattenChannels(channels);
@@ -3058,6 +3070,10 @@ export class Integrations extends Tool implements IAuth {
       name: string | null;
       autoEnableNewChannels: boolean;
       enabledScopeGroups?: string[];
+      // External URL where the user manages app authorization for this
+      // provider (e.g. GitHub's "manage organization access" page). Surfaced
+      // by the modal when present; null/omitted otherwise.
+      manageAccessUrl?: string | null;
     }>;
     syncables: Array<{
       provider: AuthProvider;
@@ -3113,6 +3129,7 @@ export class Integrations extends Tool implements IAuth {
       name: string | null;
       autoEnableNewChannels: boolean;
       enabledScopeGroups?: string[];
+      manageAccessUrl?: string | null;
     }> = [];
 
     // Track which channel IDs have access from any current-user contact
@@ -3196,6 +3213,9 @@ export class Integrations extends Tool implements IAuth {
           name,
           autoEnableNewChannels,
           ...(enabledScopeGroups ? { enabledScopeGroups } : {}),
+          ...(buildManageAccessUrl(provider, this.env)
+            ? { manageAccessUrl: buildManageAccessUrl(provider, this.env) }
+            : {}),
         });
 
         // Get this actor's channel access (may be a tree)
@@ -3310,24 +3330,6 @@ export class Integrations extends Tool implements IAuth {
     for (const [provider, tree] of channelTreesByProvider) {
       const annotated = await annotateChannelTree(provider, tree);
       const visible = filterVisibleTree(annotated);
-      const _gidLogger = createLogger({
-        twist_instance_id: this.twistInstanceId,
-        component: "Integrations.getIntegrationData",
-      });
-      _gidLogger.info("channels for provider", {
-        provider,
-        raw_count: tree.length,
-        annotated_count: annotated.length,
-        visible_count: visible.length,
-        annotated_sample: annotated.slice(0, 5).map((c) => ({
-          id: c.id,
-          title: c.title,
-          enabled: c.enabled,
-          currentUserHasAccess: c.currentUserHasAccess,
-        })),
-        channelAccessByCurrentUser_size: channelAccessByCurrentUser.size,
-        currentUserContactIds_size: currentUserContactIds.size,
-      });
       allChannels.push(...visible);
     }
 
@@ -3384,26 +3386,8 @@ export class Integrations extends Tool implements IAuth {
    * updating channel_access with the latest list.
    */
   async refreshChannels(provider: AuthProvider, actorId: ActorId): Promise<any> {
-    const logger = createLogger({
-      twist_instance_id: this.twistInstanceId,
-      component: "Integrations.refreshChannels",
-    });
-    logger.info("refreshChannels called", { provider, actor_id: actorId });
     const dispatch = await this.buildRefreshDispatch(provider, actorId);
-    if (!dispatch) {
-      logger.warn("refreshChannels: no dispatch built (no token or no matching provider)", {
-        provider,
-        actor_id: actorId,
-      });
-      return;
-    }
-    logger.info("refreshChannels: dispatching", {
-      provider,
-      actor_id: actorId,
-      dispatch_keys: Object.keys(dispatch),
-      sourceMethod: dispatch.sourceMethod ?? null,
-      optionPath: dispatch.optionPath ?? null,
-    });
+    if (!dispatch) return;
     return { __dispatch: [dispatch] } as any;
   }
 
