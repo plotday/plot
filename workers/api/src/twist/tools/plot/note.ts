@@ -238,7 +238,11 @@ export async function createNote(
       created_by: plot.twistInstanceId,
       thread_id: activityId,
       source_created_at:
-        note.created?.toISOString() ?? new Date().toISOString(),
+        note.created instanceof Date
+          ? note.created.toISOString()
+          : typeof note.created === "string"
+            ? note.created
+            : new Date().toISOString(),
       draft: false,
       access_contacts: resolvedAccessContacts,
       content: contentToStore,

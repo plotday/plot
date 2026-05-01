@@ -163,7 +163,11 @@ export async function createLink(
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
       source_created_at:
-        link.created?.toISOString() ?? new Date().toISOString(),
+        link.created instanceof Date
+          ? link.created.toISOString()
+          : typeof link.created === "string"
+            ? link.created
+            : new Date().toISOString(),
       title: link.title,
       ...(previewText !== null ? { preview: previewText } : {}),
       ...(assigneeId !== undefined ? { assignee_id: assigneeId } : {}),
@@ -397,7 +401,11 @@ export async function createLinkOnly(
       updated_by: plot.getUpdatedBy(),
       sync_depth: plot.syncDepth + 1,
       source_created_at:
-        link.created?.toISOString() ?? new Date().toISOString(),
+        link.created instanceof Date
+          ? link.created.toISOString()
+          : typeof link.created === "string"
+            ? link.created
+            : new Date().toISOString(),
       title: link.title,
       preview: previewText,
       assignee_id: assigneeId ?? null,
