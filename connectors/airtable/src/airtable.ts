@@ -54,7 +54,8 @@ const NOTES_FIELD_MATCHERS = /notes?|description|details?|summary/i;
 // Upserting keeps the original thread title, so we want the richest name we can get.
 const DEFAULT_DESCRIPTION_KEY = "description";
 
-type DetectedTable = {
+type TableMapping = {
+  baseId: string;
   tableId: string;
   tableName: string;
   primaryFieldId: string;
@@ -77,16 +78,51 @@ type DetectedTable = {
   notesFieldName: string | null;
 };
 
+type SyncUnit = { tableId: string; viewId?: string };
+
 type SyncState = {
+  units: SyncUnit[];
+  unitIndex: number;
+  offset: string | null;
+  initialSync: boolean;
+};
+
+// Pre-tree-refactor sync state. Migrated on read in `syncBatch`.
+type LegacySyncState = {
   tableIndex: number;
   offset: string | null;
   initialSync: boolean;
 };
 
+type ParsedChannelId =
+  | { kind: "base"; baseId: string }
+  | { kind: "table"; baseId: string; tableId: string }
+  | { kind: "view"; baseId: string; tableId: string; viewId: string };
+
 type LinkStatus = NonNullable<LinkTypeConfig["statuses"]>[number];
 
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const STALE_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Channel ids encode the Base > Table > View hierarchy as slash-separated
+ * Airtable ids: `appXXX`, `appXXX/tblYYY`, `appXXX/tblYYY/viwZZZ`. Slash is
+ * safe because Airtable ids never contain one.
+ */
+function parseChannelId(id: string): ParsedChannelId {
+  const parts = id.split("/");
+  if (parts.length === 1) return { kind: "base", baseId: parts[0] };
+  if (parts.length === 2)
+    return { kind: "table", baseId: parts[0], tableId: parts[1] };
+  if (parts.length === 3)
+    return {
+      kind: "view",
+      baseId: parts[0],
+      tableId: parts[1],
+      viewId: parts[2],
+    };
+  throw new Error(`Invalid Airtable channel id: ${id}`);
+}
 
 export class Airtable extends Connector<Airtable> {
   static readonly PROVIDER = AuthProvider.Airtable;
@@ -150,6 +186,16 @@ export class Airtable extends Connector<Airtable> {
 
   // ---- Channels ----
 
+  /**
+   * Returns Bases as top-level channels, with Tables nested under each Base
+   * and Views nested under each Table. Enabling at any level is supported:
+   * a Base syncs all its tables, a Table syncs all its records (any view),
+   * a View syncs only the records visible in that view.
+   *
+   * Per-channel `linkTypes` declare statuses derived from the inspected
+   * table(s) so two-way status sync preserves workflow-specific labels
+   * ("In Progress", "Fixed", etc.) instead of collapsing to To Do / Done.
+   */
   async getChannels(
     _auth: Authorization | null,
     token: AuthToken | null
@@ -159,11 +205,52 @@ export class Airtable extends Connector<Airtable> {
     const bases = await api.listBases();
     return Promise.all(
       bases.map(async (b: AirtableBase): Promise<Channel> => {
-        const statuses = await this.baseStatuses(api, b.id);
+        let tables: AirtableTable[];
+        try {
+          tables = await api.listTables(b.id);
+        } catch {
+          return { id: b.id, title: b.name };
+        }
+
+        const baseStatuses = this.unionStatuses(tables);
+
+        const tableChildren: Channel[] = tables.map((t) => {
+          const mapping = this.detectTableMapping(b.id, t);
+          const tableStatuses = this.statusesForTable(mapping, t);
+          const linkTypes: LinkTypeConfig[] | undefined =
+            tableStatuses.length > 0
+              ? [
+                  {
+                    type: "task",
+                    label: "Task",
+                    logo: LOGO,
+                    logoDark: LOGO,
+                    logoMono: LOGO_MONO,
+                    statuses: tableStatuses,
+                    supportsAssignee: true,
+                  },
+                ]
+              : undefined;
+
+          const viewChildren: Channel[] = (t.views ?? []).map((v) => ({
+            id: `${b.id}/${t.id}/${v.id}`,
+            title: v.name,
+            ...(linkTypes ? { linkTypes } : {}),
+          }));
+
+          return {
+            id: `${b.id}/${t.id}`,
+            title: t.name,
+            ...(viewChildren.length > 0 ? { children: viewChildren } : {}),
+            ...(linkTypes ? { linkTypes } : {}),
+          };
+        });
+
         return {
           id: b.id,
           title: b.name,
-          ...(statuses.length > 0
+          ...(tableChildren.length > 0 ? { children: tableChildren } : {}),
+          ...(baseStatuses.length > 0
             ? {
                 linkTypes: [
                   {
@@ -172,7 +259,7 @@ export class Airtable extends Connector<Airtable> {
                     logo: LOGO,
                     logoDark: LOGO,
                     logoMono: LOGO_MONO,
-                    statuses,
+                    statuses: baseStatuses,
                     supportsAssignee: true,
                   },
                 ],
@@ -184,167 +271,16 @@ export class Airtable extends Connector<Airtable> {
   }
 
   /**
-   * Build a per-channel status list by inspecting detected task tables in the
-   * base. Each Airtable singleSelect option becomes its own Plot status so
-   * two-way status sync preserves workflow-specific labels ("In Progress",
-   * "Fixed", etc.) instead of collapsing everything to To Do / Done.
-   * Checkboxes contribute the fallback STATUS_TODO / STATUS_DONE pair.
+   * Pure inspection: detect the field mapping for a single table. Replaces
+   * the old "is this a task table?" heuristic — every table gets a mapping,
+   * but the relevant fields may all be null for non-task-shaped tables
+   * (those still sync as plain links with title only).
    */
-  private async baseStatuses(
-    api: AirtableAPI,
-    baseId: string
-  ): Promise<LinkStatus[]> {
-    let tables: AirtableTable[];
-    try {
-      tables = await api.listTables(baseId);
-    } catch {
-      return [];
-    }
-    const detected = tables
-      .map((t) => this.scoreTable(t))
-      .filter((d): d is DetectedTable => d !== null);
-    if (detected.length === 0) return [];
-
-    const optionNames = new Set<string>();
-    let hasCheckbox = false;
-    for (const table of detected) {
-      if (table.statusFieldType === "checkbox") hasCheckbox = true;
-      if (table.statusFieldType === "singleSelect" && table.statusFieldId) {
-        const raw = tables.find((x) => x.id === table.tableId);
-        const field = raw?.fields.find((x) => x.id === table.statusFieldId);
-        for (const choice of field?.options?.choices ?? []) {
-          optionNames.add(choice.name);
-        }
-      }
-    }
-
-    const statuses: LinkStatus[] = [];
-    let createDefaultAssigned = false;
-    const pushStatus = (status: string, label: string) => {
-      const isDone = DONE_OPTION_MATCHERS.test(status);
-      if (isDone) {
-        statuses.push({ status, label, done: true, tag: Tag.Done });
-      } else if (!createDefaultAssigned) {
-        statuses.push({ status, label, todo: true, createDefault: true });
-        createDefaultAssigned = true;
-      } else {
-        statuses.push({ status, label, todo: true });
-      }
-    };
-
-    if (hasCheckbox) {
-      pushStatus(STATUS_TODO, "To Do");
-      pushStatus(STATUS_DONE, "Done");
-    }
-    for (const name of optionNames) pushStatus(name, name);
-
-    return statuses;
-  }
-
-  async onChannelEnabled(
-    channel: Channel,
-    _context?: SyncContext
-  ): Promise<void> {
-    const baseId = channel.id;
-    await this.set(`sync_enabled_${baseId}`, true);
-
-    const detectCb = await this.callback(this.detectAndSync, baseId, true);
-    await this.runTask(detectCb);
-
-    const webhookCb = await this.callback(this.setupWebhook, baseId);
-    await this.runTask(webhookCb);
-
-    // Schedule the safety-poll chain. Real-time updates flow through the
-    // webhook delivery path; this 6-hour cadence catches deliveries that
-    // were lost in transit AND keeps the webhook alive (calling /payloads
-    // resets Airtable's 7-day inactivity timer, complementing renewWebhook).
-    // Set the flag so the reconcileComments migration shim doesn't also
-    // bootstrap a duplicate poll chain after upgrade.
-    await this.set(`poll_initialized_${baseId}`, true);
-    const pollCb = await this.callback(this.pollWebhookPayloads, baseId);
-    await this.runTask(pollCb, {
-      runAt: new Date(Date.now() + POLL_INTERVAL_MS),
-    });
-  }
-
-  async onChannelDisabled(channel: Channel): Promise<void> {
-    await this.stopSync(channel.id);
-    await this.clear(`sync_enabled_${channel.id}`);
-  }
-
-  private async stopSync(baseId: string): Promise<void> {
-    const webhookId = await this.get<string>(`webhook_id_${baseId}`);
-    if (webhookId) {
-      try {
-        const api = await this.getAPI(baseId);
-        if (api) await api.deleteWebhook(baseId, webhookId);
-      } catch (error) {
-        console.warn("Failed to delete Airtable webhook:", error);
-      }
-    }
-    await this.clear(`webhook_id_${baseId}`);
-    await this.clear(`webhook_secret_${baseId}`);
-    await this.clear(`webhook_cursor_${baseId}`);
-    await this.clear(`webhook_url_${baseId}`);
-    await this.clear(`webhook_expires_at_${baseId}`);
-    await this.clear(`last_activity_at_${baseId}`);
-    await this.clear(`poll_initialized_${baseId}`);
-    await this.clear(`sync_state_${baseId}`);
-    await this.clear(`task_tables_${baseId}`);
-    await this.clear(`tracked_records_${baseId}`);
-    // Legacy key from pre-"sync all records" versions; clear for cleanup.
-    await this.clear(`viewer_${baseId}`);
-  }
-
-  // ---- Detection + Backfill ----
-
-  async detectAndSync(baseId: string, initialSync: boolean): Promise<void> {
-    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
-    const api = await this.getAPI(baseId);
-    if (!api) return;
-
-    const detected = await this.refreshTaskTables(baseId, api);
-
-    if (detected.length === 0) return;
-
-    await this.set<SyncState>(`sync_state_${baseId}`, {
-      tableIndex: 0,
-      offset: null,
-      initialSync,
-    });
-
-    const cb = await this.callback(this.syncBatch, baseId);
-    await this.runTask(cb);
-  }
-
-  /**
-   * Re-detect task tables from the live Airtable schema and persist the
-   * cached map. Called by detectAndSync at channel-enable time AND by
-   * applyPayload when a tableFields webhook event signals that the
-   * schema has changed underneath us (status field renamed, new option
-   * added, etc.).
-   */
-  private async refreshTaskTables(
+  private detectTableMapping(
     baseId: string,
-    api: AirtableAPI
-  ): Promise<DetectedTable[]> {
-    const tables = await api.listTables(baseId);
-    const detected = tables
-      .map((t) => this.scoreTable(t))
-      .filter((d): d is DetectedTable => d !== null);
-    await this.set(`task_tables_${baseId}`, detected);
-    return detected;
-  }
-
-  /**
-   * Decide whether a table looks like task tracking. Qualifies when either
-   * a collaborator assignee or a status field (checkbox, or singleSelect
-   * with a done-matching option) is present — both are strong signals of
-   * task workflow.
-   */
-  private scoreTable(table: AirtableTable): DetectedTable | null {
+    table: AirtableTable
+  ): TableMapping {
     const primary = table.fields.find((f) => f.id === table.primaryFieldId);
-    if (!primary) return null;
 
     const assignee =
       table.fields.find((f) => f.type === "multipleCollaborators") ??
@@ -358,8 +294,6 @@ export class Airtable extends Connector<Airtable> {
     const checkbox = table.fields.find((f) => f.type === "checkbox");
     const statusField = statusSelect ?? checkbox ?? null;
 
-    if (!assignee && !statusField) return null;
-
     const dueDate = table.fields.find(
       (f) => f.type === "date" || f.type === "dateTime"
     );
@@ -368,21 +302,28 @@ export class Airtable extends Connector<Airtable> {
     let todoOption: string | null = null;
     if (statusSelect) {
       const choices = statusSelect.options?.choices ?? [];
-      doneOption = choices.find((c) => DONE_OPTION_MATCHERS.test(c.name))?.name ?? null;
-      todoOption = choices.find((c) => TODO_OPTION_MATCHERS.test(c.name))?.name ?? null;
+      doneOption =
+        choices.find((c) => DONE_OPTION_MATCHERS.test(c.name))?.name ?? null;
+      todoOption =
+        choices.find((c) => TODO_OPTION_MATCHERS.test(c.name))?.name ?? null;
     }
 
-    const notesField = table.fields.find(
-      (f) =>
-        (f.type === "multilineText" || f.type === "richText") &&
-        NOTES_FIELD_MATCHERS.test(f.name)
-    ) ?? table.fields.find((f) => f.type === "multilineText" || f.type === "richText");
+    const notesField =
+      table.fields.find(
+        (f) =>
+          (f.type === "multilineText" || f.type === "richText") &&
+          NOTES_FIELD_MATCHERS.test(f.name)
+      ) ??
+      table.fields.find(
+        (f) => f.type === "multilineText" || f.type === "richText"
+      );
 
     return {
+      baseId,
       tableId: table.id,
       tableName: table.name,
-      primaryFieldId: primary.id,
-      primaryFieldName: primary.name,
+      primaryFieldId: primary?.id ?? table.primaryFieldId,
+      primaryFieldName: primary?.name ?? "Name",
       assigneeFieldId: assignee?.id ?? null,
       assigneeFieldName: assignee?.name ?? null,
       assigneeFieldType: !assignee
@@ -406,84 +347,541 @@ export class Airtable extends Connector<Airtable> {
     };
   }
 
-  async syncBatch(baseId: string): Promise<void> {
-    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+  private statusesForTable(
+    mapping: TableMapping,
+    table: AirtableTable
+  ): LinkStatus[] {
+    if (mapping.statusFieldType === "checkbox") {
+      const out: LinkStatus[] = [];
+      this.appendStatus(out, STATUS_TODO, "To Do");
+      this.appendStatus(out, STATUS_DONE, "Done");
+      return out;
+    }
+    if (mapping.statusFieldType === "singleSelect" && mapping.statusFieldId) {
+      const field = table.fields.find((f) => f.id === mapping.statusFieldId);
+      const out: LinkStatus[] = [];
+      for (const choice of field?.options?.choices ?? []) {
+        this.appendStatus(out, choice.name, choice.name);
+      }
+      return out;
+    }
+    return [];
+  }
 
-    const state = await this.get<SyncState>(`sync_state_${baseId}`);
-    if (!state) return;
+  /**
+   * Statuses for a Base channel = union of every table's status options.
+   * Preserves workflow-specific labels across the whole base; falls back to
+   * To Do / Done when any table uses a checkbox.
+   */
+  private unionStatuses(tables: AirtableTable[]): LinkStatus[] {
+    const optionNames = new Set<string>();
+    let hasCheckbox = false;
+    for (const t of tables) {
+      const mapping = this.detectTableMapping("", t);
+      if (mapping.statusFieldType === "checkbox") hasCheckbox = true;
+      if (mapping.statusFieldType === "singleSelect" && mapping.statusFieldId) {
+        const field = t.fields.find((f) => f.id === mapping.statusFieldId);
+        for (const choice of field?.options?.choices ?? []) {
+          optionNames.add(choice.name);
+        }
+      }
+    }
+    const out: LinkStatus[] = [];
+    if (hasCheckbox) {
+      this.appendStatus(out, STATUS_TODO, "To Do");
+      this.appendStatus(out, STATUS_DONE, "Done");
+    }
+    for (const name of optionNames) this.appendStatus(out, name, name);
+    return out;
+  }
 
-    const detected = (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
-    if (state.tableIndex >= detected.length) {
-      await this.clear(`sync_state_${baseId}`);
+  private appendStatus(
+    out: LinkStatus[],
+    status: string,
+    label: string
+  ): void {
+    const isDone = DONE_OPTION_MATCHERS.test(status);
+    const hasCreateDefault = out.some((s) => s.createDefault === true);
+    if (isDone) {
+      out.push({ status, label, done: true, tag: Tag.Done });
+    } else if (!hasCreateDefault) {
+      out.push({ status, label, todo: true, createDefault: true });
+    } else {
+      out.push({ status, label, todo: true });
+    }
+  }
+
+  // ---- Lifecycle ----
+
+  async onChannelEnabled(
+    channel: Channel,
+    _context?: SyncContext
+  ): Promise<void> {
+    const parsed = parseChannelId(channel.id);
+    const baseId = parsed.baseId;
+
+    // Order matters: addEnabledChannel reads `enabled_channels_${baseId}`
+    // and falls back to seeding `[baseId]` when `sync_enabled_${baseId}`
+    // is true (the legacy upgrade path). Writing `sync_enabled` first
+    // would mis-seed the list with a Base channel that wasn't actually
+    // enabled when the user picks a Table or View on a fresh connection.
+    await this.addEnabledChannel(baseId, channel.id);
+    await this.set(`sync_enabled_${baseId}`, true);
+
+    const api = await this.getAPI(baseId);
+    if (!api) return;
+
+    let tables: AirtableTable[];
+    try {
+      tables = await api.listTables(baseId);
+    } catch (error) {
+      console.warn(
+        "Airtable onChannelEnabled: listTables failed",
+        baseId,
+        error
+      );
       return;
     }
 
-    const table = detected[state.tableIndex];
+    let units: SyncUnit[];
+    if (parsed.kind === "base") {
+      for (const t of tables) {
+        await this.set<TableMapping>(
+          `table_mapping_${baseId}_${t.id}`,
+          this.detectTableMapping(baseId, t)
+        );
+      }
+      units = tables.map((t) => ({ tableId: t.id }));
+    } else {
+      const t = tables.find((x) => x.id === parsed.tableId);
+      if (!t) return;
+      await this.set<TableMapping>(
+        `table_mapping_${baseId}_${t.id}`,
+        this.detectTableMapping(baseId, t)
+      );
+      units =
+        parsed.kind === "view"
+          ? [{ tableId: parsed.tableId, viewId: parsed.viewId }]
+          : [{ tableId: parsed.tableId }];
+    }
+
+    if (units.length > 0) {
+      await this.set<SyncState>(`sync_state_${channel.id}`, {
+        units,
+        unitIndex: 0,
+        offset: null,
+        initialSync: true,
+      });
+      const cb = await this.callback(this.syncBatch, channel.id);
+      await this.runTask(cb);
+    }
+
+    // Webhook + safety poll are per-base; bring them up only when this is
+    // the first channel under the base.
+    const existingWebhook = await this.get<string>(`webhook_id_${baseId}`);
+    if (!existingWebhook) {
+      const webhookCb = await this.callback(this.setupWebhook, baseId);
+      await this.runTask(webhookCb);
+    }
+    const polled = await this.get<boolean>(`poll_initialized_${baseId}`);
+    if (!polled) {
+      await this.set(`poll_initialized_${baseId}`, true);
+      const pollCb = await this.callback(this.pollWebhookPayloads, baseId);
+      await this.runTask(pollCb, {
+        runAt: new Date(Date.now() + POLL_INTERVAL_MS),
+      });
+    }
+  }
+
+  async onChannelDisabled(channel: Channel): Promise<void> {
+    const parsed = parseChannelId(channel.id);
+    const baseId = parsed.baseId;
+
+    await this.removeEnabledChannel(baseId, channel.id);
+    await this.clear(`sync_state_${channel.id}`);
+    await this.clear(`tracked_view_records_${channel.id}`);
+
+    const remaining = await this.listEnabledChannels(baseId);
+    if (remaining.length === 0) {
+      await this.stopBaseSync(baseId);
+    }
+  }
+
+  /**
+   * Tear down all per-base webhook + poll state when the last channel under
+   * a base is disabled. Also clears legacy keys from before the tree
+   * refactor so re-enabling later starts clean.
+   */
+  private async stopBaseSync(baseId: string): Promise<void> {
+    const webhookId = await this.get<string>(`webhook_id_${baseId}`);
+    if (webhookId) {
+      try {
+        const api = await this.getAPI(baseId);
+        if (api) await api.deleteWebhook(baseId, webhookId);
+      } catch (error) {
+        console.warn("Failed to delete Airtable webhook:", error);
+      }
+    }
+    await this.clear(`sync_enabled_${baseId}`);
+    await this.clear(`webhook_id_${baseId}`);
+    await this.clear(`webhook_secret_${baseId}`);
+    await this.clear(`webhook_cursor_${baseId}`);
+    await this.clear(`webhook_url_${baseId}`);
+    await this.clear(`webhook_expires_at_${baseId}`);
+    await this.clear(`last_activity_at_${baseId}`);
+    await this.clear(`poll_initialized_${baseId}`);
+    await this.clear(`enabled_channels_${baseId}`);
+    // Legacy keys from pre-tree-refactor versions.
+    await this.clear(`sync_state_${baseId}`);
+    await this.clear(`task_tables_${baseId}`);
+    await this.clear(`tracked_records_${baseId}`);
+    await this.clear(`viewer_${baseId}`);
+  }
+
+  private async addEnabledChannel(
+    baseId: string,
+    channelId: string
+  ): Promise<void> {
+    const list = await this.listEnabledChannels(baseId);
+    if (!list.includes(channelId)) {
+      list.push(channelId);
+      await this.set(`enabled_channels_${baseId}`, list);
+    }
+  }
+
+  private async removeEnabledChannel(
+    baseId: string,
+    channelId: string
+  ): Promise<void> {
+    const list = await this.listEnabledChannels(baseId);
+    const next = list.filter((c) => c !== channelId);
+    await this.set(`enabled_channels_${baseId}`, next);
+  }
+
+  /**
+   * Reads the per-base set of enabled channel ids. Pre-tree-refactor
+   * connections never wrote this list, so on first read after upgrade we
+   * seed it from the legacy `sync_enabled_${baseId}` flag (the base id was
+   * the only channel id back then).
+   */
+  private async listEnabledChannels(baseId: string): Promise<string[]> {
+    const explicit = await this.get<string[]>(`enabled_channels_${baseId}`);
+    if (explicit !== null) return explicit;
+    if (await this.get<boolean>(`sync_enabled_${baseId}`)) {
+      const seeded = [baseId];
+      await this.set(`enabled_channels_${baseId}`, seeded);
+      return seeded;
+    }
+    return [];
+  }
+
+  // ---- Detection + Backfill (legacy entry points kept for in-flight tasks) ----
+
+  /**
+   * Pre-tree-refactor entry point. Old `onChannelEnabled` callbacks queued
+   * `detectAndSync(baseId, initialSync)`; we keep the method so in-flight
+   * tasks resolve. After upgrade it runs the equivalent of a fresh
+   * Base-level enable: refresh per-table mappings and queue a Base-level
+   * sync if the base channel is enabled.
+   */
+  async detectAndSync(baseId: string, initialSync: boolean): Promise<void> {
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+    const api = await this.getAPI(baseId);
+    if (!api) return;
+    let tables: AirtableTable[];
+    try {
+      tables = await api.listTables(baseId);
+    } catch {
+      return;
+    }
+    for (const t of tables) {
+      await this.set<TableMapping>(
+        `table_mapping_${baseId}_${t.id}`,
+        this.detectTableMapping(baseId, t)
+      );
+    }
+    const enabled = await this.listEnabledChannels(baseId);
+    const baseChannel = enabled.find(
+      (c) => parseChannelId(c).kind === "base"
+    );
+    if (!baseChannel) return;
+    if (tables.length === 0) return;
+    await this.set<SyncState>(`sync_state_${baseChannel}`, {
+      units: tables.map((t) => ({ tableId: t.id })),
+      unitIndex: 0,
+      offset: null,
+      initialSync,
+    });
+    const cb = await this.callback(this.syncBatch, baseChannel);
+    await this.runTask(cb);
+  }
+
+  // ---- Sync ----
+
+  /**
+   * Drains one page of records for the current sync unit (table[/view]),
+   * upserting each record as a Plot link. Self-reschedules until the unit
+   * pagination drains, then advances to the next unit.
+   *
+   * Backwards compatible with in-flight callbacks queued by the pre-tree
+   * refactor (signature was `syncBatch(baseId)`; baseId is a valid Base
+   * channel id under the new scheme).
+   */
+  async syncBatch(channelId: string): Promise<void> {
+    const parsed = parseChannelId(channelId);
+    const baseId = parsed.baseId;
+
+    if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
+
+    let state = await this.get<SyncState | LegacySyncState>(
+      `sync_state_${channelId}`
+    );
+    if (!state) return;
+
+    if (!("units" in state)) {
+      const legacy = state as LegacySyncState;
+      const legacyTables =
+        (await this.get<Array<TableMapping & { tableId: string }>>(
+          `task_tables_${baseId}`
+        )) ?? [];
+      for (const t of legacyTables) {
+        const existing = await this.get<TableMapping>(
+          `table_mapping_${baseId}_${t.tableId}`
+        );
+        if (!existing) {
+          await this.set<TableMapping>(
+            `table_mapping_${baseId}_${t.tableId}`,
+            { ...t, baseId }
+          );
+        }
+      }
+      const migrated: SyncState = {
+        units: legacyTables.map((t) => ({ tableId: t.tableId })),
+        unitIndex: legacy.tableIndex,
+        offset: legacy.offset,
+        initialSync: legacy.initialSync,
+      };
+      await this.set<SyncState>(`sync_state_${channelId}`, migrated);
+      state = migrated;
+    }
+    const ss = state as SyncState;
+
+    if (ss.unitIndex >= ss.units.length) {
+      await this.clear(`sync_state_${channelId}`);
+      return;
+    }
+
+    const unit = ss.units[ss.unitIndex];
+    const mapping = await this.getTableMapping(baseId, unit.tableId);
+    if (!mapping) {
+      // Table vanished from the schema — skip the unit and continue.
+      await this.advanceSync(channelId, ss);
+      const next = await this.callback(this.syncBatch, channelId);
+      await this.runTask(next);
+      return;
+    }
+
     const api = await this.getAPI(baseId);
     if (!api) return;
 
     let page;
     try {
-      page = await api.listRecords(baseId, table.tableId, {
-        offset: state.offset,
+      page = await api.listRecords(baseId, unit.tableId, {
+        offset: ss.offset,
         pageSize: 50,
+        ...(unit.viewId ? { view: unit.viewId } : {}),
       });
     } catch (error) {
       if (isAirtableAuthError(error)) {
-        // Token is revoked/expired — stop the batch so we don't keep hammering
-        // the API. The next reconcile will retry once the user reconnects.
-        console.warn("Airtable syncBatch: auth failed, stopping", baseId, error);
-        await this.clear(`sync_state_${baseId}`);
+        console.warn(
+          "Airtable syncBatch: auth failed, stopping",
+          channelId,
+          error
+        );
+        await this.clear(`sync_state_${channelId}`);
         return;
       }
       throw error;
     }
 
-    // Per-record try/catch so one bad record doesn't abort the whole batch —
-    // a malformed field or a transient saveLink failure is recoverable on
-    // the next reconcile pass.
+    const trackedIds: string[] = [];
     for (const record of page.records) {
       try {
-        const link = this.recordToLink(record, table, baseId, state.initialSync);
+        const link = this.recordToLink(
+          record,
+          mapping,
+          channelId,
+          ss.initialSync
+        );
         await this.tools.integrations.saveLink(link);
+        trackedIds.push(record.id);
       } catch (error) {
         if (isAirtableAuthError(error)) {
-          console.warn("Airtable syncBatch: auth failed, stopping", baseId, error);
-          await this.clear(`sync_state_${baseId}`);
+          console.warn(
+            "Airtable syncBatch: auth failed, stopping",
+            channelId,
+            error
+          );
+          await this.clear(`sync_state_${channelId}`);
           return;
         }
-        console.warn("Airtable syncBatch: saveLink failed", record.id, error);
+        console.warn(
+          "Airtable syncBatch: saveLink failed",
+          record.id,
+          error
+        );
       }
     }
 
-    if (page.offset) {
-      await this.set<SyncState>(`sync_state_${baseId}`, {
-        ...state,
-        offset: page.offset,
-      });
-    } else if (state.tableIndex + 1 < detected.length) {
-      await this.set<SyncState>(`sync_state_${baseId}`, {
-        tableIndex: state.tableIndex + 1,
-        offset: null,
-        initialSync: state.initialSync,
-      });
-    } else {
-      await this.clear(`sync_state_${baseId}`);
-      return;
+    // Track view membership so the safety poll can detect records that
+    // later fall out of the view.
+    if (parsed.kind === "view" && trackedIds.length > 0) {
+      const previous =
+        (await this.get<string[]>(`tracked_view_records_${channelId}`)) ?? [];
+      const merged = Array.from(new Set([...previous, ...trackedIds]));
+      await this.set(`tracked_view_records_${channelId}`, merged);
     }
 
-    const next = await this.callback(this.syncBatch, baseId);
-    await this.runTask(next);
+    if (page.offset) {
+      await this.set<SyncState>(`sync_state_${channelId}`, {
+        ...ss,
+        offset: page.offset,
+      });
+    } else {
+      await this.advanceSync(channelId, ss);
+    }
+
+    if (await this.get<SyncState>(`sync_state_${channelId}`)) {
+      const next = await this.callback(this.syncBatch, channelId);
+      await this.runTask(next);
+    }
+  }
+
+  private async advanceSync(
+    channelId: string,
+    ss: SyncState
+  ): Promise<void> {
+    if (ss.unitIndex + 1 < ss.units.length) {
+      await this.set<SyncState>(`sync_state_${channelId}`, {
+        ...ss,
+        unitIndex: ss.unitIndex + 1,
+        offset: null,
+      });
+    } else {
+      await this.clear(`sync_state_${channelId}`);
+    }
+  }
+
+  /**
+   * Per-table field mapping, with three fallback layers:
+   *  1. New per-table cache (`table_mapping_${baseId}_${tableId}`).
+   *  2. Legacy per-base array (`task_tables_${baseId}`) for connections
+   *     that haven't been re-enabled since the tree refactor.
+   *  3. Live re-detection via `listTables` when neither cache hit.
+   */
+  private async getTableMapping(
+    baseId: string,
+    tableId: string
+  ): Promise<TableMapping | null> {
+    const direct = await this.get<TableMapping>(
+      `table_mapping_${baseId}_${tableId}`
+    );
+    if (direct) return direct;
+    const legacy = await this.get<Array<TableMapping & { tableId: string }>>(
+      `task_tables_${baseId}`
+    );
+    const found = legacy?.find((t) => t.tableId === tableId);
+    if (found) return { ...found, baseId };
+    const api = await this.getAPI(baseId);
+    if (!api) return null;
+    try {
+      const tables = await api.listTables(baseId);
+      const t = tables.find((x) => x.id === tableId);
+      if (!t) return null;
+      const mapping = this.detectTableMapping(baseId, t);
+      await this.set<TableMapping>(
+        `table_mapping_${baseId}_${tableId}`,
+        mapping
+      );
+      return mapping;
+    } catch {
+      return null;
+    }
+  }
+
+  // ---- Channel attribution ----
+
+  /**
+   * Resolve the most-specific enabled channel id covering this record.
+   * Order: enabled View containing this record > enabled Table > enabled
+   * Base. Returns null when no enabled channel covers the record (e.g. the
+   * webhook fired on a table whose channels are all disabled).
+   */
+  private async resolveChannelForRecord(
+    api: AirtableAPI,
+    baseId: string,
+    tableId: string,
+    recordId: string
+  ): Promise<string | null> {
+    const enabled = await this.listEnabledChannels(baseId);
+    const viewChannels: string[] = [];
+    let tableChannel: string | null = null;
+    let baseChannel: string | null = null;
+    for (const c of enabled) {
+      const p = parseChannelId(c);
+      if (p.kind === "base") baseChannel = c;
+      else if (p.kind === "table" && p.tableId === tableId) tableChannel = c;
+      else if (p.kind === "view" && p.tableId === tableId) viewChannels.push(c);
+    }
+    for (const view of viewChannels) {
+      const parsed = parseChannelId(view) as Extract<
+        ParsedChannelId,
+        { kind: "view" }
+      >;
+      if (
+        await this.recordInView(api, baseId, tableId, parsed.viewId, recordId)
+      ) {
+        return view;
+      }
+    }
+    if (tableChannel) return tableChannel;
+    if (baseChannel) return baseChannel;
+    return null;
+  }
+
+  /**
+   * Cheap view-membership check via `filterByFormula=RECORD_ID()='...'`
+   * scoped to the view. Returns 0 or 1 record without listing the whole view.
+   */
+  private async recordInView(
+    api: AirtableAPI,
+    baseId: string,
+    tableId: string,
+    viewId: string,
+    recordId: string
+  ): Promise<boolean> {
+    try {
+      const page = await api.listRecords(baseId, tableId, {
+        view: viewId,
+        filterByFormula: `RECORD_ID()='${recordId}'`,
+        pageSize: 1,
+        fields: [],
+      });
+      return page.records.length > 0;
+    } catch {
+      return false;
+    }
   }
 
   // ---- Record → Link ----
 
   private recordToLink(
     record: AirtableRecord,
-    table: DetectedTable,
-    baseId: string,
+    table: TableMapping,
+    channelId: string,
     initialSync: boolean
   ): NewLinkWithNotes {
+    const baseId = table.baseId;
     const title = this.deriveTitle(record, table);
     const description = this.buildDescription(record, table);
     const preview = this.buildPreview(record, table);
@@ -509,7 +907,7 @@ export class Airtable extends Connector<Airtable> {
       created: new Date(record.createdTime),
       assignee: assignee ?? null,
       status,
-      channelId: baseId,
+      channelId,
       meta: {
         airtableBaseId: baseId,
         airtableTableId: table.tableId,
@@ -520,7 +918,7 @@ export class Airtable extends Connector<Airtable> {
         airtableDoneOptionName: table.doneOptionName,
         airtableTodoOptionName: table.todoOptionName,
         syncProvider: "airtable",
-        syncableId: baseId,
+        syncableId: channelId,
       },
       actions,
       sourceUrl: url,
@@ -536,7 +934,7 @@ export class Airtable extends Connector<Airtable> {
    * scalar field under 200 chars. Avoids the ugly "(untitled)" fallback
    * whenever a record has ANY usable text.
    */
-  private deriveTitle(record: AirtableRecord, table: DetectedTable): string {
+  private deriveTitle(record: AirtableRecord, table: TableMapping): string {
     const primary = this.stringValue(record.fields[table.primaryFieldName]);
     if (primary && primary.trim()) return primary.trim();
     for (const [name, value] of Object.entries(record.fields)) {
@@ -555,7 +953,7 @@ export class Airtable extends Connector<Airtable> {
    */
   private buildDescription(
     record: AirtableRecord,
-    table: DetectedTable
+    table: TableMapping
   ): string | null {
     const sections: string[] = [];
 
@@ -580,7 +978,7 @@ export class Airtable extends Connector<Airtable> {
   /** Short plain-text preview for list views — prefer the notes field. */
   private buildPreview(
     record: AirtableRecord,
-    table: DetectedTable
+    table: TableMapping
   ): string | null {
     const notes = table.notesFieldName
       ? this.stringValue(record.fields[table.notesFieldName])
@@ -595,7 +993,7 @@ export class Airtable extends Connector<Airtable> {
     return null;
   }
 
-  private isSystemField(name: string, table: DetectedTable): boolean {
+  private isSystemField(name: string, table: TableMapping): boolean {
     return (
       name === table.assigneeFieldName ||
       name === table.statusFieldName ||
@@ -610,7 +1008,7 @@ export class Airtable extends Connector<Airtable> {
    * still render with a valid status. Checkboxes collapse to STATUS_TODO /
    * STATUS_DONE.
    */
-  private deriveStatus(record: AirtableRecord, table: DetectedTable): string {
+  private deriveStatus(record: AirtableRecord, table: TableMapping): string {
     if (!table.statusFieldName || !table.statusFieldType) return STATUS_TODO;
     const raw = record.fields[table.statusFieldName];
     if (table.statusFieldType === "checkbox") {
@@ -623,7 +1021,7 @@ export class Airtable extends Connector<Airtable> {
 
   private deriveAssignee(
     record: AirtableRecord,
-    table: DetectedTable
+    table: TableMapping
   ): NewContact | null {
     const fieldName = table.assigneeFieldName;
     if (!fieldName) return null;
@@ -721,14 +1119,11 @@ export class Airtable extends Connector<Airtable> {
       }
 
       // Subscribe to base-wide events (no recordChangeScope). We filter
-      // payloads to detected task tables inside applyPayload; this keeps
-      // the webhook valid when the set of task tables changes (e.g. a
-      // user adds a status field to a previously plain table — the
-      // tableFields event triggers re-detection and the now-tracked
-      // table starts receiving record updates without webhook recreation).
+      // payloads to enabled channels inside applyTableChange; this keeps
+      // the webhook valid when the set of enabled tables/views changes.
       //
-      // tableFields keeps the cached task_tables map fresh when a status
-      // field gains new options, gets renamed, etc.
+      // tableFields keeps the cached table_mapping_* keys fresh when a
+      // status field gains new options, gets renamed, etc.
       const webhook = await api.createWebhook(baseId, webhookUrl, {
         options: {
           filters: {
@@ -747,10 +1142,6 @@ export class Airtable extends Connector<Airtable> {
         `webhook_expires_at_${baseId}`,
         webhook.expirationTime ?? null
       );
-      // Establish the activity baseline. pollWebhookPayloads compares
-      // against this to decide whether to trigger Phase 5 recovery; we
-      // bump it on every successful webhook setup AND on every payload
-      // ingestion in processWebhookPayloads.
       await this.set(`last_activity_at_${baseId}`, new Date().toISOString());
       await this.scheduleNextRenewal(baseId, webhook.expirationTime ?? null);
     } catch (error) {
@@ -762,9 +1153,10 @@ export class Airtable extends Connector<Airtable> {
    * Airtable webhooks expire 7 days after creation/refresh and stop
    * delivering notifications without warning. We schedule a `renewWebhook`
    * task ~24h before each expiration so the hook stays alive indefinitely
-   * for as long as the channel is enabled. Clamps to "1 minute from now"
-   * minimum to avoid scheduling tasks in the past when the expiration is
-   * already inside the renewal window (e.g. clock skew, slow refresh).
+   * for as long as any channel under the base is enabled. Clamps to
+   * "1 minute from now" minimum to avoid scheduling tasks in the past
+   * when the expiration is already inside the renewal window (e.g. clock
+   * skew, slow refresh).
    */
   private async scheduleNextRenewal(
     baseId: string,
@@ -797,8 +1189,6 @@ export class Airtable extends Connector<Airtable> {
 
     const webhookId = await this.get<string>(`webhook_id_${baseId}`);
     if (!webhookId) {
-      // Lost the webhook id (e.g. setupWebhook never persisted it). Re-run
-      // setup; that will create a fresh hook and reschedule renewal.
       const cb = await this.callback(this.setupWebhook, baseId);
       await this.runTask(cb);
       return;
@@ -904,22 +1294,23 @@ export class Airtable extends Connector<Airtable> {
   async processWebhookPayloads(baseId: string): Promise<void> {
     const webhookId = await this.get<string>(`webhook_id_${baseId}`);
     if (!webhookId) return;
-    const detected =
-      (await this.get<DetectedTable[]>(`task_tables_${baseId}`)) ?? [];
 
     const api = await this.getAPI(baseId);
     if (!api) return;
     let cursor = (await this.get<number>(`webhook_cursor_${baseId}`)) ?? 1;
-    let tableMap = new Map(detected.map((d) => [d.tableId, d] as const));
 
     let ingested = false;
     let drained = false;
     for (let guard = 0; guard < 10; guard++) {
-      const payloads = await api.listWebhookPayloads(baseId, webhookId, cursor);
+      const payloads = await api.listWebhookPayloads(
+        baseId,
+        webhookId,
+        cursor
+      );
 
       for (const payload of payloads.payloads) {
         ingested = true;
-        tableMap = await this.applyPayload(payload, baseId, tableMap, api);
+        await this.applyPayload(payload, baseId, api);
       }
 
       cursor = payloads.cursor;
@@ -935,26 +1326,22 @@ export class Airtable extends Connector<Airtable> {
       await this.set(`last_activity_at_${baseId}`, new Date().toISOString());
     }
     if (!drained) {
-      // Hit the guard with payloads still pending. Queue a continuation
-      // task so the next fresh execution gets its own request budget.
       const cb = await this.callback(this.processWebhookPayloads, baseId);
       await this.runTask(cb);
     }
   }
 
   /**
-   * Process one webhook payload. Returns a (possibly refreshed) tableMap
-   * — when the payload contains schema-change events, the cached
-   * task_tables map is rebuilt from the live Airtable schema before
-   * applying the record-change part of this same payload, so any newly
-   * tracked tables get their record events applied with up-to-date metadata.
+   * Process one webhook payload. Refreshes per-table mappings for any table
+   * that carried schema-change events before applying the record changes
+   * in the same payload, so newly-tracked fields/options are picked up
+   * without webhook recreation.
    */
   private async applyPayload(
     payload: AirtableWebhookPayload,
     baseId: string,
-    tableMap: Map<string, DetectedTable>,
     api: AirtableAPI
-  ): Promise<Map<string, DetectedTable>> {
+  ): Promise<void> {
     const changedTables = payload.changedTablesById ?? {};
 
     const hasFieldChange = Object.values(changedTables).some(
@@ -963,37 +1350,70 @@ export class Airtable extends Connector<Airtable> {
         c.createdFieldsById ||
         (c.destroyedFieldIds && c.destroyedFieldIds.length > 0)
     );
-    let map = tableMap;
     if (hasFieldChange) {
-      const refreshed = await this.refreshTaskTables(baseId, api);
-      map = new Map(refreshed.map((d) => [d.tableId, d] as const));
+      try {
+        const tables = await api.listTables(baseId);
+        for (const tableId of Object.keys(changedTables)) {
+          const t = tables.find((x) => x.id === tableId);
+          if (t) {
+            await this.set<TableMapping>(
+              `table_mapping_${baseId}_${tableId}`,
+              this.detectTableMapping(baseId, t)
+            );
+          }
+        }
+      } catch (error) {
+        console.warn("Airtable: failed to refresh schema", baseId, error);
+      }
     }
 
     for (const [tableId, change] of Object.entries(changedTables)) {
-      const table = map.get(tableId);
-      if (!table) continue;
-      await this.applyTableChange(change, table, baseId, api);
+      await this.applyTableChange(change, tableId, baseId, api);
     }
-    return map;
   }
 
   private async applyTableChange(
     change: AirtableWebhookTableChange,
-    table: DetectedTable,
+    tableId: string,
     baseId: string,
     api: AirtableAPI
   ): Promise<void> {
     const recordIds = new Set<string>();
-    for (const id of Object.keys(change.createdRecordsById ?? {})) recordIds.add(id);
-    for (const id of Object.keys(change.changedRecordsById ?? {})) recordIds.add(id);
+    for (const id of Object.keys(change.createdRecordsById ?? {}))
+      recordIds.add(id);
+    for (const id of Object.keys(change.changedRecordsById ?? {}))
+      recordIds.add(id);
 
     for (const recordId of recordIds) {
       try {
-        const record = await api.getRecord(baseId, table.tableId, recordId);
-        const link = this.recordToLink(record, table, baseId, false);
+        const channelId = await this.resolveChannelForRecord(
+          api,
+          baseId,
+          tableId,
+          recordId
+        );
+        if (!channelId) continue;
+        const mapping = await this.getTableMapping(baseId, tableId);
+        if (!mapping) continue;
+        const record = await api.getRecord(baseId, tableId, recordId);
+        const link = this.recordToLink(record, mapping, channelId, false);
         await this.tools.integrations.saveLink(link);
+
+        if (parseChannelId(channelId).kind === "view") {
+          const previous =
+            (await this.get<string[]>(
+              `tracked_view_records_${channelId}`
+            )) ?? [];
+          if (!previous.includes(recordId)) {
+            previous.push(recordId);
+            await this.set(`tracked_view_records_${channelId}`, previous);
+          }
+        }
       } catch (error) {
-        console.warn("Failed to sync Airtable record from webhook:", error);
+        console.warn(
+          "Failed to sync Airtable record from webhook:",
+          error
+        );
       }
     }
   }
@@ -1001,28 +1421,24 @@ export class Airtable extends Connector<Airtable> {
   // ---- Periodic safety poll ----
 
   /**
-   * Periodic webhook-payload safety poll. Runs every 6 hours per enabled
-   * channel and serves four purposes:
+   * Periodic webhook-payload safety poll. Runs every 6 hours per active
+   * base and serves five purposes:
    *
-   *  1. Recovers from missed webhook deliveries (network blip, transient
-   *     5xx on our edge) by draining payloads from the saved cursor — the
-   *     payloads sit in Airtable's 7-day buffer regardless of whether
-   *     delivery fired.
+   *  1. Recovers from missed webhook deliveries by draining payloads from
+   *     the saved cursor.
    *  2. Keeps the webhook alive: hitting /payloads resets Airtable's
-   *     7-day inactivity timer, complementing renewWebhook's 24h-before-
-   *     expiry refresh.
-   *  3. Hard recovery on a 404 from /payloads: the webhook has been
-   *     deleted or aged out; recreate it and re-emit current record state.
-   *  4. Soft recovery after 14 days of total silence: catches the rare
-   *     case where the webhook is still alive on Airtable's side but no
-   *     longer delivering for reasons we can't introspect (subscription
-   *     stuck, regional glitch, etc.). Wasted work for legitimately quiet
-   *     bases — bounded to one recovery per 14 days per base.
+   *     7-day inactivity timer, complementing renewWebhook.
+   *  3. Hard recovery on a 404 from /payloads.
+   *  4. Soft recovery after 14 days of total silence.
+   *  5. View reconciliation: archives records that have fallen out of any
+   *     enabled view since the last poll, when no broader channel still
+   *     covers them.
    *
    * Always reschedules in 6h on exit, regardless of whether work was done
    * or errors occurred — the poll is the backstop for everything else and
-   * we want it running for as long as the channel is enabled. The exit
-   * condition is "sync_enabled is false," checked at the top.
+   * we want it running for as long as any channel under the base is
+   * enabled. The exit condition is "sync_enabled is false," checked at
+   * the top.
    */
   async pollWebhookPayloads(baseId: string): Promise<void> {
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
@@ -1039,21 +1455,20 @@ export class Airtable extends Connector<Airtable> {
         if (isAirtableNotFoundError(error)) {
           recoverReason = "webhook returned 404 (deleted or expired)";
         } else if (isAirtableAuthError(error)) {
-          // Auth has been revoked; reconnection will rebuild state via
-          // onChannelEnabled. Don't try to recover here.
           console.warn(
             "Airtable pollWebhookPayloads: auth failed, skipping",
             baseId
           );
         } else {
-          console.warn("Airtable pollWebhookPayloads failed", baseId, error);
+          console.warn(
+            "Airtable pollWebhookPayloads failed",
+            baseId,
+            error
+          );
         }
       }
 
       if (!recoverReason) {
-        // Soft signal: long silence with no payloads. Migration backfill
-        // for pre-Phase 5 channels with no last_activity_at — assume the
-        // webhook is healthy (we just polled it) and start the clock now.
         let lastActivityISO = await this.get<string>(
           `last_activity_at_${baseId}`
         );
@@ -1071,12 +1486,142 @@ export class Airtable extends Connector<Airtable> {
 
     if (recoverReason) {
       await this.recoverWebhook(baseId, recoverReason);
+    } else {
+      try {
+        await this.reconcileViews(baseId);
+      } catch (error) {
+        console.warn(
+          "Airtable view reconciliation failed",
+          baseId,
+          error
+        );
+      }
     }
 
     const cb = await this.callback(this.pollWebhookPayloads, baseId);
     await this.runTask(cb, {
       runAt: new Date(Date.now() + POLL_INTERVAL_MS),
     });
+  }
+
+  /**
+   * For each enabled View under this base: list current records, diff
+   * against `tracked_view_records_${channelId}`, archive ids that fell
+   * out (only when no broader channel — Base, Table, or sibling View —
+   * still covers the record). Persists the fresh id set as the new
+   * baseline for the next poll.
+   */
+  private async reconcileViews(baseId: string): Promise<void> {
+    const enabled = await this.listEnabledChannels(baseId);
+    const viewChannels = enabled.filter(
+      (c) => parseChannelId(c).kind === "view"
+    );
+    if (viewChannels.length === 0) return;
+
+    const baseEnabled = enabled.includes(baseId);
+    const tableEnabled = (tid: string) =>
+      enabled.includes(`${baseId}/${tid}`);
+
+    const api = await this.getAPI(baseId);
+    if (!api) return;
+
+    for (const viewChannel of viewChannels) {
+      const parsed = parseChannelId(viewChannel) as Extract<
+        ParsedChannelId,
+        { kind: "view" }
+      >;
+
+      let liveIds: string[] = [];
+      try {
+        let offset: string | null = null;
+        do {
+          const page = await api.listRecords(baseId, parsed.tableId, {
+            view: parsed.viewId,
+            pageSize: 100,
+            fields: [],
+            offset,
+          });
+          for (const r of page.records) liveIds.push(r.id);
+          offset = page.offset ?? null;
+        } while (offset);
+      } catch (error) {
+        console.warn(
+          "Airtable reconcileViews: list failed",
+          viewChannel,
+          error
+        );
+        continue;
+      }
+
+      const previous =
+        (await this.get<string[]>(`tracked_view_records_${viewChannel}`)) ??
+        [];
+      const liveSet = new Set(liveIds);
+      const dropped = previous.filter((id) => !liveSet.has(id));
+
+      // Skip the per-record sibling-view check entirely when a broader
+      // channel covers the table — the records remain valid under that
+      // channel and shouldn't be archived.
+      if (
+        dropped.length > 0 &&
+        previous.length > 0 &&
+        !baseEnabled &&
+        !tableEnabled(parsed.tableId)
+      ) {
+        const otherViewIds = viewChannels
+          .filter((c) => c !== viewChannel)
+          .map(
+            (c) =>
+              parseChannelId(c) as Extract<
+                ParsedChannelId,
+                { kind: "view" }
+              >
+          )
+          .filter((p) => p.tableId === parsed.tableId)
+          .map((p) => p.viewId);
+        for (const recordId of dropped) {
+          let stillCovered = false;
+          for (const otherViewId of otherViewIds) {
+            if (
+              await this.recordInView(
+                api,
+                baseId,
+                parsed.tableId,
+                otherViewId,
+                recordId
+              )
+            ) {
+              stillCovered = true;
+              break;
+            }
+          }
+          if (stillCovered) continue;
+          try {
+            await this.tools.integrations.saveLink({
+              source: `airtable:${baseId}:record:${recordId}`,
+              type: "task",
+              channelId: viewChannel,
+              archived: true,
+              meta: {
+                airtableBaseId: baseId,
+                airtableTableId: parsed.tableId,
+                airtableRecordId: recordId,
+                syncProvider: "airtable",
+                syncableId: viewChannel,
+              },
+            });
+          } catch (error) {
+            console.warn(
+              "Airtable reconcileViews: archive failed",
+              recordId,
+              error
+            );
+          }
+        }
+      }
+
+      await this.set(`tracked_view_records_${viewChannel}`, liveIds);
+    }
   }
 
   /**
@@ -1105,11 +1650,38 @@ export class Airtable extends Connector<Airtable> {
 
     const setupCb = await this.callback(this.setupWebhook, baseId);
     await this.runTask(setupCb);
-    // Re-emit current record state so anything that changed during the
-    // gap gets a fresh saveLink. initialSync=false so we don't reset
-    // unread/archived flags users may have set in Plot.
-    const detectCb = await this.callback(this.detectAndSync, baseId, false);
-    await this.runTask(detectCb);
+    // Re-emit current record state for every enabled channel under this
+    // base so anything that changed during the gap gets a fresh saveLink.
+    // initialSync=false so we don't reset unread/archived flags users may
+    // have set in Plot.
+    const enabled = await this.listEnabledChannels(baseId);
+    for (const channelId of enabled) {
+      const parsed = parseChannelId(channelId);
+      const units: SyncUnit[] = [];
+      if (parsed.kind === "base") {
+        const api = await this.getAPI(baseId);
+        if (!api) continue;
+        try {
+          const tables = await api.listTables(baseId);
+          for (const t of tables) units.push({ tableId: t.id });
+        } catch {
+          continue;
+        }
+      } else if (parsed.kind === "table") {
+        units.push({ tableId: parsed.tableId });
+      } else {
+        units.push({ tableId: parsed.tableId, viewId: parsed.viewId });
+      }
+      if (units.length === 0) continue;
+      await this.set<SyncState>(`sync_state_${channelId}`, {
+        units,
+        unitIndex: 0,
+        offset: null,
+        initialSync: false,
+      });
+      const cb = await this.callback(this.syncBatch, channelId);
+      await this.runTask(cb);
+    }
   }
 
   /**
@@ -1128,8 +1700,6 @@ export class Airtable extends Connector<Airtable> {
   async reconcileComments(baseId: string): Promise<void> {
     if (!(await this.get<boolean>(`sync_enabled_${baseId}`))) return;
 
-    // Phase 2 backfill: channels created before expiration tracking was
-    // added need renewWebhook scheduled to avoid silent 7-day expiry.
     const expiresAt = await this.get<string>(`webhook_expires_at_${baseId}`);
     const webhookId = await this.get<string>(`webhook_id_${baseId}`);
     if (!expiresAt && webhookId) {
@@ -1137,9 +1707,6 @@ export class Airtable extends Connector<Airtable> {
       await this.runTask(renewCb);
     }
 
-    // Phase 4 backfill: bootstrap the safety-poll chain. The flag is
-    // also set in onChannelEnabled, so newly enabled channels skip this
-    // and we never end up with two parallel poll chains for one base.
     const polled = await this.get<boolean>(`poll_initialized_${baseId}`);
     if (!polled) {
       await this.set(`poll_initialized_${baseId}`, true);
@@ -1155,7 +1722,10 @@ export class Airtable extends Connector<Airtable> {
     const baseId = meta.airtableBaseId as string | undefined;
     const tableId = meta.airtableTableId as string | undefined;
     const recordId = meta.airtableRecordId as string | undefined;
-    const statusFieldName = meta.airtableStatusFieldName as string | null | undefined;
+    const statusFieldName = meta.airtableStatusFieldName as
+      | string
+      | null
+      | undefined;
     const statusFieldType = meta.airtableStatusFieldType as
       | "singleSelect"
       | "checkbox"

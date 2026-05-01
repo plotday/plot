@@ -114,11 +114,18 @@ export type AirtableField = {
   };
 };
 
+export type AirtableView = {
+  id: string;
+  name: string;
+  type: string;
+};
+
 export type AirtableTable = {
   id: string;
   name: string;
   primaryFieldId: string;
   fields: AirtableField[];
+  views: AirtableView[];
 };
 
 export type AirtableCollaborator = {
@@ -235,12 +242,14 @@ export class AirtableAPI {
       pageSize?: number;
       fields?: string[];
       filterByFormula?: string;
+      view?: string;
     } = {}
   ): Promise<AirtableListRecords> {
     const params = new URLSearchParams();
     params.set("pageSize", String(opts.pageSize ?? 100));
     if (opts.offset) params.set("offset", opts.offset);
     if (opts.filterByFormula) params.set("filterByFormula", opts.filterByFormula);
+    if (opts.view) params.set("view", opts.view);
     for (const f of opts.fields ?? []) params.append("fields[]", f);
     return this.req<AirtableListRecords>(
       "GET",
