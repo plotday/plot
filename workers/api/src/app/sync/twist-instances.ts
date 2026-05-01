@@ -15,7 +15,6 @@ import {
 import { rpcUser } from "../../rpc";
 import { notifyUserSync } from "./notify";
 import { syncUserTwistStats } from "../../utils/twist-stats";
-import { Store } from "../../twist/tools/store";
 import { createLogger } from "@plotday/worker-util";
 
 const twistInstances = new Hono<{ Bindings: Bindings }>();
@@ -66,167 +65,11 @@ twistInstances.get("/sync/twist-instances", async (c) => {
     return { rows: fetchedRows, horizon: horizonValue };
   });
 
-  // Reconcile twist_instance_connection rows for source twist_instances
-  // against the actual DO-storage state. Runs every app sync so the rows
-  // never drift more than one round-trip from the truth:
-  //   - DO has an auth_token for one of the user's contacts → write a
-  //     "connected" row (no needs_reauth_at).
-  //   - DO has no token but a channel_config records who enabled the
-  //     channels → write a placeholder row with needs_reauth_at = now()
-  //     so the app can prompt re-auth immediately.
-  //   - Neither → leave the row absent (nothing was ever connected).
-  await reconcileSourceConnections(c, rows, userId);
-
   if (useSeqCursor) {
     return c.json(seqEnvelope(rows as any, limit, horizon) as any);
   }
   return c.json(rows as any);
 });
-
-type SourceRow = {
-  id: string;
-  twist_id: string;
-  is_source: boolean;
-  user_connected: boolean;
-};
-
-async function reconcileSourceConnections(
-  c: any,
-  rows: any[],
-  userId: string
-): Promise<void> {
-  const unconnected = (rows as SourceRow[]).filter(
-    (r) => r.is_source && !r.user_connected
-  );
-  if (unconnected.length === 0) return;
-
-  const userContacts = await c.var.db
-    .selectFrom("contact")
-    .select("id")
-    .where("user_id", "=", userId)
-    .execute();
-  const contactIds = new Set<string>(userContacts.map((ct: any) => ct.id));
-  if (contactIds.size === 0) return;
-
-  const logger = createLogger({
-    operation: "reconcileSourceConnections",
-    user_id: userId,
-  });
-
-  for (const row of unconnected) {
-    try {
-      const twistInfo = await c.var.db
-        .selectFrom("twist")
-        .select(["twist.twist_package_id", "twist.version"])
-        .where("twist.id", "=", row.twist_id)
-        .executeTakeFirst();
-      if (!twistInfo) continue;
-
-      const configStr = await c.env.TWIST_CONFIG.get(
-        `${twistInfo.twist_package_id}:${twistInfo.version}`
-      );
-      if (!configStr) continue;
-
-      const config = JSON.parse(configStr);
-      const integrationsMap: Record<string, string> =
-        config.integrationsMap ?? {};
-
-      // Pass 1: try to attribute a working token to one of the user's
-      // contacts. First match wins.
-      let connected: { provider: string; actorId: string } | null = null;
-      // Last-known (provider, actor) signal for the placeholder fallback.
-      // Populated in the same loop so we only open each Storage DO once.
-      let lastKnown: { provider: string; actorId: string } | null = null;
-
-      for (const [provider, pathStr] of Object.entries(integrationsMap)) {
-        // Channel_config values are SuperJSON-encoded by the runtime's
-        // Store wrapper — go through the same wrapper here so the parse
-        // chain matches (SuperJSON → JSON fallback → raw string).
-        const store = new Store({
-          storage: c.env.STORAGE,
-          twistInstanceId: row.id,
-          path: pathStr.split(":"),
-        });
-
-        const tokenKeys = await store.list(`auth_token:${provider}:`);
-        for (const key of tokenKeys) {
-          const actorId = key.split(":").slice(2).join(":");
-          if (contactIds.has(actorId)) {
-            connected = { provider, actorId };
-            break;
-          }
-        }
-        if (connected) break;
-
-        if (!lastKnown) {
-          const configKeys = await store.list(`channel_config:${provider}:`);
-          for (const key of configKeys) {
-            const parsed = await store.get<{
-              enabled?: boolean;
-              enabledBy?: string;
-            }>(key);
-            if (
-              parsed?.enabled &&
-              parsed.enabledBy &&
-              contactIds.has(parsed.enabledBy)
-            ) {
-              lastKnown = { provider, actorId: parsed.enabledBy };
-              break;
-            }
-          }
-        }
-      }
-
-      const now = new Date().toISOString();
-      if (connected) {
-        await c.var.db
-          .insertInto("twist_instance_connection")
-          .values({
-            twist_instance_id: row.id,
-            user_id: userId,
-            provider: connected.provider,
-            actor_id: connected.actorId,
-            connected_at: now,
-          })
-          .onConflict((oc: any) =>
-            oc
-              .columns(["twist_instance_id", "user_id", "provider"])
-              .doNothing()
-          )
-          .execute();
-        row.user_connected = true;
-      } else if (lastKnown) {
-        await c.var.db
-          .insertInto("twist_instance_connection")
-          .values({
-            twist_instance_id: row.id,
-            user_id: userId,
-            provider: lastKnown.provider,
-            actor_id: lastKnown.actorId,
-            connected_at: now,
-            needs_reauth_at: now,
-          })
-          .onConflict((oc: any) =>
-            oc
-              .columns(["twist_instance_id", "user_id", "provider"])
-              .doUpdateSet({ needs_reauth_at: now })
-              .where("twist_instance_connection.needs_reauth_at", "is", null)
-          )
-          .execute();
-        row.user_connected = true;
-        logger.info("Flagged source twist_instance as needs_reauth", {
-          twist_instance_id: row.id,
-          provider: lastKnown.provider,
-        });
-      }
-    } catch (error) {
-      logger.warn("Source connection reconciliation failed", {
-        twist_instance_id: row.id,
-        error: (error as Error)?.message ?? String(error),
-      });
-    }
-  }
-}
 
 // POST /sync/twist-instances
 twistInstances.post("/sync/twist-instances", async (c) => {
