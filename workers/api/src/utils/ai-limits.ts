@@ -12,8 +12,26 @@ export const FREE_AI_LIMITS = {
 export type AiOperation = keyof typeof FREE_AI_LIMITS;
 
 /**
- * Check if a user is allowed to perform an AI operation.
- * Paid plans are unlimited; free plans are capped.
+ * Single source of truth for "who gets unlimited AI". A user is unlimited if
+ * they're on a paid personal plan OR a member of any team. All AI quota
+ * checks (checkAiLimit, checkAiLimitForContacts) route through this so the
+ * rule can't drift between callsites.
+ */
+export async function isUserAiUnlimited(
+  db: Kysely<DB>,
+  userId: string
+): Promise<boolean> {
+  const [plan, inTeam] = await Promise.all([
+    getPersonalPlan(db, userId),
+    isUserInAnyTeam(db, userId),
+  ]);
+  return plan !== "free" || inTeam;
+}
+
+/**
+ * Check if a user is allowed to perform an AI operation. Unlimited users
+ * (see isUserAiUnlimited) bypass the cap; everyone else is capped per
+ * 30-day window (see FREE_AI_LIMITS).
  */
 export async function checkAiLimit(
   env: Bindings,
@@ -21,8 +39,9 @@ export async function checkAiLimit(
   userId: string,
   operation: AiOperation
 ): Promise<{ allowed: boolean; remaining: number }> {
-  const plan = await getPersonalPlan(db, userId);
-  if (plan !== "free") return { allowed: true, remaining: Infinity };
+  if (await isUserAiUnlimited(db, userId)) {
+    return { allowed: true, remaining: Infinity };
+  }
 
   const usage = UserAiUsage.Get(env, userId);
   return usage.check(operation, FREE_AI_LIMITS[operation]);
@@ -30,7 +49,7 @@ export async function checkAiLimit(
 
 /**
  * AI limit check for a set of contacts. AI is free if ANY of the users
- * linked to these contacts are on a paid plan or part of a team.
+ * linked to these contacts is unlimited (paid or team member).
  *
  * Otherwise, it uses available free quota from any member, prioritizing
  * the syncing user.
@@ -61,13 +80,9 @@ export async function checkAiLimitForContacts(
 
   const userIds = [...new Set(users.map((u) => u.user_id))];
 
-  // 1. Skip quota if any user is on a paid plan or part of a team
+  // 1. Skip quota if any linked user has unlimited AI
   for (const userId of userIds) {
-    const [plan, inTeam] = await Promise.all([
-      getPersonalPlan(db, userId),
-      isUserInAnyTeam(db, userId),
-    ]);
-    if (plan !== "free" || inTeam) {
+    if (await isUserAiUnlimited(db, userId)) {
       return { allowed: true, chargeUserId: null };
     }
   }
