@@ -130,6 +130,9 @@ export async function syncIssueBatch(
   } else {
     // Both phases complete
     await source.clear(`issue_sync_state_${repositoryId}`);
+    if (state.initialSync) {
+      await source.markInitialSyncTypeDone(repositoryId);
+    }
   }
 }
 

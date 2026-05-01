@@ -121,6 +121,9 @@ export async function syncPRBatch(
     await source.runTask(nextBatch);
   } else {
     await source.clear(`pr_sync_state_${repositoryId}`);
+    if (state.initialSync) {
+      await source.markInitialSyncTypeDone(repositoryId);
+    }
   }
 }
 

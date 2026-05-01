@@ -259,49 +259,25 @@ export class GitHub extends Connector<GitHub> {
     _auth: Authorization,
     token: AuthToken,
   ): Promise<Channel[]> {
-    console.log("[github.getChannels] start", {
-      hasToken: !!token?.token,
-      tokenPrefix: token?.token?.slice(0, 8) ?? null,
-    });
-
     const repos: GitHubRepo[] = [];
     let page = 1;
 
     while (true) {
-      const url = `https://api.github.com/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100&page=${page}`;
-      const response = await fetch(url, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${token.token}`,
-          "X-GitHub-Api-Version": "2022-11-28",
-          "User-Agent": "Plot",
+      const response = await fetch(
+        `https://api.github.com/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100&page=${page}`,
+        {
+          headers: {
+            Accept: "application/vnd.github+json",
+            Authorization: `Bearer ${token.token}`,
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "Plot",
+          },
         },
-      });
+      );
 
-      console.log("[github.getChannels] response", {
-        page,
-        status: response.status,
-        ok: response.ok,
-        scopes: response.headers.get("x-oauth-scopes"),
-        rateRemaining: response.headers.get("x-ratelimit-remaining"),
-      });
-
-      if (!response.ok) {
-        const body = await response.text();
-        console.log("[github.getChannels] error body", {
-          page,
-          status: response.status,
-          body: body.slice(0, 500),
-        });
-        break;
-      }
+      if (!response.ok) break;
 
       const batch: GitHubRepo[] = await response.json();
-      console.log("[github.getChannels] batch", {
-        page,
-        count: batch.length,
-        sample: batch.slice(0, 3).map((r) => r.full_name),
-      });
       if (batch.length === 0) break;
 
       repos.push(...batch);
@@ -309,12 +285,10 @@ export class GitHub extends Connector<GitHub> {
       page++;
     }
 
-    const channels = repos.map((repo) => ({
+    return repos.map((repo) => ({
       id: repo.full_name,
       title: repo.full_name,
     }));
-    console.log("[github.getChannels] done", { totalRepos: repos.length, totalChannels: channels.length });
-    return channels;
   }
 
   /**
@@ -326,7 +300,11 @@ export class GitHub extends Connector<GitHub> {
     if (syncHistoryMin) {
       const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
       if (storedMin && new Date(storedMin) <= syncHistoryMin && !context?.recovering) {
-        return; // Already synced with wider range
+        // Already synced with a wider range; signal completion immediately so
+        // the connection's `initial_sync_started_at` (auto-stamped by the
+        // runtime on every dispatch) doesn't leave the UI stuck.
+        await this.tools.integrations.channelSyncCompleted(channel.id);
+        return;
       }
       await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
     }
@@ -340,8 +318,19 @@ export class GitHub extends Connector<GitHub> {
     );
     await this.runTask(webhookCallback);
 
-    // Start initial sync for enabled types
+    // Start initial sync for enabled types. Track how many sync chains we
+    // expect to complete so the last one can call channelSyncCompleted.
     const options = this.tools.options as { syncPullRequests: boolean; syncIssues: boolean };
+    const pendingTypes =
+      (options.syncPullRequests ? 1 : 0) + (options.syncIssues ? 1 : 0);
+    if (pendingTypes > 0) {
+      await this.set(`pending_initial_sync_${channel.id}`, pendingTypes);
+    } else {
+      // Nothing to sync; mark complete immediately.
+      await this.tools.integrations.channelSyncCompleted(channel.id);
+      return;
+    }
+
     if (options.syncPullRequests) {
       await startPRBatchSync(this, channel.id, true, syncHistoryMin);
     }
@@ -351,11 +340,32 @@ export class GitHub extends Connector<GitHub> {
   }
 
   /**
+   * Decrements the pending-initial-sync counter for a channel. When it hits
+   * zero (all initial sync chains complete), calls
+   * `integrations.channelSyncCompleted` so the Flutter app clears the
+   * syncing indicator. No-op when the counter is missing (i.e. this wasn't
+   * an initial sync).
+   */
+  async markInitialSyncTypeDone(channelId: string): Promise<void> {
+    const key = `pending_initial_sync_${channelId}`;
+    const remaining = await this.get<number>(key);
+    if (remaining == null) return;
+    const next = remaining - 1;
+    if (next <= 0) {
+      await this.clear(key);
+      await this.tools.integrations.channelSyncCompleted(channelId);
+    } else {
+      await this.set(key, next);
+    }
+  }
+
+  /**
    * Called when a channel repository is disabled.
    */
   async onChannelDisabled(channel: Channel): Promise<void> {
     await this.stopSync(channel.id);
     await this.clear(`sync_enabled_${channel.id}`);
+    await this.clear(`pending_initial_sync_${channel.id}`);
   }
 
   /**
