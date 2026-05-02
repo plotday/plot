@@ -53,6 +53,12 @@ class ChangeCurrentPriority extends PriorityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    // Flip the priority highlight immediately instead of waiting for the
+    // new PriorityBloc to finish loading drafts and emit its new context.
+    final nowBloc = context.read<NowBloc>();
+    if (nowBloc.state is NowLoaded) {
+      nowBloc.setContext(priority);
+    }
     return CommandRoute(
       PriorityRoute(priorityIdString: priority!.id.toShortString()),
     );
