@@ -127,7 +127,13 @@ String _getErrorTitle(int statusCode) {
 /// If the server returns `code: "user_not_found"` (JWT valid but no matching
 /// DB user — e.g. after a DB reset or account deletion), signs out immediately
 /// without consulting Clerk, since no token refresh can fix a missing user row.
-Future<void> _checkAuthError(http.Response response, String url) async {
+///
+/// Returns the recheck [TokenResult] (or `null` if no recheck was performed,
+/// e.g. for `user_not_found`). Callers use this to distinguish "Clerk handed
+/// us a fresh token that the server still rejected" (real session death) from
+/// "Clerk still couldn't produce a token" (transient SDK warmup race after
+/// sign-in) so they don't escalate the latter into a forced sign-out.
+Future<TokenResult?> _checkAuthError(http.Response response, String url) async {
   if (response.statusCode == 401) {
     log.warning("Auth error from API: 401 Unauthorized $url");
     if (_parseErrorFields(response).code == 'user_not_found') {
@@ -135,11 +141,13 @@ Future<void> _checkAuthError(http.Response response, String url) async {
       Base.handleTokenResult(
         (token: null, failure: TokenFailureReason.sessionInvalid),
       );
-      return;
+      return null;
     }
     final result = await Base.getSessionTokenWithReason();
     Base.handleTokenResult(result);
+    return result;
   }
+  return null;
 }
 
 /// On 401, refresh the token and retry once. If the retry also 401s, return it.
@@ -151,14 +159,17 @@ Future<http.Response> _retryOn401(
   var response = await request(headers);
 
   if (response.statusCode == 401) {
-    await _checkAuthError(response, url);
+    final recheck = await _checkAuthError(response, url);
     // _checkAuthError refreshes the token; retry with fresh headers
     headers = await getHeaders();
     response = await request(headers);
-    // Two consecutive 401s on the same request — the token Clerk just
-    // handed us was rejected. Treat the session as definitively dead so
-    // the user gets signed out instead of being wedged on stale errors.
-    if (response.statusCode == 401) {
+    // Two consecutive 401s, AND Clerk just handed us a fresh token — the
+    // server is rejecting a real JWT, so the session is definitively dead.
+    // If recheck couldn't produce a token (transient Clerk SDK warmup race
+    // right after sign-in, network blip, etc.), the retry went out
+    // anonymously, so this 401 says nothing about session validity. Let the
+    // caller's own backoff handle it instead of escalating to sign-out.
+    if (response.statusCode == 401 && recheck?.token != null) {
       log.warning("Auth error: 401 on retry of $url — forcing sign-out");
       Base.handleTokenResult(
         (token: null, failure: TokenFailureReason.sessionInvalid),
