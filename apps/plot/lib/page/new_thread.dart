@@ -1267,11 +1267,15 @@ class NewThreadPageState extends State<NewThreadPage> {
     return BlocBuilder<LayoutBloc, LayoutState>(
       builder: (context, layoutState) {
         return BlocListener<PriorityBloc, PriorityState>(
-          // Chain drafts load async after the page mounts (e.g. on initial app
-          // open at root) and after submitting a thread. Re-apply the default
-          // auto-file flag when the draft id changes so the chip shows "Auto"
-          // instead of "Everything" when appropriate.
-          listenWhen: (prev, curr) => prev.draft.id != curr.draft.id,
+          // Re-apply the default auto-file flag when the draft id changes
+          // (chain drafts load async after mount or after submit) or when the
+          // context changes (a PrioritiesPage click can mount NewThreadPage
+          // with a stale PriorityBloc context before setPriority emits the
+          // new root context — without listening for context we'd never
+          // re-mark the draft as Auto on the way back to root).
+          listenWhen: (prev, curr) =>
+              prev.draft.id != curr.draft.id ||
+              prev.context.id != curr.context.id,
           listener: (context, _) {
             if (!_hasAppliedQueryParams) return;
             _applyDefaultAutoFile();
