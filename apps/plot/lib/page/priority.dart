@@ -1407,25 +1407,33 @@ class _PriorityPageState extends State<PriorityPage> {
                     Container(height: 1, color: context.theme.colors.border),
                   ],
                   AgendaHeader(
-                    key: ValueKey(
-                      header.date != null
-                          ? 'agendaheader_date_${header.date}'
-                          : header.dateTimeRange != null
-                          ? 'agendaheader_event_${header.dateTimeRange}'
-                          : 'agendaheader_other',
-                    ),
+                    key: ValueKey('agendaheader_${header.stableKey}'),
                     priorityContext: state.context,
                     dateTimeRange: header.dateTimeRange,
                     date: header.date,
                     now: header.now,
+                    isNext: header.isNext,
                     thread: header.thread,
                     focusNode: focusNode,
                     text: header.text,
                     scheduleAt: header.scheduleAt,
+                    blockPriority: header.blockPriority,
                   ),
                 ];
               },
               activity: (agendaActivity) {
+                // Overflow row: replace with a compact "expand" affordance
+                // (double-down chevron, hover-aware colour) instead of a
+                // thread row. Tapping it expands the block.
+                if (agendaActivity.isCollapsedOverflow &&
+                    agendaActivity.collapsedBlockId != null) {
+                  return [
+                    _BlockExpandRow(
+                      key: ValueKey('expand_${agendaActivity.collapsedBlockId}'),
+                      blockId: agendaActivity.collapsedBlockId!,
+                    ),
+                  ];
+                }
                 final isBeingDragged = controller.draggingIndex == index;
                 final itemKey = agendaActivity.stableKey;
                 final removalKey = _getRemovalKey(itemKey);
@@ -1451,8 +1459,6 @@ class _PriorityPageState extends State<PriorityPage> {
                       isOutsidePriority: agendaActivity.isOutsidePriority,
                       focusNode: focusNode,
                       context: state.context,
-                      showSubPriority: true,
-                      showEventTiming: true,
                       onSwipeExit: (command) async {
                         // Swipeable already slid the thread off-screen.
                         // Now collapse the gap, then execute the command.
@@ -1486,6 +1492,24 @@ class _PriorityPageState extends State<PriorityPage> {
                 return null;
               }
               final item = listItems[index];
+
+              // Block-header drag: source is a priority-block header
+              // (no event, no date, not in an outside-priority context).
+              // Same-period reorder writes a priority_block row.
+              if (item is AgendaHeaderItem &&
+                  item.blockPriority != null &&
+                  item.thread == null &&
+                  item.date == null &&
+                  item.dateTimeRange == null &&
+                  !item.isOutsidePriority) {
+                return _buildBlockHeaderReorderCallback(
+                  context: context,
+                  listItems: listItems,
+                  oldIndex: index,
+                  sourcePriority: item.blockPriority!,
+                );
+              }
+
               final activity = item.when<Thread?>(
                 header: (header) => null,
                 activity: (agendaActivity) => agendaActivity.thread,
@@ -1776,25 +1800,13 @@ class _PriorityPageState extends State<PriorityPage> {
                   }
                 }
 
-                // Optimistic update: cache moved agendaViewItems so the
-                // UI doesn't re-derive them (which can produce different
-                // item counts and cause visual jank).
-                final nowFlag = item.when(
-                  header: (_) => false,
-                  activity: (a) => a.now,
-                );
+                // Optimistic update: stitch the moved thread into the
+                // bloc's cached source list and rebuild the agenda
+                // model. The block-aware rebuild moves headers in
+                // sync with the thread, avoiding the visual jank
+                // splice-based reorderViewItems used to produce.
                 context.read<PriorityBloc>().moveAgendaItem(
-                  oldListIndex,
-                  newListIndex,
-                  updatedItem: useAssociation
-                      ? AgendaThreadItem(
-                          updatedActivity,
-                          now: nowFlag,
-                          isAssociated: true,
-                          associationParentId:
-                              targetEvent?.occurrence ?? 'base',
-                        )
-                      : AgendaThreadItem(updatedActivity, now: nowFlag),
+                  movedThread: updatedActivity,
                   associatingWithParent: useAssociation
                       ? targetEvent!.id
                       : null,
@@ -1833,6 +1845,163 @@ class _PriorityPageState extends State<PriorityPage> {
     );
 
     return list;
+  }
+
+  /// Build the reorder callback for a priority-block header drag.
+  ///
+  /// On drop the closure resolves the **target period** (the gap region
+  /// or the date section the new index falls inside) and the
+  /// **source period** (the same, scanned around `oldIndex`):
+  ///
+  ///   * Same period → [PriorityBloc.reorderBlockWithinPeriod] with
+  ///     the bracketing priority neighbours and the period's reference
+  ///     time (gap start for an explicit gap, `now` for today's do-now).
+  ///   * Different period → [PriorityBloc.moveBlock] with the target
+  ///     gap's anchor time. Every thread in the block is re-anchored
+  ///     to the new gap (rule 3 of the redesign).
+  ///
+  /// Drops over an event row snap to the nearest gap boundary above /
+  /// below the event by scanning backwards / forwards for the closest
+  /// gap header before / after the drop point.
+  void Function(int newIndex)? _buildBlockHeaderReorderCallback({
+    required BuildContext context,
+    required List<AgendaItem> listItems,
+    required int oldIndex,
+    required Priority sourcePriority,
+  }) {
+    return (int newIndex) {
+      if (newIndex == oldIndex || newIndex == oldIndex + 1) {
+        // No-op: dropped at its own slot.
+        return;
+      }
+
+      // Scan center in pre-removal coordinates: when dragging down,
+      // indices after oldIndex shift by 1 in the post-removal
+      // coordinates the ReorderableListView uses.
+      final scanCenter = oldIndex < newIndex ? newIndex : newIndex - 1;
+
+      final source = _resolvePeriod(
+        listItems,
+        oldIndex,
+        scanFromIndex: oldIndex,
+      );
+      final target = _resolvePeriod(
+        listItems,
+        oldIndex,
+        scanFromIndex: scanCenter,
+      );
+
+      // Cross-period move: the target gap differs from the source gap
+      // (or the target sits in a different date section). Rewrite every
+      // thread in the source block to anchor in the target gap.
+      final sameSection = source.dateAnchor == target.dateAnchor;
+      final sameGap = source.gapAnchor == target.gapAnchor;
+      if (!sameSection || !sameGap) {
+        if (target.gapAnchor == null) {
+          // Cross-period move into a section with no gap anchor (e.g.
+          // dropping into a future day's pre-first-event area before
+          // any explicit gap header). Fall back to today's do-now
+          // semantics — anchor to the next-event boundary if we can
+          // find one, else now.
+          _log.info(
+            '[onReorder block] cross-period drop with no gap anchor — '
+            'no-op for now (priority=${sourcePriority.id})',
+          );
+          return;
+        }
+        _log.info(
+          '[onReorder block] cross-period move: priority=${sourcePriority.id} '
+          'sourceGap=${source.gapAnchor} -> targetGap=${target.gapAnchor}',
+        );
+        context.read<PriorityBloc>().moveBlock(
+          priorityId: sourcePriority.id,
+          targetGapAnchorAt: target.gapAnchor!,
+        );
+        return;
+      }
+
+      // Same-period reorder: identify bracketing priority headers in
+      // the target period.
+      Priority? above;
+      Priority? below;
+      for (var i = scanCenter; i >= 0; i--) {
+        if (i == oldIndex) continue;
+        final candidate = listItems[i];
+        if (candidate is AgendaHeaderItem) {
+          if (candidate.date != null) break;
+          if (candidate.blockPriority != null &&
+              candidate.thread == null &&
+              candidate.date == null) {
+            above ??= candidate.blockPriority;
+          }
+        }
+      }
+      for (var i = scanCenter + 1; i < listItems.length; i++) {
+        if (i == oldIndex) continue;
+        final candidate = listItems[i];
+        if (candidate is AgendaHeaderItem) {
+          if (candidate.date != null) break;
+          if (candidate.blockPriority != null &&
+              candidate.thread == null &&
+              candidate.date == null) {
+            below ??= candidate.blockPriority;
+            break;
+          }
+        }
+      }
+
+      final periodReferenceTime = target.gapAnchor ?? DateTime.now();
+      final aboveId = above?.id;
+      final belowId = below?.id;
+      if (aboveId == sourcePriority.id || belowId == sourcePriority.id) {
+        return;
+      }
+
+      _log.info(
+        '[onReorder block] same-period reorder: priority=${sourcePriority.id} '
+        'above=${above?.path.value ?? "-"} '
+        'below=${below?.path.value ?? "-"} '
+        'period=$periodReferenceTime',
+      );
+
+      context.read<PriorityBloc>().reorderBlockWithinPeriod(
+        priorityId: sourcePriority.id,
+        periodReferenceTime: periodReferenceTime,
+        above: aboveId,
+        below: belowId,
+      );
+    };
+  }
+
+  /// Resolve the time period that contains the item at [scanFromIndex].
+  ///
+  /// Walks backwards looking for the nearest gap header (a header with
+  /// a non-null dateTimeRange and no event thread) and the nearest date
+  /// header. Returns both anchors so callers can compare them across
+  /// source / target positions to detect cross-period moves.
+  ({DateTime? gapAnchor, Date? dateAnchor}) _resolvePeriod(
+    List<AgendaItem> listItems,
+    int oldIndex, {
+    required int scanFromIndex,
+  }) {
+    DateTime? gapAnchor;
+    Date? dateAnchor;
+    for (var i = scanFromIndex; i >= 0; i--) {
+      if (i == oldIndex) continue;
+      final candidate = listItems[i];
+      if (candidate is AgendaHeaderItem) {
+        if (candidate.dateTimeRange?.start != null &&
+            candidate.thread == null &&
+            candidate.date == null) {
+          gapAnchor ??= candidate.dateTimeRange!.start;
+        }
+        if (candidate.date != null) {
+          dateAnchor = candidate.date;
+          break;
+        }
+      }
+    }
+    return (gapAnchor: gapAnchor, dateAnchor: dateAnchor);
   }
 
   Widget _buildActivityFeed(
@@ -2287,6 +2456,63 @@ class _ActivityFeedItemState extends State<_ActivityFeedItem> {
           showEventTiming: rep != null,
         );
       },
+    );
+  }
+}
+
+/// Compact row that replaces a block's third thread when the block has
+/// more than the collapse limit and is not expanded. Tapping the row
+/// dispatches `PriorityBloc.toggleBlockExpansion` so the block expands
+/// to show every thread.
+///
+/// Visuals: a single short row (smaller than a thread row) with a
+/// double-down chevron centred horizontally. The chevron is `veryMuted`
+/// by default and switches to `foreground` while the row is hovered.
+/// No border / hover surround — this is a lightweight affordance, not a
+/// real list row.
+class _BlockExpandRow extends StatefulWidget {
+  const _BlockExpandRow({super.key, required this.blockId});
+
+  final String blockId;
+
+  @override
+  State<_BlockExpandRow> createState() => _BlockExpandRowState();
+}
+
+class _BlockExpandRowState extends State<_BlockExpandRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _hovered
+        ? context.theme.colors.foreground
+        : context.theme.plotColors.veryMuted;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () =>
+            context.read<PriorityBloc>().toggleBlockExpansion(widget.blockId),
+        child: SizedBox(
+          height: 20,
+          child: Center(
+            // FaIcon places the chevron glyph in the lower portion of
+            // its em-box (the icon font's natural metric leaves empty
+            // space above), so a mathematically-centred Icon reads as
+            // visually low. Lift it ~2px to optically center.
+            child: Transform.translate(
+              offset: const Offset(0, -2),
+              child: FaIcon(
+                FontAwesomeIcons.chevronDown,
+                size: 12,
+                color: color,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

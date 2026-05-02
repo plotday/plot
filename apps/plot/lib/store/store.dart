@@ -59,6 +59,7 @@ part 'sync.dart';
 part 'sync_orchestrator.dart';
 part 'actor.dart';
 part 'priority.dart';
+part 'priority_block.dart';
 part 'twist_instance.dart';
 part 'twist_connection.dart';
 part 'user_action.dart';
@@ -409,6 +410,7 @@ abstract class BaseTable {
     SyncStates,
     Actors,
     Priorities,
+    PriorityBlocks,
     TwistInstances,
     TwistConnections,
     Threads,
@@ -2113,7 +2115,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 320;
+  int get schemaVersion => 321;
 
   @override
   MigrationStrategy get migration {
@@ -3059,6 +3061,12 @@ class Store extends _$Store {
       await m.database.customStatement(
         "UPDATE sync_states SET pulled_at = NULL",
       );
+    }
+    if (from < 321) {
+      // priority_block holds the per-priority order timeline used by the
+      // agenda renderer. Empty initially; rows are written when the user
+      // reorders a block.
+      await m.createTable(priorityBlocks);
     }
   }
 

@@ -502,6 +502,20 @@ export interface Priority {
   user_id: string;
 }
 
+export interface PriorityBlock {
+  archived_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  effective_at: Timestamp;
+  id: Generated<string>;
+  order_value: number;
+  priority_id: string;
+  seq: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  updated_by: Generated<number>;
+  user_id: string;
+}
+
 export interface PriorityChild {
   archived_at: Timestamp | null;
   child_id: string | null;
@@ -1346,6 +1360,20 @@ export interface UserPriority {
   user_id: string | null;
 }
 
+export interface UserPriorityBlock {
+  archived_at: Timestamp | null;
+  created_at: Timestamp | null;
+  created_by: string | null;
+  effective_at: Timestamp | null;
+  id: string | null;
+  order_value: number | null;
+  priority_id: string | null;
+  seq: string | null;
+  updated_at: Timestamp | null;
+  updated_by: number | null;
+  user_id: string | null;
+}
+
 export interface UserPriorityExpanded {
   archived_at: Timestamp | null;
   joined_at: Timestamp | null;
@@ -1540,6 +1568,7 @@ export interface DB {
   note_tag: NoteTag;
   note_tags: NoteTags;
   priority: Priority;
+  priority_block: PriorityBlock;
   priority_child: PriorityChild;
   priority_setting: PrioritySetting;
   priority_setting_inherited: PrioritySettingInherited;
@@ -1594,6 +1623,7 @@ export interface DB {
   "user.note_redacted": UserNoteRedacted;
   "user.note_tags": UserNoteTags;
   "user.priority": UserPriority;
+  "user.priority_block": UserPriorityBlock;
   "user.priority_expanded": UserPriorityExpanded;
   "user.priority_unread": UserPriorityUnread;
   "user.schedule": UserSchedule;

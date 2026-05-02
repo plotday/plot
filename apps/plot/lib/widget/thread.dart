@@ -73,47 +73,8 @@ class ThreadWidget extends StatefulWidget {
 }
 
 class _ThreadWidgetState extends State<ThreadWidget> {
-  Timer? _timer;
   bool _leadingHovered = false;
   bool _rowHovered = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _startTimerIfNeeded();
-  }
-
-  @override
-  void didUpdateWidget(ThreadWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.now != widget.now || oldWidget.isNext != widget.isNext) {
-      _timer?.cancel();
-      _timer = null;
-      _startTimerIfNeeded();
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _startTimerIfNeeded() {
-    if (!widget.now && !widget.isNext) return;
-    final now = Time.now();
-    final secondsUntilNextMinute = 60 - now.second;
-    _timer = Timer(Duration(seconds: secondsUntilNextMinute), () {
-      if (mounted) {
-        setState(() {});
-        _timer = Timer.periodic(const Duration(minutes: 1), (_) {
-          if (mounted) {
-            setState(() {});
-          }
-        });
-      }
-    });
-  }
 
   Thread get activity => widget.activity;
   Priority? get priorityContext => widget.context;
@@ -184,7 +145,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         !activity.at!.start!.toTimeOfDay().isMidnight;
 
     final isTodoBase = activity.todo && !activity.isLinkScheduleInstance;
-    final isTimedEvent = showEventTiming && hasEventTime && !isTodoBase;
 
     final hasBodyLabel = hasSubPriorityLabel;
 
@@ -192,7 +152,10 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       // User-scheduled todos only show the label when a linked event provides
       // the date (e.g. a calendar event); plain todos hide it.
       if (isTodoBase && !activity.hasLinkSchedule) return null;
-      if (showEventTiming && !isTodoBase) return null;
+      // Events with their own start time never show a schedule label here;
+      // the agenda's AgendaHeader carries the time and the activity feed
+      // shows it via the priority-hover row below.
+      if (!isTodoBase && hasEventTime) return null;
       if (activity.recurring) {
         final nextDate = activity.nextOccurrence(
           CustomBoundedDateRange(Date.today(), Date.today().addDays(365)),
@@ -209,7 +172,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
     }();
 
     final hasScheduleLabel = scheduleDate != null;
-    final hasTopLabel = hasBodyLabel || hasScheduleLabel || isTimedEvent;
+    final hasTopLabel = hasBodyLabel || hasScheduleLabel;
 
     // When a priority label is shown above the title row, compute its
     // rendered height + the 2px gap so we can push leading/trailing down
@@ -403,30 +366,6 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                 ),
                 // Centered icon (visual only)
                 Center(child: IgnorePointer(child: todoIcon)),
-                // Right-aligned time for timed events
-                if (isTimedEvent)
-                  Positioned(
-                    top: -labelOffset - 1,
-                    right: spacing.sm,
-                    child: Text(
-                      buildContext.isMultiPanel
-                          ? activity.at!.start!.toTimeOfDay().formatShort(
-                              buildContext,
-                            )
-                          : activity.at!.start!.toTimeOfDay().formatNarrow(
-                              buildContext,
-                            ),
-                      style: TextStyle(
-                        color: now
-                            ? buildContext.colour.colours.fromTheme(
-                                activity.priority.displayColor,
-                              )
-                            : buildContext.theme.colors.mutedForeground,
-                        fontSize: buildContext.theme.typography.xs.fontSize,
-                        height: 1,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -452,135 +391,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Narrow timed events: separate from Transform.translate
-              // so only the priority label shifts left while timing
-              // stays right-aligned with the gap header.
-              if (isTimedEvent)
-                Builder(
-                  builder: (context) {
-                    final veryMuted = context.theme.plotColors.veryMuted;
-                    final hasDuration =
-                        activity.at!.duration != null &&
-                        activity.at!.duration!.inSeconds > 0;
-                    final accentColor = buildContext.colour.colours.fromTheme(
-                      activity.priority.displayColor,
-                    );
-                    final xsFontSize =
-                        buildContext.theme.typography.xs.fontSize;
-                    final currentTime = Time.now();
-
-                    final rightParts = <Widget>[
-                      if (activity.hasOtherAttendees)
-                        _RsvpSummary(activity: activity),
-                      // In-progress: elapsed ↑ · remaining ↓
-                      if (now) ...[
-                        if (activity.at!.start != null &&
-                            currentTime
-                                    .difference(activity.at!.start!)
-                                    .inMinutes >=
-                                1)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                Duration(
-                                  minutes: currentTime
-                                      .difference(activity.at!.start!)
-                                      .inMinutes,
-                                ).format(),
-                                style: TextStyle(color: accentColor),
-                              ),
-                              SizedBox(width: buildContext.theme.spacing.xs),
-                              FaIcon(
-                                PlotIcon.up,
-                                size: xsFontSize,
-                                color: accentColor,
-                              ),
-                            ],
-                          ),
-                        if (activity.at!.end != null &&
-                            activity.at!.end!.isAfter(currentTime))
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                Duration(
-                                  minutes:
-                                      (activity.at!.end!
-                                                  .difference(currentTime)
-                                                  .inSeconds /
-                                              60)
-                                          .ceil(),
-                                ).format(),
-                                style: TextStyle(color: accentColor),
-                              ),
-                              SizedBox(width: buildContext.theme.spacing.xs),
-                              FaIcon(
-                                PlotIcon.down,
-                                size: xsFontSize,
-                                color: accentColor,
-                              ),
-                            ],
-                          ),
-                      ] else if (isNext &&
-                          activity.at!.start != null &&
-                          activity.at!.start!.toDate() == Date.today()) ...[
-                        // Next event: "in Xm" countdown
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'In ${Duration(minutes: (activity.at!.start!.difference(currentTime).inSeconds / 60).ceil()).format()}',
-                              style: TextStyle(color: veryMuted),
-                            ),
-                          ],
-                        ),
-                        if (hasDuration)
-                          Text(
-                            activity.at!.duration!.format(),
-                            style: TextStyle(color: veryMuted),
-                          ),
-                      ] else ...[
-                        if (hasDuration)
-                          Text(
-                            activity.at!.duration!.format(),
-                            style: TextStyle(color: veryMuted),
-                          ),
-                      ],
-                    ];
-
-                    return DefaultTextStyle(
-                      style: TextStyle(
-                        color:
-                            headerFg ??
-                            buildContext.theme.colors.mutedForeground,
-                        fontSize: buildContext.theme.typography.xs.fontSize,
-                        height: 1,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: hasBodyLabel
-                                ? _PriorityHoverArea(
-                                    activity: activity,
-                                    priorityContext: priorityContext,
-                                    headerFg: headerFg,
-                                    fontSize:
-                                        context.theme.typography.xs.fontSize,
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                          for (int i = 0; i < rightParts.length; i++) ...[
-                            if (i > 0)
-                              Text(' · ', style: TextStyle(color: veryMuted)),
-                            rightParts[i],
-                          ],
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              if (hasTopLabel && !isTimedEvent)
+              if (hasTopLabel)
                 DefaultTextStyle(
                   style: TextStyle(
                     color:
@@ -1249,8 +1060,8 @@ class _ConferencingIconButton extends StatelessWidget {
   }
 }
 
-class _RsvpSummary extends StatelessWidget {
-  const _RsvpSummary({required this.activity});
+class RsvpSummary extends StatelessWidget {
+  const RsvpSummary({required this.activity, super.key});
 
   final Thread activity;
 

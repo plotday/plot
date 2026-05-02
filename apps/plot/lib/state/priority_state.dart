@@ -12,6 +12,7 @@ class PriorityState extends Equatable {
     Thread? draft,
     Note? draftNote,
     bool showArchived = false,
+    AgendaModel agenda = AgendaModel.empty,
     List<AgendaItem>? agendaItems,
     bool agendaDoneEnd = false,
     bool agendaLoaded = false,
@@ -31,6 +32,7 @@ class PriorityState extends Equatable {
     bool remoteSearchInProgress = false,
     bool remoteSearchOffline = false,
     bool hasArchivedMatches = false,
+    String? expandedBlockId,
   }) {
     draft ??= Thread(priority: context, draft: true);
 
@@ -39,9 +41,11 @@ class PriorityState extends Equatable {
       thread: thread,
       draft: draft,
       draftNote: draftNote ?? Note.draft(threadId: draft.id),
+      agenda: agenda,
       agendaItems: agendaItems != null && agendaItems.isNotEmpty
           ? List.unmodifiable(agendaItems)
           : agendaItems ?? const [],
+      expandedBlockId: expandedBlockId,
       agendaDoneEnd: agendaDoneEnd,
       agendaLoaded: agendaLoaded,
       showArchived: showArchived,
@@ -81,6 +85,7 @@ class PriorityState extends Equatable {
     this.thread,
     required this.draft,
     required this.draftNote,
+    required this.agenda,
     required this.agendaItems,
     this.agendaDoneEnd = false,
     this.agendaLoaded = false,
@@ -101,6 +106,7 @@ class PriorityState extends Equatable {
     this.remoteSearchInProgress = false,
     this.remoteSearchOffline = false,
     this.hasArchivedMatches = false,
+    this.expandedBlockId,
   });
 
   final Priority context;
@@ -108,6 +114,11 @@ class PriorityState extends Equatable {
   final Thread draft;
   final Note draftNote;
   final bool showArchived;
+
+  /// Block-aware view of the agenda. Source of truth going forward; the
+  /// flat [agendaItems] is held alongside during the migration so legacy
+  /// rendering and reorder paths continue to work without rewrites.
+  final AgendaModel agenda;
   final List<AgendaItem> agendaItems;
   final bool agendaDoneEnd;
   final bool agendaLoaded;
@@ -145,13 +156,20 @@ class PriorityState extends Equatable {
   /// search" ghost button. Only meaningful when [showArchived] is false.
   final bool hasArchivedMatches;
 
+  /// The id of the priority block (or gap block) currently expanded —
+  /// rendered with all its threads visible while every other block
+  /// stays truncated to the collapse limit. Null when nothing is
+  /// expanded. Toggled by [PriorityBloc.toggleBlockExpansion].
+  final String? expandedBlockId;
+
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
 
   /// "Agenda": items starting from today, moving forward.
-  /// Strips sub-priority-only headers and event timing headers
-  /// (timing info shown inside ThreadWidget), keeping only current-event
-  /// headers. Synthesizes a "Now" header at the top when needed.
+  /// Strips today's date header (replaced by a synthesized "Now" anchor
+  /// when needed). Event headers are kept because they now carry the
+  /// block's priority breadcrumb and accent borders — a separate row
+  /// above the event's [ThreadWidget] with its own visual styling.
   List<AgendaItem> get agendaViewItems {
     if (reorderViewItems != null) return reorderViewItems!;
     final now = Time.now();
@@ -161,15 +179,6 @@ class PriorityState extends Equatable {
       if (item is AgendaHeaderItem &&
           item.date != null &&
           item.date == Date.today()) {
-        return false;
-      }
-      // Strip event headers (timing info now shown inside ThreadWidget).
-      // Keep only current event headers (event happening now) since they
-      // replace the "Now" text header.
-      if (item is AgendaHeaderItem &&
-          item.thread != null &&
-          item.dateTimeRange != null &&
-          (!item.now || !item.dateTimeRange!.includes(now))) {
         return false;
       }
       return true;
@@ -207,6 +216,9 @@ class PriorityState extends Equatable {
     }
 
     // Mark the first future event as isNext for countdown display.
+    // The preceding event header (if any) gets the flag too so the
+    // header's countdown matches what the thread row would have shown
+    // pre-refactor.
     for (int i = 0; i < result.length; i++) {
       final item = result[i];
       if (item is AgendaThreadItem &&
@@ -218,6 +230,24 @@ class PriorityState extends Equatable {
           isNext: true,
           isOutsidePriority: item.isOutsidePriority,
         );
+        if (i > 0 && result[i - 1] is AgendaHeaderItem) {
+          final h = result[i - 1] as AgendaHeaderItem;
+          if (h.thread != null &&
+              h.thread!.id == item.thread.id &&
+              h.dateTimeRange != null) {
+            result[i - 1] = AgendaHeaderItem(
+              dateTimeRange: h.dateTimeRange,
+              date: h.date,
+              now: h.now,
+              isNext: true,
+              thread: h.thread,
+              text: h.text,
+              scheduleAt: h.scheduleAt,
+              isOutsidePriority: h.isOutsidePriority,
+              blockPriority: h.blockPriority,
+            );
+          }
+        }
         break;
       }
     }
@@ -307,7 +337,12 @@ class PriorityState extends Equatable {
   ///
   /// Groups threads by date, places "now" indicators, handles events and gaps.
   /// Time-dependent calculations use Time.now() for "now" indicator placement.
-  static List<AgendaItem> _makeAgenda(
+  /// Builds the flat agenda items list from a thread set.
+  ///
+  /// Public so [AgendaBuilder.build] can delegate to it during the
+  /// transitional period; once the agenda is fully block-aware this
+  /// can be moved into the builder.
+  static List<AgendaItem> makeAgendaItems(
     List<Thread> threads, {
     required Priority context,
     required int horizonDays,
@@ -320,7 +355,7 @@ class PriorityState extends Equatable {
     bool isOutside(Thread t) =>
         t.priority.path != context.path &&
         !context.path.isParent(t.priority.path);
-    log.fine('[_makeAgenda] rebuilding agenda (${threads.length} threads)');
+    log.fine('[makeAgendaItems] rebuilding agenda (${threads.length} threads)');
     final items = <AgendaItem>[];
     final addedAssociations = <String>{};
     final now = Time.now();
@@ -1091,6 +1126,7 @@ class PriorityState extends Equatable {
     Thread? draft,
     Note? draftNote,
     bool? showArchived,
+    AgendaModel? agenda,
     List<AgendaItem>? agendaItems,
     bool? agendaDoneEnd,
     bool? agendaLoaded,
@@ -1110,6 +1146,7 @@ class PriorityState extends Equatable {
     bool? remoteSearchInProgress,
     bool? remoteSearchOffline,
     bool? hasArchivedMatches,
+    Value<String?> expandedBlockId = const Value.absent(),
   }) {
     return PriorityState(
       context: context ?? this.context,
@@ -1117,6 +1154,7 @@ class PriorityState extends Equatable {
       draft: draft ?? this.draft,
       draftNote: draftNote ?? this.draftNote,
       showArchived: showArchived ?? this.showArchived,
+      agenda: agenda ?? this.agenda,
       agendaItems: agendaItems ?? this.agendaItems,
       agendaDoneEnd: agendaDoneEnd ?? this.agendaDoneEnd,
       agendaLoaded: agendaLoaded ?? this.agendaLoaded,
@@ -1157,6 +1195,7 @@ class PriorityState extends Equatable {
           remoteSearchInProgress ?? this.remoteSearchInProgress,
       remoteSearchOffline: remoteSearchOffline ?? this.remoteSearchOffline,
       hasArchivedMatches: hasArchivedMatches ?? this.hasArchivedMatches,
+      expandedBlockId: expandedBlockId.or(this.expandedBlockId),
     );
   }
 
@@ -1167,6 +1206,7 @@ class PriorityState extends Equatable {
     draft,
     draftNote,
     showArchived,
+    agenda,
     agendaItems,
     agendaDoneEnd,
     agendaLoaded,
@@ -1186,6 +1226,7 @@ class PriorityState extends Equatable {
     remoteSearchInProgress,
     remoteSearchOffline,
     hasArchivedMatches,
+    expandedBlockId,
   ];
 
   @override
@@ -1194,110 +1235,8 @@ class PriorityState extends Equatable {
   }
 }
 
-sealed class AgendaItem extends Equatable {
-  const AgendaItem();
-
-  T when<T>({
-    required T Function(AgendaHeaderItem) header,
-    required T Function(AgendaThreadItem) activity,
-  }) {
-    return switch (this) {
-      AgendaHeaderItem h => header(h),
-      AgendaThreadItem a => activity(a),
-    };
-  }
-
-  /// Stable identity key for this item, used for scroll anchor correction
-  /// and widget keys.
-  String get stableKey => when(
-    header: (h) => h.date != null
-        ? 'header_date_${h.date}'
-        : h.dateTimeRange != null
-        ? 'header_event_${h.dateTimeRange}'
-        : 'header_other',
-    activity: (a) =>
-        'activity_${a.thread.id}${a.thread.occurrence != null ? '_${a.thread.occurrence}' : ''}${a.thread.isLinkScheduleInstance ? '_link' : ''}${a.isAssociated ? '_assoc${a.associationParentId != null ? '_${a.associationParentId}' : ''}' : ''}',
-  );
-}
-
-class AgendaHeaderItem extends AgendaItem {
-  const AgendaHeaderItem({
-    this.dateTimeRange,
-    this.date,
-    this.now = false,
-    this.thread,
-    this.text,
-    this.scheduleAt,
-    this.isOutsidePriority = false,
-  });
-
-  final DateTimeRange? dateTimeRange;
-  final Date? date;
-  final bool now;
-  final Thread? thread;
-  final String? text;
-  final DateTime? scheduleAt;
-
-  /// Whether this header is for an event outside the current priority context.
-  /// Outside-priority event headers are dimmed in the UI.
-  final bool isOutsidePriority;
-
-  @override
-  List<Object?> get props => [
-    dateTimeRange,
-    date,
-    now,
-    thread,
-    text,
-    scheduleAt,
-    isOutsidePriority,
-  ];
-
-  @override
-  String toString() =>
-      'AgendaHeaderItem(dateTimeRange: $dateTimeRange, date: $date, now: $now, text: $text, scheduleAt: $scheduleAt)';
-}
-
-class AgendaThreadItem extends AgendaItem {
-  const AgendaThreadItem(
-    this.thread, {
-    this.now = false,
-    this.isNext = false,
-    this.isAssociated = false,
-    this.isOutsidePriority = false,
-    this.associationParentId,
-    this.associationOrder,
-  });
-
-  final Thread thread;
-  final bool now;
-  final bool isNext;
-  final bool isAssociated;
-
-  /// Whether this thread is outside the current priority context.
-  /// Outside-priority link-scheduled events are dimmed in the UI.
-  final bool isOutsidePriority;
-
-  /// Disambiguator for the same child thread appearing under multiple
-  /// parent events (e.g. recurring event instances). Used in widget keys
-  /// to prevent GlobalKey collisions.
-  final String? associationParentId;
-
-  /// The shared association order, used for reordering among associated
-  /// threads. Null for non-associated items.
-  final Order? associationOrder;
-
-  @override
-  List<Object?> get props => [
-    thread,
-    now,
-    isNext,
-    isAssociated,
-    isOutsidePriority,
-    associationParentId,
-  ];
-
-  @override
-  String toString() =>
-      'AgendaThreadItem(thread: ${thread.title}, now: $now, isAssociated: $isAssociated, isOutsidePriority: $isOutsidePriority)';
-}
+// AgendaItem, AgendaHeaderItem, AgendaThreadItem moved to
+// `apps/plot/lib/state/agenda_model.dart` so that `AgendaModel.flatItems`
+// can produce them without an import cycle with `priority.dart`.
+// They remain re-exported through this library because `priority.dart`
+// imports `agenda_model.dart`.

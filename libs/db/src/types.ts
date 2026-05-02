@@ -1021,6 +1021,79 @@ export type Database = {
           },
         ]
       }
+      priority_block: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          created_by: string
+          effective_at: string
+          id: string
+          order_value: number
+          priority_id: string
+          seq: unknown
+          updated_at: string
+          updated_by: number
+          user_id: string
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string
+          created_by: string
+          effective_at: string
+          id?: string
+          order_value: number
+          priority_id: string
+          seq?: unknown
+          updated_at?: string
+          updated_by?: number
+          user_id: string
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string
+          created_by?: string
+          effective_at?: string
+          id?: string
+          order_value?: number
+          priority_id?: string
+          seq?: unknown
+          updated_at?: string
+          updated_by?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_block_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_block_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_block_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["child_id"]
+          },
+          {
+            foreignKeyName: "priority_block_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_child"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_block_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "user"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       priority_setting: {
         Row: {
           key: string
@@ -4412,6 +4485,73 @@ export type Database = {
           },
         ]
       }
+      priority_block: {
+        Row: {
+          archived_at: string | null
+          created_at: string | null
+          created_by: string | null
+          effective_at: string | null
+          id: string | null
+          order_value: number | null
+          priority_id: string | null
+          seq: unknown
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          effective_at?: string | null
+          id?: string | null
+          order_value?: number | null
+          priority_id?: string | null
+          seq?: unknown
+          updated_at?: string | null
+          updated_by?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          effective_at?: string | null
+          id?: string | null
+          order_value?: number | null
+          priority_id?: string | null
+          seq?: unknown
+          updated_at?: string | null
+          updated_by?: number | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "priority_block_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "priority_block_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "priority_block_priority_id_fkey"
+            columns: ["priority_id"]
+            referencedRelation: "priority_expanded"
+            referencedColumns: ["priority_id"]
+          },
+          {
+            foreignKeyName: "priority_block_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "group"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       priority_expanded: {
         Row: {
           archived_at: string | null
@@ -4691,13 +4831,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
@@ -4922,6 +5062,28 @@ export type Database = {
           p_user_id: string
         }
         Returns: undefined
+      }
+      upsert_priority_block: {
+        Args: { p_block: Json; user_id: string }
+        Returns: {
+          archived_at: string | null
+          created_at: string | null
+          created_by: string | null
+          effective_at: string | null
+          id: string | null
+          order_value: number | null
+          priority_id: string | null
+          seq: unknown
+          updated_at: string | null
+          updated_by: number | null
+          user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "priority_block"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       upsert_schedule: {
         Args: { p_defaults?: Json; p_schedule: Json; user_id: string }

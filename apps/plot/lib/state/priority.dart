@@ -6,7 +6,23 @@ import 'package:equatable/equatable.dart';
 import 'package:drift/drift.dart' hide Column;
 
 import 'package:plot/api/network_exception.dart';
-import 'package:plot/store/store.dart';
+import 'package:plot/state/agenda_builder.dart';
+import 'package:plot/state/agenda_model.dart';
+// Hide store.dart's `PriorityBlock` (the order-timeline class) so it
+// doesn't shadow the agenda_model.dart `PriorityBlock` UI type already
+// re-exported from this file. The row + top-level helpers
+// (PriorityBlockRow, streamPriorityBlocksGroupedByPriority,
+// effectivePriorityOrderAt) remain accessible.
+import 'package:plot/store/store.dart' hide PriorityBlock;
+// Bring the timeline class in under an alias for the few places we
+// need to construct/save one.
+import 'package:plot/store/store.dart' as store show PriorityBlock;
+
+// Re-export the agenda atom types so existing consumers that import
+// `package:plot/state/priority.dart` still see them after their move
+// to `agenda_model.dart`.
+export 'package:plot/state/agenda_model.dart'
+    show AgendaItem, AgendaHeaderItem, AgendaThreadItem;
 import 'package:plot/util/async.dart';
 import 'package:plot/util/list.dart';
 import 'package:plot/page/loading.dart';
@@ -378,6 +394,36 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// suppression that operates per thread and per field.
   final Map<ThreadId, _OptimisticOverride> _optimisticOverrides = {};
 
+  /// Latest threads list emitted by the agenda subscription (after
+  /// optimistic overrides). Optimistic mutation handlers transform
+  /// this list and call [_rebuildAgendaModel] to derive a fresh
+  /// [AgendaModel] without re-running the agenda DB query.
+  List<Thread> _lastAgendaThreads = const [];
+
+  /// Rebuild the agenda model from the cached threads list and emit
+  /// it. Optional [extra] state-shape changes (e.g. updated activity
+  /// feed, cleared selected thread) are layered onto the same emit.
+  void _rebuildAgendaModel({
+    Value<Thread?> thread = const Value.absent(),
+    List<AgendaItem>? activityFeedItems,
+  }) {
+    final agenda = AgendaBuilder.build(
+      threads: _lastAgendaThreads,
+      context: state.context,
+      horizonDays: _agendaHorizonDays,
+      associationsByParentId: _associations,
+      priorityBlocksByPriority: _priorityBlocksByPriority,
+    );
+    emit(
+      state.copyWith(
+        thread: thread,
+        agenda: agenda,
+        agendaItems: agenda.flatItems(expandedBlockId: state.expandedBlockId),
+        activityFeedItems: activityFeedItems,
+      ),
+    );
+  }
+
   /// Finds a thread from the current state so callers that only have an id
   /// can build an expected-state override. Searches the activity feed first
   /// (where todo changes originate for the bug this fixes) then the agenda.
@@ -448,6 +494,16 @@ class PriorityBloc extends Cubit<PriorityState> {
   StreamSubscription<Map<Uuid, List<ThreadAssociationRow>>>?
   _associationsSubscription;
 
+  /// Per-priority order timeline (`priority_block` rows). Populated by
+  /// [_priorityBlocksSubscription] and fed to [AgendaBuilder.build] so
+  /// that block ordering reflects user-driven reorders. Empty until the
+  /// first stream emission; AgendaBuilder falls back to
+  /// `priority.order` when a priority has no rows here.
+  Map<PriorityId, List<PriorityBlockRow>> _priorityBlocksByPriority =
+      const {};
+  StreamSubscription<Map<PriorityId, List<PriorityBlockRow>>>?
+  _priorityBlocksSubscription;
+
   /// Data-driven suppression for association changes: keeps reorderViewItems
   /// until _associations confirms the child is under the expected parent.
   (ThreadId childId, Uuid parentId)? _pendingAssociation;
@@ -456,72 +512,389 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// until _associations no longer contains the child.
   ThreadId? _pendingDisassociation;
 
-  /// Optimistic reorder: caches the moved agendaViewItems so the UI
-  /// doesn't re-derive them (which can produce different item counts).
-  void moveAgendaItem(
-    int viewOldIndex,
-    int viewNewIndex, {
-    AgendaItem? updatedItem,
+  /// Optimistic reorder. The caller has computed a new [Order] for the
+  /// dragged thread and (in the association/disassociation cases) is
+  /// also writing an associations row to the DB. This handler stitches
+  /// the same change into [_lastAgendaThreads] and rebuilds the model
+  /// so the UI reflects the move immediately. Suppression flags keep
+  /// the optimistic state until the DB write settles.
+  void moveAgendaItem({
+    required Thread movedThread,
     Uuid? associatingWithParent,
     bool disassociating = false,
   }) {
-    if (viewOldIndex == viewNewIndex) return;
-
     _reorderTimestamp = DateTime.now();
-    final viewItems = List<AgendaItem>.from(state.agendaViewItems);
 
-    // The page strips the leading "Now" header from agendaViewItems before
-    // passing items to InfiniteList, so indices from onReorder are relative
-    // to the Now-stripped list. Adjust to agendaViewItems indices.
-    final nowOffset =
-        (viewItems.isNotEmpty &&
-            viewItems.first is AgendaHeaderItem &&
-            (viewItems.first as AgendaHeaderItem).now)
-        ? 1
-        : 0;
-    final adjOld = viewOldIndex + nowOffset;
-    final adjNew = viewNewIndex + nowOffset;
-
-    final item = viewItems.removeAt(adjOld);
-    viewItems.insert(adjNew, updatedItem ?? item);
-
-    // Record the expected state so the stream listener can detect when
-    // the DB data has settled and safely transition from the optimistic
-    // reorderViewItems to the derived _makeAgenda result.
-    final movedItem = viewItems[adjNew];
-    if (movedItem is AgendaThreadItem) {
-      if (associatingWithParent != null) {
-        // Association: suppress until _associations confirms child→parent.
-        _pendingAssociation = (movedItem.thread.id, associatingWithParent);
-        _pendingReorderOrder = null;
-      } else if (disassociating) {
-        // Disassociation: suppress until _associations no longer has child.
-        _pendingDisassociation = movedItem.thread.id;
-        _pendingReorderOrder = (
-          movedItem.thread.id,
-          movedItem.thread.order.value,
-        );
-      } else {
-        _pendingReorderOrder = (
-          movedItem.thread.id,
-          movedItem.thread.order.value,
-        );
+    // Splice the moved thread into the cached source list.
+    _lastAgendaThreads = _lastAgendaThreads.map((t) {
+      if (t.id != movedThread.id) return t;
+      if (t.occurrence == movedThread.occurrence &&
+          t.isLinkScheduleInstance == movedThread.isLinkScheduleInstance) {
+        return movedThread;
       }
+      return t;
+    }).toList();
+
+    // Optimistically update the associations map so the rebuilt model
+    // reflects the new parent → child mapping immediately.
+    if (associatingWithParent != null) {
+      final assoc = ThreadAssociationRow(
+        id: Uuid.generate(),
+        updatedAt: DateTime.now(),
+        parentThreadId: associatingWithParent,
+        childThreadId: movedThread.id,
+        order: movedThread.order,
+      );
+      final updated = <Uuid, List<ThreadAssociationRow>>{
+        ...?_associations,
+      };
+      final list = List<ThreadAssociationRow>.from(
+        updated[associatingWithParent] ?? const [],
+      )..removeWhere((a) => a.childThreadId == movedThread.id);
+      list.add(assoc);
+      updated[associatingWithParent] = list;
+      _associations = updated;
+      _pendingAssociation = (movedThread.id, associatingWithParent);
+      _pendingReorderOrder = null;
+    } else if (disassociating) {
+      if (_associations != null) {
+        final updated = <Uuid, List<ThreadAssociationRow>>{};
+        for (final entry in _associations!.entries) {
+          final filtered = entry.value
+              .where((a) => a.childThreadId != movedThread.id)
+              .toList();
+          if (filtered.isNotEmpty) updated[entry.key] = filtered;
+        }
+        _associations = updated;
+      }
+      _pendingDisassociation = movedThread.id;
+      _pendingReorderOrder = (movedThread.id, movedThread.order.value);
+    } else {
+      _pendingReorderOrder = (movedThread.id, movedThread.order.value);
     }
 
     log.info(
-      '[moveAgendaItem] old=$viewOldIndex new=$viewNewIndex '
-      'adjOld=$adjOld adjNew=$adjNew nowOffset=$nowOffset '
-      'viewItems=${viewItems.length} emitting reorderViewItems '
-      'pendingOrder=${_pendingReorderOrder?.$2}',
+      '[moveAgendaItem] thread=${movedThread.id} '
+      'order=${movedThread.order.value} '
+      'assoc=${associatingWithParent ?? "-"} disassoc=$disassociating',
     );
-    emit(state.copyWith(reorderViewItems: Value(viewItems)));
-    log.info('[moveAgendaItem] emit returned');
+    // Build the optimistic agenda from the mutated cache and pin it as
+    // reorderViewItems so the renderer keeps showing this exact view
+    // until the suppress window clears. Without the pin, mid-drag
+    // background stream fires would emit subtly-different rebuilds
+    // (e.g. updated_at deltas on unrelated threads) and ReorderableListView
+    // would re-render the items list, snapping the just-dropped thread
+    // back to its original position before the next frame settled.
+    final agenda = AgendaBuilder.build(
+      threads: _lastAgendaThreads,
+      context: state.context,
+      horizonDays: _agendaHorizonDays,
+      associationsByParentId: _associations,
+      priorityBlocksByPriority: _priorityBlocksByPriority,
+    );
+    final flat = agenda.flatItems(expandedBlockId: state.expandedBlockId);
+    // Mirror the page-level transform: agendaViewItems strips today's
+    // date header; the page additionally strips a leading "now" header.
+    // Build the pinned list to match what the renderer would produce.
+    final today = Date.today();
+    final pinned = flat.where((item) {
+      if (item is AgendaHeaderItem &&
+          item.date != null &&
+          item.date == today) {
+        return false;
+      }
+      return true;
+    }).toList();
+    emit(
+      state.copyWith(
+        agenda: agenda,
+        agendaItems: flat,
+        reorderViewItems: Value(pinned),
+      ),
+    );
+  }
 
-    // Cancel and restart the agenda subscription to flush any stale events
-    // sitting in the debounce pipeline. The fresh subscription will only
-    // produce events reflecting the post-reorder DB state.
-    _loadAgenda(triggerSync: false);
+  /// Move an entire priority block to a different gap (and optionally a
+  /// different day). Every contained thread's `_userSchedule.startAt` is
+  /// rewritten to `targetGapAnchorAt` (the start of the destination gap)
+  /// using the existing pinned-after-event encoding. If [targetDay]
+  /// differs from the threads' current day, the new startAt naturally
+  /// carries the day too (startOn is cleared by `reorderToAfterEvent`).
+  ///
+  /// Implements rule 3 of the redesign (blocks can move into different
+  /// time periods). Rejected drops over events should snap to the
+  /// nearest gap before reaching this method.
+  Future<void> moveBlock({
+    required PriorityId priorityId,
+    required DateTime targetGapAnchorAt,
+  }) async {
+    _reorderTimestamp = DateTime.now();
+    final threadsToMove = _lastAgendaThreads
+        .where((t) => t.priority.id == priorityId)
+        .toList();
+    if (threadsToMove.isEmpty) {
+      log.warning('[moveBlock] no threads in priority $priorityId');
+      return;
+    }
+
+    log.info(
+      '[moveBlock] priority=$priorityId threads=${threadsToMove.length} '
+      'target=$targetGapAnchorAt',
+    );
+
+    final updated = <Thread>[];
+    for (final t in threadsToMove) {
+      final moved = t.reorderToAfterEvent(t.order, eventEndTime: targetGapAnchorAt);
+      updated.add(moved);
+      _optimisticOverrides[t.id] = _OptimisticOverride.expect(expected: moved);
+    }
+    final movedById = {for (final t in updated) t.id: t};
+    _lastAgendaThreads = _lastAgendaThreads
+        .map((t) => movedById[t.id] ?? t)
+        .toList();
+
+    _rebuildAgendaModel();
+
+    for (final t in updated) {
+      // Fire-and-forget; the optimistic override survives until the
+      // stream confirms.
+      unawaited(t.save());
+    }
+  }
+
+  /// Reorder a priority's block within a single time period.
+  ///
+  /// `periodReferenceTime` is the moment the new ordering should be in
+  /// effect from — `now` for a do-now reorder (the gap containing now),
+  /// or the gap's start for a future-period reorder. `above` and `below`
+  /// identify the block's new neighbours (null = top / bottom).
+  ///
+  /// Writes a `priority_block` row at:
+  ///   - `effective_at = now` (with archivePast: true) when reordering
+  ///     do-now, so the new order applies "from now forward" and any
+  ///     stale past rows for this priority are soft-archived.
+  ///   - `effective_at = periodReferenceTime` (without archivePast)
+  ///     when reordering a future period, so the new order takes effect
+  ///     from that moment onward and the current order is preserved.
+  Future<void> reorderBlockWithinPeriod({
+    required PriorityId priorityId,
+    required DateTime periodReferenceTime,
+    required PriorityId? above,
+    required PriorityId? below,
+  }) async {
+    _reorderTimestamp = DateTime.now();
+    final now = DateTime.now();
+
+    Order? aboveOrder;
+    Order? belowOrder;
+    if (above != null) {
+      final aboveBlocks = _priorityBlocksByPriority[above] ?? const [];
+      final fallback = _findPriorityFallback(above);
+      aboveOrder = Order(effectivePriorityOrderAt(
+        moment: periodReferenceTime,
+        blocksForPriority: aboveBlocks,
+        fallback: fallback,
+      ));
+    }
+    if (below != null) {
+      final belowBlocks = _priorityBlocksByPriority[below] ?? const [];
+      final fallback = _findPriorityFallback(below);
+      belowOrder = Order(effectivePriorityOrderAt(
+        moment: periodReferenceTime,
+        blocksForPriority: belowBlocks,
+        fallback: fallback,
+      ));
+    }
+    final newOrder = Order.between(aboveOrder, belowOrder);
+    final isDoNow = !periodReferenceTime.isAfter(now);
+    final effectiveAt = isDoNow ? now : periodReferenceTime;
+
+    log.info(
+      '[reorderBlockWithinPeriod] priority=$priorityId '
+      'order=${newOrder.value} effectiveAt=$effectiveAt isDoNow=$isDoNow',
+    );
+
+    // Optimistic: splice a synthetic row into the cache so the next
+    // rebuild reflects the new ordering immediately.
+    final optimisticRow = PriorityBlockRow(
+      id: Uuid.generate(),
+      priorityId: priorityId,
+      createdBy: Base.userId,
+      orderValue: newOrder,
+      effectiveAt: effectiveAt,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final updated = <PriorityId, List<PriorityBlockRow>>{
+      for (final entry in _priorityBlocksByPriority.entries)
+        entry.key: List.of(entry.value),
+    };
+    final list = updated.putIfAbsent(priorityId, () => <PriorityBlockRow>[]);
+    if (isDoNow) {
+      // Soft-archive locally any past rows (server-side mirror happens
+      // below via PriorityBlock.save's archivePast option).
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].effectiveAt.isBefore(effectiveAt) &&
+            list[i].archivedAt == null) {
+          list[i] = list[i].copyWith(archivedAt: Value(now));
+        }
+      }
+    }
+    list.add(optimisticRow);
+    _priorityBlocksByPriority = updated;
+
+    _rebuildAgendaModel();
+
+    final block = store.PriorityBlock(
+      priorityId: priorityId,
+      orderValue: newOrder,
+      effectiveAt: effectiveAt,
+    );
+    unawaited(block.save(archivePast: isDoNow));
+  }
+
+  /// Drop a thread inside another priority's block — reparents and
+  /// reorders within that block. `above` / `below` are the dragged
+  /// thread's new neighbours inside the target block.
+  Future<void> dropThreadIntoBlock({
+    required ThreadId threadId,
+    required PriorityId targetPriorityId,
+    required ThreadId? above,
+    required ThreadId? below,
+    DateTime? gapAnchorAt,
+  }) async {
+    return _dropThread(
+      threadId: threadId,
+      targetPriorityId: targetPriorityId,
+      above: above,
+      below: below,
+      gapAnchorAt: gapAnchorAt,
+      tag: 'dropThreadIntoBlock',
+    );
+  }
+
+  /// Drop a thread outside any existing block. If the thread's target
+  /// priority already has a block in this period the drop appends or
+  /// prepends to it (based on which side of the existing block was
+  /// dropped onto); otherwise a new block forms at the drop position.
+  ///
+  /// `above` / `below` are the threads of the *target priority* that
+  /// would sit immediately above / below the drop in the consolidated
+  /// view (they may be the same thread set as the existing block when a
+  /// block exists, or null/null when the priority has no block yet).
+  Future<void> dropThreadOutsideBlock({
+    required ThreadId threadId,
+    required PriorityId targetPriorityId,
+    required ThreadId? above,
+    required ThreadId? below,
+    DateTime? gapAnchorAt,
+  }) async {
+    return _dropThread(
+      threadId: threadId,
+      targetPriorityId: targetPriorityId,
+      above: above,
+      below: below,
+      gapAnchorAt: gapAnchorAt,
+      tag: 'dropThreadOutsideBlock',
+    );
+  }
+
+  /// Shared implementation for `dropThreadIntoBlock` /
+  /// `dropThreadOutsideBlock`. Both end up doing the same thing on the
+  /// thread side — only the page-level intent differs.
+  Future<void> _dropThread({
+    required ThreadId threadId,
+    required PriorityId targetPriorityId,
+    required ThreadId? above,
+    required ThreadId? below,
+    DateTime? gapAnchorAt,
+    required String tag,
+  }) async {
+    _reorderTimestamp = DateTime.now();
+    Thread? source;
+    for (final t in _lastAgendaThreads) {
+      if (t.id == threadId) {
+        source = t;
+        break;
+      }
+    }
+    source ??= _findThreadInState(threadId);
+    if (source == null) {
+      log.warning('[$tag] thread $threadId not found in cache');
+      return;
+    }
+
+    final aboveOrder = _findThreadOrder(above);
+    final belowOrder = _findThreadOrder(below);
+    final newOrder = Order.between(aboveOrder, belowOrder);
+
+    final reparented = source.priority.id == targetPriorityId
+        ? source
+        : source.copyWith(
+            priority: _findPriorityById(targetPriorityId) ?? source.priority,
+          );
+
+    final ordered = reparented.copyWith(order: newOrder);
+    final anchored = gapAnchorAt != null
+        ? ordered.reorderToAfterEvent(newOrder, eventEndTime: gapAnchorAt)
+        : ordered;
+
+    log.info(
+      '[$tag] thread=$threadId target=$targetPriorityId '
+      'order=${newOrder.value} above=$above below=$below '
+      'anchor=$gapAnchorAt',
+    );
+
+    _optimisticOverrides[threadId] = _OptimisticOverride.expect(expected: anchored);
+    _lastAgendaThreads = _lastAgendaThreads
+        .map((t) => t.id == threadId ? anchored : t)
+        .toList();
+    _pendingReorderOrder = (threadId, newOrder.value);
+
+    _rebuildAgendaModel();
+
+    unawaited(anchored.save());
+  }
+
+  /// Look up a priority's fallback order value. Used by
+  /// `reorderBlockWithinPeriod` when computing the order between two
+  /// neighbours; matches the same fallback `AgendaBuilder` uses when no
+  /// `priority_block` rows exist for a priority.
+  double _findPriorityFallback(PriorityId id) {
+    final priority = _findPriorityById(id);
+    return priority?.order.value ?? 0.0;
+  }
+
+  Priority? _findPriorityById(PriorityId id) {
+    for (final t in _lastAgendaThreads) {
+      if (t.priority.id == id) return t.priority;
+    }
+    return null;
+  }
+
+  Order? _findThreadOrder(ThreadId? id) {
+    if (id == null) return null;
+    for (final t in _lastAgendaThreads) {
+      if (t.id == id) return t.order;
+    }
+    return null;
+  }
+
+  /// Toggle which block is expanded. The agenda renders at most three
+  /// threads per priority block by default; the expanded block is shown
+  /// in full. Calling this with the currently-expanded block's id
+  /// collapses everything; passing a different id expands that block
+  /// and implicitly collapses the previous one.
+  void toggleBlockExpansion(String blockId) {
+    final newId = state.expandedBlockId == blockId ? null : blockId;
+    final flat = state.agenda.flatItems(expandedBlockId: newId);
+    emit(
+      state.copyWith(
+        expandedBlockId: Value(newId),
+        agendaItems: flat,
+      ),
+    );
   }
 
   Future<void> fetchMoreAgendaItems(int first, int count) async {
@@ -561,6 +934,7 @@ class PriorityBloc extends Cubit<PriorityState> {
     _agendaSubscription?.cancel();
     _activityFeedSubscription?.cancel();
     _associationsSubscription?.cancel();
+    _priorityBlocksSubscription?.cancel();
     _tagsSubscription?.cancel();
     _iconCountsSubscription?.cancel();
     return super.close();
@@ -588,31 +962,20 @@ class PriorityBloc extends Cubit<PriorityState> {
         _optimisticOverrides[id] = _OptimisticOverride.absent();
       }
     }
-    final updatedItems = state.agendaItems
-        .where(
-          (item) => item.when(
-            header: (_) => true,
-            activity: (a) =>
-                a.thread.id != id || a.thread.isLinkScheduleInstance,
-          ),
-        )
-        .map((item) {
-          if (!finishTodo) return item;
-          return item.when(
-            header: (_) => item,
-            activity: (a) => a.thread.id == id
-                ? AgendaThreadItem(
-                    a.thread.copyWith(todo: false),
-                    now: a.now,
-                    isNext: a.isNext,
-                  )
-                : item,
-          );
+    // Drop non-link-instance copies of the thread from the cached
+    // source list; finishing a todo keeps any link-schedule instance
+    // alive (it remains as an event) but flips its todo flag so the
+    // builder treats it as the user's scheduled completion.
+    _lastAgendaThreads = _lastAgendaThreads
+        .where((t) => t.id != id || t.isLinkScheduleInstance)
+        .map((t) {
+          if (!finishTodo || t.id != id) return t;
+          return t.copyWith(todo: false);
         })
         .toList();
 
-    // Also update activity feed so the icon reflects the finished state
-    // immediately (the activity feed doesn't use removal animations).
+    // Activity feed isn't backed by _lastAgendaThreads — splice the
+    // finishedTodo flag through directly so the icon updates instantly.
     final updatedFeedItems = finishTodo
         ? state.activityFeedItems.map((item) {
             return item.when(
@@ -624,12 +987,7 @@ class PriorityBloc extends Cubit<PriorityState> {
           }).toList()
         : null;
 
-    emit(
-      state.copyWith(
-        agendaItems: updatedItems,
-        activityFeedItems: updatedFeedItems,
-      ),
-    );
+    _rebuildAgendaModel(activityFeedItems: updatedFeedItems);
   }
 
   /// Optimistically remove an archived thread from the agenda and the
@@ -648,14 +1006,9 @@ class PriorityBloc extends Cubit<PriorityState> {
         : _OptimisticOverride.absent();
     _stickyUnreadIds.remove(id);
 
-    final updatedAgenda = state.agendaItems
-        .where(
-          (item) => item.when(
-            header: (_) => true,
-            activity: (a) => a.thread.id != id,
-          ),
-        )
-        .toList();
+    // Drop the archived thread from the cached source list so the
+    // rebuilt model omits it.
+    _lastAgendaThreads = _lastAgendaThreads.where((t) => t.id != id).toList();
 
     final updatedFeed = state.showArchived
         ? state.activityFeedItems.map((item) {
@@ -675,14 +1028,11 @@ class PriorityBloc extends Cubit<PriorityState> {
             )
             .toList();
 
-    emit(
-      state.copyWith(
-        thread: state.thread?.id == id
-            ? Value(archivedThread)
-            : const Value.absent(),
-        agendaItems: updatedAgenda,
-        activityFeedItems: updatedFeed,
-      ),
+    _rebuildAgendaModel(
+      thread: state.thread?.id == id
+          ? Value(archivedThread)
+          : const Value.absent(),
+      activityFeedItems: updatedFeed,
     );
   }
 
@@ -708,16 +1058,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       _associations = updated;
     }
 
-    final updatedItems = state.agendaItems
-        .where(
-          (item) => item.when(
-            header: (_) => true,
-            activity: (a) => !a.isAssociated || a.thread.id != id,
-          ),
-        )
-        .toList();
-
-    emit(state.copyWith(agendaItems: updatedItems));
+    // _associations was pruned above, and _lastAgendaThreads still
+    // contains the thread (its other appearances stay valid). Rebuilding
+    // from the cache drops the associated copies as the builder no longer
+    // sees the parent → child mapping for this id.
+    _rebuildAgendaModel();
   }
 
   /// Optimistically update a thread in the agenda for instant UI feedback.
@@ -749,231 +1094,58 @@ class PriorityBloc extends Cubit<PriorityState> {
       }
     }
 
-    final foundInAgenda = state.agendaItems.any(
-      (item) => item.when(
-        header: (_) => false,
-        activity: (a) => a.thread.id == updatedThread.id,
-      ),
+    // Mutate the cached threads list to reflect the update. Sibling
+    // occurrences of recurring threads share an id but have different
+    // `occurrence`/`isLinkScheduleInstance` — propagate only the
+    // todo flag to siblings while replacing the exact match in full.
+    bool exactMatch(Thread t) =>
+        t.id == updatedThread.id &&
+        t.occurrence == updatedThread.occurrence &&
+        t.isLinkScheduleInstance == updatedThread.isLinkScheduleInstance;
+
+    final foundInAgenda = _lastAgendaThreads.any(
+      (t) => t.id == updatedThread.id,
     );
 
-    List<AgendaItem> updatedAgendaItems;
-    if (foundInAgenda) {
-      // Thread is in agenda — check if it should be removed or updated.
-      final shouldRemove =
-          !updatedThread.todo &&
-          updatedThread.at == null &&
-          updatedThread.on == null;
-      if (shouldRemove) {
-        // Thread was only in agenda as a todo — remove it
-        updatedAgendaItems = state.agendaItems
-            .where(
-              (item) => item.when(
-                header: (_) => true,
-                activity: (a) => a.thread.id != updatedThread.id,
-              ),
-            )
-            .toList();
-      } else {
-        // Match the specific item (not sibling occurrences of recurring
-        // threads) for schedule-change detection and repositioning.
-        bool exactMatch(Thread a) =>
-            a.id == updatedThread.id &&
-            a.occurrence == updatedThread.occurrence &&
-            a.isLinkScheduleInstance == updatedThread.isLinkScheduleInstance;
+    final shouldRemove =
+        !updatedThread.todo &&
+        updatedThread.at == null &&
+        updatedThread.on == null;
 
-        // Check if the event's schedule changed — if so, reposition
-        // instead of doing an in-place replacement.
-        final exactItem = state.agendaItems
-            .whereType<AgendaThreadItem>()
-            .where((a) => exactMatch(a.thread))
-            .firstOrNull;
-        final oldAt = exactItem?.thread.at;
-        final scheduleChanged = exactItem != null && oldAt != updatedThread.at;
+    var rebuilt = _lastAgendaThreads.map((t) {
+      if (t.id != updatedThread.id) return t;
+      if (exactMatch(t)) return updatedThread;
+      // Sibling occurrence: propagate todo state only.
+      return t.copyWith(todo: updatedThread.todo);
+    }).toList();
 
-        if (scheduleChanged && updatedThread.at != null) {
-          // The override recorded above already captures the expected `at`,
-          // so stream emissions with the new schedule will settle it.
-
-          // Remove only the specific item and its associated event header
-          updatedAgendaItems = state.agendaItems.where((item) {
-            if (item is AgendaHeaderItem &&
-                item.thread != null &&
-                exactMatch(item.thread!)) {
-              return false;
-            }
-            if (item is AgendaThreadItem && exactMatch(item.thread)) {
-              return false;
-            }
-            return true;
-          }).toList();
-
-          // Find insertion point by date section and start time
-          final targetDate = updatedThread.agendaAt.toDate();
-          int insertIndex = updatedAgendaItems.length; // default: end
-
-          for (int i = 0; i < updatedAgendaItems.length; i++) {
-            final item = updatedAgendaItems[i];
-            if (item is AgendaHeaderItem && item.date != null) {
-              if (item.date!.isAfter(targetDate)) {
-                insertIndex = i;
-                break;
-              }
-              if (item.date == targetDate) {
-                // Found the target date section — find position by start time
-                insertIndex = i + 1;
-                for (int j = i + 1; j < updatedAgendaItems.length; j++) {
-                  final sectionItem = updatedAgendaItems[j];
-                  if (sectionItem is AgendaHeaderItem &&
-                      sectionItem.date != null) {
-                    insertIndex = j;
-                    break;
-                  }
-                  if (sectionItem is AgendaHeaderItem &&
-                      sectionItem.dateTimeRange?.start != null &&
-                      sectionItem.thread != null &&
-                      updatedThread.at!.start != null &&
-                      sectionItem.dateTimeRange!.start!.isAfter(
-                        updatedThread.at!.start!,
-                      )) {
-                    insertIndex = j;
-                    break;
-                  }
-                  insertIndex = j + 1;
-                }
-                break;
-              }
-            }
-          }
-
-          updatedAgendaItems.insert(
-            insertIndex,
-            AgendaHeaderItem(
-              dateTimeRange: updatedThread.at,
-              thread: updatedThread,
-            ),
-          );
-          updatedAgendaItems.insert(
-            insertIndex + 1,
-            AgendaThreadItem(updatedThread),
-          );
-        } else {
-          // In-place replacement (schedule unchanged or no schedule).
-          // Update the exact item with the full updatedThread; for sibling
-          // occurrences of the same thread, propagate todo state only
-          // (preserving each occurrence's own schedule and event time).
-          updatedAgendaItems = state.agendaItems.map((item) {
-            return item.when(
-              header: (h) {
-                if (h.thread == null || h.thread!.id != updatedThread.id) {
-                  return item;
-                }
-                if (exactMatch(h.thread!)) {
-                  return AgendaHeaderItem(
-                    dateTimeRange: updatedThread.at,
-                    date: h.date,
-                    now: h.now,
-                    thread: updatedThread,
-                    text: h.text,
-                    scheduleAt: h.scheduleAt,
-                  );
-                }
-                // Sibling occurrence: propagate todo state only
-                return AgendaHeaderItem(
-                  dateTimeRange: h.dateTimeRange,
-                  date: h.date,
-                  now: h.now,
-                  thread: h.thread!.copyWith(todo: updatedThread.todo),
-                  text: h.text,
-                  scheduleAt: h.scheduleAt,
-                );
-              },
-              activity: (a) {
-                if (a.thread.id != updatedThread.id) return item;
-                if (exactMatch(a.thread)) {
-                  return AgendaThreadItem(updatedThread, now: a.now);
-                }
-                // Sibling occurrence: propagate todo state only
-                return AgendaThreadItem(
-                  a.thread.copyWith(todo: updatedThread.todo),
-                  now: a.now,
-                  isNext: a.isNext,
-                );
-              },
-            );
-          }).toList();
-
-          // When a link schedule instance becomes a todo, also insert the
-          // base todo duplicate in today's section so it appears instantly.
-          if (updatedThread.isLinkScheduleInstance &&
-              updatedThread.todo &&
-              !state.agendaItems.any(
-                (item) => item.when(
-                  header: (_) => false,
-                  activity: (a) =>
-                      a.thread.id == updatedThread.id &&
-                      !a.thread.isLinkScheduleInstance,
-                ),
-              )) {
-            final baseTodo = updatedThread.toBaseTodo();
-            final today = Date.today();
-            int insertIndex = -1;
-            bool inTodaySection = false;
-            for (int i = 0; i < updatedAgendaItems.length; i++) {
-              final item = updatedAgendaItems[i];
-              if (item is AgendaHeaderItem && item.date != null) {
-                if (!item.date!.isAfter(today)) {
-                  inTodaySection = true;
-                  if (insertIndex == -1) insertIndex = i + 1;
-                } else if (inTodaySection) {
-                  break;
-                }
-              }
-              if (inTodaySection &&
-                  item is AgendaThreadItem &&
-                  item.thread.todo &&
-                  !item.thread.isLinkScheduleInstance) {
-                insertIndex = i + 1;
-              }
-            }
-            if (insertIndex == -1) {
-              insertIndex = updatedAgendaItems.isNotEmpty ? 1 : 0;
-            }
-            updatedAgendaItems.insert(insertIndex, AgendaThreadItem(baseTodo));
-          }
-        }
+    if (shouldRemove) {
+      // Thread was only in agenda as a todo — remove every copy.
+      rebuilt = rebuilt.where((t) => t.id != updatedThread.id).toList();
+    } else if (!foundInAgenda) {
+      if (updatedThread.todo) {
+        // Becoming a todo but not in agenda yet — append; the builder
+        // sorts todos by todoCompareTo, so position resolves automatically.
+        rebuilt.add(updatedThread);
       }
-    } else if (updatedThread.todo) {
-      // Thread becoming a todo but not in agenda yet — insert it after
-      // the last existing todo in today's section.
-      updatedAgendaItems = List<AgendaItem>.from(state.agendaItems);
-      final today = Date.today();
-      int insertIndex = -1;
-      bool inTodaySection = false;
-      for (int i = 0; i < updatedAgendaItems.length; i++) {
-        final item = updatedAgendaItems[i];
-        if (item is AgendaHeaderItem && item.date != null) {
-          if (!item.date!.isAfter(today)) {
-            inTodaySection = true;
-            if (insertIndex == -1) insertIndex = i + 1;
-          } else if (inTodaySection) {
-            break; // Passed today's section
-          }
-        }
-        if (inTodaySection &&
-            item is AgendaThreadItem &&
-            item.thread.todo &&
-            !item.thread.isLinkScheduleInstance) {
-          insertIndex = i + 1;
-        }
-      }
-      if (insertIndex == -1) {
-        // No today header found — insert after the first header
-        insertIndex = updatedAgendaItems.isNotEmpty ? 1 : 0;
-      }
-      updatedAgendaItems.insert(insertIndex, AgendaThreadItem(updatedThread));
-    } else {
-      updatedAgendaItems = state.agendaItems;
+      // Otherwise (e.g. archive transitioning, no longer todo): no
+      // change — the thread stays absent from the agenda.
     }
+
+    // When a link schedule instance becomes a todo, also surface the
+    // base todo so it appears in today's section even before the DB
+    // sync emits the user's user-schedule row. The builder dedups by
+    // (id, isLinkScheduleInstance, occurrence), so adding the base
+    // todo here doesn't conflict with the link instance.
+    if (updatedThread.isLinkScheduleInstance &&
+        updatedThread.todo &&
+        !rebuilt.any(
+          (t) => t.id == updatedThread.id && !t.isLinkScheduleInstance,
+        )) {
+      rebuilt.add(updatedThread.toBaseTodo());
+    }
+
+    _lastAgendaThreads = rebuilt;
 
     final updatedFeedItems = state.activityFeedItems.map((item) {
       return item.when(
@@ -984,14 +1156,11 @@ class PriorityBloc extends Cubit<PriorityState> {
       );
     }).toList();
 
-    emit(
-      state.copyWith(
-        thread: state.thread?.id == updatedThread.id
-            ? Value(updatedThread)
-            : const Value.absent(),
-        agendaItems: updatedAgendaItems,
-        activityFeedItems: updatedFeedItems,
-      ),
+    _rebuildAgendaModel(
+      thread: state.thread?.id == updatedThread.id
+          ? Value(updatedThread)
+          : const Value.absent(),
+      activityFeedItems: updatedFeedItems,
     );
   }
 
@@ -1471,6 +1640,16 @@ class PriorityBloc extends Cubit<PriorityState> {
       _associations = associations;
     });
 
+    // Watch the per-priority order timeline. Updates reflect immediately
+    // in the next agenda rebuild; AgendaBuilder falls back to
+    // priority.order for any priority that has no rows here.
+    _priorityBlocksSubscription?.cancel();
+    _priorityBlocksSubscription = streamPriorityBlocksGroupedByPriority().listen(
+      (grouped) {
+        _priorityBlocksByPriority = grouped;
+      },
+    );
+
     // Watch tags for the priority
     _tagsSubscription?.cancel();
     _tagsSubscription = Thread.watchTagsForPriority(priorityToLoad.path).listen(
@@ -1881,28 +2060,47 @@ class PriorityBloc extends Cubit<PriorityState> {
                 'disassoc=$suppressDisassociation time=$suppressReorderTime) '
                 'overrides=${_optimisticOverrides.length} '
                 'reorderAge=${_reorderTimestamp != null ? now.difference(_reorderTimestamp!).inMilliseconds : "null"}ms '
-                'hasReorderViewItems=${state.reorderViewItems != null} '
-                'pendingOrder=${_pendingReorderOrder?.$2}',
+                'pendingOrder=${_pendingReorderOrder?.$2} '
+                'streamThreads=${threads.length} patched=${patchedThreads.length}',
               );
 
-              final agendaItems = suppressRebuild
-                  ? state.agendaItems
-                  : PriorityState._makeAgenda(
-                      patchedThreads,
-                      context: priorityToLoad,
-                      horizonDays: _agendaHorizonDays,
-                      associationsByParentId: _associations,
-                    );
-
+              if (suppressRebuild) {
+                emit(
+                  state.copyWith(
+                    agendaDoneEnd: false,
+                    agendaLoaded: true,
+                  ),
+                );
+                return;
+              }
+              _lastAgendaThreads = patchedThreads;
+              final agenda = AgendaBuilder.build(
+                threads: patchedThreads,
+                context: priorityToLoad,
+                horizonDays: _agendaHorizonDays,
+                associationsByParentId: _associations,
+                priorityBlocksByPriority: _priorityBlocksByPriority,
+              );
+              // Skip the emit when the rebuilt agenda matches what we
+              // already have (e.g. background stream re-fires that don't
+              // change visible content). bloc.emit's Equatable check
+              // would handle this for us if `state.agenda` were the only
+              // dirty field, but `agendaItems` references new Thread
+              // instances on every patched-threads rebuild, so we
+              // compare blocks structurally before paying the rebuild
+              // cost downstream.
+              if (agenda == state.agenda &&
+                  state.agendaLoaded &&
+                  state.reorderViewItems == null) {
+                return;
+              }
               emit(
                 state.copyWith(
-                  agendaItems: agendaItems,
+                  agenda: agenda,
+                  agendaItems: agenda.flatItems(expandedBlockId: state.expandedBlockId),
                   agendaDoneEnd: false,
                   agendaLoaded: true,
-                  // Keep reorderViewItems during suppress, clear when real data arrives
-                  reorderViewItems: suppressRebuild
-                      ? const Value.absent()
-                      : const Value(null),
+                  reorderViewItems: const Value(null),
                 ),
               );
             });

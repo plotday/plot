@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/command/command.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/style/plot_colors.dart';
@@ -31,10 +34,12 @@ class AgendaHeader extends StatelessWidget {
     this.dateTimeRange,
     this.date,
     this.now = false,
+    this.isNext = false,
     this.thread,
     this.focusNode,
     this.text,
     this.scheduleAt,
+    this.blockPriority,
     super.key,
   });
 
@@ -42,13 +47,28 @@ class AgendaHeader extends StatelessWidget {
   final DateTimeRange? dateTimeRange;
   final Date? date;
   final bool now;
+  final bool isNext;
   final Thread? thread;
   final FocusNode? focusNode;
   final String? text;
   final DateTime? scheduleAt;
 
+  /// When set, render a combined block header carrying this priority's
+  /// breadcrumb plus a priority-tinted background.
+  final Priority? blockPriority;
+
   @override
   Widget build(BuildContext context) {
+    if (blockPriority != null) {
+      return _BlockHeader(
+        priority: blockPriority!,
+        priorityContext: priorityContext,
+        dateTimeRange: dateTimeRange,
+        thread: thread,
+        now: now,
+        isNext: isNext,
+      );
+    }
     // Determine what to show in the center
     String? centerText = text;
     // Split date into two parts for center-on-month alignment
@@ -278,13 +298,19 @@ class AgendaHeader extends StatelessWidget {
         child = SizedBox(height: textHeight);
       }
 
-      Widget result = Padding(
-        padding: EdgeInsets.symmetric(vertical: verticalMargin),
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: context.theme.spacing.xs),
-          child: child,
-        ),
+      // Empty gap headers (no priority) share the date-header background
+      // so they read as a neutral time marker rather than a priority block.
+      Widget result = Container(
+        color: isGapHeader ? context.colour.headerBackground : null,
+        padding: EdgeInsets.symmetric(vertical: context.theme.spacing.xs),
+        child: child,
       );
+      if (!isGapHeader) {
+        result = Padding(
+          padding: EdgeInsets.symmetric(vertical: verticalMargin),
+          child: result,
+        );
+      }
 
       final cmd = command;
       if (cmd != null) {
@@ -352,6 +378,201 @@ class AgendaHeader extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: verticalMargin),
       child: SizedBox(height: textHeight),
+    );
+  }
+
+}
+
+/// Combined block header: block priority's breadcrumb in the main area,
+/// optional time on the left for gap/event blocks, and event metadata
+/// (RSVP, in-progress timing, countdown, duration) on the right.
+/// Background is the priority's tinted color; foreground uses the
+/// priority's accent for contrast. Stateful because in-progress events
+/// need a per-minute timer to refresh elapsed/remaining counters.
+class _BlockHeader extends StatefulWidget {
+  const _BlockHeader({
+    required this.priority,
+    required this.priorityContext,
+    required this.dateTimeRange,
+    required this.thread,
+    required this.now,
+    required this.isNext,
+  });
+
+  final Priority priority;
+  final Priority? priorityContext;
+  final DateTimeRange? dateTimeRange;
+  final Thread? thread;
+  final bool now;
+  final bool isNext;
+
+  @override
+  State<_BlockHeader> createState() => _BlockHeaderState();
+}
+
+class _BlockHeaderState extends State<_BlockHeader> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleTick();
+  }
+
+  @override
+  void didUpdateWidget(_BlockHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.now != widget.now || oldWidget.isNext != widget.isNext) {
+      _tick?.cancel();
+      _scheduleTick();
+    }
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleTick() {
+    if (!widget.now && !widget.isNext) return;
+    final now = Time.now();
+    final secondsUntilNextMinute = 60 - now.second;
+    _tick = Timer(Duration(seconds: secondsUntilNextMinute + 1), () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleTick();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final priority = widget.priority;
+    final dateTimeRange = widget.dateTimeRange;
+    final thread = widget.thread;
+
+    final fg = context.colour.colours.fromTheme(priority.displayColor);
+    final bg = context.colour.colours.backgroundFromTheme(priority.displayColor);
+    final fontSize = context.theme.typography.xs.fontSize;
+    final iconSize = fontSize ?? 12;
+    final spacing = context.theme.spacing;
+    final currentTime = Time.now();
+
+    final hasTime = dateTimeRange != null;
+    final timeOfDay = dateTimeRange?.start?.toTimeOfDay();
+    final timeText = hasTime && timeOfDay != null && !timeOfDay.isMidnight
+        ? (context.isMultiPanel
+              ? timeOfDay.formatShort(context)
+              : timeOfDay.formatNarrow(context))
+        : null;
+    final hasDuration =
+        dateTimeRange?.duration != null &&
+        dateTimeRange!.duration!.inSeconds > 0;
+    final isLastGapOfDay =
+        hasTime &&
+        thread == null &&
+        dateTimeRange.end?.hour == 0 &&
+        dateTimeRange.end?.minute == 0 &&
+        dateTimeRange.end?.second == 0;
+
+    // Build right-side metadata children for event blocks.
+    final rightParts = <Widget>[];
+    if (thread != null && thread.hasOtherAttendees) {
+      rightParts.add(RsvpSummary(activity: thread));
+    }
+    if (widget.now && thread != null) {
+      // In-progress: elapsed ↑ since start, remaining ↓ until end.
+      final start = thread.at?.start;
+      final end = thread.at?.end;
+      if (start != null && currentTime.difference(start).inMinutes >= 1) {
+        rightParts.add(_metaPair(
+          text: Duration(
+            minutes: currentTime.difference(start).inMinutes,
+          ).format(),
+          icon: PlotIcon.up,
+          color: fg,
+          iconSize: iconSize,
+        ));
+      }
+      if (end != null && end.isAfter(currentTime)) {
+        rightParts.add(_metaPair(
+          text: Duration(
+            minutes: (end.difference(currentTime).inSeconds / 60).ceil(),
+          ).format(),
+          icon: PlotIcon.down,
+          color: fg,
+          iconSize: iconSize,
+        ));
+      }
+    } else if (widget.isNext &&
+        thread?.at?.start != null &&
+        thread!.at!.start!.toDate() == Date.today()) {
+      rightParts.add(Text(
+        'In ${Duration(minutes: (thread.at!.start!.difference(currentTime).inSeconds / 60).ceil()).format()}',
+      ));
+    }
+    if (hasDuration && !isLastGapOfDay && !widget.now) {
+      rightParts.add(Text(dateTimeRange.duration!.format()));
+    }
+
+    final timeColWidth = agendaLeadingWidth(context);
+
+    return Container(
+      color: bg,
+      padding: EdgeInsets.symmetric(vertical: spacing.sm),
+      child: DefaultTextStyle(
+        style: TextStyle(color: fg, fontSize: fontSize, height: 1),
+        child: Row(
+          children: [
+            SizedBox(
+              width: timeColWidth,
+              child: Padding(
+                padding: EdgeInsets.only(right: spacing.sm),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: timeText == null
+                      ? const SizedBox.shrink()
+                      : Text(
+                          timeText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: PriorityLabel(
+                priority: priority,
+                context: widget.priorityContext,
+                color: fg,
+                fontSize: fontSize,
+                height: 1,
+              ),
+            ),
+            for (var i = 0; i < rightParts.length; i++) ...[
+              if (i > 0) SizedBox(width: spacing.sm),
+              rightParts[i],
+            ],
+            if (rightParts.isNotEmpty) SizedBox(width: spacing.lg),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Widget _metaPair({
+    required String text,
+    required IconData icon,
+    required Color color,
+    required double iconSize,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(text),
+        SizedBox(width: 4),
+        FaIcon(icon, size: iconSize, color: color),
+      ],
     );
   }
 }
