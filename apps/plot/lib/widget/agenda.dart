@@ -636,85 +636,107 @@ class _BlockHeaderState extends State<_BlockHeader> {
       padding: EdgeInsets.symmetric(vertical: spacing.sm),
       child: DefaultTextStyle(
         style: TextStyle(color: fg, fontSize: fontSize, height: 1),
-        child: Row(
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            SizedBox(
-              width: timeColWidth,
-              child: Padding(
-                padding: EdgeInsets.only(right: spacing.sm),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: timeText == null
-                      ? const SizedBox.shrink()
-                      : Text(
-                          timeText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: context.colour.foreground,
-                            fontSize: fontSize,
-                            height: 1,
+            if (grip != null) grip,
+            Row(
+              children: [
+                SizedBox(
+                  width: timeColWidth,
+                  child: Padding(
+                    padding: EdgeInsets.only(right: spacing.sm),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: timeText == null
+                          ? const SizedBox.shrink()
+                          : ColoredBox(
+                              color: bg,
+                              child: Text(
+                                timeText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: context.colour.foreground,
+                                  fontSize: fontSize,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      if (thread != null) ...[
+                        Flexible(
+                          child: ColoredBox(
+                            color: bg,
+                            child: Text(
+                              thread.displayTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: fg,
+                                fontSize: fontSize,
+                                fontWeight: FontWeight.w500,
+                                height: 1,
+                              ),
+                            ),
                           ),
                         ),
+                        ColoredBox(
+                          color: bg,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: spacing.sm,
+                            ),
+                            child: Text(
+                              '·',
+                              style: TextStyle(
+                                color: fg,
+                                fontSize: fontSize,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Flexible(
+                          child: ColoredBox(
+                            color: bg,
+                            child: PriorityLabel(
+                              priority: priority,
+                              context: widget.priorityContext,
+                              color: fg,
+                              fontSize: fontSize,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ] else
+                        Flexible(
+                          child: ColoredBox(
+                            color: bg,
+                            child: PriorityLabel(
+                              priority: priority,
+                              context: widget.priorityContext,
+                              color: fg,
+                              fontSize: fontSize,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-            ),
-            Expanded(
-              child: Row(
-                children: [
-                  if (thread != null) ...[
-                    Flexible(
-                      child: Text(
-                        thread.displayTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: fg,
-                          fontSize: fontSize,
-                          fontWeight: FontWeight.w500,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: spacing.sm),
-                      child: Text(
-                        '·',
-                        style: TextStyle(
-                          color: fg,
-                          fontSize: fontSize,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                    Flexible(
-                      child: PriorityLabel(
-                        priority: priority,
-                        context: widget.priorityContext,
-                        color: fg,
-                        fontSize: fontSize,
-                        height: 1,
-                      ),
-                    ),
-                  ] else
-                    Flexible(
-                      child: PriorityLabel(
-                        priority: priority,
-                        context: widget.priorityContext,
-                        color: fg,
-                        fontSize: fontSize,
-                        height: 1,
-                      ),
-                    ),
-                  if (grip != null) ...[SizedBox(width: spacing.md), grip],
+                for (var i = 0; i < rightParts.length; i++) ...[
+                  if (i > 0) SizedBox(width: spacing.sm),
+                  ColoredBox(color: bg, child: rightParts[i]),
                 ],
-              ),
+                if (rightParts.isNotEmpty) SizedBox(width: spacing.lg),
+              ],
             ),
-            for (var i = 0; i < rightParts.length; i++) ...[
-              if (i > 0) SizedBox(width: spacing.sm),
-              rightParts[i],
-            ],
-            if (rightParts.isNotEmpty) SizedBox(width: spacing.lg),
           ],
         ),
       ),
