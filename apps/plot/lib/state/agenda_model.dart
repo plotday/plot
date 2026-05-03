@@ -48,6 +48,14 @@ class AgendaModel extends Equatable {
   }) {
     final out = <AgendaItem>[];
     for (final section in sections) {
+      // Track the section's date and the most recent gap anchor so
+      // each block header can carry its source-period metadata for the
+      // block-drag system.
+      final Date? sectionDate = switch (section) {
+        DateSection s => s.date,
+        TextSection _ => null,
+      };
+      DateTime? currentPeriodStart;
       switch (section) {
         case DateSection s:
           out.add(
@@ -70,6 +78,14 @@ class AgendaModel extends Equatable {
               AgendaHeaderItem(
                 blockPriority: b.priority,
                 isOutsidePriority: b.isOutside,
+                parentBlockId: b.id,
+                sourceDate: sectionDate,
+                sourcePeriodStart: currentPeriodStart,
+                parentBlockVisibleCount: _visibleCountFor(
+                  b.threads.length,
+                  isExpanded: expandedBlockId == b.id,
+                  collapseLimit: collapseLimit,
+                ),
               ),
             );
             _emitTruncated(
@@ -84,12 +100,27 @@ class AgendaModel extends Equatable {
             // Empty gaps are pure visual time markers — no priority,
             // neutral background. Gaps with threads carry the
             // priority of their first thread (combined gap+priority
-            // header).
+            // header). Both carry [parentBlockId] so the renderer
+            // recognizes the block transition for drop-zone insertion;
+            // draggability is gated by [blockPriority != null] separately.
+            // The gap defines a new period: this block — and any
+            // blocks that follow it within the section — live in this
+            // period.
+            final hasThreads = b.threads.isNotEmpty;
+            final gapStart = b.range.start;
             out.add(
               AgendaHeaderItem(
                 dateTimeRange: b.range,
-                blockPriority: b.threads.isEmpty ? null : b.priority,
+                blockPriority: hasThreads ? b.priority : null,
                 isOutsidePriority: b.isOutside,
+                parentBlockId: b.id,
+                sourceDate: sectionDate,
+                sourcePeriodStart: gapStart,
+                parentBlockVisibleCount: _visibleCountFor(
+                  b.threads.length,
+                  isExpanded: expandedBlockId == b.id,
+                  collapseLimit: collapseLimit,
+                ),
               ),
             );
             _emitTruncated(
@@ -100,8 +131,21 @@ class AgendaModel extends Equatable {
               expandedBlockId: expandedBlockId,
               collapseLimit: collapseLimit,
             );
+            if (gapStart != null) {
+              currentPeriodStart = gapStart;
+            }
           case EventBlock b:
-            // Combined event + priority header.
+            // Combined event + priority header. Event blocks are not
+            // draggable as a unit (the event row anchors them to a
+            // time), but they still carry [parentBlockId] so the
+            // renderer recognizes the block boundaries that flank them.
+            // Draggability is gated by [thread == null] in the header
+            // predicate, which excludes event headers.
+            //
+            // When the event is outside the current priority context,
+            // the header carries its title (rendered on the priority's
+            // tinted background) and we omit the event row itself — the
+            // header alone is enough to locate it in the day.
             out.add(
               AgendaHeaderItem(
                 dateTimeRange: b.event.at,
@@ -109,31 +153,52 @@ class AgendaModel extends Equatable {
                 now: b.isCurrent,
                 blockPriority: b.priority,
                 isOutsidePriority: b.isOutside,
+                parentBlockId: b.id,
+                sourceDate: sectionDate,
+                sourcePeriodStart: currentPeriodStart,
               ),
             );
-            out.add(
-              AgendaThreadItem(
-                b.event,
-                now: b.isCurrent,
-                isOutsidePriority: b.isOutside,
-              ),
-            );
-            final parentKey =
-                '${b.event.id}'
-                '${b.event.occurrence != null ? '_${b.event.occurrence}' : ''}';
-            for (final child in b.associated) {
+            if (!b.isOutside) {
               out.add(
                 AgendaThreadItem(
-                  child,
-                  isAssociated: true,
-                  associationParentId: parentKey,
+                  b.event,
+                  now: b.isCurrent,
+                  isOutsidePriority: b.isOutside,
+                  parentBlockId: b.id,
                 ),
               );
+              final parentKey =
+                  '${b.event.id}'
+                  '${b.event.occurrence != null ? '_${b.event.occurrence}' : ''}';
+              for (final child in b.associated) {
+                out.add(
+                  AgendaThreadItem(
+                    child,
+                    isAssociated: true,
+                    associationParentId: parentKey,
+                    parentBlockId: b.id,
+                  ),
+                );
+              }
             }
         }
       }
     }
     return out;
+  }
+
+  /// Number of thread rows the renderer will produce for a block — the
+  /// full count when expanded or below the limit, [collapseLimit]
+  /// otherwise (the last visible thread becomes an overflow marker).
+  /// Used by [AgendaHeaderItem.parentBlockVisibleCount] to size the
+  /// block-drag drop zones to the source block.
+  static int _visibleCountFor(
+    int totalThreads, {
+    required bool isExpanded,
+    required int collapseLimit,
+  }) {
+    if (isExpanded || totalThreads <= collapseLimit) return totalThreads;
+    return collapseLimit;
   }
 
   /// Emit threads with collapse rules applied. When the block has more
@@ -152,13 +217,21 @@ class AgendaModel extends Equatable {
     final isExpanded = expandedBlockId == blockId;
     if (isExpanded || threads.length <= collapseLimit) {
       for (final t in threads) {
-        out.add(AgendaThreadItem(t, isOutsidePriority: isOutside));
+        out.add(AgendaThreadItem(
+          t,
+          isOutsidePriority: isOutside,
+          parentBlockId: blockId,
+        ));
       }
       return;
     }
     final visibleCount = collapseLimit; // last one is the overflow marker
     for (var i = 0; i < visibleCount - 1; i++) {
-      out.add(AgendaThreadItem(threads[i], isOutsidePriority: isOutside));
+      out.add(AgendaThreadItem(
+        threads[i],
+        isOutsidePriority: isOutside,
+        parentBlockId: blockId,
+      ));
     }
     out.add(
       AgendaThreadItem(
@@ -166,6 +239,7 @@ class AgendaModel extends Equatable {
         isOutsidePriority: isOutside,
         isCollapsedOverflow: true,
         collapsedBlockId: blockId,
+        parentBlockId: blockId,
       ),
     );
   }
@@ -340,7 +414,9 @@ sealed class AgendaItem extends Equatable {
     header: (h) => h.date != null
         ? 'header_date_${h.date}'
         : h.dateTimeRange != null
-        ? 'header_event_${h.dateTimeRange}_${h.blockPriority?.path.value ?? ""}'
+        ? 'header_event_${h.dateTimeRange}_${h.parentBlockId ?? h.blockPriority?.path.value ?? ""}'
+        : h.parentBlockId != null
+        ? 'header_block_${h.parentBlockId}'
         : h.blockPriority != null
         ? 'header_priority_${h.blockPriority!.path.value}'
         : 'header_other',
@@ -362,6 +438,10 @@ class AgendaHeaderItem extends AgendaItem {
     this.scheduleAt,
     this.isOutsidePriority = false,
     this.blockPriority,
+    this.parentBlockId,
+    this.sourceDate,
+    this.sourcePeriodStart,
+    this.parentBlockVisibleCount,
   });
 
   final DateTimeRange? dateTimeRange;
@@ -383,6 +463,30 @@ class AgendaHeaderItem extends AgendaItem {
   /// this is set.
   final Priority? blockPriority;
 
+  /// The id of the [AgendaBlock] this header introduces. Set for every
+  /// block header ([PriorityBlock], [GapBlock], [EventBlock]) so the
+  /// renderer can track block transitions for drop-zone insertion.
+  /// Draggability as a block source is a separate predicate
+  /// (`blockPriority != null && thread == null && !isOutsidePriority`).
+  final String? parentBlockId;
+
+  /// The [Date] this block lives in (null for orphan/text sections).
+  /// Used by the block-drag system to compute the source period.
+  final Date? sourceDate;
+
+  /// The gap-anchor of the period this block lives in. For a GapBlock
+  /// header, this is the gap's own start (the gap defines its period);
+  /// for blocks that follow a gap within a section, this is the
+  /// preceding gap's start; null for blocks above any gap on the date.
+  final DateTime? sourcePeriodStart;
+
+  /// How many thread rows the renderer will emit for this block —
+  /// the full thread count when expanded / below the collapse limit,
+  /// otherwise the limit. The block-drag drop zones use this (paired
+  /// with the header's intrinsic height) to size themselves to the
+  /// dragged block, so dropping into a zone "fits" the source.
+  final int? parentBlockVisibleCount;
+
   @override
   List<Object?> get props => [
     dateTimeRange,
@@ -394,11 +498,15 @@ class AgendaHeaderItem extends AgendaItem {
     scheduleAt,
     isOutsidePriority,
     blockPriority,
+    parentBlockId,
+    sourceDate,
+    sourcePeriodStart,
+    parentBlockVisibleCount,
   ];
 
   @override
   String toString() =>
-      'AgendaHeaderItem(dateTimeRange: $dateTimeRange, date: $date, now: $now, isNext: $isNext, text: $text, scheduleAt: $scheduleAt, blockPriority: ${blockPriority?.title})';
+      'AgendaHeaderItem(dateTimeRange: $dateTimeRange, date: $date, now: $now, isNext: $isNext, text: $text, scheduleAt: $scheduleAt, blockPriority: ${blockPriority?.title}, parentBlockId: $parentBlockId, sourceDate: $sourceDate, sourcePeriodStart: $sourcePeriodStart, parentBlockVisibleCount: $parentBlockVisibleCount)';
 }
 
 class AgendaThreadItem extends AgendaItem {
@@ -412,6 +520,7 @@ class AgendaThreadItem extends AgendaItem {
     this.associationOrder,
     this.isCollapsedOverflow = false,
     this.collapsedBlockId,
+    this.parentBlockId,
   });
 
   final Thread thread;
@@ -443,6 +552,12 @@ class AgendaThreadItem extends AgendaItem {
   /// belongs to (so the tap handler knows which block to expand).
   final String? collapsedBlockId;
 
+  /// The id of the [AgendaBlock] this thread belongs to (when known).
+  /// Used by the renderer to collapse threads of a block whose header
+  /// is being dragged. Null for event-block contents (events are not
+  /// draggable as a unit) and for items not produced by [flatItems].
+  final String? parentBlockId;
+
   @override
   List<Object?> get props => [
     thread,
@@ -453,9 +568,10 @@ class AgendaThreadItem extends AgendaItem {
     associationParentId,
     isCollapsedOverflow,
     collapsedBlockId,
+    parentBlockId,
   ];
 
   @override
   String toString() =>
-      'AgendaThreadItem(thread: ${thread.title}, now: $now, isAssociated: $isAssociated, isOutsidePriority: $isOutsidePriority, isCollapsedOverflow: $isCollapsedOverflow)';
+      'AgendaThreadItem(thread: ${thread.title}, now: $now, isAssociated: $isAssociated, isOutsidePriority: $isOutsidePriority, isCollapsedOverflow: $isCollapsedOverflow, parentBlockId: $parentBlockId)';
 }

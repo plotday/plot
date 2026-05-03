@@ -165,54 +165,33 @@ class PriorityState extends Equatable {
   bool get doneStart => true;
   bool get doneEnd => agendaDoneEnd;
 
-  /// "Agenda": items starting from today, moving forward.
-  /// Strips today's date header (replaced by a synthesized "Now" anchor
-  /// when needed). Event headers are kept because they now carry the
-  /// block's priority breadcrumb and accent borders — a separate row
-  /// above the event's [ThreadWidget] with its own visual styling.
+  /// "Agenda": items starting from today, moving forward. Today's date
+  /// header is preserved so the agenda always opens with a header above
+  /// the first thread. When a current event is in progress, content
+  /// before it is collapsed but today's date header is reinjected at the
+  /// top so the section still leads with a header. Event headers are
+  /// kept because they now carry the block's priority breadcrumb and
+  /// accent borders — a separate row above the event's [ThreadWidget]
+  /// with its own visual styling.
   List<AgendaItem> get agendaViewItems {
     if (reorderViewItems != null) return reorderViewItems!;
     final now = Time.now();
 
-    final result = agendaItems.where((item) {
-      // Strip today's date header (replaced by synthesized "Now" header)
-      if (item is AgendaHeaderItem &&
-          item.date != null &&
-          item.date == Date.today()) {
-        return false;
-      }
-      return true;
-    }).toList();
+    final result = agendaItems.toList();
 
-    // If there's a current event header (event happening now), use it
-    // as the starting point (it replaces the "Now" text header).
-    final nowEventIdx = result.indexWhere(
+    // Strip the legacy standalone "Now" text header if `_makeAgenda`
+    // emitted one — we no longer show it. Today's date header carries
+    // the "we're here now" signal instead and is always rendered (no
+    // fast-forward stripping of past content).
+    final nowTextIdx = result.indexWhere(
       (item) =>
           item is AgendaHeaderItem &&
-          item.thread != null &&
-          item.dateTimeRange != null &&
           item.now &&
-          item.dateTimeRange!.includes(now),
+          item.text == 'Now' &&
+          item.thread == null,
     );
-    if (nowEventIdx > 0) {
-      result.removeRange(0, nowEventIdx);
-    }
-
-    // If _makeAgenda already created a "Now" text header (e.g. between past
-    // threads and todos), strip it — we no longer show standalone "Now" headers.
-    if (nowEventIdx <= 0) {
-      final nowTextIdx = result.indexWhere(
-        (item) =>
-            item is AgendaHeaderItem &&
-            item.now &&
-            item.text == 'Now' &&
-            item.thread == null,
-      );
-      if (nowTextIdx > 0) {
-        result.removeRange(0, nowTextIdx);
-        // Remove the "Now" text header itself
-        result.removeAt(0);
-      }
+    if (nowTextIdx >= 0) {
+      result.removeAt(nowTextIdx);
     }
 
     // Mark the first future event as isNext for countdown display.

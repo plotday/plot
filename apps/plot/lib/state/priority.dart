@@ -593,53 +593,67 @@ class PriorityBloc extends Cubit<PriorityState> {
       priorityBlocksByPriority: _priorityBlocksByPriority,
     );
     final flat = agenda.flatItems(expandedBlockId: state.expandedBlockId);
-    // Mirror the page-level transform: agendaViewItems strips today's
-    // date header; the page additionally strips a leading "now" header.
-    // Build the pinned list to match what the renderer would produce.
-    final today = Date.today();
-    final pinned = flat.where((item) {
-      if (item is AgendaHeaderItem &&
-          item.date != null &&
-          item.date == today) {
-        return false;
-      }
-      return true;
-    }).toList();
     emit(
       state.copyWith(
         agenda: agenda,
         agendaItems: flat,
-        reorderViewItems: Value(pinned),
+        reorderViewItems: Value(flat),
       ),
     );
   }
 
-  /// Move an entire priority block to a different gap (and optionally a
+  /// Move a single priority block to a different gap (and optionally a
   /// different day). Every contained thread's `_userSchedule.startAt` is
   /// rewritten to `targetGapAnchorAt` (the start of the destination gap)
-  /// using the existing pinned-after-event encoding. If [targetDay]
-  /// differs from the threads' current day, the new startAt naturally
-  /// carries the day too (startOn is cleared by `reorderToAfterEvent`).
+  /// using the existing pinned-after-event encoding. The thread set is
+  /// scoped to the source [blockId] — the agenda model already groups
+  /// threads by `(date, period, priority)`, so using the block's own
+  /// thread list is what isolates a drag of (say) Using Plot's *today*
+  /// block from Using Plot's *tomorrow* block.
+  ///
+  /// Earlier this scope was just `priority.id`, which had the dragged
+  /// block silently consuming every thread of that priority across the
+  /// whole agenda — `reorderToAfterEvent` clears `startOn` and writes
+  /// one common `startAt`, so other-day blocks of the same priority
+  /// collapsed into the dragged target and disappeared from their
+  /// original date.
   ///
   /// Implements rule 3 of the redesign (blocks can move into different
   /// time periods). Rejected drops over events should snap to the
   /// nearest gap before reaching this method.
   Future<void> moveBlock({
-    required PriorityId priorityId,
+    required String blockId,
     required DateTime targetGapAnchorAt,
   }) async {
     _reorderTimestamp = DateTime.now();
+    final block = state.agenda.blockById(blockId);
+    if (block == null) {
+      log.warning('[moveBlock] block $blockId not found in agenda');
+      return;
+    }
+    final blockThreadIds = {for (final t in block.threads) t.id};
+    if (blockThreadIds.isEmpty) {
+      log.warning('[moveBlock] block $blockId has no threads');
+      return;
+    }
+    // Resolve back to the canonical [Thread] instances in
+    // [_lastAgendaThreads] — `block.threads` is the post-grouping copy
+    // built by `AgendaBuilder`, but optimistic overrides and the
+    // agenda rebuild key off the raw cache.
     final threadsToMove = _lastAgendaThreads
-        .where((t) => t.priority.id == priorityId)
+        .where((t) => blockThreadIds.contains(t.id))
         .toList();
     if (threadsToMove.isEmpty) {
-      log.warning('[moveBlock] no threads in priority $priorityId');
+      log.warning(
+        '[moveBlock] block $blockId threads not present in cache '
+        '(stale agenda?)',
+      );
       return;
     }
 
     log.info(
-      '[moveBlock] priority=$priorityId threads=${threadsToMove.length} '
-      'target=$targetGapAnchorAt',
+      '[moveBlock] block=$blockId priority=${block.priority.id} '
+      'threads=${threadsToMove.length} target=$targetGapAnchorAt',
     );
 
     final updated = <Thread>[];

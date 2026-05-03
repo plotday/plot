@@ -113,12 +113,14 @@ class ConnectionStatusTile extends StatelessWidget {
       return tile;
     }
 
+    final hasConnections = connections.isNotEmpty;
+    final title = hasConnections ? 'Connections' : 'Add connection';
     return ListTile(
-      title: 'Add connection',
-      icon: PlotIcon.plugCirclePlus,
+      title: title,
+      icon: hasConnections ? PlotIcon.connection : PlotIcon.plugCirclePlus,
       textStyle: textStyle,
       muted: true,
-      command: _OpenManageConnections(title: 'Add connection'),
+      command: _OpenManageConnections(title: title),
     );
   }
 

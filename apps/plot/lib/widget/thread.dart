@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:plot/store/store.dart';
 import 'package:plot/util/logo_cache.dart';
+import 'package:plot/widget/agenda_block_drag.dart';
 import 'package:plot/widget/widget.dart' hide Link;
 import 'package:plot/style/plot_colors.dart';
 import 'package:plot/style/plot_icon_sizes.dart';
@@ -75,6 +76,34 @@ class ThreadWidget extends StatefulWidget {
 class _ThreadWidgetState extends State<ThreadWidget> {
   bool _leadingHovered = false;
   bool _rowHovered = false;
+  BlockDragController? _dragController;
+
+  /// True while a block-level drag is in progress anywhere in the agenda.
+  /// Threads are not drop targets for block drags — suppressing the hover
+  /// effect prevents the row from looking like one.
+  bool get _isBlockDragging => _dragController?.isDragging ?? false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newController = BlockDragScope.maybeOf(context);
+    if (newController != _dragController) {
+      _dragController?.removeListener(_onDragChanged);
+      _dragController = newController;
+      _dragController?.addListener(_onDragChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _dragController?.removeListener(_onDragChanged);
+    super.dispose();
+  }
+
+  void _onDragChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   Thread get activity => widget.activity;
   Priority? get priorityContext => widget.context;
@@ -213,7 +242,12 @@ class _ThreadWidgetState extends State<ThreadWidget> {
       ),
       highlightColor: buildContext.colour.editableBackground,
       selectedColor: selectedBg,
-      leadingBuilder: (isHovered, hasFocus) {
+      // While a block drag is in progress, threads are not drop targets —
+      // suppress the bg highlight so the row doesn't read as one.
+      noHoverHighlight: _isBlockDragging,
+      leadingBuilder: (rawHovered, hasFocus) {
+        final isHovered = _isBlockDragging ? false : rawHovered;
+        final leadingHovered = _isBlockDragging ? false : _leadingHovered;
         final bool isTodo = activity.todo;
         final bool isScheduled = isTodo && activity.isFuture;
 
@@ -268,17 +302,21 @@ class _ThreadWidgetState extends State<ThreadWidget> {
         } else {
           leadingTitle = 'Remove from agenda';
         }
+        final iconHoverColor = leadingHovered
+            ? buildContext.colour.foreground
+            : buildContext.colour.muted;
         if (isAssoc && !hasPending) {
-          // Associated thread without outstanding tasks: show association icon
+          // Associated thread without outstanding tasks: leave the
+          // leading slot visually empty (the row is already nested under
+          // its event header), and surface "Remove from event" only as
+          // an X on hover.
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
               outlineIcon: PlotIcon.associated,
               filledIcon: PlotIcon.associated,
-              showFill: activity.unread,
-              iconHoverColor: _leadingHovered
-                  ? buildContext.colour.foreground
-                  : buildContext.colour.muted,
+              showEmpty: true,
+              iconHoverColor: iconHoverColor,
               hoverIcon: Value(FontAwesomeIcons.xmark),
               title: leadingTitle,
             ),
@@ -297,9 +335,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               dotColor: activity.unread
                   ? buildContext.colour.accent.withValues(alpha: 0.7)
                   : null,
-              iconHoverColor: _leadingHovered
-                  ? buildContext.colour.foreground
-                  : buildContext.colour.muted,
+              iconHoverColor: iconHoverColor,
               hoverIcon: Value(PlotIcon.todo),
               title: leadingTitle,
             ),
@@ -326,9 +362,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
               outlineIcon: outlineIcon,
               filledIcon: filledIcon,
               showFill: activity.unread,
-              iconHoverColor: _leadingHovered
-                  ? buildContext.colour.foreground
-                  : buildContext.colour.muted,
+              iconHoverColor: iconHoverColor,
               hoverIcon: Value(hoverActionIcon),
               title: leadingTitle,
             ),
@@ -371,7 +405,11 @@ class _ThreadWidgetState extends State<ThreadWidget> {
           ),
         );
       },
-      bodyBuilder: (buildCtx, isHighlighted) {
+      bodyBuilder: (buildCtx, rawHighlighted) {
+        // While a block drag is in progress, treat the thread as not
+        // highlighted so it doesn't render edit affordances or the
+        // ThreadCommands row that would make it look like a drop target.
+        final isHighlighted = _isBlockDragging ? false : rawHighlighted;
         // State-dependent colors – only selection unmutes foreground;
         // hover should not change any foreground colors.
         final headerFg = selected ? threadColor : null;
@@ -461,7 +499,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                 isHighlighted &&
                                     !activity.priority.isViewer &&
                                     !widget.isOutsidePriority
-                                ? _ScheduleHoverIcon(activity: activity)
+                                ? _EditHoverIcon(activity: activity)
                                 : _ThreadLogo(activity: activity),
                           ),
                           SizedBox(width: buildContext.theme.spacing.md),
@@ -514,6 +552,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                     // effective background so the title text is cleanly
                     // truncated rather than bleeding through the buttons.
                     Positioned(
+                      // Push the trailing row right enough that its icon
+                      // glyphs / avatars line up with the right edge of
+                      // header durations (block headers end at
+                      // `spacing.lg` from the agenda edge — same as the
+                      // ListTile's right padding — so we offset by the
+                      // button's own internal icon padding to land the
+                      // visible glyph/avatar right at that boundary).
                       right:
                           -buildContext
                               .theme
@@ -523,9 +568,8 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                               .iconContentStyle
                               .padding
                               .resolve(TextDirection.ltr)
-                              .right +
-                          buildContext.theme.spacing.xs +
-                          1,
+                              .right -
+                          buildContext.theme.spacing.xs,
                       top: 0,
                       bottom: 0,
                       child: Builder(
@@ -584,12 +628,15 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
     // Dim outside-priority threads (cross-priority calendar events).
     // Remove dimming on hover so the user can read the full content.
+    // While a block drag is active, ignore hover so the row doesn't
+    // light up like a drop target.
+    final rowHovered = _rowHovered && !_isBlockDragging;
     final listTile = widget.isOutsidePriority
         ? MouseRegion(
             onEnter: (_) => setState(() => _rowHovered = true),
             onExit: (_) => setState(() => _rowHovered = false),
             child: Opacity(
-              opacity: _rowHovered ? 1.0 : 0.4,
+              opacity: rowHovered ? 1.0 : 0.4,
               child: rawListTile,
             ),
           )
@@ -767,10 +814,10 @@ class ThreadCommands extends HookWidget {
 
     // Get commands (only if showCommands is true).
     // Share affordance lives in the trailing slot (as an [AvatarGroup]) when
-    // the thread is shared, so we drop it from the hover-command pool to avoid
-    // duplication. When not shared, we keep it in hover commands AND hoist it
-    // to the front so the tag/command take() limit below can't truncate it
-    // when a thread already carries multiple tag buttons.
+    // the thread is shared, so we drop it from the hover-command pool to
+    // avoid duplication. When the thread isn't shared yet, we surface a
+    // share button after the more-commands menu so the affordance stays
+    // visible without competing with tag buttons for the take() limit.
     final isShared = isThreadShared(activity);
     final rawHoverCommands = threadCommands(
       activity,
@@ -780,18 +827,21 @@ class ThreadCommands extends HookWidget {
     ).toList();
     // PickScheduleThread is surfaced via the thread-icon hover swap, so
     // exclude it from the trailing command row to avoid duplication.
-    final filteredHoverCommands = rawHoverCommands.where(
-      (cmd) => cmd is! PickScheduleThread,
+    // PickThreadShared is rendered separately (see [trailingShareButton])
+    // when the thread isn't shared.
+    final hoverCommands = rawHoverCommands.where(
+      (cmd) => cmd is! PickScheduleThread && cmd is! PickThreadShared,
     );
-    final hoverCommands = isShared
-        ? filteredHoverCommands.where((cmd) => cmd is! PickThreadShared)
-        : <Command>[
-            ...filteredHoverCommands.whereType<PickThreadShared>(),
-            ...filteredHoverCommands.where((cmd) => cmd is! PickThreadShared),
-          ];
     final threadCommandButtons = showCommands
         ? hoverCommands.map((cmd) => Button.icon(cmd)).toList()
         : <Widget>[];
+
+    // When the thread isn't shared, render the share command as an icon
+    // button anchored after the more-commands menu — the trailing
+    // AvatarGroup slot is reserved for the avatars of shared threads.
+    final trailingShareButton = !isShared && showCommands
+        ? Button.icon(PickThreadShared(activity))
+        : null;
 
     // Conferencing/RSVP buttons only for threads shown by their own event
     // timing, not for user-scheduled todos.
@@ -894,6 +944,9 @@ class ThreadCommands extends HookWidget {
                 icon: Value(PlotIcon.more),
               ),
             ),
+            // When the thread isn't shared, the share affordance sits to
+            // the right of the more-commands menu so it's always visible.
+            if (trailingShareButton != null) trailingShareButton,
             ...loadedTagButtons.take(5),
           ];
         } else {
@@ -1205,25 +1258,23 @@ class _ThreadLeadingCommand extends CommandWrapper {
 }
 
 /// Replaces the small thread logo when the row is hovered, surfacing the
-/// schedule/reschedule action without crowding the trailing command row.
-class _ScheduleHoverIcon extends StatefulWidget {
-  const _ScheduleHoverIcon({required this.activity});
+/// edit-thread action without crowding the trailing command row.
+class _EditHoverIcon extends StatefulWidget {
+  const _EditHoverIcon({required this.activity});
 
   final Thread activity;
 
   @override
-  State<_ScheduleHoverIcon> createState() => _ScheduleHoverIconState();
+  State<_EditHoverIcon> createState() => _EditHoverIconState();
 }
 
-class _ScheduleHoverIconState extends State<_ScheduleHoverIcon> {
+class _EditHoverIconState extends State<_EditHoverIcon> {
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final command = PickScheduleThread(widget.activity);
-    final iconData = widget.activity.on != null
-        ? PlotIcon.reschedule
-        : PlotIcon.schedule;
+    final command = EditThread(widget.activity);
+    final iconData = FontAwesomeIcons.pen;
     final shortcutText = hasPhysicalKeyboard() && command.shortcut != null
         ? formatShortcut(command.shortcut)
         : '';
@@ -1252,6 +1303,8 @@ class _ScheduleHoverIconState extends State<_ScheduleHoverIcon> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => context.run(command),
+          onLongPress: () =>
+              context.run(MoveThreadToPriority(widget.activity)),
           child: Center(
             child: FaIcon(
               iconData,

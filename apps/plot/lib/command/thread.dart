@@ -354,10 +354,7 @@ class AddThreadWithNote extends Command {
   Future<CommandReturn> run(BuildContext context) async {
     // Add the thread (handles saving, note creation, title generation, and draft reset)
     final priorityBloc = context.read<PriorityBloc>();
-    final savedThread = await priorityBloc.add(
-      _data.thread,
-      note: _data.note,
-    );
+    final savedThread = await priorityBloc.add(_data.thread, note: _data.note);
 
     // Only navigate if requested
     if (!navigate) {
@@ -2730,8 +2727,8 @@ List<Command> threadCommands(
   if (thread.isReadOnly) {
     return [
       if (open) ChangeCurrentThread(thread),
-      MoveThreadToPriority(thread),
-      ArchiveThread(thread),
+      if (!skipInfrequent) MoveThreadToPriority(thread),
+      if (!skipInfrequent) ArchiveThread(thread),
     ];
   }
 
@@ -2757,12 +2754,12 @@ List<Command> threadCommands(
     if (!isPrimarySchedule && !(thread.todo && thread.isFuture))
       PickScheduleThread(thread),
     if (!skipInfrequent) EditThread(thread),
-    MoveThreadToPriority(thread),
+    if (!skipInfrequent) MoveThreadToPriority(thread),
     PickThreadShared(thread),
     if (!skipInfrequent) MergeThreadInto(thread),
     if (!skipInfrequent && showSplitThread) SplitThread(thread),
     if (!skipInfrequent) ToggleThreadPrivate(thread),
-    if (!hideArchive) ArchiveThread(thread),
+    if (!skipInfrequent && !hideArchive) ArchiveThread(thread),
   ];
 }
 
