@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/widgets.dart';
@@ -137,6 +138,14 @@ class Window extends StatefulWidget {
       width = width.clamp(400, maxWidth);
       height = height.clamp(300, maxHeight);
 
+      log.info(
+        'Restoring window: saved=${savedWidth?.toStringAsFixed(0)}x'
+        '${savedHeight?.toStringAsFixed(0)} at '
+        '${savedX?.toStringAsFixed(0)},${savedY?.toStringAsFixed(0)}; '
+        'visible=${maxWidth.toStringAsFixed(0)}x${maxHeight.toStringAsFixed(0)}; '
+        'applying ${width.toStringAsFixed(0)}x${height.toStringAsFixed(0)}',
+      );
+
       await windowManager.setSize(Size(width, height));
 
       // Only restore position if it was saved and is valid
@@ -177,6 +186,12 @@ class Window extends StatefulWidget {
       final size = await windowManager.getSize();
       final position = await windowManager.getPosition();
 
+      log.fine(
+        'Saving window: ${size.width.toStringAsFixed(0)}x'
+        '${size.height.toStringAsFixed(0)} at '
+        '${position.dx.toStringAsFixed(0)},${position.dy.toStringAsFixed(0)}',
+      );
+
       await prefs.setDouble('window_width', size.width);
       await prefs.setDouble('window_height', size.height);
       await prefs.setDouble('window_x', position.dx);
@@ -197,6 +212,7 @@ class Window extends StatefulWidget {
 
 class WindowState extends State<Window> with WindowListener {
   late final AppLifecycleListener _lifecycleListener;
+  Timer? _saveDebounce;
 
   @override
   void initState() {
@@ -213,12 +229,24 @@ class WindowState extends State<Window> with WindowListener {
 
   @override
   void dispose() {
+    _saveDebounce?.cancel();
     _lifecycleListener.dispose();
     windowManager.removeListener(this);
     super.dispose();
   }
 
+  // Debounce frame-change saves so we don't write on every pixel of a live
+  // drag-resize, but still capture the final state after macOS Sequoia
+  // tiling (which is programmatic and fires `windowDidResize` only).
+  void _scheduleSave() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 300), () {
+      Window._saveWindowState();
+    });
+  }
+
   Future<AppExitResponse> _onExitRequested() async {
+    _saveDebounce?.cancel();
     await Window._saveWindowState();
     await Store.stop();
     if (instanceLock != null) {
@@ -227,15 +255,20 @@ class WindowState extends State<Window> with WindowListener {
     return AppExitResponse.exit;
   }
 
+  // Use `onWindowResize` (no -d) for resize: it maps to `windowDidResize`,
+  // which fires for all frame changes including programmatic ones (macOS
+  // Sequoia tiling). The past-tense `onWindowResized` only fires after a
+  // USER drag-resize ends, so it misses tiling.
+  //
+  // For move, use `onWindowMoved` (past-tense): it maps to `windowDidMove`,
+  // which also fires for programmatic moves. The non-`d` variant maps to
+  // `windowWillMove`, which fires BEFORE the move (so the frame is still
+  // the old position) and only for user-driven drags.
   @override
-  void onWindowResized() {
-    Window._saveWindowState();
-  }
+  void onWindowResize() => _scheduleSave();
 
   @override
-  void onWindowMoved() {
-    Window._saveWindowState();
-  }
+  void onWindowMoved() => _scheduleSave();
 
   @override
   void onWindowMaximize() {
@@ -249,6 +282,7 @@ class WindowState extends State<Window> with WindowListener {
 
   @override
   void onWindowClose() async {
+    _saveDebounce?.cancel();
     await Window._saveWindowState();
 
     // Close the database before the process exits to prevent FFI crashes
