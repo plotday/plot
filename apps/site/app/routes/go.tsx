@@ -101,12 +101,12 @@ export default function Go() {
                 />
                 <div>
                   <div className={classes.bioName}>
-                    <Group gap="sm">
+                    <Group gap="sm" align="center">
                       Kris Braun
                       <Anchor
                         href="https://www.linkedin.com/in/krisbraun/"
                         title="Kris' LinkedIn"
-                        lh="normal"
+                        display="inline-flex"
                       >
                         <IconBrandLinkedin size={20} />
                       </Anchor>
