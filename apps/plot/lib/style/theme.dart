@@ -11,6 +11,7 @@ import 'package:plot/style/header.dart';
 import 'package:plot/style/text_field.dart';
 import 'package:plot/style/button.dart';
 import 'package:plot/style/sidebar.dart';
+import 'package:plot/style/switch.dart';
 import 'package:plot/style/tile.dart';
 import 'package:plot/style/scaffold.dart';
 import 'package:plot/style/bottom_navigation_bar.dart';
@@ -84,6 +85,7 @@ FThemeData buildTheme(BuildContext context, ColourSchemeData colourScheme) {
       colourScheme,
       iconSizes,
     ),
+    switchStyle: buildSwitchStyleDelta(colourScheme),
     tileStyles: buildTileStylesDelta(theme.colors),
     scaffoldStyle: scaffoldStyle(
       style: theme.style,
