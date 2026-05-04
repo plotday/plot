@@ -1,4 +1,4 @@
-h1:c8czMuvvaDGPMEFHjyv/jCqIABwsxFgc02vUu7wgpAQ=
+h1:F2azcWuHhlyGsBDpMVCeKcXBijPc50gBba6dbfbMoA0=
 00-bootstrap.sql h1:VrgPW2PA/w+5qkrRhjv+Zz3y2Rk0AnG7FyNjQewGWVc=
 20260215045303_baseline_public.sql h1:bsPlz7Ka8K34zBsnlCAAxzoy5Giq/CSvr1VHs+sU3SA=
 20260215174052_pending_schema_changes.sql h1:1C1wy1Hg5i/+VWATAdjBYYXW0D8FkdpsRi2jhWPXBpg=
@@ -331,3 +331,4 @@ h1:c8czMuvvaDGPMEFHjyv/jCqIABwsxFgc02vUu7wgpAQ=
 20260504023717_group_can_post_and_keyed_priority_routing.sql h1:DH4CYI6QddxDqz3sF5f6p9eLvauYVX7uQvgstFnQu9w=
 20260504143857_bump_group_seq_on_admin_member_change.sql h1:j7CTzYDluUvD1rXbbO8sSN7rr+5/RD2l6Mb47nKbTiQ=
 20260504145231_bump_thread_last_note_on_source_created_at_change.sql h1:gqDkQki7UHykdT/9osraoe/HNkW8+zi8ZE4lEnTzAPM=
+20260504174548_normalize_google_chat_user_account_ids.sql h1:Y+2cQEhp9PHK07JMNykRqKChqHld0Y1R8H1qtoe7t0U=
