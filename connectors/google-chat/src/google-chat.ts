@@ -141,12 +141,16 @@ export class GoogleChat extends Connector<GoogleChat> {
         await this.set("auth_google_user", authUser);
 
         // Save a contact with both email and source so the Google Chat
-        // user ID resolves to the user's Plot identity
+        // user ID resolves to the user's Plot identity. We use the bare
+        // numeric `sub` (not the `users/…` resource name) as the
+        // accountId so it matches what Drive emits as `permissionId`,
+        // letting Drive comments and Chat messages from the same person
+        // dedupe to one contact via `contact_external_account`.
         if (authUser.email) {
           await this.tools.integrations.saveContacts([{
             email: authUser.email,
             name: authUser.name ?? undefined,
-            source: { provider: AuthProvider.Google, accountId: authUser.googleUserId },
+            source: { provider: AuthProvider.Google, accountId: userInfo.sub },
           }]);
         }
       }

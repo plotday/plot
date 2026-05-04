@@ -63,6 +63,43 @@ function isVirtualChannel(id: string): boolean {
   return id === VIRTUAL_MY_DRIVE || id === VIRTUAL_SHARED_DRIVES || id === VIRTUAL_SHARED_WITH_ME;
 }
 
+/**
+ * Map a Drive `User` (file owner, comment author, reply author) to a
+ * `NewContact` for Plot.
+ *
+ * Drive's comments endpoint commonly omits `emailAddress` on `author`, so we
+ * cannot rely on it to attribute comments. Instead we anchor identity on
+ * `permissionId` — the stable Drive-side user ID, the same value Drive uses
+ * across file owners, permissions and comment authors. The platform stores
+ * `(provider, accountId)` mappings in `contact_external_account`, so a
+ * source-only contact created by a comment will be transparently merged with
+ * the email-having contact created by the file owner (or any later sync that
+ * sees the same user with an email) — see `addContacts` in
+ * `workers/api/src/twist/tools/plot/contacts.ts`.
+ *
+ * The pattern (used by Linear, Asana, GitHub, Google Chat, Jira, etc.):
+ *   - Always emit `source` when you have a stable provider-side user ID.
+ *   - Emit `email` opportunistically — the platform fills it in on a later
+ *     sync that does see it.
+ *
+ * Returning `undefined` causes the runtime to attribute the note to the
+ * connector itself (`plot.twistInstanceId`), which is almost never what the
+ * caller wants — keep at least one of `email`, `source`, or `name`.
+ */
+function userToContact(
+  user: { displayName?: string; emailAddress?: string; permissionId?: string } | undefined
+): NewContact | undefined {
+  if (!user) return undefined;
+  if (!user.emailAddress && !user.permissionId && !user.displayName) return undefined;
+  return {
+    ...(user.displayName ? { name: user.displayName } : {}),
+    ...(user.emailAddress ? { email: user.emailAddress } : {}),
+    ...(user.permissionId
+      ? { source: { provider: AuthProvider.Google, accountId: user.permissionId } }
+      : {}),
+  } as NewContact;
+}
+
 const MIME_TO_LINK_TYPE: Record<string, string> = {
   "application/vnd.google-apps.document": "doc",
   "application/vnd.google-apps.spreadsheet": "sheet",
@@ -1093,28 +1130,8 @@ export class GoogleDrive extends Connector<GoogleDrive> {
   ): Promise<NewLinkWithNotes> {
     const canonicalSource = `google-drive:file:${file.id}`;
 
-    // Build author contact from file owner
-    let author: NewContact | undefined;
-    if (file.owners?.[0]) {
-      const owner = file.owners[0];
-      if (owner.emailAddress) {
-        author = {
-          email: owner.emailAddress,
-          name: owner.displayName,
-        };
-      }
-    }
-
-    // Build displayName -> email lookup from file permissions
-    // (Drive API doesn't return emailAddress on comment authors)
-    const emailByName = new Map<string, string>();
-    if (file.permissions) {
-      for (const perm of file.permissions) {
-        if (perm.displayName && perm.emailAddress) {
-          emailByName.set(perm.displayName, perm.emailAddress);
-        }
-      }
-    }
+    // Author contact for the link itself = the file owner.
+    const author = userToContact(file.owners?.[0]);
 
     // Build notes
     const notes: NewNote[] = [];
@@ -1135,20 +1152,13 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     try {
       const comments = await listComments(api, file.id);
       for (const comment of comments) {
-        notes.push(
-          this.buildCommentNote(canonicalSource, comment, emailByName)
-        );
+        notes.push(this.buildCommentNote(canonicalSource, comment));
 
         // Add replies
         if (comment.replies) {
           for (const reply of comment.replies) {
             notes.push(
-              this.buildReplyNote(
-                canonicalSource,
-                comment.id,
-                reply,
-                emailByName
-              )
+              this.buildReplyNote(canonicalSource, comment.id, reply)
             );
           }
         }
@@ -1196,27 +1206,14 @@ export class GoogleDrive extends Connector<GoogleDrive> {
 
   private buildCommentNote(
     canonicalSource: string,
-    comment: GoogleDriveComment,
-    emailByName: Map<string, string>
+    comment: GoogleDriveComment
   ): NewNote {
-    const email =
-      comment.author.emailAddress ||
-      (comment.author.displayName
-        ? emailByName.get(comment.author.displayName)
-        : undefined);
-    const commentAuthor: NewContact | undefined = email
-      ? {
-          email,
-          name: comment.author.displayName,
-        }
-      : undefined;
-
     return {
       thread: { source: canonicalSource },
       key: `comment-${comment.id}`,
       content: comment.content,
       contentType: comment.htmlContent ? "html" : "text",
-      author: commentAuthor,
+      author: userToContact(comment.author),
       created: new Date(comment.createdTime),
       ...(comment.assigneeEmailAddress
         ? { tags: { [Tag.Todo]: [{ email: comment.assigneeEmailAddress }] } }
@@ -1229,28 +1226,15 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     commentId: string,
     reply: GoogleDriveComment["replies"] extends (infer R)[] | undefined
       ? R
-      : never,
-    emailByName: Map<string, string>
+      : never
   ): NewNote {
-    const email =
-      reply.author.emailAddress ||
-      (reply.author.displayName
-        ? emailByName.get(reply.author.displayName)
-        : undefined);
-    const replyAuthor: NewContact | undefined = email
-      ? {
-          email,
-          name: reply.author.displayName,
-        }
-      : undefined;
-
     return {
       thread: { source: canonicalSource },
       key: `reply-${commentId}-${reply.id}`,
       reNote: { key: `comment-${commentId}` },
       content: reply.content,
       contentType: reply.htmlContent ? "html" : "text",
-      author: replyAuthor,
+      author: userToContact(reply.author),
       created: new Date(reply.createdTime),
     };
   }

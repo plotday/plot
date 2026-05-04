@@ -445,6 +445,17 @@ export type MemberInfo = {
 };
 
 /**
+ * Strip the `users/` resource-name prefix Chat returns on `User.name` so the
+ * `source.accountId` is the bare numeric Google user ID. That's the same
+ * identifier Drive emits as `permissionId` and that other Google APIs use as
+ * the OIDC `sub` claim, so contacts dedupe across Google connectors via
+ * `contact_external_account`.
+ */
+export function googleUserIdToAccountId(name: string): string {
+  return name.startsWith("users/") ? name.slice("users/".length) : name;
+}
+
+/**
  * Converts a Google Chat sender into a NewActor for Plot.
  * Uses the sender's display name; email and name are resolved via membership data.
  * Always provides at least a name so contacts are never "Unknown".
@@ -461,7 +472,10 @@ export function senderToNewActor(
   return {
     name,
     ...(email ? { email } : {}),
-    source: { provider: AuthProvider.Google, accountId: sender.name },
+    source: {
+      provider: AuthProvider.Google,
+      accountId: googleUserIdToAccountId(sender.name),
+    },
   };
 }
 
@@ -592,7 +606,10 @@ function reactionUserToNewActor(
   return {
     name: user.displayName || info?.displayName || user.name,
     ...(info?.email ? { email: info.email } : {}),
-    source: { provider: AuthProvider.Google, accountId: user.name },
+    source: {
+      provider: AuthProvider.Google,
+      accountId: googleUserIdToAccountId(user.name),
+    },
   };
 }
 

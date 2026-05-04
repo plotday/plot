@@ -10,6 +10,7 @@ export type GoogleDriveFile = {
   owners?: Array<{
     emailAddress?: string;
     displayName?: string;
+    permissionId?: string;
   }>;
   permissions?: Array<{
     emailAddress?: string;
@@ -26,6 +27,7 @@ export type GoogleDriveComment = {
   author: {
     displayName?: string;
     emailAddress?: string;
+    permissionId?: string;
   };
   assigneeEmailAddress?: string;
   createdTime: string;
@@ -41,6 +43,7 @@ export type GoogleDriveReply = {
   author: {
     displayName?: string;
     emailAddress?: string;
+    permissionId?: string;
   };
   createdTime: string;
   modifiedTime: string;
@@ -237,7 +240,7 @@ export async function listComments(
       `${DRIVE_API}/files/${fileId}/comments`,
       {
         fields:
-          "nextPageToken,comments(id,content,htmlContent,author,assigneeEmailAddress,createdTime,modifiedTime,resolved,replies(id,content,htmlContent,author,createdTime,modifiedTime))",
+          "nextPageToken,comments(id,content,htmlContent,author/displayName,author/emailAddress,author/permissionId,assigneeEmailAddress,createdTime,modifiedTime,resolved,replies(id,content,htmlContent,author/displayName,author/emailAddress,author/permissionId,createdTime,modifiedTime))",
         pageSize: 100,
         includeDeleted: false,
         supportsAllDrives: true,
