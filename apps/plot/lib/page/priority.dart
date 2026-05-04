@@ -2024,12 +2024,59 @@ class _PriorityPageState extends State<PriorityPage> {
                   }
                 }
 
+                // End-of-block drops keep the thread's own priority so a
+                // new block is created (or — when the destination period
+                // already contains a block of the thread's priority —
+                // consolidation merges into it). The exception is a
+                // same-period drop: the source's priority block IS the
+                // existing block in this period, so the user is clearly
+                // moving the thread OUT of it; fall through to the
+                // standard "adopt destination block's priority" path.
+                String? justBelowBlockId;
+                var justBelowFound = false;
+                for (var i = dropAnchor + 1; i < listItems.length; i++) {
+                  if (i == oldListIndex) continue;
+                  final li = listItems[i];
+                  if (li is AgendaHeaderItem && li.date != null) {
+                    justBelowFound = true;
+                    break;
+                  }
+                  final blockId = li.when<String?>(
+                    header: (h) => h.parentBlockId,
+                    activity: (a) => a.parentBlockId,
+                  );
+                  if (blockId == null) continue;
+                  justBelowFound = true;
+                  justBelowBlockId = blockId;
+                  break;
+                }
+                final isEndOfBlockDrop = destBlockId != null &&
+                    (!justBelowFound || justBelowBlockId != destBlockId);
+
+                final sourcePeriod = _resolvePeriod(
+                  listItems,
+                  oldListIndex,
+                  scanFromIndex: oldListIndex,
+                );
+                final destPeriod = _resolvePeriod(
+                  listItems,
+                  oldListIndex,
+                  scanFromIndex: dropAnchor,
+                );
+                final crossesPeriod =
+                    sourcePeriod.gapAnchor != destPeriod.gapAnchor ||
+                    sourcePeriod.dateAnchor != destPeriod.dateAnchor;
+
+                final keepOwnPriority = isEndOfBlockDrop && crossesPeriod;
+
                 // Drop into a different priority block: adopt that
                 // block's priority. Skipped for [useAssociation] — the
                 // thread is being put under an event association and
                 // its priority is governed by the association edge, not
-                // the block boundary.
+                // the block boundary. Skipped for end-of-block drops
+                // that cross periods — see comment above.
                 if (!useAssociation &&
+                    !keepOwnPriority &&
                     targetBlockPriority != null &&
                     targetBlockPriority.id != updatedActivity.priority.id) {
                   updatedActivity = updatedActivity.copyWith(
