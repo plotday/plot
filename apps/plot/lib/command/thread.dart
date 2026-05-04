@@ -1345,7 +1345,14 @@ class MoveToPriority extends PriorityCommand {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
-    await thread.copyWith(priority: priority!).save();
+    // Drive the agenda rebuild from PriorityBloc so the thread visibly
+    // jumps to its new priority block before the Drift watch fires. The
+    // override clears once the stream's emitted thread has the new
+    // priority.id (default watched fields include priorityId).
+    final priorityBloc = context.read<PriorityBloc?>();
+    final updated = thread.copyWith(priority: priority!);
+    priorityBloc?.optimisticallyUpdateThread(updated);
+    await updated.save();
     // Record the explicit move so the server can learn from it and
     // retroactively re-file similar threads. The thread_priority.priority_id
     // is already in sync via the save() call above; this endpoint sets
@@ -1444,12 +1451,15 @@ class _CreateAndMoveToNewPriority extends Command {
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
+    final priorityBloc = context.read<PriorityBloc?>();
     final priority = await createPriorityInline(
       context,
       parent: thread.priority,
     );
     if (priority == null) return const CommandSkipped();
-    await thread.copyWith(priority: priority).save();
+    final updated = thread.copyWith(priority: priority);
+    priorityBloc?.optimisticallyUpdateThread(updated);
+    await updated.save();
     // Best-effort learning signal — fire and forget so the move modal closes
     // immediately instead of waiting on the network round trip.
     unawaited(
