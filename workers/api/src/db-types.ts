@@ -1231,6 +1231,7 @@ export interface UserContact {
 export interface UserGroup {
   archived_at: Timestamp | null;
   auto_maintained: boolean | null;
+  can_post: boolean | null;
   created_at: Timestamp | null;
   id: string | null;
   is_admin: boolean | null;

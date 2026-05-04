@@ -4190,6 +4190,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           auto_maintained: boolean | null
+          can_post: boolean | null
           created_at: string | null
           id: string | null
           is_admin: boolean | null
@@ -4831,13 +4832,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

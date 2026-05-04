@@ -22,6 +22,28 @@ SELECT
             AND uc.linked = TRUE AND uc.archived_at IS NULL
         WHERE gm.group_id = g.id AND uc.user_id = u.id
     ) AS is_member,
+    -- Whether this user is allowed to send threads to the group.
+    -- Admins can post to any group. Non-admins can post only to groups
+    -- they're a member of and only when the group is not 'announce'-typed
+    -- (announce groups — Everyone, Plot Team — are admin-only broadcast
+    -- channels). Public groups behave like private here: membership is
+    -- required, so the rule is "admin OR member, but never plain member of
+    -- an announce group".
+    (
+        EXISTS (
+            SELECT 1 FROM group_admin ga
+            WHERE ga.group_id = g.id AND ga.user_id = u.id
+        )
+        OR (
+            g.type <> 'announce'
+            AND EXISTS (
+                SELECT 1 FROM group_member gm
+                JOIN user_contact uc ON uc.contact_id = gm.contact_id
+                    AND uc.linked = TRUE AND uc.archived_at IS NULL
+                WHERE gm.group_id = g.id AND uc.user_id = u.id
+            )
+        )
+    ) AS can_post,
     CASE
         WHEN EXISTS (
             SELECT 1 FROM group_admin ga

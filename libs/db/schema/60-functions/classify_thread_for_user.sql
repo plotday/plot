@@ -86,6 +86,33 @@ BEGIN
         END IF;
     END IF;
 
+    -- 2.3. Cross-user keyed priority match. If another user has filed this
+    --      thread under a priority that has a `key` (Using Plot is `@plot.app`,
+    --      Twist Development is `@plot.twist-dev`), prefer the recipient's
+    --      same-keyed priority. This makes "filed in Using Plot" propagate to
+    --      every recipient's Using Plot without requiring a topic convention,
+    --      and works for any current or future keyed priority. The recipient's
+    --      own user_moved short-circuit (step 2) ran first, so explicit moves
+    --      always win.
+    IF p_thread_id IS NOT NULL THEN
+        SELECT p.id INTO v_matched
+        FROM public.thread_priority tp
+        JOIN public.priority src ON src.id = tp.priority_id
+        JOIN public.priority p
+          ON p.user_id = p_user_id
+         AND p.key = src.key
+         AND p.archived_at IS NULL
+        WHERE tp.thread_id = p_thread_id
+          AND tp.user_id <> p_user_id
+          AND src.key IS NOT NULL
+          AND src.archived_at IS NULL
+        ORDER BY tp.created_at ASC
+        LIMIT 1;
+        IF v_matched IS NOT NULL THEN
+            RETURN v_matched;
+        END IF;
+    END IF;
+
     -- 2.5. Channel default. When the thread topic is of the form
     --      'channel:<pk>' and the channel has a non-archived
     --      default_priority_id, return it. This is the LLM-assigned default
@@ -224,4 +251,4 @@ BEGIN
 END;
 $function$;
 
-COMMENT ON FUNCTION public.classify_thread_for_user IS 'Classify a thread into a priority. Order: (1) topic short-circuit on user_moved siblings, (2) channel.default_priority_id when topic is ''channel:<pk>'', (3) semantic/contact/group scoring against user_moved examples, (4) priority:{KEY} prefix, (5) root priority fallback.';
+COMMENT ON FUNCTION public.classify_thread_for_user IS 'Classify a thread into a priority. Order: (1) topic short-circuit on user_moved siblings, (2) cross-user keyed priority match (file under recipient''s same-keyed priority when another user already filed there), (3) channel.default_priority_id when topic is ''channel:<pk>'', (4) semantic/contact/group scoring against user_moved examples, (5) priority:{KEY} prefix, (6) root priority fallback.';
