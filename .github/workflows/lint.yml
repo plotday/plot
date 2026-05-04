@@ -77,8 +77,14 @@ jobs:
           chmod +x $HOME/pg_format/pg_format
           echo "$HOME/pg_format" >> "$GITHUB_PATH"
 
-      - name: Start Supabase
-        run: cd libs/db && pnpm run start:db
+      - name: Start DB
+        run: cd libs/db && pnpm run start
+
+      - name: Install Atlas
+        uses: ariga/setup-atlas@v0
+
+      - name: Apply migrations and run plpgsql_check
+        run: cd libs/db && pnpm run apply-migrations
 
       - name: Lint
         run: pnpm run lint

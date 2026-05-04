@@ -13,7 +13,7 @@
     "types": "tsx scripts/gen-types.ts",
     "gen-migration": "./scripts/db-lint.sh && atlas migrate diff --env local",
     "diff-schema-migrations": "atlas migrate diff verify_sync --env local",
-    "apply-migrations": "./scripts/init-local-roles.sh && atlas migrate apply --env local --url \"${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:54322/postgres}?sslmode=disable\"",
+    "apply-migrations": "./scripts/init-local-roles.sh && atlas migrate apply --env local --url \"${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:54322/postgres}?sslmode=disable\" && ./scripts/db-lint.sh",
     "reset": "docker compose down -v && docker compose up -d && ./scripts/wait-for-pg.sh && ./scripts/init-local-roles.sh && atlas migrate apply --env local --url \"${DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:54322/postgres}?sslmode=disable\"",
     "lint": "pnpm --silent lint:pending-migrations && pnpm --silent lint:pending-types",
     "lint:pending-migrations": "atlas migrate diff check_sync --env local 2>&1 | grep -q 'no changes' || (echo '❌ Pending migrations detected. Please apply or remove them.' && exit 1)",

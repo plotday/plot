@@ -203,8 +203,38 @@ jobs:
             echo "Workers to deploy: ${WORKERS[*]}"
           fi
 
-  migrate:
+  migrate-lint:
     needs: refresh-secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter=@plotday/db
+
+      - name: Install Atlas
+        uses: ariga/setup-atlas@v0
+
+      - name: Start ephemeral Postgres
+        run: cd libs/db && pnpm run start
+
+      - name: Apply migrations and run plpgsql_check
+        run: cd libs/db && pnpm run apply-migrations
+
+  migrate:
+    needs: [refresh-secrets, migrate-lint]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
