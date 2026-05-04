@@ -402,6 +402,153 @@ class Actor extends ActorRow {
     ];
   }
 
+  /// Single MRU-sorted list of share candidates — actors and groups
+  /// interleaved by recency over the same thread scan as
+  /// [getSortedForSharing]. The share modal renders this as one section so
+  /// a freshly-used group sorts beside freshly-used contacts instead of
+  /// pushing recent contacts down a separate "Groups" header.
+  ///
+  /// Banding mirrors [getSortedForSharing]: explicit MRU, explicit
+  /// frequent, channel-only frequent, then the tail (cross-priority MRU
+  /// when [priority] is set, else alphabetical). Ties resolve
+  /// alphabetically against [Actor.nameOrEmail] / [GroupRow.name].
+  static Future<List<ShareCandidate>> getSortedShareCandidates({
+    String? search,
+    Priority? priority,
+    int mruSize = 5,
+    int threadWindow = 200,
+  }) async {
+    final actors = await get(
+      types: [ActorType.user, ActorType.contact],
+      search: search,
+      inviteable: true,
+      primary: true,
+    );
+    final selfIds = getCurrentUserActorIds().map((a) => a.toUuid()).toSet();
+    actors.removeWhere(
+      (a) => a.self || selfIds.contains(a.id.toUuid()),
+    );
+
+    final groups = await Group.getPostable(search: search);
+
+    final scoped = await _scanThreadsForSharing(
+      selfIds: selfIds,
+      priorityPath: priority?.path,
+      limit: threadWindow,
+    );
+    final global = priority == null
+        ? scoped
+        : await _scanThreadsForSharing(
+            selfIds: selfIds,
+            priorityPath: null,
+            limit: threadWindow,
+          );
+
+    String sortKey(ShareCandidate c) => switch (c) {
+          ActorShareCandidate(:final actor) =>
+            actor.nameOrEmail.toLowerCase(),
+          GroupShareCandidate(:final group) => group.name.toLowerCase(),
+        };
+    int byName(ShareCandidate a, ShareCandidate b) =>
+        sortKey(a).compareTo(sortKey(b));
+
+    int? explicitFirstSeen(ShareCandidate c) => switch (c) {
+          ActorShareCandidate(:final actor) =>
+            scoped.explicitFirstSeenIndex[actor.id.toUuid()],
+          GroupShareCandidate(:final group) =>
+            scoped.groupExplicitFirstSeenIndex[group.id],
+        };
+    int? anyFirstSeen(ShareCandidate c, _ThreadScanResult scan) =>
+        switch (c) {
+          ActorShareCandidate(:final actor) =>
+            scan.firstSeenIndex[actor.id.toUuid()],
+          GroupShareCandidate(:final group) =>
+            scan.groupFirstSeenIndex[group.id],
+        };
+    int explicitCount(ShareCandidate c) => switch (c) {
+          ActorShareCandidate(:final actor) =>
+            scoped.explicitCounts[actor.id.toUuid()] ?? 0,
+          GroupShareCandidate(:final group) =>
+            scoped.groupExplicitCounts[group.id] ?? 0,
+        };
+    int anyCount(ShareCandidate c, _ThreadScanResult scan) => switch (c) {
+          ActorShareCandidate(:final actor) =>
+            scan.counts[actor.id.toUuid()] ?? 0,
+          GroupShareCandidate(:final group) =>
+            scan.groupCounts[group.id] ?? 0,
+        };
+
+    final candidates = <ShareCandidate>[
+      ...actors.map(ActorShareCandidate.new),
+      ...groups.map(GroupShareCandidate.new),
+    ];
+
+    final explicitSeen = <ShareCandidate>[];
+    final channelOnlySeen = <ShareCandidate>[];
+    final unseen = <ShareCandidate>[];
+    for (final c in candidates) {
+      if (explicitFirstSeen(c) != null) {
+        explicitSeen.add(c);
+      } else if (anyFirstSeen(c, scoped) != null) {
+        channelOnlySeen.add(c);
+      } else {
+        unseen.add(c);
+      }
+    }
+
+    explicitSeen.sort((a, b) {
+      final ai = explicitFirstSeen(a)!;
+      final bi = explicitFirstSeen(b)!;
+      if (ai != bi) return ai.compareTo(bi);
+      return byName(a, b);
+    });
+
+    final mru = explicitSeen.take(mruSize).toList();
+    final frequent = explicitSeen.skip(mruSize).toList()
+      ..sort((a, b) {
+        final ca = explicitCount(a);
+        final cb = explicitCount(b);
+        if (ca != cb) return cb.compareTo(ca);
+        return byName(a, b);
+      });
+
+    final channelFrequent = channelOnlySeen
+      ..sort((a, b) {
+        final ca = anyCount(a, scoped);
+        final cb = anyCount(b, scoped);
+        if (ca != cb) return cb.compareTo(ca);
+        return byName(a, b);
+      });
+
+    final tailSeen = <ShareCandidate>[];
+    final tailUnseen = <ShareCandidate>[];
+    for (final c in unseen) {
+      if (anyFirstSeen(c, global) != null) {
+        tailSeen.add(c);
+      } else {
+        tailUnseen.add(c);
+      }
+    }
+    tailSeen.sort((a, b) {
+      final ai = anyFirstSeen(a, global)!;
+      final bi = anyFirstSeen(b, global)!;
+      if (ai != bi) return ai.compareTo(bi);
+      final ca = anyCount(a, global);
+      final cb = anyCount(b, global);
+      if (ca != cb) return cb.compareTo(ca);
+      return byName(a, b);
+    });
+    tailUnseen.sort(byName);
+
+    return [
+      ...mru,
+      ...frequent,
+      ...channelFrequent,
+      ...tailSeen,
+      ...tailUnseen,
+    ];
+  }
+
   static Future<_ThreadScanResult> _scanThreadsForSharing({
     required Set<Uuid> selfIds,
     required Path? priorityPath,
@@ -418,6 +565,10 @@ class Actor extends ActorRow {
     final counts = <Uuid, int>{};
     final explicitFirstSeenIndex = <Uuid, int>{};
     final explicitCounts = <Uuid, int>{};
+    final groupFirstSeenIndex = <Uuid, int>{};
+    final groupCounts = <Uuid, int>{};
+    final groupExplicitFirstSeenIndex = <Uuid, int>{};
+    final groupExplicitCounts = <Uuid, int>{};
     for (var i = 0; i < threads.length; i++) {
       final thread = threads[i];
       final isExplicit = !(thread.topic?.startsWith('channel:') ?? false);
@@ -430,12 +581,25 @@ class Actor extends ActorRow {
           explicitCounts[contactId] = (explicitCounts[contactId] ?? 0) + 1;
         }
       }
+      for (final groupId in thread.groups) {
+        groupFirstSeenIndex.putIfAbsent(groupId, () => i);
+        groupCounts[groupId] = (groupCounts[groupId] ?? 0) + 1;
+        if (isExplicit) {
+          groupExplicitFirstSeenIndex.putIfAbsent(groupId, () => i);
+          groupExplicitCounts[groupId] =
+              (groupExplicitCounts[groupId] ?? 0) + 1;
+        }
+      }
     }
     return _ThreadScanResult(
       firstSeenIndex: firstSeenIndex,
       counts: counts,
       explicitFirstSeenIndex: explicitFirstSeenIndex,
       explicitCounts: explicitCounts,
+      groupFirstSeenIndex: groupFirstSeenIndex,
+      groupCounts: groupCounts,
+      groupExplicitFirstSeenIndex: groupExplicitFirstSeenIndex,
+      groupExplicitCounts: groupExplicitCounts,
     );
   }
 
@@ -641,12 +805,33 @@ class Actor extends ActorRow {
   }
 }
 
+/// Either an [Actor] or a [GroupRow], surfaced together by
+/// [Actor.getSortedShareCandidates] so the share picker can render
+/// people and groups in a single MRU-ordered list.
+sealed class ShareCandidate {
+  const ShareCandidate();
+}
+
+class ActorShareCandidate extends ShareCandidate {
+  const ActorShareCandidate(this.actor);
+  final Actor actor;
+}
+
+class GroupShareCandidate extends ShareCandidate {
+  const GroupShareCandidate(this.group);
+  final GroupRow group;
+}
+
 class _ThreadScanResult {
   _ThreadScanResult({
     required this.firstSeenIndex,
     required this.counts,
     required this.explicitFirstSeenIndex,
     required this.explicitCounts,
+    required this.groupFirstSeenIndex,
+    required this.groupCounts,
+    required this.groupExplicitFirstSeenIndex,
+    required this.groupExplicitCounts,
   });
 
   /// First-seen index and counts across all scanned threads.
@@ -660,6 +845,14 @@ class _ThreadScanResult {
   /// user actually started.
   final Map<Uuid, int> explicitFirstSeenIndex;
   final Map<Uuid, int> explicitCounts;
+
+  /// Group MRU/frequency tallies, keyed on `thread.groups`. Groups share
+  /// the same thread index space as actors so the merged share picker
+  /// can interleave them by recency.
+  final Map<Uuid, int> groupFirstSeenIndex;
+  final Map<Uuid, int> groupCounts;
+  final Map<Uuid, int> groupExplicitFirstSeenIndex;
+  final Map<Uuid, int> groupExplicitCounts;
 }
 
 /// Drift converter for ActorId

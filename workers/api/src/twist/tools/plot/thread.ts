@@ -90,6 +90,92 @@ export { prepareThreadForDb as prepareActivityForDb } from "./thread-helpers";
 /** @deprecated Use PreparedThread */
 export type { PreparedThread as PreparedActivity } from "./thread-helpers";
 
+/**
+ * Insert thread_unread rows for users with thread_priority on this thread,
+ * so the thread appears unread in their feed. Pairs with the existing
+ * thread_read marking: thread_read tracks "user saw it"; thread_unread
+ * tracks "should appear unread" and is what user.thread.unread reads from.
+ *
+ * mode = "non-authors" looks ONLY at notes created in this sync (after
+ * `syncStartedAt`) and skips users for whom every such note was authored
+ * by one of their linked contacts. Historical notes are intentionally
+ * ignored so that, for example, a user replying to a thread they had
+ * already read doesn't get re-flagged unread because of the older notes
+ * from other people sitting in that thread.
+ *
+ * mode = "all" marks every priority user unread regardless of authorship —
+ * used when the caller passes unread === true.
+ *
+ * Uses upsert_thread_unread with read_at unset (defaults to NULL = unread).
+ * The function preserves an existing read_at if the user has read past the
+ * latest note (race-guard via p_note_created_at).
+ */
+async function markThreadUnreadForUsers(
+  plot: Plot,
+  threadId: string,
+  mode: "all" | "non-authors",
+  syncStartedAt: Date
+): Promise<void> {
+  const priorityUsers = await plot.db
+    .selectFrom("thread_priority")
+    .select("user_id")
+    .where("thread_id", "=", threadId)
+    .where("archived_at", "is", null)
+    .execute();
+
+  if (priorityUsers.length === 0) return;
+
+  // Race guard: don't clobber a read_at the user just set if it's after the
+  // most recent note's created timestamp.
+  const noteCreatedAt = new Date().toISOString();
+  const syncStartedAtIso = syncStartedAt.toISOString();
+
+  for (const { user_id } of priorityUsers) {
+    if (mode === "non-authors") {
+      // Look only at notes created in this sync. Skip if every such note was
+      // authored by one of this user's linked contacts (i.e. they wrote
+      // everything that just landed). A single non-self-authored note in the
+      // batch still flags the thread unread.
+      const otherAuthored = await sql<{ id: string }>`
+        SELECT n.id
+        FROM note n
+        WHERE n.thread_id = ${threadId}::uuid
+          AND n.draft = FALSE
+          AND n.archived_at IS NULL
+          AND n.created_at >= ${syncStartedAtIso}::timestamptz
+          AND n.author_id NOT IN (
+            SELECT uc.contact_id
+            FROM user_contact uc
+            WHERE uc.user_id = ${user_id}::uuid
+              AND uc.linked = TRUE
+              AND uc.archived_at IS NULL
+          )
+        LIMIT 1
+      `.execute(plot.db);
+
+      if (otherAuthored.rows.length === 0) continue;
+    }
+
+    try {
+      await rpcUser(plot.db, "upsert_thread_unread", {
+        user_id,
+        p_thread_id: threadId,
+        p_urgency: "inform-updates",
+        p_importance: 50,
+        p_note_created_at: noteCreatedAt,
+      });
+    } catch (err) {
+      const logger = createLogger({
+        twist_instance_id: plot.twistInstanceId,
+      });
+      logger.error("Failed to mark thread unread", err as Error, {
+        thread_id: threadId,
+        user_id,
+      });
+    }
+  }
+}
+
 export async function createThread(
   plot: Plot,
   activity: NewThread | NewThreadWithNotes,
@@ -204,6 +290,13 @@ export async function createThread(
       }
     }
 
+    // Capture a boundary just before createNotes so the unread-marking step
+    // below can scope its "any other-authored note?" check to this sync's
+    // notes only. Older notes (e.g. a thread the user already read) must not
+    // count — otherwise a user replying to an existing thread would re-flag
+    // it unread for themselves because of historical notes from others.
+    const syncStartedAt = new Date();
+
     // Create initial notes if provided
     if ("notes" in activity && activity.notes && activity.notes.length > 0) {
       await createNotes(
@@ -295,6 +388,28 @@ export async function createThread(
       }
     }
     // unread === true: do nothing (explicitly unread for all)
+
+    // Insert thread_unread rows so the thread appears unread for the right
+    // users. Without this, twist-authored threads (e.g. Gmail messages) never
+    // get a thread_unread row: file_thread_priority_peers early-exits for
+    // twist-authored threads, upsert_thread only inserts thread_unread for
+    // promoted_contacts (not the calling user), and the channelNewNotes path
+    // in queue/updates.ts only fires when an observing twist exists. The
+    // user.thread view computes `unread` from thread_unread.read_at, so
+    // missing rows render as already-read.
+    //
+    // Authors are excluded so a user syncing in a thread they themselves
+    // authored content for (e.g. Gmail message they sent) doesn't see it
+    // unread. unread === true bypasses the author exclusion to honor the
+    // explicit request.
+    if (activity?.unread !== false) {
+      await markThreadUnreadForUsers(
+        plot,
+        dbResult.id,
+        activity?.unread === true ? "all" : "non-authors",
+        syncStartedAt
+      );
+    }
 
     // Notify sync DOs since triggers skip HTTP calls for twist writes.
     // createLink passes skipNotify=true so it can batch one notify after the

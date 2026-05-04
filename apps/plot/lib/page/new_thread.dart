@@ -95,20 +95,27 @@ class NewThreadPageState extends State<NewThreadPage> {
   // Twists for the selected draft priority (may differ from context priority)
   List<TwistInstance>? _draftTwists;
 
-  /// Contacts the user has recently shared threads with, for suggestions.
-  List<Actor> _recentContacts = const [];
+  /// People + groups the user has recently shared threads with, ordered by
+  /// the same MRU sort the share modal uses. Drives the suggestion chips.
+  List<ShareCandidate> _recentCandidates = const [];
 
-  /// Pinned actors shown in the "with" chip row. Only updated when the modal
-  /// changes contacts — tapping a chip toggles selected state without removing
-  /// the chip, so the row stays stable.
+  /// Selected actors pinned in the "with" chip row. Only updated when the
+  /// modal changes contacts — tapping a chip toggles selected state without
+  /// removing the chip, so the row stays stable.
   List<Actor> _pinnedActors = const [];
 
   /// Pinned email invites shown in the chip row. Same stability rule.
   List<String> _pinnedEmails = const [];
 
-  /// Pinned groups shown in the chip row (from per-priority defaults, or
+  /// Selected groups pinned in the chip row (from per-priority defaults, or
   /// added via the share picker). Users can toggle them off on the draft.
   List<GroupRow> _pinnedGroups = const [];
+
+  /// MRU-ordered suggestion chips appended after the selected groups,
+  /// actors, and emails. Mixes [ActorShareCandidate] and
+  /// [GroupShareCandidate] so a recently-used group can sit beside
+  /// recently-used contacts instead of always coming first.
+  List<ShareCandidate> _pinnedSuggestions = const [];
 
   // Selected twist for chat mode
   TwistInstance? _selectedTwist;
@@ -173,8 +180,8 @@ class NewThreadPageState extends State<NewThreadPage> {
     // auto — so the thread goes where the user is working.
     _applyDefaultAutoFile();
 
-    // Load recently shared contacts for suggestion chips
-    _loadRecentContacts();
+    // Load recently shared people + groups for suggestion chips.
+    _loadRecentCandidates();
   }
 
   Future<void> _applyQueryParametersToDraft() async {
@@ -296,22 +303,23 @@ class NewThreadPageState extends State<NewThreadPage> {
     });
   }
 
-  /// Loads contacts for the "with" suggestion chips, sorted MRU → frequent →
-  /// rest by [Actor.getSortedForSharing]. Scoped to the draft's currently
-  /// selected priority so suggestions reflect who the user typically shares
-  /// with in that priority, falling back to cross-priority MRU for actors
-  /// with no history in this priority.
-  Future<void> _loadRecentContacts() async {
+  /// Loads people + groups for the "with" suggestion chips, sorted by the
+  /// shared MRU pass in [Actor.getSortedShareCandidates] so a recently-used
+  /// group can interleave with recently-used contacts. Scoped to the
+  /// draft's currently selected priority so suggestions reflect who the
+  /// user typically shares with there, falling back to cross-priority MRU
+  /// for candidates with no history in this priority.
+  Future<void> _loadRecentCandidates() async {
     try {
       final priority = context.read<PriorityBloc>().state.draft.priority;
-      final sorted = await Actor.getSortedForSharing(priority: priority);
+      final sorted = await Actor.getSortedShareCandidates(priority: priority);
       final recent = sorted.take(10).toList();
       if (mounted) {
-        setState(() => _recentContacts = recent);
+        setState(() => _recentCandidates = recent);
         _refreshPinnedChips();
       }
     } catch (e, t) {
-      log.warning('[NewThreadPage._loadRecentContacts] failed', e, t);
+      log.warning('[NewThreadPage._loadRecentCandidates] failed', e, t);
     }
   }
 
@@ -350,7 +358,9 @@ class NewThreadPageState extends State<NewThreadPage> {
       if (g != null) groups.add(g);
     }
 
-    // Budget: 3 total chips across groups + contacts + emails.
+    // Budget: 3 total chips across selected groups + contacts + emails +
+    // suggestions. Selected items always win the leading slots so a
+    // newly-attached chip never gets bumped by a suggestion.
     final groupChipCount = groups.length.clamp(0, 3);
     final selectedChipCount = selected.length.clamp(0, 3 - groupChipCount);
     final emailSlots = (3 - groupChipCount - selectedChipCount).clamp(0, 3);
@@ -358,17 +368,28 @@ class NewThreadPageState extends State<NewThreadPage> {
     final suggestionSlots =
         (3 - groupChipCount - selectedChipCount - emailChipCount).clamp(0, 3);
 
-    final suggestions = _recentContacts
-        .where((a) => !selectedIds.contains(a.id.toUuid()))
-        .where((a) => !selfUuids.contains(a.id.toUuid()))
-        .take(suggestionSlots)
-        .toList();
+    // Pull from the merged MRU list so a recently-used group and a
+    // recently-used contact compete for the same suggestion slot.
+    final suggestions = <ShareCandidate>[];
+    for (final candidate in _recentCandidates) {
+      if (suggestions.length >= suggestionSlots) break;
+      switch (candidate) {
+        case ActorShareCandidate(:final actor):
+          final id = actor.id.toUuid();
+          if (selectedIds.contains(id) || selfUuids.contains(id)) continue;
+          suggestions.add(candidate);
+        case GroupShareCandidate(:final group):
+          if (groupIds.contains(group.id)) continue;
+          suggestions.add(candidate);
+      }
+    }
 
     if (!mounted) return;
     setState(() {
-      _pinnedGroups = groups.take(3).toList();
-      _pinnedActors = [...selected.take(3 - groupChipCount), ...suggestions];
-      _pinnedEmails = pendingEmails.take(emailSlots).toList();
+      _pinnedGroups = groups.take(groupChipCount).toList();
+      _pinnedActors = selected.take(selectedChipCount).toList();
+      _pinnedEmails = pendingEmails.take(emailChipCount).toList();
+      _pinnedSuggestions = suggestions;
     });
   }
 
@@ -580,7 +601,7 @@ class NewThreadPageState extends State<NewThreadPage> {
       await bloc.updateDraft(updated);
     }
     if (mounted) {
-      _loadRecentContacts();
+      _loadRecentCandidates();
       _refreshPinnedChips();
     }
   }
@@ -598,7 +619,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     bloc.setNewThreadDefaultPriority(priority);
     await _loadTwistsForPriority(priority);
     if (mounted) {
-      _loadRecentContacts();
+      _loadRecentCandidates();
       _refreshPinnedChips();
     }
   }
@@ -911,19 +932,14 @@ class NewThreadPageState extends State<NewThreadPage> {
     final pendingEmails = state.draft.inviteEmails.toSet();
 
     // Render from pinned lists so chips stay stable when toggled via tap.
-    // _pinnedGroups, _pinnedActors, and _pinnedEmails are only updated by
-    // _refreshPinnedChips (called after modal changes and initial load).
+    // _pinnedGroups, _pinnedActors, _pinnedEmails, and _pinnedSuggestions
+    // are only updated by _refreshPinnedChips (called after modal changes
+    // and initial load).
     final groupIds = state.draft.groups.toSet();
-    final displayedSelectedContacts = _pinnedActors
-        .where((a) => selectedIds.contains(a.id.toUuid()))
-        .length;
-    final displayedGroups = _pinnedGroups
-        .where((g) => groupIds.contains(g.id))
-        .length;
     final hasMore =
-        selectedIds.length > displayedSelectedContacts ||
+        selectedIds.length > _pinnedActors.length ||
         pendingEmails.length > _pinnedEmails.length ||
-        groupIds.length > displayedGroups;
+        groupIds.length > _pinnedGroups.length;
 
     return Center(
       child: ConstrainedBox(
@@ -955,6 +971,19 @@ class NewThreadPageState extends State<NewThreadPage> {
                     email,
                     selected: pendingEmails.contains(email),
                   ),
+                for (final suggestion in _pinnedSuggestions)
+                  switch (suggestion) {
+                    ActorShareCandidate(:final actor) => _buildContactChip(
+                        context,
+                        actor,
+                        selected: selectedIds.contains(actor.id.toUuid()),
+                      ),
+                    GroupShareCandidate(:final group) => _buildGroupChip(
+                        context,
+                        group,
+                        selected: groupIds.contains(group.id),
+                      ),
+                  },
                 _buildAddContactChip(context, state, hasMore: hasMore),
               ],
             ),

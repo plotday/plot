@@ -1950,22 +1950,23 @@ class PickDraftThreadShared extends ShowCommands {
   final Future<void> Function(Thread thread) onUpdate;
 }
 
-/// Caches sorted sharing candidates by search string for the lifetime of a
-/// single share-picker modal. Toggling a contact doesn't change the candidate
-/// pool (only which side of the "Shared" / "Contacts" partition each actor is
-/// on), so we avoid re-running the thread scan in [Actor.getSortedForSharing]
+/// Caches sorted sharing candidates (people + groups, interleaved by MRU)
+/// by search string for the lifetime of a single share-picker modal.
+/// Toggling a row doesn't change the candidate pool, only which side of
+/// the "Shared" / suggestions partition each candidate falls on, so we
+/// avoid re-running the thread scan in [Actor.getSortedShareCandidates]
 /// on every toggle.
 class _ShareCandidatesCache {
-  final Map<String, List<Actor>> _byQuery = {};
+  final Map<String, List<ShareCandidate>> _byQuery = {};
 
-  Future<List<Actor>> get({
+  Future<List<ShareCandidate>> get({
     required String? search,
     required Priority? priority,
   }) async {
     final key = (search ?? '').toLowerCase();
     final cached = _byQuery[key];
     if (cached != null) return cached;
-    final fresh = await Actor.getSortedForSharing(
+    final fresh = await Actor.getSortedShareCandidates(
       search: search,
       priority: priority,
     );
@@ -2195,14 +2196,10 @@ Future<Commands> _buildSharedCommands(
             ...thread.inviteEmails.map(toggleInvite),
           ],
         ),
-      _ThreadShareGroupsGroup(
-        thread: thread,
-        excludeGroupIds: thread.groups.toSet(),
-        onUpdate: onUpdate,
-      ),
-      _ThreadShareContactsGroup(
+      _ThreadShareSuggestionsGroup(
         thread: thread,
         excludeActorIds: sharedActorIds,
+        excludeGroupIds: thread.groups.toSet(),
         onUpdate: onUpdate,
         candidates: candidates,
       ),
@@ -2210,42 +2207,22 @@ Future<Commands> _buildSharedCommands(
   );
 }
 
-/// Suggests groups the caller can share to (admin of any group, or member of
-/// any non-`announce` group). Mirrors `_SelectionShareGroupsGroup` in
-/// `share.dart` but binds to a [Thread] so the toggle adds the group to
-/// `thread.groups` directly.
-class _ThreadShareGroupsGroup extends CommandGroup {
-  _ThreadShareGroupsGroup({
-    required this.thread,
-    required this.excludeGroupIds,
-    required this.onUpdate,
-  }) : super(title: 'Groups');
-
-  final Thread thread;
-  final Set<Uuid> excludeGroupIds;
-  final Future<void> Function(Thread) onUpdate;
-
-  @override
-  Future<List<Command>> list({String? search}) async {
-    final rows = await Group.getPostable(search: search);
-    return [
-      for (final g in rows)
-        if (!excludeGroupIds.contains(g.id))
-          ShareThreadGroup(thread, g, onUpdate: onUpdate),
-    ];
-  }
-}
-
-class _ThreadShareContactsGroup extends CommandGroup {
-  _ThreadShareContactsGroup({
+/// Single merged "people + groups" suggestion list for the thread share
+/// modal, ordered by the shared MRU sort from
+/// [Actor.getSortedShareCandidates] so a recently-used group can appear
+/// beside recently-used contacts instead of pushing them out of view.
+class _ThreadShareSuggestionsGroup extends CommandGroup {
+  _ThreadShareSuggestionsGroup({
     required this.thread,
     required this.excludeActorIds,
+    required this.excludeGroupIds,
     required this.onUpdate,
     required this.candidates,
-  }) : super(title: 'Contacts');
+  });
 
   final Thread thread;
   final List<ActorId> excludeActorIds;
+  final Set<Uuid> excludeGroupIds;
   final Future<void> Function(Thread) onUpdate;
   final _ShareCandidatesCache candidates;
 
@@ -2255,20 +2232,25 @@ class _ThreadShareContactsGroup extends CommandGroup {
       search: search,
       priority: thread.priority,
     );
-    final excluded = excludeActorIds.toSet();
-    final actors = sorted
-        .where((a) => !excluded.contains(a.id))
-        .toList(growable: false);
-
-    final commands = <Command>[
-      for (final actor in actors)
-        ShareThreadActor(thread, actor, onUpdate: onUpdate),
-    ];
+    final excludedActorIds = excludeActorIds.toSet();
+    final commands = <Command>[];
+    for (final candidate in sorted) {
+      switch (candidate) {
+        case ActorShareCandidate(:final actor):
+          if (excludedActorIds.contains(actor.id)) continue;
+          commands.add(ShareThreadActor(thread, actor, onUpdate: onUpdate));
+        case GroupShareCandidate(:final group):
+          if (excludeGroupIds.contains(group.id)) continue;
+          commands.add(ShareThreadGroup(thread, group, onUpdate: onUpdate));
+      }
+    }
 
     if (search != null && _isValidShareEmail(search)) {
       final normalized = search.toLowerCase();
-      final emailExists = actors.any(
-        (a) => a.email?.toLowerCase() == normalized,
+      final emailExists = sorted.any(
+        (c) =>
+            c is ActorShareCandidate &&
+            c.actor.email?.toLowerCase() == normalized,
       );
       final alreadyInvited = thread.inviteEmails.contains(normalized);
       if (!emailExists && !alreadyInvited) {

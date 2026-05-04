@@ -2671,14 +2671,20 @@ class Thread extends Equatable implements Comparable<Thread> {
     if (_schedule == null) return null;
 
     final now = DateTime.now();
+    // A cancelled (archived) recurring schedule still has an RRULE, so naively
+    // iterating it would keep producing today's occurrence forever. Cap the
+    // search at the cancellation time so cancelled events don't appear as
+    // ongoing activity.
+    final archived = _schedule.archivedAt;
+    final upper = archived != null && archived.isBefore(now) ? archived : now;
 
     if (!recurring) {
       // Non-recurring: use the schedule end time directly
       final end = _schedule.endAt ?? _schedule.endOn?.toDateTime();
-      return (end != null && end.isBefore(now)) ? end : null;
+      return (end != null && end.isBefore(upper)) ? end : null;
     }
 
-    // Recurring: find the last occurrence that has ended before now
+    // Recurring: find the last occurrence that has ended before the upper bound
     final start = (at?.start ?? on?.start?.toDateTime());
     if (start == null || recurrenceRule == null) return null;
 
@@ -2687,7 +2693,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         start: start.copyWith(isUtc: true),
         after: start.copyWith(isUtc: true),
         includeAfter: true,
-        before: now.copyWith(isUtc: true),
+        before: upper.copyWith(isUtc: true),
       );
 
       DateTime? lastInstance;
@@ -2697,7 +2703,7 @@ class Thread extends Equatable implements Comparable<Thread> {
 
       if (lastInstance != null && duration != null) {
         final end = lastInstance.add(duration!);
-        if (end.isBefore(now)) return end;
+        if (end.isBefore(upper)) return end;
       }
     } catch (_) {
       // Silently handle invalid RRULEs

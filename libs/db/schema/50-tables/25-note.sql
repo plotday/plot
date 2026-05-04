@@ -145,10 +145,18 @@ CREATE TRIGGER update_thread_last_note_created_at_trigger
     FOR EACH ROW
     EXECUTE FUNCTION update_thread_on_note_change ();
 
--- Trigger on UPDATE only when draft or archived_at changes
+-- Trigger on UPDATE when draft, archived_at, or source_created_at changes.
+-- source_created_at is included so cancellation/edit upserts (which keep the
+-- same row but bump source_created_at to the new external timestamp) advance
+-- thread.last_note_source_created_at — without this, the activity feed shows
+-- the original event time instead of the cancellation time for, e.g.,
+-- cancelled recurring Google Calendar events.
 CREATE OR REPLACE TRIGGER update_thread_last_note_created_at_on_status_change
     AFTER UPDATE OF draft,
-    archived_at ON "public"."note"
+    archived_at,
+    source_created_at ON "public"."note"
     FOR EACH ROW
-    WHEN ((OLD.draft IS DISTINCT FROM NEW.draft OR OLD.archived_at IS DISTINCT FROM NEW.archived_at))
+    WHEN ((OLD.draft IS DISTINCT FROM NEW.draft
+        OR OLD.archived_at IS DISTINCT FROM NEW.archived_at
+        OR OLD.source_created_at IS DISTINCT FROM NEW.source_created_at))
     EXECUTE FUNCTION update_thread_on_note_change ();

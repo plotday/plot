@@ -80,28 +80,29 @@ class SharedSelection {
     List<Uuid>? groups,
     List<String>? inviteEmails,
   }) => SharedSelection(
-        contacts: contacts ?? this.contacts,
-        groups: groups ?? this.groups,
-        inviteEmails: inviteEmails ?? this.inviteEmails,
-      );
+    contacts: contacts ?? this.contacts,
+    groups: groups ?? this.groups,
+    inviteEmails: inviteEmails ?? this.inviteEmails,
+  );
 }
 
-/// Caches sorted sharing candidates by search string for the lifetime of a
-/// single share-picker modal. Toggling a contact doesn't change the candidate
-/// pool (only which side of the "Shared" / "Contacts" partition each actor is
-/// on), so we avoid re-running the thread scan in [Actor.getSortedForSharing]
+/// Caches sorted sharing candidates (people + groups, interleaved by MRU)
+/// by search string for the lifetime of a single share-picker modal.
+/// Toggling a row doesn't change the candidate pool, only which side of
+/// the "Shared" / suggestions partition each candidate falls on, so we
+/// avoid re-running the thread scan in [Actor.getSortedShareCandidates]
 /// on every toggle.
 class ShareCandidatesCache {
-  final Map<String, List<Actor>> _byQuery = {};
+  final Map<String, List<ShareCandidate>> _byQuery = {};
 
-  Future<List<Actor>> get({
+  Future<List<ShareCandidate>> get({
     required String? search,
     required Priority? priority,
   }) async {
     final key = (search ?? '').toLowerCase();
     final cached = _byQuery[key];
     if (cached != null) return cached;
-    final fresh = await Actor.getSortedForSharing(
+    final fresh = await Actor.getSortedShareCandidates(
       search: search,
       priority: priority,
     );
@@ -190,14 +191,10 @@ Future<Commands> buildSharedSelectionCommands({
             ...selection.inviteEmails.map(toggleInvite),
           ],
         ),
-      _SelectionShareGroupsGroup(
-        selection: selection,
-        excludeGroupIds: selection.groups.toSet(),
-        onUpdate: onUpdate,
-      ),
-      _SelectionShareContactsGroup(
+      _SelectionShareSuggestionsGroup(
         selection: selection,
         excludeActorIds: sharedActorIds,
+        excludeGroupIds: selection.groups.toSet(),
         onUpdate: onUpdate,
         candidates: candidates,
         priority: priority,
@@ -206,42 +203,23 @@ Future<Commands> buildSharedSelectionCommands({
   );
 }
 
-/// Suggests groups the caller can share with (admin of the group, or member of
-/// any non-`announce` group). Backed by the local `groups` Drift cache, which
-/// mirrors the `user.group` view's `can_post` flag.
-class _SelectionShareGroupsGroup extends CommandGroup {
-  _SelectionShareGroupsGroup({
-    required this.selection,
-    required this.excludeGroupIds,
-    required this.onUpdate,
-  }) : super(title: 'Groups');
-
-  final SharedSelection selection;
-  final Set<Uuid> excludeGroupIds;
-  final Future<void> Function(SharedSelection) onUpdate;
-
-  @override
-  Future<List<Command>> list({String? search}) async {
-    final rows = await Group.getPostable(search: search);
-    return [
-      for (final g in rows)
-        if (!excludeGroupIds.contains(g.id))
-          ShareSelectionGroup(selection, g, onUpdate: onUpdate),
-    ];
-  }
-}
-
-class _SelectionShareContactsGroup extends CommandGroup {
-  _SelectionShareContactsGroup({
+/// Single merged "people + groups" suggestion list, ordered by the
+/// shared MRU sort from [Actor.getSortedShareCandidates]. Replaces the
+/// older split where alphabetical groups always came before recent
+/// contacts and pushed them out of view.
+class _SelectionShareSuggestionsGroup extends CommandGroup {
+  _SelectionShareSuggestionsGroup({
     required this.selection,
     required this.excludeActorIds,
+    required this.excludeGroupIds,
     required this.onUpdate,
     required this.candidates,
     required this.priority,
-  }) : super(title: 'Contacts');
+  });
 
   final SharedSelection selection;
   final List<ActorId> excludeActorIds;
+  final Set<Uuid> excludeGroupIds;
   final Future<void> Function(SharedSelection) onUpdate;
   final ShareCandidatesCache candidates;
   final Priority? priority;
@@ -249,19 +227,30 @@ class _SelectionShareContactsGroup extends CommandGroup {
   @override
   Future<List<Command>> list({String? search}) async {
     final sorted = await candidates.get(search: search, priority: priority);
-    final excluded = excludeActorIds.toSet();
-    final actors =
-        sorted.where((a) => !excluded.contains(a.id)).toList(growable: false);
-
-    final commands = <Command>[
-      for (final actor in actors)
-        ShareSelectionActor(selection, actor, onUpdate: onUpdate),
-    ];
+    final excludedActorIds = excludeActorIds.toSet();
+    final commands = <Command>[];
+    for (final candidate in sorted) {
+      switch (candidate) {
+        case ActorShareCandidate(:final actor):
+          if (excludedActorIds.contains(actor.id)) continue;
+          commands.add(
+            ShareSelectionActor(selection, actor, onUpdate: onUpdate),
+          );
+        case GroupShareCandidate(:final group):
+          if (excludeGroupIds.contains(group.id)) continue;
+          commands.add(
+            ShareSelectionGroup(selection, group, onUpdate: onUpdate),
+          );
+      }
+    }
 
     if (search != null && isValidShareEmail(search)) {
       final normalized = search.toLowerCase();
-      final emailExists =
-          actors.any((a) => a.email?.toLowerCase() == normalized);
+      final emailExists = sorted.any(
+        (c) =>
+            c is ActorShareCandidate &&
+            c.actor.email?.toLowerCase() == normalized,
+      );
       final alreadyInvited = selection.inviteEmails.contains(normalized);
       if (!emailExists && !alreadyInvited) {
         commands.insert(
@@ -277,18 +266,18 @@ class _SelectionShareContactsGroup extends CommandGroup {
 
 class ShareSelectionActor extends Command {
   ShareSelectionActor(this.selection, this.actor, {required this.onUpdate})
-      : _isShared = selection.contacts.contains(actor.id.toUuid()),
-        super(
-          title: actor.nameOrEmail,
-          eventObject: EventObject.activity,
-          eventAction: selection.contacts.contains(actor.id.toUuid())
-              ? EventAction.updated
-              : EventAction.shared,
-          icon: selection.contacts.contains(actor.id.toUuid())
-              ? PlotIcon.user
-              : PlotIcon.shareAdd,
-          on: selection.contacts.contains(actor.id.toUuid()),
-        );
+    : _isShared = selection.contacts.contains(actor.id.toUuid()),
+      super(
+        title: actor.nameOrEmail,
+        eventObject: EventObject.activity,
+        eventAction: selection.contacts.contains(actor.id.toUuid())
+            ? EventAction.updated
+            : EventAction.shared,
+        icon: selection.contacts.contains(actor.id.toUuid())
+            ? PlotIcon.user
+            : PlotIcon.shareAdd,
+        on: selection.contacts.contains(actor.id.toUuid()),
+      );
 
   final SharedSelection selection;
   final Actor actor;
@@ -321,14 +310,14 @@ class ShareSelectionActor extends Command {
 
 class ShareSelectionGroup extends Command {
   ShareSelectionGroup(this.selection, this.group, {required this.onUpdate})
-      : _isShared = selection.groups.contains(group.id),
-        super(
-          title: group.name,
-          eventObject: EventObject.activity,
-          eventAction: EventAction.updated,
-          icon: PlotIcon.users,
-          on: selection.groups.contains(group.id),
-        );
+    : _isShared = selection.groups.contains(group.id),
+      super(
+        title: group.name,
+        eventObject: EventObject.activity,
+        eventAction: EventAction.updated,
+        icon: PlotIcon.users,
+        on: selection.groups.contains(group.id),
+      );
 
   final SharedSelection selection;
   final GroupRow group;
@@ -353,23 +342,23 @@ class ShareSelectionGroup extends Command {
 
 class ShareSelectionInvite extends Command {
   ShareSelectionInvite(this.selection, this.email, {required this.onUpdate})
-      : _isInvited = selection.inviteEmails.contains(email.toLowerCase()),
-        super(
-          title: selection.inviteEmails.contains(email.toLowerCase())
-              ? email
-              : 'Invite $email',
-          subtitle: selection.inviteEmails.contains(email.toLowerCase())
-              ? 'Pending invitation'
-              : 'Invite by email',
-          eventObject: EventObject.activity,
-          eventAction: selection.inviteEmails.contains(email.toLowerCase())
-              ? EventAction.updated
-              : EventAction.shared,
-          icon: selection.inviteEmails.contains(email.toLowerCase())
-              ? PlotIcon.user
-              : PlotIcon.shareAdd,
-          on: selection.inviteEmails.contains(email.toLowerCase()),
-        );
+    : _isInvited = selection.inviteEmails.contains(email.toLowerCase()),
+      super(
+        title: selection.inviteEmails.contains(email.toLowerCase())
+            ? email
+            : 'Invite $email',
+        subtitle: selection.inviteEmails.contains(email.toLowerCase())
+            ? 'Pending invitation'
+            : 'Invite by email',
+        eventObject: EventObject.activity,
+        eventAction: selection.inviteEmails.contains(email.toLowerCase())
+            ? EventAction.updated
+            : EventAction.shared,
+        icon: selection.inviteEmails.contains(email.toLowerCase())
+            ? PlotIcon.user
+            : PlotIcon.shareAdd,
+        on: selection.inviteEmails.contains(email.toLowerCase()),
+      );
 
   final SharedSelection selection;
   final String email;
@@ -410,8 +399,7 @@ String sharedSelectionSummary(
   required Map<Uuid, String> contactNames,
 }) {
   final parts = <String>[
-    for (final id in selection.groups)
-      groupNames[id] ?? 'Group',
+    for (final id in selection.groups) groupNames[id] ?? 'Group',
     for (final id in selection.contacts) contactNames[id] ?? 'Someone',
     ...selection.inviteEmails,
   ];
@@ -438,8 +426,7 @@ class PickShared extends ShowCommands {
     }
 
     return PickShared._(
-      title: title ??
-          (selection.isEmpty ? 'Share' : 'Shared'),
+      title: title ?? (selection.isEmpty ? 'Share' : 'Shared'),
       icon: sharedSelectionIcon(selection),
       commandsBuilder: (context) => buildSharedSelectionCommands(
         selection: ref[0],
@@ -456,15 +443,14 @@ class PickShared extends ShowCommands {
     required IconData icon,
     required Future<Commands> Function(BuildContext) commandsBuilder,
   }) : super(
-          icon: icon,
-          commandsBuilder: commandsBuilder,
-          showFilter: true,
-          eventObject: EventObject.activity,
-          eventAction: EventAction.updated,
-          shortcut: platformSingleActivator(
-            LogicalKeyboardKey.keyS,
-            shift: true,
-          ),
-        );
+         icon: icon,
+         commandsBuilder: commandsBuilder,
+         showFilter: true,
+         eventObject: EventObject.activity,
+         eventAction: EventAction.updated,
+         shortcut: platformSingleActivator(
+           LogicalKeyboardKey.keyS,
+           shift: true,
+         ),
+       );
 }
-
