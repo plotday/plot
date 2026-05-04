@@ -1301,11 +1301,21 @@ export class GoogleCalendar extends Connector<GoogleCalendar> {
 
       const cancelledBy =
         event.organizer?.displayName || event.organizer?.email;
+      const isAllDay = !event.originalStartTime?.dateTime;
+      const formattedDate = new Date(originalStartTime).toLocaleDateString(
+        "en-US",
+        {
+          dateStyle: "long",
+          ...(isAllDay ? { timeZone: "UTC" } : {}),
+        }
+      );
       const cancelNote = {
-        key: "cancellation" as const,
+        // Unique key per occurrence so multiple instance cancellations on the
+        // same recurring event don't overwrite each other's notes.
+        key: `cancellation-${new Date(originalStartTime).toISOString()}`,
         content: cancelledBy
-          ? `${cancelledBy} cancelled this event.`
-          : "This event was cancelled.",
+          ? `${cancelledBy} cancelled the ${formattedDate} occurrence.`
+          : `The ${formattedDate} occurrence was cancelled.`,
         contentType: "text" as const,
         created: event.updated ? new Date(event.updated) : new Date(),
       };
