@@ -1514,11 +1514,30 @@ class NoteEditorState extends State<NoteEditor> {
     final shouldSchedule = alt;
     final hasDateTime = widget.thread!.at != null;
 
+    // Mirror the server's upsert_thread merge: if no linked contact of the
+    // author is already in thread.contacts, append their primary contact so
+    // the local row matches what the server will store. Without this the
+    // author's freshly-finalized thread looks read-only locally (isReadOnly
+    // sees no self in contacts and no group, hiding the header Edit/Share
+    // buttons until sync round-trips the server-merged contact list back).
+    final selfActorIds = Actor.getCurrentUserActorIds()
+        .map((a) => a.toUuid())
+        .toSet();
+    final currentContacts = widget.thread!.contacts;
+    final selfPrimary = Base.actorIdOrNull?.toUuid();
+    final List<Uuid>? mergedContacts =
+        (selfPrimary != null && !currentContacts.any(selfActorIds.contains))
+            ? [...currentContacts, selfPrimary]
+            : null;
+
     // Create Thread — title null signals server to generate AI title
     final thread = widget.thread!.copyWith(
       title: Value(existingTitle),
       preview: Value(previewContent),
       draft: false,
+      contacts: mergedContacts != null
+          ? Value(mergedContacts)
+          : const Value.absent(),
       on: shouldSchedule && !hasDateTime
           ? Value(CustomDateRange(Date.today(), null))
           : const Value.absent(),
