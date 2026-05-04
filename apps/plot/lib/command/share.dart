@@ -198,6 +198,7 @@ Future<Commands> buildSharedSelectionCommands({
         onUpdate: onUpdate,
         candidates: candidates,
         priority: priority,
+        title: 'Share with',
       ),
     ],
   );
@@ -215,7 +216,8 @@ class _SelectionShareSuggestionsGroup extends CommandGroup {
     required this.onUpdate,
     required this.candidates,
     required this.priority,
-  });
+    required String title,
+  }) : super(title: title);
 
   final SharedSelection selection;
   final List<ActorId> excludeActorIds;

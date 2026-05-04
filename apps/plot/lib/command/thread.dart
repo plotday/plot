@@ -2212,6 +2212,7 @@ Future<Commands> _buildSharedCommands(
         excludeGroupIds: thread.groups.toSet(),
         onUpdate: onUpdate,
         candidates: candidates,
+        title: 'Share with',
       ),
     ],
   );
@@ -2228,7 +2229,8 @@ class _ThreadShareSuggestionsGroup extends CommandGroup {
     required this.excludeGroupIds,
     required this.onUpdate,
     required this.candidates,
-  });
+    required String title,
+  }) : super(title: title);
 
   final Thread thread;
   final List<ActorId> excludeActorIds;
@@ -2411,31 +2413,43 @@ List<Uuid>? _contactsWithSelfIfGroupMember(Thread thread, GroupRow group) {
 
 class ShareThreadGroup extends Command {
   ShareThreadGroup(this.thread, this.group, {required this.onUpdate})
-    : super(
+    : _isShared = thread.groups.contains(group.id),
+      super(
         title: group.name,
         eventObject: EventObject.activity,
-        eventAction: EventAction.updated,
+        eventAction: thread.groups.contains(group.id)
+            ? EventAction.updated
+            : EventAction.shared,
         icon: PlotIcon.users,
-        on: true,
+        on: thread.groups.contains(group.id),
       );
 
   final Thread thread;
   final GroupRow group;
   final Future<void> Function(Thread) onUpdate;
+  final bool _isShared;
 
   @override
   Future<CommandReturn> run(BuildContext context) async {
     try {
-      final newGroups = thread.groups.where((id) => id != group.id).toList();
-      final newContacts = _contactsWithSelfIfGroupMember(thread, group);
-      await onUpdate(
-        thread.copyWith(
-          groups: Value(newGroups.isEmpty ? null : newGroups),
-          contacts: newContacts != null
-              ? Value(newContacts)
-              : const Value.absent(),
-        ),
-      );
+      if (_isShared) {
+        final newGroups = thread.groups
+            .where((id) => id != group.id)
+            .toList();
+        final newContacts = _contactsWithSelfIfGroupMember(thread, group);
+        await onUpdate(
+          thread.copyWith(
+            groups: Value(newGroups.isEmpty ? null : newGroups),
+            contacts: newContacts != null
+                ? Value(newContacts)
+                : const Value.absent(),
+          ),
+        );
+      } else {
+        await onUpdate(
+          thread.copyWith(groups: Value([...thread.groups, group.id])),
+        );
+      }
       return const CommandRefresh();
     } catch (e, stackTrace) {
       log.severe('Error in ShareThreadGroup: $e', e, stackTrace);
