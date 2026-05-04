@@ -4,36 +4,39 @@ import 'package:prism_flutter/prism_flutter.dart';
 
 import 'package:plot/style/colors.dart';
 
-/// Builds a switch style with better thumb contrast in dark mode.
+/// Builds a switch style with better thumb contrast against the track.
 ///
-/// Forui's defaults give poor contrast in dark mode: the off-state track is
-/// `colors.secondary` (= our `highlight`, 14% alpha) which is barely visible,
-/// and the on-state track is `colors.primary` (the accent) which sits at a
-/// similar lightness to the white thumb. Both states make it hard to read
-/// the thumb's position. Light mode is left untouched.
+/// Forui's defaults render the thumb and the off-state track at very similar
+/// lightnesses in both modes: in light mode the white thumb sits on a 94%-
+/// lightness highlight; in dark mode the white thumb sits on a 14%-alpha
+/// highlight that nearly disappears against the dark background. The
+/// on-state accent in dark mode is also too close to the white thumb. We
+/// pick solid track colors with enough lightness gap to read the thumb's
+/// position clearly.
 FSwitchStyleDelta buildSwitchStyleDelta(ColourSchemeData colourScheme) {
-  if (colourScheme.brightness != Brightness.dark) {
-    return const FSwitchStyleDelta.delta();
-  }
+  final isDark = colourScheme.brightness == Brightness.dark;
 
-  // Solid neutral gray for the off-state track. Lightness sits between the
-  // background (~0.26) and the thumb (~0.88) so the thumb reads clearly.
-  final offTrackColor =
-      RayOklch.fromComponents(0.45, 0.006, 115.0).toColor();
+  // Off-state track: solid neutral gray. Sits between the background and
+  // the thumb so the (near-white) thumb stands out.
+  final offTrackColor = isDark
+      ? RayOklch.fromComponents(0.45, 0.006, 115.0).toColor()
+      : RayOklch.fromComponents(0.82, 0.006, 115.0).toColor();
 
-  // Darken the accent for the on-state track so the white thumb stands out.
-  // Default accent lightness in dark mode is ~0.78–0.82.
-  final onTrackColor = colourScheme.colours.accent
-      .withLightness(0.50)
-      .toColor();
+  // On-state track: only the dark mode accent needs darkening (default ~0.78–
+  // 0.82). Light mode's accent (~0.30–0.46) already contrasts with the white
+  // thumb.
+  final onTrackColor = isDark
+      ? colourScheme.colours.accent.withLightness(0.50).toColor()
+      : null;
 
   return FSwitchStyleDelta.delta(
     trackColor: FVariantsValueDelta.delta([
       FVariantValueDeltaOperation.base(offTrackColor),
-      FVariantValueDeltaOperation.exact(
-        {FSwitchVariantConstraint.selected},
-        onTrackColor,
-      ),
+      if (onTrackColor != null)
+        FVariantValueDeltaOperation.exact(
+          {FSwitchVariantConstraint.selected},
+          onTrackColor,
+        ),
     ]),
   );
 }
