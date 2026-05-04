@@ -33,9 +33,10 @@ import {
 } from "./gmail-api";
 
 /**
- * Persisted mailbox-wide watch state. There is exactly one Gmail watch per
- * mailbox — calling `users.watch` twice replaces the previous registration —
- * so this state is per-twist-instance, not per-channel.
+ * Persisted mailbox-wide watch state. Gmail allows one watch per (mailbox,
+ * OAuth client); each call to `users.watch()` from the same OAuth client
+ * replaces that client's previous registration. Different OAuth clients
+ * (e.g. dev vs prod) maintain independent watches.
  */
 type MailboxWebhookState = {
   topicName: string;
@@ -43,6 +44,21 @@ type MailboxWebhookState = {
   expiration: Date;
   created: string;
 };
+
+/**
+ * How often `selfHealCheck` runs while at least one channel is enabled. A
+ * faster cadence improves recovery latency when push delivery breaks; a
+ * slower one reduces Gmail API load. 1h is a comfortable middle.
+ */
+const SELF_HEAL_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * If a watch is within this window of expiry, `selfHealCheck` re-establishes
+ * it preemptively rather than relying on `mailbox_renewal_task` (which can
+ * fail to fire if the Durable Object alarm is dropped on deploy/eviction).
+ * 36h gives the renewal task its scheduled run plus a safety margin.
+ */
+const WATCH_PREEMPTIVE_RENEW_MS = 36 * 60 * 60 * 1000;
 
 /** Persisted per-channel initial-backfill cursor. */
 type InitialSyncState = {
@@ -141,7 +157,24 @@ export class Gmail extends Connector<Gmail> {
   override async upgrade(): Promise<void> {
     // Already migrated? `mailbox_webhook` is the canonical sentinel.
     const already = await this.get<MailboxWebhookState>("mailbox_webhook");
-    if (already) return;
+    if (already) {
+      // Self-heal bootstrap for instances that migrated to mailbox-wide
+      // before self-heal existed. Idempotent: skipped if already scheduled.
+      const existingSelfHeal = await this.get<string>(
+        "mailbox_self_heal_task"
+      );
+      if (!existingSelfHeal) {
+        try {
+          await this.scheduleSelfHealCheck();
+        } catch (error) {
+          console.error(
+            `Gmail upgrade [${this.id}]: failed to bootstrap self-heal`,
+            error
+          );
+        }
+      }
+      return;
+    }
 
     // Stop whatever per-channel watch was last active. Gmail allows only
     // one watch per mailbox, so a single stopWatch() call covers all of
@@ -412,8 +445,16 @@ export class Gmail extends Connector<Gmail> {
    */
   async ensureMailboxWebhook(): Promise<void> {
     const existing = await this.get<MailboxWebhookState>("mailbox_webhook");
-    if (existing) return;
-    await this.setupMailboxWebhook();
+    if (!existing) {
+      await this.setupMailboxWebhook();
+      return;
+    }
+    // Watch already established — make sure the self-heal cycle is running.
+    // This handles upgrades from versions that didn't schedule self-heal.
+    const existingSelfHeal = await this.get<string>("mailbox_self_heal_task");
+    if (!existingSelfHeal) {
+      await this.scheduleSelfHealCheck();
+    }
   }
 
   private async setupMailboxWebhook(): Promise<void> {
@@ -428,39 +469,47 @@ export class Gmail extends Connector<Gmail> {
     const api = await this.getApiAny();
     if (!api) {
       console.warn(
-        "ensureMailboxWebhook: no enabled channel to source auth from"
+        `Gmail setupMailboxWebhook [${this.id}]: no enabled channel to source auth from`
       );
       return;
     }
 
-    try {
-      // No labelId → mailbox-wide notifications.
-      const watchResult = await api.setupWatch(topicName);
-      const expiration = new Date(parseInt(watchResult.expiration));
+    // No labelId → mailbox-wide notifications. Failures here are surfaced
+    // via throw so the runtime captures the exception in PostHog. The
+    // caller (selfHealCheck or onChannelEnabled task) is responsible for
+    // logging context and deciding whether to retry.
+    const watchResult = await api.setupWatch(topicName);
+    const expiration = new Date(parseInt(watchResult.expiration));
 
-      await this.set<MailboxWebhookState>("mailbox_webhook", {
+    await this.set<MailboxWebhookState>("mailbox_webhook", {
+      topicName,
+      historyId: watchResult.historyId,
+      expiration,
+      created: new Date().toISOString(),
+    });
+
+    // Seed the incremental cursor so the first webhook has somewhere to
+    // start. Gmail's watch returns the current historyId; any change after
+    // this point will appear in history.list from this seed.
+    const existingIncremental =
+      await this.get<{ historyId?: string }>("incremental_state");
+    if (!existingIncremental?.historyId) {
+      await this.set("incremental_state", {
+        historyId: watchResult.historyId,
+        lastSyncTime: new Date(),
+      });
+    }
+
+    await this.scheduleMailboxRenewal(expiration);
+    await this.scheduleSelfHealCheck();
+    console.log(
+      `Gmail setupMailboxWebhook [${this.id}]: watch established`,
+      {
         topicName,
         historyId: watchResult.historyId,
-        expiration,
-        created: new Date().toISOString(),
-      });
-
-      // Seed the incremental cursor so the first webhook has somewhere to
-      // start. Gmail's watch returns the current historyId; any change after
-      // this point will appear in history.list from this seed.
-      const existingIncremental =
-        await this.get<{ historyId?: string }>("incremental_state");
-      if (!existingIncremental?.historyId) {
-        await this.set("incremental_state", {
-          historyId: watchResult.historyId,
-          lastSyncTime: new Date(),
-        });
+        expiration: expiration.toISOString(),
       }
-
-      await this.scheduleMailboxRenewal(expiration);
-    } catch (error) {
-      console.error("Failed to setup Gmail mailbox webhook:", error);
-    }
+    );
   }
 
   /**
@@ -469,14 +518,24 @@ export class Gmail extends Connector<Gmail> {
    * (and from preUpgrade for stale per-channel state).
    */
   private async teardownMailboxWebhook(): Promise<void> {
-    const taskToken = await this.get<string>("mailbox_renewal_task");
-    if (taskToken) {
+    const renewalTaskToken = await this.get<string>("mailbox_renewal_task");
+    if (renewalTaskToken) {
       try {
-        await this.cancelTask(taskToken);
+        await this.cancelTask(renewalTaskToken);
       } catch {
         // Task may have already executed
       }
       await this.clear("mailbox_renewal_task");
+    }
+
+    const selfHealTaskToken = await this.get<string>("mailbox_self_heal_task");
+    if (selfHealTaskToken) {
+      try {
+        await this.cancelTask(selfHealTaskToken);
+      } catch {
+        // Task may have already executed
+      }
+      await this.clear("mailbox_self_heal_task");
     }
 
     const api = await this.getApiAny();
@@ -484,7 +543,7 @@ export class Gmail extends Connector<Gmail> {
       try {
         await api.stopWatch();
       } catch (error) {
-        console.error("Failed to stop Gmail watch:", error);
+        console.error(`Gmail teardownMailboxWebhook [${this.id}]: stopWatch failed`, error);
       }
     }
 
@@ -493,11 +552,12 @@ export class Gmail extends Connector<Gmail> {
       try {
         await this.tools.network.deleteWebhook(webhook.topicName);
       } catch (error) {
-        console.error("Failed to delete Gmail webhook:", error);
+        console.error(`Gmail teardownMailboxWebhook [${this.id}]: deleteWebhook failed`, error);
       }
     }
     await this.clear("mailbox_webhook");
     await this.clear("incremental_state");
+    await this.clear("last_webhook_received_at");
   }
 
   /**
@@ -533,13 +593,21 @@ export class Gmail extends Connector<Gmail> {
   }
 
   /**
-   * Renews the Gmail mailbox watch before it expires. On failure, falls back
-   * to a full mailbox-webhook re-setup.
+   * Renews the Gmail mailbox watch before it expires. On primary-path
+   * failure, falls back to a full mailbox-webhook re-setup. If both paths
+   * fail the error is rethrown so the runtime captures it in PostHog —
+   * `selfHealCheck` is the safety net that retries on the next interval.
    */
   async renewMailboxWatch(): Promise<void> {
+    let primaryError: unknown;
     try {
       const api = await this.getApiAny();
-      if (!api) return;
+      if (!api) {
+        console.warn(
+          `Gmail renewMailboxWatch [${this.id}]: no enabled channel to source auth from`
+        );
+        return;
+      }
 
       const webhook = await this.get<MailboxWebhookState>("mailbox_webhook");
       if (!webhook?.topicName) {
@@ -557,16 +625,238 @@ export class Gmail extends Connector<Gmail> {
       });
 
       await this.scheduleMailboxRenewal(expiration);
+      await this.scheduleSelfHealCheck();
+      console.log(
+        `Gmail renewMailboxWatch [${this.id}]: watch renewed`,
+        {
+          historyId: watchResult.historyId,
+          expiration: expiration.toISOString(),
+        }
+      );
+      return;
     } catch (error) {
-      console.error("Failed to renew Gmail mailbox watch:", error);
+      primaryError = error;
+      console.error(
+        `Gmail renewMailboxWatch [${this.id}]: renewal failed, attempting full recreate`,
+        error
+      );
+    }
+
+    // Fallback path: tear down and recreate. If this also fails, throw so
+    // the runtime surfaces the error to PostHog.
+    try {
+      await this.setupMailboxWebhook();
+    } catch (retryError) {
+      console.error(
+        `Gmail renewMailboxWatch [${this.id}]: fallback setup also failed`,
+        { primaryError, retryError }
+      );
+      throw retryError instanceof Error
+        ? retryError
+        : new Error(String(retryError));
+    }
+  }
+
+  /**
+   * Periodic safety net for the mailbox watch. Runs every
+   * {@link SELF_HEAL_INTERVAL_MS} while at least one channel is enabled.
+   *
+   * The Gmail watch + Pub/Sub push pipeline can silently break in ways the
+   * `mailbox_renewal_task` won't catch:
+   *
+   * - the renewal Durable-Object alarm gets dropped on a deploy or DO eviction,
+   * - `users.watch()` succeeded but the Pub/Sub push subscription got
+   *   tombstoned or tore itself down on consecutive delivery failures,
+   * - notifications stopped arriving for an unrelated GCP-side reason.
+   *
+   * Each run does three things and always reschedules itself, so a single
+   * failed run never permanently breaks the cycle:
+   *
+   * 1. Calls `users.history.list` against the stored
+   *    `incremental_state.historyId`. If history is non-empty, push delivery
+   *    skipped messages — process them and force a fresh watch setup.
+   * 2. Verifies `mailbox_webhook` exists and isn't within
+   *    {@link WATCH_PREEMPTIVE_RENEW_MS} of expiry. Recreates if not.
+   * 3. Logs a structured heartbeat for observability (twist instance, watch
+   *    state, time since last push, action taken).
+   *
+   * Throws on unrecoverable failures (e.g. the recreate retry exhausted) so
+   * the runtime captures the exception in PostHog. Rescheduling happens
+   * before the rethrow, so the next run still fires.
+   */
+  async selfHealCheck(): Promise<void> {
+    const now = new Date();
+
+    const enabled = await this.getEnabledChannels();
+    if (enabled.size === 0) {
+      // No channels enabled — let the cycle die. onChannelEnabled will
+      // bootstrap a fresh self-heal next time a channel is enabled.
+      await this.clear("mailbox_self_heal_task");
+      console.log(
+        `Gmail selfHealCheck [${this.id}]: no enabled channels, ending cycle`
+      );
+      return;
+    }
+
+    let unrecoverableError: unknown;
+    let action: "healthy" | "renewed" | "recreated" | "missed_history" =
+      "healthy";
+    let missedThreads = 0;
+
+    const webhook = await this.get<MailboxWebhookState>("mailbox_webhook");
+    const incremental = await this.get<{
+      historyId?: string;
+      lastSyncTime?: Date;
+    }>("incremental_state");
+    const lastWebhookAt = await this.get<string>(
+      "last_webhook_received_at"
+    );
+
+    // 1. Catch any history we missed. Works even when the watch is broken
+    //    because we're calling history.list directly, not waiting for a push.
+    if (incremental?.historyId) {
       try {
-        await this.setupMailboxWebhook();
-      } catch (retryError) {
+        const api = await this.getApiAny();
+        if (api) {
+          const result = await syncGmailMailboxIncremental(
+            api,
+            incremental.historyId
+          );
+          if (result.expired) {
+            // History window expired; reseed cursor (same fallback as
+            // incrementalSyncBatch).
+            if (webhook?.historyId) {
+              await this.set("incremental_state", {
+                historyId: webhook.historyId,
+                lastSyncTime: now,
+              });
+            } else {
+              await this.clear("incremental_state");
+            }
+            console.warn(
+              `Gmail selfHealCheck [${this.id}]: history window expired, reseeded cursor`
+            );
+          } else if (result.threads.length > 0) {
+            missedThreads = result.threads.length;
+            await this.processEmailThreads(result.threads, false);
+            await this.set("incremental_state", {
+              historyId: result.historyId,
+              lastSyncTime: now,
+            });
+            // Missed history while a watch existed = push delivery is
+            // broken. Force a fresh watch setup below.
+            action = "missed_history";
+          }
+        }
+      } catch (error) {
+        // History check is best-effort; don't let it abort the rest of
+        // self-heal — we still want to verify watch state.
         console.error(
-          "Failed to recreate Gmail mailbox webhook:",
-          retryError
+          `Gmail selfHealCheck [${this.id}]: history check failed`,
+          error
         );
       }
+    }
+
+    // 2. Verify watch state. Recreate if missing/expired/imminent-expiry.
+    let needsReup = action === "missed_history";
+    if (!webhook) {
+      needsReup = true;
+      if (action === "healthy") action = "recreated";
+    } else {
+      const expirationDate = new Date(webhook.expiration);
+      const msToExpiry = expirationDate.getTime() - now.getTime();
+      if (msToExpiry < 0) {
+        needsReup = true;
+        if (action === "healthy") action = "recreated";
+        console.warn(
+          `Gmail selfHealCheck [${this.id}]: watch expired ${-msToExpiry}ms ago`
+        );
+      } else if (msToExpiry < WATCH_PREEMPTIVE_RENEW_MS) {
+        // <36h to expiry — preemptively renew (covers renewal alarm misses).
+        needsReup = true;
+        if (action === "healthy") action = "renewed";
+      }
+    }
+
+    if (needsReup) {
+      try {
+        await this.setupMailboxWebhook();
+      } catch (error) {
+        // Setup failed permanently. Capture for PostHog by rethrowing AFTER
+        // we've rescheduled the next self-heal run.
+        unrecoverableError = error;
+        console.error(
+          `Gmail selfHealCheck [${this.id}]: setupMailboxWebhook failed`,
+          error
+        );
+      }
+    }
+
+    // Heartbeat with resolved outcome so a single log line tells the full
+    // story (action, thread count, watch state, push silence duration).
+    console.log(`Gmail selfHealCheck [${this.id}]: ${action}`, {
+      missedThreads,
+      enabledChannels: Array.from(enabled),
+      historyId: incremental?.historyId ?? null,
+      watchTopic: webhook?.topicName ?? null,
+      watchExpiration: webhook?.expiration
+        ? new Date(webhook.expiration).toISOString()
+        : null,
+      lastWebhookAt: lastWebhookAt ?? null,
+      minutesSinceLastWebhook: lastWebhookAt
+        ? Math.round(
+            (now.getTime() - new Date(lastWebhookAt).getTime()) / 60000
+          )
+        : null,
+      now: now.toISOString(),
+    });
+
+    // 3. Always reschedule next run, even on failure, so a single error
+    //    doesn't break the cycle. setupMailboxWebhook also schedules
+    //    self-heal on success; scheduleSelfHealCheck cancels-and-replaces,
+    //    so the duplicate scheduling is harmless.
+    try {
+      await this.scheduleSelfHealCheck();
+    } catch (rescheduleError) {
+      console.error(
+        `Gmail selfHealCheck [${this.id}]: reschedule failed`,
+        rescheduleError
+      );
+      if (!unrecoverableError) {
+        unrecoverableError = rescheduleError;
+      }
+    }
+
+    if (unrecoverableError) {
+      throw unrecoverableError instanceof Error
+        ? unrecoverableError
+        : new Error(String(unrecoverableError));
+    }
+  }
+
+  /**
+   * (Re)schedules the next self-heal check. Cancels any existing task so
+   * there's at most one outstanding self-heal task at a time. Idempotent:
+   * safe to call from multiple bootstrap paths.
+   */
+  private async scheduleSelfHealCheck(): Promise<void> {
+    const existing = await this.get<string>("mailbox_self_heal_task");
+    if (existing) {
+      try {
+        await this.cancelTask(existing);
+      } catch {
+        // Task may have already executed.
+      }
+      await this.clear("mailbox_self_heal_task");
+    }
+
+    const callback = await this.callback(this.selfHealCheck);
+    const taskToken = await this.runTask(callback, {
+      runAt: new Date(Date.now() + SELF_HEAL_INTERVAL_MS),
+    });
+    if (taskToken) {
+      await this.set("mailbox_self_heal_task", taskToken);
     }
   }
 
@@ -1109,10 +1399,31 @@ export class Gmail extends Connector<Gmail> {
     request: WebhookRequest,
     _channelId?: string
   ): Promise<void> {
+    // Record receipt before any early returns so `selfHealCheck` can
+    // distinguish "watch is healthy, just no new mail" from "we haven't
+    // heard from Gmail in hours". This is the only signal the connector has
+    // that push delivery is working.
+    await this.set("last_webhook_received_at", new Date().toISOString());
+
+    // Self-heal bootstrap: ensures upgrades from versions without self-heal
+    // start the cycle on the first push after deploy. Idempotent — skipped
+    // if a task is already scheduled.
+    const selfHealTask = await this.get<string>("mailbox_self_heal_task");
+    if (!selfHealTask) {
+      try {
+        await this.scheduleSelfHealCheck();
+      } catch (error) {
+        console.error(
+          `Gmail onGmailWebhook [${this.id}]: failed to bootstrap self-heal`,
+          error
+        );
+      }
+    }
+
     const body = request.body as { message?: { data: string } };
     const message = body?.message;
     if (!message) {
-      console.warn("No message in Gmail webhook body");
+      console.warn(`Gmail onGmailWebhook [${this.id}]: no message in body`);
       return;
     }
 
@@ -1121,7 +1432,10 @@ export class Gmail extends Connector<Gmail> {
       const decoded = atob(message.data);
       data = JSON.parse(decoded);
     } catch (error) {
-      console.error("Failed to decode Gmail webhook message:", error);
+      console.error(
+        `Gmail onGmailWebhook [${this.id}]: failed to decode message`,
+        error
+      );
       return;
     }
 
