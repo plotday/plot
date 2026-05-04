@@ -157,6 +157,7 @@
     var(--mantine-color-brand-7),
     var(--mantine-color-brand-6)
   );
+  color: white;
 }
 
 .learnSection {
