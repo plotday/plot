@@ -69,12 +69,29 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
     final search = _searchController.text;
 
     // Immediately update search text in state and cancel stale subscriptions
-    // so old unfiltered results stop flowing while the user types.
-    // The actual query is deferred until the debounce fires.
+    // so old unfiltered results stop flowing while the user types. The
+    // actual query is throttled below.
     context.read<PriorityBloc>().prepareSearch(search);
 
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 400), _dispatchSearch);
+    // Clearing the box should feel instant — no point waiting 500 ms to
+    // tear down filtered results when the user just wiped the field.
+    if (search.isEmpty) {
+      _debounceTimer?.cancel();
+      _dispatchSearch();
+      return;
+    }
+
+    // Throttle with trailing edge: first keystroke arms a 500 ms timer;
+    // further keystrokes during that window are absorbed (no reset);
+    // when it fires, _dispatchSearch reads the latest controller text. A
+    // new timer is armed by the next keystroke, so continued typing yields
+    // an update every ~500 ms and the final text always gets searched.
+    if (_debounceTimer == null || !_debounceTimer!.isActive) {
+      _debounceTimer = Timer(
+        const Duration(milliseconds: 500),
+        _dispatchSearch,
+      );
+    }
   }
 
   void _dispatchSearch() {

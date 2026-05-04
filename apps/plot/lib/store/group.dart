@@ -10,6 +10,7 @@ class Groups extends Table with SyncableTable, UuidTable, DeletableTable {
       boolean().withDefault(const Constant(false))();
   BoolColumn get isAdmin => boolean().withDefault(const Constant(false))();
   BoolColumn get isMember => boolean().withDefault(const Constant(false))();
+  BoolColumn get canPost => boolean().withDefault(const Constant(false))();
   TextColumn get memberContactIds =>
       text().nullable().map(const UuidListConverter())();
 }
@@ -72,5 +73,31 @@ class Group {
           ..where((t) => t.id.equals(id.toBytes()))
           ..limit(1))
         .watchSingleOrNull();
+  }
+
+  /// Groups the user is allowed to send threads to (admin of the group, or
+  /// member of any non-`announce` group), filtered by [search] against name.
+  ///
+  /// Computed from the locally-cached `is_admin` / `is_member` / `type`
+  /// columns rather than the synced `can_post` column, so the picker
+  /// works immediately after the schema migration without waiting for a
+  /// fresh group sync to repopulate `can_post`.
+  static Future<List<GroupRow>> getPostable({String? search}) async {
+    final query = Store.get.select(table)
+      ..where(
+        (t) =>
+            t.archivedAt.isNull() &
+            (t.isAdmin.equals(true) |
+                (t.isMember.equals(true) &
+                    t.type.isNotIn(const ['announce']))),
+      );
+    if (search != null && search.isNotEmpty) {
+      final lower = search.toLowerCase();
+      query.where(
+        (t) => t.name.like('$lower%') | t.name.like('% $lower%'),
+      );
+    }
+    query.orderBy([(t) => OrderingTerm(expression: t.name)]);
+    return query.get();
   }
 }

@@ -78,14 +78,25 @@ class _HeaderState extends State<Header> {
   }
 
   void _onSearchChanged() {
-    // Cancel previous timer
-    _debounceTimer?.cancel();
+    final search = _searchController.text;
 
-    // Create new timer with 250ms delay
-    _debounceTimer = Timer(const Duration(milliseconds: 250), () {
-      final search = _searchController.text;
-      widget.onSearchChanged?.call(search);
-    });
+    // Clearing the box should feel instant.
+    if (search.isEmpty) {
+      _debounceTimer?.cancel();
+      widget.onSearchChanged?.call('');
+      return;
+    }
+
+    // Throttle with trailing edge: first keystroke arms a 500 ms timer;
+    // further keystrokes during the window are absorbed (no reset). When
+    // it fires, the callback receives the latest controller text. The
+    // next keystroke arms a fresh window, so continued typing yields one
+    // update per ~500 ms and the final text always gets searched.
+    if (_debounceTimer == null || !_debounceTimer!.isActive) {
+      _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+        widget.onSearchChanged?.call(_searchController.text);
+      });
+    }
   }
 
   @override

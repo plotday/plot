@@ -558,9 +558,13 @@ class _ListTileState extends State<ListTile> {
 
           // Only apply spacing when icon is present
           final hasIcon = iconWidget is! SizedBox;
-          // Normalize icon height so varying glyph heights stay centered
+          // Normalize the leading slot to a fixed iconSize square so swapping
+          // in a Spinner (always iconSize wide) doesn't shift the title for
+          // custom icons whose natural width is narrower than iconSize
+          // (e.g. FaIcon, which doesn't wrap itself in a SizedBox).
           final normalizedIcon = hasIcon
               ? SizedBox(
+                  width: iconSize,
                   height: iconSize,
                   child: Center(child: iconWidget),
                 )

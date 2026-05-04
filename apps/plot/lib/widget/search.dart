@@ -7,7 +7,8 @@ import 'package:plot/style/plot_icon_sizes.dart';
 import 'icon.dart';
 
 /// Toggleable search widget that displays a search icon or input field.
-/// Uses debouncing to avoid excessive queries.
+/// Uses throttling to keep results streaming in while the user types
+/// without overloading the database.
 /// When expanded, it takes the full width of the header.
 class SearchWidget extends StatefulWidget {
   const SearchWidget({
@@ -46,15 +47,25 @@ class _SearchWidgetState extends State<SearchWidget> {
   }
 
   void _onSearchChanged() {
-    // Leading-edge: fire immediately on the first change so the UI responds
-    // without waiting for the debounce window.
-    if (_debounceTimer == null || !_debounceTimer!.isActive) {
-      widget.onSearchChanged(_controller.text);
+    final search = _controller.text;
+
+    // Clearing the box should feel instant.
+    if (search.isEmpty) {
+      _debounceTimer?.cancel();
+      widget.onSearchChanged('');
+      return;
     }
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 250), () {
-      widget.onSearchChanged(_controller.text);
-    });
+
+    // Throttle with trailing edge: first keystroke arms a 500 ms timer;
+    // further keystrokes during the window are absorbed (no reset). When
+    // it fires, the callback receives the latest controller text. The
+    // next keystroke arms a fresh window, so continued typing yields one
+    // update per ~500 ms and the final text always gets searched.
+    if (_debounceTimer == null || !_debounceTimer!.isActive) {
+      _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+        widget.onSearchChanged(_controller.text);
+      });
+    }
   }
 
   void _toggle() {

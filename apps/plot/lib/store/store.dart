@@ -2115,7 +2115,7 @@ class Store extends _$Store {
   }
 
   @override
-  int get schemaVersion => 321;
+  int get schemaVersion => 323;
 
   @override
   MigrationStrategy get migration {
@@ -2124,6 +2124,7 @@ class Store extends _$Store {
         await m.createAll();
         await ThreadFts.createTable(m.database);
         await NoteFts.createTable(m.database);
+        await _createPerfIndexes(m.database);
       },
       onUpgrade: (Migrator m, int from, int to) async {
         // =============================================================
@@ -2136,6 +2137,7 @@ class Store extends _$Store {
           await m.createAll();
           await ThreadFts.createTable(m.database);
           await NoteFts.createTable(m.database);
+          await _createPerfIndexes(m.database);
           return;
         }
 
@@ -2154,6 +2156,7 @@ class Store extends _$Store {
           await m.createAll();
           await ThreadFts.createTable(m.database);
           await NoteFts.createTable(m.database);
+          await _createPerfIndexes(m.database);
           return;
         }
 
@@ -2167,6 +2170,7 @@ class Store extends _$Store {
             .createAll(); // CREATE VIEW/TABLE IF NOT EXISTS — only views get recreated since tables already exist
         await ThreadFts.createTable(m.database);
         await NoteFts.createTable(m.database);
+        await _createPerfIndexes(m.database);
       },
       beforeOpen: (details) async {
         // Validate critical tables have expected columns. On web, OPFS may
@@ -3068,6 +3072,53 @@ class Store extends _$Store {
       // reorders a block.
       await m.createTable(priorityBlocks);
     }
+    if (from < 322) {
+      // groups.canPost mirrors user.group.can_post — whether the user is
+      // allowed to send threads to the group (admins always; non-admins
+      // only when they're members and the group is not 'announce'-typed).
+      await _safeAddColumn(m, groups, groups.canPost);
+      // The new column defaults to false on existing rows. Reset the
+      // groups entity sync state so the next pull is a full refresh and
+      // populates canPost from the server.
+      await m.database.customStatement(
+        "UPDATE sync_states SET pulled_at = NULL, last_horizon = NULL, "
+        "first_pulled_at = NULL, last = NULL, no_more = 0 "
+        "WHERE entity = 'user_groups'",
+      );
+    }
+    if (from < 323) {
+      // Backfill the foreign-key indexes that earlier schema versions
+      // never created. Drift only auto-indexes primary keys, so joins
+      // through schedules/links/threads were doing per-row scans and the
+      // search query (with its OR'd correlated EXISTS) was taking
+      // multiple seconds on large databases.
+      await _createPerfIndexes(m.database);
+    }
+  }
+
+  /// Foreign-key indexes used by the activity-feed and search queries.
+  /// `IF NOT EXISTS` keeps this idempotent across migration paths.
+  static Future<void> _createPerfIndexes(DatabaseConnectionUser db) async {
+    await db.customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_schedules_thread_id '
+      'ON schedules(thread_id) WHERE thread_id IS NOT NULL',
+    );
+    await db.customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_schedules_link_id '
+      'ON schedules(link_id) WHERE link_id IS NOT NULL',
+    );
+    await db.customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_schedules_user_id '
+      'ON schedules(user_id) WHERE user_id IS NOT NULL',
+    );
+    await db.customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_links_thread_id '
+      'ON links(thread_id) WHERE thread_id IS NOT NULL',
+    );
+    await db.customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_threads_priority_id '
+      'ON threads(priority_id)',
+    );
   }
 
   /// Runs a SQL statement, ignoring "duplicate column" and "already exists" errors.

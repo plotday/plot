@@ -2195,6 +2195,11 @@ Future<Commands> _buildSharedCommands(
             ...thread.inviteEmails.map(toggleInvite),
           ],
         ),
+      _ThreadShareGroupsGroup(
+        thread: thread,
+        excludeGroupIds: thread.groups.toSet(),
+        onUpdate: onUpdate,
+      ),
       _ThreadShareContactsGroup(
         thread: thread,
         excludeActorIds: sharedActorIds,
@@ -2203,6 +2208,32 @@ Future<Commands> _buildSharedCommands(
       ),
     ],
   );
+}
+
+/// Suggests groups the caller can share to (admin of any group, or member of
+/// any non-`announce` group). Mirrors `_SelectionShareGroupsGroup` in
+/// `share.dart` but binds to a [Thread] so the toggle adds the group to
+/// `thread.groups` directly.
+class _ThreadShareGroupsGroup extends CommandGroup {
+  _ThreadShareGroupsGroup({
+    required this.thread,
+    required this.excludeGroupIds,
+    required this.onUpdate,
+  }) : super(title: 'Groups');
+
+  final Thread thread;
+  final Set<Uuid> excludeGroupIds;
+  final Future<void> Function(Thread) onUpdate;
+
+  @override
+  Future<List<Command>> list({String? search}) async {
+    final rows = await Group.getPostable(search: search);
+    return [
+      for (final g in rows)
+        if (!excludeGroupIds.contains(g.id))
+          ShareThreadGroup(thread, g, onUpdate: onUpdate),
+    ];
+  }
 }
 
 class _ThreadShareContactsGroup extends CommandGroup {

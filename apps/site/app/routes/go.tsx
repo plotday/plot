@@ -114,7 +114,11 @@ export default function Go() {
                 />
                 <div>
                   <div className={classes.bioName}>Beth</div>
-                  <Text className={classes.bioText}>Beth&hellip;</Text>
+                  <Text className={classes.bioText}>
+                    Beth scaled operations in an organization from a single to
+                    over forty cities worldwide, learning to create just the
+                    right amount of order from chaos.
+                  </Text>
                 </div>
               </div>
             </Box>

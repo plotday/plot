@@ -190,6 +190,11 @@ Future<Commands> buildSharedSelectionCommands({
             ...selection.inviteEmails.map(toggleInvite),
           ],
         ),
+      _SelectionShareGroupsGroup(
+        selection: selection,
+        excludeGroupIds: selection.groups.toSet(),
+        onUpdate: onUpdate,
+      ),
       _SelectionShareContactsGroup(
         selection: selection,
         excludeActorIds: sharedActorIds,
@@ -199,6 +204,31 @@ Future<Commands> buildSharedSelectionCommands({
       ),
     ],
   );
+}
+
+/// Suggests groups the caller can share with (admin of the group, or member of
+/// any non-`announce` group). Backed by the local `groups` Drift cache, which
+/// mirrors the `user.group` view's `can_post` flag.
+class _SelectionShareGroupsGroup extends CommandGroup {
+  _SelectionShareGroupsGroup({
+    required this.selection,
+    required this.excludeGroupIds,
+    required this.onUpdate,
+  }) : super(title: 'Groups');
+
+  final SharedSelection selection;
+  final Set<Uuid> excludeGroupIds;
+  final Future<void> Function(SharedSelection) onUpdate;
+
+  @override
+  Future<List<Command>> list({String? search}) async {
+    final rows = await Group.getPostable(search: search);
+    return [
+      for (final g in rows)
+        if (!excludeGroupIds.contains(g.id))
+          ShareSelectionGroup(selection, g, onUpdate: onUpdate),
+    ];
+  }
 }
 
 class _SelectionShareContactsGroup extends CommandGroup {

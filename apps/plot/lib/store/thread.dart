@@ -1414,7 +1414,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         final linkConditions = sanitizedWords
             .map(
               (word) =>
-                  "(ll.title LIKE '%$word%' OR ll.source_url LIKE '%$word%')",
+                  "(title LIKE '%$word%' OR source_url LIKE '%$word%')",
             )
             .join(' AND ');
 
@@ -1442,13 +1442,22 @@ class Thread extends Equatable implements Comparable<Thread> {
           contactBranch = clauses.join(' AND ');
         }
 
+        // Drive the search from the small match-set instead of evaluating
+        // correlated EXISTS per thread. With OR'd correlated EXISTS the
+        // planner falls back to SCAN threads × N subqueries (FTS scan per
+        // row, full links scan per row with leading-wildcard LIKE), which
+        // takes seconds on real data. A `thread.id IN (UNION ALL …)` form
+        // lets SQLite execute each match source once and look threads up
+        // by primary key.
         query.where(
           CustomExpression<bool>('''
-            EXISTS (SELECT 1 FROM thread_fts WHERE thread_id = a.id AND thread_fts MATCH '$ftsWords')
-            OR
-            EXISTS (SELECT 1 FROM note_fts WHERE thread_id = a.id AND note_fts MATCH '$ftsWords')
-            OR
-            EXISTS (SELECT 1 FROM links ll WHERE ll.thread_id = a.id AND $linkConditions)
+            a.id IN (
+              SELECT thread_id FROM thread_fts WHERE thread_fts MATCH '$ftsWords'
+              UNION ALL
+              SELECT thread_id FROM note_fts WHERE note_fts MATCH '$ftsWords'
+              UNION ALL
+              SELECT thread_id FROM links WHERE thread_id IS NOT NULL AND $linkConditions
+            )
             ${contactBranch != null ? 'OR ($contactBranch)' : ''}
           '''),
         );
