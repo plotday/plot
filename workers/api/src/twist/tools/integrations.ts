@@ -971,30 +971,61 @@ export class Integrations extends Tool implements IAuth {
     const flat = this.flattenChannels(channels);
     if (flat.length === 0) return;
     const futureDate = new Date(Date.now() + 1);
+
+    // Single multi-row INSERT. ON CONFLICT keeps existing enabled state and
+    // only refreshes title/link_types when this refresh provides them — the
+    // CASE/COALESCE expressions below mirror the per-row branching the loop
+    // version did via conditional updateFields.
+    //
+    // Postgres rejects ON CONFLICT DO UPDATE when the same statement
+    // proposes duplicate constraint values, so dedupe by channel_id first.
+    // (The previous loop ran separate statements, which made dup channel_ids
+    // a no-op on the second pass; we replicate that by keeping the last one.)
+    const dedupedByChannelId = new Map<string, Channel>();
     for (const channel of flat) {
-      const linkTypesJson = channel.linkTypes
-        ? JSON.stringify(channel.linkTypes)
-        : null;
-      await this.db
-        .insertInto("channel")
-        .values({
-          twist_instance_id: this.twistInstanceId,
-          channel_id: channel.id,
-          title: channel.title ?? channel.id,
-          enabled: false,
-          link_types: linkTypesJson as any,
-          updated_at: futureDate,
-        })
-        .onConflict((oc) => {
-          const updateFields: Record<string, unknown> = { updated_at: futureDate };
-          if (channel.title) updateFields.title = channel.title;
-          if (linkTypesJson) updateFields.link_types = linkTypesJson;
-          return oc
-            .columns(["twist_instance_id", "channel_id"])
-            .doUpdateSet(updateFields as any);
-        })
-        .execute();
+      dedupedByChannelId.set(channel.id, channel);
     }
+    const values = [...dedupedByChannelId.values()].map((channel) => ({
+      twist_instance_id: this.twistInstanceId,
+      channel_id: channel.id,
+      title: channel.title ?? channel.id,
+      enabled: false,
+      link_types: (channel.linkTypes
+        ? JSON.stringify(channel.linkTypes)
+        : null) as any,
+      updated_at: futureDate,
+    }));
+
+    await this.db
+      .insertInto("channel")
+      .values(values)
+      .onConflict((oc) =>
+        oc.columns(["twist_instance_id", "channel_id"]).doUpdateSet((eb) => ({
+          updated_at: eb.ref("excluded.updated_at"),
+          // Only overwrite title when the incoming row has a real title
+          // (not the channel_id fallback). Mirrors the original `if
+          // (channel.title)` guard.
+          title: eb.fn<string>("COALESCE", [
+            eb
+              .case()
+              .when(
+                eb.ref("excluded.title"),
+                "<>",
+                eb.ref("excluded.channel_id")
+              )
+              .then(eb.ref("excluded.title"))
+              .else(null)
+              .end(),
+            eb.ref("channel.title"),
+          ]),
+          // Only overwrite link_types when the incoming row provides them.
+          link_types: eb.fn<unknown>("COALESCE", [
+            eb.ref("excluded.link_types"),
+            eb.ref("channel.link_types"),
+          ]) as any,
+        }))
+      )
+      .execute();
   }
 
 
@@ -3167,22 +3198,41 @@ export class Integrations extends Tool implements IAuth {
       // Build accounts and collect channel trees
       for (const actorId of knownActorIds) {
         const tokenKey = `auth_token:${provider}:${actorId}`;
-        const tokenData = await this.store.get<StoredTokenData>(tokenKey);
+
+        // Fan out the independent reads — token data, contact, scope group
+        // selections, auto-enable flag, and channel access tree. Each is a
+        // separate Durable Object / DB round-trip with no inter-dependency,
+        // so doing them sequentially adds latency for nothing.
+        const [
+          tokenData,
+          contactRow,
+          enabledScopeGroups,
+          autoEnableSetting,
+          actorChannels,
+        ] = await Promise.all([
+          this.store.get<StoredTokenData>(tokenKey),
+          actorId
+            ? this.db
+                .selectFrom("contact")
+                .select("user_id")
+                .where("id", "=", actorId)
+                .executeTakeFirst()
+            : Promise.resolve(undefined),
+          this.store.get<string[]>(
+            `enabled_scope_groups:${provider}:${actorId}`
+          ),
+          this.store.get<boolean>(
+            `auto_enable_new_channels:${provider}:${actorId}`
+          ),
+          this.getChannelAccess(provider, actorId as ActorId),
+        ]);
+
         const email = tokenData ? this.extractEmail(tokenData.providerData) : null;
 
-        // Look up contact user_id for self-healing below; contact.name is
-        // intentionally NOT used as the account label — it's the connected
-        // person's display name, not the workspace/account disambiguator the
-        // modal is trying to show.
-        let contactUserId: string | null = null;
-        if (actorId) {
-          const contact = await this.db
-            .selectFrom("contact")
-            .select("user_id")
-            .where("id", "=", actorId)
-            .executeTakeFirst();
-          contactUserId = contact?.user_id ?? null;
-        }
+        // contact.name is intentionally NOT used as the account label — it's
+        // the connected person's display name, not the workspace/account
+        // disambiguator the modal is trying to show.
+        const contactUserId = contactRow?.user_id ?? null;
 
         // Prefer the provider-level account label (Slack workspace, Notion
         // workspace, Atlassian site, …) — it's the useful disambiguator for
@@ -3196,15 +3246,7 @@ export class Integrations extends Tool implements IAuth {
             ) ?? null)
           : null;
 
-        // Look up stored scope group selections
-        const enabledScopeGroups = await this.store.get<string[]>(
-          `enabled_scope_groups:${provider}:${actorId}`
-        );
-
-        const autoEnableNewChannels =
-          (await this.store.get<boolean>(
-            `auto_enable_new_channels:${provider}:${actorId}`
-          )) ?? false;
+        const autoEnableNewChannels = autoEnableSetting ?? false;
 
         accounts.push({
           provider,
@@ -3217,9 +3259,6 @@ export class Integrations extends Tool implements IAuth {
             ? { manageAccessUrl: buildManageAccessUrl(provider, this.env) }
             : {}),
         });
-
-        // Get this actor's channel access (may be a tree)
-        const actorChannels = await this.getChannelAccess(provider, actorId as ActorId);
 
         // Self-heal: mirror the DO access list into public.channel so ops
         // queries see the full available list even for connections that
@@ -3273,6 +3312,22 @@ export class Integrations extends Tool implements IAuth {
       }
     }
 
+    // Pre-fetch all channel rows for this twist instance in a single DB
+    // query. The previous per-channel `getChannelConfig` call did one DB
+    // SELECT + one Durable Object read per channel, sequentially — for
+    // connectors with many channels (e.g. Drive with many shared drives /
+    // folders) that waterfall dominated the response time. After
+    // mirrorChannelsToDb above, every channel reachable from the DO access
+    // tree should be present in this row set.
+    const dbChannels = await this.db
+      .selectFrom("channel")
+      .select(["channel_id", "enabled", "title"])
+      .where("twist_instance_id", "=", this.twistInstanceId)
+      .execute();
+    const dbChannelMap = new Map(
+      dbChannels.map((c) => [c.channel_id, c])
+    );
+
     // Annotate channel trees with config and access info
     const annotateChannelTree = async (
       provider: AuthProvider,
@@ -3280,7 +3335,17 @@ export class Integrations extends Tool implements IAuth {
     ): Promise<AnnotatedChannel[]> => {
       const result: AnnotatedChannel[] = [];
       for (const channel of channels) {
-        const channelConfig = await this.getChannelConfig(provider, channel.id);
+        const dbRow = dbChannelMap.get(channel.id);
+        // Fast path: channel was mirrored to DB. `enabledBy` is only stored
+        // in DO KV and is currently unused by the modal client, so we skip
+        // the per-channel KV fetch in this path. If we later need it,
+        // pre-fetch all `channel_config:*` keys via a batch DO read.
+        // Slow-path fallback: channel missing from DB (mirror failed or hasn't
+        // run for this channel yet) — read both DB row and KV config. Single-
+        // call latency, only triggered for the rare un-mirrored channel.
+        const channelConfig = dbRow
+          ? { enabled: dbRow.enabled, enabledBy: undefined, title: dbRow.title }
+          : await this.getChannelConfig(provider, channel.id);
         const mapKey = `${provider}:${channel.id}`;
 
         // Resolve linkTypes: channel-level > connector-level
