@@ -302,3 +302,63 @@ CREATE TRIGGER auto_maintain_everyone_group
     AFTER INSERT OR UPDATE OR DELETE ON public.user_contact
     FOR EACH ROW
     EXECUTE FUNCTION public.auto_maintain_everyone_group ();
+
+-- Bump group.seq when group_admin / group_member rows change.
+--
+-- The user.group view's `is_admin`, `is_member`, `can_post`, and
+-- `member_contact_ids` columns are computed by joining group_admin and
+-- group_member, but /sync/groups paginates on `group.seq`. Without these
+-- triggers, adding/removing an admin or member never advances `group.seq`,
+-- so clients with a stamped `last_horizon` past the row's existing seq
+-- never see the membership change. (Symptom: a user newly granted admin
+-- of a group can't post to it from the Mac app until the group is
+-- otherwise touched.)
+--
+-- Statement-level so a bulk membership change bumps each affected group
+-- once. The UPDATE on "group" fires the existing BEFORE trigger which
+-- sets seq = pg_current_xact_id().
+CREATE OR REPLACE FUNCTION public.bump_group_seq_from_new_table ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE "group" SET updated_at = now()
+    WHERE id IN (SELECT DISTINCT group_id FROM new_table);
+    RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.bump_group_seq_from_old_table ()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE "group" SET updated_at = now()
+    WHERE id IN (SELECT DISTINCT group_id FROM old_table);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER bump_group_seq_on_admin_insert
+    AFTER INSERT ON public.group_admin
+    REFERENCING NEW TABLE AS new_table
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION public.bump_group_seq_from_new_table ();
+
+CREATE TRIGGER bump_group_seq_on_admin_delete
+    AFTER DELETE ON public.group_admin
+    REFERENCING OLD TABLE AS old_table
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION public.bump_group_seq_from_old_table ();
+
+CREATE TRIGGER bump_group_seq_on_member_insert
+    AFTER INSERT ON public.group_member
+    REFERENCING NEW TABLE AS new_table
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION public.bump_group_seq_from_new_table ();
+
+CREATE TRIGGER bump_group_seq_on_member_delete
+    AFTER DELETE ON public.group_member
+    REFERENCING OLD TABLE AS old_table
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION public.bump_group_seq_from_old_table ();

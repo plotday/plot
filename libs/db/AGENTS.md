@@ -157,6 +157,61 @@ can't actually see.
 **Exception**: Twist callback views (e.g. `twist_instance_thread_read`) are
 scoped to threads the twist created — the twist has inherent visibility.
 
+## CRITICAL: Removing Rows from Synced Tables
+
+**Never use `DELETE` on a row that may have been synced to a Flutter client. Set `archived_at = now()` instead.**
+
+The Flutter client pulls incrementally via `seq_since=<last_horizon>` cursors and merges rows by primary key. A bare `DELETE` is invisible to that protocol — the row simply stops being returned, and the local copy stays forever. Setting `archived_at` produces a visible row update (the seq bumps), the client receives the changed row, and per-table archive logic on the client removes it from views.
+
+Applies to every table whose contents flow through `/sync/*` (anything readable from a `user.*` view): `thread`, `note`, `priority`, `schedule`, `link`, `twist_instance`, `group`, `group_member`, `contact`, `user_contact`, etc.
+
+**When this rule applies:**
+
+- Migration data fixes that remove rows
+- Trigger functions that clean up after a parent change
+- API handlers responding to user actions
+- Cron-driven cleanup jobs
+
+**The only safe DELETE on a synced table:** the entity itself is being removed from the schema (table dropped or renamed away). Even then, prefer landing an `archived_at` update one release before the schema change so clients reconcile cleanly. The April 2026 `topic` → `group` rename hit this exact wall — `DELETE FROM topic WHERE auto_personal_twist_user_id IS NOT NULL` followed by `ALTER TABLE topic RENAME TO "group"` left every user with a stranded "Personal Twists" group locally because no per-row sync event ever fired.
+
+**Apparent exceptions that are not actually exceptions:**
+
+- `ON DELETE CASCADE` on a foreign key: still synced if the child table is on a sync endpoint. Either set `archived_at` on the parent first (and let triggers cascade `archived_at` to children), or accept that the cascade will strand client copies of the child rows.
+- "It's just internal bookkeeping": if the table is read by any `user.*` view, it is synced. Check.
+
+## CRITICAL: Bump Parent `seq` on Child-Table Changes Used by Synced Views
+
+**When a `user.*` view's columns are computed by joining a child table to its parent, every write to the child table MUST bump the parent's `seq` (via an `UPDATE` on the parent that fires the existing `update_seq_and_updated_at` trigger).**
+
+`/sync/*` cursors pull rows where `parent.seq >= last_horizon`. If a child-table write (e.g. adding a `group_admin` row) changes what the view returns for a parent without bumping the parent's `seq`, clients with a stamped `last_horizon` past that seq will never re-pull the parent — the view's computed columns drift permanently out of sync.
+
+Examples in the schema:
+
+- `group_admin` / `group_member` → `group.seq` (drives `user.group.is_admin`, `is_member`, `can_post`, `member_contact_ids`). Triggers in `schema/95-triggers/24-group_auto_maintain.sql`.
+- `schedule_contact` → `schedule.updated_at` (drives `user.schedule` RSVP fields). Triggers in `schema/95-triggers/11-schedule-contact-bump.sql`.
+
+**Pattern (statement-level so bulk writes bump each parent once):**
+
+```sql
+CREATE OR REPLACE FUNCTION bump_parent_from_new_table () RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE parent SET updated_at = now()
+    WHERE id IN (SELECT DISTINCT parent_id FROM new_table);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER bump_parent_on_child_insert
+    AFTER INSERT ON child
+    REFERENCING NEW TABLE AS new_table
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION bump_parent_from_new_table ();
+
+-- Symmetric old_table version for AFTER DELETE.
+```
+
+**Also bump on schema changes that add view columns.** When a migration adds a column to a `user.*` view, existing rows still have stale `seq` values. Add a one-shot `UPDATE parent SET updated_at = now();` at the end of the migration so clients re-pull and pick up the new column.
+
 ## Database Infrastructure
 
 The local database runs as a Docker container (PostgreSQL 18.1 + pgvector) via `docker-compose.yml`. Key details:

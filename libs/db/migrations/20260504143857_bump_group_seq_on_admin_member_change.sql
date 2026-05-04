@@ -1,35 +1,29 @@
--- Upsert a thread with cross-user deduplication and attestation-based visibility.
---
--- Dedup is scoped by (twist_id, key) with archived_at IS NULL — two instances
--- of the same twist that upsert the same key converge on the same thread
--- across users. User-created threads (twist_id IS NULL) do not participate
--- in cross-user dedup.
---
--- Membership model for twist-created threads:
---   - The caller claims their own thread_priority row only if at least one
---     of their linked contacts appears in thread.contacts (an attester has
---     confirmed them).
---   - Otherwise the caller's primary contact is appended to pending_contacts
---     and no thread_priority row is created. Their visibility is deferred
---     until another sync attests them.
---   - When any caller's upsert lists contacts that are currently in
---     pending_contacts, those contacts are promoted to contacts and
---     thread_priority rows are created for their linked users.
---
--- Immutable-on-update fields: created_by, twist_id. First creator wins.
--- Contacts updates are additive (array union); removal happens only via
--- share_thread.
---
--- Parameters:
---   user_id     — the calling user (owner of the row in thread_priority).
---   p_thread    — thread fields explicitly provided by the caller.
---   p_defaults  — fallback values used on INSERT when fields are omitted.
---
--- Returns: the full thread row so the caller can process occurrences.
-CREATE OR REPLACE FUNCTION "user".upsert_thread (user_id uuid, p_thread jsonb, p_defaults jsonb DEFAULT '{}' ::jsonb)
-    RETURNS thread
-    LANGUAGE plpgsql
-    AS $function$
+-- Create "bump_group_seq_from_old_table" function
+CREATE FUNCTION "public"."bump_group_seq_from_old_table" () RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE "group" SET updated_at = now()
+    WHERE id IN (SELECT DISTINCT group_id FROM old_table);
+    RETURN NULL;
+END;
+$$;
+-- Create trigger "bump_group_seq_on_admin_delete"
+CREATE TRIGGER "bump_group_seq_on_admin_delete" AFTER DELETE ON "public"."group_admin" REFERENCING OLD TABLE AS "old_table" FOR EACH STATEMENT EXECUTE FUNCTION "public"."bump_group_seq_from_old_table"();
+-- Create "bump_group_seq_from_new_table" function
+CREATE FUNCTION "public"."bump_group_seq_from_new_table" () RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE "group" SET updated_at = now()
+    WHERE id IN (SELECT DISTINCT group_id FROM new_table);
+    RETURN NULL;
+END;
+$$;
+-- Create trigger "bump_group_seq_on_admin_insert"
+CREATE TRIGGER "bump_group_seq_on_admin_insert" AFTER INSERT ON "public"."group_admin" REFERENCING NEW TABLE AS "new_table" FOR EACH STATEMENT EXECUTE FUNCTION "public"."bump_group_seq_from_new_table"();
+-- Create trigger "bump_group_seq_on_member_delete"
+CREATE TRIGGER "bump_group_seq_on_member_delete" AFTER DELETE ON "public"."group_member" REFERENCING OLD TABLE AS "old_table" FOR EACH STATEMENT EXECUTE FUNCTION "public"."bump_group_seq_from_old_table"();
+-- Create trigger "bump_group_seq_on_member_insert"
+CREATE TRIGGER "bump_group_seq_on_member_insert" AFTER INSERT ON "public"."group_member" REFERENCING NEW TABLE AS "new_table" FOR EACH STATEMENT EXECUTE FUNCTION "public"."bump_group_seq_from_new_table"();
+-- Modify "upsert_thread" function
+CREATE OR REPLACE FUNCTION "user"."upsert_thread" ("user_id" uuid, "p_thread" jsonb, "p_defaults" jsonb DEFAULT '{}') RETURNS "public"."thread" LANGUAGE plpgsql AS $$
 DECLARE
     v_result thread;
     v_existing thread;
@@ -585,4 +579,14 @@ BEGIN
 
     RETURN v_result;
 END;
-$function$;
+$$;
+
+-- Backfill: bump every group's seq so clients with a stamped last_horizon
+-- past the existing seq re-pull and pick up the now-correct membership
+-- flags. The Plot-admins-of-Everyone INSERT in
+-- 20260504023717_group_can_post_and_keyed_priority_routing.sql didn't
+-- touch group, so admins got Everyone's `is_admin` server-side but their
+-- clients still see is_admin=false (and therefore can't post to it).
+-- One-shot UPDATE: the existing set_group_updated_at BEFORE trigger
+-- writes seq = pg_current_xact_id() and updated_at = now().
+UPDATE "public"."group" SET updated_at = now();

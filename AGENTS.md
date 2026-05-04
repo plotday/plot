@@ -285,6 +285,8 @@ pnpm reset
 - **NEVER do a database reset** (`pnpm reset`) without explicit user permission - it destroys all local data
 - **NEVER modify migration files** after they've been applied - create a new migration instead
 - **NEVER create migrations manually** - always generate them with `pnpm gen-migration`
+- **NEVER `DELETE` rows from a synced table** - set `archived_at = now()` instead so the change reaches Flutter clients via sync. Bare DELETEs on synced tables (anything readable from a `user.*` view: thread, note, priority, schedule, link, twist_instance, group, contact, …) are invisible to the seq-cursor protocol and strand local copies forever. See `libs/db/AGENTS.md` "Removing Rows from Synced Tables" for the full rule.
+- **ALWAYS bump parent `seq` on child-table writes** when a `user.*` view computes columns by joining the child to the parent (e.g. `group_admin` → `group.seq` drives `user.group.is_admin/can_post`). Without the bump, membership-shaped changes never reach clients. See `libs/db/AGENTS.md` "Bump Parent `seq` on Child-Table Changes" for the trigger pattern.
 - **ALWAYS generate types** after schema changes: `pnpm types`
 - **ALWAYS use `$DATABASE_URL`** for psql commands — never hardcode a port number
 
