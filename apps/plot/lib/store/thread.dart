@@ -2879,6 +2879,56 @@ class Thread extends Equatable implements Comparable<Thread> {
     );
   }
 
+  /// Returns a copy with the user schedule marked archived. Used to
+  /// mirror what `associateWith` will write to the DB so the optimistic
+  /// agenda model treats this thread as no longer todo (no dual
+  /// appearance under both its scheduled spot AND the event header).
+  /// No-op when there's no user schedule to archive.
+  Thread withScheduleArchived() {
+    if (_userSchedule == null) return this;
+    return _withUserSchedule(
+      _userSchedule.copyWith(
+        archivedAt: Value(DateTime.now()),
+        updatedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Returns a copy with the user schedule unarchived (or freshly
+  /// created) so the thread renders as a regular todo in the agenda.
+  /// Mirrors what `disassociate(order, date)` will persist so the
+  /// optimistic UI shows the thread back on the agenda the instant the
+  /// user clicks "Remove from event" — instead of letting it vanish
+  /// while the DB write resolves.
+  Thread withScheduleRestored({required Order order, Date? date}) {
+    if (_userSchedule != null) {
+      return _withUserSchedule(
+        _userSchedule.copyWith(
+          archivedAt: const Value(null),
+          order: Value(order),
+          startOn: Value(date ?? Thread.todoNowDate),
+          startAt: const Value(null),
+          endOn: const Value(null),
+          endAt: const Value(null),
+          updatedAt: DateTime.now(),
+          reason: Value(date != null ? 'schedule' : 'add'),
+        ),
+      );
+    }
+    return _withUserSchedule(
+      ScheduleRow(
+        id: Uuid.generate(),
+        updatedAt: DateTime.now(),
+        threadId: id,
+        userId: Base.userId,
+        startOn: date ?? Thread.todoNowDate,
+        order: order,
+        outstandingTasks: false,
+        reason: date != null ? 'schedule' : 'add',
+      ),
+    );
+  }
+
   /// Returns a copy with [isLinkScheduleInstance] set to false.
   /// Used for optimistic insertion of the base todo duplicate when starting
   /// a link schedule thread.
@@ -3385,8 +3435,15 @@ class Thread extends Equatable implements Comparable<Thread> {
     // Handle personal to-do state
     if (todo == true) {
       if (userSchedule != null) {
+        // Clearing startAt/endAt/endOn alongside startOn keeps the row valid
+        // under DB constraint schedule_at_xor_on (exactly one of at/on set);
+        // a re-add from a previously timed schedule could otherwise leave
+        // startAt populated and cause the push to fail.
         userSchedule = userSchedule.copyWith(
           startOn: Value(Thread.todoNowDate),
+          startAt: const Value(null),
+          endOn: const Value(null),
+          endAt: const Value(null),
           order: Value(Order.first()),
           archivedAt: const Value(null),
           reason: const Value('add'),
@@ -3495,29 +3552,11 @@ class Thread extends Equatable implements Comparable<Thread> {
               endAt: const Value(null),
             ),
           );
-        } else if (_userSchedule != null) {
-          // Re-add to todo: unarchive and set epoch sentinel
-          return _withUserSchedule(
-            _userSchedule.copyWith(
-              startOn: Value(Thread.todoNowDate),
-              order: Value(Order.first()),
-              archivedAt: const Value(null),
-              reason: const Value('add'),
-            ),
-          );
         } else {
-          return _withUserSchedule(
-            ScheduleRow(
-              id: Uuid.generate(),
-              updatedAt: DateTime.now(),
-              threadId: id,
-              userId: Base.userId,
-              startOn: Thread.todoNowDate,
-              order: Order.first(),
-              reason: 'add',
-              outstandingTasks: false,
-            ),
-          );
+          // Re-add to todo: delegate to copyWith so the schedule_at_xor_on
+          // constraint clearing (and create-vs-update branching) stays in
+          // one place.
+          return copyWith(todo: true);
         }
       default:
         break;
@@ -3729,10 +3768,16 @@ class Thread extends Equatable implements Comparable<Thread> {
     }
 
     // 5. Build the new user schedule (same rules as toggleTag(Tag.todo) add).
+    //    startAt/endAt/endOn are cleared so a re-add from a previously
+    //    timed schedule doesn't leave both at/on populated and trip
+    //    DB constraint schedule_at_xor_on.
     final ScheduleRow newUserSchedule;
     if (_userSchedule != null) {
       newUserSchedule = _userSchedule.copyWith(
         startOn: Value(Thread.todoNowDate),
+        startAt: const Value(null),
+        endOn: const Value(null),
+        endAt: const Value(null),
         order: Value(Order.first()),
         archivedAt: const Value(null),
         reason: const Value('add'),

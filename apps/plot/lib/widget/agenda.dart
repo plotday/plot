@@ -702,29 +702,26 @@ class _BlockHeaderState extends State<_BlockHeader> {
                             ),
                           ),
                         ),
-                        Flexible(
-                          child: ColoredBox(
-                            color: bg,
-                            child: PriorityLabel(
-                              priority: priority,
-                              context: widget.priorityContext,
-                              color: fg,
-                              fontSize: fontSize,
-                              height: 1,
-                            ),
+                        ColoredBox(
+                          color: bg,
+                          child: PriorityLabel(
+                            priority: priority,
+                            context: widget.priorityContext,
+                            color: fg,
+                            fontSize: fontSize,
+                            height: 1,
                           ),
                         ),
+                        SizedBox(width: spacing.md),
                       ] else
-                        Flexible(
-                          child: ColoredBox(
-                            color: bg,
-                            child: PriorityLabel(
-                              priority: priority,
-                              context: widget.priorityContext,
-                              color: fg,
-                              fontSize: fontSize,
-                              height: 1,
-                            ),
+                        ColoredBox(
+                          color: bg,
+                          child: PriorityLabel(
+                            priority: priority,
+                            context: widget.priorityContext,
+                            color: fg,
+                            fontSize: fontSize,
+                            height: 1,
                           ),
                         ),
                     ],
@@ -776,10 +773,31 @@ class _BlockHeaderState extends State<_BlockHeader> {
     );
   }
 
+  /// Wraps [child] in a press handler that collapses this block when
+  /// it is currently expanded. Fires on pointer-down — before any drag
+  /// recognition — so the collapse happens immediately and any
+  /// subsequent drag operates on the collapsed block. [Listener] taps
+  /// the raw pointer stream without claiming the pointer in the
+  /// gesture arena, so the surrounding [Draggable] / [LongPressDraggable]
+  /// is unaffected.
+  Widget _wrapPressToCollapse(Widget child) {
+    final blockId = widget.parentBlockId;
+    if (blockId == null) return child;
+    return Listener(
+      onPointerDown: (_) {
+        final bloc = context.read<PriorityBloc>();
+        if (bloc.state.expandedBlockId == blockId) {
+          bloc.toggleBlockExpansion(blockId);
+        }
+      },
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_isDraggable || widget.parentBlockId == null) {
-      return _buildRow(context);
+      return _wrapPressToCollapse(_buildRow(context));
     }
 
     final payload = BlockDragPayload(
@@ -824,7 +842,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
     // feedback can match the source row's shape instead of growing to the
     // full viewport (multi-panel renders the agenda narrower than the
     // window).
-    return MouseRegion(
+    return _wrapPressToCollapse(MouseRegion(
       onEnter: (_) {
         if (_hover) return;
         setState(() => _hover = true);
@@ -866,7 +884,7 @@ class _BlockHeaderState extends State<_BlockHeader> {
           );
         },
       ),
-    );
+    ));
   }
 }
 

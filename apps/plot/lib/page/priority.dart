@@ -1237,58 +1237,73 @@ class _PriorityPageState extends State<PriorityPage> {
     return ListenableBuilder(
       listenable: _blockDragController,
       builder: (context, _) {
-        if (nextParentId != null &&
+        // Hide separators inside the collapsing source block. Wrapped in
+        // [AnimatedSize] below so the 1px collapse runs in sync with the
+        // source header / thread row [AnimatedSize]s and the active drop
+        // zone's [AnimatedContainer]. Hiding instantly here would yank
+        // the separators out of layout one frame before the rest of the
+        // block starts animating — visible as a brief upward jump in
+        // everything below the source while the surrounding animations
+        // catch up.
+        final shouldHide = nextParentId != null &&
             _blockDragController.draggingBlockId == nextParentId &&
-            !_blockDragController.isSourceVisible) {
-          return const SizedBox.shrink();
-        }
+            !_blockDragController.isSourceVisible;
 
         // Selected: full 1px tinted border (still shown during a drag —
         // selection is a persistent state, not a hover affordance).
         final baseBorder = Color.alphaBlend(borderColor, bg);
+        Widget separator;
         if (prev is AgendaThreadItem && prev.thread.id == selectedId) {
           final accent = context.colour.colours
               .fromTheme(prev.thread.priority.displayColor)
               .withValues(alpha: 0.3);
-          return Container(
+          separator = Container(
             height: 1,
             color: Color.alphaBlend(accent, baseBorder),
           );
-        }
-        if (next is AgendaThreadItem && next.thread.id == selectedId) {
+        } else if (next is AgendaThreadItem && next.thread.id == selectedId) {
           final accent = context.colour.colours
               .fromTheme(next.thread.priority.displayColor)
               .withValues(alpha: 0.3);
-          return Container(
+          separator = Container(
             height: 1,
             color: Color.alphaBlend(accent, baseBorder),
           );
+        } else {
+          // Hover/focus (threads only): full 1px bright border. Skip the
+          // bright style if the adjacent item is being dragged in the
+          // thread reorder list, or if any block-level drag is in
+          // progress.
+          final isBlockDragging = _blockDragController.isDragging;
+          final dragging = controller.draggingIndex;
+          final prevHighlighted = prev is AgendaThreadItem &&
+              !isBlockDragging &&
+              (hovered == index - 1 || focused == index - 1) &&
+              dragging != index - 1;
+          final nextHighlighted = next is AgendaThreadItem &&
+              !isBlockDragging &&
+              (hovered == index || focused == index) &&
+              dragging != index;
+          if (prevHighlighted || nextHighlighted) {
+            final bright = borderColor.withValues(
+              alpha: (borderColor.a * 2).clamp(0.0, 1.0),
+            );
+            separator =
+                Container(height: 1, color: Color.alphaBlend(bright, bg));
+          } else {
+            // Default: transparent for first item (avoids double border
+            // with header), otherwise the standard border color.
+            separator =
+                Container(height: 1, color: prev == null ? bg : baseBorder);
+          }
         }
 
-        // Hover/focus (threads only): full 1px bright border. Skip the
-        // bright style if the adjacent item is being dragged in the
-        // thread reorder list, or if any block-level drag is in
-        // progress.
-        final isBlockDragging = _blockDragController.isDragging;
-        final dragging = controller.draggingIndex;
-        final prevHighlighted = prev is AgendaThreadItem &&
-            !isBlockDragging &&
-            (hovered == index - 1 || focused == index - 1) &&
-            dragging != index - 1;
-        final nextHighlighted = next is AgendaThreadItem &&
-            !isBlockDragging &&
-            (hovered == index || focused == index) &&
-            dragging != index;
-        if (prevHighlighted || nextHighlighted) {
-          final bright = borderColor.withValues(
-            alpha: (borderColor.a * 2).clamp(0.0, 1.0),
-          );
-          return Container(height: 1, color: Color.alphaBlend(bright, bg));
-        }
-
-        // Default: transparent for first item (avoids double border with
-        // header), otherwise the standard border color.
-        return Container(height: 1, color: prev == null ? bg : baseBorder);
+        return AnimatedSize(
+          duration: kBlockBoundaryAnimDuration,
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: shouldHide ? const SizedBox.shrink() : separator,
+        );
       },
     );
   }
@@ -1310,20 +1325,45 @@ class _PriorityPageState extends State<PriorityPage> {
 
     // Precompute block-boundary metadata for [BlockDropZone] insertion.
     // Boundaries live ABOVE block-introducing rows and ABOVE date/text
-    // headers (representing "end of previous section"). The final
-    // boundary, if any, lives BELOW the last item.
+    // headers (representing "end of previous section"). For empty date
+    // sections (e.g. a Tuesday with no blocks), we additionally place
+    // a boundary BELOW the date header so users can still drop blocks
+    // onto that date — without it, an empty day would be untargetable
+    // and dragging past it would skip straight to the next non-empty
+    // section. The final boundary, if any, lives BELOW the last item.
     final beforeBoundaries = <int, BlockDropTarget>{};
+    final afterBoundaries = <int, BlockDropTarget>{};
     BlockDropTarget? afterListBoundary;
     {
       Date? currentDate;
       DateTime? currentPeriodStart;
       String? prevBlockId;
       PriorityId? prevPriorityId;
+      // Position + date of the most recent date header. We use these
+      // to emit an "anywhere on this date" boundary on empty sections
+      // when we discover (at the next section break or end of list)
+      // that no blocks lived in the just-finishing section.
+      int? sectionDateIndex;
+      Date? sectionDateValue;
+
       void resetSection() {
         currentDate = null;
         currentPeriodStart = null;
         prevBlockId = null;
         prevPriorityId = null;
+      }
+
+      void maybeEmitEmptySectionAfter() {
+        if (sectionDateIndex == null || sectionDateValue == null) return;
+        if (prevBlockId != null) return; // section had blocks
+        afterBoundaries[sectionDateIndex] = BlockDropTarget(
+          targetDate: sectionDateValue,
+          targetPeriodStart: null,
+          prevBlockId: null,
+          prevPriorityId: null,
+          nextBlockId: null,
+          nextPriorityId: null,
+        );
       }
 
       for (var i = 0; i < listItems.length; i++) {
@@ -1345,9 +1385,18 @@ class _PriorityPageState extends State<PriorityPage> {
               nextPriorityId: null,
             );
           }
+          // The just-finishing section may have been empty (date header
+          // with no blocks). If so, attach a "drop on this date" slot
+          // to that date header so the user has somewhere to land.
+          maybeEmitEmptySectionAfter();
           resetSection();
           if (item.date != null) {
             currentDate = item.date;
+            sectionDateIndex = i;
+            sectionDateValue = item.date;
+          } else {
+            sectionDateIndex = null;
+            sectionDateValue = null;
           }
           continue;
         }
@@ -1360,6 +1409,11 @@ class _PriorityPageState extends State<PriorityPage> {
             prevPriorityId: prevPriorityId,
             nextBlockId: item.parentBlockId,
             nextPriorityId: item.blockPriority?.id,
+            // EventBlock headers carry a `thread`; gap and priority
+            // blocks don't. Flagging this lets the drag controller
+            // deadzone the event's vertical footprint so a drop can
+            // never open inside or land on a scheduled event.
+            nextIsEvent: item.thread != null,
           );
           // The gap header advances the period anchor for blocks that
           // follow it within the same section.
@@ -1372,6 +1426,8 @@ class _PriorityPageState extends State<PriorityPage> {
           prevPriorityId = item.blockPriority?.id;
         }
       }
+      // The last section might also be empty — handle the same way.
+      maybeEmitEmptySectionAfter();
       if (prevBlockId != null) {
         afterListBoundary = BlockDropTarget(
           targetDate: currentDate,
@@ -1414,9 +1470,15 @@ class _PriorityPageState extends State<PriorityPage> {
         }
         final current = listItems[index];
         final beforeBoundary = beforeBoundaries[index];
-        final afterBoundary = (index == listItems.length - 1)
-            ? afterListBoundary
-            : null;
+        // After-boundary sources: empty-date-section slot (anchored to a
+        // date header), or end-of-list afterListBoundary on the last
+        // item. They never both apply to the same row — empty-section
+        // slots attach to date headers; afterListBoundary attaches only
+        // to the final list item, which is a date header only when the
+        // last section is empty (in which case afterListBoundary is
+        // null because prevBlockId was reset).
+        final afterBoundary = afterBoundaries[index] ??
+            ((index == listItems.length - 1) ? afterListBoundary : null);
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -1622,11 +1684,54 @@ class _PriorityPageState extends State<PriorityPage> {
                 final oldListIndex = index;
                 var newListIndex = newIndex;
 
+                // Identify the destination block by inspecting items
+                // adjacent to the drop position. Order.between across
+                // blocks is meaningless — different priority blocks have
+                // wildly different order scales (a block whose threads
+                // were created from emails has tiny orders, while a
+                // user-created block uses recent timestamps), so a
+                // midpoint can land anywhere relative to the same-block
+                // neighbors and undo the visual move.
+                final dropAnchor = oldListIndex < newListIndex
+                    ? newListIndex
+                    : newListIndex - 1;
+                String? destBlockId;
+                for (var i = dropAnchor; i >= 0; i--) {
+                  if (i == oldListIndex) continue;
+                  final li = listItems[i];
+                  if (li is AgendaHeaderItem && li.date != null) break;
+                  final blockId = li.when<String?>(
+                    header: (h) => h.parentBlockId,
+                    activity: (a) => a.parentBlockId,
+                  );
+                  if (blockId != null) {
+                    destBlockId = blockId;
+                    break;
+                  }
+                }
+                if (destBlockId == null) {
+                  for (var i = dropAnchor + 1; i < listItems.length; i++) {
+                    if (i == oldListIndex) continue;
+                    final li = listItems[i];
+                    if (li is AgendaHeaderItem && li.date != null) break;
+                    final blockId = li.when<String?>(
+                      header: (h) => h.parentBlockId,
+                      activity: (a) => a.parentBlockId,
+                    );
+                    if (blockId != null) {
+                      destBlockId = blockId;
+                      break;
+                    }
+                  }
+                }
+
                 // Build list of todo items with their indices (excluding
                 // the dragged item) so we can find the correct neighbors.
                 // Stop at the first date header past both old and new
                 // positions so items from later sections don't pollute
-                // the order calculation.
+                // the order calculation. Restrict to the destination
+                // block so Order.between operates within a single order
+                // space.
                 final dropBound = oldListIndex > newListIndex
                     ? oldListIndex
                     : newListIndex;
@@ -1638,6 +1743,13 @@ class _PriorityPageState extends State<PriorityPage> {
                       li.date != null &&
                       i > dropBound) {
                     break;
+                  }
+                  final liBlockId = li.when<String?>(
+                    header: (h) => h.parentBlockId,
+                    activity: (a) => a.parentBlockId,
+                  );
+                  if (destBlockId != null && liBlockId != destBlockId) {
+                    continue;
                   }
                   final t = li.when<Thread?>(
                     header: (_) => null,
@@ -1766,9 +1878,33 @@ class _PriorityPageState extends State<PriorityPage> {
                 }
                 // If no date header found, target is "Now" (null date).
 
+                // For within-section drops, align the dragged item's date
+                // with its prev (or next) neighbor's [todoSortDate]. The
+                // agenda's [AgendaSort.compareThreadsInBlock] sorts most-
+                // recently-arrived first then by order ASC; tying arrival
+                // with prev (or next) ensures the order tiebreak places
+                // the dragged item in the user-chosen position. Without
+                // this, sections that mix overdue + scheduled + "now"
+                // todos (each clamped into today by [Thread.agendaAt])
+                // re-promote the drop to the wrong slot because the items
+                // have different real dates. For cross-section drops, fall
+                // back to the section header's date so the move actually
+                // changes the section.
+                final activitySectionDate = activity.agendaAt.toDate();
+                final crossingSection = activitySectionDate != targetDate;
+                final prevTodoDate = prevTodo?.todoSortDate.toDate();
+                final nextTodoDate = nextTodo?.todoSortDate.toDate();
+                final Date? effectiveTargetDate;
+                if (crossingSection) {
+                  effectiveTargetDate = targetDate;
+                } else {
+                  effectiveTargetDate =
+                      prevTodoDate ?? nextTodoDate ?? targetDate;
+                }
+
                 final currentDate =
                     activity.on?.start ?? activity.at?.start?.toDate();
-                final dateChanged = targetDate != currentDate;
+                final dateChanged = effectiveTargetDate != currentDate;
                 final wasPinned = activity.isPinnedTodo;
                 // Pin time: gap start when dropped into a gap (passedGap),
                 // event start when dropped right after an event.
@@ -1799,6 +1935,7 @@ class _PriorityPageState extends State<PriorityPage> {
                 _log.info(
                   '[onReorder] "${activity.title}" '
                   'old=$oldListIndex -> new=$newListIndex '
+                  'destBlock=$destBlockId '
                   'prevTodo="${prevTodo?.title}" (${prevTodo?.order.value}) '
                   'nextTodo="${nextTodo?.title}" (${nextTodo?.order.value}) '
                   '-> newOrder=${newOrder.value} '
@@ -1806,7 +1943,7 @@ class _PriorityPageState extends State<PriorityPage> {
                   'isAssociated=$isAssociated '
                   'hasUserSched=${activity.hasUserSchedule} '
                   'outstandingTasks=${activity.outstandingTasks}'
-                  '${dateChanged ? ' dateChange=$currentDate->$targetDate' : ''}'
+                  '${dateChanged ? ' dateChange=$currentDate->$effectiveTargetDate' : ''}'
                   '${pinningToEvent ? ' pinTime=$pinTime gap=$passedGap nearestGap=$nearestGapStart event="${targetEvent?.title}"' : ''}'
                   '${wasPinned && !pinningToEvent ? ' unpinning' : ''}',
                 );
@@ -1815,15 +1952,22 @@ class _PriorityPageState extends State<PriorityPage> {
                 bool needsFullSave = false;
                 bool useAssociation = false;
 
-                // Check if dropping immediately after a link-scheduled event
-                final droppingOnLinkEvent =
-                    !passedGap &&
-                    targetEvent != null &&
-                    targetEvent.isLinkScheduleInstance;
+                // Dropped immediately after a scheduled event (link or
+                // user-created) — treat the drop as "add this thread to
+                // the event". Association archives the thread's user
+                // schedule so it disappears from elsewhere in the agenda
+                // and renders only as a child of the event.
+                final droppingOnEvent = !passedGap && targetEvent != null;
 
-                if (droppingOnLinkEvent) {
-                  // CREATE/MOVE ASSOCIATION: dropped right after a link event
-                  updatedActivity = activity;
+                if (droppingOnEvent) {
+                  // CREATE/MOVE ASSOCIATION: dropped right after an event.
+                  // Mirror what `associateWith` will persist by archiving
+                  // the user schedule on the optimistic copy. Without this,
+                  // the optimistic agenda renders the thread BOTH at its
+                  // old scheduled position (still has todo=true) AND under
+                  // the event header — the thread visibly disappears and
+                  // reappears once the DB write catches up.
+                  updatedActivity = activity.withScheduleArchived();
                   useAssociation = true;
                 } else if (isAssociated) {
                   // REMOVE ASSOCIATION: associated thread dragged away.
@@ -1834,7 +1978,7 @@ class _PriorityPageState extends State<PriorityPage> {
                     if (dateChanged || activity.isPinnedTodo) {
                       updatedActivity = activity.reorderTo(
                         newOrder,
-                        date: targetDate,
+                        date: effectiveTargetDate,
                       );
                     } else {
                       updatedActivity = activity.reorder(newOrder);
@@ -1845,57 +1989,35 @@ class _PriorityPageState extends State<PriorityPage> {
                     // ensuring _pendingReorderOrder doesn't match immediately.
                     updatedActivity = activity
                         .copyWith(todo: true)
-                        .reorderTo(newOrder, date: targetDate);
+                        .reorderTo(newOrder, date: effectiveTargetDate);
                   }
                 } else if (pinningToEvent) {
-                  if (!passedGap && targetEvent != null) {
-                    // Dropped right after a non-link scheduled event —
-                    // check priority relationship
-                    final eventPriority = targetEvent.priority;
-                    if (activity.priority.isParent(eventPriority)) {
-                      // Ancestor → adopt event's priority, pin after event
-                      updatedActivity = activity
-                          .copyWith(priority: eventPriority)
-                          .reorderToAfterEvent(newOrder, eventEndTime: pinTime);
-                      needsFullSave = true;
-                    } else if (eventPriority.id == activity.priority.id ||
-                        eventPriority.isParent(activity.priority)) {
-                      // Same or descendant → pin after event
-                      updatedActivity = activity.reorderToAfterEvent(
-                        newOrder,
-                        eventEndTime: pinTime,
-                      );
-                    } else {
-                      // Unrelated → pin after the event
-                      updatedActivity = activity.reorderToAfterEvent(
-                        newOrder,
-                        eventEndTime: pinTime,
-                      );
-                    }
-                  } else {
-                    // Dropped in a gap → pin to gap start
-                    updatedActivity = activity.reorderToAfterEvent(
-                      newOrder,
-                      eventEndTime: pinTime,
-                    );
-                  }
+                  // Dropped in a gap → pin to gap start. (The "dropped
+                  // immediately after an event" case was captured by
+                  // [droppingOnEvent] above and turned into an
+                  // association, so this branch now only handles gap
+                  // drops.)
+                  updatedActivity = activity.reorderToAfterEvent(
+                    newOrder,
+                    eventEndTime: pinTime,
+                  );
                 } else if (dateChanged || wasPinned) {
                   // Date changed or unpinning a previously pinned todo
                   updatedActivity = activity.reorderTo(
                     newOrder,
-                    date: targetDate,
+                    date: effectiveTargetDate,
                   );
                 } else {
                   // Use reorderTo to normalize the schedule date to the
                   // target section so todoCompareTo (which sorts by date
                   // first, then order) doesn't override the user's chosen
                   // position with a stale date.
-                  if (targetDate != null ||
+                  if (effectiveTargetDate != null ||
                       activity.on?.start != null ||
                       activity.at?.start != null) {
                     updatedActivity = activity.reorderTo(
                       newOrder,
-                      date: targetDate,
+                      date: effectiveTargetDate,
                     );
                   } else {
                     updatedActivity = activity.reorder(newOrder);
@@ -1926,7 +2048,12 @@ class _PriorityPageState extends State<PriorityPage> {
                   associatingWithParent: useAssociation
                       ? targetEvent!.id
                       : null,
-                  disassociating: isAssociated && !droppingOnLinkEvent,
+                  // Match the order `associateWith` is about to write so
+                  // the optimistic association row sorts at the dropped
+                  // position rather than at the source thread's stale
+                  // user-schedule order.
+                  associationOrder: useAssociation ? newOrder : null,
+                  disassociating: isAssociated && !droppingOnEvent,
                 );
 
                 // Persist changes
@@ -1936,14 +2063,14 @@ class _PriorityPageState extends State<PriorityPage> {
                     parentThreadId: targetEvent!.id,
                     order: newOrder,
                   );
-                } else if (isAssociated && !droppingOnLinkEvent) {
+                } else if (isAssociated && !droppingOnEvent) {
                   // Optimistically clear association so _makeAgenda doesn't
                   // re-add the thread under the event on next rebuild.
                   context.read<PriorityBloc>().optimisticallyDisassociate(
                     activity.id,
                   );
                   // Remove association and restore user schedule
-                  activity.disassociate(order: newOrder, date: targetDate);
+                  activity.disassociate(order: newOrder, date: effectiveTargetDate);
                 } else if (needsFullSave) {
                   updatedActivity.save();
                 } else {
@@ -2052,7 +2179,29 @@ class _PriorityPageState extends State<PriorityPage> {
     }
 
     if (children.isEmpty) return null;
-    return Column(mainAxisSize: MainAxisSize.min, children: children);
+
+    // Interleave 1px dividers between consecutive rows AND append one
+    // after the last row so the preview matches the source block's
+    // captured height. The list's [_buildSeparator] inserts a divider
+    // between every consecutive pair of rows; [sourceTotalHeight] is
+    // measured from the source's top to the top of the slot that sits
+    // *below* the trailing separator, so the divider after the last
+    // thread is part of that captured height. Without these dividers
+    // the preview is shorter than the expanded drop zone, leaving an
+    // empty strip at the bottom and producing a visible vertical shift
+    // whenever the dragged content renders anywhere but its origin.
+    final dividerColor = Color.alphaBlend(
+      context.theme.colors.border,
+      context.colour.background,
+    );
+    Widget divider() => Container(height: 1, color: dividerColor);
+    final interleaved = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      if (i > 0) interleaved.add(divider());
+      interleaved.add(children[i]);
+    }
+    interleaved.add(divider());
+    return Column(mainAxisSize: MainAxisSize.min, children: interleaved);
   }
 
   /// Dispatch a block-drop event from the [BlockDragController].
@@ -2072,16 +2221,43 @@ class _PriorityPageState extends State<PriorityPage> {
     BlockDropTarget target,
   ) {
     // Find the source row to read its sourceDate/sourcePeriodStart.
+    // Collecting ids from `listItems` alone is unsafe: `listItems` is
+    // the collapsed flat view, so threads beyond the block's collapse
+    // limit are absent and would silently stay behind. Resolve the
+    // full thread set from the canonical agenda block instead, with
+    // a `listItems`-walk fallback for the race window where the bloc
+    // emitted a state with no matching block.
     AgendaHeaderItem? source;
     int? sourceIndex;
+    final fallbackThreadIds = <ThreadId>{};
     for (var i = 0; i < listItems.length; i++) {
       final it = listItems[i];
-      if (it is AgendaHeaderItem && it.parentBlockId == payload.blockId) {
-        source = it;
-        sourceIndex = i;
-        break;
+      if (source == null) {
+        if (it is AgendaHeaderItem && it.parentBlockId == payload.blockId) {
+          source = it;
+          sourceIndex = i;
+        }
+        continue;
       }
+      // We've found the source header — keep walking while the items
+      // belong to the same block, harvesting their thread ids as a
+      // fallback in case the canonical block lookup misses.
+      if (it is AgendaThreadItem && it.parentBlockId == payload.blockId) {
+        fallbackThreadIds.add(it.thread.id);
+        continue;
+      }
+      if (it is AgendaHeaderItem && it.parentBlockId == payload.blockId) {
+        // Multi-header block (e.g. event + associated rows wrapped in
+        // a single block) — stay on this block.
+        continue;
+      }
+      break;
     }
+    final canonicalBlock =
+        context.read<PriorityBloc>().state.agenda.blockById(payload.blockId);
+    final sourceThreadIds = canonicalBlock != null
+        ? {for (final t in canonicalBlock.threads) t.id}
+        : fallbackThreadIds;
     if (source == null ||
         sourceIndex == null ||
         source.blockPriority == null) {
@@ -2104,7 +2280,10 @@ class _PriorityPageState extends State<PriorityPage> {
       'targetDate=${target.targetDate} '
       'targetPeriodStart=${target.targetPeriodStart} '
       'targetPrev=${target.prevBlockId} targetNext=${target.nextBlockId} '
-      'sameDate=$sameDate samePeriod=$samePeriod',
+      'sameDate=$sameDate samePeriod=$samePeriod '
+      'threadIds=${sourceThreadIds.length} '
+      '(canonical=${canonicalBlock != null} '
+      'visible=${fallbackThreadIds.length})',
     );
 
     final bloc = context.read<PriorityBloc>();
@@ -2144,6 +2323,7 @@ class _PriorityPageState extends State<PriorityPage> {
       );
       bloc.moveBlock(
         blockId: payload.blockId,
+        threadIds: sourceThreadIds,
         targetGapAnchorAt: anchor,
       );
       return;
@@ -2379,6 +2559,21 @@ class _PriorityPageState extends State<PriorityPage> {
           );
           return;
         }
+        // Collect the source block's thread ids from the contiguous
+        // run after its header — moveBlock now operates on ids rather
+        // than looking the block up from the bloc's agenda.
+        final sourceThreadIds = <ThreadId>{};
+        for (var i = oldIndex + 1; i < listItems.length; i++) {
+          final it = listItems[i];
+          if (it is AgendaThreadItem && it.parentBlockId == sourceBlockId) {
+            sourceThreadIds.add(it.thread.id);
+            continue;
+          }
+          if (it is AgendaHeaderItem && it.parentBlockId == sourceBlockId) {
+            continue;
+          }
+          break;
+        }
         _log.info(
           '[onReorder block] cross-period move: block=$sourceBlockId '
           'priority=${sourcePriority.id} '
@@ -2386,6 +2581,7 @@ class _PriorityPageState extends State<PriorityPage> {
         );
         context.read<PriorityBloc>().moveBlock(
           blockId: sourceBlockId,
+          threadIds: sourceThreadIds,
           targetGapAnchorAt: target.gapAnchor!,
         );
         return;
@@ -2959,7 +3155,6 @@ class _BlockExpandRowState extends State<_BlockExpandRow> {
         ? context.theme.colors.foreground
         : context.theme.plotColors.veryMuted;
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(

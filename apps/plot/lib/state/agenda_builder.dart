@@ -282,13 +282,20 @@ class AgendaBuilder {
       );
     }
 
+    // Block ids include the priority's path but NOT the rank index so
+    // the same priority keeps the same id when the user reorders. A
+    // rank-suffixed id would change for every block in the section on
+    // every drop, churning the agenda's widget keys (header rows,
+    // BlockDropZone slot keys) — which breaks AnimatedContainer
+    // continuity at the drop boundary and produces visible "snap"
+    // artifacts after the drop completes.
     return [
-      for (var k = 0; k < ranked.length; k++)
+      for (final r in ranked)
         PriorityBlock(
-          id: 'p_${sectionId}_${ranked[k].priority.path.value}_$k',
-          priority: ranked[k].priority,
-          threads: List.unmodifiable(ranked[k].threads),
-          isOutside: ranked[k].allOutside,
+          id: 'p_${sectionId}_${r.priority.path.value}',
+          priority: r.priority,
+          threads: List.unmodifiable(r.threads),
+          isOutside: r.allOutside,
         ),
     ];
   }

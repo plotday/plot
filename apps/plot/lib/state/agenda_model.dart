@@ -44,7 +44,7 @@ class AgendaModel extends Equatable {
   /// [expandedBlockId] is exempt and emits all its threads in full.
   List<AgendaItem> flatItems({
     String? expandedBlockId,
-    int collapseLimit = 3,
+    int collapseLimit = 2,
   }) {
     final out = <AgendaItem>[];
     for (final section in sections) {
@@ -156,6 +156,11 @@ class AgendaModel extends Equatable {
                 parentBlockId: b.id,
                 sourceDate: sectionDate,
                 sourcePeriodStart: currentPeriodStart,
+                parentBlockVisibleCount: _visibleCountFor(
+                  1 + b.associated.length,
+                  isExpanded: expandedBlockId == b.id,
+                  collapseLimit: collapseLimit,
+                ),
               ),
             );
             if (!b.isOutside) {
@@ -170,13 +175,45 @@ class AgendaModel extends Equatable {
               final parentKey =
                   '${b.event.id}'
                   '${b.event.occurrence != null ? '_${b.event.occurrence}' : ''}';
-              for (final child in b.associated) {
+              // Apply the same collapse rule as priority/gap blocks: when
+              // the total visible row count (event + associated) exceeds
+              // the limit and the block is not expanded, keep the event
+              // row plus (collapseLimit - 1) associated rows, then emit a
+              // carrier overflow row that the renderer turns into the
+              // expand affordance.
+              final isExpanded = expandedBlockId == b.id;
+              final totalRows = 1 + b.associated.length;
+              if (isExpanded || totalRows <= collapseLimit) {
+                for (final child in b.associated) {
+                  out.add(
+                    AgendaThreadItem(
+                      child,
+                      isAssociated: true,
+                      associationParentId: parentKey,
+                      parentBlockId: b.id,
+                    ),
+                  );
+                }
+              } else {
+                final visibleAssociated = collapseLimit - 1;
+                for (var ci = 0; ci < visibleAssociated; ci++) {
+                  out.add(
+                    AgendaThreadItem(
+                      b.associated[ci],
+                      isAssociated: true,
+                      associationParentId: parentKey,
+                      parentBlockId: b.id,
+                    ),
+                  );
+                }
                 out.add(
                   AgendaThreadItem(
-                    child,
+                    b.associated[visibleAssociated],
                     isAssociated: true,
                     associationParentId: parentKey,
                     parentBlockId: b.id,
+                    isCollapsedOverflow: true,
+                    collapsedBlockId: b.id,
                   ),
                 );
               }
@@ -187,9 +224,9 @@ class AgendaModel extends Equatable {
     return out;
   }
 
-  /// Number of thread rows the renderer will produce for a block — the
-  /// full count when expanded or below the limit, [collapseLimit]
-  /// otherwise (the last visible thread becomes an overflow marker).
+  /// Number of rows the renderer will produce for a block — the full
+  /// thread count when expanded or below the limit, otherwise
+  /// [collapseLimit] thread rows plus one trailing expand row.
   /// Used by [AgendaHeaderItem.parentBlockVisibleCount] to size the
   /// block-drag drop zones to the source block.
   static int _visibleCountFor(
@@ -198,14 +235,14 @@ class AgendaModel extends Equatable {
     required int collapseLimit,
   }) {
     if (isExpanded || totalThreads <= collapseLimit) return totalThreads;
-    return collapseLimit;
+    return collapseLimit + 1;
   }
 
   /// Emit threads with collapse rules applied. When the block has more
-  /// than [collapseLimit] threads and is *not* the expanded block, the
-  /// last visible thread carries [AgendaThreadItem.isCollapsedOverflow]
-  /// + the block id so the renderer can fade it and turn taps into a
-  /// `toggleBlockExpansion(blockId)` call.
+  /// than [collapseLimit] threads and is *not* the expanded block, emit
+  /// [collapseLimit] real thread rows followed by an extra row carrying
+  /// [AgendaThreadItem.isCollapsedOverflow] + the block id so the
+  /// renderer can replace it with the expand affordance.
   static void _emitTruncated(
     List<AgendaItem> out, {
     required List<Thread> threads,
@@ -225,17 +262,19 @@ class AgendaModel extends Equatable {
       }
       return;
     }
-    final visibleCount = collapseLimit; // last one is the overflow marker
-    for (var i = 0; i < visibleCount - 1; i++) {
+    for (var i = 0; i < collapseLimit; i++) {
       out.add(AgendaThreadItem(
         threads[i],
         isOutsidePriority: isOutside,
         parentBlockId: blockId,
       ));
     }
+    // Carrier thread for the expand row — the renderer ignores [thread]
+    // when [isCollapsedOverflow] is true and renders a chevron instead.
+    // Use the first hidden thread so its stableKey is well-defined.
     out.add(
       AgendaThreadItem(
-        threads[visibleCount - 1],
+        threads[collapseLimit],
         isOutsidePriority: isOutside,
         isCollapsedOverflow: true,
         collapsedBlockId: blockId,

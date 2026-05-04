@@ -521,6 +521,7 @@ class PriorityBloc extends Cubit<PriorityState> {
   void moveAgendaItem({
     required Thread movedThread,
     Uuid? associatingWithParent,
+    Order? associationOrder,
     bool disassociating = false,
   }) {
     _reorderTimestamp = DateTime.now();
@@ -538,20 +539,37 @@ class PriorityBloc extends Cubit<PriorityState> {
     // Optimistically update the associations map so the rebuilt model
     // reflects the new parent → child mapping immediately.
     if (associatingWithParent != null) {
+      // The new association row's order MUST match the order the DB
+      // write (`associateWith`) is about to use — it determines where
+      // the thread sorts among the parent's other associated children.
+      // Falling back to `movedThread.order` here would use the (now
+      // archived) user schedule's order, which is unrelated to
+      // association order and would render the thread at an arbitrary
+      // position until the DB sync caught up.
       final assoc = ThreadAssociationRow(
         id: Uuid.generate(),
         updatedAt: DateTime.now(),
         parentThreadId: associatingWithParent,
         childThreadId: movedThread.id,
-        order: movedThread.order,
+        order: associationOrder ?? movedThread.order,
       );
-      final updated = <Uuid, List<ThreadAssociationRow>>{
-        ...?_associations,
-      };
+      // First strip the moved thread out of every other parent — a
+      // child can only be associated with one parent at a time, and
+      // `associateWith` archives any prior association in the DB. If
+      // we left the optimistic map showing both, the thread would
+      // briefly appear under both events until the DB sync caught up.
+      final updated = <Uuid, List<ThreadAssociationRow>>{};
+      if (_associations != null) {
+        for (final entry in _associations!.entries) {
+          final filtered = entry.value
+              .where((a) => a.childThreadId != movedThread.id)
+              .toList();
+          if (filtered.isNotEmpty) updated[entry.key] = filtered;
+        }
+      }
       final list = List<ThreadAssociationRow>.from(
         updated[associatingWithParent] ?? const [],
-      )..removeWhere((a) => a.childThreadId == movedThread.id);
-      list.add(assoc);
+      )..add(assoc);
       updated[associatingWithParent] = list;
       _associations = updated;
       _pendingAssociation = (movedThread.id, associatingWithParent);
@@ -623,36 +641,37 @@ class PriorityBloc extends Cubit<PriorityState> {
   /// nearest gap before reaching this method.
   Future<void> moveBlock({
     required String blockId,
+    required Iterable<ThreadId> threadIds,
     required DateTime targetGapAnchorAt,
   }) async {
     _reorderTimestamp = DateTime.now();
-    final block = state.agenda.blockById(blockId);
-    if (block == null) {
-      log.warning('[moveBlock] block $blockId not found in agenda');
+    // Resolve thread ids against `_lastAgendaThreads` — the canonical
+    // cache. The dispatcher passes ids gathered from `listItems`, which
+    // comes from the same agenda model. We don't read `state.agenda` to
+    // find the block here because there's a narrow race where the bloc
+    // has emitted a new state but the page hasn't yet rebuilt with
+    // matching `listItems` — in that window `blockById` can miss while
+    // `listItems` still references the prior model. Operating on thread
+    // ids directly sidesteps the lookup.
+    final threadIdSet = threadIds.toSet();
+    if (threadIdSet.isEmpty) {
+      log.warning('[moveBlock] block $blockId — empty thread id set');
       return;
     }
-    final blockThreadIds = {for (final t in block.threads) t.id};
-    if (blockThreadIds.isEmpty) {
-      log.warning('[moveBlock] block $blockId has no threads');
-      return;
-    }
-    // Resolve back to the canonical [Thread] instances in
-    // [_lastAgendaThreads] — `block.threads` is the post-grouping copy
-    // built by `AgendaBuilder`, but optimistic overrides and the
-    // agenda rebuild key off the raw cache.
     final threadsToMove = _lastAgendaThreads
-        .where((t) => blockThreadIds.contains(t.id))
+        .where((t) => threadIdSet.contains(t.id))
         .toList();
     if (threadsToMove.isEmpty) {
       log.warning(
-        '[moveBlock] block $blockId threads not present in cache '
-        '(stale agenda?)',
+        '[moveBlock] block $blockId — none of ${threadIdSet.length} '
+        'thread ids present in cache (stale agenda?)',
       );
       return;
     }
+    final priorityId = threadsToMove.first.priority.id;
 
     log.info(
-      '[moveBlock] block=$blockId priority=${block.priority.id} '
+      '[moveBlock] block=$blockId priority=$priorityId '
       'threads=${threadsToMove.length} target=$targetGapAnchorAt',
     );
 

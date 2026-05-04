@@ -256,21 +256,14 @@ class _ThreadWidgetState extends State<ThreadWidget> {
             ? null
             : () => buildContext.run(PickScheduleThread(activity));
 
-        // The command that the leading tap target triggers
+        // The command that the leading tap target triggers.
+        // Associated threads use the same leading commands as regular
+        // (non-event) threads — adding to the agenda or finishing —
+        // because users still want to manage the thread's own todo
+        // state from this slot. Removing the thread from the event is
+        // surfaced as an X-icon at the trailing end on hover instead.
         final Command leadingCommand;
-        if (widget.isAssociated && !activity.outstandingTasks) {
-          leadingCommand = DisassociateThread(activity);
-        } else if (widget.isAssociated && activity.outstandingTasks) {
-          leadingCommand = DisassociateThread(
-            activity,
-            finish: true,
-            onBeforeRun: widget.onMobileFinish != null
-                ? (_) => widget.onMobileFinish!()
-                : widget.onDesktopFinish != null
-                ? (_) => widget.onDesktopFinish!()
-                : null,
-          );
-        } else if (!isTodo) {
+        if (!isTodo) {
           leadingCommand = StartThread(activity);
         } else {
           leadingCommand = FinishThread(
@@ -293,39 +286,13 @@ class _ThreadWidgetState extends State<ThreadWidget> {
 
         final Widget todoIcon;
         final hasPending = activity.outstandingTasks;
-        final isAssoc = widget.isAssociated;
-        final String leadingTitle;
-        if (isAssoc && !hasPending) {
-          leadingTitle = 'Remove from event';
-        } else if (!isTodo && !isAssoc) {
-          leadingTitle = 'Add to agenda';
-        } else {
-          leadingTitle = 'Remove from agenda';
-        }
+        final String leadingTitle = !isTodo
+            ? 'Add to agenda'
+            : 'Remove from agenda';
         final iconHoverColor = leadingHovered
             ? buildContext.colour.foreground
             : buildContext.colour.muted;
-        if (isAssoc && !hasPending) {
-          // Associated thread without outstanding tasks: leave the
-          // leading slot visually empty (the row is already nested under
-          // its event header), and surface "Remove from event" only as
-          // an X on hover.
-          todoIcon = Button.icon(
-            _ThreadLeadingCommand(
-              leadingCommand,
-              outlineIcon: PlotIcon.associated,
-              filledIcon: PlotIcon.associated,
-              showEmpty: true,
-              iconHoverColor: iconHoverColor,
-              hoverIcon: Value(FontAwesomeIcons.xmark),
-              title: leadingTitle,
-            ),
-            selected: true,
-            selectedColor: threadColor,
-            forceHover: isHovered,
-            onLongPress: longPress,
-          );
-        } else if (!isTodo && !isAssoc) {
+        if (!isTodo) {
           todoIcon = Button.icon(
             _ThreadLeadingCommand(
               leadingCommand,
@@ -597,6 +564,7 @@ class _ThreadWidgetState extends State<ThreadWidget> {
                                   showCommands: isHighlighted,
                                   showEventTiming: showEventTiming,
                                   bump: bump,
+                                  isAssociated: widget.isAssociated,
                                   onDesktopFinish: widget.onDesktopFinish,
                                 ),
                               ),
@@ -730,6 +698,7 @@ class ThreadCommands extends HookWidget {
     this.showCommands = false,
     this.showEventTiming = false,
     this.bump = true,
+    this.isAssociated = false,
     this.onDesktopFinish,
     this.onMobileFinish,
     super.key,
@@ -740,6 +709,13 @@ class ThreadCommands extends HookWidget {
   final bool showCommands;
   final bool showEventTiming;
   final bool bump;
+
+  /// True when this thread is rendered nested under an event header in
+  /// the agenda. When set and [showCommands] is true, a "Remove from
+  /// event" X-icon is appended to the trailing-most position so the
+  /// user can detach the thread from the event without disturbing its
+  /// own todo state.
+  final bool isAssociated;
   final Future<void> Function()? onDesktopFinish;
   final Future<void> Function()? onMobileFinish;
 
@@ -967,6 +943,13 @@ class ThreadCommands extends HookWidget {
             // padding, no tooltip); the share command is reachable via the
             // hover commands list instead.
             if (isShared) SharedCommandButton(thread: activity),
+            // Trailing-most "Remove from event" X-icon for associated
+            // threads, surfaced only on hover. The row is positioned at
+            // the right edge with mainAxisSize.min, so adding this as
+            // the last child pushes existing trailing items (tags,
+            // avatars) to the left.
+            if (isAssociated && showCommands)
+              Button.icon(DisassociateThread(activity)),
           ],
         );
       },

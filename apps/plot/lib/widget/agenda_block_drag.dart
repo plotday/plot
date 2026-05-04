@@ -61,6 +61,7 @@ class BlockDropTarget extends Equatable {
     required this.prevPriorityId,
     required this.nextBlockId,
     required this.nextPriorityId,
+    this.nextIsEvent = false,
   });
 
   final Date? targetDate;
@@ -78,6 +79,13 @@ class BlockDropTarget extends Equatable {
   /// Priority id of the block below (null = bottom of section).
   final PriorityId? nextPriorityId;
 
+  /// True when the block immediately below this drop zone is a scheduled
+  /// event. Used by the activation algorithm to treat the event's vertical
+  /// footprint as a deadzone — a dragged block can't land "inside" or
+  /// adjacent to an event because events are anchored to a fixed time and
+  /// a drop there has no useful semantics.
+  final bool nextIsEvent;
+
   @override
   List<Object?> get props => [
     targetDate,
@@ -86,6 +94,7 @@ class BlockDropTarget extends Equatable {
     prevPriorityId,
     nextBlockId,
     nextPriorityId,
+    nextIsEvent,
   ];
 }
 
@@ -111,30 +120,132 @@ class _SlotEntry {
   final BuildContext Function() contextProvider;
 }
 
+/// Helper record for the block-center activation algorithm.
+class _OrderedSlot {
+  _OrderedSlot({
+    required this.key,
+    required this.y,
+    required this.target,
+  });
+
+  final Object key;
+  final double y;
+  final BlockDropTarget target;
+}
+
+/// Result of one activation pass — which slot won (if any).
+@visibleForTesting
+class BlockDragActivation {
+  const BlockDragActivation({this.key, this.target});
+
+  /// Stable key of the active slot. Null when no slot is active
+  /// (pointer in source's deadzone, over an event, or off the agenda).
+  final Object? key;
+
+  /// Target metadata of the active slot. Always paired with [key]:
+  /// both null or both non-null.
+  final BlockDropTarget? target;
+
+  static const none = BlockDragActivation();
+}
+
+/// Pure activation logic, exposed for unit testing. Given a list of
+/// slots (key + screen Y + target metadata) and the dragged block's
+/// id + pointer Y, returns which slot should be active.
+///
+/// Algorithm: sort slots by Y. Find the bracketing pair for the
+/// pointer (the gap between consecutive slots is one block region).
+/// Top half of the block → "before" slot; bottom half → "after" slot.
+/// Filtered out: slots adjacent to the dragged block (no-op drops),
+/// and slots whose `nextIsEvent` is true (events are deadzones —
+/// pointer over an event activates nothing).
+///
+/// Returns [BlockDragActivation.none] when pointer is past the
+/// agenda's edges, in source's deadzone (both flanks filtered), or
+/// over an event.
+@visibleForTesting
+BlockDragActivation computeBlockDragActivation({
+  required List<({Object key, double y, BlockDropTarget target})> slots,
+  required String draggingId,
+  required double pointerY,
+}) {
+  if (slots.isEmpty) return BlockDragActivation.none;
+  final ordered = [
+    for (final s in slots)
+      _OrderedSlot(key: s.key, y: s.y, target: s.target),
+  ]..sort((a, b) => a.y.compareTo(b.y));
+
+  if (pointerY < ordered.first.y || pointerY >= ordered.last.y) {
+    return BlockDragActivation.none;
+  }
+
+  var blockIdx = 0;
+  for (var i = 0; i < ordered.length - 1; i++) {
+    if (pointerY >= ordered[i].y && pointerY < ordered[i + 1].y) {
+      blockIdx = i;
+      break;
+    }
+  }
+
+  final beforeSlot = ordered[blockIdx];
+  final afterSlot = ordered[blockIdx + 1];
+
+  // Event-block deadzone: pointer over a scheduled event never
+  // activates anything. The block bracketed by (beforeSlot,
+  // afterSlot) is identified by `beforeSlot.target.nextIsEvent`.
+  if (beforeSlot.target.nextIsEvent) return BlockDragActivation.none;
+
+  final center = (beforeSlot.y + afterSlot.y) / 2;
+  final candidate = pointerY < center ? beforeSlot : afterSlot;
+
+  final filtered = candidate.target.prevBlockId == draggingId ||
+      candidate.target.nextBlockId == draggingId;
+  if (filtered) return BlockDragActivation.none;
+
+  return BlockDragActivation(key: candidate.key, target: candidate.target);
+}
+
 /// Controller for the block drag interaction.
 ///
-/// **Model:** the source's natural footprint (top..bottom) is the
-/// "stay here" deadzone. While the pointer is inside that range no
-/// slot activates and releasing is a no-op. The instant the pointer
-/// crosses either source edge into a neighbouring block, the closest
-/// unfiltered slot wins — so a one-pixel push past source's bottom is
-/// enough to make the block below visually slide up into source's
-/// space. Once a slot wins, the source collapses and that slot
-/// expands by exactly the source's height; total agenda height is
-/// conserved.
+/// **Model — block-center activation with live reads.** On every
+/// pointer event we read each registered slot's CURRENT screen Y from
+/// its [RenderBox]. We sort by Y; the gap between two consecutive
+/// slots is one block.
 ///
-/// This is more aggressive than the older "halfway between source
-/// center and target slot" rule, which felt asymmetric when the
-/// neighbour block was a different height than the source: the
-/// activation point would creep deep into the neighbour, forcing the
-/// user to drag much further than the source/neighbour boundary
-/// suggested.
+///   1. Find the block region the pointer falls inside (the gap whose
+///      bounds bracket the pointer's Y).
+///   2. The block's center splits it in half. Pointer above center →
+///      candidate is the "before" slot (top of block). Below center →
+///      "after" slot (bottom of block).
+///   3. If the candidate would be a no-op drop (`prevBlockId == source`
+///      or `nextBlockId == source`), set active = null.
 ///
-/// **Why captured-at-start positions:** during the drag the source's
-/// `RenderBox` shrinks to zero (so we can't measure it any more), and
-/// other slots' raw Ys depend on which one is currently expanded, which
-/// would oscillate the active selection. Capturing every slot's anchor
-/// (and the source's bounds) once at drag start sidesteps both problems.
+/// **Why live reads (not snapshot at drag start).** During a drag
+/// three things shift slot positions: source collapse (removes source's
+/// height above), active slot expansion (adds source's height back at
+/// the active slot), and auto-scroll. A drag-start snapshot drifts out
+/// of sync as soon as any of these happen, so the pointer no longer
+/// maps to the slot it's visually over. Live reads always see the
+/// CURRENT layout, which is what the user is interacting with.
+///
+/// **Why this doesn't oscillate.** With block-center activation the
+/// active slot is determined by which BLOCK the pointer is in (= gap
+/// between consecutive slots) and which HALF, not by closest-slot
+/// distance. When source collapses + active slot S expands by exactly
+/// the same amount, total agenda height is conserved: the layout
+/// shift moves OTHER slots' positions, but the gap between the slots
+/// flanking the block the pointer is in shifts coherently. The pointer
+/// stays in the same logical block, so the same slot stays active.
+///
+/// **Implicit deadzone.** Source's own block region has both flanking
+/// slots filtered (top half → "before source", bottom half → "after
+/// source", both no-ops). Pointer in source's range therefore never
+/// activates anything.
+///
+/// **Symmetric activation.** Each non-source block has a clean
+/// top-half/bottom-half split, so dragging past a neighbour requires
+/// crossing its center — not its top edge — before the neighbour
+/// shifts.
 class BlockDragController extends ChangeNotifier {
   String? _draggingBlockId;
   BlockDragPayload? _draggingPayload;
@@ -143,14 +254,6 @@ class BlockDragController extends ChangeNotifier {
   BlockDropTarget? _activeTarget;
   BlockDropDispatcher? _dispatcher;
   BlockDragPreviewBuilder? _previewBuilder;
-
-  /// Top and bottom edges of the source's natural footprint, captured
-  /// at drag start (global coords). Pointer inside `[top, bottom]` is
-  /// the "stay here" deadzone — no slot activates. Pointer past either
-  /// edge picks the closest unfiltered slot, so dragging just past the
-  /// source/neighbour boundary triggers an immediate displacement.
-  double? _sourceTopY;
-  double? _sourceBottomY;
 
   /// Total height of the source block (header + visible threads),
   /// captured at drag start. The active drop slot expands to exactly
@@ -161,12 +264,6 @@ class BlockDragController extends ChangeNotifier {
   /// Total height of the source block, or `null` if no drag is in
   /// progress. Used by [BlockDropZone] to size its expanded gap.
   double? get sourceTotalHeight => _sourceTotalHeight;
-
-  /// Each slot's natural anchor Y, captured at drag start. We use the
-  /// captured value rather than re-reading the RenderBox each frame
-  /// because real-slot expansion shifts other slots' raw Ys, which
-  /// would make the closest-slot search unstable.
-  final Map<Object, double> _capturedSlotY = <Object, double>{};
 
   final Map<Object, _SlotEntry> _slots = <Object, _SlotEntry>{};
 
@@ -217,15 +314,19 @@ class BlockDragController extends ChangeNotifier {
   }
 
   /// Register a [BlockDropZone] under [key] so the controller can
-  /// consider it when picking the active slot. Idempotent — re-registering
-  /// the same key just overwrites the entry.
+  /// consider it when picking the active slot. Idempotent —
+  /// re-registering the same key just overwrites the entry.
   ///
-  /// **Never notifies.** Register/unregister run during the build phase
-  /// (called from `didChangeDependencies` / `didUpdateWidget`), and
-  /// `notifyListeners` from inside build would mark dirty other listening
-  /// widgets that are concurrently being built — crashing with the
-  /// "setState during build" error. The next pointer event picks up new
-  /// slots; until then, a freshly-mounted slot just isn't selectable.
+  /// Slot positions are read live on every pointer event, so there's
+  /// no capture step here. Slots that mount mid-drag (scrolled into
+  /// view by auto-scroll) become candidates as soon as their
+  /// RenderBox is laid out.
+  ///
+  /// **Never notifies.** Register runs during the build phase (called
+  /// from `didChangeDependencies` / `didUpdateWidget`); notifying from
+  /// inside build would mark dirty other listening widgets that are
+  /// concurrently being built — crashing with the "setState during
+  /// build" error.
   void registerSlot({
     required Object key,
     required BlockDropTarget target,
@@ -235,9 +336,8 @@ class BlockDragController extends ChangeNotifier {
         _SlotEntry(target: target, contextProvider: contextProvider);
   }
 
-  /// Remove a previously-registered slot. Clears the active reference if
-  /// it pointed at this slot, but does not notify — see [registerSlot]
-  /// for the reasoning.
+  /// Remove a previously-registered slot. Clears the active reference
+  /// if it pointed at this slot.
   void unregisterSlot(Object key) {
     final removed = _slots.remove(key);
     if (removed == null) return;
@@ -256,9 +356,20 @@ class BlockDragController extends ChangeNotifier {
     }
   }
 
+  /// Read a slot's current screen Y from its [RenderBox]. Returns
+  /// `null` when the widget isn't laid out yet.
+  double? _readSlotY(Object key) {
+    final entry = _slots[key];
+    if (entry == null) return null;
+    final ctx = entry.contextProvider();
+    final ro = ctx.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize) return null;
+    return ro.localToGlobal(Offset.zero).dy;
+  }
+
   /// Begin a drag. [sourceContextProvider] yields the source header's
-  /// [BuildContext] so the controller can read its natural bounds
-  /// before the source visually changes.
+  /// [BuildContext] so the controller can read its natural height at
+  /// drag start (before the source visually collapses).
   void start(
     BlockDragPayload payload, {
     required BuildContext Function() sourceContextProvider,
@@ -266,68 +377,44 @@ class BlockDragController extends ChangeNotifier {
     if (_draggingBlockId == payload.blockId) return;
     _draggingBlockId = payload.blockId;
     _draggingPayload = payload;
-    _captureNaturalGeometry(sourceContextProvider);
+    _captureSourceHeight(sourceContextProvider);
     _log.info(
       '[block-drag] start: blockId=${payload.blockId} '
-      'sourceTopY=$_sourceTopY sourceBottomY=$_sourceBottomY '
-      'sourceTotalHeight=$_sourceTotalHeight '
-      'slots=${_slots.length} capturedSlots=${_capturedSlotY.length}',
+      'sourceTotalHeight=$_sourceTotalHeight slots=${_slots.length}',
     );
     notifyListeners();
   }
 
-  /// Capture source's top/bottom + every slot's anchor Y at drag start,
-  /// while the agenda is still in its at-rest layout.
-  void _captureNaturalGeometry(BuildContext Function() sourceContextProvider) {
-    _sourceTopY = null;
-    _sourceBottomY = null;
+  /// Capture the source block's natural height at drag start. The
+  /// drop zone expands to this height when active, so source-collapse
+  /// + slot-expansion conserve total agenda height.
+  ///
+  /// Computed as `afterSourceY - sourceTopY` where afterSourceY is
+  /// the slot whose `prevBlockId == source.id` (i.e. the boundary
+  /// rendered immediately below source). That slot has zero height
+  /// at rest, so its top Y is the next block's top — i.e. source's
+  /// natural bottom. Falls back to header height when no such slot
+  /// is mounted.
+  void _captureSourceHeight(BuildContext Function() sourceContextProvider) {
     _sourceTotalHeight = null;
-    _capturedSlotY.clear();
 
     final sourceCtx = sourceContextProvider();
     final sourceRO = sourceCtx.findRenderObject();
-    final payload = _draggingPayload;
     final draggingId = _draggingBlockId;
-    double? sourceTopY;
-    double? sourceHeaderHeight;
-    if (sourceRO is RenderBox && sourceRO.hasSize) {
-      sourceTopY = sourceRO.localToGlobal(Offset.zero).dy;
-      sourceHeaderHeight = sourceRO.size.height;
-    }
+    if (sourceRO is! RenderBox || !sourceRO.hasSize) return;
+    final sourceTopY = sourceRO.localToGlobal(Offset.zero).dy;
+    final sourceHeaderHeight = sourceRO.size.height;
 
-    // Capture all slot positions in one pass.
+    double? afterSourceY;
     for (final entry in _slots.entries) {
-      final ctx = entry.value.contextProvider();
-      final ro = ctx.findRenderObject();
-      if (ro is RenderBox && ro.hasSize) {
-        _capturedSlotY[entry.key] = ro.localToGlobal(Offset.zero).dy;
+      if (entry.value.target.prevBlockId == draggingId) {
+        afterSourceY = _readSlotY(entry.key);
+        if (afterSourceY != null) break;
       }
     }
-
-    // Source's actual bottom = top edge of the slot that sits right
-    // after the source block (the boundary whose `prevBlockId` matches
-    // the source). That slot is at zero height in the at-rest layout,
-    // so its top Y is the next block's content top — i.e., source's
-    // natural bottom. This is more accurate than estimating block
-    // height as `headerHeight + visibleThreadCount × thread-row
-    // constant`, which over-shoots when actual rows are shorter than
-    // the constant and leaves the agenda shifting on drop.
-    if (sourceTopY != null) {
-      double? afterSourceY;
-      for (final entry in _slots.entries) {
-        if (entry.value.target.prevBlockId == draggingId) {
-          afterSourceY = _capturedSlotY[entry.key];
-          if (afterSourceY != null) break;
-        }
-      }
-      final totalHeight = afterSourceY != null
-          ? afterSourceY - sourceTopY
-          : (sourceHeaderHeight ?? 0) +
-              (payload?.visibleThreadCount ?? 0) * kThreadRowApproxHeight;
-      _sourceTopY = sourceTopY;
-      _sourceBottomY = sourceTopY + totalHeight;
-      _sourceTotalHeight = totalHeight;
-    }
+    _sourceTotalHeight = afterSourceY != null
+        ? afterSourceY - sourceTopY
+        : sourceHeaderHeight;
   }
 
   void updatePointer(Offset global) {
@@ -360,10 +447,7 @@ class BlockDragController extends ChangeNotifier {
     _pointerPosition = null;
     _activeSlotKey = null;
     _activeTarget = null;
-    _sourceTopY = null;
-    _sourceBottomY = null;
     _sourceTotalHeight = null;
-    _capturedSlotY.clear();
     notifyListeners();
 
     if (dispatch && dispatcher != null && payload != null && target != null) {
@@ -371,18 +455,23 @@ class BlockDragController extends ChangeNotifier {
     }
   }
 
-  /// Pick the active slot for the current pointer position.
+  /// Pick the active slot for the current pointer position using the
+  /// block-center model with **live slot reads**.
   ///
-  /// The source's natural footprint (top..bottom) is the "stay here"
-  /// deadzone. While the pointer is inside that range no slot
-  /// activates and a release is a no-op. Once the pointer passes
-  /// either source edge into a neighbouring block, the closest
-  /// unfiltered slot wins immediately — so a tiny push past the
-  /// source/neighbour boundary makes that neighbour visually slide
-  /// into the source's place. Slots directly adjacent to the source
-  /// are filtered (dropping there would mean no movement) so the
-  /// "closest unfiltered" search naturally reaches across the
-  /// adjacent neighbour to the slot on its far side.
+  /// Read each registered slot's current screen Y from its [RenderBox],
+  /// sort by Y, find the bracketing pair for the pointer, and split
+  /// that block in half: top half → "before" slot; bottom half →
+  /// "after" slot. Filter out candidates that would be no-op drops
+  /// (the slot's prev or next equals the dragged block).
+  ///
+  /// Live reads keep the comparison consistent with the visible
+  /// layout — source collapse, slot expansion, and auto-scroll all
+  /// shift screen positions, but each slot's RenderBox always reports
+  /// its CURRENT frame, so the pointer maps to the slot it's visually
+  /// over. Block-center activation prevents oscillation: even though
+  /// other slots move when the active slot changes, the pointer stays
+  /// in the same logical block (= gap between flanking slots) and the
+  /// same slot stays active.
   void _recomputeActiveSlot() {
     final pointer = _pointerPosition;
     final draggingId = _draggingBlockId;
@@ -391,38 +480,19 @@ class BlockDragController extends ChangeNotifier {
       return;
     }
 
-    // Inside the source's captured footprint = deadzone. We only
-    // engage when the pointer crosses the source's top or bottom edge.
-    final sourceTop = _sourceTopY;
-    final sourceBottom = _sourceBottomY;
-    if (sourceTop != null &&
-        sourceBottom != null &&
-        pointer.dy >= sourceTop &&
-        pointer.dy <= sourceBottom) {
-      _setActive(null, null);
-      return;
-    }
-
-    Object? bestKey;
-    BlockDropTarget? bestTarget;
-    double bestDist = double.infinity;
+    final slots = <({Object key, double y, BlockDropTarget target})>[];
     for (final entry in _slots.entries) {
-      final target = entry.value.target;
-      if (target.prevBlockId == draggingId ||
-          target.nextBlockId == draggingId) {
-        continue;
-      }
-      final naturalY = _capturedSlotY[entry.key];
-      if (naturalY == null) continue;
-      final dist = (pointer.dy - naturalY).abs();
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestKey = entry.key;
-        bestTarget = target;
-      }
+      final y = _readSlotY(entry.key);
+      if (y == null) continue;
+      slots.add((key: entry.key, y: y, target: entry.value.target));
     }
 
-    _setActive(bestKey, bestTarget);
+    final result = computeBlockDragActivation(
+      slots: slots,
+      draggingId: draggingId,
+      pointerY: pointer.dy,
+    );
+    _setActive(result.key, result.target);
   }
 
   void _setActive(Object? key, BlockDropTarget? target) {
@@ -691,8 +761,18 @@ class _BlockDropZoneState extends State<BlockDropZone> {
     // animating height is smaller than the preview) trip Flutter's
     // RenderFlex overflow check on the preview's [Column]. The
     // surrounding [ClipRect] still clips the visual to the box.
+    //
+    // Keying the [AnimatedContainer] on whether a drag is in progress
+    // forces a remount on drag boundaries — otherwise an in-flight
+    // collapse animation (started when the pointer left this slot
+    // shortly before release) keeps running past `end()`, leaving the
+    // slot at a partial height into the next drag and shifting
+    // block-center activation thresholds so the user has to drag
+    // farther on each subsequent attempt. Each drag session starts
+    // with a fresh, fully-collapsed slot.
     return ClipRect(
       child: AnimatedContainer(
+        key: ValueKey(payload != null),
         duration: kBlockBoundaryAnimDuration,
         curve: Curves.easeOut,
         height: isActive ? expandedHeight : kBlockBoundaryRestHeight,

@@ -204,10 +204,23 @@ class PriorityState extends Equatable {
           !item.now &&
           item.thread.at?.start != null &&
           item.thread.at!.start!.isAfter(now)) {
+        // Preserve every field on the original item; only [isNext]
+        // changes. Dropping fields here (notably [parentBlockId]) would
+        // detach the row from its block — e.g. block-drag's
+        // [BlockDragHidden] can't identify it and it stays at full
+        // opacity while the rest of the block dims/collapses, which the
+        // user perceives as the row "staying behind."
         result[i] = AgendaThreadItem(
           item.thread,
+          now: item.now,
           isNext: true,
+          isAssociated: item.isAssociated,
           isOutsidePriority: item.isOutsidePriority,
+          associationParentId: item.associationParentId,
+          associationOrder: item.associationOrder,
+          isCollapsedOverflow: item.isCollapsedOverflow,
+          collapsedBlockId: item.collapsedBlockId,
+          parentBlockId: item.parentBlockId,
         );
         if (i > 0 && result[i - 1] is AgendaHeaderItem) {
           final h = result[i - 1] as AgendaHeaderItem;
@@ -224,6 +237,10 @@ class PriorityState extends Equatable {
               scheduleAt: h.scheduleAt,
               isOutsidePriority: h.isOutsidePriority,
               blockPriority: h.blockPriority,
+              parentBlockId: h.parentBlockId,
+              sourceDate: h.sourceDate,
+              sourcePeriodStart: h.sourcePeriodStart,
+              parentBlockVisibleCount: h.parentBlockVisibleCount,
             );
           }
         }
@@ -829,14 +846,29 @@ class PriorityState extends Equatable {
             createdDateHeader = true;
 
             // Add unpinned todos at start of day, before the first event.
-            // Pinned todos stay in remainingUnscheduled for makeBlock.
+            // Pinned todos stay in remainingUnscheduled for makeBlock —
+            // EXCEPT those whose pinnedAfterTime equals the day's start.
+            // Those have no preceding event to land after (a block-move
+            // dispatch can write `pinnedAfterTime = midnight of future
+            // date` when the drop target has no gap anchor), so without
+            // this catchall they'd be dropped entirely: `makeBlock`
+            // requires either a priority match or a time-match against
+            // the event's start, and subsequent gaps only claim pinned
+            // todos whose pinnedAfterTime equals the gap start. Treat
+            // "pinned to midnight" as "first thing in the day" so the
+            // threads remain visible.
             // Skip when the upcoming event is the current one — todos will
             // be placed after it via makeBlock / the next gap instead.
             if (!nextIsNow) {
+              final dayStart = date.toStart();
               final todosForStart = remainingUnscheduled
                   .where(
                     (a) =>
-                        a.todo && !a.isLinkScheduleInstance && !a.isPinnedTodo,
+                        a.todo &&
+                        !a.isLinkScheduleInstance &&
+                        (!a.isPinnedTodo ||
+                            (a.pinnedAfterTime != null &&
+                                a.pinnedAfterTime!.isAtSameMomentAs(dayStart))),
                   )
                   .toList();
               if (todosForStart.isNotEmpty) {
