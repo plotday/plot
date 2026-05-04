@@ -119,6 +119,18 @@ mixin UuidTable on Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Result of attempting to revert a local row to its server-side version
+/// after a "permanent" push error.
+///
+/// - [reverted]: server had a version of this row; local was overwritten and
+///   `pending` should be cleared.
+/// - [absentOnServer]: server returned no row for this id. The local row is
+///   kept; `pending` should stay set so the next sync retries. Treating a
+///   not-yet-synced create as "deleted on the server" loses user data.
+/// - [fetchFailed]: the GET itself errored out (network, 5xx). Same handling
+///   as [absentOnServer]: keep local row, keep pending.
+enum _RevertOutcome { reverted, absentOnServer, fetchFailed }
+
 /// A table in the remote database that can be synced with the local database.
 abstract class BaseTable {
   const BaseTable({
@@ -646,9 +658,11 @@ class Store extends _$Store {
     return false;
   }
 
-  /// Reverts a local row to its remote version after a permanent error
-  /// If the row doesn't exist remotely, it's deleted locally
-  Future<void>
+  /// Attempts to revert a local row to its server-side version. Never deletes
+  /// the local row — if the server doesn't have this id, returns
+  /// [_RevertOutcome.absentOnServer] and leaves the local copy alone so the
+  /// caller can retry the push instead of dropping unsynced user data.
+  Future<_RevertOutcome>
   _revertToRemote<TABLE extends SyncableTable, DATA extends DataClass>(
     BaseTable baseTable,
     TableInfo<TABLE, DATA> table,
@@ -656,46 +670,48 @@ class Store extends _$Store {
   ) async {
     final id = localRow['id'] as Object;
 
+    final List<dynamic> rows;
     try {
-      // Fetch current remote version by ID via sync API
-      final rows = await api.get<List<dynamic>>(
+      rows = await api.get<List<dynamic>>(
         '/sync/${baseTable.syncEndpoint}?id=${Uri.encodeQueryComponent(id.toString())}',
       );
-      final response = rows.isEmpty
-          ? null
-          : (rows.first as Map<String, dynamic>);
-
-      if (response == null) {
-        // Row doesn't exist remotely - delete local copy
-        log.warning(
-          "Reverting local-only ${baseTable.table} row by deleting it: $localRow",
-        );
-
-        await customStatement(
-          'DELETE FROM ${table.actualTableName} WHERE id = ?',
-          [id],
-        );
-      } else {
-        // Row exists remotely - revert to remote version
-        log.warning(
-          "Reverting local changes to remote version (ID: $id, table: ${baseTable.table})",
-        );
-
-        // Convert remote row to Insertable and clear pending
-        final remoteData = baseTable.fromBase(response);
-
-        // Update local database to match remote using batch insert
-        await batch((batch) {
-          batch.insertAllOnConflictUpdate(table, [remoteData]);
-        });
-      }
     } catch (e, trace) {
-      log.severe(
-        "Failed to revert row to remote version (ID: $id, table: ${baseTable.table})",
+      log.warning(
+        "Could not fetch remote version of ${baseTable.table} (ID: $id) — leaving local row pending for retry",
         e,
         trace,
       );
-      // Don't rethrow - we tried our best
+      return _RevertOutcome.fetchFailed;
+    }
+
+    final response = rows.isEmpty ? null : (rows.first as Map<String, dynamic>);
+    if (response == null) {
+      // Server has no version of this row. The local copy is most likely a
+      // create that hasn't been acknowledged yet (e.g. parent row not pushed
+      // yet, or a transient server outage that surfaced as a "permanent"
+      // 4xx). Keep the row and let the next push retry.
+      log.warning(
+        "No remote version of ${baseTable.table} (ID: $id) — leaving local row pending for retry",
+      );
+      return _RevertOutcome.absentOnServer;
+    }
+
+    try {
+      final remoteData = baseTable.fromBase(response);
+      await batch((batch) {
+        batch.insertAllOnConflictUpdate(table, [remoteData]);
+      });
+      log.warning(
+        "Reverted local ${baseTable.table} (ID: $id) to remote version",
+      );
+      return _RevertOutcome.reverted;
+    } catch (e, trace) {
+      log.severe(
+        "Failed to apply remote version of ${baseTable.table} (ID: $id)",
+        e,
+        trace,
+      );
+      return _RevertOutcome.fetchFailed;
     }
   }
 
@@ -953,34 +969,39 @@ class Store extends _$Store {
                   await Store._handleAuthError();
                   rethrow;
                 } else if (Store._isPermanentError(e)) {
-                  // Permanent error - revert local change to remote version
+                  // Server rejected this push as "permanent". Try to revert
+                  // local to remote — but only clear `pending` if the server
+                  // actually had a version we could revert to. If it didn't
+                  // (or the GET failed), keep the row and leave `pending` set
+                  // so the next sync retries. This protects unsynced creates
+                  // when a transient symptom (e.g. parent not pushed yet, or a
+                  // brief 5xx that surfaces as a "permanent" 4xx like 403)
+                  // would otherwise have stranded the row.
                   final errorMsg = e is ApiException
                       ? e.description
                       : 'Invalid local change';
                   log.warning(
-                    "Permanent error during sync (${baseTable.table}): $errorMsg. Reverting row.",
+                    "Permanent error during sync (${baseTable.table}): $errorMsg",
                     e,
                     stackTrace,
                   );
 
-                  // Revert to remote version
-                  await _revertToRemote(
+                  final outcome = await _revertToRemote(
                     baseTable,
                     table,
                     baseTable.toBase(data),
                   );
 
-                  // Clear pending flag so this row won't retry.
-                  // If _revertToRemote succeeded, the row has correct data.
-                  // If it failed, we still must stop retrying to avoid
-                  // an infinite error loop on every startup.
-                  await customUpdate(
-                    'UPDATE ${table.actualTableName} SET pending = NULL WHERE id = ?',
-                    variables: [Variable(row.data['id'])],
-                    updates: {table},
-                  );
-
-                  // Don't set success = true (this wasn't a successful push)
+                  if (outcome == _RevertOutcome.reverted) {
+                    await customUpdate(
+                      'UPDATE ${table.actualTableName} SET pending = NULL WHERE id = ?',
+                      variables: [Variable(row.data['id'])],
+                      updates: {table},
+                    );
+                  }
+                  // For absentOnServer / fetchFailed: leave `pending` set —
+                  // the row stays in the queue and the next push retries.
+                  // Don't set success = true (this wasn't a successful push).
                 } else {
                   // Transient error - log and continue
                   log.warning(
