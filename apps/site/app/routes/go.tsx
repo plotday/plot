@@ -5,11 +5,13 @@ import {
   Box,
   Button,
   Container,
+  Group,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
 
+import { IconBrandLinkedin } from "@tabler/icons-react";
 import { Link } from "react-router";
 import { mergeMeta } from "~/lib/meta";
 
@@ -98,7 +100,18 @@ export default function Go() {
                   className={classes.headshot}
                 />
                 <div>
-                  <div className={classes.bioName}>Kris</div>
+                  <div className={classes.bioName}>
+                    <Group gap="sm">
+                      Kris Braun
+                      <Anchor
+                        href="https://www.linkedin.com/in/krisbraun/"
+                        title="Kris' LinkedIn"
+                        lh="normal"
+                      >
+                        <IconBrandLinkedin size={20} />
+                      </Anchor>
+                    </Group>
+                  </div>
                   <Text className={classes.bioText}>
                     Kris created Plot while building companies and causes as a
                     way to amplify the momentum required to start something new.
@@ -112,7 +125,7 @@ export default function Go() {
                   className={classes.headshot}
                 />
                 <div>
-                  <div className={classes.bioName}>Beth</div>
+                  <div className={classes.bioName}>Beth Round</div>
                   <Text className={classes.bioText}>
                     Beth scaled operations in an organization growing from five
                     to over forty cities worldwide, learning to cultivate just
