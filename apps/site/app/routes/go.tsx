@@ -100,24 +100,23 @@ export default function Go() {
                 <div>
                   <div className={classes.bioName}>Kris</div>
                   <Text className={classes.bioText}>
-                    Kris created Plot while building companies and causes and
-                    seeing how much momentum is lost to the tools meant to
-                    support our work.
+                    Kris created Plot while building companies and causes as a
+                    way to amplify the momentum required to start something new.
                   </Text>
                 </div>
               </div>
               <div className={classes.bioCard}>
                 <img
-                  src="/assets/headshot-beth.svg"
+                  src="/assets/headshot-beth.jpg"
                   alt="Beth"
                   className={classes.headshot}
                 />
                 <div>
                   <div className={classes.bioName}>Beth</div>
                   <Text className={classes.bioText}>
-                    Beth scaled operations in an organization from a single to
-                    over forty cities worldwide, learning to create just the
-                    right amount of order from chaos.
+                    Beth scaled operations in an organization growing from five
+                    to over forty cities worldwide, learning to cultivate just
+                    the right amount of order from chaos.
                   </Text>
                 </div>
               </div>
