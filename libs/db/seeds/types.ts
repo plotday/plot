@@ -94,10 +94,10 @@ export interface Thread {
   created?: string; // Date offset
   author_ref?: string; // Default: "user" — only used to resolve note author defaults
   draft?: boolean; // Default: false
-  private?: boolean; // Default: false
   archived_at?: string; // Date offset
   icon?: string; // Thread icon: "notes", "idea", "goal", "decision", "discussion", "announcement", "ask"
   twist_ref?: string; // Reference to a twist (sets icon to twist logo)
+  shared_with?: string[]; // Contact refs the thread is shared with (in addition to refs auto-derived from author_ref / note authors / mentions)
   tags?: Tags;
   notes?: Note[]; // Notes associated with this thread
   schedule?: Schedule; // Schedule block (at/on/recurrence)
@@ -133,7 +133,6 @@ export interface Note {
   actions?: Array<Record<string, unknown>>; // Actions (file attachments, etc.)
   tags?: Tags;
   draft?: boolean; // Default: false
-  private?: boolean; // Default: false
 }
 
 export interface Tags {
@@ -222,7 +221,6 @@ export interface GeneratedPrioritySettings {
   priority_id: string; // UUID
   user_id: string; // UUID
   color: number | null;
-  path: string | null;
   pomodoro: number | null;
 }
 
@@ -239,13 +237,24 @@ export interface GeneratedPriorityContact {
 export interface GeneratedThread {
   id: string; // UUID
   created_by: string; // UUID
-  priority_id: string; // UUID
+  priority_id: string; // UUID — used to populate the user's thread_priority filing (not a column on thread)
   draft: boolean;
-  private: boolean;
   title: string | null;
   preview: string | null;
   icon: string | null;
   archived_at: string | null; // ISO timestamp
+  contacts: string[]; // Contact UUIDs visible on this thread (always includes the seed user's primary contact)
+}
+
+export interface GeneratedThreadPriority {
+  thread_id: string; // UUID
+  user_id: string; // UUID
+  priority_id: string; // UUID
+}
+
+export interface GeneratedUserContact {
+  user_id: string; // UUID
+  contact_id: string; // UUID
 }
 
 export interface GeneratedLink {
@@ -312,7 +321,6 @@ export interface GeneratedNote {
   author_id: string; // UUID
   created_by: string; // UUID
   draft: boolean;
-  private: boolean;
   content: string | null;
   actions: string | null; // JSON string for actions JSONB
   mentions: string | null; // Array literal

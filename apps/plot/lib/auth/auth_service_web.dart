@@ -380,6 +380,13 @@ class ClerkJsAuthService implements AuthService {
           case AuthStrategy.emailCode:
             // Not used for sign-in in the current app.
             throw AuthError(message: 'emailCode strategy not supported for sign-in');
+
+          case AuthStrategy.resetPasswordEmailCode:
+            // Reset password is initiated via [initiatePasswordReset] and
+            // completed via [resetPassword]; not driven through attemptSignIn.
+            throw AuthError(
+                message:
+                    'resetPasswordEmailCode strategy not supported via attemptSignIn');
         }
       });
 
@@ -469,7 +476,45 @@ class ClerkJsAuthService implements AuthService {
           case AuthStrategy.emailAddress:
             throw AuthError(
                 message: 'emailAddress strategy not supported for sign-up');
+
+          case AuthStrategy.resetPasswordEmailCode:
+            throw AuthError(
+                message:
+                    'resetPasswordEmailCode strategy not supported for sign-up');
         }
+      });
+
+  @override
+  Future<void> initiatePasswordReset({required String email}) =>
+      _guard(() async {
+        final result = _asSignIn(await _clerk.client!.signIn!
+            .create(jsObj({
+              'strategy': 'reset_password_email_code',
+              'identifier': email,
+            }))
+            .toDart);
+        _pendingSignIn = result;
+      });
+
+  @override
+  Future<void> resetPassword({required String code, required String password}) =>
+      _guard(() async {
+        final si = _pendingSignIn ?? _clerk.client!.signIn!;
+        // Step 1: verify the emailed code. After this the SignIn enters
+        // status `needs_new_password`.
+        final verified = _asSignIn(await si
+            .attemptFirstFactor(jsObj({
+              'strategy': 'reset_password_email_code',
+              'code': code,
+            }))
+            .toDart);
+        _pendingSignIn = verified;
+        // Step 2: set the new password and complete the SignIn.
+        final result = _asSignIn(await verified
+            .resetPassword(jsObj({'password': password}))
+            .toDart);
+        _pendingSignIn = result;
+        await _activateIfComplete(result.status, result.createdSessionId);
       });
 
   @override

@@ -20,13 +20,22 @@ class EmailSignInPage extends StatefulWidget {
   State<EmailSignInPage> createState() => _EmailSignInPageState();
 }
 
-enum _AuthMode { signIn, signUp, otpSent, secondFactor }
+enum _AuthMode {
+  signIn,
+  signUp,
+  otpSent,
+  resetRequest,
+  resetVerify,
+  secondFactor,
+}
 
 class _EmailSignInPageState extends State<EmailSignInPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
   final _otpController = FOtpController();
   final _emailFocusNode = FocusNode();
+  final _newPasswordFocusNode = FocusNode();
   _AuthMode _mode = _AuthMode.signIn;
   bool _isLoading = false;
   int _otpResetCounter = 0;
@@ -43,8 +52,10 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _newPasswordController.dispose();
     _otpController.dispose();
     _emailFocusNode.dispose();
+    _newPasswordFocusNode.dispose();
     super.dispose();
   }
 
@@ -58,6 +69,14 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
     setState(() {
       _isLoading = false;
     });
+  }
+
+  // Clears the OTP field after a failed verification. Without this, the
+  // controller still holds the 6-digit code and the next edit fires onChange
+  // with length == 6, re-submitting the stale code immediately.
+  void _resetOtpField() {
+    _otpController.clear();
+    _otpResetCounter++;
   }
 
   String _authErrorMessage(AuthError e) {
@@ -99,6 +118,13 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
           await Base.resolveIdentity();
           return;
         }
+
+        // Drop any stale SignIn/SignUp resource left over from a previous
+        // attempt (e.g. an abandoned password reset, where the SignIn is
+        // pinned to `reset_password_email_code` and rejects `password` as a
+        // parameter). clerk_auth otherwise re-uses an existing SignIn when
+        // the identifier matches.
+        await Base.auth.resetClient();
 
         // Two-step sign-in flow:
         // 1. Identify with email
@@ -215,8 +241,147 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
   }
 
   Future<void> _handlePasswordReset() async {
-    // Use the same OTP flow for password reset
-    await _handleSignUp();
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty) {
+      context.showToast(
+        message: 'Please enter your email address',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Reset the Clerk client first to clear any stale sign-in/sign-up
+      // state from earlier attempts; otherwise the create() call below can
+      // be ignored on a stale resource.
+      await Base.auth.resetClient();
+      await Base.auth
+          .initiatePasswordReset(email: email)
+          .timeout(const Duration(seconds: 15));
+      if (!mounted) return;
+      setState(() {
+        _mode = _AuthMode.resetVerify;
+        _newPasswordController.clear();
+        _otpController.clear();
+        _otpResetCounter++;
+        _isLoading = false;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      context.showToast(
+        message: 'Password reset is taking too long. Please try again.',
+        isError: true,
+      );
+      setState(() {
+        _isLoading = false;
+      });
+    } on AuthError catch (e, t) {
+      log.warning('Error initiating password reset', e, t);
+      if (!mounted) return;
+      context.showToast(message: _authErrorMessage(e), isError: true);
+      setState(() {
+        _isLoading = false;
+      });
+    } on NetworkException {
+      if (!mounted) return;
+      context.showToast(
+        message: 'Unable to connect. Please check your internet.',
+        isError: true,
+      );
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e, t) {
+      log.warning('Error initiating password reset', e, t);
+      _showGenericError(e, t);
+    }
+  }
+
+  Future<void> _handleVerifyResetPassword() async {
+    if (_isLoading) return;
+
+    final code = _otpController.text.trim();
+    final password = _newPasswordController.text;
+
+    if (code.isEmpty) {
+      context.showToast(
+        message: 'Please enter the verification code',
+        isError: true,
+      );
+      return;
+    }
+    if (password.length < 8) {
+      context.showToast(
+        message: 'Password must be at least 8 characters',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await Future(() async {
+        await Base.auth.resetPassword(code: code, password: password);
+        // resetPassword leaves the user signed in on success — pull identity.
+        if (Base.auth.isSignedIn) {
+          await Base.resolveIdentity();
+        } else {
+          throw const AuthError(
+            message: 'Password reset did not complete sign-in.',
+          );
+        }
+      }).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      if (!mounted) return;
+      context.showToast(
+        message: 'Password reset is taking too long. Please try again.',
+        isError: true,
+      );
+      setState(() {
+        _resetOtpField();
+        _isLoading = false;
+      });
+    } on AuthError catch (e, t) {
+      log.warning('Error completing password reset', e, t);
+      if (!mounted) return;
+      context.showToast(message: _authErrorMessage(e), isError: true);
+      setState(() {
+        _resetOtpField();
+        _isLoading = false;
+      });
+    } on NetworkException {
+      if (!mounted) return;
+      context.showToast(
+        message: 'Unable to connect. Please check your internet.',
+        isError: true,
+      );
+      setState(() {
+        _resetOtpField();
+        _isLoading = false;
+      });
+    } catch (e, t) {
+      log.warning('Error completing password reset', e, t);
+      if (mounted) {
+        setState(_resetOtpField);
+      }
+      _showGenericError(e, t);
+    }
+  }
+
+  Future<void> _handleResendResetCode() async {
+    setState(() {
+      _otpResetCounter++;
+      _otpController.clear();
+    });
+    await _handlePasswordReset();
   }
 
   Future<void> _handleVerifyOtp() async {
@@ -263,6 +428,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         isError: true,
       );
       setState(() {
+        _resetOtpField();
         _isLoading = false;
       });
     } on AuthError catch (e, t) {
@@ -270,6 +436,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       if (!mounted) return;
       context.showToast(message: _authErrorMessage(e), isError: true);
       setState(() {
+        _resetOtpField();
         _isLoading = false;
       });
     } on NetworkException {
@@ -279,10 +446,14 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         isError: true,
       );
       setState(() {
+        _resetOtpField();
         _isLoading = false;
       });
     } catch (e, t) {
       log.warning('Error verifying OTP', e, t);
+      if (mounted) {
+        setState(_resetOtpField);
+      }
       _showGenericError(e, t);
     }
   }
@@ -319,6 +490,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         isError: true,
       );
       setState(() {
+        _resetOtpField();
         _isLoading = false;
       });
     } on AuthError catch (e, t) {
@@ -326,6 +498,7 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
       if (!mounted) return;
       context.showToast(message: _authErrorMessage(e), isError: true);
       setState(() {
+        _resetOtpField();
         _isLoading = false;
       });
     } on NetworkException {
@@ -335,10 +508,14 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
         isError: true,
       );
       setState(() {
+        _resetOtpField();
         _isLoading = false;
       });
     } catch (e, t) {
       log.warning('Error verifying second factor', e, t);
+      if (mounted) {
+        setState(_resetOtpField);
+      }
       _showGenericError(e, t);
     }
   }
@@ -396,6 +573,8 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                 switch (_mode) {
                   _AuthMode.signUp => 'Create your account',
                   _AuthMode.secondFactor => 'Verify your identity',
+                  _AuthMode.resetRequest => 'Reset your password',
+                  _AuthMode.resetVerify => 'Reset your password',
                   _ => 'Sign in to Plot',
                 },
                 style: context.theme.typography.xl.copyWith(
@@ -554,6 +733,108 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                     ),
                   ],
                 ),
+
+              // Password reset: OTP + new password entry
+              ] else if (_mode == _AuthMode.resetVerify) ...[
+                FAlert(
+                  title: const Text(
+                    'Check your email!\nWe sent a reset code to',
+                  ),
+                  subtitle: Text(
+                    _emailController.text.trim(),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Opacity(
+                      opacity: _isLoading ? 0.3 : 1.0,
+                      child: Column(
+                        spacing: 12,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Enter the 6-digit code from your email:',
+                            style: context.theme.typography.md,
+                            textAlign: TextAlign.center,
+                          ),
+                          Align(
+                            alignment: Alignment.center,
+                            child: FOtpField(
+                              key: ValueKey('reset_$_otpResetCounter'),
+                              control: FOtpFieldControl.managed(
+                                controller: _otpController,
+                                onChange: (value) {
+                                  if (value.text.length == 6) {
+                                    _newPasswordFocusNode.requestFocus();
+                                  }
+                                },
+                              ),
+                              autofocus: true,
+                            ),
+                          ),
+                          AutofillGroup(
+                            child: FTextField(
+                              focusNode: _newPasswordFocusNode,
+                              control: .managed(
+                                  controller: _newPasswordController),
+                              hint: 'New password (8+ characters)',
+                              label: const Text('New password'),
+                              obscureText: true,
+                              autofillHints: const [AutofillHints.newPassword],
+                              onSubmit: (_) => _handleVerifyResetPassword(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_isLoading) const Spinner.message('Resetting...'),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                SizedBox(
+                  height: 44,
+                  child: FButton(
+                    onPress:
+                        _isLoading ? null : _handleVerifyResetPassword,
+                    variant: FButtonVariant.primary,
+                    child: _isLoading
+                        ? const Spinner()
+                        : const Text('Reset password'),
+                  ),
+                ),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FButton(
+                      onPress:
+                          _isLoading ? null : _handleResendResetCode,
+                      variant: FButtonVariant.ghost,
+                      child: const Text('Resend code'),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('•'),
+                    const SizedBox(width: 8),
+                    FButton(
+                      onPress: () {
+                        setState(() {
+                          _mode = _AuthMode.signIn;
+                          _otpController.clear();
+                          _newPasswordController.clear();
+                        });
+                      },
+                      variant: FButtonVariant.ghost,
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
               ] else ...[
                 // Email field
                 AutofillGroup(
@@ -570,9 +851,11 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                         autofillHints: const [AutofillHints.email],
                         autofocus: true,
                         autocorrect: false,
-                        onSubmit: (_) => _mode == _AuthMode.signUp
-                            ? _handleSignUp()
-                            : _handleSignIn(),
+                        onSubmit: (_) => switch (_mode) {
+                          _AuthMode.signUp => _handleSignUp(),
+                          _AuthMode.resetRequest => _handlePasswordReset(),
+                          _ => _handleSignIn(),
+                        },
                       ),
 
                       // Password field (only in sign-in mode)
@@ -598,8 +881,17 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           FButton(
-                            onPress:
-                                _isLoading ? null : _handlePasswordReset,
+                            onPress: _isLoading
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _mode = _AuthMode.resetRequest;
+                                    });
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                          _emailFocusNode.requestFocus();
+                                        });
+                                  },
                             variant: FButtonVariant.ghost,
                             child: const Text('Reset password'),
                           ),
@@ -633,24 +925,41 @@ class _EmailSignInPageState extends State<EmailSignInPage> {
                   child: FButton(
                     onPress: _isLoading
                         ? null
-                        : (_mode == _AuthMode.signUp
-                              ? _handleSignUp
-                              : _handleSignIn),
+                        : switch (_mode) {
+                            _AuthMode.signUp => _handleSignUp,
+                            _AuthMode.resetRequest => _handlePasswordReset,
+                            _ => _handleSignIn,
+                          },
                     variant: FButtonVariant.primary,
                     child: _isLoading
                         ? const Spinner()
-                        : Text(
-                            _mode == _AuthMode.signUp ? 'Continue' : 'Sign In',
-                          ),
+                        : Text(switch (_mode) {
+                            _AuthMode.signUp => 'Continue',
+                            _AuthMode.resetRequest => 'Send reset code',
+                            _ => 'Sign In',
+                          }),
                   ),
                 ),
 
                 // Back button
-                FButton(
-                  onPress: () => context.router.maybePop(),
-                  variant: FButtonVariant.ghost,
-                  child: const Text('Use another sign-in method'),
-                ),
+                if (_mode == _AuthMode.resetRequest)
+                  FButton(
+                    onPress: _isLoading
+                        ? null
+                        : () {
+                            setState(() {
+                              _mode = _AuthMode.signIn;
+                            });
+                          },
+                    variant: FButtonVariant.ghost,
+                    child: const Text('Cancel'),
+                  )
+                else
+                  FButton(
+                    onPress: () => context.router.maybePop(),
+                    variant: FButtonVariant.ghost,
+                    child: const Text('Use another sign-in method'),
+                  ),
               ],
 
               const SizedBox(height: 16),

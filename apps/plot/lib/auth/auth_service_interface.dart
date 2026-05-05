@@ -10,6 +10,7 @@ enum AuthStrategy {
   emailAddress,
   password,
   emailCode,
+  resetPasswordEmailCode,
 }
 
 /// OAuth id-token providers supported by [AuthService.signInWithIdToken].
@@ -174,6 +175,15 @@ abstract class AuthService {
   /// Transfer a pending sign-up into a sign-in (or vice versa).
   Future<void> transfer();
 
+  /// Initiate a password reset by emailing the user a one-time code.
+  /// Step 1 of the reset flow; followed by [resetPassword] once the user
+  /// has the code in hand.
+  Future<void> initiatePasswordReset({required String email});
+
+  /// Complete a password reset using the emailed [code] and the user's
+  /// chosen [password]. On success the user is signed in.
+  Future<void> resetPassword({required String code, required String password});
+
   // -- User management -------------------------------------------------------
 
   /// Update the signed-in user's profile.
@@ -278,6 +288,18 @@ class FailedAuthService implements AuthService {
   Future<void> transfer() => throw const AuthError(
     message: 'Authentication unavailable, please restart the app.',
   );
+
+  @override
+  Future<void> initiatePasswordReset({required String email}) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
+
+  @override
+  Future<void> resetPassword({required String code, required String password}) =>
+      throw const AuthError(
+        message: 'Authentication unavailable, please restart the app.',
+      );
 
   @override
   Future<void> updateUser({String? firstName, String? lastName}) =>

@@ -37,6 +37,7 @@ extension type SignInJS._(JSObject _) implements JSObject {
   external JSPromise<JSAny?> attemptFirstFactor(JSObject params);
   external JSPromise<JSAny?> prepareSecondFactor(JSObject params);
   external JSPromise<JSAny?> attemptSecondFactor(JSObject params);
+  external JSPromise<JSAny?> resetPassword(JSObject params);
   external JSPromise<JSAny?> authenticateWithRedirect(JSObject params);
   external String? get status;
   external String? get createdSessionId;

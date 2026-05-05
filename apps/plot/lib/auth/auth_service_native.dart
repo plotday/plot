@@ -95,6 +95,7 @@ clerk.Strategy _toClerkStrategy(AuthStrategy s) => switch (s) {
   AuthStrategy.emailAddress => clerk.Strategy.emailAddress,
   AuthStrategy.password => clerk.Strategy.password,
   AuthStrategy.emailCode => clerk.Strategy.emailCode,
+  AuthStrategy.resetPasswordEmailCode => clerk.Strategy.resetPasswordEmailCode,
 };
 
 clerk.IdTokenProvider _toClerkProvider(IdTokenProvider p) => switch (p) {
@@ -366,6 +367,24 @@ class ClerkDartAuthService implements AuthService {
 
   @override
   Future<void> transfer() => _guard(() => _auth.transfer());
+
+  @override
+  Future<void> initiatePasswordReset({required String email}) => _guard(
+        () => _auth.initiatePasswordReset(
+          identifier: email,
+          strategy: clerk.Strategy.resetPasswordEmailCode,
+        ),
+      );
+
+  @override
+  Future<void> resetPassword({required String code, required String password}) =>
+      _guard(
+        () => _auth.attemptSignIn(
+          strategy: clerk.Strategy.resetPasswordEmailCode,
+          code: code,
+          password: password,
+        ),
+      );
 
   @override
   Future<void> updateUser({String? firstName, String? lastName}) =>

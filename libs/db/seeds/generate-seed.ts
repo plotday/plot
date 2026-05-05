@@ -897,6 +897,18 @@ function validateThread(
     );
   }
 
+  // Validate shared_with
+  if (thread.shared_with) {
+    for (const ref of thread.shared_with) {
+      if (ref !== "user" && !contactRefs.has(ref)) {
+        addError(
+          `${path}.shared_with`,
+          `Unknown contact_ref in shared_with: ${ref}`
+        );
+      }
+    }
+  }
+
   // Validate tags
   if (thread.tags) {
     for (const tagName of Object.keys(thread.tags)) {
@@ -1061,8 +1073,11 @@ function generateSQL(
     `DELETE FROM priority_setting WHERE user_id = ${sqlString(userId)};`
   );
   lines.push(`DELETE FROM priority WHERE created_by = ${sqlString(userId)};`);
+  // Remove non-self user_contact rows so a reseed doesn't carry forward
+  // people who happened to share threads with the demo account between runs
+  // (visible in share/mention pickers via user.actor regardless of `linked`).
   lines.push(
-    `DELETE FROM twist_admin WHERE user_id = ${sqlString(userId)};`
+    `DELETE FROM user_contact WHERE user_id = ${sqlString(userId)} AND COALESCE(source, '') <> 'self';`
   );
   lines.push("");
 
@@ -1201,19 +1216,27 @@ function generateSQL(
     lines.push("");
 
     lines.push("-- Contacts");
+    // Contacts with a user_id are inserted with primary=true so user.actor
+    // returns them. The view's WHERE filter is `c.user_id IS NULL OR
+    // c."primary" = true` — without primary, share/mention pickers and the
+    // thread avatar group's Actor.getOne lookups silently filter the contact
+    // out, so avatars never render. The placeholder users above each have a
+    // single contact, so there's no risk of violating the
+    // contact_user_primary_unique index.
     lines.push(
-      "INSERT INTO contact (id, email, name, avatar_url, user_id, created_at, updated_at)"
+      'INSERT INTO contact (id, email, name, avatar_url, user_id, "primary", created_at, updated_at)'
     );
     lines.push("VALUES");
     for (let i = 0; i < contacts.length; i++) {
       const c = contacts[i];
       const comma = i < contacts.length - 1 ? "," : ";";
+      const isPrimary = c.user_id !== null;
       lines.push(
         `  (${sqlString(c.id)}, ${sqlString(c.email)}, ${sqlString(
           c.name
         )}, ${sqlString(c.avatar_url)}, ${sqlString(
           c.user_id
-        )}, NOW(), NOW())${comma}`
+        )}, ${isPrimary}, NOW(), NOW())${comma}`
       );
     }
     lines.push("");
@@ -1275,20 +1298,60 @@ function generateSQL(
   if (threads.length > 0) {
     lines.push("-- Threads");
     lines.push(
-      "INSERT INTO thread (id, created_by, priority_id, draft, private, title, preview, icon, archived_at, created_at, updated_at)"
+      "INSERT INTO thread (id, created_by, draft, title, preview, icon, archived_at, contacts, created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < threads.length; i++) {
       const t = threads[i];
       const comma = i < threads.length - 1 ? "," : ";";
+      const contactsArrSql = t.contacts.length === 0
+        ? "ARRAY[]::uuid[]"
+        : `ARRAY[${t.contacts.map(sqlString).join(", ")}]::uuid[]`;
       lines.push(
-        `  (${sqlString(t.id)}, ${sqlString(t.created_by)}, ${sqlString(
-          t.priority_id
-        )}, ${t.draft}, ${t.private}, ${sqlString(t.title)}, ${sqlString(
-          t.preview
-        )}, ${sqlString(t.icon)}, ${sqlString(t.archived_at)}, NOW(), NOW())${comma}`
+        `  (${sqlString(t.id)}, ${sqlString(t.created_by)}, ${t.draft}, ${sqlString(
+          t.title
+        )}, ${sqlString(t.preview)}, ${sqlString(t.icon)}, ${sqlString(
+          t.archived_at
+        )}, ${contactsArrSql}, NOW(), NOW())${comma}`
       );
     }
+    lines.push("");
+
+    // File each thread under the seed user's priority. Raw INSERTs into
+    // thread bypass upsert_thread (which normally creates this row) and the
+    // populate_thread_priority_for_author trigger has been retired, so
+    // without this block the seed user has no thread_priority rows and
+    // user.thread / user.priority_unread filter every seeded thread out.
+    lines.push("-- Thread filings for the seed user");
+    lines.push(
+      "INSERT INTO thread_priority (thread_id, user_id, priority_id) VALUES"
+    );
+    for (let i = 0; i < threads.length; i++) {
+      const t = threads[i];
+      const comma = i < threads.length - 1 ? "," : "";
+      lines.push(
+        `  (${sqlString(t.id)}, ${sqlString(userId)}, ${sqlString(t.priority_id)})${comma}`
+      );
+    }
+    lines.push("ON CONFLICT (thread_id, user_id) DO NOTHING;");
+    lines.push("");
+
+    // Backfill the seed user's user_contact rows for every contact appearing
+    // on a seeded thread. The sync_user_contact_for_thread_contacts trigger
+    // fires AFTER INSERT on thread, when no thread_priority row exists yet
+    // for the seed user (we file her below, after the thread insert), so the
+    // trigger's INSERT-SELECT finds nothing. Without this backfill the seed
+    // user can't see external contacts in mention/share pickers.
+    lines.push("-- Backfill user_contact for the seed user from thread contacts");
+    lines.push(
+      `INSERT INTO user_contact (user_id, contact_id, linked, source)
+SELECT DISTINCT ${sqlString(userId)}::uuid, contact_id, false, 'thread'
+FROM thread t
+CROSS JOIN unnest(t.contacts) AS arr(contact_id)
+WHERE t.created_by = ${sqlString(userId)}::uuid
+  AND EXISTS (SELECT 1 FROM contact c WHERE c.id = arr.contact_id)
+ON CONFLICT (user_id, contact_id) DO NOTHING;`
+    );
     lines.push("");
   }
 
@@ -1348,7 +1411,7 @@ function generateSQL(
   if (notes.length > 0) {
     lines.push("-- Notes");
     lines.push(
-      "INSERT INTO note (id, thread_id, author_id, created_by, draft, private, content, actions, mentions, source_created_at, updated_at)"
+      "INSERT INTO note (id, thread_id, author_id, created_by, draft, content, actions, mentions, source_created_at, updated_at)"
     );
     lines.push("VALUES");
     for (let i = 0; i < notes.length; i++) {
@@ -1357,9 +1420,7 @@ function generateSQL(
       lines.push(
         `  (${sqlString(n.id)}, ${sqlString(n.thread_id)}, ${sqlString(
           n.author_id
-        )}, ${sqlString(n.created_by)}, ${n.draft}, ${n.private}, ${sqlString(
-          n.content
-        )}, ${
+        )}, ${sqlString(n.created_by)}, ${n.draft}, ${sqlString(n.content)}, ${
           n.actions ? sqlString(n.actions) : "NULL"
         }, ${
           n.mentions ? sqlString(n.mentions) : "NULL"
@@ -1504,10 +1565,14 @@ function processSource(
     ],
   });
 
-  // Try to use a public twist if one exists with the same name, otherwise create a personal one
+  // Try to use a public twist if one exists with the same name, otherwise create
+  // a personal one. Personal twists are scoped to the seed user via twist.user_id
+  // (twist_admin was removed); each personal twist needs a fresh twist_package_id.
+  // Note: twist_instance no longer has priority_id (per-user filing now lives in
+  // thread_priority); the source's priority is conveyed via the threads filed
+  // under it, not the twist_instance row itself.
   outLines.push(`DO $$`);
   outLines.push(`DECLARE`);
-  outLines.push(`  v_twist_admin_id bigint;`);
   outLines.push(`  v_twist_id bigint;`);
   outLines.push(`BEGIN`);
   outLines.push(
@@ -1515,21 +1580,18 @@ function processSource(
   );
   outLines.push(`  IF v_twist_id IS NULL THEN`);
   outLines.push(
-    `    INSERT INTO twist_admin (user_id) VALUES (${sqlString(userId)}) RETURNING id INTO v_twist_admin_id;`
+    `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
   );
   outLines.push(
-    `    INSERT INTO twist (twist_admin_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
-  );
-  outLines.push(
-    `    VALUES (v_twist_admin_id, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)})`
+    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(source.name)}, '0.0.0', true, ${sqlString(permissions)}::jsonb, ${sqlString(source.logo ?? null)}, ${sqlString(source.logo_dark ?? null)})`
   );
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
   outLines.push(
-    `  INSERT INTO twist_instance (id, twist_id, owner_id, priority_id, name, config)`
+    `  INSERT INTO twist_instance (id, twist_id, owner_id, name, options)`
   );
   outLines.push(
-    `  VALUES (${sqlString(twistInstanceId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(source.name)}, '{}'::jsonb);`
+    `  VALUES (${sqlString(twistInstanceId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(source.name)}, '{}'::jsonb);`
   );
   outLines.push(
     `  INSERT INTO twist_instance_connection (twist_instance_id, user_id, provider, actor_id)`
@@ -1538,6 +1600,8 @@ function processSource(
     `  VALUES (${sqlString(twistInstanceId)}, ${sqlString(userId)}, 'seed', ${sqlString(userId)});`
   );
   outLines.push(`END $$;`);
+  // Silence the unused-warning so the priority_ref still validates as required.
+  void priorityId;
 }
 
 function processTwist(
@@ -1552,10 +1616,11 @@ function processTwist(
 
   twistIdMap[twist.ref] = twistInstanceId;
 
-  // Try to use a public twist if one exists with the same name, otherwise create a personal one
+  // Try to use a public twist if one exists with the same name, otherwise create
+  // a personal one. See processSource for the rationale on twist.user_id /
+  // twist_package_id / twist_instance.options.
   outLines.push(`DO $$`);
   outLines.push(`DECLARE`);
-  outLines.push(`  v_twist_admin_id bigint;`);
   outLines.push(`  v_twist_id bigint;`);
   outLines.push(`BEGIN`);
   outLines.push(
@@ -1563,23 +1628,21 @@ function processTwist(
   );
   outLines.push(`  IF v_twist_id IS NULL THEN`);
   outLines.push(
-    `    INSERT INTO twist_admin (user_id) VALUES (${sqlString(userId)}) RETURNING id INTO v_twist_admin_id;`
+    `    INSERT INTO twist (twist_package_id, user_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
   );
   outLines.push(
-    `    INSERT INTO twist (twist_admin_id, environment, name, version, is_source, permissions, logo_url, logo_url_dark)`
-  );
-  outLines.push(
-    `    VALUES (v_twist_admin_id, 'personal', ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)})`
+    `    VALUES (gen_random_uuid(), ${sqlString(userId)}, 'personal', ${sqlString(twist.name)}, '0.0.0', false, NULL, ${sqlString(twist.logo ?? null)}, ${sqlString(twist.logo_dark ?? null)})`
   );
   outLines.push(`    RETURNING id INTO v_twist_id;`);
   outLines.push(`  END IF;`);
   outLines.push(
-    `  INSERT INTO twist_instance (id, twist_id, owner_id, priority_id, name, config)`
+    `  INSERT INTO twist_instance (id, twist_id, owner_id, name, options)`
   );
   outLines.push(
-    `  VALUES (${sqlString(twistInstanceId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(priorityId)}, ${sqlString(twist.name)}, '{}'::jsonb);`
+    `  VALUES (${sqlString(twistInstanceId)}, v_twist_id, ${sqlString(userId)}, ${sqlString(twist.name)}, '{}'::jsonb);`
   );
   outLines.push(`END $$;`);
+  void priorityId;
 }
 
 function processThread(
@@ -1608,18 +1671,46 @@ function processThread(
 
   const priorityId = priorityIdMap[thread.priority_ref];
 
+  // Compute thread.contacts: the seed user (always, since they own the thread
+  // and need a thread_priority filing) plus everyone derived from author_ref,
+  // explicit shared_with, note authors, and note mentions. The seed bypasses
+  // upsert_thread, so this list is what makes the share-pill render and what
+  // file_thread_priority_peers uses to file peer users.
+  const userContactId = contactIdMap.user;
+  const contactIds = new Set<string>();
+  if (userContactId) contactIds.add(userContactId);
+
+  const addContactRef = (ref: string | undefined) => {
+    if (!ref) return;
+    const cid = contactIdMap[ref];
+    if (cid) contactIds.add(cid);
+  };
+
+  addContactRef(thread.author_ref);
+  if (thread.shared_with) {
+    for (const ref of thread.shared_with) addContactRef(ref);
+  }
+  if (thread.notes) {
+    for (const note of thread.notes) {
+      addContactRef(note.author_ref);
+      if (note.mentions) {
+        for (const ref of note.mentions) addContactRef(ref);
+      }
+    }
+  }
+
   outThreads.push({
     id,
     created_by: userId,
     priority_id: priorityId,
     draft: thread.draft ?? false,
-    private: thread.private ?? false,
     title: thread.title ?? null,
     preview: null,
     icon: thread.icon ?? null,
     archived_at: thread.archived_at
       ? parseDateOffset(baseDate, thread.archived_at).toISOString()
       : null,
+    contacts: Array.from(contactIds),
   });
 
   // If twist_ref is set, emit a post-insert UPDATE to resolve the twist icon
@@ -1806,7 +1897,6 @@ function processNote(
     author_id: authorId,
     created_by: userId,
     draft: note.draft ?? false,
-    private: note.private ?? false,
     content: note.content ?? note.note ?? null,
     actions: note.actions ? JSON.stringify(note.actions) : null,
     mentions,

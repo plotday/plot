@@ -1,45 +1,45 @@
 config:
   baseDate: "2025-02-07"
-  email: "rebecca.welton@afcrichmond.com"
-  userName: "Rebecca Welton"
+  email: "margot.whitcombe@afcmarlow.com"
+  userName: "Margot Whitcombe"
 
 contacts:
-  - ref: keeley
-    email: keeley.jones@afcrichmond.com
-    name: Keeley Jones
+  - ref: posy
+    email: posy.mercer@afcmarlow.com
+    name: Posy Mercer
     user_id: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
-  - ref: roy
-    email: roy.kent@afcrichmond.com
-    name: Roy Kent
+  - ref: wes
+    email: wes.tanner@afcmarlow.com
+    name: Wes Tanner
     user_id: "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"
-  - ref: nate
-    email: nate.shelley@afcrichmond.com
-    name: Nate Shelley
+  - ref: eli
+    email: eli.bryant@afcmarlow.com
+    name: Eli Bryant
     user_id: "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f"
-  - ref: higgins
-    email: leslie.higgins@afcrichmond.com
-    name: Leslie Higgins
+  - ref: maurice
+    email: maurice.embry@afcmarlow.com
+    name: Maurice Embry
     user_id: "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a"
-  - ref: beard
-    email: coach.beard@afcrichmond.com
-    name: Coach Beard
+  - ref: murph
+    email: coach.murphy@afcmarlow.com
+    name: Coach Murphy
     user_id: "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b"
-  - ref: trent
-    email: trent.crimm@independent.co.uk
-    name: Trent Crimm
+  - ref: gus
+    email: gus.vellum@themeridian.co.uk
+    name: Gus Vellum
     user_id: "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c"
-  - ref: barbara
-    email: barbara@bossbabe.uk
-    name: Barbara
-  - ref: rupert
-    email: rupert.mannion@westhamathletic.com
-    name: Rupert Mannion
-  - ref: analytics
-    email: analytics@afcrichmond.com
-    name: Performance Analytics Team
+  - ref: pen
+    email: pen@pencarraway.uk
+    name: Pen Carraway
+  - ref: magnus
+    email: magnus.drake@brentmoorunited.com
+    name: Magnus Drake
+  - ref: perflab
+    email: performance@afcmarlow.com
+    name: Performance Lab
   - ref: supporters_trust
-    email: contact@richmondtrust.org
-    name: Richmond Supporters Trust
+    email: contact@marlowtrust.org
+    name: Marlow Supporters Trust
 
 priorities:
   - ref: everything
@@ -47,85 +47,87 @@ priorities:
     root: true
     children:
       - ref: operations
-        title: AFC Richmond
+        title: AFC Marlow
         settings:
           color: 7
-        shared_with: [keeley, roy, higgins]
+        shared_with: [posy, wes, maurice]
         children:
           - ref: mens_team
             title: Men's team
             settings:
               color: 1
-            shared_with: [roy, beard, nate]
+            shared_with: [wes, murph, eli]
             children:
               - ref: coaching_staff
                 title: Coaching staff
-                shared_with: [roy, beard]
+                shared_with: [wes, murph]
               - ref: player_performance
                 title: Player performance
-                shared_with: [roy, beard, nate]
+                shared_with: [wes, murph, eli]
               - ref: match_prep
                 title: Match preparation
-                shared_with: [roy, beard, nate]
+                shared_with: [wes, murph, eli]
           - ref: womens_team
             title: Women's team development
             settings:
-              color: 6
-            shared_with: [keeley, higgins]
+              color: 2
+            shared_with: [posy, maurice]
             children:
               - ref: business_case
                 title: Business case
-                shared_with: [higgins, keeley]
+                shared_with: [maurice, posy]
               - ref: board_process
                 title: Board approval
-                shared_with: [higgins]
+                shared_with: [maurice]
               - ref: facility_planning
                 title: Facility planning
-                shared_with: [higgins]
+                shared_with: [maurice]
           - ref: business_ops
             title: Business operations
-            settings:
-              color: 0
-            shared_with: [higgins, keeley]
+            shared_with: [maurice, posy]
             children:
               - ref: financial_mgmt
                 title: Financial management
-                shared_with: [higgins]
+                shared_with: [maurice]
               - ref: commercial
                 title: Commercial partnerships
-                shared_with: [keeley]
+                shared_with: [posy]
           - ref: facilities
             title: Facilities & infrastructure
-            shared_with: [higgins]
+            settings:
+              color: 0
+            shared_with: [maurice]
             children:
               - ref: training_ground
                 title: Training ground
-                shared_with: [beard, higgins]
+                shared_with: [murph, maurice]
               - ref: stadium_ops
                 title: Stadium operations
-                shared_with: [higgins]
+                shared_with: [maurice]
           - ref: community
             title: Community & supporters
             settings:
-              color: 5
-            shared_with: [keeley]
+              color: 6
+            shared_with: [posy]
             children:
               - ref: supporter_relations
                 title: Supporter relations
                 children:
-                  - ref: richmond_trust
-                    title: Richmond Trust
+                  - ref: marlow_trust
+                    title: Marlow Trust
                   - ref: fan_comm
                     title: Fan communication
               - ref: community_programs
                 title: Community programs
               - ref: media_pr
                 title: Media & PR
-                shared_with: [keeley, trent]
+                settings:
+                  color: 5
+                shared_with: [posy, gus]
       - ref: personal
         title: Personal
         settings:
-          color: 2
+          color: 4
         children:
           - ref: social_life
             title: Social life
@@ -206,20 +208,20 @@ threads:
       - source_ref: gmail
         type: email
         title: "Post-Match Analysis"
-        source_url: "mailto:analytics@afcrichmond.com"
+        source_url: "mailto:performance@afcmarlow.com"
     notes:
       - created: "-2d 09:00"
         content: |
-          **From: Performance Analytics Team**
-          **Subject: Post-Match Analysis - AFC Richmond vs Bournemouth**
+          **From: Performance Lab**
+          **Subject: Post-Match Analysis - AFC Marlow vs Bournemouth**
 
-          **Result:** Richmond 1 - 2 Bournemouth (Home)
+          **Result:** Marlow 1 - 2 Bournemouth (Home)
 
           **Key Stats:**
-          - Possession: 58% Richmond
-          - Shots: 14 Richmond, 8 Bournemouth
-          - Shots on target: 4 Richmond, 5 Bournemouth
-          - Expected goals (xG): 1.8 Richmond, 1.2 Bournemouth
+          - Possession: 58% Marlow
+          - Shots: 14 Marlow, 8 Bournemouth
+          - Shots on target: 4 Marlow, 5 Bournemouth
+          - Expected goals (xG): 1.8 Marlow, 1.2 Bournemouth
 
           **Analysis:**
           Dominated possession and chances but lacked clinical finishing. Bournemouth punished mistakes. This is the fourth match this pattern has repeated.
@@ -228,10 +230,10 @@ threads:
 
           Not collapsing. Just... not winning when we should.
         mentions:
-          - analytics
+          - perflab
 
   - priority_ref: coaching_staff
-    title: "Review coaching strategy with Roy and Beard"
+    title: "Review coaching strategy with Wes and Murph"
     created: "-2d"
     icon: discussion
     schedule:
@@ -241,11 +243,11 @@ threads:
       - source_ref: slack
         type: message
         title: "#coaching-staff discussion"
-        source_url: "https://afcrichmond.slack.com/archives/C04coaching"
+        source_url: "https://afcmarlow.slack.com/archives/C04coaching"
     notes:
       - created: "-2d 10:00"
         content: |
-          Need to check in with Roy and Beard about the team's form. Not panic. Not pressure. Just... understanding.
+          Need to check in with Wes and Murph about the team's form. Not panic. Not pressure. Just... understanding.
 
           The team isn't falling apart. They're just stuck. There's a difference.
 
@@ -253,7 +255,7 @@ threads:
 
           I don't do rescue anymore. I do support.
 
-  - author_ref: keeley
+  - author_ref: posy
     priority_ref: media_pr
     title: "Supporter sentiment - social media summary"
     created: "-2d"
@@ -264,16 +266,16 @@ threads:
       - source_ref: gmail
         type: email
         title: "Fan Sentiment Update"
-        source_url: "mailto:keeley.jones@afcrichmond.com"
+        source_url: "mailto:posy.mercer@afcmarlow.com"
       - source_ref: slack
         type: message
         title: "#fan-engagement"
-        source_url: "https://afcrichmond.slack.com/archives/C04fans"
+        source_url: "https://afcmarlow.slack.com/archives/C04fans"
     notes:
-      - author_ref: keeley
+      - author_ref: posy
         created: "-2d 11:00"
         content: |
-          Becca - social media roundup from the weekend:
+          Margot - social media roundup from the weekend:
 
           **The mood:** Frustrated but not hostile. Fans see the effort, just not the results.
 
@@ -283,14 +285,14 @@ threads:
           - "Still believe in the team"
           - A few calling for tactical changes, but not loud
 
-          **Positive:** No one's turning on Roy or the players. The Ted era built real loyalty.
+          **Positive:** No one's turning on Wes or the players. The Hank era built real loyalty.
 
           **Concern:** If this continues another month, frustration could shift to anger.
 
           Recommend: Visible club engagement. Show we're aware, we're working on it, we believe.
 
   - priority_ref: social_life
-    title: "Coffee with Barbara - weekly catchup"
+    title: "Coffee with Pen - weekly catchup"
     created: "-2d"
     schedule:
       at: "-2d 10:00 / -2d 11:00"
@@ -299,32 +301,32 @@ threads:
     links:
       - source_ref: whatsapp
         type: message
-        title: "Barbara chat"
+        title: "Pen chat"
         source_url: "https://wa.me/447700900001"
     notes:
       - created: "-2d 11:15"
         content: |
-          Weekly Saturday coffee with Barbara. The one hour where I'm not the club owner, just... Rebecca.
+          Weekly Saturday coffee with Pen. The one hour where I'm not the club owner, just... Margot.
 
-          **Barbara:** "How's the team?"
+          **Pen:** "How's the team?"
 
           **Me:** "Struggling. But not catastrophically."
 
-          **Barbara:** "And you?"
+          **Pen:** "And you?"
 
           **Me:** "Same, probably."
 
-          **Barbara:** "What would Ted say?"
+          **Pen:** "What would Hank say?"
 
           **Me:** "That struggle is part of growth. That patience wins more than panic."
 
-          **Barbara:** "Smart man."
+          **Pen:** "Smart man."
 
           **Me:** "Infuriatingly so."
 
           She always knows when to ask about the team and when to ask about me. That's friendship.
         mentions:
-          - barbara
+          - pen
 
   # Day -1: Individual conversations
   - priority_ref: match_prep
@@ -341,14 +343,14 @@ threads:
     notes:
       - created: "-1d 15:00"
         content: |
-          Tactical review with Roy and Nate ahead of Chelsea away. They're aligned on approach — high press early, exploit Chelsea's fullbacks on transitions. Nate's positioning tweaks from training looked sharp.
+          Tactical review with Wes and Eli ahead of Chelsea away. They're aligned on approach — high press early, exploit Chelsea's fullbacks on transitions. Eli's positioning tweaks from training looked sharp.
 
-          Roy: "We're finishing better in practice. Saturday will show it."
+          Wes: "We're finishing better in practice. Saturday will show it."
 
           Confidence is back. That's what matters.
         mentions:
-          - roy
-          - nate
+          - wes
+          - eli
 
   - priority_ref: business_case
     title: "Women's team exploration - initial research"
@@ -360,13 +362,13 @@ threads:
       - source_ref: notion
         type: document
         title: "Women's Team Research Notes"
-        source_url: "https://notion.so/afcrichmond/womens-team-research"
+        source_url: "https://notion.so/afcmarlow/womens-team-research"
     notes:
       - created: "-1d 17:00"
         content: |
-          Thought that won't leave me alone: What if Richmond had a women's team?
+          Thought that won't leave me alone: What if Marlow had a women's team?
 
-          Not as a "nice to have." Not as a PR move. As a continuation of what Ted built here.
+          Not as a "nice to have." Not as a PR move. As a continuation of what Hank built here.
 
           **Questions:**
           - Financial viability? (Need to model this)
@@ -378,7 +380,7 @@ threads:
 
           But it needs to be more than vision. It needs to be sustainable.
 
-  # Day 0 (Base date): Building the future — Rebecca's agenda at 8:33 AM
+  # Day 0 (Base date): Building the future — Margot's agenda at 8:33 AM
   - priority_ref: business_case
     title: "WOMEN'S TEAM PROPOSAL - Vision and viability"
     created: "-1d"
@@ -391,7 +393,7 @@ threads:
       - source_ref: notion
         type: document
         title: "Women's Team Proposal v1.0"
-        source_url: "https://notion.so/afcrichmond/womens-team-proposal"
+        source_url: "https://notion.so/afcmarlow/womens-team-proposal"
       - source_ref: sheets
         type: spreadsheet
         title: "Women's Team Financial Model"
@@ -399,14 +401,14 @@ threads:
       - source_ref: gmail
         type: email
         title: "Board Feedback on Proposal"
-        source_url: "mailto:board@afcrichmond.com"
+        source_url: "mailto:board@afcmarlow.com"
     notes:
       - created: "-1d 07:30"
         content: |
-          ## AFC Richmond Women's Football Club
+          ## AFC Marlow Women's Football Club
           ### Vision Document - Draft 1.0
 
-          **Core Question:** Can we build a women's team that embodies Richmond values while being financially sustainable?
+          **Core Question:** Can we build a women's team that embodies Marlow values while being financially sustainable?
 
           **Answer:** Yes. But only if we do it right.
 
@@ -418,7 +420,7 @@ threads:
           - Women's football growing rapidly (attendance up 200% in 3 years)
           - Commercial interest increasing
           - Community demand exists (supporter surveys show strong interest)
-          - Richmond is already about belief, growth, and inclusion
+          - Marlow is already about belief, growth, and inclusion
 
           **The timing:**
           - Men's team stable (even in this slump, foundation is solid)
@@ -427,9 +429,9 @@ threads:
           - Cultural moment for women's sports
 
           **The truth:**
-          This isn't about capitalizing on a trend. This is about what Richmond is.
+          This isn't about capitalizing on a trend. This is about what Marlow is.
 
-          Ted built a club that believes in people. That gives second chances. That values effort and growth over just winning.
+          Hank built a club that believes in people. That gives second chances. That values effort and growth over just winning.
 
           A women's team isn't a departure from that. It's a continuation.
 
@@ -446,7 +448,7 @@ threads:
 
           **Revenue projections (Year 1):** £800K
           - Match day: £200K (conservative attendance estimates)
-          - Sponsorship: £400K (leverage existing Richmond brand)
+          - Sponsorship: £400K (leverage existing Marlow brand)
           - Merchandise: £150K
           - League funding: £50K
 
@@ -468,7 +470,7 @@ threads:
           - Locker room renovations needed (budget: £150K)
 
           **Match venue:**
-          - Year 1-2: Use Richmond stadium for select matches (community building)
+          - Year 1-2: Use Marlow stadium for select matches (community building)
           - Consider partnership with local venue for regular season
           - As attendance grows, transition more matches to main stadium
 
@@ -482,7 +484,7 @@ threads:
           - **2027-28 Season target:** Promotion push to WSL (Tier 1)
 
           **Why Championship, not lower?**
-          - Richmond brand deserves competitive level
+          - Marlow brand deserves competitive level
           - Championship has infrastructure for growth
           - Player recruitment easier at competitive tier
           - Supporter interest higher with quality football
@@ -497,7 +499,7 @@ threads:
           ### Cultural Integration
 
           **This isn't "men's team + women's team"**
-          **This is AFC Richmond, full stop.**
+          **This is AFC Marlow, full stop.**
 
           - Shared badge, shared values, shared community
           - Women's team featured equally in club communications
@@ -506,8 +508,8 @@ threads:
           - Supporters support BOTH teams (cultivate this from day one)
 
           **The framing matters:**
-          Not: "Richmond launches women's team" (implies addition)
-          Instead: "Richmond completes its club" (implies fulfillment)
+          Not: "Marlow launches women's team" (implies addition)
+          Instead: "Marlow completes its club" (implies fulfillment)
 
           ---
 
@@ -529,9 +531,9 @@ threads:
 
           ### Next Steps (If Approved)
 
-          1. **Board presentation** - Get ownership buy-in (Higgins will help)
+          1. **Board presentation** - Get ownership buy-in (Embry will help)
           2. **League application** - Begin FA Women's Championship process
-          3. **Coaching search** - Find the right leader (someone who gets Richmond)
+          3. **Coaching search** - Find the right leader (someone who gets Marlow)
           4. **Facility planning** - Integrate into 2026 training ground expansion
           5. **Community engagement** - Supporter trust, local councils, schools
           6. **Sponsor development** - Leverage existing partnerships, find women's team-specific sponsors
@@ -542,11 +544,11 @@ threads:
 
           ### Personal Note
 
-          When Ted left, he said: "This place isn't about me. It's about what we all built together."
+          When Hank left, he said: "This place isn't about me. It's about what we all built together."
 
           He was right.
 
-          Richmond isn't about any one person. It's about belief. Growth. Second chances. Community.
+          Marlow isn't about any one person. It's about belief. Growth. Second chances. Community.
 
           A women's team isn't a departure from that story.
 
@@ -582,12 +584,12 @@ threads:
           - Build community programs that engage fans with both teams
           - Set realistic timelines for competitive success
 
-          Richmond's advantage: Established culture of belief and community could translate well if authentically applied to women's team.
+          Marlow's advantage: Established culture of belief and community could translate well if authentically applied to women's team.
       - created: "-1d 08:45"
         content: |
           ---
 
-          Good summary. Richmond has the culture advantage.
+          Good summary. Marlow has the culture advantage.
 
           Now I just need to convince the board this is strategic, not sentimental.
 
@@ -608,28 +610,28 @@ threads:
         content: |
           Tomorrow morning agenda — before anyone else arrives:
 
-          1. **Scarf design** — Keeley sent the founding season concept. It's gorgeous. Need to confirm the order with the Manchester supplier before her deadline.
-          2. **Revenue model** — Run the Year 1–5 assumptions through ChatGPT. Higgins gave me the benchmarking data from three Championship clubs. Lock the numbers down before he reviews.
+          1. **Scarf design** — Posy sent the founding season concept. It's gorgeous. Need to confirm the order with the Manchester supplier before her deadline.
+          2. **Revenue model** — Run the Year 1–5 assumptions through ChatGPT. Embry gave me the benchmarking data from three Championship clubs. Lock the numbers down before he reviews.
           3. **Board talking points** — Ask Claude to help me frame this right. Sustainable investment, not vanity project. Both can be true, but the board needs to hear it one way first.
 
           Three things. One hour. Let's go.
       - created: "+0d 08:05"
         content: |
-          Scarf design confirmed. Keeley's concept is exactly right — the crest detail is understated but unmistakably Richmond. Told the supplier to do a run large enough for the supporters' trust event.
+          Scarf design confirmed. Posy's concept is exactly right — the crest detail is understated but unmistakably Marlow. Told the supplier to do a run large enough for the supporters' trust event.
 
           Imagining the unveiling alongside the women's team announcement. The fans will lose their minds.
         mentions:
-          - keeley
+          - posy
       - created: "+0d 08:30"
         content: |
-          Revenue model locked. ChatGPT helped me stress-test the assumptions — Year 1 conservative, Year 3 realistic, Year 5 self-sustaining. Club B's trajectory (attendance up 340% from launch) is the closest comparable to what Richmond could do.
+          Revenue model locked. ChatGPT helped me stress-test the assumptions — Year 1 conservative, Year 3 realistic, Year 5 self-sustaining. Club B's trajectory (attendance up 340% from launch) is the closest comparable to what Marlow could do.
 
           The numbers work. They're ambitious but they're real.
       - created: "+0d 08:50"
         content: |
           Board talking points drafted with Claude's help. The frame that landed: **strategic club development that happens to feel good.** Not leading with values — leading with data, then letting the values be obvious.
 
-          Higgins was right. Same outcome, different story.
+          Embry was right. Same outcome, different story.
 
   - priority_ref: business_case
     title: "Revenue model assumptions"
@@ -657,7 +659,7 @@ threads:
           **Sponsorship (most sensitive to brand positioning):**
           - Women's football sponsorship market growing ~25% YoY
           - Clubs that announced women's teams as "completing the club" vs. "adding a women's team" secured deals 30–50% larger
-          - Year 1 sponsorship of £400K is achievable if you leverage existing Aegon/shirt sponsor relationships first
+          - Year 1 sponsorship of £400K is achievable if you leverage existing Avenir/shirt sponsor relationships first
 
           **Year 3 break-even sensitivity:**
           - Primary driver: whether attendance compounds (viral launch moment helps enormously)
@@ -692,16 +694,16 @@ threads:
 
           2. **The data makes the case** — Lead with the benchmarking numbers, not the vision. Three comparable Championship clubs. Club A: broke even mid-Year 2. Club B: attendance up 340%. Sponsors exceeded projections by 25%. Let the numbers carry the emotion.
 
-          3. **Brand integration is the multiplier** — Clubs that launched women's teams as a separate entity underperformed those that treated it as completing the club. Richmond's brand advantage is precisely this: the culture already exists.
+          3. **Brand integration is the multiplier** — Clubs that launched women's teams as a separate entity underperformed those that treated it as completing the club. Marlow's brand advantage is precisely this: the culture already exists.
 
           4. **Risk framing** — Acknowledge the risks explicitly before anyone else raises them. Shows rigor. "Here's what could go wrong, and here's how we've structured this to mitigate it."
 
-          5. **Close with values, not first** — End with the culture argument. "This is who Richmond is." But only after the strategic case is made. Let them arrive at the values conclusion themselves.
+          5. **Close with values, not first** — End with the culture argument. "This is who Marlow is." But only after the strategic case is made. Let them arrive at the values conclusion themselves.
 
-          **What to avoid:** Don't lead with Ted. It reads as sentimental to a skeptical board. Earn the emotional close by winning the analytical argument first.
+          **What to avoid:** Don't lead with Hank. It reads as sentimental to a skeptical board. Earn the emotional close by winning the analytical argument first.
 
   - priority_ref: social_life
-    title: "Drinks with Keeley"
+    title: "Drinks with Posy"
     created: "-1d"
     schedule:
       at: "-1d 21:30 / -1d 23:00"
@@ -710,11 +712,11 @@ threads:
     links:
       - source_ref: whatsapp
         type: message
-        title: "Keeley chat"
+        title: "Posy chat"
         source_url: "https://wa.me/447700900002"
 
   # Day 0: Early morning messages
-  - author_ref: beard
+  - author_ref: murph
     priority_ref: match_prep
     title: "Pre-match travel logistics - Chelsea"
     created: "+0d"
@@ -722,12 +724,12 @@ threads:
       - source_ref: slack
         type: message
         title: "#match-day logistics"
-        source_url: "https://afcrichmond.slack.com/archives/C04matchday"
+        source_url: "https://afcmarlow.slack.com/archives/C04matchday"
     notes:
-      - author_ref: beard
+      - author_ref: murph
         created: "+0d 06:45"
         content: |
-          Rebecca — travel sorted for Saturday.
+          Margot — travel sorted for Saturday.
 
           **Logistics:**
           - Coach departs training ground at 08:30 Saturday
@@ -735,15 +737,15 @@ threads:
           - Pre-match meal at the hotel: 10:45
           - Stadium walk-through: 11:30
 
-          Roy wants the lads on the bus together — no separate cars this time. Says it's good for team bonding before a big away match.
+          Wes wants the lads on the bus together — no separate cars this time. Says it's good for team bonding before a big away match.
 
           Kit and equipment already dispatched. Everything's in order.
 
           Let me know if you need anything changed on your end.
 
-          — Beard
+          — Murph
 
-  - author_ref: keeley
+  - author_ref: posy
     priority_ref: media_pr
     title: "Sky Sports interview request - Friday"
     created: "+0d"
@@ -751,12 +753,12 @@ threads:
       - source_ref: gmail
         type: email
         title: "Sky Sports Interview Request"
-        source_url: "mailto:keeley.jones@afcrichmond.com"
+        source_url: "mailto:posy.mercer@afcmarlow.com"
     notes:
-      - author_ref: keeley
+      - author_ref: posy
         created: "+0d 07:15"
         content: |
-          Becs — Sky Sports want a pre-match interview today. They're framing it around the team's recent run and what the club is doing about it.
+          Mags — Sky Sports want a pre-match interview today. They're framing it around the team's recent run and what the club is doing about it.
 
           My recommendation: do it. Show visible leadership. You don't have to say anything groundbreaking — just be present, calm, confident. The fans need to see the owner believes in the team, not just the manager saying it.
 
@@ -778,13 +780,13 @@ threads:
       - source_ref: slack
         type: message
         title: "#commercial-partnerships"
-        source_url: "https://afcrichmond.slack.com/archives/C04commercial"
+        source_url: "https://afcmarlow.slack.com/archives/C04commercial"
     notes:
       - created: "+0d 08:00"
         content: |
-          Meeting with Keeley to align launch sponsorship strategy for the women's team. Need to identify partners who want to be part of the founding story.
+          Meeting with Posy to align launch sponsorship strategy for the women's team. Need to identify partners who want to be part of the founding story.
         mentions:
-          - keeley
+          - posy
 
   - priority_ref: board_process
     title: "Draft board presentation outline"
@@ -797,7 +799,7 @@ threads:
       - source_ref: notion
         type: document
         title: "Board Presentation Draft"
-        source_url: "https://notion.so/afcrichmond/board-presentation-draft"
+        source_url: "https://notion.so/afcmarlow/board-presentation-draft"
 
   - priority_ref: media_pr
     title: "Sky Sports pre-match interview"
@@ -816,9 +818,9 @@ threads:
     notes:
       - created: "+0d 08:15"
         content: |
-          Confirmed with Keeley. Key message: believe in the team, believe in the process.
+          Confirmed with Posy. Key message: believe in the team, believe in the process.
         mentions:
-          - keeley
+          - posy
 
   # Day 0: Completed morning actions
   - priority_ref: training_ground
@@ -831,7 +833,7 @@ threads:
       - source_ref: notion
         type: document
         title: "Spring Maintenance Plan 2025"
-        source_url: "https://notion.so/afcrichmond/spring-maintenance"
+        source_url: "https://notion.so/afcmarlow/spring-maintenance"
     notes:
       - created: "+0d 08:10"
         content: |
@@ -874,23 +876,23 @@ threads:
       - source_ref: slack
         type: message
         title: "#media-comms"
-        source_url: "https://afcrichmond.slack.com/archives/C04media"
+        source_url: "https://afcmarlow.slack.com/archives/C04media"
     notes:
       - created: "+0d 08:30"
         content: |
-          Aligned with Keeley and Trent on messaging around the team's form.
+          Aligned with Posy and Gus on messaging around the team's form.
 
           **Key themes:**
           - Patience. Process. Belief.
           - Results will come — the underlying performance metrics are strong
           - Club is stable, invested, and building for the long term
 
-          Told Trent the women's team story isn't ready yet but will be soon. He understands. He's not the type to push before we're ready.
+          Told Gus the women's team story isn't ready yet but will be soon. He understands. He's not the type to push before we're ready.
 
-          Keeley will handle social channels. Consistent tone: honest, forward-looking, no panic.
+          Posy will handle social channels. Consistent tone: honest, forward-looking, no panic.
         mentions:
-          - keeley
-          - trent
+          - posy
+          - gus
 
   # Day 0: Remaining actions and events
   - priority_ref: fan_comm
@@ -906,7 +908,7 @@ threads:
       - source_ref: notion
         type: document
         title: "Supporter Comms Plan"
-        source_url: "https://notion.so/afcrichmond/supporter-comms"
+        source_url: "https://notion.so/afcmarlow/supporter-comms"
     notes:
       - created: "+0d 09:15"
         content: |
@@ -914,28 +916,28 @@ threads:
 
           **Tone:** Honest, not defensive. Confident, not arrogant. We see what they see. We're working on it.
 
-          **Channels:** Open letter on club website, Keeley to amplify on socials, Supporters Trust briefing.
+          **Channels:** Open letter on club website, Posy to amplify on socials, Supporters Trust briefing.
 
           The worst thing would be silence. The second worst thing would be empty platitudes.
 
           Find the middle. Say something real.
 
   - priority_ref: commercial
-    title: "Lunch with Aegon sponsorship rep"
+    title: "Lunch with Avenir sponsorship rep"
     created: "+0d"
     schedule:
       at: "+0d 12:30 / +0d 13:30"
     links:
       - source_ref: gcal
         type: event
-        title: "Lunch - Aegon Sponsorship"
-        source_url: "https://calendar.google.com/calendar/event?eid=aegonlunch"
+        title: "Lunch - Avenir Sponsorship"
+        source_url: "https://calendar.google.com/calendar/event?eid=avenirlunch"
     notes:
       - created: "+0d 09:20"
         content: |
-          Lunch with Sarah from Aegon. Ostensibly a routine check-in on the shirt sponsorship, but I want to gauge their appetite for women's team partnership.
+          Lunch with Sarah from Avenir. Ostensibly a routine check-in on the shirt sponsorship, but I want to gauge their appetite for women's team partnership.
 
-          Not pitching yet. Just listening. If they're interested in expanding their football portfolio, Richmond could offer something unique.
+          Not pitching yet. Just listening. If they're interested in expanding their football portfolio, Marlow could offer something unique.
 
           Also need to reassure them the men's team form is temporary. Sponsors get nervous when results dip.
 
@@ -947,18 +949,18 @@ threads:
       on: "+0d"
       todo: true
     notes:
-      - author_ref: keeley
+      - author_ref: posy
         created: "-1d 10:15"
         content: "Ok you need to see this RIGHT NOW. Founding season scarf concept. Tell me this isn't absolutely gorgeous."
         actions:
           - type: file
             fileId: "b7e3f1a2-4d5c-6e8f-9a0b-1c2d3e4f5a6b"
-            fileName: wfc-richmond.png
+            fileName: wfc-marlow.png
             fileSize: 2578195
             mimeType: image/png
       - created: "-1d 10:45"
-        content: "Keeley Jones, you brilliant woman. This is stunning. The crest detail is perfect — understated but unmistakably Richmond."
-      - author_ref: keeley
+        content: "Posy Mercer, you brilliant woman. This is stunning. The crest detail is perfect — understated but unmistakably Marlow."
+      - author_ref: posy
         created: "-1d 11:02"
         content: "Right?? I've already got a supplier in Manchester who can do samples in a week. You'll have one on your desk by Thursday. It's going to look incredible wrapped around a few thousand necks on match day."
       - created: "-1d 11:15"
@@ -999,7 +1001,7 @@ threads:
       - source_ref: slack
         type: message
         title: "#match-day prep"
-        source_url: "https://afcrichmond.slack.com/archives/C04matchprep"
+        source_url: "https://afcmarlow.slack.com/archives/C04matchprep"
       - source_ref: sheets
         type: spreadsheet
         title: "Chelsea Match Analytics"
@@ -1009,8 +1011,8 @@ threads:
         content: |
           Saturday checklist:
           - Confirm my own travel arrangements (driving separately, arriving by 11:00)
-          - Review analytics pack one final time
-          - Brief call with Roy tonight after his final training session
+          - Review perflab pack one final time
+          - Brief call with Wes tonight after his final training session
           - Prepare my own mental framing: trust the process, trust the team, be present
 
           Chelsea away is always a big atmosphere. The supporters who make the trip deserve to see the owner there, composed, believing.
@@ -1030,11 +1032,11 @@ threads:
     notes:
       - created: "+0d 09:35"
         content: |
-          Evening block to review the analytics pack one final time and mentally prepare for Saturday.
+          Evening block to review the perflab pack one final time and mentally prepare for Saturday.
 
           Final review of Chelsea's recent form, our matchups, set-piece analysis.
 
-          Then close the laptop. Trust Roy. Trust the process.
+          Then close the laptop. Trust Wes. Trust the process.
 
           The result matters. But how we handle it — win, lose, or draw — matters more right now.
 
@@ -1051,37 +1053,37 @@ threads:
       - source_ref: gcal
         type: event
         title: "Women's team board strategy"
-        source_url: "https://calendar.google.com/calendar/event?eid=higgins1on1"
+        source_url: "https://calendar.google.com/calendar/event?eid=maurice1on1"
       - source_ref: slack
         type: message
-        title: "DM with Higgins"
-        source_url: "https://afcrichmond.slack.com/archives/D04higgins"
+        title: "DM with Embry"
+        source_url: "https://afcmarlow.slack.com/archives/D04maurice"
     notes:
       - created: "-2d 11:00"
         content: |
-          Ran the women's team proposal by Higgins before taking it to the full board.
+          Ran the women's team proposal by Embry before taking it to the full board.
 
-          **Higgins:** "This is wonderful, Rebecca. Really wonderful."
+          **Embry:** "This is wonderful, Margot. Really wonderful."
 
           **Me:** "But?"
 
-          **Higgins:** "No buts! Well... maybe one small consideration. The board will worry about timing given the men's team form."
+          **Embry:** "No buts! Well... maybe one small consideration. The board will worry about timing given the men's team form."
 
           **Me:** "That's short-term thinking."
 
-          **Higgins:** "I agree! But we need to help them see the long-term vision. Emphasize sustainability, community value, cultural alignment."
+          **Embry:** "I agree! But we need to help them see the long-term vision. Emphasize sustainability, community value, cultural alignment."
 
           **Me:** "Not just 'feel-good story'?"
 
-          **Higgins:** "Oh, it's ALSO a feel-good story. But frame it as strategic club development that happens to feel good."
+          **Embry:** "Oh, it's ALSO a feel-good story. But frame it as strategic club development that happens to feel good."
 
           **Me:** "Different story, same outcome?"
 
-          **Higgins:** "Precisely."
+          **Embry:** "Precisely."
 
           He'll help me prepare the presentation. He's better at the board politics than I am.
         mentions:
-          - higgins
+          - maurice
 
   - priority_ref: match_prep
     title: "Upcoming fixture - Chelsea (away)"
@@ -1091,19 +1093,19 @@ threads:
       - source_ref: gmail
         type: email
         title: "Match Preview"
-        source_url: "mailto:analytics@afcrichmond.com"
+        source_url: "mailto:performance@afcmarlow.com"
     notes:
       - created: "-2d 12:00"
         content: |
-          **From: Performance Analytics**
-          **Subject: Match Preview - Chelsea vs Richmond**
+          **From: Performance Lab**
+          **Subject: Match Preview - Chelsea vs Marlow**
 
           **Fixture:** Chelsea (A) - Saturday, Feb 8
-          **Form:** Chelsea 4W-1D, Richmond 2W-1D-3L (last 6)
+          **Form:** Chelsea 4W-1D, Marlow 2W-1D-3L (last 6)
 
           **Challenge:** Chelsea in strong form, Stamford Bridge difficult venue
 
-          **Opportunity:** Richmond historically performs better as underdog, pressure off
+          **Opportunity:** Marlow historically performs better as underdog, pressure off
 
           **Key:** Clinical finishing. We create chances. We need to take them.
 
@@ -1126,7 +1128,7 @@ threads:
       - source_ref: notion
         type: document
         title: "Ops Meeting Agenda"
-        source_url: "https://notion.so/afcrichmond/ops-meeting-agenda"
+        source_url: "https://notion.so/afcmarlow/ops-meeting-agenda"
     notes:
       - created: "-2d 15:15"
         content: |
@@ -1157,12 +1159,12 @@ threads:
         content: |
           **Plot AI Response:**
 
-          **Richmond Supporter Sentiment & Engagement (Last 30 days):**
+          **Marlow Supporter Sentiment & Engagement (Last 30 days):**
 
           **Sentiment:**
           - Overall: Cautiously optimistic despite recent results
           - Frustration with finishing, but not with effort or coaching
-          - Strong loyalty to Roy and the coaching staff
+          - Strong loyalty to Wes and the coaching staff
           - No toxic negativity (yet)
 
           **Engagement:**
@@ -1174,7 +1176,7 @@ threads:
           **Key themes:**
           - "We believe in the process"
           - "Form is temporary"
-          - "Still better than pre-Ted days"
+          - "Still better than pre-Hank days"
           - Interest in women's team proposal growing organically
 
           **Assessment:** Fanbase is resilient but needs reassurance that club is stable and has vision beyond current form.
@@ -1182,11 +1184,11 @@ threads:
         content: |
           ---
 
-          Good. Supporters are patient. That's the Ted legacy.
+          Good. Supporters are patient. That's the Hank legacy.
 
           But patience isn't infinite. Need to give them something to believe in beyond "wait it out."
 
-          Women's team could be that. Not a distraction from men's team struggles. A demonstration that Richmond is building something bigger.
+          Women's team could be that. Not a distraction from men's team struggles. A demonstration that Marlow is building something bigger.
 
   # Day +2: Confidence building
   - priority_ref: coaching_staff
@@ -1197,29 +1199,29 @@ threads:
       - source_ref: gmail
         type: email
         title: "Training Update"
-        source_url: "mailto:roy.kent@afcrichmond.com"
+        source_url: "mailto:wes.tanner@afcmarlow.com"
       - source_ref: slack
         type: message
         title: "#coaching-staff update"
-        source_url: "https://afcrichmond.slack.com/archives/C04coaching2"
+        source_url: "https://afcmarlow.slack.com/archives/C04coaching2"
     notes:
       - created: "-2d 10:00"
         content: |
-          **From: Roy Kent**
+          **From: Wes Tanner**
           **Subject: Training Update**
 
           Focused today on finishing confidence. Small-sided games, lots of shooting practice, positive reinforcement.
 
-          Nate suggested some positioning tweaks for the attack. Actually decent ideas. Trying them out.
+          Eli suggested some positioning tweaks for the attack. Actually decent ideas. Trying them out.
 
           Team's in good spirits. They know they're better than results show. Just need one fucking win to prove it.
 
           Saturday will tell us where we are.
 
-          - Roy
+          - Wes
         mentions:
-          - roy
-          - nate
+          - wes
+          - eli
 
   - priority_ref: personal_dev
     title: "Evening walk - think time"
@@ -1234,19 +1236,19 @@ threads:
     notes:
       - created: "-2d 19:15"
         content: |
-          Walked through Richmond Green. Quiet evening, almost spring weather.
+          Walked through Higginson Park. Quiet evening, almost spring weather.
 
           Thought about the club. The men's team struggling but not broken. The women's team idea taking shape.
 
           The doubt creeps in sometimes: "Is this the right time?" "Should I wait until the men's team is stable?"
 
-          But Ted's voice in my head: "Doubt's just fear wearing a fancy hat."
+          But Hank's voice in my head: "Doubt only gets loud when you stop moving."
 
           This isn't about perfect timing. It's about building the future without losing the present.
 
-          The men's team will find their form. Roy and Beard and Nate will figure it out.
+          The men's team will find their form. Wes and Murph and Eli will figure it out.
 
-          And when they do, wouldn't it be better if Richmond was already building something bigger?
+          And when they do, wouldn't it be better if Marlow was already building something bigger?
 
   - priority_ref: business_case
     title: "Potential coaching candidates - preliminary research"
@@ -1258,16 +1260,16 @@ threads:
       - source_ref: notion
         type: document
         title: "Coaching Candidate Criteria"
-        source_url: "https://notion.so/afcrichmond/coaching-candidates"
+        source_url: "https://notion.so/afcmarlow/coaching-candidates"
     notes:
       - created: "-2d 20:00"
         content: |
-          Started thinking about who could coach a Richmond women's team.
+          Started thinking about who could coach a Marlow women's team.
 
           **Criteria:**
           - Understands women's football (obviously)
           - Believes in player development over just winning
-          - Gets the Richmond culture (or can learn it)
+          - Gets the Marlow culture (or can learn it)
           - Respects the community connection
           - Has the tactical knowledge for Championship level
 
@@ -1278,7 +1280,7 @@ threads:
 
           Too early for specific names. But criteria matter. Hire for culture first, resume second.
 
-          That's what Ted taught us.
+          That's what Hank taught us.
 
   - priority_ref: board_process
     title: "Board dinner - informal"
@@ -1306,11 +1308,11 @@ threads:
 
           Will present formally in March with full financial model and strategic plan.
 
-          Higgins was right - frame it as strategic development, not just values statement.
+          Embry was right - frame it as strategic development, not just values statement.
 
           Both can be true.
         mentions:
-          - higgins
+          - maurice
 
   - priority_ref: financial_mgmt
     title: "Finalize women's team financial model"
@@ -1338,7 +1340,7 @@ threads:
           Make it bulletproof. Make it clear this is strategic, sustainable, and right.
       - created: "+0d 08:35"
         content: |
-          @Higgins — can you pull comparable revenue data from other Championship clubs that launched women's teams in the last 3 years? Need actual numbers, not projections.
+          @Embry — can you pull comparable revenue data from other Championship clubs that launched women's teams in the last 3 years? Need actual numbers, not projections.
 
           Specifically interested in:
           - Year 1 vs Year 3 revenue comparison
@@ -1347,11 +1349,11 @@ threads:
 
           Want to benchmark our model against reality before the board sees it.
         mentions:
-          - higgins
-      - author_ref: higgins
+          - maurice
+      - author_ref: maurice
         created: "+0d 09:00"
         content: |
-          Rebecca — here you are! I've compiled data from three Championship clubs that launched women's teams between 2022-2024.
+          Margot — here you are! I've compiled data from three Championship clubs that launched women's teams between 2022-2024.
 
           **Summary:**
           - **Club A** (launched 2022): Year 1 revenue £620K, Year 3 revenue £1.4M. Broke even mid-Year 2.
@@ -1362,19 +1364,19 @@ threads:
 
           Full spreadsheet attached with detailed breakdowns.
         mentions:
-          - higgins
+          - maurice
       - created: "+0d 09:10"
         content: |
           This is exactly what I needed. The numbers support our projections — and Club A breaking even in Year 2 is better than our conservative model assumes.
 
-          The brand integration point is critical. That's already in our proposal — shared badge, shared identity, "Richmond completes its club."
+          The brand integration point is critical. That's already in our proposal — shared badge, shared identity, "Marlow completes its club."
 
           Going to update the financial model with these benchmarks before the board presentation. Real data beats projections every time.
         mentions:
-          - higgins
+          - maurice
 
   - priority_ref: media_pr
-    title: "Trent Crimm - potential feature story"
+    title: "Gus Vellum - potential feature story"
     created: "-2d"
     tags:
       idea: [user]
@@ -1382,23 +1384,23 @@ threads:
       - source_ref: gmail
         type: email
         title: "Women's Team Feature Inquiry"
-        source_url: "mailto:trent.crimm@independent.co.uk"
+        source_url: "mailto:gus.vellum@themeridian.co.uk"
     notes:
       - created: "-2d 11:30"
         content: |
-          **Email from Trent Crimm (The Independent)**
+          **Email from Gus Vellum (The Independent)**
 
-          Rebecca,
+          Margot,
 
-          Working on a feature about football clubs building women's programs. Heard whispers Richmond might be exploring this.
+          Working on a feature about football clubs building women's programs. Heard whispers Marlow might be exploring this.
 
-          If true, I'd love to cover it. The Richmond story - Ted's legacy, the culture, the community connection - would be a compelling frame for why some clubs succeed with women's teams and others don't.
+          If true, I'd love to cover it. The Marlow story - Hank's legacy, the culture, the community connection - would be a compelling frame for why some clubs succeed with women's teams and others don't.
 
           No pressure. Just wanted you to know I'm interested when/if you're ready to talk.
 
-          - Trent
+          - Gus
         mentions:
-          - trent
+          - gus
 
   - priority_ref: business_ops
     title: "Looking ahead - Feb-March priorities"
@@ -1410,7 +1412,7 @@ threads:
       - source_ref: notion
         type: document
         title: "Feb-March Priorities"
-        source_url: "https://notion.so/afcrichmond/feb-march-priorities"
+        source_url: "https://notion.so/afcmarlow/feb-march-priorities"
     notes:
       - created: "-2d 12:00"
         content: |
@@ -1432,13 +1434,13 @@ threads:
           That's the job now.
 
   - priority_ref: personal_dev
-    title: "Reflection - what Ted built here"
+    title: "Reflection - what Hank built here"
     created: "-2d"
     icon: idea
     notes:
       - created: "-2d 22:00"
         content: |
-          Ted left almost two years ago. Sometimes it feels like yesterday. Sometimes it feels like a lifetime.
+          Hank left almost two years ago. Sometimes it feels like yesterday. Sometimes it feels like a lifetime.
 
           What he built here wasn't about tactics or results. It was about belief.
 
@@ -1448,15 +1450,15 @@ threads:
 
           But the culture? The belief? That's holding.
 
-          Roy leads with honesty. Nate's finding his confidence again. The supporters stay loyal. The community stays engaged.
+          Wes leads with honesty. Eli's finding his confidence again. The supporters stay loyal. The community stays engaged.
 
           A women's team isn't about fixing the men's team slump.
 
-          It's about showing that Richmond's values aren't situational. They're foundational.
+          It's about showing that Marlow's values aren't situational. They're foundational.
 
           When things are hard, you don't abandon who you are. You lean into it.
 
-          That's what Ted would say.
+          That's what Hank would say.
 
           That's what I'm trying to do.
 
@@ -1490,14 +1492,14 @@ threads:
         source_url: "https://calendar.google.com/calendar/event?eid=prematchmeal"
 
   - priority_ref: match_prep
-    title: "Chelsea vs Richmond"
+    title: "Chelsea vs Marlow"
     created: "-1d"
     schedule:
       at: "+1d 12:30 / +1d 14:30"
     links:
       - source_ref: gcal
         type: event
-        title: "Chelsea vs Richmond"
+        title: "Chelsea vs Marlow"
         source_url: "https://calendar.google.com/calendar/event?eid=chelseamatch"
     notes:
       - created: "-1d 18:00"
