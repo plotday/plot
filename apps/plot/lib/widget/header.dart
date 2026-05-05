@@ -70,6 +70,7 @@ class _HeaderState extends State<Header> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
+  String _lastSearchText = '';
 
   @override
   void initState() {
@@ -79,6 +80,10 @@ class _HeaderState extends State<Header> {
 
   void _onSearchChanged() {
     final search = _searchController.text;
+    // The controller fires this listener on selection changes too; ignore
+    // those so cursor moves don't re-dispatch and reset search results.
+    if (search == _lastSearchText) return;
+    _lastSearchText = search;
 
     // Clearing the box should feel instant.
     if (search.isEmpty) {

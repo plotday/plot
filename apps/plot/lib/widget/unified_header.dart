@@ -39,6 +39,7 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
+  String _lastSearchText = '';
   PriorityShortcutsProviderState? _panelController;
   final GlobalKey _headerKey = GlobalKey();
   double? _lastMeasuredHeaderHeight;
@@ -67,6 +68,10 @@ class _UnifiedHeaderState extends State<UnifiedHeader> {
 
   void _onSearchChanged() {
     final search = _searchController.text;
+    // The controller fires this listener on selection changes too; ignore
+    // those so cursor moves don't tear down in-flight remote search results.
+    if (search == _lastSearchText) return;
+    _lastSearchText = search;
 
     // Immediately update search text in state and cancel stale subscriptions
     // so old unfiltered results stop flowing while the user types. The

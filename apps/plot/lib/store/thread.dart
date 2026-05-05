@@ -771,6 +771,10 @@ class Thread extends Equatable implements Comparable<Thread> {
   /// Splits [search] on whitespace, strips FTS5 special chars, and keeps
   /// words ≥ 2 chars. Shared by the FTS branch and the contact-name match
   /// resolution so both apply the same gating and word ordering.
+  @visibleForTesting
+  static List<String> sanitizeSearchWords(String? search) =>
+      _sanitizeSearchWords(search);
+
   static List<String> _sanitizeSearchWords(String? search) {
     if (search == null || search.isEmpty) return const [];
     return search
@@ -781,6 +785,24 @@ class Thread extends Equatable implements Comparable<Thread> {
         )
         .where((word) => word.length >= 2)
         .toList();
+  }
+
+  /// Builds an FTS5 MATCH expression from sanitized search words. Each
+  /// word is further split into alphanumeric-only tokens (matching the
+  /// `ascii` tokenizer used by `thread_fts` / `note_fts`) and emitted as
+  /// a prefix term, joined by spaces (implicit AND). Returns an empty
+  /// string when no token survives — callers should drop the FTS branch
+  /// in that case rather than emit an invalid `MATCH ''` clause.
+  @visibleForTesting
+  static String ftsQueryFromWords(List<String> sanitizedWords) =>
+      _ftsQueryFromWords(sanitizedWords);
+
+  static String _ftsQueryFromWords(List<String> sanitizedWords) {
+    return sanitizedWords
+        .expand((word) => word.split(RegExp(r'[^A-Za-z0-9]+')))
+        .where((token) => token.length >= 2)
+        .map((token) => '$token*')
+        .join(' ');
   }
 
   /// Resolves contact-name matches for each sanitized search word. Returns
@@ -1407,9 +1429,17 @@ class Thread extends Equatable implements Comparable<Thread> {
       // Split and sanitize search words once for both FTS5 and LIKE matching
       final sanitizedWords = _sanitizeSearchWords(search);
 
-      final ftsWords = sanitizedWords.map((word) => '$word*').join(' ');
+      // FTS5 query syntax rejects '.' (and other punctuation) inside a
+      // bareword with `fts5: syntax error near "."`, so passing 'cal.com*'
+      // would throw and abort the entire query. Pre-split each sanitized
+      // word into pure-alphanumeric tokens (matching the ascii tokenizer's
+      // separator rules) and prefix-match each one — 'cal.com' becomes
+      // 'cal* com*' (implicit AND). The link-LIKE branch below still uses
+      // the un-split sanitized words so substring matches like
+      // `source_url LIKE '%cal.com%'` continue to work.
+      final ftsWords = _ftsQueryFromWords(sanitizedWords);
 
-      if (ftsWords.isNotEmpty) {
+      if (sanitizedWords.isNotEmpty) {
         // Each word must appear in either link title or source_url
         final linkConditions = sanitizedWords
             .map(
@@ -1442,6 +1472,18 @@ class Thread extends Equatable implements Comparable<Thread> {
           contactBranch = clauses.join(' AND ');
         }
 
+        // FTS branches are skipped when no usable token survives splitting
+        // (e.g. 'a.b' → 'a','b' are both <2 chars). The link-LIKE branch
+        // still applies, so URL searches like '?.?' that have no FTS terms
+        // can still match through source_url.
+        final ftsBranch = ftsWords.isNotEmpty
+            ? '''SELECT thread_id FROM thread_fts WHERE thread_fts MATCH '$ftsWords'
+              UNION ALL
+              SELECT thread_id FROM note_fts WHERE note_fts MATCH '$ftsWords'
+              UNION ALL
+              '''
+            : '';
+
         // Drive the search from the small match-set instead of evaluating
         // correlated EXISTS per thread. With OR'd correlated EXISTS the
         // planner falls back to SCAN threads × N subqueries (FTS scan per
@@ -1452,11 +1494,7 @@ class Thread extends Equatable implements Comparable<Thread> {
         query.where(
           CustomExpression<bool>('''
             a.id IN (
-              SELECT thread_id FROM thread_fts WHERE thread_fts MATCH '$ftsWords'
-              UNION ALL
-              SELECT thread_id FROM note_fts WHERE note_fts MATCH '$ftsWords'
-              UNION ALL
-              SELECT thread_id FROM links WHERE thread_id IS NOT NULL AND $linkConditions
+              ${ftsBranch}SELECT thread_id FROM links WHERE thread_id IS NOT NULL AND $linkConditions
             )
             ${contactBranch != null ? 'OR ($contactBranch)' : ''}
           '''),
