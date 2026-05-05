@@ -444,6 +444,10 @@ export interface Note {
    */
   key: string | null;
   /**
+   * The connector-created link this note belongs to. Scopes note.key uniqueness to (thread_id, link_id, key) so two links on the same thread (e.g. after a merge) can each carry a "description" note. NULL for user/Plot-tool authored notes.
+   */
+  link_id: string | null;
+  /**
    * Array of twist_instance_ids (twists and connectors) mentioned in this note. Used for dispatch routing only — user visibility is handled by access_contacts.
    */
   mentions: string[] | null;

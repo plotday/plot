@@ -762,6 +762,7 @@ export type Database = {
           external_content_hash: string | null
           id: string
           key: string | null
+          link_id: string | null
           mentions: string[] | null
           merged_from_thread_id: string | null
           re_note_id: string | null
@@ -785,6 +786,7 @@ export type Database = {
           external_content_hash?: string | null
           id?: string
           key?: string | null
+          link_id?: string | null
           mentions?: string[] | null
           merged_from_thread_id?: string | null
           re_note_id?: string | null
@@ -808,6 +810,7 @@ export type Database = {
           external_content_hash?: string | null
           id?: string
           key?: string | null
+          link_id?: string | null
           mentions?: string[] | null
           merged_from_thread_id?: string | null
           re_note_id?: string | null
@@ -819,6 +822,42 @@ export type Database = {
           updated_by?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "note_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "link"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "link_x"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "twist_instance_channel_link_create"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "twist_instance_channel_link_update"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "twist_instance_channel_note_create"
+            referencedColumns: ["link_id"]
+          },
+          {
+            foreignKeyName: "note_link_id_fkey"
+            columns: ["link_id"]
+            referencedRelation: "twist_instance_link_update"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "note_merged_from_thread_id_fkey"
             columns: ["merged_from_thread_id"]
@@ -4832,13 +4871,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["user_id"]
+            columns: ["owner_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "twist_instance_owner_id_fkey"
-            columns: ["owner_id"]
+            columns: ["user_id"]
             referencedRelation: "group"
             referencedColumns: ["user_id"]
           },

@@ -18,6 +18,7 @@ CREATE TABLE "public"."note" (
     "mentions" uuid[],
     "re_note_id" uuid REFERENCES public.note ON DELETE SET NULL,
     "merged_from_thread_id" uuid REFERENCES public.thread ON DELETE SET NULL,
+    "link_id" uuid REFERENCES public.link (id) ON DELETE SET NULL,
     "embedding" halfvec(384),
     "seq" xid8 NOT NULL DEFAULT pg_current_xact_id()
 );
@@ -38,16 +39,27 @@ WHERE
 
 COMMENT ON COLUMN "public"."note"."key" IS 'External identifier for deduplication and sync within a thread. Provided as a top-level field in the Note type. Indexed for efficient lookups. Used with thread_id for upsert behavior, allowing notes to be idempotently created or updated by external key (e.g., "description" for Jira issue descriptions).';
 
+COMMENT ON COLUMN "public"."note"."link_id" IS 'The connector-created link this note belongs to. Scopes note.key uniqueness to (thread_id, link_id, key) so two links on the same thread (e.g. after a merge) can each carry a "description" note. NULL for user/Plot-tool authored notes.';
+
 COMMENT ON COLUMN "public"."note"."external_content_hash" IS 'SHA-256 hash of the content the connector last saw in the external system, computed over (contentType + "\n" + content). Used by connector sync-in to distinguish "external unchanged" (preserve Plot''s content, which may be formatted markdown) from "external edited" (overwrite with incoming). NULL means no baseline yet. Only set by the twist runtime — clients must not write to this column.';
 
--- Ensure one note per key per thread
--- No WHERE clause needed: NULL != NULL allows multiple notes when key is null
-CREATE UNIQUE INDEX note_thread_key_unique ON "public"."note" ("thread_id", "key");
+-- Ensure one keyed note per (thread, link). Partial: notes with no key
+-- (user-authored markdown) are unconstrained. NULL link_id rows coexist
+-- because NULL != NULL in unique indexes — orphan keyed notes (link
+-- deleted) and any user-authored keyed notes use this allowance.
+CREATE UNIQUE INDEX note_thread_link_key_unique
+    ON "public"."note" ("thread_id", "link_id", "key")
+    WHERE key IS NOT NULL;
 
 -- Index for efficient key lookups
 CREATE INDEX idx_note_key ON "public"."note" ("key")
 WHERE
     key IS NOT NULL;
+
+-- Index for FK lookups by link (used during cascading and migration backfill)
+CREATE INDEX idx_note_link_id ON "public"."note" ("link_id")
+WHERE
+    link_id IS NOT NULL;
 
 -- Index for FK lookups
 CREATE INDEX idx_note_thread_id ON "public"."note" ("thread_id");

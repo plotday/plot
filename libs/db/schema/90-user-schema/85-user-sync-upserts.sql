@@ -270,7 +270,8 @@ BEGIN
     IF p_id IS NULL THEN
         INSERT INTO note (id, author_id, created_by, updated_by, archived_at, thread_id, draft, access_contacts, content, actions, mentions, re_note_id, source_created_at, key, merged_from_thread_id)
             VALUES (uuidv7(), v_author_id, v_created_by, COALESCE(p_updated_by, 0), p_archived_at, p_thread_id, COALESCE(p_draft, FALSE), p_access_contacts, p_content, p_actions, p_mentions, p_re_note_id, COALESCE(p_source_created_at, now()), p_key, p_merged_from_thread_id)
-        ON CONFLICT (thread_id, key)
+        ON CONFLICT (thread_id, link_id, key)
+            WHERE key IS NOT NULL
             DO UPDATE SET
                 author_id = note.author_id,
                 created_by = note.created_by,
