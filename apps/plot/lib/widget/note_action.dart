@@ -20,6 +20,7 @@ import 'package:plot/widget/toast.dart';
 import 'package:plot/api/api.dart' as api;
 import 'package:plot/analytics/tracker.dart';
 import 'package:plot/api/network_exception.dart';
+import 'package:plot/util/download.dart';
 import 'logging.dart';
 
 /// Widget that displays a single note action with appropriate styling based on type
@@ -729,8 +730,11 @@ class _FileImageWidgetState extends State<FileImageWidget> {
       maxWidthPercentage: 0.9,
       maxHeightPercentage: 0.9,
       padding: EdgeInsets.zero,
-      builder: (context) =>
-          _FullImageViewer(bytes: bytes, fileName: widget.link.fileName),
+      builder: (context) => _FullImageViewer(
+        bytes: bytes,
+        fileName: widget.link.fileName,
+        mimeType: widget.link.mimeType,
+      ),
     ).show<void>(context);
   }
 
@@ -883,14 +887,57 @@ class _SkeletonBoxState extends State<_SkeletonBox>
   }
 }
 
-class _FullImageViewer extends StatelessWidget {
-  const _FullImageViewer({required this.bytes, required this.fileName});
+class _FullImageViewer extends StatefulWidget {
+  const _FullImageViewer({
+    required this.bytes,
+    required this.fileName,
+    required this.mimeType,
+  });
 
   final Uint8List bytes;
   final String fileName;
+  final String mimeType;
+
+  @override
+  State<_FullImageViewer> createState() => _FullImageViewerState();
+}
+
+class _FullImageViewerState extends State<_FullImageViewer> {
+  bool _downloading = false;
+
+  Future<void> _download() async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    try {
+      final result = await downloadFile(
+        bytes: widget.bytes,
+        fileName: widget.fileName,
+        mimeType: widget.mimeType,
+      );
+      if (!mounted || !result.success) return;
+      final dest = result.destinationLabel;
+      context.showToast(
+        message: dest != null
+            ? 'Saved ${widget.fileName} to $dest'
+            : 'Downloaded ${widget.fileName}',
+      );
+    } catch (e, t) {
+      log.warning('Failed to download image: ${widget.fileName}', e, t);
+      Tracker.captureException(e, t);
+      if (mounted) {
+        context.showToast(
+          message: 'Failed to download image. Please try again.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final fg = context.theme.colors.foreground;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -900,7 +947,7 @@ class _FullImageViewer extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  fileName,
+                  widget.fileName,
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                   style: DefaultTextStyle.of(
@@ -909,11 +956,24 @@ class _FullImageViewer extends StatelessWidget {
                 ),
               ),
               Tapable(
+                onTap: _downloading ? null : _download,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Icon(
+                    PlotIcon.download,
+                    size: 16,
+                    color: _downloading
+                        ? fg.withValues(alpha: 0.5)
+                        : fg,
+                  ),
+                ),
+              ),
+              Tapable(
                 onTap: () => Modal.pop<void>(context, const Value(null)),
                 child: Icon(
                   PlotIcon.close,
                   size: 16,
-                  color: context.theme.colors.foreground,
+                  color: fg,
                 ),
               ),
             ],
@@ -923,7 +983,7 @@ class _FullImageViewer extends StatelessWidget {
           child: InteractiveViewer(
             maxScale: 5.0,
             minScale: 0.5,
-            child: Image.memory(bytes, fit: BoxFit.contain),
+            child: Image.memory(widget.bytes, fit: BoxFit.contain),
           ),
         ),
       ],
