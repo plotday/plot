@@ -230,6 +230,7 @@ class _SignInPageState extends State<SignInPage> {
                             child: SvgPicture.asset(
                               "assets/plot.svg",
                               width: 240,
+                              height: 240 * 252 / 803.735,
                             ),
                           ),
                           if (Base.wasForceSignedOut)

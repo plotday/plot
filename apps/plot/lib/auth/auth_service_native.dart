@@ -256,7 +256,7 @@ class ClerkDartAuthService implements AuthService {
         }
         await _auth.idTokenSignIn(
           provider: _toClerkProvider(provider),
-          idToken: idToken,
+          token: idToken,
         );
       });
 

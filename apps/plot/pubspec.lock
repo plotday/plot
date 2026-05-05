@@ -245,11 +245,11 @@ packages:
     dependency: "direct main"
     description:
       path: "packages/clerk_auth"
-      ref: HEAD
-      resolved-ref: "9fed85e2d5704db64665562414cb3dcfff6e3f8a"
+      ref: "clerk_auth-v0.0.15-beta"
+      resolved-ref: "43e68eea391430589e3011502bd3d2ed8b235044"
       url: "https://github.com/clerk/clerk-sdk-flutter.git"
     source: git
-    version: "0.0.14-beta"
+    version: "0.0.15-beta"
   cli_config:
     dependency: transitive
     description:
