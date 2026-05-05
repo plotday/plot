@@ -15,7 +15,13 @@
 -- unlinked external contacts and twist instances.
 CREATE OR REPLACE VIEW "user"."actor" --
 AS
--- Contacts visible via user_contact (primary or external contacts)
+-- Contacts visible via user_contact (primary or external contacts).
+-- The tombstone (a row with archived_at IS NOT NULL) is always emitted
+-- without PII: when EITHER the contact itself (a.archived_at) OR the
+-- recipient's user_contact (uc.archived_at) is archived, name / email /
+-- avatar are returned as NULL. This is the canonical revocation
+-- mechanism — clients pull the tombstone via the seq cursor, mark the
+-- row archived in their local cache, and never see the PII again.
 SELECT
     uc.user_id,
     a.id,
@@ -24,9 +30,9 @@ SELECT
     GREATEST(uc.seq, a.seq) AS seq,
     COALESCE(a.archived_at, uc.archived_at) AS archived_at,
     a.type,
-    a.name,
-    a.email,
-    a.avatar_url,
+    CASE WHEN a.archived_at IS NULL AND uc.archived_at IS NULL THEN a.name       ELSE NULL END AS name,
+    CASE WHEN a.archived_at IS NULL AND uc.archived_at IS NULL THEN a.email      ELSE NULL END AS email,
+    CASE WHEN a.archived_at IS NULL AND uc.archived_at IS NULL THEN a.avatar_url ELSE NULL END AS avatar_url,
     EXISTS (
         SELECT 1
         FROM contact c
@@ -45,18 +51,20 @@ WHERE
 UNION ALL
 -- Non-primary contacts: include for any user who can already see
 -- the primary contact, so notes authored by alternate contact IDs
--- resolve to a name instead of "Unknown" for all viewers
+-- resolve to a name instead of "Unknown" for all viewers. seq /
+-- updated_at / archived_at incorporate uc_primary so revoking the
+-- primary's user_contact propagates redaction to the alias too.
 SELECT
     uc_primary.user_id,
     a.id,
     a.created_at,
-    a.updated_at,
-    a.seq,
-    a.archived_at,
+    GREATEST(uc_primary.updated_at, a.updated_at) AS updated_at,
+    GREATEST(uc_primary.seq, a.seq) AS seq,
+    COALESCE(a.archived_at, uc_primary.archived_at) AS archived_at,
     a.type,
-    a.name,
-    a.email,
-    a.avatar_url,
+    CASE WHEN a.archived_at IS NULL AND uc_primary.archived_at IS NULL THEN a.name       ELSE NULL END AS name,
+    CASE WHEN a.archived_at IS NULL AND uc_primary.archived_at IS NULL THEN a.email      ELSE NULL END AS email,
+    CASE WHEN a.archived_at IS NULL AND uc_primary.archived_at IS NULL THEN a.avatar_url ELSE NULL END AS avatar_url,
     (c.user_id = uc_primary.user_id) AS self,
     a.inviteable,
     false AS "primary",
