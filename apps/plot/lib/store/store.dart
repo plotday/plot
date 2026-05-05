@@ -721,8 +721,16 @@ class Store extends _$Store {
   /// Verify the session with Clerk and act accordingly. If the session is
   /// definitively invalid, [Base.handleTokenResult] triggers sign-out. If
   /// it's a network error, schedule a retry with increasing backoff.
+  ///
+  /// `_handleAuthError` only fires after the API has returned 401 for a
+  /// request that used a token we just fetched, so the cached JWT is
+  /// known-bad. Pass `forceRefresh: true` so the auth layer goes back to
+  /// Clerk's server rather than handing back the same stale JWT — without
+  /// this we silently loop here forever on a server-side session
+  /// revocation, sync cursors freeze, and the user sees stale data with
+  /// no path to recovery.
   static Future<void> _handleAuthError() async {
-    final result = await Base.getSessionTokenWithReason();
+    final result = await Base.getSessionTokenWithReason(forceRefresh: true);
 
     // Let Base decide: sessionInvalid → sign-out, success → clear flag.
     Base.handleTokenResult(result);

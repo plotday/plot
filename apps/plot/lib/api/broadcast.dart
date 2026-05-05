@@ -347,7 +347,10 @@ class BroadcastClient with WidgetsBindingObserver {
     _isConnected = false;
     _updateConnectionNotifier();
 
-    final result = await Base.getSessionTokenWithReason();
+    // The websocket just rejected our token as unauthorized, so the
+    // cached JWT is known-bad — force a reconciliation with Clerk's
+    // server rather than handing the same token back on reconnect.
+    final result = await Base.getSessionTokenWithReason(forceRefresh: true);
     Base.handleTokenResult(result);
 
     // If sessionInvalid, Base triggers sign-out — no reconnect needed.

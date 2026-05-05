@@ -231,7 +231,12 @@ class ClerkJsAuthService implements AuthService {
   }
 
   @override
-  Future<TokenResult> getSessionTokenWithReason() async {
+  Future<TokenResult> getSessionTokenWithReason({
+    bool forceRefresh = false,
+  }) async {
+    // Web's `session.getToken()` already round-trips to Clerk's server
+    // every call (clerk-js doesn't cache JWTs the way clerk_auth's
+    // native SDK does), so [forceRefresh] is implicitly satisfied.
     final session = _clerk.session;
     if (session == null) {
       return (token: null, failure: TokenFailureReason.sessionInvalid);

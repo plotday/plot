@@ -63,13 +63,25 @@ class Base {
   static Completer<TokenResult>? _tokenFetchInFlight;
 
   /// Get session token with failure reason. Serializes concurrent calls.
-  static Future<TokenResult> getSessionTokenWithReason() async {
+  ///
+  /// [forceRefresh] is passed through to [AuthService.getSessionTokenWithReason]
+  /// — sync layers (store / broadcast) set it after seeing a 401 so we
+  /// reconcile with Clerk's server rather than handing back the same
+  /// stale JWT from cache. If a force-refresh is in flight when a
+  /// regular fetch arrives (or vice versa), the in-flight call wins —
+  /// a force-refresh subsumes a regular fetch, and a regular fetch is
+  /// satisfied by the more thorough force-refresh result.
+  static Future<TokenResult> getSessionTokenWithReason({
+    bool forceRefresh = false,
+  }) async {
     if (_tokenFetchInFlight != null) {
       return _tokenFetchInFlight!.future;
     }
     _tokenFetchInFlight = Completer<TokenResult>();
     try {
-      final result = await auth.getSessionTokenWithReason();
+      final result = await auth.getSessionTokenWithReason(
+        forceRefresh: forceRefresh,
+      );
       _tokenFetchInFlight!.complete(result);
       return result;
     } catch (e) {

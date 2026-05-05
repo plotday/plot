@@ -91,9 +91,19 @@ abstract class AuthService {
   /// Like [getSessionToken] but also reports *why* the fetch failed so
   /// callers can distinguish network errors from dead sessions.
   ///
+  /// When [forceRefresh] is true, callers (e.g. sync layer reacting to a
+  /// 401) ask the implementation to bypass any locally cached session
+  /// token and reconcile with Clerk's server first. Without this, a
+  /// server-side session revocation can stay invisible for the lifetime
+  /// of the cached JWT — `_auth.sessionToken()` keeps returning the same
+  /// stale token, sync keeps 401-ing, and we loop forever without ever
+  /// surfacing a sign-out signal.
+  ///
   /// Default implementation wraps [getSessionToken] — subclasses should
   /// override with proper error classification.
-  Future<TokenResult> getSessionTokenWithReason() async {
+  Future<TokenResult> getSessionTokenWithReason({
+    bool forceRefresh = false,
+  }) async {
     final token = await getSessionToken();
     return (
       token: token,
@@ -198,8 +208,9 @@ class FailedAuthService implements AuthService {
   Future<String?> getSessionToken() async => null;
 
   @override
-  Future<TokenResult> getSessionTokenWithReason() async =>
-      (token: null, failure: TokenFailureReason.networkError);
+  Future<TokenResult> getSessionTokenWithReason({
+    bool forceRefresh = false,
+  }) async => (token: null, failure: TokenFailureReason.networkError);
 
   @override
   Stream<void> get sessionInvalidatedStream => const Stream<void>.empty();
