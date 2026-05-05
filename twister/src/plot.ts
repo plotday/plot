@@ -600,8 +600,15 @@ export type Note = ThreadCommon & {
   /** The author of this note */
   author: Actor;
   /**
-   * Globally unique, stable identifier for the note within its thread.
+   * Globally unique, stable identifier for the note within its thread + link.
    * Can be used to upsert without knowing the id.
+   *
+   * Note keys are scoped to a `(thread, link)` pair — two links on the same
+   * thread (e.g. after a merge) can each carry a `"description"` note without
+   * colliding. The runtime infers the link from the surrounding `saveLink`
+   * call. For bare `saveNote` calls outside a `saveLink`, the runtime
+   * resolves the link by looking up the connector's links on the thread
+   * and errors if more than one matches.
    *
    * Use one of these patterns:
    *   - Hardcoded semantic keys for fixed note types: "description", "cancellation"
