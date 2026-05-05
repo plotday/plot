@@ -301,7 +301,8 @@ export async function createNote(
           .values(dbNote)
           .onConflict((oc) =>
             oc
-              .columns(["thread_id", "key"])
+              .columns(["thread_id", "link_id", "key"])
+              .where("key", "is not", null)
               .doUpdateSet((eb) => ({
                 author_id: eb.ref("excluded.author_id"),
                 created_by: eb.ref("excluded.created_by"),
@@ -355,14 +356,18 @@ export async function createNote(
           .returningAll()
           .executeTakeFirstOrThrow();
 
-    // If upsert was a no-op (existing row with identical content), fetch the existing row
+    // If upsert was a no-op (existing row with identical content), fetch the existing row.
+    // Match the partial unique index — link_id may be NULL.
     if (!dbResult) {
-      dbResult = await plot.db
+      let q = plot.db
         .selectFrom("note")
         .selectAll()
         .where("thread_id", "=", dbNote.thread_id)
-        .where("key", "=", dbNote.key)
-        .executeTakeFirstOrThrow();
+        .where("key", "=", dbNote.key);
+      q = dbNote.link_id
+        ? q.where("link_id", "=", dbNote.link_id)
+        : q.where("link_id", "is", null);
+      dbResult = await q.executeTakeFirstOrThrow();
     }
 
     // Generate embedding (best-effort, don't fail the create)
