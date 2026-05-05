@@ -12,7 +12,7 @@ import { createClerkClient } from "@clerk/backend";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { parse as parseYAML } from "yaml";
 
@@ -36,9 +36,11 @@ import type {
   GeneratedNote,
   GeneratedNoteTag,
   GeneratedPriority,
+  GeneratedPriorityBlock,
   GeneratedPrioritySettings,
   GeneratedSchedule,
   GeneratedThread,
+  GeneratedThreadAssociation,
   GeneratedThreadTag,
   Note,
   Priority,
@@ -96,7 +98,8 @@ function loadEnvFromFile() {
  */
 async function getOrCreateClerkUser(
   email: string,
-  userName: string
+  userName: string,
+  dbUrl?: string
 ): Promise<string | null> {
   const secretKey = process.env.CLERK_SECRET_KEY;
   if (!secretKey) {
@@ -104,6 +107,26 @@ async function getOrCreateClerkUser(
       "⚠ CLERK_SECRET_KEY not set — skipping Clerk user creation. Set it in .env.development.local"
     );
     return null;
+  }
+
+  // Safety: refuse to create Clerk users in production unless the DB URL is
+  // also production. The seed script's env loader reads libs/db/.env (a
+  // symlink to .env.development), so a stale prod secret in that file would
+  // silently leak demo personas into production Clerk on every `pnpm gen-seed`.
+  // The seed-prod script intentionally pairs sk_live_* with the Cloud SQL
+  // proxy URL (host 127.0.0.1:5433), so we treat that pairing as the only
+  // legitimate path for sk_live_*.
+  if (secretKey.startsWith("sk_live_")) {
+    const target = dbUrl || process.env.DATABASE_URL || "";
+    const isProdProxy = target.includes(":5433/");
+    if (!isProdProxy) {
+      throw new Error(
+        `Refusing to use a production Clerk secret (sk_live_*) with a non-prod DB target.\n` +
+          `Got DATABASE_URL=${target || "(unset)"}.\n` +
+          `If you meant to seed production, use \`pnpm apply-seed:prod\`.\n` +
+          `If you meant to seed locally, regenerate libs/db/.env via \`pnpm --filter @plotday/db get-env\`.`
+      );
+    }
   }
 
   const clerk = createClerkClient({ secretKey });
@@ -152,15 +175,18 @@ async function getOrCreateUser(
   email: string,
   userName: string,
   existingClerkId?: string,
-  dbUrl?: string
+  dbUrl?: string,
+  loginEmail?: string
 ): Promise<{ userId: string; contactId: string }> {
   // Load from .env.development.local if needed
   loadEnvFromFile();
 
-  // Use provided Clerk ID or create/find one
+  // Use provided Clerk ID, or look up/create one keyed on the login email
+  // (defaults to the display email if no separate login email was given).
+  const clerkLookupEmail = loginEmail || email;
   const clerkId = existingClerkId
     ? (console.error(`✓ Using provided Clerk user: ${existingClerkId}`), existingClerkId)
-    : await getOrCreateClerkUser(email, userName);
+    : await getOrCreateClerkUser(clerkLookupEmail, userName, dbUrl);
 
   const connectionString =
     dbUrl ||
@@ -254,6 +280,9 @@ async function main() {
       apply: { type: "boolean" },
       "db-url": { type: "string" },
       "clerk-id": { type: "string" },
+      "login-email": { type: "string" },
+      "r2-bucket": { type: "string" },
+      "r2-remote": { type: "boolean" },
     },
     allowPositionals: true,
   });
@@ -271,6 +300,17 @@ Options:
   --clerk-id <id>         Use an existing Clerk user ID instead of creating one.
                           The DB user.email will be set to the YAML email (demo address),
                           while authentication uses the Clerk account's real credentials.
+  --login-email <email>   Create/find the Clerk user with this email (the real login
+                          address), while keeping the YAML email as the in-app display
+                          email. Useful for production demo accounts where you sign in
+                          as e.g. team+margot@plot.day but the app shows the persona's
+                          fictional email. Requires CLERK_SECRET_KEY. Mutually exclusive
+                          with --clerk-id.
+  --r2-bucket <name>      R2 bucket name for asset uploads
+                          (default: plot-files-development)
+  --r2-remote             Upload assets to remote R2 (production) via wrangler instead
+                          of the local Miniflare-backed bucket. Requires being logged
+                          in with wrangler.
 
 Examples:
   # Generate SQL and output to stdout
@@ -287,8 +327,16 @@ Examples:
 
   # Apply seed using a pre-created Clerk user (for production demo accounts)
   CLERK_SECRET_KEY=sk_live_... pnpm gen-seed my-data.yaml --apply --db-url postgresql://... --clerk-id user_2abc...
+
+  # Apply to production with separate login email + remote R2 (preferred):
+  pnpm apply-seed:prod libs/db/seeds/margot.yaml --login-email team+margot@plot.day
 `);
     process.exit(values.help ? 0 : 1);
+  }
+
+  if (values["clerk-id"] && values["login-email"]) {
+    console.error("Error: --clerk-id and --login-email are mutually exclusive.");
+    process.exit(1);
   }
 
   const yamlFile = positionals[0];
@@ -319,7 +367,8 @@ Examples:
       data.config.email,
       data.config.userName,
       values["clerk-id"] as string | undefined,
-      dbUrl
+      dbUrl,
+      values["login-email"] as string | undefined
     );
 
     const { sql, fileUploads } = generateSQL(data, userId, contactId);
@@ -328,10 +377,17 @@ Examples:
       // Apply mode: execute SQL via psql
       await applySQL(sql, dbUrl, data);
 
-      // Upload seed files to local R2
+      // Upload seed files to R2 (local Miniflare or remote wrangler)
       if (fileUploads.length > 0) {
         const assetsDir = join(dirname(yamlFile), "assets");
-        await uploadSeedFiles(fileUploads, assetsDir);
+        const r2Bucket =
+          (values["r2-bucket"] as string) || "plot-files-development";
+        const remote = values["r2-remote"] === true;
+        if (remote) {
+          await uploadSeedFilesRemote(fileUploads, assetsDir, r2Bucket);
+        } else {
+          await uploadSeedFiles(fileUploads, assetsDir, r2Bucket);
+        }
       }
     } else {
       // Default mode: output SQL to stdout
@@ -451,10 +507,10 @@ async function applySQL(
 
 async function uploadSeedFiles(
   fileUploads: SeedFileUpload[],
-  assetsDir: string
+  assetsDir: string,
+  bucket: string = "plot-files-development"
 ): Promise<void> {
   const r2Persist = join(__dirname, "../../../workers/api/.wrangler/state/v3/r2");
-  const bucket = "plot-files-development";
 
   const uploads = fileUploads.filter((file) => {
     const localPath = join(assetsDir, file.fileName);
@@ -500,6 +556,82 @@ async function uploadSeedFiles(
   }
 
   await mf.dispose();
+}
+
+/**
+ * Upload assets to a remote R2 bucket via `wrangler r2 object put --remote`.
+ * Reuses the wrangler binary already installed in workers/api so we don't
+ * have to depend on a globally-installed wrangler.
+ */
+async function uploadSeedFilesRemote(
+  fileUploads: SeedFileUpload[],
+  assetsDir: string,
+  bucket: string
+): Promise<void> {
+  const uploads = fileUploads.filter((file) => {
+    const localPath = join(assetsDir, file.fileName);
+    if (!existsSync(localPath)) {
+      console.error(`  ⚠ Asset not found: ${localPath} (skipping)`);
+      return false;
+    }
+    return true;
+  });
+
+  if (uploads.length === 0) return;
+
+  const repoRoot = join(__dirname, "../../..");
+  const apiWorkerDir = join(repoRoot, "workers/api");
+  // Wrangler is hoisted to the workspace root by pnpm.
+  const wranglerBin = join(repoRoot, "node_modules/.bin/wrangler");
+  if (!existsSync(wranglerBin)) {
+    throw new Error(
+      `wrangler binary not found at ${wranglerBin}. Run \`pnpm install\` from the repo root first.`
+    );
+  }
+
+  console.error("");
+  console.error(`Uploading seed files to remote R2 bucket: ${bucket}`);
+
+  for (const file of uploads) {
+    // Resolve to an absolute path: wrangler is spawned with cwd=apiWorkerDir,
+    // so a relative path from the caller's cwd would not resolve correctly.
+    const localPath = resolve(assetsDir, file.fileName);
+    const r2Key = `files/${file.fileId}/${file.fileName}`;
+
+    await new Promise<void>((resolvePromise, reject) => {
+      // `wrangler r2 object put` does NOT support custom metadata via flags,
+      // but the seed-data file rows reference these keys directly so the
+      // priorityId/uploadedBy metadata is recoverable from the DB if needed.
+      const child = spawn(
+        wranglerBin,
+        [
+          "r2",
+          "object",
+          "put",
+          `${bucket}/${r2Key}`,
+          "--file",
+          localPath,
+          "--content-type",
+          file.mimeType,
+          "--remote",
+        ],
+        {
+          cwd: apiWorkerDir,
+          stdio: ["ignore", "inherit", "inherit"],
+        }
+      );
+
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code === 0) {
+          console.error(`  ✓ ${file.fileName} → ${r2Key}`);
+          resolvePromise();
+        } else {
+          reject(new Error(`wrangler exited with code ${code} for ${file.fileName}`));
+        }
+      });
+    });
+  }
 }
 
 function countPriorities(priorities: Priority[]): number {
@@ -981,6 +1113,20 @@ function validateThread(
       );
     }
   }
+
+  // Validate associated_with — parent ref must point at another thread.
+  // Existence is checked at SQL emit time so refs can resolve
+  // forward-declared threads.
+  if (
+    thread.associated_with &&
+    thread.ref &&
+    thread.associated_with === thread.ref
+  ) {
+    addError(
+      `${path}.associated_with`,
+      `Thread cannot associate with itself: ${thread.ref}`
+    );
+  }
 }
 
 function validateNote(
@@ -1098,6 +1244,16 @@ function generateSQL(
   const schedules: GeneratedSchedule[] = [];
   const notes: GeneratedNote[] = [];
   const noteTags: GeneratedNoteTag[] = [];
+  // Thread associations are resolved after all threads are processed,
+  // so refs in `associated_with` can point at threads that appear later
+  // in the YAML.
+  const pendingAssociations: {
+    childId: string;
+    parentRef: string;
+    order: number;
+  }[] = [];
+  const threadAssociations: GeneratedThreadAssociation[] = [];
+  const priorityBlocks: GeneratedPriorityBlock[] = [];
 
   // Source SQL is generated inline (due to bigint IDENTITY sequencing)
   const sourceSQLLines: string[] = [];
@@ -1189,8 +1345,45 @@ function generateSQL(
         notes,
         noteTags,
         fileUploads,
-        postInsertSQLLines
+        postInsertSQLLines,
+        pendingAssociations
       );
+    }
+  }
+
+  // Resolve thread associations now that every thread ref is in scope.
+  let associationOrder = 0;
+  for (const pa of pendingAssociations) {
+    const parentId = threadIdMap[pa.parentRef];
+    if (!parentId) {
+      throw new Error(
+        `Thread.associated_with references unknown ref: ${pa.parentRef}`
+      );
+    }
+    threadAssociations.push({
+      id: generateUUID(),
+      parent_thread_id: parentId,
+      child_thread_id: pa.childId,
+      order: associationOrder++,
+    });
+  }
+
+  // Process priority_block rows (per-gap priority order overrides).
+  if (data.priority_blocks) {
+    for (const pb of data.priority_blocks) {
+      const priorityId = priorityIdMap[pb.priority_ref];
+      if (!priorityId) {
+        throw new Error(
+          `priority_block.priority_ref references unknown priority: ${pb.priority_ref}`
+        );
+      }
+      priorityBlocks.push({
+        id: generateUUID(),
+        user_id: userId,
+        priority_id: priorityId,
+        order_value: pb.order_value,
+        effective_at: parseDateOffset(baseDate, pb.effective_at).toISOString(),
+      });
     }
   }
 
@@ -1213,6 +1406,21 @@ function generateSQL(
     const contactEmails = contacts.map((c) => sqlString(c.email)).join(", ");
     lines.push("-- Cleanup existing contacts");
     lines.push(`DELETE FROM contact WHERE email IN (${contactEmails});`);
+    // Also drop any contact whose user_id matches one of the placeholder
+    // user_ids we're about to (re)use. A prior partially-applied seed can
+    // leave a contact tied to a placeholder user_id with a *different*
+    // email, which the email-based cleanup misses. The lingering
+    // user_contact row (primary=true) then collides with the new
+    // contact's primary=true insert via the
+    // idx_user_contact_user_primary_unique partial index.
+    const placeholderUserIds = contactsWithUserId
+      .map((c) => sqlString(c.user_id))
+      .join(", ");
+    if (placeholderUserIds.length > 0) {
+      lines.push(
+        `DELETE FROM contact WHERE user_id IN (${placeholderUserIds});`
+      );
+    }
     lines.push("");
 
     lines.push("-- Contacts");
@@ -1468,6 +1676,40 @@ ON CONFLICT (user_id, contact_id) DO NOTHING;`
     lines.push("");
   }
 
+  // Priority blocks (temporal priority-order overrides for gap rendering)
+  if (priorityBlocks.length > 0) {
+    lines.push("-- Priority blocks (per-gap priority order)");
+    lines.push(
+      "INSERT INTO priority_block (id, user_id, created_by, priority_id, order_value, effective_at, created_at, updated_at)"
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < priorityBlocks.length; i++) {
+      const pb = priorityBlocks[i];
+      const comma = i < priorityBlocks.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(pb.id)}, ${sqlString(pb.user_id)}, ${sqlString(pb.user_id)}, ${sqlString(pb.priority_id)}, ${pb.order_value}, ${sqlString(pb.effective_at)}, NOW(), NOW())${comma}`
+      );
+    }
+    lines.push("");
+  }
+
+  // Thread associations (event ↔ child thread links)
+  if (threadAssociations.length > 0) {
+    lines.push("-- Thread associations");
+    lines.push(
+      'INSERT INTO thread_association (id, parent_thread_id, child_thread_id, "order", created_at, updated_at)'
+    );
+    lines.push("VALUES");
+    for (let i = 0; i < threadAssociations.length; i++) {
+      const ta = threadAssociations[i];
+      const comma = i < threadAssociations.length - 1 ? "," : ";";
+      lines.push(
+        `  (${sqlString(ta.id)}, ${sqlString(ta.parent_thread_id)}, ${sqlString(ta.child_thread_id)}, ${ta.order}, NOW(), NOW())${comma}`
+      );
+    }
+    lines.push("");
+  }
+
   // Post-insert updates (e.g., twist_ref icon resolution)
   if (postInsertSQLLines.length > 0) {
     lines.push("-- Post-insert updates (twist icon resolution)");
@@ -1662,11 +1904,23 @@ function processThread(
   outNotes: GeneratedNote[],
   outNoteTags: GeneratedNoteTag[],
   outFileUploads: SeedFileUpload[],
-  outPostInsertSQL: string[]
+  outPostInsertSQL: string[],
+  outPendingAssociations: {
+    childId: string;
+    parentRef: string;
+    order: number;
+  }[]
 ): number {
   const id = generateUUID();
   if (thread.ref) {
     threadIdMap[thread.ref] = id;
+  }
+  if (thread.associated_with) {
+    outPendingAssociations.push({
+      childId: id,
+      parentRef: thread.associated_with,
+      order: 0, // Final order is assigned after all threads resolve.
+    });
   }
 
   const priorityId = priorityIdMap[thread.priority_ref];
@@ -1737,6 +1991,33 @@ function processThread(
     }
   }
 
+  // Process links first so the schedule can attach to a calendar-style link
+  // when the thread is a shared event. The agenda's child-association
+  // injection (apps/plot/lib/state/priority.dart) only treats threads with
+  // hasLinkSchedule (schedule.link_id != null) as parents, so events that
+  // need nested children must own a link-anchored schedule.
+  let firstEventLinkId: string | null = null;
+  if (thread.links) {
+    const createdAt = thread.created
+      ? parseDateOffset(baseDate, thread.created).toISOString()
+      : new Date().toISOString();
+
+    for (const link of thread.links) {
+      const linkId = processLink(
+        link,
+        id,
+        priorityId,
+        createdAt,
+        contactIdMap,
+        sourceIdMap,
+        outLinks
+      );
+      if (firstEventLinkId === null && link.type === "event") {
+        firstEventLinkId = linkId;
+      }
+    }
+  }
+
   // Process schedule
   if (thread.schedule) {
     const sched = thread.schedule;
@@ -1748,10 +2029,15 @@ function processThread(
     const isTodo =
       sched.todo === true || (sched.todo !== false && !sched.at && !!sched.on);
 
+    // Shared timed events: attach to a calendar link (type: "event") when one
+    // exists so the agenda recognizes the thread as a link-scheduled event
+    // and renders associated child threads nested under it.
+    const useLink = !isTodo && !!sched.at && firstEventLinkId !== null;
+
     outSchedules.push({
       id: generateUUID(),
-      thread_id: id,
-      link_id: null,
+      thread_id: useLink ? null : id,
+      link_id: useLink ? firstEventLinkId : null,
       user_id: isTodo ? userId : null,
       order: isTodo ? order++ : null,
       at,
@@ -1759,25 +2045,6 @@ function processThread(
       duration: sched.duration ?? null,
       recurrence_rule: sched.recurrence_rule ?? null,
     });
-  }
-
-  // Process links
-  if (thread.links) {
-    const createdAt = thread.created
-      ? parseDateOffset(baseDate, thread.created).toISOString()
-      : new Date().toISOString();
-
-    for (const link of thread.links) {
-      processLink(
-        link,
-        id,
-        priorityId,
-        createdAt,
-        contactIdMap,
-        sourceIdMap,
-        outLinks
-      );
-    }
   }
 
   // Process tags
@@ -1845,7 +2112,7 @@ function processLink(
   contactIdMap: RefMap<string>,
   sourceIdMap: RefMap<string>,
   outLinks: GeneratedLink[]
-) {
+): string {
   const id = generateUUID();
 
   const assigneeId = link.assignee_ref
@@ -1868,6 +2135,7 @@ function processLink(
     source_created_at: sourceCreatedAt,
     meta: link.meta ? JSON.stringify(link.meta) : null,
   });
+  return id;
 }
 
 function processNote(

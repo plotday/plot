@@ -22,11 +22,16 @@
     "test:setup": "docker compose up -d && ./scripts/wait-for-pg.sh",
     "test:lint": "./scripts/db-lint.sh",
     "test:run": "pg_prove -d ${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres} tests/*.sql",
+    "get-env": "bash ../../scripts/get-env",
     "gen-seed": "tsx seeds/generate-seed.ts",
     "apply-seed": "tsx seeds/generate-seed.ts --apply",
+    "apply-seed:prod": "../../scripts/seed-prod",
     "prod-db-connect": "docker rm -f cloud-sql-proxy 2>/dev/null; docker run -d --name cloud-sql-proxy -p 127.0.0.1:5433:5432 -v ~/.config/gcloud/application_default_credentials.json:/config/adc.json -e GOOGLE_APPLICATION_CREDENTIALS=/config/adc.json gcr.io/cloud-sql-connectors/cloud-sql-proxy:latest --address 0.0.0.0 plot-core:northamerica-northeast2:plot-prod",
     "prod-db-disconnect": "docker rm -f cloud-sql-proxy",
     "prod-db-logs": "docker logs cloud-sql-proxy"
+  },
+  "config": {
+    "deploy_vars": "CLERK_SECRET_KEY"
   },
   "devDependencies": {
     "@clerk/backend": "^2.31.0",

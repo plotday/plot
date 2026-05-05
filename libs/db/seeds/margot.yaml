@@ -1,5 +1,5 @@
 config:
-  baseDate: "2025-02-07"
+  baseDate: "2026-05-01"
   email: "margot.whitcombe@afcmarlow.com"
   userName: "Margot Whitcombe"
 
@@ -236,9 +236,6 @@ threads:
     title: "Review coaching strategy with Wes and Murph"
     created: "-2d"
     icon: discussion
-    schedule:
-      on: "-2d"
-      todo: true
     links:
       - source_ref: slack
         type: message
@@ -329,12 +326,13 @@ threads:
           - pen
 
   # Day -1: Individual conversations
-  - priority_ref: match_prep
+  - ref: event_tactics
+    priority_ref: match_prep
     title: "Chelsea match tactics"
     created: "-1d"
     icon: discussion
     schedule:
-      at: "+0d 10:15 / +0d 11:00"
+      at: "+0d 09:15 / +0d 09:45"
     links:
       - source_ref: gcal
         type: event
@@ -385,6 +383,7 @@ threads:
     title: "WOMEN'S TEAM PROPOSAL - Vision and viability"
     created: "-1d"
     icon: goal
+    associated_with: event_focus
     tags:
       pinned: [user]
       goal: [user]
@@ -595,7 +594,8 @@ threads:
 
           Both can be true.
 
-  - priority_ref: womens_team
+  - ref: event_focus
+    priority_ref: womens_team
     title: "Focus: Launch women's team"
     created: "-1d"
     schedule:
@@ -637,9 +637,7 @@ threads:
     title: "Revenue model assumptions"
     created: "+0d"
     twist_ref: chatgpt
-    schedule:
-      on: "+0d"
-      todo: true
+    associated_with: event_focus
     notes:
       - created: "+0d 08:20"
         content: |
@@ -672,9 +670,7 @@ threads:
     title: "Board presentation talking points"
     created: "+0d"
     twist_ref: claude
-    schedule:
-      on: "+0d"
-      todo: true
+    associated_with: event_focus
     notes:
       - created: "+0d 08:40"
         content: |
@@ -767,11 +763,12 @@ threads:
           Let me know and I'll confirm with their producer. 💛
 
   # Day 0: New events and to-dos
-  - priority_ref: commercial
+  - ref: event_sponsor
+    priority_ref: commercial
     title: "Launch sponsorship strategy"
     created: "+0d"
     schedule:
-      at: "+0d 09:15 / +0d 10:00"
+      at: "+0d 10:00 / +0d 10:30"
     links:
       - source_ref: gcal
         type: event
@@ -788,20 +785,8 @@ threads:
         mentions:
           - posy
 
-  - priority_ref: board_process
-    title: "Draft board presentation outline"
-    created: "+0d"
-    icon: decision
-    schedule:
-      on: "+0d"
-      todo: true
-    links:
-      - source_ref: notion
-        type: document
-        title: "Board Presentation Draft"
-        source_url: "https://notion.so/afcmarlow/board-presentation-draft"
-
-  - priority_ref: media_pr
+  - ref: event_sky
+    priority_ref: media_pr
     title: "Sky Sports pre-match interview"
     created: "+0d"
     schedule:
@@ -825,17 +810,14 @@ threads:
   # Day 0: Completed morning actions
   - priority_ref: training_ground
     title: "Training ground spring maintenance plan"
-    created: "+0d"
-    schedule:
-      on: "+0d"
-      todo: true
+    created: "-1d"
     links:
       - source_ref: notion
         type: document
         title: "Spring Maintenance Plan 2025"
         source_url: "https://notion.so/afcmarlow/spring-maintenance"
     notes:
-      - created: "+0d 08:10"
+      - created: "-1d 16:30"
         content: |
           Reviewed contractor proposals for spring maintenance during the international break.
 
@@ -848,17 +830,14 @@ threads:
 
   - priority_ref: community_programs
     title: "Community outreach budget for Q2"
-    created: "+0d"
-    schedule:
-      on: "+0d"
-      todo: true
+    created: "-1d"
     links:
       - source_ref: sheets
         type: spreadsheet
         title: "Q2 Community Budget"
         source_url: "https://docs.google.com/spreadsheets/d/2b3c4d5e/edit"
     notes:
-      - created: "+0d 08:20"
+      - created: "-1d 16:00"
         content: |
           Approved the quarterly community budget. Increased youth coaching allocation by 15% — the Saturday programme has waiting lists now.
 
@@ -868,17 +847,14 @@ threads:
 
   - priority_ref: media_pr
     title: "Media narrative around current form"
-    created: "+0d"
-    schedule:
-      on: "+0d"
-      todo: true
+    created: "-1d"
     links:
       - source_ref: slack
         type: message
         title: "#media-comms"
         source_url: "https://afcmarlow.slack.com/archives/C04media"
     notes:
-      - created: "+0d 08:30"
+      - created: "-1d 17:00"
         content: |
           Aligned with Posy and Gus on messaging around the team's form.
 
@@ -899,9 +875,6 @@ threads:
     title: "Supporter communication strategy"
     created: "+0d"
     icon: decision
-    schedule:
-      on: "+0d"
-      todo: true
     tags:
       todo: [user]
     links:
@@ -922,7 +895,8 @@ threads:
 
           Find the middle. Say something real.
 
-  - priority_ref: commercial
+  - ref: event_lunch
+    priority_ref: commercial
     title: "Lunch with Avenir sponsorship rep"
     created: "+0d"
     schedule:
@@ -945,9 +919,7 @@ threads:
     title: "Founding season scarf design"
     created: "-1d"
     icon: discussion
-    schedule:
-      on: "+0d"
-      todo: true
+    associated_with: event_focus
     notes:
       - author_ref: posy
         created: "-1d 10:15"
@@ -955,9 +927,9 @@ threads:
         actions:
           - type: file
             fileId: "b7e3f1a2-4d5c-6e8f-9a0b-1c2d3e4f5a6b"
-            fileName: wfc-marlow.png
-            fileSize: 2578195
-            mimeType: image/png
+            fileName: wfc-marlow.jpg
+            fileSize: 482324
+            mimeType: image/jpeg
       - created: "-1d 10:45"
         content: "Posy Mercer, you brilliant woman. This is stunning. The crest detail is perfect — understated but unmistakably Marlow."
       - author_ref: posy
@@ -966,7 +938,8 @@ threads:
       - created: "-1d 11:15"
         content: "Order extra. I want enough for the supporters' trust event. Imagine unveiling these with the women's team announcement. The fans will lose their minds."
 
-  - priority_ref: board_process
+  - ref: event_fa
+    priority_ref: board_process
     title: "FA Women's Championship liaison call"
     created: "+0d"
     schedule:
@@ -989,37 +962,8 @@ threads:
 
           This is just intelligence-gathering. Not committing to anything yet. But need to understand the process before the board presentation.
 
-  - priority_ref: match_prep
-    title: "Chelsea away-day preparation"
-    created: "+0d"
-    schedule:
-      on: "+0d"
-      todo: true
-    tags:
-      todo: [user]
-    links:
-      - source_ref: slack
-        type: message
-        title: "#match-day prep"
-        source_url: "https://afcmarlow.slack.com/archives/C04matchprep"
-      - source_ref: sheets
-        type: spreadsheet
-        title: "Chelsea Match Analytics"
-        source_url: "https://docs.google.com/spreadsheets/d/3c4d5e6f/edit"
-    notes:
-      - created: "+0d 09:30"
-        content: |
-          Saturday checklist:
-          - Confirm my own travel arrangements (driving separately, arriving by 11:00)
-          - Review perflab pack one final time
-          - Brief call with Wes tonight after his final training session
-          - Prepare my own mental framing: trust the process, trust the team, be present
-
-          Chelsea away is always a big atmosphere. The supporters who make the trip deserve to see the owner there, composed, believing.
-
-          Not rescuing. Not fixing. Just... present.
-
-  - priority_ref: match_prep
+  - ref: event_review
+    priority_ref: match_prep
     title: "Match-day prep review"
     created: "+0d"
     schedule:
@@ -1041,7 +985,8 @@ threads:
           The result matters. But how we handle it — win, lose, or draw — matters more right now.
 
   # Day 0: Late morning
-  - priority_ref: board_process
+  - ref: event_embry
+    priority_ref: board_process
     title: "Women's team board strategy"
     created: "-2d"
     icon: discussion
@@ -1223,18 +1168,19 @@ threads:
           - wes
           - eli
 
-  - priority_ref: personal_dev
+  - ref: event_walk
+    priority_ref: personal_dev
     title: "Evening walk - think time"
-    created: "-2d"
+    created: "+0d"
     schedule:
-      at: "+2d 18:00 / +2d 19:00"
+      at: "+0d 18:00 / +0d 19:00"
     links:
       - source_ref: gcal
         type: event
         title: "Walk - Think Time"
         source_url: "https://calendar.google.com/calendar/event?eid=eveningwalk"
     notes:
-      - created: "-2d 19:15"
+      - created: "+0d 19:15"
         content: |
           Walked through Higginson Park. Quiet evening, almost spring weather.
 
@@ -1317,9 +1263,7 @@ threads:
   - priority_ref: financial_mgmt
     title: "Finalize women's team financial model"
     created: "-2d"
-    schedule:
-      on: "+0d"
-      todo: true
+    associated_with: event_embry
     tags:
       todo: [user]
     links:
@@ -1468,6 +1412,662 @@ threads:
 
           Believe.
 
+  # Day 0: Priority blocks (work between events)
+
+  # 10:30-11:15 — Women's team launch prep (before the Embry meeting)
+  - priority_ref: business_case
+    title: "Marlow Trust pre-brief - women's team announcement"
+    created: "+0d"
+    icon: notes
+    schedule:
+      at: "+0d 10:30 / +0d 11:15"
+      todo: true
+    links:
+      - source_ref: notion
+        type: document
+        title: "Marlow Trust pre-brief"
+        source_url: "https://notion.so/afcmarlow/marlow-trust-prebrief"
+      - source_ref: slack
+        type: message
+        title: "DM with Posy - Trust briefing tone"
+        source_url: "https://afcmarlow.slack.com/archives/D04posy"
+    notes:
+      - created: "+0d 10:35"
+        content: |
+          Drafting the pre-brief for the Marlow Supporters Trust before the formal women's team announcement. They've earned the courtesy of hearing it first.
+
+          **Tone:** Honest excitement. Not "we're doing you a favour by telling you early" — "we trust you with this before anyone else."
+
+          Three paragraphs. Strategic context. What we're building. How the Trust fits in.
+
+          Posy will help land the language. Then book a 30-min sit-down with the Trust chair next week.
+        mentions:
+          - supporters_trust
+          - posy
+
+  - priority_ref: business_case
+    title: "Coaching candidate criteria - tighten"
+    created: "+0d"
+    icon: notes
+    schedule:
+      at: "+0d 10:30 / +0d 11:15"
+      todo: true
+    links:
+      - source_ref: notion
+        type: document
+        title: "Coaching Candidate Criteria"
+        source_url: "https://notion.so/afcmarlow/coaching-candidates"
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Long-list - Championship coaches available 2025"
+        source_url: "https://docs.google.com/spreadsheets/d/9j0k1l2m/edit"
+    notes:
+      - created: "+0d 10:55"
+        content: |
+          Tightening the criteria sheet before next week's first conversations.
+
+          The thing I keep coming back to: hire for culture, then tactics. Hank's lesson — the system follows the person.
+
+          What I want, in order:
+          1. Believes in player development as the point, not the perk.
+          2. Coaches women, not "women's football" — knows the players, not the genre.
+          3. Marlow-curious. Not Marlow-needy. Wants to be here, not running through here.
+          4. Tactical literacy for Championship level. Non-negotiable, but third on the list.
+
+          One name keeps surfacing on the back-channel. Not naming her yet, even in my own notes. Earn the conversation first.
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Threads associated to events (render nested under the event in the
+  # agenda via thread_association). These are the supporting docs,
+  # messages, and prep notes that travel with each meeting.
+  # ─────────────────────────────────────────────────────────────────────
+
+  # event_tactics (09:15-09:45) — Chelsea match tactics
+  - priority_ref: match_prep
+    title: "Wes' formation notes - Chelsea (A)"
+    created: "-1d"
+    associated_with: event_tactics
+    links:
+      - source_ref: notion
+        type: document
+        title: "Chelsea away - shape & set-piece book"
+        source_url: "https://notion.so/afcmarlow/chelsea-away-shape"
+    notes:
+      - author_ref: wes
+        created: "-1d 17:30"
+        content: |
+          Margot — the shape book for Saturday. Same 4-2-3-1 we've been training, but Eli inside-left to pull their right back.
+
+          The high press is on. We've drilled the triggers all week. They concede from inswingers; we'll have Eli on those.
+        mentions:
+          - wes
+          - eli
+
+  - priority_ref: match_prep
+    title: "Eli: positioning ideas in #coaching-staff"
+    created: "-1d"
+    associated_with: event_tactics
+    links:
+      - source_ref: slack
+        type: message
+        title: "#coaching-staff — Eli positioning"
+        source_url: "https://afcmarlow.slack.com/archives/C04coaching/p1714"
+    notes:
+      - author_ref: eli
+        created: "-1d 18:10"
+        content: |
+          Two small things from training. When their 8 drops to receive, I drift inside the half-space — frees the fullback to overlap. We tried it Tuesday, it worked.
+
+          Also: their keeper goes long when pressed at 70%+ tempo. We can win the second balls.
+        mentions:
+          - eli
+
+  - priority_ref: match_prep
+    title: "Last meeting clips - Chelsea (H)"
+    created: "-2d"
+    associated_with: event_tactics
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Chelsea (H) - moments index"
+        source_url: "https://docs.google.com/spreadsheets/d/9j0k1l2mat/edit"
+    notes:
+      - created: "-2d 14:30"
+        content: |
+          Indexed the seven moments worth re-watching from the home tie. Same shape, same press triggers. The ones that worked then can work again.
+
+  # event_sponsor (10:00-10:30) — Sponsorship strategy huddle
+  - priority_ref: commercial
+    title: "Founding-partner shortlist"
+    created: "-1d"
+    associated_with: event_sponsor
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Founding-partner shortlist - Q2 2026"
+        source_url: "https://docs.google.com/spreadsheets/d/short1/edit"
+    notes:
+      - created: "-1d 16:00"
+        content: |
+          Six names on the shortlist for the founding-partner tier. Three local, three regional, none national-loud — exactly the tone we want for Year 1.
+
+          Posy and I will pick the first two to approach in this huddle.
+        mentions:
+          - posy
+
+  - priority_ref: commercial
+    title: "Avenir warm signals - pre-lunch context"
+    created: "-1d"
+    associated_with: event_sponsor
+    links:
+      - source_ref: slack
+        type: message
+        title: "#commercial-partnerships — Sarah read"
+        source_url: "https://afcmarlow.slack.com/archives/C04commercial/p1715"
+    notes:
+      - author_ref: posy
+        created: "-1d 19:20"
+        content: |
+          Heads up before tomorrow's huddle: Sarah's email this morning had three different ways of asking about the women's team. She's in. We just have to not scare her off by overplaying it.
+        mentions:
+          - posy
+
+  # event_embry (11:15-12:00) — Women's team board strategy w/ Embry
+  - priority_ref: board_process
+    title: "Embry pre-meeting DM"
+    created: "+0d"
+    associated_with: event_embry
+    links:
+      - source_ref: slack
+        type: message
+        title: "DM with Embry - 'one quick thing before 11:15'"
+        source_url: "https://afcmarlow.slack.com/archives/D04maurice/p1716"
+    notes:
+      - author_ref: maurice
+        created: "+0d 10:50"
+        content: |
+          Margot — one quick thing before we sit down. Wakeling on the board has been quieter than usual this month. Don't read it as opposition; he reads numbers slower than the rest of us. If we open with the data and let him follow, he comes with us. If we lead with values he digs in.
+
+          Going to make this easy. See you at 11:15.
+        mentions:
+          - maurice
+
+  # event_lunch (12:30-13:30) — Lunch with Avenir sponsorship rep
+  - priority_ref: commercial
+    title: "Lunch agenda - Avenir"
+    created: "+0d"
+    associated_with: event_lunch
+    links:
+      - source_ref: notion
+        type: document
+        title: "Avenir lunch — running order"
+        source_url: "https://notion.so/afcmarlow/avenir-lunch-agenda"
+    notes:
+      - created: "+0d 09:40"
+        content: |
+          Loose agenda for lunch — not on paper, just in my head:
+
+          1. Renewal terms (the boring part — get it out of the way first).
+          2. The women's team. Listen for tone. Don't pitch.
+          3. Founding-partner concept. Float it as an idea, not an ask.
+          4. Pay the bill before they reach for it.
+
+          Goal: walk out with Sarah more excited than when she walked in.
+
+  - priority_ref: commercial
+    title: "Sarah @ Avenir - last week's intro"
+    created: "-1w"
+    associated_with: event_lunch
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Re: Quick catch-up next week?"
+        source_url: "mailto:sarah@avenir.co.uk"
+    notes:
+      - author_ref: maurice
+        created: "-1w 14:00"
+        content: |
+          Forwarding the email Sarah sent last week — useful framing before lunch. She's not just renewing; she wants to expand. Read between the lines on paragraph three.
+        mentions:
+          - maurice
+
+  # event_fa (14:00-14:30) — FA Women's Championship liaison call
+  - priority_ref: board_process
+    title: "FA Championship application checklist"
+    created: "+0d"
+    icon: decision
+    associated_with: event_fa
+    links:
+      - source_ref: notion
+        type: document
+        title: "FA Women's Championship - Application Requirements"
+        source_url: "https://notion.so/afcmarlow/fa-application-checklist"
+    notes:
+      - created: "+0d 09:25"
+        content: |
+          Checklist for the call:
+          - Infrastructure thresholds (training ground, match venue, medical)
+          - Financial guarantees and Year 1 escrow
+          - Coaching staff minimums
+          - Player welfare / safeguarding policy
+          - Application window (likely closes early September)
+
+          Goal: get a clean read on what's strict, what's flexible. Don't pitch. Just ask.
+
+  - priority_ref: facility_planning
+    title: "Marlow facilities vs Championship minimums"
+    created: "+0d"
+    associated_with: event_fa
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Marlow facilities vs FA Championship minimums"
+        source_url: "https://docs.google.com/spreadsheets/d/5e6f7g8h/edit"
+    notes:
+      - created: "+0d 09:30"
+        content: |
+          Comparison sheet pulled — our facilities vs. published Championship minimums.
+
+          **Comfortable margin:** training pitches, medical room, locker capacity (after the 2026 upgrade).
+          **Tight:** match-venue capacity for select fixtures (need a partnership venue in Year 1).
+          **Gap to close:** dedicated women's locker room, separate analysis space.
+
+          Bring this exact framing to the call. Show our work.
+
+  - priority_ref: board_process
+    title: "FA contact - call agenda"
+    created: "-1d"
+    associated_with: event_fa
+    links:
+      - source_ref: gmail
+        type: email
+        title: "FA - 2pm call agenda + dial-in"
+        source_url: "mailto:applications@thefa.com"
+    notes:
+      - author_ref: gus
+        created: "-1d 11:00"
+        content: |
+          (Forwarded by Gus from the FA contact) — agenda for tomorrow's 2pm:
+          1. Application timeline overview
+          2. Infrastructure requirements walk-through
+          3. Q&A
+          4. Next steps
+
+          30 minutes. Tight. They're efficient — that's a good sign.
+        mentions:
+          - gus
+
+  # event_sky (15:00-15:30) — Sky Sports pre-match interview
+  - priority_ref: media_pr
+    title: "Sky interview talking points - final pass"
+    created: "+0d"
+    icon: notes
+    associated_with: event_sky
+    links:
+      - source_ref: notion
+        type: document
+        title: "Sky Sports interview - talking points"
+        source_url: "https://notion.so/afcmarlow/sky-sports-talking-points"
+    notes:
+      - created: "+0d 09:50"
+        content: |
+          Posy's prep doc, one final pass. Three things, plain and slow:
+
+          1. **The team is good.** The performance numbers say so. Results will follow performance.
+          2. **The club is stable.** No panic. No manager-of-the-month thinking. We back people.
+          3. **The story is bigger than this run.** We're building something — and the supporters know it.
+
+          What I will not say: anything about Wes's job security, anything about transfers, anything that sounds like a promise.
+
+          What I will say: "I believe in this team." Once. Slowly. With my whole face.
+        mentions:
+          - posy
+
+  - priority_ref: media_pr
+    title: "Last-6 form summary - on-camera numbers"
+    created: "+0d"
+    associated_with: event_sky
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Last 6 matches - underlying performance"
+        source_url: "https://docs.google.com/spreadsheets/d/6f7g8h9i/edit"
+      - source_ref: gmail
+        type: email
+        title: "Performance Lab - 6-match summary"
+        source_url: "mailto:performance@afcmarlow.com"
+    notes:
+      - created: "+0d 09:55"
+        content: |
+          xG over the last six: outperforming results by ~0.4 per match. Chances are there. Finishing isn't.
+
+          One sentence to keep in my head on camera: **possession up, shots up, xG up.** Three honest numbers. Don't reach further than that.
+        mentions:
+          - perflab
+
+  - priority_ref: media_pr
+    title: "Posy: go-time DM"
+    created: "+0d"
+    associated_with: event_sky
+    links:
+      - source_ref: slack
+        type: message
+        title: "DM with Posy - 'you've got this'"
+        source_url: "https://afcmarlow.slack.com/archives/D04posy/p1718"
+    notes:
+      - author_ref: posy
+        created: "+0d 14:50"
+        content: |
+          You've got this. Your face is your strongest asset on camera — calm, certain, no scrambling. The numbers are a gift; you don't need to oversell them.
+
+          See you in the green room. 💛
+        mentions:
+          - posy
+
+  # event_review (19:00-20:00) — Match-day prep review
+  - priority_ref: match_prep
+    title: "Perflab pack - Chelsea final pass"
+    created: "+0d"
+    associated_with: event_review
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Performance Lab - Chelsea pre-match pack"
+        source_url: "mailto:performance@afcmarlow.com"
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Chelsea set-piece patterns"
+        source_url: "https://docs.google.com/spreadsheets/d/8h9i0j1k/edit"
+    notes:
+      - created: "+0d 19:05"
+        content: |
+          Final read of the perflab pack. Looking for:
+          - Set-piece patterns we can exploit (Chelsea concedes from inswingers — Eli already knows)
+          - Their press triggers (we played through them well last meeting)
+          - Substitution timings (their bench drops off after 70 min)
+
+          Not actionable for me — actionable for Wes. My job tonight: knowing enough to ask the right question if he wants to talk.
+        mentions:
+          - perflab
+          - wes
+
+  - priority_ref: match_prep
+    title: "Pre-match call brief for Wes"
+    created: "+0d"
+    icon: notes
+    associated_with: event_review
+    links:
+      - source_ref: notion
+        type: document
+        title: "Wes pre-match call - my notes"
+        source_url: "https://notion.so/afcmarlow/wes-prematch-call"
+      - source_ref: whatsapp
+        type: message
+        title: "Wes on WhatsApp"
+        source_url: "https://wa.me/447700900003"
+    notes:
+      - created: "+0d 19:35"
+        content: |
+          Calling Wes after his last training session. The call isn't about tactics. It's about his head.
+
+          What I want him to leave with:
+          - The owner trusts him.
+          - The plan is the plan; results follow performance.
+          - Tomorrow is just football.
+
+          What I want me to leave with:
+          - A read on whether he's tight or loose.
+          - Whatever it is he hasn't said all week.
+
+          Listen more than talk. That's the whole brief.
+        mentions:
+          - wes
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Gap-pinned to-dos (`at: <gap_start>, todo: true` so the agenda's
+  # pinnedAfterTime logic drops them into the corresponding gap).
+  # ─────────────────────────────────────────────────────────────────────
+
+  # 12:00-12:30 — Quick admin block (between Embry meeting and Avenir lunch)
+  - priority_ref: financial_mgmt
+    title: "Sign-off: Q2 facilities CapEx"
+    created: "+0d"
+    schedule:
+      at: "+0d 12:00 / +0d 12:30"
+      todo: true
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Q2 CapEx approvals - facilities team"
+        source_url: "mailto:facilities@afcmarlow.com"
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Q2 CapEx schedule"
+        source_url: "https://docs.google.com/spreadsheets/d/8a9b0c1d/edit"
+    notes:
+      - created: "+0d 12:05"
+        content: |
+          Three line items needing sign-off before the international break:
+          - Pitch 2 resurfacing (already approved verbally — formalising)
+          - East-side drainage (slightly over the original quote — within tolerance)
+          - LED floodlights for the indoor facility (Embry pre-cleared the budget)
+
+          Signed. Forwarded. Done.
+
+  - priority_ref: financial_mgmt
+    title: "Reply to Embry on quarterly digest"
+    created: "+0d"
+    schedule:
+      at: "+0d 12:00 / +0d 12:30"
+      todo: true
+    links:
+      - source_ref: slack
+        type: message
+        title: "DM with Embry - quarterly digest"
+        source_url: "https://afcmarlow.slack.com/archives/D04maurice/p1717"
+      - source_ref: notion
+        type: document
+        title: "Q1 Quarterly Digest - draft"
+        source_url: "https://notion.so/afcmarlow/q1-quarterly-digest"
+    notes:
+      - created: "+0d 12:18"
+        content: |
+          Embry wants a one-liner on the women's team for the Q1 quarterly. Drafted: "Strategic development — full proposal to the board in March."
+
+          Honest. Forward-looking. Doesn't tip the agenda before we want it tipped.
+        mentions:
+          - maurice
+
+  # 13:30-14:00 — Personal block (small breath after lunch, before FA call)
+  - priority_ref: personal_dev
+    title: "Pen: Sunday brunch?"
+    created: "+0d"
+    schedule:
+      at: "+0d 13:30 / +0d 14:00"
+      todo: true
+    links:
+      - source_ref: whatsapp
+        type: message
+        title: "Pen on WhatsApp"
+        source_url: "https://wa.me/447700900001"
+    notes:
+      - author_ref: pen
+        created: "+0d 12:45"
+        content: |
+          Brunch Sunday? The new place by the river. I'll bake if you bring the tea.
+        mentions:
+          - pen
+      - created: "+0d 13:35"
+        content: |
+          Yes. Always yes. I'll bring the tea AND the gossip.
+        mentions:
+          - pen
+
+  - priority_ref: personal_dev
+    title: "Note to self - week ahead"
+    created: "+0d"
+    icon: idea
+    schedule:
+      at: "+0d 13:30 / +0d 14:00"
+      todo: true
+    links:
+      - source_ref: notion
+        type: document
+        title: "Weekly journal"
+        source_url: "https://notion.so/afcmarlow/weekly-journal"
+    notes:
+      - created: "+0d 13:50"
+        content: |
+          What's true this week:
+          - The team isn't broken. They're stuck. Different problem.
+          - The women's team idea has legs. The board will say yes — they just don't know it yet.
+          - I'm tireder than I've admitted.
+
+          One thing for next week: sleep. The owner who decides things at 6am decides them better than the owner who decides them at midnight. Hank's rule. Still right.
+
+  # 14:30-15:00 — Media prep block (between FA call and Sky interview)
+  - priority_ref: media_pr
+    title: "Posy: launch-week social cadence"
+    created: "+0d"
+    icon: discussion
+    schedule:
+      at: "+0d 14:30 / +0d 15:00"
+      todo: true
+    links:
+      - source_ref: whatsapp
+        type: message
+        title: "Posy on WhatsApp"
+        source_url: "https://wa.me/447700900002"
+    notes:
+      - author_ref: posy
+        created: "+0d 14:18"
+        content: |
+          Mags — when we announce the women's team, what's the rollout you want?
+
+          Option A: One big bang on the announcement day, everything dropped at once.
+          Option B: Three days of building anticipation, scarf reveal on day 2, team announcement day 3.
+
+          B is more fun. A is safer. Your call. 💛
+      - created: "+0d 14:35"
+        content: |
+          B. Always B.
+
+          Day 1 we tease, day 2 we show the scarf, day 3 we tell them why. Hank used to say: "Make people lean forward. Then tell them the truth."
+        mentions:
+          - posy
+
+  - priority_ref: media_pr
+    title: "Last week's supporter sentiment - quick read"
+    created: "+0d"
+    schedule:
+      at: "+0d 14:30 / +0d 15:00"
+      todo: true
+    links:
+      - source_ref: slack
+        type: message
+        title: "#fan-engagement - weekly digest"
+        source_url: "https://afcmarlow.slack.com/archives/C04fans/p1719"
+    notes:
+      - created: "+0d 14:45"
+        content: |
+          Quick scan of the weekly sentiment digest before walking into the Sky studio. The mood is patient, not panicked. Loyal but watching. Exactly the audience the camera sees through me.
+
+          Read it. Closed it. Carried it.
+
+  # 15:30-18:00 — Big afternoon work block (multi-priority gap)
+  # Two priorities live in this block: Commercial follow-through and
+  # Community programs. priority_blocks rows below order them deliberately
+  # within the gap.
+
+  - priority_ref: commercial
+    title: "Avenir post-lunch follow-up"
+    created: "+0d"
+    icon: discussion
+    schedule:
+      at: "+0d 15:30 / +0d 18:00"
+      todo: true
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Draft: Sarah @ Avenir - thanks + next steps"
+        source_url: "mailto:sarah@avenir.co.uk"
+    notes:
+      - created: "+0d 15:35"
+        content: |
+          Drafting the follow-up from lunch. Sarah was warmer about the women's team than I expected — she didn't ask "if", she asked "when".
+
+          Send: a soft thank-you, the public timeline, an offer to share the financial model under NDA when we're ready. Don't pitch. Don't push.
+
+  - priority_ref: commercial
+    title: "Sponsor pipeline - founding-partner tier"
+    created: "+0d"
+    schedule:
+      at: "+0d 15:30 / +0d 18:00"
+      todo: true
+    links:
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Sponsor pipeline - Q2 2026"
+        source_url: "https://docs.google.com/spreadsheets/d/7g8h9i0j/edit"
+      - source_ref: notion
+        type: document
+        title: "Founding-partner criteria"
+        source_url: "https://notion.so/afcmarlow/founding-partner-criteria"
+    notes:
+      - created: "+0d 16:10"
+        content: |
+          Walked the pipeline. Six warm leads for the founding-partner tier.
+
+          **Top three to chase first:**
+          - Local manufacturer (already a community sponsor — cultural fit is real, not invented)
+          - Regional health network (huge audience overlap, women's sports lift)
+          - National kit retailer (interested in the founding scarf collab as a way in)
+
+          Not pitching this week. Just keeping the warm ones warm. Posy will set up coffees.
+        mentions:
+          - posy
+
+  - priority_ref: community_programs
+    title: "Schools partnership - 4 new requests"
+    created: "+0d"
+    icon: idea
+    schedule:
+      at: "+0d 15:30 / +0d 18:00"
+      todo: true
+    links:
+      - source_ref: gmail
+        type: email
+        title: "Borough Schools - partnership inquiries"
+        source_url: "mailto:community@afcmarlow.com"
+      - source_ref: sheets
+        type: spreadsheet
+        title: "Schools partnership tracker"
+        source_url: "https://docs.google.com/spreadsheets/d/schools1/edit"
+    notes:
+      - created: "+0d 16:30"
+        content: |
+          Four new schools want into the borough partnership programme this term. We've got capacity for two without straining the coaching staff. Pick the right two — both with female PE leads, ideally — and the women's team launch lands on receptive ground in May.
+
+          Replied to all four with timelines. Two yes, two "shortly, with intent." Honest beats hopeful.
+
+  - priority_ref: community_programs
+    title: "Match-day volunteer roster - Saturday"
+    created: "+0d"
+    schedule:
+      at: "+0d 15:30 / +0d 18:00"
+      todo: true
+    links:
+      - source_ref: slack
+        type: message
+        title: "#match-day-volunteers"
+        source_url: "https://afcmarlow.slack.com/archives/C04volunteers"
+    notes:
+      - created: "+0d 17:05"
+        content: |
+          Confirmed the volunteer roster for tomorrow's away travel. Eighteen supporters on the official coach, three of them first-timers. Asked Maeve to keep an eye on the new ones — make them feel like Marlow people, not visitors.
+
+          The first away trip is the one they'll remember.
+
   # Day +1: Game day
   - priority_ref: match_prep
     title: "Team departs for Stamford Bridge"
@@ -1509,3 +2109,15 @@ threads:
           Will be there. In the owner's box. Watching. Supporting.
 
           Not rescuing. Not fixing. Just... believing.
+
+# Per-gap priority order overrides. Each row says "from effective_at
+# onwards, this priority sorts at order_value". Used when a gap contains
+# multiple priorities so Margot's chosen order is deterministic.
+priority_blocks:
+  # 15:30 — afternoon work block: Commercial first, then Community programs.
+  - priority_ref: commercial
+    effective_at: "+0d 15:30"
+    order_value: 1.0
+  - priority_ref: community_programs
+    effective_at: "+0d 15:30"
+    order_value: 2.0

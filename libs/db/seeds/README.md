@@ -12,6 +12,42 @@ pnpm gen-seed libs/db/seeds/carmy.yaml
 pnpm gen-seed --apply libs/db/seeds/carmy.yaml
 ```
 
+## Production Demo Accounts
+
+To apply a seed to **production** with a separate login email (so we can receive
+sign-in emails at `team+<persona>@plot.day` while the app displays the persona's
+fictional email):
+
+```bash
+# One-time prep: make sure libs/db/.env.production has CLERK_SECRET_KEY
+pnpm --filter @plotday/db get-env
+
+# Then:
+pnpm --filter @plotday/db apply-seed:prod \
+  libs/db/seeds/margot.yaml \
+  --login-email team+margot@plot.day
+```
+
+The `apply-seed:prod` wrapper (`scripts/seed-prod`):
+
+1. Prompts for confirmation (set `SEED_PROD_CONFIRM=yes` to skip).
+2. Reads `CLERK_SECRET_KEY` from `libs/db/.env.production`.
+3. Resolves the prod DB username/password from 1Password (`op` CLI, `plotco`
+   account).
+4. Auto-starts the Cloud SQL Proxy on `127.0.0.1:5433` if it isn't already
+   running (via `pnpm prod-db-connect`).
+5. Runs `gen-seed --apply --r2-bucket plot-files-production --r2-remote`,
+   uploading any referenced assets via `wrangler r2 object put --remote`.
+
+The YAML's `config.email` becomes the **display** email written to
+`public."user".email` and the primary contact. The Clerk user is
+created/looked-up by `--login-email`, and its `externalId` is set to the
+new DB user ID so authentication via the login email resolves to the
+persona.
+
+You'll need to be logged in with the `op` CLI and `wrangler` (api
+worker's Cloudflare account) before running this.
+
 ## Requirements
 
 - **Local Testing**: For local development, users are created with their email as the password for convenience

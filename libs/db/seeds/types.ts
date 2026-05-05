@@ -13,6 +13,22 @@ export interface SeedData {
   sources?: SeedSource[];
   twists?: SeedTwist[];
   threads?: Thread[];
+  priority_blocks?: SeedPriorityBlock[];
+}
+
+/**
+ * Seed entry for `public.priority_block` — a temporal override of a
+ * priority's sort order. Each row says "from effective_at onwards, this
+ * priority sorts at order_value". The agenda uses these rows when ranking
+ * priorities within a gap that contains multiple priorities, so the
+ * relative order matches what Margot would have arranged when filling
+ * the gap. Without any rows the agenda falls back to the priority's
+ * intrinsic order.
+ */
+export interface SeedPriorityBlock {
+  priority_ref: string;
+  effective_at: string; // Date offset (e.g., "+0d 10:30")
+  order_value: number; // Lower sorts earlier within the gap
 }
 
 export interface Config {
@@ -102,6 +118,7 @@ export interface Thread {
   notes?: Note[]; // Notes associated with this thread
   schedule?: Schedule; // Schedule block (at/on/recurrence)
   links?: SeedLink[]; // External links
+  associated_with?: string; // ref of a parent thread (typically an event) — emits a thread_association row so this thread renders nested under the parent in the agenda
 }
 
 export interface Schedule {
@@ -332,6 +349,21 @@ export interface GeneratedNoteTag {
   actor_id: string; // UUID
   note_id: string; // UUID
   tag_id: number;
+}
+
+export interface GeneratedThreadAssociation {
+  id: string; // UUID
+  parent_thread_id: string; // UUID
+  child_thread_id: string; // UUID
+  order: number;
+}
+
+export interface GeneratedPriorityBlock {
+  id: string; // UUID
+  user_id: string; // UUID
+  priority_id: string; // UUID
+  order_value: number;
+  effective_at: string; // ISO timestamp
 }
 
 // ============================================================================

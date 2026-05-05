@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+#
+# Apply a seed YAML to the PRODUCTION database with a separate Clerk
+# login email, and upload referenced assets to remote R2.
+#
+# Usage:
+#   pnpm apply-seed:prod libs/db/seeds/margot.yaml --login-email team+margot@plot.day [extra gen-seed args]
+#
+# What this script does (so you don't have to):
+#   1. Sources libs/db/.env.production (must contain CLERK_SECRET_KEY).
+#      Run `pnpm --filter @plotday/db get-env` first if it's missing.
+#   2. Reads the prod DB username + password from 1Password (account: plotco).
+#   3. Ensures the Cloud SQL Proxy is running on 127.0.0.1:5433
+#      (auto-starts via `pnpm prod-db-connect` if not).
+#   4. Builds DATABASE_URL pointed at the proxy.
+#   5. Runs gen-seed with --apply --r2-bucket plot-files-production --r2-remote.
+#
+# The YAML's config.email is the *display* email (shown in the app).
+# The Clerk user is created/found with the email passed via --login-email.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="$REPO_ROOT/libs/db/.env.production"
+
+# --- Confirmation: this writes to PRODUCTION ---
+if [ "${SEED_PROD_CONFIRM:-}" != "yes" ]; then
+  echo ""
+  echo "⚠️  This will apply seed data to the PRODUCTION database and upload"
+  echo "    assets to the production R2 bucket (plot-files-production)."
+  echo ""
+  read -r -p "Type 'yes' to continue: " confirm
+  if [ "$confirm" != "yes" ]; then
+    echo "Aborted."
+    exit 1
+  fi
+fi
+
+# --- 1. Load CLERK_SECRET_KEY from libs/db/.env.production ---
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Error: $ENV_FILE not found." >&2
+  echo "Run: pnpm --filter @plotday/db get-env" >&2
+  exit 1
+fi
+
+# Source only the variables we need; ignore comments and blank lines.
+# (We can't `set -a; source` because the file may contain unresolved op:// refs
+# in other places.)
+CLERK_SECRET_KEY="$(grep -E '^CLERK_SECRET_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2-)"
+if [ -z "${CLERK_SECRET_KEY:-}" ] || [[ "$CLERK_SECRET_KEY" == op://* ]]; then
+  echo "Error: CLERK_SECRET_KEY missing or unresolved in $ENV_FILE." >&2
+  echo "Run: pnpm --filter @plotday/db get-env" >&2
+  exit 1
+fi
+export CLERK_SECRET_KEY
+
+# --- 2. Resolve DB credentials from 1Password ---
+if ! command -v op >/dev/null 2>&1; then
+  echo "Error: 1Password CLI (op) not found. Install it from https://1password.com/downloads/command-line/" >&2
+  exit 1
+fi
+
+echo "→ Fetching production DB credentials from 1Password..." >&2
+DB_USER="$(op read --account plotco 'op://Production/Database/username')"
+DB_PASS="$(op read --account plotco 'op://Production/Database/password')"
+if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ]; then
+  echo "Error: failed to read DB credentials from 1Password." >&2
+  exit 1
+fi
+
+# --- 3. Ensure Cloud SQL Proxy is running on 127.0.0.1:5433 ---
+if ! nc -z 127.0.0.1 5433 2>/dev/null; then
+  echo "→ Starting Cloud SQL Proxy (pnpm prod-db-connect)..." >&2
+  pnpm --filter @plotday/db prod-db-connect >/dev/null
+  # Wait up to ~15s for the proxy to accept connections.
+  for _ in {1..30}; do
+    if nc -z 127.0.0.1 5433 2>/dev/null; then break; fi
+    sleep 0.5
+  done
+  if ! nc -z 127.0.0.1 5433 2>/dev/null; then
+    echo "Error: Cloud SQL Proxy did not become ready on 127.0.0.1:5433." >&2
+    exit 1
+  fi
+fi
+
+# --- 4. Build DATABASE_URL ---
+# urlencode the password in case it contains special characters.
+urlencode() {
+  python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
+}
+DB_PASS_ENC="$(urlencode "$DB_PASS")"
+DB_USER_ENC="$(urlencode "$DB_USER")"
+export DATABASE_URL="postgresql://${DB_USER_ENC}:${DB_PASS_ENC}@127.0.0.1:5433/plot"
+
+echo "→ DATABASE_URL pointed at Cloud SQL Proxy (user: $DB_USER)" >&2
+
+# --- 5. Run gen-seed ---
+exec pnpm --filter @plotday/db gen-seed \
+  --apply \
+  --r2-bucket plot-files-production \
+  --r2-remote \
+  "$@"

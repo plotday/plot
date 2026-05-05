@@ -1,32 +1,5 @@
--- Retroactively re-file a user's threads that would now classify to a
--- different priority, given an anchor thread that was just explicitly moved.
---
--- Called asynchronously (via c.executionCtx.waitUntil from the priority-moves
--- sync endpoint). Bounded, index-driven, single function — the worker makes
--- one RPC call and does not iterate.
---
--- Algorithm:
---   1. Load the anchor thread's current signals (topic, embedding,
---      contacts, groups).
---   2. Build a candidate set via an index-backed UNION:
---        - threads with the same topic (idx_thread_topic)
---        - threads within HNSW cosine distance of the anchor's embedding,
---          capped at p_max_candidates (idx_thread_embedding)
---        - threads with contact or group overlap (idx_thread_contacts /
---          idx_thread_groups GIN)
---      Every candidate is currently filed for this user with
---      user_moved = FALSE — explicit moves are sticky and never overwritten.
---   3. For each candidate, call classify_thread_for_user(p_user_id, id).
---      Move candidates whose new priority differs from their current one.
---   4. Return the number of moved rows.
-CREATE OR REPLACE FUNCTION public.reclassify_user_threads (
-    p_user_id uuid,
-    p_anchor_thread_id uuid,
-    p_max_candidates int DEFAULT 500
-)
-    RETURNS int
-    LANGUAGE plpgsql
-    AS $function$
+-- Modify "reclassify_user_threads" function
+CREATE OR REPLACE FUNCTION "public"."reclassify_user_threads" ("p_user_id" uuid, "p_anchor_thread_id" uuid, "p_max_candidates" integer DEFAULT 500) RETURNS integer LANGUAGE plpgsql AS $$
 DECLARE
     v_topic text;
     v_embedding halfvec;
@@ -144,6 +117,4 @@ BEGIN
 
     RETURN v_moved_count;
 END;
-$function$;
-
-COMMENT ON FUNCTION public.reclassify_user_threads IS 'After an explicit user move (anchor thread), retroactively re-file other threads that now classify differently. Uses indexed candidate prefilter (topic, HNSW, GIN), runs classify_thread_for_user per candidate, and moves those whose new classification differs — never touching rows where user_moved = TRUE.';
+$$;
