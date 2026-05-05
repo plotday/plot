@@ -139,7 +139,19 @@ export async function addTrialNote(
   const createdBy = plotTwistInstanceId ?? userId;
   const authorId = plotTwistInstanceId ?? contact?.id ?? userId;
 
-  // Insert note with key for idempotency
+  // Trial notes have no link (authored by Plot system twist), so the
+  // partial unique index (thread_id, link_id, key) WHERE key IS NOT NULL
+  // can't dedupe them via ON CONFLICT — NULL link_id rows coexist by NULL
+  // semantics. Pre-check explicitly to keep this insert idempotent.
+  const existing = await db
+    .selectFrom("note")
+    .select("id")
+    .where("thread_id", "=", threadId)
+    .where("key", "=", key)
+    .where("link_id", "is", null)
+    .executeTakeFirst();
+  if (existing) return; // Already exists (idempotent)
+
   const note = await db
     .insertInto("note")
     .values({
@@ -149,11 +161,8 @@ export async function addTrialNote(
       author_id: authorId,
       key,
     })
-    .onConflict((oc) => oc.columns(["thread_id", "key"]).doNothing())
     .returning("id")
-    .executeTakeFirst();
-
-  if (!note) return; // Already exists (idempotent)
+    .executeTakeFirstOrThrow();
 
   if (addTodo && contact) {
     // Add Tag.todo (tag_id = 1) for the user's contact

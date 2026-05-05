@@ -419,7 +419,11 @@ describe("Plot", () => {
       });
 
       // Verify onConflict was configured for activity_id,key
-      expect(noteInsert._onConflictColumns).toEqual(["thread_id", "key"]);
+      expect(noteInsert._onConflictColumns).toEqual([
+        "thread_id",
+        "link_id",
+        "key",
+      ]);
     });
 
     it("createNotes filters out empty notes silently", async () => {
