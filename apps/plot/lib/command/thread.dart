@@ -810,18 +810,21 @@ class DisassociateThread extends Command {
       // Finish + disassociate: remove all copies (associated and todo)
       priorityBloc?.optimisticallyRemoveThread(thread.id, finishTodo: true);
       await thread.copyWith(todo: false).save();
+      await thread.disassociate(order: order);
     } else {
       // Just disassociate: prune the association map AND splice in a
       // schedule-restored copy so the thread re-appears as a regular
       // todo on the agenda the instant the user clicks the X — instead
       // of vanishing while the DB write to restore the schedule
-      // resolves.
+      // resolves. `disassociate` is now a pure association op, so we
+      // explicitly persist the schedule restore alongside it.
       priorityBloc?.optimisticallyDisassociate(thread.id);
       priorityBloc?.optimisticallyUpdateThread(
         thread.withScheduleRestored(order: order),
       );
+      await thread.disassociate(order: order);
+      await thread.withScheduleRestored(order: order).save();
     }
-    await thread.disassociate(order: order);
     return const CommandDone();
   }
 }

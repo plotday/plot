@@ -999,8 +999,18 @@ class PriorityBloc extends Cubit<PriorityState> {
     // source list; finishing a todo keeps any link-schedule instance
     // alive (it remains as an event) but flips its todo flag so the
     // builder treats it as the user's scheduled completion.
+    // Associated threads are also kept so they continue to render
+    // nested under their parent event — "Remove from agenda" must
+    // not strip the event nesting (that's "Remove from event"'s job).
+    final isAssociated =
+        _associations?.values.any(
+          (children) => children.any((a) => a.childThreadId == id),
+        ) ??
+        false;
     _lastAgendaThreads = _lastAgendaThreads
-        .where((t) => t.id != id || t.isLinkScheduleInstance)
+        .where(
+          (t) => t.id != id || t.isLinkScheduleInstance || isAssociated,
+        )
         .map((t) {
           if (!finishTodo || t.id != id) return t;
           return t.copyWith(todo: false);

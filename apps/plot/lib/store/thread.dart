@@ -3033,7 +3033,12 @@ class Thread extends Equatable implements Comparable<Thread> {
   }
 
   /// Associate this thread with a parent event thread.
-  /// Archives the user schedule and creates a shared association.
+  /// Pure association op: only writes a `thread_association` row; the
+  /// per-user schedule is left alone so "associated to event" and
+  /// "on personal agenda" stay independent. Callers that want the
+  /// classic "moved under the event, off the agenda" UX (e.g. dropping
+  /// onto an event header in the agenda drag-drop) should also call
+  /// [withScheduleArchived().save()] explicitly.
   Future<void> associateWith({
     required Uuid parentThreadId,
     required Order order,
@@ -3089,28 +3094,21 @@ class Thread extends Equatable implements Comparable<Thread> {
       ThreadAssociationsBase(),
     );
 
-    // Archive the user schedule (remove from personal agenda)
-    if (_userSchedule != null) {
-      final archivedSchedule = _userSchedule.copyWith(
-        archivedAt: Value(DateTime.now()),
-        updatedAt: DateTime.now(),
-      );
-      await Store.get.save(
-        Store.get.schedules,
-        archivedSchedule.toCompanion(false),
-        SchedulesBase(),
-      );
-    }
-
     Thread.push();
   }
 
-  /// Remove association and restore the user schedule.
+  /// Remove this thread's association with its parent event.
+  /// Pure detach op: only archives the `thread_association` row; the
+  /// per-user schedule is left alone so "removed from event" doesn't
+  /// implicitly add the thread back to the agenda. Callers that want
+  /// the classic "thread reappears as a todo" UX (e.g. drag-drop away
+  /// from an event, or the X-icon "Remove from event" affordance)
+  /// should also call [withScheduleRestored(order, date).save()]
+  /// explicitly.
   Future<void> disassociate({
     required Order order,
-    Date? date,
   }) async {
-    log.info('[disassociate] "$title" order=${order.value} date=$date');
+    log.info('[disassociate] "$title" order=${order.value}');
 
     // Archive the active association for this child thread
     final associations = await (Store.get.select(Store.get.threadAssociations)
@@ -3128,41 +3126,6 @@ class Thread extends Equatable implements Comparable<Thread> {
             )
             .toCompanion(false),
         ThreadAssociationsBase(),
-      );
-    }
-
-    // Restore or create a user schedule
-    if (_userSchedule != null) {
-      final restoredSchedule = _userSchedule.copyWith(
-        archivedAt: const Value(null),
-        order: Value(order),
-        startOn: Value(date ?? Thread.todoNowDate),
-        startAt: const Value(null),
-        endAt: const Value(null),
-        endOn: const Value(null),
-        updatedAt: DateTime.now(),
-        reason: Value(date != null ? 'schedule' : 'add'),
-      );
-      await Store.get.save(
-        Store.get.schedules,
-        restoredSchedule.toCompanion(false),
-        SchedulesBase(),
-      );
-    } else {
-      final newSchedule = ScheduleRow(
-        id: Uuid.generate(),
-        updatedAt: DateTime.now(),
-        threadId: id,
-        userId: Base.userId,
-        startOn: date ?? Thread.todoNowDate,
-        order: order,
-        outstandingTasks: false,
-        reason: date != null ? 'schedule' : 'add',
-      );
-      await Store.get.save(
-        Store.get.schedules,
-        newSchedule.toCompanion(false),
-        SchedulesBase(),
       );
     }
 

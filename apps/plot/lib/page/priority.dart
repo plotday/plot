@@ -1232,8 +1232,8 @@ class _PriorityPageState extends State<PriorityPage> {
     final nextParentId = next is AgendaHeaderItem
         ? next.parentBlockId
         : next is AgendaThreadItem
-            ? next.parentBlockId
-            : null;
+        ? next.parentBlockId
+        : null;
     return ListenableBuilder(
       listenable: _blockDragController,
       builder: (context, _) {
@@ -1245,7 +1245,8 @@ class _PriorityPageState extends State<PriorityPage> {
         // block starts animating — visible as a brief upward jump in
         // everything below the source while the surrounding animations
         // catch up.
-        final shouldHide = nextParentId != null &&
+        final shouldHide =
+            nextParentId != null &&
             _blockDragController.draggingBlockId == nextParentId &&
             !_blockDragController.isSourceVisible;
 
@@ -1276,11 +1277,13 @@ class _PriorityPageState extends State<PriorityPage> {
           // progress.
           final isBlockDragging = _blockDragController.isDragging;
           final dragging = controller.draggingIndex;
-          final prevHighlighted = prev is AgendaThreadItem &&
+          final prevHighlighted =
+              prev is AgendaThreadItem &&
               !isBlockDragging &&
               (hovered == index - 1 || focused == index - 1) &&
               dragging != index - 1;
-          final nextHighlighted = next is AgendaThreadItem &&
+          final nextHighlighted =
+              next is AgendaThreadItem &&
               !isBlockDragging &&
               (hovered == index || focused == index) &&
               dragging != index;
@@ -1288,13 +1291,17 @@ class _PriorityPageState extends State<PriorityPage> {
             final bright = borderColor.withValues(
               alpha: (borderColor.a * 2).clamp(0.0, 1.0),
             );
-            separator =
-                Container(height: 1, color: Color.alphaBlend(bright, bg));
+            separator = Container(
+              height: 1,
+              color: Color.alphaBlend(bright, bg),
+            );
           } else {
             // Default: transparent for first item (avoids double border
             // with header), otherwise the standard border color.
-            separator =
-                Container(height: 1, color: prev == null ? bg : baseBorder);
+            separator = Container(
+              height: 1,
+              color: prev == null ? bg : baseBorder,
+            );
           }
         }
 
@@ -1477,7 +1484,8 @@ class _PriorityPageState extends State<PriorityPage> {
         // to the final list item, which is a date header only when the
         // last section is empty (in which case afterListBoundary is
         // null because prevBlockId was reset).
-        final afterBoundary = afterBoundaries[index] ??
+        final afterBoundary =
+            afterBoundaries[index] ??
             ((index == listItems.length - 1) ? afterListBoundary : null);
 
         return Column(
@@ -1586,6 +1594,13 @@ class _PriorityPageState extends State<PriorityPage> {
                     child: AnimatedRemoval(
                       key: removalKey,
                       onRemoved: () {
+                        // Drop the cached GlobalKey so the next render builds
+                        // a fresh AnimatedRemoval (with _removed=false). When
+                        // the thread is associated, the bloc rebuild puts A
+                        // back under its parent event with the same stableKey;
+                        // without clearing this we'd reparent the just-collapsed
+                        // State and render an empty box forever.
+                        _removalKeys.remove(itemKey);
                         context.read<PriorityBloc>().optimisticallyRemoveThread(
                           agendaActivity.thread.id,
                           finishTodo: true,
@@ -2050,7 +2065,8 @@ class _PriorityPageState extends State<PriorityPage> {
                   justBelowBlockId = blockId;
                   break;
                 }
-                final isEndOfBlockDrop = destBlockId != null &&
+                final isEndOfBlockDrop =
+                    destBlockId != null &&
                     (!justBelowFound || justBelowBlockId != destBlockId);
 
                 final sourcePeriod = _resolvePeriod(
@@ -2105,19 +2121,33 @@ class _PriorityPageState extends State<PriorityPage> {
 
                 // Persist changes
                 if (useAssociation) {
-                  // Create association and archive user schedule
-                  activity.associateWith(
-                    parentThreadId: targetEvent!.id,
-                    order: newOrder,
-                  );
+                  // Create association, then archive the user schedule so
+                  // the thread renders only under the event (matches the
+                  // visual position the user dropped it at).
+                  activity
+                      .associateWith(
+                        parentThreadId: targetEvent!.id,
+                        order: newOrder,
+                      )
+                      .then((_) => activity.withScheduleArchived().save());
                 } else if (isAssociated && !droppingOnEvent) {
                   // Optimistically clear association so _makeAgenda doesn't
                   // re-add the thread under the event on next rebuild.
                   context.read<PriorityBloc>().optimisticallyDisassociate(
                     activity.id,
                   );
-                  // Remove association and restore user schedule
-                  activity.disassociate(order: newOrder, date: effectiveTargetDate);
+                  // Remove association, then restore the user schedule at
+                  // the dropped position so the thread reappears as a todo.
+                  activity
+                      .disassociate(order: newOrder)
+                      .then(
+                        (_) => activity
+                            .withScheduleRestored(
+                              order: newOrder,
+                              date: effectiveTargetDate,
+                            )
+                            .save(),
+                      );
                 } else if (needsFullSave) {
                   updatedActivity.save();
                 } else {
@@ -2150,10 +2180,7 @@ class _PriorityPageState extends State<PriorityPage> {
     _blockDragController.previewBuilder = (payload) =>
         _buildBlockDragPreview(state, listItems, payload);
 
-    return BlockDragScope(
-      controller: _blockDragController,
-      child: list,
-    );
+    return BlockDragScope(controller: _blockDragController, child: list);
   }
 
   /// Build a static dimmed preview of the source block's content
@@ -2300,14 +2327,13 @@ class _PriorityPageState extends State<PriorityPage> {
       }
       break;
     }
-    final canonicalBlock =
-        context.read<PriorityBloc>().state.agenda.blockById(payload.blockId);
+    final canonicalBlock = context.read<PriorityBloc>().state.agenda.blockById(
+      payload.blockId,
+    );
     final sourceThreadIds = canonicalBlock != null
         ? {for (final t in canonicalBlock.threads) t.id}
         : fallbackThreadIds;
-    if (source == null ||
-        sourceIndex == null ||
-        source.blockPriority == null) {
+    if (source == null || sourceIndex == null || source.blockPriority == null) {
       _log.info(
         '[block-drop] dispatch skipped: source not found / no blockPriority '
         '(blockId=${payload.blockId} sourceFound=${source != null} '
