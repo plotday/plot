@@ -13,6 +13,7 @@ import {
   convertNoteToMarkdown,
 } from "./thread-helpers";
 import { createThread } from "./thread";
+import { createNotes } from "./note";
 import { createLinkSchedules } from "./schedule";
 import type { Plot } from "./index";
 
@@ -54,7 +55,8 @@ export async function createLink(
       ...(link.archived !== undefined ? { archived: link.archived } : {}),
       ...(link.preview !== undefined ? { preview: link.preview } : {}),
       ...(link.priority ? { priority: link.priority } : {}),
-      ...(link.notes ? { notes: link.notes } : {}),
+      // Notes are created AFTER the link row exists (see createNotes call
+      // later in this function) so note.link_id can be set on the first write.
     };
 
     // Look up twist_id for icon + cross-user link lookup scope.
@@ -322,6 +324,24 @@ export async function createLink(
         .returning("id")
         .executeTakeFirstOrThrow();
       linkId = linkResult.id;
+    }
+
+    // Create notes against the resolved linkId so note.link_id is set on
+    // the first write — keeps the FK valid and lets the partial unique
+    // index (thread_id, link_id, key) deduplicate connector keys per link.
+    if (link.notes && link.notes.length > 0) {
+      await createNotes(
+        plot,
+        link.notes.map((note) => ({
+          ...note,
+          thread: { id: threadId as Uuid },
+        })),
+        {
+          priority_id: threadPriorityId,
+          created_by: plot.twistInstanceId,
+          link_id: linkId,
+        }
+      );
     }
 
     // Create link schedules if present

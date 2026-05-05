@@ -65,6 +65,12 @@ export function ensureIncreasingCreatedTimestamps(notes: NewNote[]): NewNote[] {
 export type ActivityContext = {
   priority_id: string;
   created_by?: string;
+  /**
+   * The link this note batch belongs to. Set by createLink to scope
+   * note.key uniqueness to (thread_id, link_id, key). Omitted for
+   * user-authored or Plot-tool batches that aren't tied to a link.
+   */
+  link_id?: string;
 };
 
 export async function createNote(
@@ -255,6 +261,13 @@ export async function createNote(
       archived_at: note.archived ? new Date().toISOString() : null,
       re_note_id: note.reNote && "id" in note.reNote ? note.reNote.id : null,
     };
+
+    // Set link_id if provided by the caller (saveLink path). For bare
+    // connector saveNote calls the link is resolved later — see Task 4.
+    // User-authored notes leave link_id NULL.
+    if (activityContext?.link_id) {
+      dbNote.link_id = activityContext.link_id;
+    }
 
     // If tool provided an ID, use it instead of letting database generate one
     if ("id" in note && note.id) {
