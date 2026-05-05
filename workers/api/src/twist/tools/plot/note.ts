@@ -73,6 +73,38 @@ export type ActivityContext = {
   link_id?: string;
 };
 
+/**
+ * Resolves which link a connector-authored note belongs to when the caller
+ * didn't pass it explicitly (e.g. bare saveNote on an existing thread).
+ *
+ * Rules:
+ *   - Exactly one link by this connector instance on this thread → use it.
+ *   - Multiple → throw. Connectors should call saveLink (which carries the
+ *     link explicitly) instead of bare saveNote on merged threads.
+ *   - Zero → return null. The note will be inserted with link_id = NULL
+ *     and coexist with other NULL-link notes via the partial unique index's
+ *     NULL semantics. Happens when the link was deleted but the note kept,
+ *     or when this code path is invoked before any link exists.
+ */
+export async function resolveLinkIdForConnectorNote(
+  db: Plot["db"],
+  threadId: string,
+  twistInstanceId: string
+): Promise<string | null> {
+  const links = await db
+    .selectFrom("link")
+    .select("id")
+    .where("thread_id", "=", threadId)
+    .where("created_by", "=", twistInstanceId)
+    .execute();
+
+  if (links.length === 0) return null;
+  if (links.length === 1) return links[0].id;
+  throw new Error(
+    `Cannot resolve link for keyed note: thread ${threadId} has ${links.length} links from this connector. Use saveLink instead, or specify the link explicitly.`
+  );
+}
+
 export async function createNote(
   plot: Plot,
   note: NewNote,
@@ -262,13 +294,6 @@ export async function createNote(
       re_note_id: note.reNote && "id" in note.reNote ? note.reNote.id : null,
     };
 
-    // Set link_id if provided by the caller (saveLink path). For bare
-    // connector saveNote calls the link is resolved later — see Task 4.
-    // User-authored notes leave link_id NULL.
-    if (activityContext?.link_id) {
-      dbNote.link_id = activityContext.link_id;
-    }
-
     // If tool provided an ID, use it instead of letting database generate one
     if ("id" in note && note.id) {
       dbNote.id = note.id;
@@ -277,6 +302,21 @@ export async function createNote(
     // If tool provided a key, add it for upsert behavior
     if ("key" in note && note.key) {
       dbNote.key = note.key;
+    }
+
+    // Set link_id from explicit context first (saveLink path). For bare
+    // saveNote calls from a connector (or other twist), resolve by querying
+    // the thread's links for this connector instance. Only resolve keyed
+    // notes — unkeyed notes can't collide on the partial unique index.
+    // User-authored notes have no twistInstanceId and leave link_id NULL.
+    if (activityContext?.link_id) {
+      dbNote.link_id = activityContext.link_id;
+    } else if (plot.twistInstanceId && dbNote.key) {
+      dbNote.link_id = await resolveLinkIdForConnectorNote(
+        plot.db,
+        activityId,
+        plot.twistInstanceId
+      );
     }
 
     // Insert or upsert note based on whether key is provided.
