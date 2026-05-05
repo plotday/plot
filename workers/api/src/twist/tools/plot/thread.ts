@@ -840,7 +840,17 @@ export async function getNote(
     if ("id" in note) {
       query = query.where("id", "=", note.id);
     } else {
-      query = query.where("key", "=", note.key);
+      // For connector callers, restrict to notes on a link owned by this
+      // connector so reply-by-key targeting on a merged thread doesn't pick
+      // a sibling connector's note with the same key.
+      const twistInstanceId = plot.twistInstanceId;
+      query = query
+        .where("note.key", "=", note.key)
+        .$if(twistInstanceId != null, (qb) =>
+          qb
+            .innerJoin("link", "link.id", "note.link_id")
+            .where("link.created_by", "=", twistInstanceId!)
+        );
     }
 
     // Always include archived notes (no filter on archived_at)

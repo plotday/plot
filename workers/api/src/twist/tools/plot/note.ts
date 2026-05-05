@@ -713,14 +713,24 @@ export async function updateNote(plot: Plot, note: NoteUpdate): Promise<void> {
       // ID provided directly
       noteId = note.id;
     } else if ("key" in note && note.key) {
-      // Look up note by key
-      // Note: We need the activity_id to look up by key, but NoteUpdate doesn't require it
-      // We'll need to query by key alone since the unique constraint is (activity_id, key)
-      // This means if the same key exists in multiple activities, this will fail
+      // Look up note by key. For connector callers, scope to the connector's
+      // links on this thread so we don't match another connector's note with
+      // the same key (e.g. "description") after a merge. NoteUpdate doesn't
+      // carry thread_id, so we have to accept a cross-thread risk for
+      // non-connector callers — same as before. With the new partial unique
+      // index (thread_id, link_id, key) WHERE key IS NOT NULL, two notes
+      // can share the same key on the same thread when they belong to
+      // different links, so the unscoped lookup may return the wrong row.
+      const twistInstanceId = plot.twistInstanceId;
       const existingNote = await plot.db
         .selectFrom("note")
-        .select("id")
-        .where("key", "=", note.key)
+        .select(["note.id"])
+        .where("note.key", "=", note.key)
+        .$if(twistInstanceId != null, (qb) =>
+          qb
+            .innerJoin("link", "link.id", "note.link_id")
+            .where("link.created_by", "=", twistInstanceId!)
+        )
         .executeTakeFirst();
 
       if (!existingNote) {
