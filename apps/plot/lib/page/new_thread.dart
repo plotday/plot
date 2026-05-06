@@ -584,6 +584,7 @@ class NewThreadPageState extends State<NewThreadPage> {
     );
     if (!result.present) return;
     final picked = result.value;
+    if (!mounted) return;
     await _switchToPriority(picked);
   }
 
