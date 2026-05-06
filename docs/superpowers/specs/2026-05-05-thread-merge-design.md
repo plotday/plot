@@ -45,7 +45,7 @@ restoration of *its* identity.
 | `thread.contacts`, `thread.groups` | **Union** source ∪ target. | `target.contacts -= (source.contacts \ otherActiveSources.contacts)`, same for `groups`. Removes contacts/groups that only this source contributed; keeps any that another still-merged source carries. Lossy only in the rare case where a contact was in both the pre-merge target and source (the overlap is dropped from target on split). |
 | `thread.importance` | `max(source, target)`. | Target untouched. (Lossy — accepted.) |
 | `thread.urgency` | More urgent of the two by `_urgencyRank` (`interrupt < inform-requests < inform-updates < passive < null`). | Target untouched. (Lossy — accepted.) |
-| `thread.twist_id`, `thread.key` | Copy from source to target. **If target already has both set and they differ from source's, abort merge** with user-facing error "this thread is already linked to a different external item". Source row keeps its values. | If `target.(twist_id, key) == source.(twist_id, key)`, clear them on target. (At most one source can match because merge refuses the conflict case.) |
+| `thread.twist_id`, `thread.key` | **Server-side trigger** copies from source to target when target's are unset. If target already has its own different `(twist_id, key)`, trigger leaves both rows unchanged (rare; behavior matches today's connector-duplicate bug — no regression, just no fix in this case). Source row keeps its values either way. Client never reads or writes these — they're not synced to clients. | Server-side trigger: when `merged_into_thread_id` transitions back to NULL on source, if `target.(twist_id, key) == source.(twist_id, key)`, clear them on target so source can reclaim the active slot. |
 | `thread.preview`, `bumpedAt`, `lastNoteCreatedAt`, `embedding` | Recomputed server-side from notes; no explicit handling. | Same. |
 | `thread.merged_into_thread_id` | On source: set to target.id. On target: never set by merge. | On source being split: set to NULL. |
 | `thread.archived_at` (on source) | Set to `now()`. | Set to NULL. |
@@ -71,14 +71,33 @@ WHERE t.twist_id = v_twist_id
   AND t.archived_at IS NULL;
 ```
 
-Because the merge step archives source and copies its `(twist_id, key)`
+Because the merge trigger archives source and copies its `(twist_id, key)`
 onto target, this lookup naturally lands on target. **No change needed
 to `upsert_thread()`.**
 
-The `merged_into_thread_id` column is therefore used solely for split-
-time discovery on the client (and for any future audit/analytics paths
-that want to walk the merge graph), not as a runtime indirection for
-connector ingestion.
+The `merged_into_thread_id` column is used for split-time discovery on
+the client (and for the trigger to know which target to copy
+`(twist_id, key)` onto), not as a runtime indirection for connector
+ingestion.
+
+## Server-side trigger: `transfer_twist_key_on_merge`
+
+Because `thread.twist_id` and `thread.key` are not synced to clients,
+the migration of those fields between source and target happens
+server-side via an `AFTER UPDATE` trigger on `thread`. The trigger
+fires on transitions of `merged_into_thread_id`:
+
+- **NULL → set (merge)**: source must also be archived in the same
+  update (precondition). If source has `(twist_id, key)` and target
+  has none, copy them onto target. If target already has different
+  `(twist_id, key)`, leave both rows unchanged.
+- **set → NULL (split)**: if `target.(twist_id, key) == source.(twist_id, key)`,
+  clear them on target. Then source's unarchive (also in the same
+  update) restores it to the active key slot.
+
+The order of operations within the trigger ensures the partial unique
+index `thread_twist_key_unique` is satisfied at every intermediate
+state.
 
 ## UI
 
@@ -130,44 +149,36 @@ shape used by `SyncOrchestrator.thread`.
 ### Client-side merge logic
 
 `apps/plot/lib/command/thread.dart`, `_ExecuteMerge.run`. New steps,
-ordered. **Ordering is load-bearing for the twist-key step** because
-`thread_twist_key_unique` is `WHERE archived_at IS NULL`: the source
-must be archived before the target can claim its `(twist_id, key)`.
+ordered:
 
-1. **Twist-key conflict check**: if both source and target have
-   `(twist_id, key)` set and they differ, throw with user error and
-   abort. (No writes yet — pure precondition.)
-2. **Note key collision pre-pass**: build a `Set<NoteId>` of
+1. **Note key collision pre-pass**: build a `Set<NoteId>` of
    moved-source-note ids whose `key` collides with an existing target
-   note's `key`. Apply `key: null` for those during the existing move
-   loop.
-3. **Archive source and set the back-reference**: write
-   `source.merged_into_thread_id = target.id` and
-   `archived_at = now()`. This replaces the existing `source.delete()`
-   call (which already set `archived_at`). Done first so the source no
-   longer participates in `thread_twist_key_unique`.
-4. **Twist-key copy onto target**: if source has `(twist_id, key)`
-   and target's are unset, copy them onto target. (If target already
-   has the same values, no-op.) Save target.
-5. **Audience union**: `target.contacts = target.contacts ∪
-   source.contacts`, same for `groups`. Save target.
-6. **Importance/urgency**: `target.importance =
+   note's `key`. Apply `key: null` for those during the move loop.
+2. **Audience union onto target**: `target.contacts = target.contacts ∪
+   source.contacts`, same for `groups`.
+3. **Importance/urgency onto target**: `target.importance =
    max(target.importance, source.importance)`; `target.urgency =
-   urgencyByLowerRank(target.urgency, source.urgency)`. Save target.
-7. **Existing note move**, with the collision set applied.
-8. **Existing link move.**
-9. **Existing tag union.**
-10. **Existing schedule fill-gaps.**
-11. **`thread_association` move**:
+   urgencyByLowerRank(target.urgency, source.urgency)`.
+4. **Single target write** combining steps 2 and 3 (one row write to
+   minimize sync pushes).
+5. **Archive source and set back-reference**: write
+   `source.merged_into_thread_id = target.id` and
+   `archived_at = now()`. The server trigger fires on this update and
+   handles the `(twist_id, key)` migration. `(twist_id, key)` is not
+   readable from the client, so we don't surface conflict errors;
+   the trigger silently skips the copy when target already has its own
+   different key.
+6. **Existing note move**, with the collision set applied.
+7. **Existing link move.**
+8. **Existing tag union.**
+9. **Existing schedule fill-gaps.**
+10. **`thread_association` move**:
     - Active row where `child_thread_id == source.id`: if target has no
       active parent association, set `child_thread_id = target.id`.
       Else archive source's association.
     - Active rows where `parent_thread_id == source.id`: bulk update
       `parent_thread_id = target.id`.
-12. Existing sync push for note + thread; navigate to target.
-
-Steps 4–6 can be combined into a single target write to avoid multiple
-sync pushes for the same row.
+11. Existing sync push for note + thread; navigate to target.
 
 ### Client-side split logic
 
@@ -179,14 +190,15 @@ sync pushes for the same row.
    existing notes/links scan only for legacy data without the new
    column populated.)
 2. After existing note/link/schedule restore for the chosen source:
-   - If `target.(twist_id, key) == source.(twist_id, key)`, clear
-     them on target. Source's are already preserved.
    - **Audience subtract**: collect `otherActiveSources` for this
      target via the same reverse-lookup, excluding the source being
      split. Compute `removeContacts = source.contacts \ ⋃
      otherActiveSources.contacts`. Apply
      `target.contacts -= removeContacts`. Same for `groups`.
    - Set `source.merged_into_thread_id = NULL`, `archived_at = NULL`.
+     The server trigger fires on this transition and handles
+     `(twist_id, key)` reverse-migration (clears them from target if
+     they match source's).
 3. `thread_association` rows are not restored.
 4. Target's `importance`/`urgency` are not modified (no clean inverse
    of `max`).
@@ -208,10 +220,13 @@ stale on that point). To get `merged_into_thread_id` to clients:
 
 ## Failure modes & errors
 
-- Merge aborts with a user-facing error if both threads have a
-  different `(twist_id, key)` set. Today: silent overwrite. New:
-  surface a `ConfirmModal`-style explanation that the user must split
-  one of the threads first.
+- `(twist_id, key)` conflict between source and target: the server
+  trigger silently skips the key migration. Merge content (notes,
+  links, etc.) still moves correctly. The connector continues
+  upserting against source's (twist_id, key), which is now archived;
+  the upsert lookup finds no active row and creates a fresh thread on
+  next sync. This is the existing connector-duplicate bug — no
+  regression vs today, just no fix in this rare conflict case.
 - Merge aborts if either thread is already a merge source
   (`merged_into_thread_id IS NOT NULL`) — a source can't be re-merged
   while alive, and you can't merge into an archived source. (Listing
