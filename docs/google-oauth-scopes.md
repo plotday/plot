@@ -88,7 +88,7 @@ Already compliant (`apps/site/app/routes/privacy.tsx`). Explicitly states adhere
 
 ### Issue 4: Data storage and retention
 
-CASA assessors will want documentation of: encryption at rest (Supabase/PostgreSQL AES-256), TLS for all API communication, Clerk JWT verification, token refresh mechanism, data deletion on connector disconnect, and account deletion flow.
+CASA assessors will want documentation of: encryption at rest (GCP Cloud SQL PostgreSQL AES-256, Google-managed keys), TLS for all API communication, Clerk JWT verification, token refresh mechanism, data deletion on connector disconnect, and account deletion flow.
 
 ### Issue 5: Token storage security
 
@@ -154,11 +154,11 @@ Plot is a productivity app that helps teams organize tasks, messages, and docume
 
 Yes, we store synced data to provide offline access and cross-device sync.
 
-- **Location**: PostgreSQL database hosted on Supabase (AWS, with data residency in Canada and the United States).
-- **Encryption at rest**: Database is encrypted at rest using AES-256.
-- **Encryption in transit**: All connections use TLS 1.2+. API endpoints are HTTPS-only.
-- **Access controls**: Database access is restricted to our API workers (Cloudflare Workers). No direct database access is provided to end users. Authentication is handled via Clerk with JWT verification using local PEM keys.
-- **OAuth tokens**: Stored encrypted in the database. Refresh tokens are used to maintain access. Tokens are scoped per-user and per-service.
+- **Location**: PostgreSQL database hosted on Google Cloud SQL in `northamerica-northeast2` (Toronto, Canada). Automated backups are stored in the same region.
+- **Encryption at rest**: AES-256 via Google-managed encryption keys (default GCP encryption). Backups inherit the same encryption posture.
+- **Encryption in transit**: API endpoints are HTTPS-only (TLS 1.2/1.3 terminated at Cloudflare). Worker → database connections go through the Cloud SQL Auth Proxy, which provides mutually-authenticated TLS using short-lived ephemeral certificates and IAM-based authorization.
+- **Access controls**: Database access is restricted to our API workers (Cloudflare Workers) via the Cloud SQL Auth Proxy. No direct database access is provided to end users. Application authentication is handled via Clerk with JWT verification using local PEM keys.
+- **OAuth tokens**: Stored in per-connection Cloudflare Durable Object storage (AES-256 at rest). Highest-sensitivity application secrets (user-supplied AI provider keys, secure twist options) are additionally protected with column-level AES-256-GCM encryption (`workers/api/src/utils/encryption.ts`). Refresh tokens are used to maintain access; tokens are scoped per-user and per-service.
 - **Data isolation**: Each user's data is logically isolated. Private threads are only visible to their creator and explicitly mentioned users.
 
 ### How do you handle data deletion requests?
@@ -175,7 +175,7 @@ Access to production data is restricted to core engineering team members who req
 ### What third parties receive user data?
 
 Google data synced to Plot is not shared with third parties except:
-- **Infrastructure providers**: Supabase (database hosting), Cloudflare (API hosting, edge computing). These providers process data on our behalf under data processing agreements.
+- **Infrastructure providers**: Google Cloud (Cloud SQL database hosting in Toronto), Cloudflare (API hosting, edge computing, Durable Objects, R2 object storage), Clerk (authentication). These providers process data on our behalf under data processing agreements.
 - **AI providers** (only when user explicitly invokes AI features): Anthropic (Claude). AI features are opt-in and do not automatically process Google data.
 
 We do not sell user data. We do not use Google data for advertising.

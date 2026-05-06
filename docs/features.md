@@ -143,7 +143,7 @@ Internal catalog of product features for marketing content generation. Direct an
 - SQLite local storage (via Drift)
 - Automatic sync when connected
 - Conflict resolution
-- Multi-device sync via Supabase (PostgreSQL)
+- Multi-device sync via PostgreSQL (GCP Cloud SQL)
 - Cloud backup
 
 ### Sync Intelligence
@@ -286,7 +286,7 @@ Internal catalog of product features for marketing content generation. Direct an
 - Encrypted data transmission
 
 ### Data Management
-- PostgreSQL backend (Supabase enterprise-grade)
+- PostgreSQL backend (GCP Cloud SQL, enterprise-grade)
 - SQLite local storage
 - Vector search (AI-powered similarity)
 - Full-text search (FTS5-based)
@@ -329,7 +329,7 @@ Internal catalog of product features for marketing content generation. Direct an
 
 ### Infrastructure
 - Cloudflare Workers (globally distributed API)
-- Supabase (scalable PostgreSQL)
+- GCP Cloud SQL (scalable PostgreSQL)
 - Queue system (background processing)
 - Durable Objects (stateful twist runtime)
 - Webhook support (event-driven)

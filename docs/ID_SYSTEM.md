@@ -72,12 +72,12 @@ Automated integrations/plugins:
 
 ## Authentication Architecture
 
-Authentication uses Clerk instead of Supabase Auth:
+Authentication uses Clerk:
 
 1. **JWT Verification**: Clerk JWTs are verified using `verifyToken()` from `@clerk/backend`
 2. **User Lookup**: The API looks up the user in `public."user"` by `external_id` (fast path) or `clerk_id` (fallback)
 3. **No RLS**: Row-Level Security is disabled on all tables. Authorization is enforced at the API layer.
-4. **No `auth.uid()`**: There is no Supabase auth schema. User identity comes from the API's JWT verification.
+4. **No `auth.uid()`**: User identity comes from the API's JWT verification, not from a database-resident auth schema.
 
 ```typescript
 // Authentication flow (workers/api/src/utils/auth.ts)

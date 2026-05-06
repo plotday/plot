@@ -60,7 +60,7 @@
 ### Privacy & Compliance
 
 - [ ] Review privacy policy requirements - app uses:
-  - Network connections to Supabase
+  - Network connections to Plot's API (Cloudflare Workers backed by GCP Cloud SQL)
   - OAuth authentication (Google, Apple, Microsoft)
   - PostHog analytics
   - User data storage
