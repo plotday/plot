@@ -558,57 +558,70 @@ export class TwistSync extends DurableObject<Bindings> {
         }
       }
 
-      // Advance seq cursors to the horizon for all 9 (entity, operation) pairs.
-      // Every pair is upserted unconditionally — the cursor advances to horizonSeq
-      // regardless of whether any items were returned. This keeps SyncRecovery from
-      // seeing perpetually stale cursors and re-notifying every 30s.
-      const cursorEntities = [
-        ["thread", "update"],
-        ["note", "create"],
-        ["note", "update"],
-        ["channel_link", "create"],
-        ["channel_link", "update"],
-        ["channel_note", "create"],
-        ["thread_read", "update"],
-        ["thread_schedule", "update"],
-        ["schedule_contact", "update"],
-      ] as const;
+      // Advance seq cursors to the horizon for the 9 (entity, operation) pairs.
+      // We batch these into a single multi-row UPSERT and skip pairs whose
+      // cursor is already at or past horizonSeq with nothing to send — those
+      // rows would have no-op'd anyway. Pairs that returned items, or whose
+      // cursor is behind the horizon, are upserted so SyncRecovery doesn't see
+      // perpetually stale rows and re-notify every 30s.
+      const cursorEntities: ReadonlyArray<readonly [string, string, number]> = [
+        ["thread", "update", updatedActivities.length],
+        ["note", "create", newNotes.length],
+        ["note", "update", updatedNotes.length],
+        ["channel_link", "create", channelNewLinks.length],
+        ["channel_link", "update", channelUpdatedLinks.length],
+        ["channel_note", "create", channelNewNotes.length],
+        ["thread_read", "update", threadReads.length],
+        ["thread_schedule", "update", threadSchedules.length],
+        ["schedule_contact", "update", scheduleContacts.length],
+      ];
 
-      const cursorUpdates = cursorEntities.map(([entity, operation]) => ({
-        name: `${entity} ${operation} sync`,
-        promise: db
-          .insertInto("twist_instance_sync")
-          .values({
-            twist_instance_id: twistInstanceId,
-            entity: sql`${entity}`,
-            operation: sql`${operation}`,
-            last_update_at: sql`now()`,
-            last_update_seq: sql`${horizonSeq}::xid8`,
-            last_sync_at: sql`now()`,
-            last_sync_seq: sql`${horizonSeq}::xid8`,
-          })
-          .onConflict((oc) =>
-            oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
-              last_sync_at: sql`now()`,
-              last_sync_seq: sql`GREATEST(twist_instance_sync.last_sync_seq, ${horizonSeq}::xid8)`,
-            } as any)
-          )
-          .execute(),
-      }));
+      const horizonSeqBig = BigInt(horizonSeq);
+      const cursorRows = cursorEntities
+        .filter(([entity, operation, itemCount]) => {
+          if (itemCount > 0) return true;
+          const info = syncInfos.find(
+            (s) => s.entity === entity && s.operation === operation
+          );
+          // No existing row: nothing to advance — let triggers bootstrap when
+          // real data arrives. Existing row already at/past horizon: no-op.
+          if (!info) return false;
+          try {
+            return BigInt(info.last_sync_seq_text) < horizonSeqBig;
+          } catch {
+            return true;
+          }
+        })
+        .map(([entity, operation]) => ({
+          twist_instance_id: twistInstanceId,
+          entity: sql`${entity}`,
+          operation: sql`${operation}`,
+          last_update_at: sql`now()`,
+          last_update_seq: sql`${horizonSeq}::xid8`,
+          last_sync_at: sql`now()`,
+          last_sync_seq: sql`${horizonSeq}::xid8`,
+        }));
 
-      const cursorUpdateResults = await Promise.allSettled(
-        cursorUpdates.map((u) => u.promise)
-      );
-
-      for (let i = 0; i < cursorUpdateResults.length; i++) {
-        const result = cursorUpdateResults[i];
-        if (result.status === "rejected") {
-          const error = result.reason;
-          logger.error(`Failed to update ${cursorUpdates[i].name}`, error as Error, {
+      if (cursorRows.length > 0) {
+        try {
+          await db
+            .insertInto("twist_instance_sync")
+            .values(cursorRows as any)
+            .onConflict((oc) =>
+              oc.columns(["twist_instance_id", "entity", "operation"]).doUpdateSet({
+                last_sync_at: sql`now()`,
+                last_sync_seq: sql`GREATEST(twist_instance_sync.last_sync_seq, EXCLUDED.last_sync_seq)`,
+              } as any)
+            )
+            .execute();
+        } catch (error) {
+          logger.error("Failed to advance twist_instance_sync cursors", error as Error, {
             twist_instance_id: twistInstanceId!,
+            cursor_count: cursorRows.length,
           });
           this.captureException(error as Error, {
-            sync_update: cursorUpdates[i].name,
+            sync_update: "batch cursor advance",
+            cursor_count: cursorRows.length,
           });
         }
       }
